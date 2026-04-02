@@ -27,8 +27,8 @@ export default function FaturamentoMotoPage() {
     api.faturamento.porMoto().then(d => { setData(d); setLoading(false); });
   }, []);
 
-  const motos = [...new Set(data.map(d => d.moto))].sort();
-  const anos  = [...new Set(data.map(d => d.ano))].sort();
+  const motos = Array.from(new Set(data.map((d: any) => d.moto))).sort();
+  const anos  = Array.from(new Set(data.map((d: any) => d.ano))).sort();
   const filtered = data.filter(d =>
     (!filtMoto || d.moto === filtMoto) && (!filtAno || d.ano === Number(filtAno))
   );

@@ -27,7 +27,7 @@ export default function FaturamentoGeralPage() {
     api.faturamento.geral().then(d => { setData(d); setLoading(false); });
   }, []);
 
-  const anos = [...new Set(data.map(d => d.ano))].sort();
+  const anos = Array.from(new Set(data.map((d: any) => d.ano))).sort();
   const filtered = data.filter(d => !filtAno || d.ano === Number(filtAno));
   const totalR = filtered.reduce((s, d) => s + d.receita, 0);
   const totalQ = filtered.reduce((s, d) => s + d.qtd, 0);
