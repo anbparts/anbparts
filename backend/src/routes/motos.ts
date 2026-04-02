@@ -1,0 +1,100 @@
+import { Router } from 'express';
+import { prisma } from '../lib/prisma';
+import { z } from 'zod';
+
+export const motosRouter = Router();
+
+const motoSchema = z.object({
+  marca:        z.string().min(1),
+  modelo:       z.string().min(1),
+  ano:          z.number().int().optional().nullable(),
+  cor:          z.string().optional().nullable(),
+  placa:        z.string().optional().nullable(),
+  chassi:       z.string().optional().nullable(),
+  dataCompra:   z.string().optional().nullable(),
+  precoCompra:  z.number().default(0),
+  origemCompra: z.string().optional().nullable(),
+  observacoes:  z.string().optional().nullable(),
+});
+
+// GET /motos
+motosRouter.get('/', async (req, res, next) => {
+  try {
+    const motos = await prisma.moto.findMany({
+      include: {
+        pecas: {
+          select: { id: true, disponivel: true, precoML: true, valorLiq: true }
+        }
+      },
+      orderBy: { id: 'asc' }
+    });
+
+    const result = motos.map(m => {
+      const disponiveis = m.pecas.filter(p => p.disponivel);
+      const vendidas    = m.pecas.filter(p => !p.disponivel);
+      const receita     = vendidas.reduce((s, p) => s + Number(p.precoML), 0);
+      const valorEst    = disponiveis.reduce((s, p) => s + Number(p.precoML), 0);
+      const lucro       = receita - Number(m.precoCompra);
+      return {
+        ...m,
+        precoCompra:  Number(m.precoCompra),
+        qtdDisp:      disponiveis.length,
+        qtdVendidas:  vendidas.length,
+        receitaTotal: receita,
+        valorEstoque: valorEst,
+        lucro,
+        pecas: undefined,
+      };
+    });
+
+    res.json(result);
+  } catch (e) { next(e); }
+});
+
+// GET /motos/:id
+motosRouter.get('/:id', async (req, res, next) => {
+  try {
+    const moto = await prisma.moto.findUniqueOrThrow({
+      where: { id: Number(req.params.id) },
+      include: { pecas: { orderBy: { idPeca: 'asc' } } }
+    });
+    res.json(moto);
+  } catch (e) { next(e); }
+});
+
+// POST /motos
+motosRouter.post('/', async (req, res, next) => {
+  try {
+    const data = motoSchema.parse(req.body);
+    const moto = await prisma.moto.create({
+      data: {
+        ...data,
+        dataCompra: data.dataCompra ? new Date(data.dataCompra) : null,
+      }
+    });
+    res.status(201).json(moto);
+  } catch (e) { next(e); }
+});
+
+// PUT /motos/:id
+motosRouter.put('/:id', async (req, res, next) => {
+  try {
+    const data = motoSchema.partial().parse(req.body);
+    const moto = await prisma.moto.update({
+      where: { id: Number(req.params.id) },
+      data: {
+        ...data,
+        dataCompra: data.dataCompra ? new Date(data.dataCompra) : undefined,
+      }
+    });
+    res.json(moto);
+  } catch (e) { next(e); }
+});
+
+// DELETE /motos/:id
+motosRouter.delete('/:id', async (req, res, next) => {
+  try {
+    await prisma.moto.delete({ where: { id: Number(req.params.id) } });
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
