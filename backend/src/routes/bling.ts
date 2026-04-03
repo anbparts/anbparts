@@ -6,27 +6,22 @@ export const blingRouter = Router();
 const BLING_API   = 'https://www.bling.com.br/Api/v3';
 const BLING_OAUTH = 'https://www.bling.com.br/Api/v3/oauth/token';
 
-// ── Config helpers — usa tabela BlingConfig no banco ───────────────────────
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+// ── Config helpers ──────────────────────────────────────────────────────────
 async function getConfig(): Promise<any> {
   let cfg = await prisma.blingConfig.findFirst();
-  if (!cfg) {
-    cfg = await prisma.blingConfig.create({ data: {} });
-  }
+  if (!cfg) cfg = await prisma.blingConfig.create({ data: {} });
   return { ...cfg, prefixos: cfg.prefixos as any[] };
 }
 
 async function saveConfig(data: any) {
   const cfg = await prisma.blingConfig.findFirst();
-  if (cfg) {
-    await prisma.blingConfig.update({ where: { id: cfg.id }, data });
-  } else {
-    await prisma.blingConfig.create({ data });
-  }
+  if (cfg) await prisma.blingConfig.update({ where: { id: cfg.id }, data });
+  else await prisma.blingConfig.create({ data });
 }
 
-// ── Helper: requisição autenticada para Bling ──────────────────────────────
-const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
-
+// ── Helper: requisição autenticada ─────────────────────────────────────────
 async function blingReq(pathUrl: string, options: any = {}, retries = 3): Promise<any> {
   const cfg = await getConfig();
   let token = cfg.accessToken;
@@ -38,13 +33,11 @@ async function blingReq(pathUrl: string, options: any = {}, retries = 3): Promis
 
   let resp = await doReq(token);
 
-  // Token expirado → renova
   if (resp.status === 401 && cfg.refreshToken) {
     token = await refreshAccessToken();
     resp = await doReq(token);
   }
 
-  // Rate limit → espera e tenta de novo
   if (resp.status === 429 && retries > 0) {
     await sleep(2000);
     return blingReq(pathUrl, options, retries - 1);
@@ -72,23 +65,21 @@ async function refreshAccessToken() {
   return data.access_token;
 }
 
-// ── Rotas ──────────────────────────────────────────────────────────────────
+// ── Rotas de config ─────────────────────────────────────────────────────────
 
-// GET /bling/config
 blingRouter.get('/config', async (req, res, next) => {
   try {
     const cfg = await getConfig();
     res.json({
-      clientId:    cfg.clientId    || '',
+      clientId:     cfg.clientId    || '',
       clientSecret: cfg.clientSecret ? '••••••••' : '',
-      hasTokens:   !!(cfg.accessToken),
-      connectedAt: cfg.connectedAt || null,
-      prefixos:    cfg.prefixos    || [],
+      hasTokens:    !!(cfg.accessToken),
+      connectedAt:  cfg.connectedAt || null,
+      prefixos:     cfg.prefixos    || [],
     });
   } catch (e) { next(e); }
 });
 
-// POST /bling/config
 blingRouter.post('/config', async (req, res, next) => {
   try {
     const { clientId, clientSecret } = req.body;
@@ -99,7 +90,6 @@ blingRouter.post('/config', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// GET /bling/auth-url
 blingRouter.get('/auth-url', async (req, res, next) => {
   try {
     const cfg = await getConfig();
@@ -111,7 +101,6 @@ blingRouter.get('/auth-url', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// GET /bling/callback
 blingRouter.get('/callback', async (req, res, next) => {
   try {
     const { code } = req.query as any;
@@ -133,18 +122,15 @@ blingRouter.get('/callback', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// GET /bling/status
 blingRouter.get('/status', async (req, res, next) => {
   try {
-    // Testa com endpoint que existe na API v3
-    const data = await blingReq('/situacoes/modulos') as any;
+    await blingReq('/situacoes/modulos');
     res.json({ ok: true, empresa: 'Conectado' });
   } catch (e: any) {
     res.status(400).json({ ok: false, error: e.message });
   }
 });
 
-// DELETE /bling/disconnect
 blingRouter.delete('/disconnect', async (req, res, next) => {
   try {
     await saveConfig({ accessToken: '', refreshToken: '', connectedAt: null });
@@ -152,7 +138,8 @@ blingRouter.delete('/disconnect', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// GET /bling/prefixos
+// ── Prefixos ────────────────────────────────────────────────────────────────
+
 blingRouter.get('/prefixos', async (req, res, next) => {
   try {
     const cfg = await getConfig();
@@ -160,7 +147,6 @@ blingRouter.get('/prefixos', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// POST /bling/prefixos
 blingRouter.post('/prefixos', async (req, res, next) => {
   try {
     const { prefixos } = req.body;
@@ -169,7 +155,6 @@ blingRouter.post('/prefixos', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// Helper: resolve motoId pelo SKU (prefixo mais longo tem prioridade)
 function resolverMotoId(sku: string, prefixos: any[]): number | null {
   if (!sku || !prefixos?.length) return null;
   const up = sku.toUpperCase();
@@ -180,7 +165,8 @@ function resolverMotoId(sku: string, prefixos: any[]): number | null {
   return null;
 }
 
-// POST /bling/sync/produtos
+// ── Sync produtos ───────────────────────────────────────────────────────────
+
 blingRouter.post('/sync/produtos', async (req, res, next) => {
   try {
     const cfg = await getConfig();
@@ -191,15 +177,15 @@ blingRouter.post('/sync/produtos', async (req, res, next) => {
 
     while (true) {
       let url = `/produtos?pagina=${pagina}&limite=100&situacao=A`;
-      if (dataInicio) url += `&dataInicio=${dataInicio}`;
-      if (dataFim)    url += `&dataFim=${dataFim}`;
+      if (dataInicio) url += `&dataInicial=${dataInicio}`;
+      if (dataFim)    url += `&dataFinal=${dataFim}`;
 
       const data = await blingReq(url) as any;
       const produtos = data?.data || [];
       if (!produtos.length) break;
 
       for (const p of produtos) {
-        await sleep(200); // evita rate limit
+        await sleep(200);
         const idPeca = `BL${String(p.id).padStart(8, '0')}`;
         const exists = await prisma.peca.findUnique({ where: { idPeca } });
         if (exists) { skipped.push(idPeca); continue; }
@@ -211,11 +197,11 @@ blingRouter.post('/sync/produtos', async (req, res, next) => {
 
         await prisma.peca.create({ data: {
           idPeca, motoId,
-          descricao: p.nome || 'Produto Bling',
-          precoML:   Number(p.preco) || 0,
-          valorLiq:  Number(p.preco) || 0,
+          descricao:  p.nome || 'Produto Bling',
+          precoML:    Number(p.preco) || 0,
+          valorLiq:   Number(p.preco) || 0,
           disponivel: true,
-          cadastro:  new Date(),
+          cadastro:   new Date(),
         }});
         created.push(idPeca);
       }
@@ -229,31 +215,34 @@ blingRouter.post('/sync/produtos', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// POST /bling/sync/vendas — retorna lista para revisão manual
+// ── Sync vendas ─────────────────────────────────────────────────────────────
+
 blingRouter.post('/sync/vendas', async (req, res, next) => {
   try {
     const { dataInicio, dataFim } = req.body;
 
-    // 1. Carrega TODAS as peças do banco de uma vez (evita N queries)
+    // Carrega todas as peças do banco de uma vez (evita N queries)
     const todasPecas = await prisma.peca.findMany({
       select: { id: true, idPeca: true, disponivel: true, precoML: true, moto: { select: { marca: true, modelo: true } } }
     });
-    // Mapa rápido por idPeca
     const pecaMap = new Map(todasPecas.map(p => [p.idPeca, p]));
 
-    // 2. Busca pedidos página a página
+    // Busca IDs dos pedidos concluídos no período
     let pagina = 1;
     const pedidosIds: number[] = [];
 
     while (true) {
+      // Bling v3: filtros de data usam sufixo Inicial/Final
       let url = `/pedidos/vendas?pagina=${pagina}&limite=100&situacoes[]=9`;
       if (dataInicio) url += `&dataInicial=${dataInicio}`;
       if (dataFim)    url += `&dataFinal=${dataFim}`;
 
-      console.log(`[Bling] Buscando: ${BLING_API}${url}`);
+      console.log(`[Bling] GET ${BLING_API}${url}`);
 
       const data = await blingReq(url) as any;
       const pedidos = data?.data || [];
+      console.log(`[Bling] Pedidos retornados: ${pedidos.length}`);
+
       if (!pedidos.length) break;
       pedidosIds.push(...pedidos.map((p: any) => p.id));
       if (pedidos.length < 100) break;
@@ -261,7 +250,9 @@ blingRouter.post('/sync/vendas', async (req, res, next) => {
       await sleep(300);
     }
 
-    // 3. Busca detalhes de cada pedido com delay menor
+    console.log(`[Bling] Total pedidos a detalhar: ${pedidosIds.length}`);
+
+    // Busca detalhe de cada pedido
     const itens: any[] = [];
     for (const pedidoId of pedidosIds) {
       await sleep(150);
@@ -273,21 +264,21 @@ blingRouter.post('/sync/vendas', async (req, res, next) => {
         const skuBling = item.produto?.codigo || '';
         const idBling  = item.produto?.id ? `BL${String(item.produto.id).padStart(8, '0')}` : '';
 
-        // Busca no mapa local — zero chamadas ao banco
+        // Busca pelo SKU (como peças são importadas do Excel) ou pelo ID do Bling
         const peca = pecaMap.get(skuBling) || pecaMap.get(idBling) || null;
 
         itens.push({
           pedidoId,
-          pedidoNum:   dp.numero || String(pedidoId),
+          pedidoNum:    dp.numero || String(pedidoId),
           dataVenda,
-          idPeca:      peca?.idPeca || skuBling || idBling,
-          descricao:   item.produto?.nome || item.descricao || '',
+          idPeca:       peca?.idPeca || skuBling || idBling,
+          descricao:    item.produto?.nome || item.descricao || '',
           skuBling,
-          precoVenda:  Number(item.valor) || 0,
-          encontrada:  !!peca,
-          jaVendida:   peca ? !peca.disponivel : false,
-          pecaId:      peca?.id || null,
-          moto:        peca?.moto ? `${peca.moto.marca} ${peca.moto.modelo}` : null,
+          precoVenda:   Number(item.valor) || 0,
+          encontrada:   !!peca,
+          jaVendida:    peca ? !peca.disponivel : false,
+          pecaId:       peca?.id || null,
+          moto:         peca?.moto ? `${peca.moto.marca} ${peca.moto.modelo}` : null,
           precoMLAtual: peca ? Number(peca.precoML) : null,
         });
       }
@@ -297,56 +288,8 @@ blingRouter.post('/sync/vendas', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-      const data = await blingReq(url) as any;
-      const pedidos = data?.data || [];
-      if (!pedidos.length) break;
+// ── Baixar venda ────────────────────────────────────────────────────────────
 
-      for (const pedido of pedidos) {
-        await sleep(300); // evita rate limit do Bling
-        const det = await blingReq(`/pedidos/vendas/${pedido.id}`) as any;
-        const dp = det?.data || {};
-        const dataVenda = (dp.data || '').split('T')[0] || new Date().toISOString().split('T')[0];
-
-        for (const item of (dp.itens || [])) {
-          const skuBling = item.produto?.codigo || '';
-          const idBling  = item.produto?.id ? `BL${String(item.produto.id).padStart(8, '0')}` : '';
-
-          // Busca pelo SKU primeiro (forma como peças são importadas do Excel)
-          // Se não achar, tenta pelo ID interno do Bling
-          let peca = skuBling
-            ? await prisma.peca.findUnique({ where: { idPeca: skuBling }, include: { moto: { select: { marca: true, modelo: true } } } })
-            : null;
-
-          if (!peca && idBling) {
-            peca = await prisma.peca.findUnique({ where: { idPeca: idBling }, include: { moto: { select: { marca: true, modelo: true } } } });
-          }
-
-          itens.push({
-            pedidoId:    pedido.id,
-            pedidoNum:   dp.numero || String(pedido.id),
-            dataVenda,
-            idPeca:      peca?.idPeca || skuBling || idBling,
-            descricao:   item.produto?.nome || item.descricao || '',
-            skuBling,
-            precoVenda:  Number(item.valor) || 0,
-            encontrada:  !!peca,
-            jaVendida:   peca ? !peca.disponivel : false,
-            pecaId:      peca?.id || null,
-            moto:        peca?.moto ? `${peca.moto.marca} ${peca.moto.modelo}` : null,
-            precoMLAtual: peca ? Number(peca.precoML) : null,
-          });
-        }
-      }
-
-      if (pedidos.length < 100) break;
-      pagina++;
-    }
-
-    res.json({ ok: true, total: itens.length, itens });
-  } catch (e) { next(e); }
-});
-
-// POST /bling/baixar
 blingRouter.post('/baixar', async (req, res, next) => {
   try {
     const { pecaId, dataVenda, precoVenda } = req.body;
