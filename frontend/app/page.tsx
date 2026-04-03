@@ -49,11 +49,12 @@ export default function DashboardPage() {
         {/* Stats */}
         <div style={s.grid}>
           {[
-            { label: '🏍 Motos',        val: dash?.totalMotos,      color: 'var(--ink)',   sub: 'cadastradas' },
-            { label: '📦 Total peças',  val: dash?.totalPecas?.toLocaleString('pt-BR'), color: 'var(--ink)', sub: `${dash?.totalDisponivel} disp · ${dash?.totalVendidas} vendidas` },
-            { label: '💰 Receita',      val: fmt(dash?.receita||0), color: 'var(--sage)',  sub: 'peças vendidas' },
-            { label: '🏷 Em estoque',   val: fmt(dash?.valorEst||0),color: 'var(--amber)', sub: 'valor Preço ML' },
-            { label: '📈 Investido',    val: fmt(dash?.investido||0),color:'var(--ink)',   sub: 'compra das motos' },
+            { label: '🏍 Motos',          val: dash?.totalMotos,                                    color: 'var(--blue-500)', sub: 'cadastradas' },
+            { label: '📦 Total peças',    val: dash?.totalPecas?.toLocaleString('pt-BR'),           color: 'var(--ink)',      sub: `${dash?.totalDisponivel} disp · ${dash?.totalVendidas} vendidas` },
+            { label: '💰 Receita bruta',  val: fmt(dash?.receitaBruta||0),                          color: 'var(--amber)',    sub: `líq. ${fmt(dash?.receitaLiq||0)}` },
+            { label: '🏷 Em estoque',     val: fmt(dash?.valorEst||0),                              color: 'var(--blue-400)', sub: 'valor Preço ML' },
+            { label: '📈 Investido',      val: fmt(dash?.investido||0),                             color: 'var(--ink)',      sub: 'compra das motos' },
+            { label: '📊 Lucro operac.',  val: fmt(dash?.lucroOp||0),                               color: (dash?.lucroOp||0) >= 0 ? 'var(--green)' : 'var(--red)', sub: 'receita líq. − CMV − despesas' },
           ].map(c => (
             <div key={c.label} style={s.card}>
               <div style={s.label}>{c.label}</div>
@@ -71,9 +72,10 @@ export default function DashboardPage() {
           {motos.map(m => {
             const tot = (m.qtdDisp || 0) + (m.qtdVendidas || 0);
             const pct = tot > 0 ? Math.round((m.qtdVendidas || 0) / tot * 100) : 0;
+            const pctRec = m.pctRecuperada || 0;
             return (
               <div key={m.id} style={s.mCard}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10, flexWrap: 'wrap', gap: 4 }}>
                   <span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 10, background: 'var(--gray-100)', color: 'var(--ink-muted)', padding: '2px 7px', borderRadius: 4 }}>
                     ID {m.id} · {m.ano}
                   </span>
@@ -82,13 +84,13 @@ export default function DashboardPage() {
                   </span>
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: '0.8px', fontFamily: 'Geist Mono, monospace', marginBottom: 2 }}>{m.marca}</div>
-                <div style={{ fontFamily: 'Fraunces, serif', fontSize: 18, fontWeight: 600, letterSpacing: '-0.3px', marginBottom: 14 }}>{m.modelo}</div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+                <div style={{ fontFamily: 'Fraunces, serif', fontSize: 18, fontWeight: 600, letterSpacing: '-0.3px', marginBottom: 12 }}>{m.modelo}</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
                   {[
-                    { l: 'Em estoque', v: m.qtdDisp,           c: 'var(--sage)'  },
-                    { l: 'Vendidas',   v: m.qtdVendidas,        c: 'var(--ink)'   },
-                    { l: 'Receita',    v: fmt(m.receitaTotal||0), c: 'var(--amber)', sm: true },
-                    { l: 'Lucro',      v: fmt(m.lucro||0),      c: 'var(--sage)', sm: true },
+                    { l: 'Em estoque', v: m.qtdDisp,              c: 'var(--sage)'  },
+                    { l: 'Vendidas',   v: m.qtdVendidas,           c: 'var(--ink)'   },
+                    { l: 'Receita',    v: fmt(m.receitaTotal||0),  c: 'var(--amber)', sm: true },
+                    { l: 'Lucro prev.',v: fmt(m.lucro||0),         c: (m.lucro||0) >= 0 ? 'var(--sage)' : 'var(--red)', sm: true },
                   ].map(st => (
                     <div key={st.l}>
                       <div style={{ fontSize: 10, color: 'var(--ink-muted)', fontFamily: 'Geist Mono, monospace', marginBottom: 3 }}>{st.l}</div>
@@ -96,8 +98,15 @@ export default function DashboardPage() {
                     </div>
                   ))}
                 </div>
-                <div style={{ width: '100%', height: 3, background: 'var(--gray-100)', borderRadius: 99, overflow: 'hidden', marginBottom: 5 }}>
-                  <div style={{ width: `${pct}%`, height: '100%', background: 'var(--sage)', borderRadius: 99, transition: 'width 0.6s ease' }} />
+                {/* Barra de recuperação do investimento */}
+                <div style={{ marginBottom: 6 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <span style={{ fontSize: 10, color: 'var(--ink-muted)', fontFamily: 'Geist Mono, monospace' }}>Investimento recuperado</span>
+                    <span style={{ fontSize: 10, fontFamily: 'Geist Mono, monospace', color: pctRec >= 100 ? 'var(--sage)' : pctRec >= 50 ? 'var(--amber)' : 'var(--ink-muted)', fontWeight: 600 }}>{pctRec}%</span>
+                  </div>
+                  <div style={{ width: '100%', height: 4, background: 'var(--gray-100)', borderRadius: 99, overflow: 'hidden' }}>
+                    <div style={{ width: `${Math.min(pctRec, 100)}%`, height: '100%', background: pctRec >= 100 ? 'var(--sage)' : pctRec >= 50 ? 'var(--amber)' : 'var(--blue-300)', borderRadius: 99, transition: 'width 0.6s ease' }} />
+                  </div>
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--ink-muted)', fontFamily: 'Geist Mono, monospace' }}>{m.qtdVendidas} de {tot} peças vendidas</div>
               </div>

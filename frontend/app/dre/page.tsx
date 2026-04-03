@@ -80,9 +80,11 @@ export default function DREPage() {
                     {row('1.2', '- Frete', -dre.frete, -dre.frete, true)}
                     {row('1.3', 'Receita Líquida de Vendas', dre.receitaLiq, dre.receitaLiq, false, true)}
 
-                    {section('2. Custo')}
-                    {row('2.0', '(-) Custo das Motos (CMV)', -dre.cmv, -dre.cmv, false, true, 'var(--amber)')}
-                    {row('2.1', 'Lucro Bruto', dre.lucroBruto, dre.lucroBruto, false, true, dre.lucroBruto >= 0 ? 'var(--green)' : 'var(--red)')}
+                    {section('2. Custo das Mercadorias (CMV)')}
+                    {row('2.0', '(-) Preço compra das motos', -dre.investido, -dre.investido, true)}
+                    {dre.comprasMoto > 0 && row('2.1', '(-) Compras extras (cat. Moto)', -dre.comprasMoto, -dre.comprasMoto, true)}
+                    {row('2.T', 'CMV Total', -dre.cmv, -dre.cmv, false, true, 'var(--amber)')}
+                    {row('2.R', 'Lucro Bruto', dre.lucroBruto, dre.lucroBruto, false, true, dre.lucroBruto >= 0 ? 'var(--green)' : 'var(--red)')}
 
                     {section('3. Despesas Operacionais')}
                     {Object.entries(dre.despPorCateg || {}).map(([cat, val]: any) =>

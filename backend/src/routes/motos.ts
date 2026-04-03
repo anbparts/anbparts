@@ -32,17 +32,36 @@ motosRouter.get('/', async (req, res, next) => {
     const result = motos.map(m => {
       const disponiveis = m.pecas.filter(p => p.disponivel);
       const vendidas    = m.pecas.filter(p => !p.disponivel);
-      const receita     = vendidas.reduce((s, p) => s + Number(p.precoML), 0);
-      const valorEst    = disponiveis.reduce((s, p) => s + Number(p.precoML), 0);
-      const lucro       = receita - Number(m.precoCompra);
+
+      // Receita = Preço ML das vendidas (valor bruto)
+      const receita = vendidas.reduce((s, p) => s + Number(p.precoML), 0);
+
+      // Valor estoque = Preço ML das disponíveis
+      const valorEst = disponiveis.reduce((s, p) => s + Number(p.precoML), 0);
+
+      // Lucro previsto = igual ao Excel:
+      // (Valor Líq. vendidas + Valor Líq. em estoque) - Preço Compra
+      // Valor Líquido = já descontado taxa ML + frete
+      const vlVendidas  = vendidas.reduce((s, p) => s + Number(p.valorLiq), 0);
+      const vlEstoque   = disponiveis.reduce((s, p) => s + Number(p.valorLiq), 0);
+      const lucro       = (vlVendidas + vlEstoque) - Number(m.precoCompra);
+
+      // % recuperada = quanto do investimento já voltou (valor líq. vendidas / preço compra)
+      const pctRecuperada = Number(m.precoCompra) > 0
+        ? Math.round(vlVendidas / Number(m.precoCompra) * 100)
+        : 0;
+
       return {
         ...m,
-        precoCompra:  Number(m.precoCompra),
-        qtdDisp:      disponiveis.length,
-        qtdVendidas:  vendidas.length,
-        receitaTotal: receita,
-        valorEstoque: valorEst,
+        precoCompra:    Number(m.precoCompra),
+        qtdDisp:        disponiveis.length,
+        qtdVendidas:    vendidas.length,
+        receitaTotal:   receita,
+        valorEstoque:   valorEst,
+        vlVendidas,
+        vlEstoque,
         lucro,
+        pctRecuperada,
         pecas: undefined,
       };
     });

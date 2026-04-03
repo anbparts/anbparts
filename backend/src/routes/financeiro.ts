@@ -84,24 +84,31 @@ financeiroRouter.get('/dre', async (req, res, next) => {
       prisma.moto.findMany({ select: { precoCompra: true } }),
     ]);
 
-    const receitaBruta   = pecasVendidas.reduce((s, p) => s + fmt(p.precoML), 0);
-    const comissaoML     = pecasVendidas.reduce((s, p) => s + fmt(p.valorTaxas), 0);
-    const frete          = pecasVendidas.reduce((s, p) => s + fmt(p.valorFrete), 0);
-    const receitaLiq     = receitaBruta - comissaoML - frete;
-    const cmv            = motos.reduce((s, m) => s + fmt(m.precoCompra), 0);
-    const lucroBruto     = receitaLiq - cmv;
+    const receitaBruta  = pecasVendidas.reduce((s, p) => s + fmt(p.precoML), 0);
+    const comissaoML    = pecasVendidas.reduce((s, p) => s + fmt(p.valorTaxas), 0);
+    const frete         = pecasVendidas.reduce((s, p) => s + fmt(p.valorFrete), 0);
+    // Receita líquida = Valor Líquido (já descontado taxa + frete, igual ao Excel)
+    const receitaLiq    = pecasVendidas.reduce((s, p) => s + fmt(p.valorLiq), 0);
 
-    const totalDesp      = despesas.reduce((s, d) => s + fmt(d.valor), 0);
-    const totalPrej      = prejuizos.reduce((s, p) => s + fmt(p.valor) + fmt(p.frete), 0);
-    const lucroOp        = lucroBruto - totalDesp - totalPrej;
+    // CMV = preços de compra + despesas categoria "Moto" (compras extras)
+    const investido     = motos.reduce((s, m) => s + fmt(m.precoCompra), 0);
+    const comprasMoto   = despesas.filter(d => d.categoria.trim() === 'Moto').reduce((s, d) => s + fmt(d.valor), 0);
+    const cmv           = investido + comprasMoto;
+    const lucroBruto    = receitaLiq - cmv;
 
-    // Agrupamento por categoria de despesa
+    // Despesas operacionais (sem categoria Moto — ela vai pro CMV)
+    const despOp        = despesas.filter(d => d.categoria.trim() !== 'Moto');
+    const totalDesp     = despOp.reduce((s, d) => s + fmt(d.valor), 0);
+    const totalPrej     = prejuizos.reduce((s, p) => s + fmt(p.valor) + fmt(p.frete), 0);
+    const lucroOp       = lucroBruto - totalDesp - totalPrej;
+
+    // Agrupamento por categoria (só despesas operacionais)
     const despPorCateg: Record<string, number> = {};
-    despesas.forEach(d => { despPorCateg[d.categoria] = (despPorCateg[d.categoria] || 0) + fmt(d.valor); });
+    despOp.forEach(d => { despPorCateg[d.categoria] = (despPorCateg[d.categoria] || 0) + fmt(d.valor); });
 
     res.json({
       receitaBruta, comissaoML, frete, receitaLiq,
-      cmv, lucroBruto,
+      investido, comprasMoto, cmv, lucroBruto,
       totalDesp, totalPrej, lucroOp,
       despPorCateg,
       qtdVendidas: pecasVendidas.length,

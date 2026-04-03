@@ -25,7 +25,9 @@ async function saveConfig(data: any) {
 }
 
 // ── Helper: requisição autenticada para Bling ──────────────────────────────
-async function blingReq(pathUrl: string, options: any = {}) {
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+async function blingReq(pathUrl: string, options: any = {}, retries = 3): Promise<any> {
   const cfg = await getConfig();
   let token = cfg.accessToken;
 
@@ -35,10 +37,19 @@ async function blingReq(pathUrl: string, options: any = {}) {
   });
 
   let resp = await doReq(token);
+
+  // Token expirado → renova
   if (resp.status === 401 && cfg.refreshToken) {
     token = await refreshAccessToken();
     resp = await doReq(token);
   }
+
+  // Rate limit → espera e tenta de novo
+  if (resp.status === 429 && retries > 0) {
+    await sleep(2000);
+    return blingReq(pathUrl, options, retries - 1);
+  }
+
   if (!resp.ok) {
     const err = await resp.text();
     throw new Error(`Bling API ${resp.status}: ${err.slice(0, 200)}`);
@@ -184,6 +195,7 @@ blingRouter.post('/sync/produtos', async (req, res, next) => {
       if (!produtos.length) break;
 
       for (const p of produtos) {
+        await sleep(200); // evita rate limit
         const idPeca = `BL${String(p.id).padStart(8, '0')}`;
         const exists = await prisma.peca.findUnique({ where: { idPeca } });
         if (exists) { skipped.push(idPeca); continue; }
@@ -230,6 +242,7 @@ blingRouter.post('/sync/vendas', async (req, res, next) => {
       if (!pedidos.length) break;
 
       for (const pedido of pedidos) {
+        await sleep(300); // evita rate limit do Bling
         const det = await blingReq(`/pedidos/vendas/${pedido.id}`) as any;
         const dp = det?.data || {};
         const dataVenda = (dp.data || '').split('T')[0] || new Date().toISOString().split('T')[0];
