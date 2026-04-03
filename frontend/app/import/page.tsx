@@ -75,24 +75,34 @@ export default function ImportPage() {
         const estoqueSheet = wb.Sheets['Estoque'];
         if (estoqueSheet) {
           const motosDB = await api.motos.list();
+          // Mapeia ID do Excel → ID real no banco pela ordem de cadastro
           const motoMap: Record<number, number> = {};
           motosDB.forEach((m: any, i: number) => { motoMap[i + 1] = m.id; });
+          // Também mapeia direto pelo ID real (caso IDs do Excel já sejam os IDs do banco)
+          motosDB.forEach((m: any) => { motoMap[m.id] = m.id; });
 
           const raw = XLSX.utils.sheet_to_json(estoqueSheet, { defval: null });
+          // Gera ID único por linha: PN0111 (1ª), PN0111-2 (2ª), PN0111-3 (3ª)...
+          const skuCount: Record<string, number> = {};
           const pecas = raw
             .filter((r: any) => r['ID Peça'])
-            .map((r: any) => ({
-              motoId:     motoMap[Number(r['ID Moto'])] || 1,
-              idPeca:     String(r['ID Peça']),
-              descricao:  String(r['Descrição Peça'] || ''),
-              precoML:    Number(r['Preço ML'])      || 0,
-              valorLiq:   Number(r['Valor Líquido']) || 0,
-              valorFrete: Number(r['Valor Frete'])   || 0,
-              valorTaxas: Number(r['Valor Taxas'])   || 0,
-              disponivel: r['Disponível'] === 'Sim',
-              cadastro:   fmtD(r['Cadastro'])   || null,
-              dataVenda:  fmtD(r['Data Venda']) || null,
-            }));
+            .map((r: any) => {
+              const skuBase = String(r['ID Peça']);
+              skuCount[skuBase] = (skuCount[skuBase] || 0) + 1;
+              const idPeca = skuCount[skuBase] === 1 ? skuBase : `${skuBase}-${skuCount[skuBase]}`;
+              return {
+                motoId:     motoMap[Number(r['ID Moto'])] || 1,
+                idPeca,
+                descricao:  String(r['Descrição Peça'] || ''),
+                precoML:    Number(r['Preço ML'])      || 0,
+                valorLiq:   Number(r['Valor Líquido']) || 0,
+                valorFrete: Number(r['Valor Frete'])   || 0,
+                valorTaxas: Number(r['Valor Taxas'])   || 0,
+                disponivel: r['Disponível'] === 'Sim',
+                cadastro:   fmtD(r['Cadastro'])   || null,
+                dataVenda:  fmtD(r['Data Venda']) || null,
+              };
+            });
 
           let pecasImported = 0;
           for (let i = 0; i < pecas.length; i += 200) {
