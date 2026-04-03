@@ -260,14 +260,26 @@ blingRouter.post('/sync/vendas', async (req, res, next) => {
       const dp = det?.data || {};
       const dataVenda = (dp.data || '').split('T')[0] || new Date().toISOString().split('T')[0];
 
+      console.log(`[Bling] Pedido ${pedidoId} campos:`, JSON.stringify(Object.keys(dp)));
+      console.log(`[Bling] Pedido ${pedidoId} transporte:`, JSON.stringify(dp.transporte));
+      console.log(`[Bling] Pedido ${pedidoId} taxasMarketplace:`, JSON.stringify(dp.taxasMarketplace));
+
+      // Dados financeiros do pedido (nível do pedido, não do item)
+      const totalPedido    = Number(dp.totalItens || dp.total || 0);
+      const taxaPct        = Number(dp.taxasMarketplace?.aliquota || dp.comissao?.aliquota || 0); // % taxa ML
+      const freteBruto     = Number(dp.transporte?.frete || dp.frete || 0);
+      const fretePositivo  = Math.abs(freteBruto); // garante positivo
+
       for (const item of (dp.itens || [])) {
         const skuBling = item.produto?.codigo || item.codigo || item.sku || '';
         const idBling  = item.produto?.id ? `BL${String(item.produto.id).padStart(8, '0')}` : '';
 
-        console.log(`[Bling] Item pedido ${pedidoId}: SKU="${skuBling}" idBling="${idBling}" campos=`, JSON.stringify(Object.keys(item)));
-
         // Busca pelo SKU (como peças são importadas do Excel) ou pelo ID do Bling
         const peca = pecaMap.get(skuBling) || pecaMap.get(idBling) || null;
+
+        const precoVenda  = Number(item.valor) || 0;
+        const taxaValor   = taxaPct > 0 ? parseFloat((precoVenda * taxaPct / 100).toFixed(2)) : 0;
+        const valorLiq    = parseFloat((precoVenda - fretePositivo - taxaValor).toFixed(2));
 
         itens.push({
           pedidoId,
@@ -276,7 +288,11 @@ blingRouter.post('/sync/vendas', async (req, res, next) => {
           idPeca:       peca?.idPeca || skuBling || idBling,
           descricao:    item.produto?.nome || item.descricao || '',
           skuBling,
-          precoVenda:   Number(item.valor) || 0,
+          precoVenda,
+          frete:        fretePositivo,
+          taxaPct,
+          taxaValor,
+          valorLiq,
           encontrada:   !!peca,
           jaVendida:    peca ? !peca.disponivel : false,
           pecaId:       peca?.id || null,
@@ -294,12 +310,27 @@ blingRouter.post('/sync/vendas', async (req, res, next) => {
 
 blingRouter.post('/baixar', async (req, res, next) => {
   try {
-    const { pecaId, dataVenda, precoVenda } = req.body;
+    const { pecaId, dataVenda, precoVenda, frete, taxaValor, valorLiq } = req.body;
     if (!pecaId || !dataVenda)
       return res.status(400).json({ error: 'pecaId e dataVenda são obrigatórios' });
+
+    const precoML = Number(precoVenda) || 0;
+    const freteN  = Number(frete)      || 0;
+    const taxas   = Number(taxaValor)  || 0;
+    const vliq    = valorLiq !== undefined
+      ? Number(valorLiq)
+      : parseFloat((precoML - freteN - taxas).toFixed(2));
+
     await prisma.peca.update({
       where: { id: Number(pecaId) },
-      data: { disponivel: false, dataVenda: new Date(dataVenda), ...(precoVenda ? { precoML: Number(precoVenda) } : {}) }
+      data: {
+        disponivel:  false,
+        dataVenda:   new Date(dataVenda),
+        precoML:     precoML,
+        valorFrete:  freteN,
+        valorTaxas:  taxas,
+        valorLiq:    vliq,
+      }
     });
     res.json({ ok: true });
   } catch (e) { next(e); }
