@@ -35,7 +35,7 @@ pecasRouter.get('/', async (req, res, next) => {
       { descricao: { contains: search, mode: 'insensitive' } },
     ];
 
-    const [total, pecas] = await Promise.all([
+    const [total, pecas, totalDisp, totalVend] = await Promise.all([
       prisma.peca.count({ where }),
       prisma.peca.findMany({
         where,
@@ -43,10 +43,12 @@ pecasRouter.get('/', async (req, res, next) => {
         orderBy: { idPeca: 'asc' },
         skip: (Number(page) - 1) * Number(per),
         take: Number(per),
-      })
+      }),
+      prisma.peca.count({ where: { ...where, disponivel: true  } }),
+      prisma.peca.count({ where: { ...where, disponivel: false } }),
     ]);
 
-    res.json({ total, page: Number(page), per: Number(per), data: pecas });
+    res.json({ total, totalDisp, totalVend, page: Number(page), per: Number(per), data: pecas });
   } catch (e) { next(e); }
 });
 

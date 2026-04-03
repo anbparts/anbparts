@@ -135,7 +135,7 @@ function VendaModal({ open, peca, onClose, onConfirm }: any) {
 }
 
 export default function EstoquePage() {
-  const [data, setData]       = useState<any>({ total: 0, data: [] });
+  const [data, setData]       = useState<any>({ total: 0, totalDisp: 0, totalVend: 0, data: [] });
   const [motos, setMotos]     = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal]     = useState(false);
@@ -179,9 +179,9 @@ export default function EstoquePage() {
         {/* Stats */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 14, marginBottom: 20 }}>
           {[
-            { l: 'Total (página)', v: data.total, c: 'var(--ink)' },
-            { l: 'Em estoque', v: pecasDisp.length, c: 'var(--sage)', sub: fmt(pecasDisp.reduce((s: number, p: any) => s + Number(p.precoML), 0)) },
-            { l: 'Vendidas', v: pecasVend.length, c: 'var(--amber)', sub: fmt(pecasVend.reduce((s: number, p: any) => s + Number(p.precoML), 0)) },
+            { l: 'Total', v: data.total, c: 'var(--ink)' },
+            { l: 'Em estoque', v: data.totalDisp, c: 'var(--sage)' },
+            { l: 'Vendidas',   v: data.totalVend, c: 'var(--amber)' },
           ].map(c => (
             <div key={c.l} style={cs.sCard}>
               <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '0.6px', textTransform: 'uppercase', marginBottom: 10 }}>{c.l}</div>

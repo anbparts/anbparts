@@ -27,17 +27,17 @@ export default function FaturamentoGeralPage() {
     api.faturamento.geral().then(d => { setData(d); setLoading(false); });
   }, []);
 
-  const anos = Array.from(new Set(data.map((d: any) => d.ano))).sort();
+  const anos = [...new Set(data.map(d => d.ano))].sort();
   const filtered = data.filter(d => !filtAno || d.ano === Number(filtAno));
-  const totalR = filtered.reduce((s, d) => s + d.receita, 0);
+  const totalR = filtered.reduce((s, d) => s + (d.receitaLiq || d.receita), 0);
   const totalQ = filtered.reduce((s, d) => s + d.qtd, 0);
-  const melhor = filtered.reduce((b: any, d) => d.receita > (b?.receita || 0) ? d : b, null);
+  const melhor = filtered.reduce((b: any, d) => (d.receitaLiq || d.receita) > ((b?.receitaLiq || b?.receita) || 0) ? d : b, null);
 
   // month grid
   const monthTotals: Record<number, { receita: number; qtd: number }> = {};
   filtered.forEach(d => {
     if (!monthTotals[d.mes]) monthTotals[d.mes] = { receita: 0, qtd: 0 };
-    monthTotals[d.mes].receita += d.receita;
+    monthTotals[d.mes].receita += (d.receitaLiq || d.receita);
     monthTotals[d.mes].qtd    += d.qtd;
   });
 
@@ -95,7 +95,7 @@ export default function FaturamentoGeralPage() {
                   <tr key={i}>
                     <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12 }}>{MESES_FULL[d.mes - 1]}</td>
                     <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12 }}>{d.ano}</td>
-                    <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', color: 'var(--sage)' }}>{fmt(d.receita)}</td>
+                    <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', color: 'var(--sage)' }}>{fmt(d.receitaLiq || d.receita)}</td>
                     <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12 }}>{d.qtd}</td>
                   </tr>
                 ))}

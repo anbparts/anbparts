@@ -27,14 +27,14 @@ export default function FaturamentoMotoPage() {
     api.faturamento.porMoto().then(d => { setData(d); setLoading(false); });
   }, []);
 
-  const motos = Array.from(new Set(data.map((d: any) => d.moto))).sort();
-  const anos  = Array.from(new Set(data.map((d: any) => d.ano))).sort();
+  const motos = [...new Set(data.map(d => d.moto))].sort();
+  const anos  = [...new Set(data.map(d => d.ano))].sort();
   const filtered = data.filter(d =>
     (!filtMoto || d.moto === filtMoto) && (!filtAno || d.ano === Number(filtAno))
   );
-  const totalR = filtered.reduce((s, d) => s + d.receita, 0);
+  const totalR = filtered.reduce((s, d) => s + (d.receitaLiq || d.receita), 0);
   const totalQ = filtered.reduce((s, d) => s + d.qtd, 0);
-  const melhor = filtered.reduce((b: any, d) => d.receita > (b?.receita || 0) ? d : b, null);
+  const melhor = filtered.reduce((b: any, d) => (d.receitaLiq || d.receita) > ((b?.receitaLiq || b?.receita) || 0) ? d : b, null);
 
   return (
     <>
@@ -82,7 +82,7 @@ export default function FaturamentoMotoPage() {
                     <td style={cs.td}>{d.moto}</td>
                     <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12 }}>{MESES_FULL[d.mes - 1]}</td>
                     <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12 }}>{d.ano}</td>
-                    <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', color: 'var(--sage)' }}>{fmt(d.receita)}</td>
+                    <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', color: 'var(--sage)' }}>{fmt(d.receitaLiq || d.receita)}</td>
                     <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12 }}>{d.qtd}</td>
                   </tr>
                 ))}
