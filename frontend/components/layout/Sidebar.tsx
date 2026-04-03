@@ -20,8 +20,10 @@ const NAV = [
     { href: '/investimentos',     icon: '💼', label: 'Investimentos' },
   ]},
   { section: 'Bling ERP', items: [
-    { href: '/bling',        icon: '🔗', label: 'Configuração' },
-    { href: '/bling/vendas', icon: '💸', label: 'Baixas Bling' },
+    { href: '/bling/vendas',         icon: '💸', label: 'Vendas'            },
+    { href: '/bling/produtos',       icon: '📦', label: 'Produtos'          },
+    { href: '/bling/config-produtos',icon: '🗺', label: 'Config. Produtos'  },
+    { href: '/bling',                icon: '🔗', label: 'Configuração'      },
   ]},
 ];
 

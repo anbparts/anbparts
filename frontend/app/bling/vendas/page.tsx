@@ -81,7 +81,7 @@ export default function VendasBlingPage() {
     <>
       <div style={s.topbar}>
         <div>
-          <div style={s.title}>Baixas de Venda — Bling</div>
+          <div style={s.title}>Vendas Bling</div>
           <div style={s.sub}>Revise e confirme cada venda do Bling para dar baixa no estoque</div>
         </div>
         {buscou && itens.length > 0 && (

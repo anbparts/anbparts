@@ -185,12 +185,16 @@ blingRouter.post('/sync/produtos', async (req, res, next) => {
   try {
     const cfg = await getConfig();
     const prefixos = cfg.prefixos || [];
-    const { motoIdFallback } = req.body;
+    const { motoIdFallback, dataInicio, dataFim } = req.body;
     let pagina = 1, total = 0;
     const created: string[] = [], skipped: string[] = [], semMoto: string[] = [];
 
     while (true) {
-      const data = await blingReq(`/produtos?pagina=${pagina}&limite=100&situacao=A`) as any;
+      let url = `/produtos?pagina=${pagina}&limite=100&situacao=A`;
+      if (dataInicio) url += `&dataInicio=${dataInicio}`;
+      if (dataFim)    url += `&dataFim=${dataFim}`;
+
+      const data = await blingReq(url) as any;
       const produtos = data?.data || [];
       if (!produtos.length) break;
 
@@ -232,10 +236,14 @@ blingRouter.post('/sync/vendas', async (req, res, next) => {
     let pagina = 1;
     const itens: any[] = [];
 
+    // Bling v3 aceita datas no formato YYYY-MM-DD
+    const di = dataInicio || null;
+    const df = dataFim    || null;
+
     while (true) {
-      let url = `/pedidos/vendas?pagina=${pagina}&limite=100&situacao=9`;
-      if (dataInicio) url += `&dataInicio=${dataInicio}`;
-      if (dataFim)    url += `&dataFim=${dataFim}`;
+      let url = `/pedidos/vendas?pagina=${pagina}&limite=100&situacoes[]=9`;
+      if (di) url += `&dataInicio=${di}`;
+      if (df) url += `&dataFim=${df}`;
 
       const data = await blingReq(url) as any;
       const pedidos = data?.data || [];
@@ -248,19 +256,31 @@ blingRouter.post('/sync/vendas', async (req, res, next) => {
         const dataVenda = (dp.data || '').split('T')[0] || new Date().toISOString().split('T')[0];
 
         for (const item of (dp.itens || [])) {
-          const idPeca = `BL${String(item.produto?.id || '').padStart(8, '0')}`;
-          const peca = await prisma.peca.findUnique({
-            where: { idPeca },
-            include: { moto: { select: { marca: true, modelo: true } } }
-          });
+          const skuBling = item.produto?.codigo || '';
+          const idBling  = item.produto?.id ? `BL${String(item.produto.id).padStart(8, '0')}` : '';
+
+          // Busca pelo SKU primeiro (forma como peças são importadas do Excel)
+          // Se não achar, tenta pelo ID interno do Bling
+          let peca = skuBling
+            ? await prisma.peca.findUnique({ where: { idPeca: skuBling }, include: { moto: { select: { marca: true, modelo: true } } } })
+            : null;
+
+          if (!peca && idBling) {
+            peca = await prisma.peca.findUnique({ where: { idPeca: idBling }, include: { moto: { select: { marca: true, modelo: true } } } });
+          }
+
           itens.push({
-            pedidoId: pedido.id, pedidoNum: dp.numero || String(pedido.id), dataVenda, idPeca,
-            descricao: item.produto?.nome || item.descricao || '',
-            skuBling: item.produto?.codigo || '',
-            precoVenda: Number(item.valor) || 0,
-            encontrada: !!peca, jaVendida: peca ? !peca.disponivel : false,
-            pecaId: peca?.id || null,
-            moto: peca?.moto ? `${peca.moto.marca} ${peca.moto.modelo}` : null,
+            pedidoId:    pedido.id,
+            pedidoNum:   dp.numero || String(pedido.id),
+            dataVenda,
+            idPeca:      peca?.idPeca || skuBling || idBling,
+            descricao:   item.produto?.nome || item.descricao || '',
+            skuBling,
+            precoVenda:  Number(item.valor) || 0,
+            encontrada:  !!peca,
+            jaVendida:   peca ? !peca.disponivel : false,
+            pecaId:      peca?.id || null,
+            moto:        peca?.moto ? `${peca.moto.marca} ${peca.moto.modelo}` : null,
             precoMLAtual: peca ? Number(peca.precoML) : null,
           });
         }
