@@ -19,10 +19,19 @@ importRouter.post('/motos', async (req, res, next) => {
         precoCompra: Number(m.precoCompra) || 0,
       }));
 
-    const created = await prisma.$transaction(
-      motos.map(m => prisma.moto.create({ data: m }))
-    );
-    res.json({ imported: created.length });
+    let imported = 0;
+    for (const m of motos) {
+      // Evita duplicata pela combinação marca+modelo+ano
+      const exists = await prisma.moto.findFirst({
+        where: { marca: m.marca, modelo: m.modelo, ano: m.ano }
+      });
+      if (!exists) {
+        await prisma.moto.create({ data: m });
+        imported++;
+      }
+    }
+
+    res.json({ imported });
   } catch (e) { next(e); }
 });
 
@@ -53,5 +62,63 @@ importRouter.post('/pecas', async (req, res, next) => {
 
     const results = await prisma.$transaction(ops);
     res.json({ imported: results.length });
+  } catch (e) { next(e); }
+});
+
+// POST /import/despesas
+importRouter.post('/despesas', async (req, res, next) => {
+  try {
+    const raw = req.body as any[];
+    if (!Array.isArray(raw)) return res.status(400).json({ error: 'Dados inválidos' });
+
+    const rows = raw.filter(r => r.data && r.detalhes).map(r => ({
+      data:      new Date(r.data),
+      detalhes:  String(r.detalhes),
+      categoria: String(r.categoria || 'Outros'),
+      valor:     Number(r.valor) || 0,
+    }));
+
+    // Limpa e reimporta (evita duplicata)
+    await prisma.despesa.deleteMany();
+    await prisma.despesa.createMany({ data: rows });
+    res.json({ imported: rows.length });
+  } catch (e) { next(e); }
+});
+
+// POST /import/prejuizos
+importRouter.post('/prejuizos', async (req, res, next) => {
+  try {
+    const raw = req.body as any[];
+    if (!Array.isArray(raw)) return res.status(400).json({ error: 'Dados inválidos' });
+
+    const rows = raw.filter(r => r.data && r.detalhe).map(r => ({
+      data:   new Date(r.data),
+      detalhe: String(r.detalhe),
+      valor:  Number(r.valor) || 0,
+      frete:  Number(r.frete) || 0,
+    }));
+
+    await prisma.prejuizo.deleteMany();
+    await prisma.prejuizo.createMany({ data: rows });
+    res.json({ imported: rows.length });
+  } catch (e) { next(e); }
+});
+
+// POST /import/investimentos
+importRouter.post('/investimentos', async (req, res, next) => {
+  try {
+    const raw = req.body as any[];
+    if (!Array.isArray(raw)) return res.status(400).json({ error: 'Dados inválidos' });
+
+    const rows = raw.filter(r => r.data && r.socio).map(r => ({
+      data:  new Date(r.data),
+      socio: String(r.socio),
+      moto:  r.moto ? String(r.moto) : null,
+      valor: Number(r.valor) || 0,
+    }));
+
+    await prisma.investimento.deleteMany();
+    await prisma.investimento.createMany({ data: rows });
+    res.json({ imported: rows.length });
   } catch (e) { next(e); }
 });
