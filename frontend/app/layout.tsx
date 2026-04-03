@@ -3,8 +3,8 @@ import './globals.css';
 import { AuthWrapper } from '@/components/layout/AuthWrapper';
 
 export const metadata: Metadata = {
-  title: 'ANB Parts — Gestão de Peças',
-  description: 'Sistema de gestão de peças ANB Motos',
+  title: 'ANB Parts — Sistema de Gestão',
+  description: 'Sistema interno de gestão de peças ANB Parts',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -1,46 +1,81 @@
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,500;0,9..144,600;1,9..144,300&family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
 :root {
-  --white:   #ffffff;
-  --gray-50: #f8f8f7;
-  --gray-100:#f0efed;
-  --gray-200:#e4e2de;
-  --gray-300:#ccc9c2;
-  --gray-400:#a09d96;
-  --gray-500:#706d66;
-  --gray-600:#4a4843;
-  --gray-700:#2e2c29;
-  --ink:     #1a1917;
-  --ink-soft:#4a4843;
-  --ink-muted:#a09d96;
-  --sage:    #3d6b5e;
-  --sage-light:#e8f0ee;
-  --sage-mid: #c2d6d1;
-  --amber:   #c47f2e;
-  --amber-light:#fdf3e3;
-  --amber-mid:#f5d89a;
-  --red:     #b94040;
-  --red-light:#fceaea;
-  --blue:    #2e5fa3;
-  --blue-light:#e8eef8;
-  --border:  #e4e2de;
-  --border-strong: #ccc9c2;
-  --shadow-sm: 0 1px 3px rgba(0,0,0,.06);
-  --shadow-md: 0 4px 12px rgba(0,0,0,.08);
-  --sidebar-w: 248px;
-  --topbar-h: 60px;
+  /* Azul ANB Parts */
+  --blue-900: #0a1628;
+  --blue-800: #0d1f3c;
+  --blue-700: #112a52;
+  --blue-600: #1a3f7a;
+  --blue-500: #1e56a0;
+  --blue-400: #2563eb;
+  --blue-300: #3b82f6;
+  --blue-200: #93c5fd;
+  --blue-100: #dbeafe;
+  --blue-50:  #eff6ff;
+
+  /* Neutros */
+  --white: #ffffff;
+  --gray-50:  #f8fafc;
+  --gray-100: #f1f5f9;
+  --gray-200: #e2e8f0;
+  --gray-300: #cbd5e1;
+  --gray-400: #94a3b8;
+  --gray-500: #64748b;
+  --gray-600: #475569;
+  --gray-700: #334155;
+  --gray-800: #1e293b;
+
+  /* Status */
+  --green:        #16a34a;
+  --green-light:  #dcfce7;
+  --green-mid:    #86efac;
+  --red:          #dc2626;
+  --red-light:    #fee2e2;
+  --amber:        #d97706;
+  --amber-light:  #fef3c7;
+  --amber-mid:    #fcd34d;
+
+  /* Layout */
+  --border:     #e2e8f0;
+  --shadow:     0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.04);
+  --shadow-md:  0 4px 16px rgba(0,0,0,.10);
+  --sidebar-w:  252px;
+  --topbar-h:   58px;
+
+  /* Aliases compatibilidade (páginas antigas) */
+  --ink:       #1e293b;
+  --ink-soft:  #475569;
+  --ink-muted: #94a3b8;
+  --sage:      #16a34a;
+  --sage-light: #dcfce7;
+  --sage-mid:   #86efac;
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html { font-size: 14px; }
+
 body {
-  font-family: 'Geist', system-ui, sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
   background: var(--gray-50);
-  color: var(--ink);
+  color: var(--gray-800);
   -webkit-font-smoothing: antialiased;
+  display: flex;
+  min-height: 100vh;
 }
 
-/* Scrollbar */
+/* Main offset pela sidebar */
+main {
+  margin-left: var(--sidebar-w);
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+a { text-decoration: none; color: inherit; }
+button { font-family: inherit; }
+input, select, textarea { font-family: inherit; }
+
 ::-webkit-scrollbar { width: 5px; height: 5px; }
-::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--gray-200); border-radius: 3px; }
+::-webkit-scrollbar-track { background: transparent; }
