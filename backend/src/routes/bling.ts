@@ -260,15 +260,11 @@ blingRouter.post('/sync/vendas', async (req, res, next) => {
       const dp = det?.data || {};
       const dataVenda = (dp.data || '').split('T')[0] || new Date().toISOString().split('T')[0];
 
-      console.log(`[Bling] Pedido ${pedidoId} campos:`, JSON.stringify(Object.keys(dp)));
-      console.log(`[Bling] Pedido ${pedidoId} transporte:`, JSON.stringify(dp.transporte));
-      console.log(`[Bling] Pedido ${pedidoId} taxasMarketplace:`, JSON.stringify(dp.taxasMarketplace));
-
-      // Dados financeiros do pedido (nível do pedido, não do item)
-      const totalPedido    = Number(dp.totalItens || dp.total || 0);
-      const taxaPct        = Number(dp.taxasMarketplace?.aliquota || dp.comissao?.aliquota || 0); // % taxa ML
-      const freteBruto     = Number(dp.transporte?.frete || dp.frete || 0);
-      const fretePositivo  = Math.abs(freteBruto); // garante positivo
+      // Dados financeiros do pedido
+      const taxaPct       = Number(dp.taxasMarketplace?.aliquota || dp.comissao?.aliquota || 0);
+      const freteBruto    = Number(dp.transporte?.frete || 0);
+      const fretePositivo = Math.abs(freteBruto);
+      console.log(`[Bling] Pedido ${pedidoId} taxas:`, JSON.stringify(dp.taxas), '| totalComissoes:', dp.totalComissoes, '| total:', dp.total, '| totalProdutos:', dp.totalProdutos);
 
       for (const item of (dp.itens || [])) {
         const skuBling = item.produto?.codigo || item.codigo || item.sku || '';
