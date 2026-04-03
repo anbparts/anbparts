@@ -42,3 +42,30 @@ model Peca {
 
   moto        Moto     @relation(fields: [motoId], references: [id])
 }
+
+model Despesa {
+  id         Int      @id @default(autoincrement())
+  data       DateTime
+  detalhes   String
+  categoria  String   @default("Outros")
+  valor      Decimal  @default(0) @db.Decimal(12, 2)
+  createdAt  DateTime @default(now())
+}
+
+model Prejuizo {
+  id         Int      @id @default(autoincrement())
+  data       DateTime
+  detalhe    String
+  valor      Decimal  @default(0) @db.Decimal(12, 2)
+  frete      Decimal  @default(0) @db.Decimal(12, 2)
+  createdAt  DateTime @default(now())
+}
+
+model Investimento {
+  id        Int      @id @default(autoincrement())
+  data      DateTime
+  socio     String
+  moto      String?
+  valor     Decimal  @default(0) @db.Decimal(12, 2)
+  createdAt DateTime @default(now())
+}

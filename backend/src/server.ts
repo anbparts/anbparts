@@ -5,6 +5,8 @@ import { motosRouter } from './routes/motos';
 import { pecasRouter } from './routes/pecas';
 import { faturamentoRouter } from './routes/faturamento';
 import { importRouter } from './routes/import';
+import { blingRouter } from './routes/bling';
+import { financeiroRouter } from './routes/financeiro';
 import { errorMiddleware } from './middlewares/error';
 
 const app = express();
@@ -22,6 +24,8 @@ app.use('/motos', motosRouter);
 app.use('/pecas', pecasRouter);
 app.use('/faturamento', faturamentoRouter);
 app.use('/import', importRouter);
+app.use('/bling', blingRouter);
+app.use('/financeiro', financeiroRouter);
 
 app.use(errorMiddleware);
 
