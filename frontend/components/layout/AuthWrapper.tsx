@@ -23,7 +23,7 @@ export function AuthWrapper({ children }: { children: React.ReactNode }) {
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
       <Sidebar onLogout={logout} user={getUser()} />
-      <main style={{ marginLeft: 'var(--sidebar-w)', flex: 1, display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+      <main style={{ marginLeft: 'var(--sidebar-w)', flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: '100vh', width: 'calc(100vw - var(--sidebar-w))' }}>
         {children}
       </main>
     </div>
