@@ -1,51 +1,44 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
-import fs from 'fs';
-import path from 'path';
 
 export const blingRouter = Router();
 
 const BLING_API   = 'https://www.bling.com.br/Api/v3';
 const BLING_OAUTH = 'https://www.bling.com.br/Api/v3/oauth/token';
 
-// ── Persistência da config ──────────────────────────────────────────────────
-// Railway tem filesystem efêmero — usamos /tmp que sobrevive entre requests
-// do mesmo container, e ENV vars como fallback de leitura.
-const CFG_FILE = '/tmp/.bling_config.json';
-
+// ── Config helpers — usa tabela BlingConfig no banco ───────────────────────
 async function getConfig(): Promise<any> {
-  // 1. Tenta arquivo /tmp (persiste enquanto container vive)
-  try {
-    const raw = fs.readFileSync(CFG_FILE, 'utf8');
-    return JSON.parse(raw);
-  } catch {}
-  // 2. Fallback vazio
-  return { clientId: '', clientSecret: '', accessToken: '', refreshToken: '', connectedAt: null, prefixos: [] };
+  let cfg = await prisma.blingConfig.findFirst();
+  if (!cfg) {
+    cfg = await prisma.blingConfig.create({ data: {} });
+  }
+  return { ...cfg, prefixos: cfg.prefixos as any[] };
 }
 
-async function saveConfig(cfg: any) {
-  fs.writeFileSync(CFG_FILE, JSON.stringify(cfg, null, 2));
+async function saveConfig(data: any) {
+  const cfg = await prisma.blingConfig.findFirst();
+  if (cfg) {
+    await prisma.blingConfig.update({ where: { id: cfg.id }, data });
+  } else {
+    await prisma.blingConfig.create({ data });
+  }
 }
 
-// ── Helper: requisição autenticada para Bling ───────────────────────────────
+// ── Helper: requisição autenticada para Bling ──────────────────────────────
 async function blingReq(pathUrl: string, options: any = {}) {
   const cfg = await getConfig();
   let token = cfg.accessToken;
 
-  const doReq = async (tk: string) =>
-    fetch(`${BLING_API}${pathUrl}`, {
-      ...options,
-      headers: { 'Authorization': `Bearer ${tk}`, 'Content-Type': 'application/json', ...(options.headers || {}) },
-    });
+  const doReq = (tk: string) => fetch(`${BLING_API}${pathUrl}`, {
+    ...options,
+    headers: { 'Authorization': `Bearer ${tk}`, 'Content-Type': 'application/json', ...(options.headers || {}) },
+  });
 
   let resp = await doReq(token);
-
-  // Token expirado → tenta renovar automaticamente
   if (resp.status === 401 && cfg.refreshToken) {
     token = await refreshAccessToken();
     resp = await doReq(token);
   }
-
   if (!resp.ok) {
     const err = await resp.text();
     throw new Error(`Bling API ${resp.status}: ${err.slice(0, 200)}`);
@@ -62,13 +55,13 @@ async function refreshAccessToken() {
     headers: { 'Authorization': `Basic ${creds}`, 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: cfg.refreshToken }).toString(),
   });
-  if (!resp.ok) throw new Error('Falha ao renovar token Bling — reconecte.');
+  if (!resp.ok) throw new Error('Falha ao renovar token — reconecte o Bling.');
   const data = await resp.json() as any;
-  await saveConfig({ ...cfg, accessToken: data.access_token, refreshToken: data.refresh_token });
+  await saveConfig({ accessToken: data.access_token, refreshToken: data.refresh_token });
   return data.access_token;
 }
 
-// ── Rotas de configuração ───────────────────────────────────────────────────
+// ── Rotas ──────────────────────────────────────────────────────────────────
 
 // GET /bling/config
 blingRouter.get('/config', async (req, res, next) => {
@@ -90,8 +83,7 @@ blingRouter.post('/config', async (req, res, next) => {
     const { clientId, clientSecret } = req.body;
     if (!clientId || !clientSecret)
       return res.status(400).json({ error: 'clientId e clientSecret são obrigatórios' });
-    const cfg = await getConfig();
-    await saveConfig({ ...cfg, clientId, clientSecret });
+    await saveConfig({ clientId, clientSecret, accessToken: '', refreshToken: '', connectedAt: null });
     res.json({ ok: true });
   } catch (e) { next(e); }
 });
@@ -122,9 +114,9 @@ blingRouter.get('/callback', async (req, res, next) => {
       headers: { 'Authorization': `Basic ${creds}`, 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: redirect }).toString(),
     });
-    if (!resp.ok) { const err = await resp.text(); return res.status(400).send('Erro ao trocar token: ' + err); }
+    if (!resp.ok) { const err = await resp.text(); return res.status(400).send('Erro: ' + err); }
     const data = await resp.json() as any;
-    await saveConfig({ ...cfg, accessToken: data.access_token, refreshToken: data.refresh_token, connectedAt: new Date().toISOString() });
+    await saveConfig({ accessToken: data.access_token, refreshToken: data.refresh_token, connectedAt: new Date() });
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
     res.redirect(`${frontendUrl}/bling?connected=true`);
   } catch (e) { next(e); }
@@ -133,8 +125,9 @@ blingRouter.get('/callback', async (req, res, next) => {
 // GET /bling/status
 blingRouter.get('/status', async (req, res, next) => {
   try {
-    const data = await blingReq('/empresas') as any;
-    res.json({ ok: true, empresa: data?.data?.nome || 'Conectado' });
+    // Testa com endpoint que existe na API v3
+    const data = await blingReq('/situacoes/modulos') as any;
+    res.json({ ok: true, empresa: 'Conectado' });
   } catch (e: any) {
     res.status(400).json({ ok: false, error: e.message });
   }
@@ -143,13 +136,10 @@ blingRouter.get('/status', async (req, res, next) => {
 // DELETE /bling/disconnect
 blingRouter.delete('/disconnect', async (req, res, next) => {
   try {
-    const cfg = await getConfig();
-    await saveConfig({ ...cfg, accessToken: '', refreshToken: '', connectedAt: null });
+    await saveConfig({ accessToken: '', refreshToken: '', connectedAt: null });
     res.json({ ok: true });
   } catch (e) { next(e); }
 });
-
-// ── Prefixos de/para ────────────────────────────────────────────────────────
 
 // GET /bling/prefixos
 blingRouter.get('/prefixos', async (req, res, next) => {
@@ -163,13 +153,12 @@ blingRouter.get('/prefixos', async (req, res, next) => {
 blingRouter.post('/prefixos', async (req, res, next) => {
   try {
     const { prefixos } = req.body;
-    const cfg = await getConfig();
-    await saveConfig({ ...cfg, prefixos });
+    await saveConfig({ prefixos });
     res.json({ ok: true });
   } catch (e) { next(e); }
 });
 
-// Helper: resolve motoId pelo SKU usando prefixos (mais longo tem prioridade)
+// Helper: resolve motoId pelo SKU (prefixo mais longo tem prioridade)
 function resolverMotoId(sku: string, prefixos: any[]): number | null {
   if (!sku || !prefixos?.length) return null;
   const up = sku.toUpperCase();
@@ -180,15 +169,12 @@ function resolverMotoId(sku: string, prefixos: any[]): number | null {
   return null;
 }
 
-// ── Sincronização de produtos ───────────────────────────────────────────────
-
 // POST /bling/sync/produtos
 blingRouter.post('/sync/produtos', async (req, res, next) => {
   try {
     const cfg = await getConfig();
     const prefixos = cfg.prefixos || [];
     const { motoIdFallback } = req.body;
-
     let pagina = 1, total = 0;
     const created: string[] = [], skipped: string[] = [], semMoto: string[] = [];
 
@@ -227,9 +213,7 @@ blingRouter.post('/sync/produtos', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// ── Sincronização de vendas (retorna lista para revisão manual) ─────────────
-
-// POST /bling/sync/vendas
+// POST /bling/sync/vendas — retorna lista para revisão manual
 blingRouter.post('/sync/vendas', async (req, res, next) => {
   try {
     const { dataInicio, dataFim } = req.body;
@@ -256,19 +240,14 @@ blingRouter.post('/sync/vendas', async (req, res, next) => {
             where: { idPeca },
             include: { moto: { select: { marca: true, modelo: true } } }
           });
-
           itens.push({
-            pedidoId:     pedido.id,
-            pedidoNum:    dp.numero || String(pedido.id),
-            dataVenda,
-            idPeca,
-            descricao:    item.produto?.nome || item.descricao || '',
-            skuBling:     item.produto?.codigo || '',
-            precoVenda:   Number(item.valor) || 0,
-            encontrada:   !!peca,
-            jaVendida:    peca ? !peca.disponivel : false,
-            pecaId:       peca?.id || null,
-            moto:         peca?.moto ? `${peca.moto.marca} ${peca.moto.modelo}` : null,
+            pedidoId: pedido.id, pedidoNum: dp.numero || String(pedido.id), dataVenda, idPeca,
+            descricao: item.produto?.nome || item.descricao || '',
+            skuBling: item.produto?.codigo || '',
+            precoVenda: Number(item.valor) || 0,
+            encontrada: !!peca, jaVendida: peca ? !peca.disponivel : false,
+            pecaId: peca?.id || null,
+            moto: peca?.moto ? `${peca.moto.marca} ${peca.moto.modelo}` : null,
             precoMLAtual: peca ? Number(peca.precoML) : null,
           });
         }
@@ -282,22 +261,16 @@ blingRouter.post('/sync/vendas', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// POST /bling/baixar — confirma baixa de uma peça com data e preço
+// POST /bling/baixar
 blingRouter.post('/baixar', async (req, res, next) => {
   try {
     const { pecaId, dataVenda, precoVenda } = req.body;
     if (!pecaId || !dataVenda)
       return res.status(400).json({ error: 'pecaId e dataVenda são obrigatórios' });
-
     await prisma.peca.update({
       where: { id: Number(pecaId) },
-      data: {
-        disponivel: false,
-        dataVenda:  new Date(dataVenda),
-        ...(precoVenda ? { precoML: Number(precoVenda) } : {}),
-      }
+      data: { disponivel: false, dataVenda: new Date(dataVenda), ...(precoVenda ? { precoML: Number(precoVenda) } : {}) }
     });
-
     res.json({ ok: true });
   } catch (e) { next(e); }
 });

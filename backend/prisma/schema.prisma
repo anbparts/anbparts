@@ -69,3 +69,14 @@ model Investimento {
   valor     Decimal  @default(0) @db.Decimal(12, 2)
   createdAt DateTime @default(now())
 }
+
+model BlingConfig {
+  id           Int      @id @default(autoincrement())
+  clientId     String   @default("")
+  clientSecret String   @default("")
+  accessToken  String   @default("")
+  refreshToken String   @default("")
+  connectedAt  DateTime?
+  prefixos     Json     @default("[]")
+  updatedAt    DateTime @default(now()) @updatedAt
+}
