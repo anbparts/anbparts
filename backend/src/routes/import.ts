@@ -41,7 +41,7 @@ importRouter.post('/pecas', async (req, res, next) => {
     const raw = req.body as any[];
     if (!Array.isArray(raw)) return res.status(400).json({ error: 'Dados inválidos' });
 
-    const pecas = raw.filter(p => p.idPeca && p.motoId).map(p => ({
+    const pecasRaw = raw.filter(p => p.idPeca && p.motoId).map(p => ({
       motoId:     Number(p.motoId) || 1,
       idPeca:     String(p.idPeca),
       descricao:  String(p.descricao || ''),
@@ -54,10 +54,15 @@ importRouter.post('/pecas', async (req, res, next) => {
       dataVenda:  p.dataVenda ? new Date(p.dataVenda) : null,
     }));
 
+    // Deduplica por idPeca — mantém só a última ocorrência de cada ID
+    const pecaMap = new Map<string, any>();
+    pecasRaw.forEach(p => pecaMap.set(p.idPeca, p));
+    const pecas = Array.from(pecaMap.values());
+
     const ops = pecas.map(p => prisma.peca.upsert({
       where:  { idPeca: p.idPeca },
       create: p,
-      update: { disponivel: p.disponivel, dataVenda: p.dataVenda, precoML: p.precoML },
+      update: { disponivel: p.disponivel, dataVenda: p.dataVenda, precoML: p.precoML, valorLiq: p.valorLiq, valorFrete: p.valorFrete, valorTaxas: p.valorTaxas },
     }));
 
     const results = await prisma.$transaction(ops);

@@ -203,15 +203,18 @@ blingRouter.post('/sync/produtos', async (req, res, next) => {
           ? await prisma.moto.findUnique({ where: { id: motoId }, select: { marca: true, modelo: true } })
           : null;
 
+        const qtdEstoque = Number(p.estoque?.saldoVirtualTotal || p.estoque?.saldo || 0);
+
         itens.push({
-          id:        p.id,
+          id:          p.id,
           sku,
-          nome:      p.nome || '',
-          preco:     Number(p.preco) || 0,
-          motoId:    motoId || null,
-          moto:      moto ? `${moto.marca} ${moto.modelo}` : null,
+          nome:        p.nome || '',
+          preco:       Number(p.preco) || 0,
+          qtdEstoque,
+          motoId:      motoId || null,
+          moto:        moto ? `${moto.marca} ${moto.modelo}` : null,
           jaExiste,
-          semPrefixo: !motoId,
+          semPrefixo:  !motoId,
         });
       }
 
@@ -227,23 +230,38 @@ blingRouter.post('/sync/produtos', async (req, res, next) => {
 // POST /bling/importar-produto — importa um produto aprovado individualmente
 blingRouter.post('/importar-produto', async (req, res, next) => {
   try {
-    const { id, sku, nome, preco, motoId } = req.body;
+    const { id, sku, nome, preco, motoId, frete, taxaPct, qtd } = req.body;
     if (!motoId) return res.status(400).json({ error: 'motoId obrigatório' });
 
-    const idPeca = sku || `BL${String(id).padStart(8, '0')}`;
-    const exists = await prisma.peca.findUnique({ where: { idPeca } });
-    if (exists) return res.json({ ok: true, skipped: true });
+    const precoML  = Number(preco)   || 0;
+    const freteN   = Number(frete)   || 29.90;
+    const taxa     = Number(taxaPct) || 17;
+    const taxaVal  = parseFloat((precoML * taxa / 100).toFixed(2));
+    const valorLiq = parseFloat((precoML - freteN - taxaVal).toFixed(2));
+    const quantidade = Number(qtd) || 1;
 
-    await prisma.peca.create({ data: {
-      idPeca, motoId: Number(motoId),
-      descricao:  nome || 'Produto Bling',
-      precoML:    Number(preco) || 0,
-      valorLiq:   Number(preco) || 0,
-      disponivel: true,
-      cadastro:   new Date(),
-    }});
+    // Cria uma linha por unidade em estoque
+    const skippedAll: boolean[] = [];
+    for (let i = 0; i < quantidade; i++) {
+      const skuBase = sku || `BL${String(id).padStart(8, '0')}`;
+      const idPeca  = i === 0 ? skuBase : `${skuBase}-${i + 1}`;
+      const exists  = await prisma.peca.findUnique({ where: { idPeca } });
+      if (exists) { skippedAll.push(true); continue; }
 
-    res.json({ ok: true, skipped: false });
+      await prisma.peca.create({ data: {
+        idPeca, motoId: Number(motoId),
+        descricao:   nome || 'Produto Bling',
+        precoML,
+        valorFrete:  freteN,
+        valorTaxas:  taxaVal,
+        valorLiq,
+        disponivel:  true,
+        cadastro:    new Date(),
+      }});
+      skippedAll.push(false);
+    }
+
+    res.json({ ok: true, skipped: skippedAll.every(s => s), criados: skippedAll.filter(s => !s).length });
   } catch (e) { next(e); }
 });
 
@@ -305,8 +323,17 @@ blingRouter.post('/sync/vendas', async (req, res, next) => {
         const skuBling = item.produto?.codigo || item.codigo || item.sku || '';
         const idBling  = item.produto?.id ? `BL${String(item.produto.id).padStart(8, '0')}` : '';
 
-        // Busca pelo SKU (como peças são importadas do Excel) ou pelo ID do Bling
-        const peca = pecaMap.get(skuBling) || pecaMap.get(idBling) || null;
+        // Busca pelo SKU exato primeiro, depois pelo prefixo (primeira unidade disponível)
+        // Ex: SKU "PN0111" do Bling → busca PN0111, PN0111-2, PN0111-3... pega primeiro disponível
+        let peca = pecaMap.get(skuBling) || pecaMap.get(idBling) || null;
+
+        if (!peca && skuBling) {
+          // Busca primeira unidade disponível com esse prefixo de SKU
+          const candidatas = Array.from(pecaMap.values()).filter((p: any) =>
+            (p.idPeca === skuBling || p.idPeca.startsWith(skuBling + '-')) && p.disponivel
+          );
+          if (candidatas.length > 0) peca = candidatas[0];
+        }
 
         const precoVenda  = Number(item.valor) || 0;
         const taxaValor   = taxaComissao;  // já vem calculado pelo Bling
