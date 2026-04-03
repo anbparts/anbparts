@@ -3,14 +3,14 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 const nav = [
-  { href: '/',               icon: '⊞', label: 'Dashboard'       },
-  { href: '/motos',          icon: '🏍', label: 'Motos'           },
-  { href: '/estoque',        icon: '📦', label: 'Estoque'         },
-  { href: '/faturamento',    icon: '📊', label: 'Fat. por Moto'   },
-  { href: '/faturamento/geral', icon: '💰', label: 'Fat. Geral'   },
+  { href: '/',                  icon: '⊞', label: 'Dashboard'     },
+  { href: '/motos',             icon: '🏍', label: 'Motos'         },
+  { href: '/estoque',           icon: '📦', label: 'Estoque'       },
+  { href: '/faturamento',       icon: '📊', label: 'Fat. por Moto' },
+  { href: '/faturamento/geral', icon: '💰', label: 'Fat. Geral'    },
 ];
 
-export function Sidebar() {
+export function Sidebar({ onLogout, user }: { onLogout?: () => void; user?: string }) {
   const path = usePathname();
 
   return (
@@ -53,18 +53,34 @@ export function Sidebar() {
             </Link>
           );
         })}
-      </nav>
-
-      {/* Import Excel */}
-      <div style={{ padding: '14px 12px', borderTop: '1px solid var(--border)' }}>
         <Link href="/import" style={{
           display: 'flex', alignItems: 'center', gap: 9, padding: '8px 10px',
-          borderRadius: 6, fontSize: 13, color: 'var(--ink-muted)',
-          textDecoration: 'none',
+          borderRadius: 6, fontSize: 13.5, fontWeight: 400,
+          color: path === '/import' ? 'var(--ink)' : 'var(--ink-soft)',
+          background: path === '/import' ? 'var(--gray-100)' : 'transparent',
+          textDecoration: 'none', transition: '150ms ease',
         }}>
-          <span style={{ width: 20, textAlign: 'center' }}>📥</span>
+          <span style={{ width: 20, textAlign: 'center', fontSize: 15 }}>📥</span>
           Importar Excel
         </Link>
+      </nav>
+
+      {/* User + Logout */}
+      <div style={{ padding: '14px 12px', borderTop: '1px solid var(--border)' }}>
+        {user && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', marginBottom: 4 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ width: 26, height: 26, borderRadius: '50%', background: 'var(--gray-100)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 600, color: 'var(--ink-soft)', textTransform: 'uppercase' }}>
+                {user[0]}
+              </div>
+              <span style={{ fontSize: 13, color: 'var(--ink-soft)', textTransform: 'capitalize' }}>{user}</span>
+            </div>
+            <button onClick={onLogout} title="Sair" style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              color: 'var(--ink-muted)', fontSize: 16, padding: 4, borderRadius: 4,
+            }}>⎋</button>
+          </div>
+        )}
       </div>
     </aside>
   );

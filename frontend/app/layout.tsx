@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
-import { Sidebar } from '@/components/layout/Sidebar';
+import { AuthWrapper } from '@/components/layout/AuthWrapper';
 
 export const metadata: Metadata = {
   title: 'ANB Parts — Gestão de Peças',
@@ -10,11 +10,8 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="pt-BR">
-      <body style={{ display: 'flex', minHeight: '100vh' }}>
-        <Sidebar />
-        <main style={{ marginLeft: 'var(--sidebar-w)', flex: 1, display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
-          {children}
-        </main>
+      <body>
+        <AuthWrapper>{children}</AuthWrapper>
       </body>
     </html>
   );
