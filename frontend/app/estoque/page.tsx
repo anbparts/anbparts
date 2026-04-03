@@ -186,7 +186,6 @@ export default function EstoquePage() {
             <div key={c.l} style={cs.sCard}>
               <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '0.6px', textTransform: 'uppercase', marginBottom: 10 }}>{c.l}</div>
               <div style={{ fontFamily: 'Fraunces, serif', fontSize: 26, fontWeight: 500, color: c.c }}>{c.v}</div>
-              {c.sub && <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 4 }}>{c.sub}</div>}
             </div>
           ))}
         </div>
