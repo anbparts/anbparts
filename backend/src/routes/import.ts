@@ -41,32 +41,41 @@ importRouter.post('/pecas', async (req, res, next) => {
     const raw = req.body as any[];
     if (!Array.isArray(raw)) return res.status(400).json({ error: 'Dados inválidos' });
 
-    const pecasRaw = raw.filter(p => p.idPeca && p.motoId).map(p => ({
-      motoId:     Number(p.motoId) || 1,
-      idPeca:     String(p.idPeca),
-      descricao:  String(p.descricao || ''),
-      precoML:    Number(p.precoML)    || 0,
-      valorLiq:   Number(p.valorLiq)   || 0,
-      valorFrete: Number(p.valorFrete) || 0,
-      valorTaxas: Number(p.valorTaxas) || 0,
-      disponivel: p.disponivel === true || p.disponivel === 'Sim',
-      cadastro:   p.cadastro  ? new Date(p.cadastro)  : new Date(),
-      dataVenda:  p.dataVenda ? new Date(p.dataVenda) : null,
-    }));
+    let imported = 0;
 
-    // Deduplica por idPeca — mantém só a última ocorrência de cada ID
-    const pecaMap = new Map<string, any>();
-    pecasRaw.forEach(p => pecaMap.set(p.idPeca, p));
-    const pecas = Array.from(pecaMap.values());
+    for (const p of raw) {
+      if (!p.idPeca || !p.motoId) continue;
 
-    const ops = pecas.map(p => prisma.peca.upsert({
-      where:  { idPeca: p.idPeca },
-      create: p,
-      update: { disponivel: p.disponivel, dataVenda: p.dataVenda, precoML: p.precoML, valorLiq: p.valorLiq, valorFrete: p.valorFrete, valorTaxas: p.valorTaxas },
-    }));
+      const data = {
+        motoId:     Number(p.motoId) || 1,
+        idPeca:     String(p.idPeca),
+        descricao:  String(p.descricao || ''),
+        precoML:    Number(p.precoML)    || 0,
+        valorLiq:   Number(p.valorLiq)   || 0,
+        valorFrete: Number(p.valorFrete) || 0,
+        valorTaxas: Number(p.valorTaxas) || 0,
+        disponivel: p.disponivel === true || p.disponivel === 'Sim',
+        cadastro:   p.cadastro  ? new Date(p.cadastro)  : new Date(),
+        dataVenda:  p.dataVenda ? new Date(p.dataVenda) : null,
+      };
 
-    const results = await prisma.$transaction(ops);
-    res.json({ imported: results.length });
+      await prisma.peca.upsert({
+        where:  { idPeca: data.idPeca },
+        create: data,
+        update: {
+          disponivel: data.disponivel,
+          dataVenda:  data.dataVenda,
+          precoML:    data.precoML,
+          valorLiq:   data.valorLiq,
+          valorFrete: data.valorFrete,
+          valorTaxas: data.valorTaxas,
+          descricao:  data.descricao,
+        },
+      });
+      imported++;
+    }
+
+    res.json({ imported });
   } catch (e) { next(e); }
 });
 
