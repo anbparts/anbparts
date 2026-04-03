@@ -233,17 +233,69 @@ blingRouter.post('/sync/produtos', async (req, res, next) => {
 blingRouter.post('/sync/vendas', async (req, res, next) => {
   try {
     const { dataInicio, dataFim } = req.body;
-    let pagina = 1;
-    const itens: any[] = [];
 
-    // Bling v3 aceita datas no formato YYYY-MM-DD
-    const di = dataInicio || null;
-    const df = dataFim    || null;
+    // 1. Carrega TODAS as peças do banco de uma vez (evita N queries)
+    const todasPecas = await prisma.peca.findMany({
+      select: { id: true, idPeca: true, disponivel: true, precoML: true, moto: { select: { marca: true, modelo: true } } }
+    });
+    // Mapa rápido por idPeca
+    const pecaMap = new Map(todasPecas.map(p => [p.idPeca, p]));
+
+    // 2. Busca pedidos página a página
+    let pagina = 1;
+    const pedidosIds: number[] = [];
 
     while (true) {
       let url = `/pedidos/vendas?pagina=${pagina}&limite=100&situacoes[]=9`;
-      if (di) url += `&dataInicio=${di}`;
-      if (df) url += `&dataFim=${df}`;
+      if (dataInicio) url += `&dataInicial=${dataInicio}`;
+      if (dataFim)    url += `&dataFinal=${dataFim}`;
+
+      console.log(`[Bling] Buscando: ${BLING_API}${url}`);
+
+      const data = await blingReq(url) as any;
+      const pedidos = data?.data || [];
+      if (!pedidos.length) break;
+      pedidosIds.push(...pedidos.map((p: any) => p.id));
+      if (pedidos.length < 100) break;
+      pagina++;
+      await sleep(300);
+    }
+
+    // 3. Busca detalhes de cada pedido com delay menor
+    const itens: any[] = [];
+    for (const pedidoId of pedidosIds) {
+      await sleep(150);
+      const det = await blingReq(`/pedidos/vendas/${pedidoId}`) as any;
+      const dp = det?.data || {};
+      const dataVenda = (dp.data || '').split('T')[0] || new Date().toISOString().split('T')[0];
+
+      for (const item of (dp.itens || [])) {
+        const skuBling = item.produto?.codigo || '';
+        const idBling  = item.produto?.id ? `BL${String(item.produto.id).padStart(8, '0')}` : '';
+
+        // Busca no mapa local — zero chamadas ao banco
+        const peca = pecaMap.get(skuBling) || pecaMap.get(idBling) || null;
+
+        itens.push({
+          pedidoId,
+          pedidoNum:   dp.numero || String(pedidoId),
+          dataVenda,
+          idPeca:      peca?.idPeca || skuBling || idBling,
+          descricao:   item.produto?.nome || item.descricao || '',
+          skuBling,
+          precoVenda:  Number(item.valor) || 0,
+          encontrada:  !!peca,
+          jaVendida:   peca ? !peca.disponivel : false,
+          pecaId:      peca?.id || null,
+          moto:        peca?.moto ? `${peca.moto.marca} ${peca.moto.modelo}` : null,
+          precoMLAtual: peca ? Number(peca.precoML) : null,
+        });
+      }
+    }
+
+    res.json({ ok: true, total: itens.length, itens });
+  } catch (e) { next(e); }
+});
 
       const data = await blingReq(url) as any;
       const pedidos = data?.data || [];
