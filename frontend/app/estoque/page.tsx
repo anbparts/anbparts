@@ -242,8 +242,9 @@ export default function EstoquePage() {
                     </td>
                     <td style={cs.td}>
                       <div style={{ display: 'flex', gap: 4 }}>
-                        <button onClick={() => { setEditPeca(p); setModal(true); }} style={{ ...cs.btn, padding: '4px 8px', fontSize: 11, background: 'transparent', borderColor: 'transparent', color: 'var(--ink-muted)' }}>✏</button>
+                        <button onClick={() => { setEditPeca(p); setModal(true); }} style={{ ...cs.btn, padding: '4px 8px', fontSize: 11, background: 'transparent', borderColor: 'transparent', color: 'var(--ink-muted)' }} title="Editar">✏</button>
                         {p.disponivel && <button onClick={() => { setVendaPeca(p); setVendaModal(true); }} style={{ ...cs.btn, padding: '4px 9px', fontSize: 11, background: 'var(--amber-light)', color: 'var(--amber)', borderColor: 'var(--amber-mid)' }}>💰 Vender</button>}
+                        <button onClick={async () => { if (!confirm(`Excluir peça ${p.idPeca}?`)) return; await api.pecas.delete(p.id); load(); }} style={{ ...cs.btn, padding: '4px 8px', fontSize: 11, background: 'transparent', borderColor: 'transparent', color: '#fca5a5' }} title="Excluir">🗑</button>
                       </div>
                     </td>
                   </tr>

@@ -161,7 +161,10 @@ export default function MotosPage() {
                     <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12.5, color: 'var(--amber)' }}>{fmt(m.receitaTotal||0)}</td>
                     <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12.5, color: 'var(--sage)' }}>{fmt(m.lucro||0)}</td>
                     <td style={cs.td}>
-                      <button onClick={() => { setEditing(m); setModal(true); }} style={{ ...cs.btn, padding: '5px 10px', fontSize: 12, background: 'transparent', color: 'var(--ink-muted)', borderColor: 'transparent' }}>✏</button>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <button onClick={() => { setEditing(m); setModal(true); }} style={{ ...cs.btn, padding: '5px 10px', fontSize: 12, background: 'transparent', color: 'var(--ink-muted)', borderColor: 'transparent' }} title="Editar">✏</button>
+                        <button onClick={async () => { if (!confirm(`Excluir ${m.marca} ${m.modelo}?`)) return; await api.motos.delete(m.id); load(); }} style={{ ...cs.btn, padding: '5px 10px', fontSize: 12, background: 'transparent', color: 'var(--red-light)', borderColor: 'transparent' }} title="Excluir">🗑</button>
+                      </div>
                     </td>
                   </tr>
                 ))}
