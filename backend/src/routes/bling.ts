@@ -260,11 +260,14 @@ blingRouter.post('/sync/vendas', async (req, res, next) => {
       const dp = det?.data || {};
       const dataVenda = (dp.data || '').split('T')[0] || new Date().toISOString().split('T')[0];
 
-      // Dados financeiros do pedido
-      const taxaPct       = Number(dp.taxasMarketplace?.aliquota || dp.comissao?.aliquota || 0);
-      const freteBruto    = Number(dp.transporte?.frete || 0);
-      const fretePositivo = Math.abs(freteBruto);
-      console.log(`[Bling] Pedido ${pedidoId} taxas:`, JSON.stringify(dp.taxas), '| totalComissoes:', dp.totalComissoes, '| total:', dp.total, '| totalProdutos:', dp.totalProdutos);
+      // Dados financeiros do Totais Marketplace do Bling
+      const taxaComissao  = Number(dp.taxas?.taxaComissao || 0);   // Taxa ML em R$
+      const custoFrete    = Number(dp.taxas?.custoFrete   || 0);   // Frete em R$ (positivo)
+      const valorBase     = Number(dp.taxas?.valorBase    || 0);   // Preço ML base
+      const taxaPct       = valorBase > 0 ? parseFloat((taxaComissao / valorBase * 100).toFixed(2)) : 0;
+      // Frete: usa custoFrete do marketplace, ou frete do transporte se não houver
+      const freteBruto    = Number(dp.transporte?.frete   || 0);
+      const fretePositivo = custoFrete > 0 ? custoFrete : Math.abs(freteBruto);
 
       for (const item of (dp.itens || [])) {
         const skuBling = item.produto?.codigo || item.codigo || item.sku || '';
@@ -274,7 +277,7 @@ blingRouter.post('/sync/vendas', async (req, res, next) => {
         const peca = pecaMap.get(skuBling) || pecaMap.get(idBling) || null;
 
         const precoVenda  = Number(item.valor) || 0;
-        const taxaValor   = taxaPct > 0 ? parseFloat((precoVenda * taxaPct / 100).toFixed(2)) : 0;
+        const taxaValor   = taxaComissao;  // já vem calculado pelo Bling
         const valorLiq    = parseFloat((precoVenda - fretePositivo - taxaValor).toFixed(2));
 
         itens.push({
