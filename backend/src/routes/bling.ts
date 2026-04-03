@@ -261,8 +261,10 @@ blingRouter.post('/sync/vendas', async (req, res, next) => {
       const dataVenda = (dp.data || '').split('T')[0] || new Date().toISOString().split('T')[0];
 
       for (const item of (dp.itens || [])) {
-        const skuBling = item.produto?.codigo || '';
+        const skuBling = item.produto?.codigo || item.codigo || item.sku || '';
         const idBling  = item.produto?.id ? `BL${String(item.produto.id).padStart(8, '0')}` : '';
+
+        console.log(`[Bling] Item pedido ${pedidoId}: SKU="${skuBling}" idBling="${idBling}" campos=`, JSON.stringify(Object.keys(item)));
 
         // Busca pelo SKU (como peças são importadas do Excel) ou pelo ID do Bling
         const peca = pecaMap.get(skuBling) || pecaMap.get(idBling) || null;
