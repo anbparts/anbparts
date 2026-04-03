@@ -172,46 +172,78 @@ blingRouter.post('/sync/produtos', async (req, res, next) => {
     const cfg = await getConfig();
     const prefixos = cfg.prefixos || [];
     const { motoIdFallback, dataInicio, dataFim } = req.body;
-    let pagina = 1, total = 0;
-    const created: string[] = [], skipped: string[] = [], semMoto: string[] = [];
+
+    // Carrega SKUs já existentes no banco
+    const existentes = await prisma.peca.findMany({ select: { idPeca: true } });
+    const skusExistentes = new Set(existentes.map((p: any) => p.idPeca));
+
+    let pagina = 1;
+    const itens: any[] = [];
 
     while (true) {
-      let url = `/produtos?pagina=${pagina}&limite=100&situacao=A`;
-      if (dataInicio) url += `&dataInicial=${dataInicio}`;
-      if (dataFim)    url += `&dataFinal=${dataFim}`;
+      let url = `/produtos?pagina=${pagina}&limite=100&criterio=2`;
+      if (dataInicio) url += `&dataInclusaoInicial=${dataInicio} 00:00:00`;
+      if (dataFim)    url += `&dataInclusaoFinal=${dataFim} 23:59:59`;
 
+      console.log(`[Bling Produtos] GET ${url}`);
       const data = await blingReq(url) as any;
       const produtos = data?.data || [];
+      console.log(`[Bling Produtos] Retornou ${produtos.length} produtos`);
       if (!produtos.length) break;
 
       for (const p of produtos) {
-        await sleep(200);
-        const idPeca = `BL${String(p.id).padStart(8, '0')}`;
-        const exists = await prisma.peca.findUnique({ where: { idPeca } });
-        if (exists) { skipped.push(idPeca); continue; }
+        const sku     = p.codigo || '';
+        const idBling = `BL${String(p.id).padStart(8, '0')}`;
+        const jaExiste = skusExistentes.has(sku) || skusExistentes.has(idBling);
 
-        const sku = p.codigo || p.sku || '';
         let motoId = resolverMotoId(sku, prefixos);
         if (!motoId && motoIdFallback) motoId = Number(motoIdFallback);
-        if (!motoId) { semMoto.push(`${idPeca}(${sku || 'sem SKU'})`); continue; }
 
-        await prisma.peca.create({ data: {
-          idPeca, motoId,
-          descricao:  p.nome || 'Produto Bling',
-          precoML:    Number(p.preco) || 0,
-          valorLiq:   Number(p.preco) || 0,
-          disponivel: true,
-          cadastro:   new Date(),
-        }});
-        created.push(idPeca);
+        const moto = motoId
+          ? await prisma.moto.findUnique({ where: { id: motoId }, select: { marca: true, modelo: true } })
+          : null;
+
+        itens.push({
+          id:        p.id,
+          sku,
+          nome:      p.nome || '',
+          preco:     Number(p.preco) || 0,
+          motoId:    motoId || null,
+          moto:      moto ? `${moto.marca} ${moto.modelo}` : null,
+          jaExiste,
+          semPrefixo: !motoId,
+        });
       }
 
-      total += produtos.length;
       if (produtos.length < 100) break;
       pagina++;
+      await sleep(300);
     }
 
-    res.json({ ok: true, total, created: created.length, skipped: skipped.length, semMoto: semMoto.length, semMotoExemplos: semMoto.slice(0, 5) });
+    res.json({ ok: true, total: itens.length, itens });
+  } catch (e) { next(e); }
+});
+
+// POST /bling/importar-produto — importa um produto aprovado individualmente
+blingRouter.post('/importar-produto', async (req, res, next) => {
+  try {
+    const { id, sku, nome, preco, motoId } = req.body;
+    if (!motoId) return res.status(400).json({ error: 'motoId obrigatório' });
+
+    const idPeca = sku || `BL${String(id).padStart(8, '0')}`;
+    const exists = await prisma.peca.findUnique({ where: { idPeca } });
+    if (exists) return res.json({ ok: true, skipped: true });
+
+    await prisma.peca.create({ data: {
+      idPeca, motoId: Number(motoId),
+      descricao:  nome || 'Produto Bling',
+      precoML:    Number(preco) || 0,
+      valorLiq:   Number(preco) || 0,
+      disponivel: true,
+      cadastro:   new Date(),
+    }});
+
+    res.json({ ok: true, skipped: false });
   } catch (e) { next(e); }
 });
 
