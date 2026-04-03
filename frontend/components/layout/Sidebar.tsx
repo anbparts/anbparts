@@ -60,7 +60,7 @@ export function Sidebar({ onLogout, user }: { onLogout?: () => void; user?: stri
               textTransform: 'uppercase', padding: '10px 8px 4px',
             }}>{group.section}</div>
             {group.items.map(item => {
-              const active = item.href === '/' ? path === '/' : path.startsWith(item.href);
+              const active = item.href === '/' ? path === '/' : path === item.href || (path.startsWith(item.href + '/') && item.href !== '/bling');
               return (
                 <Link key={item.href} href={item.href} style={{
                   display: 'flex', alignItems: 'center', gap: 10,

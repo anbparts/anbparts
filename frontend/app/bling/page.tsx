@@ -173,8 +173,8 @@ export default function BlingPage() {
             </div>
           )}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 16 }}>
-            <div><label style={s.label}>Client ID</label><input style={s.input} placeholder="Cole aqui o Client ID" value={clientId} onChange={e => setClientId(e.target.value)} /></div>
-            <div><label style={s.label}>Client Secret</label><input style={s.input} type="password" placeholder="Cole aqui o Client Secret" value={clientSecret} onChange={e => setClientSecret(e.target.value)} /></div>
+            <div><label style={s.label}>Client ID</label><input style={s.input} autoComplete="off" placeholder="Cole aqui o Client ID" value={clientId} onChange={e => setClientId(e.target.value)} /></div>
+            <div><label style={s.label}>Client Secret</label><input style={s.input} type="password" autoComplete="new-password" placeholder="Cole aqui o Client Secret" value={clientSecret} onChange={e => setClientSecret(e.target.value)} /></div>
           </div>
           <button style={{ ...s.btn, background: 'var(--ink)', color: 'var(--white)' }} onClick={saveCredentials} disabled={saving || !clientId || !clientSecret}>
             {saving ? 'Salvando...' : '💾 Salvar credenciais'}
