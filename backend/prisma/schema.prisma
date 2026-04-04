@@ -78,5 +78,7 @@ model BlingConfig {
   refreshToken String   @default("")
   connectedAt  DateTime?
   prefixos     Json     @default("[]")
+  fretePadrao  Decimal  @default(29.90) @db.Decimal(12, 2)
+  taxaPadraoPct Decimal @default(17.00) @db.Decimal(5, 2)
   updatedAt    DateTime @default(now()) @updatedAt
 }
