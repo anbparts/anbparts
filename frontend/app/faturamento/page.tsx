@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { ChartPanel, ColumnChart, DonutChart, HorizontalBarChart, ViewModeSwitch, type ViewMode } from '@/components/finance/Charts';
 import { api } from '@/lib/api';
 
+const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3333';
 const MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 const MESES_FULL = ['Janeiro', 'Fevereiro', 'Marco', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 
@@ -58,13 +59,29 @@ const cs: any = {
 
 export default function FaturamentoMotoPage() {
   const [data, setData] = useState<any[]>([]);
+  const [skuPorMoto, setSkuPorMoto] = useState<Record<number, string[]>>({});
   const [filtMoto, setFiltMoto] = useState('');
   const [filtAno, setFiltAno] = useState('');
   const [loading, setLoading] = useState(true);
   const [modo, setModo] = useState<ViewMode>('grafico');
 
   useEffect(() => {
-    api.faturamento.porMoto().then((response) => {
+    Promise.all([
+      api.faturamento.porMoto(),
+      fetch(`${API}/bling/config-produtos`)
+        .then((response) => response.ok ? response.json() : { prefixos: [] })
+        .catch(() => ({ prefixos: [] })),
+    ]).then(([response, configProdutos]) => {
+      const grouped: Record<number, string[]> = {};
+      for (const item of (configProdutos?.prefixos || [])) {
+        const motoId = Number(item?.motoId);
+        const prefixo = String(item?.prefixo || '').trim();
+        if (!motoId || !prefixo) continue;
+        if (!grouped[motoId]) grouped[motoId] = [];
+        if (!grouped[motoId].includes(prefixo)) grouped[motoId].push(prefixo);
+      }
+
+      setSkuPorMoto(grouped);
       setData(response);
       setLoading(false);
     });
@@ -86,18 +103,21 @@ export default function FaturamentoMotoPage() {
     return receitaAtual > receitaBest ? item : best;
   }, null);
 
-  const porMotoMap = new Map<string, { receita: number; qtd: number }>();
+  const porMotoMap = new Map<number, { nome: string; sku: string; receita: number; qtd: number }>();
   const porPeriodoMap = new Map<string, { label: string; receita: number; qtd: number }>();
 
   filtered.forEach((item) => {
-    const motoKey = item.moto;
+    const motoKey = Number(item.motoId);
     const period = periodKey(item.ano, item.mes);
     const receita = Number(item.receitaLiq || item.receita || 0);
     const qtd = Number(item.qtd || 0);
+    const sku = (skuPorMoto[motoKey] || []).join(' · ');
 
-    const acumuladoMoto = porMotoMap.get(motoKey) || { receita: 0, qtd: 0 };
+    const acumuladoMoto = porMotoMap.get(motoKey) || { nome: item.moto, sku, receita: 0, qtd: 0 };
     acumuladoMoto.receita += receita;
     acumuladoMoto.qtd += qtd;
+    acumuladoMoto.nome = item.moto;
+    acumuladoMoto.sku = sku;
     porMotoMap.set(motoKey, acumuladoMoto);
 
     const acumuladoPeriodo = porPeriodoMap.get(period) || {
@@ -111,12 +131,20 @@ export default function FaturamentoMotoPage() {
   });
 
   const rankingMotos = Array.from(porMotoMap.entries())
-    .map(([label, value]) => ({ label, value: value.receita, note: `${value.qtd} pecas` }))
+    .map(([, value]) => ({
+      label: value.sku ? `${value.sku} · ${value.nome}` : value.nome,
+      value: value.receita,
+      note: `${value.qtd} pecas`,
+    }))
     .sort((a, b) => b.value - a.value)
     .slice(0, 8);
 
   const participacaoMotos = Array.from(porMotoMap.entries())
-    .map(([label, value]) => ({ label, value: value.receita, note: `${value.qtd} pecas` }))
+    .map(([, value]) => ({
+      label: value.sku || value.nome,
+      value: value.receita,
+      note: `${value.qtd} pecas`,
+    }))
     .sort((a, b) => b.value - a.value)
     .slice(0, 6);
 
