@@ -23,10 +23,20 @@ async function gerarIdPeca(): Promise<string> {
   return 'PN' + String(num).padStart(4, '0');
 }
 
+function parseDateStart(date: string) {
+  const [year, month, day] = date.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
+}
+
+function parseDateEnd(date: string) {
+  const [year, month, day] = date.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999));
+}
+
 // GET /pecas
 pecasRouter.get('/', async (req, res, next) => {
   try {
-    const { motoId, disponivel, search, page = '1', per = '20' } = req.query as any;
+    const { motoId, disponivel, search, dataVendaFrom, dataVendaTo, page = '1', per = '20' } = req.query as any;
     const where: any = {};
     if (motoId) where.motoId = Number(motoId);
     if (disponivel !== undefined) where.disponivel = disponivel === 'true';
@@ -34,6 +44,11 @@ pecasRouter.get('/', async (req, res, next) => {
       { idPeca: { contains: search, mode: 'insensitive' } },
       { descricao: { contains: search, mode: 'insensitive' } },
     ];
+    if (dataVendaFrom || dataVendaTo) {
+      where.dataVenda = {};
+      if (dataVendaFrom) where.dataVenda.gte = parseDateStart(dataVendaFrom);
+      if (dataVendaTo) where.dataVenda.lte = parseDateEnd(dataVendaTo);
+    }
 
     const [total, pecas, totalDisp, totalVend] = await Promise.all([
       prisma.peca.count({ where }),

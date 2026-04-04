@@ -5,7 +5,7 @@ import { api } from '@/lib/api';
 function fmt(v: number) { return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }); }
 function today() { return new Date().toISOString().split('T')[0]; }
 
-const pageSizeOptions = [10, 20, 50, 100];
+const pageSizeOptions = [10, 20, 50, 100, 250];
 
 const cs: any = {
   topbar: { height: 'var(--topbar-h)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 28px', background: 'var(--white)', borderBottom: '1px solid var(--border)', position: 'sticky' as const, top: 0, zIndex: 50 },
@@ -144,7 +144,7 @@ export default function EstoquePage() {
   const [editPeca, setEditPeca] = useState<any>(null);
   const [vendaModal, setVendaModal] = useState(false);
   const [vendaPeca, setVendaPeca]   = useState<any>(null);
-  const [filters, setFilters] = useState({ motoId: '', disponivel: '', search: '', page: 1, perPage: 20 });
+  const [filters, setFilters] = useState({ motoId: '', disponivel: '', search: '', dataVendaFrom: '', dataVendaTo: '', page: 1, perPage: 20 });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -152,6 +152,8 @@ export default function EstoquePage() {
     if (filters.motoId)    params.motoId    = filters.motoId;
     if (filters.disponivel !== '') params.disponivel = filters.disponivel;
     if (filters.search)    params.search    = filters.search;
+    if (filters.dataVendaFrom) params.dataVendaFrom = filters.dataVendaFrom;
+    if (filters.dataVendaTo) params.dataVendaTo = filters.dataVendaTo;
     const [d, m] = await Promise.all([api.pecas.list(params), api.motos.list()]);
     setData(d); setMotos(m); setLoading(false);
   }, [filters]);
@@ -207,6 +209,26 @@ export default function EstoquePage() {
                 <option value="false">Vendido</option>
               </select>
               <input style={{ ...cs.sel, paddingLeft: 11 }} placeholder="🔍 ID ou descrição..." value={filters.search} onChange={e => setFilters({ ...filters, search: e.target.value, page: 1 })} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 10px', background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 6, minHeight: 32 }}>
+                <span style={{ fontSize: 12, color: 'var(--ink-muted)', whiteSpace: 'nowrap' }}>Venda de</span>
+                <input
+                  type="date"
+                  value={filters.dataVendaFrom}
+                  max={filters.dataVendaTo || undefined}
+                  onChange={e => setFilters({ ...filters, dataVendaFrom: e.target.value, page: 1 })}
+                  style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: 13, fontFamily: 'Geist, sans-serif', color: 'var(--ink)', minWidth: 128 }}
+                />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 10px', background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 6, minHeight: 32 }}>
+                <span style={{ fontSize: 12, color: 'var(--ink-muted)', whiteSpace: 'nowrap' }}>ate</span>
+                <input
+                  type="date"
+                  value={filters.dataVendaTo}
+                  min={filters.dataVendaFrom || undefined}
+                  onChange={e => setFilters({ ...filters, dataVendaTo: e.target.value, page: 1 })}
+                  style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: 13, fontFamily: 'Geist, sans-serif', color: 'var(--ink)', minWidth: 128 }}
+                />
+              </div>
               <select style={cs.sel} value={String(filters.perPage)} onChange={e => setFilters({ ...filters, perPage: Number(e.target.value), page: 1 })}>
                 {pageSizeOptions.map(size => <option key={size} value={size}>{size} por pagina</option>)}
               </select>
