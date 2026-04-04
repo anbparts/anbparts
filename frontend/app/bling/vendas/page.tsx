@@ -238,6 +238,65 @@ export default function VendasBlingPage() {
           </div>
         </div>
 
+        {cancelPendentes.length > 0 && (
+          <div style={{ marginBottom: 24 }}>
+            <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--red)', marginBottom: 12 }}>Cancelamentos pendentes - {cancelPendentes.length}</div>
+            {cancelPendentes.map((item) => {
+              const realIdx = itens.indexOf(item);
+              const precoBase = Number(item.precoMLAtual ?? item.precoVenda ?? 0);
+              const previsao = calcularLiq(precoBase, defaults.fretePadrao, defaults.taxaPadraoPct);
+
+              return (
+                <div key={`${item.pedidoId}-${item.idPeca}-cancelamento`} style={{ ...s.card, borderLeft: '3px solid #ef4444' }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
+                    <span style={{ background: '#fee2e2', color: '#b91c1c', padding: '2px 10px', borderRadius: 6, fontSize: 12, fontFamily: 'JetBrains Mono, monospace', fontWeight: 600 }}>Pedido #{item.pedidoNum}</span>
+                    <span style={{ background: 'var(--blue-100)', color: 'var(--blue-500)', padding: '2px 10px', borderRadius: 6, fontSize: 12, fontFamily: 'JetBrains Mono, monospace' }}>{item.idPeca}</span>
+                    <span style={{ fontSize: 11, background: '#fee2e2', color: '#b91c1c', padding: '2px 8px', borderRadius: 5 }}>{item.statusLabel}</span>
+                    {item.moto && <span style={{ color: 'var(--gray-500)', fontSize: 12 }}>{item.moto}</span>}
+                  </div>
+
+                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 10 }}>{item.descricao}</div>
+                  <div style={{ fontSize: 12, color: 'var(--gray-500)', lineHeight: 1.7, marginBottom: 12 }}>
+                    Ao aprovar o cancelamento, a peca volta para o estoque, a data da venda e removida e os valores
+                    financeiros voltam para os padroes configurados em Config. Produtos.
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 14 }}>
+                    <div style={{ background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
+                      <div style={{ fontSize: 11, color: 'var(--gray-400)', marginBottom: 4 }}>Preco base</div>
+                      <div style={{ fontWeight: 600, color: 'var(--gray-700)' }}>{fmtMoney(precoBase)}</div>
+                    </div>
+                    <div style={{ background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
+                      <div style={{ fontSize: 11, color: 'var(--gray-400)', marginBottom: 4 }}>Frete padrao</div>
+                      <div style={{ fontWeight: 600, color: 'var(--gray-700)' }}>{fmtMoney(defaults.fretePadrao)}</div>
+                    </div>
+                    <div style={{ background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
+                      <div style={{ fontSize: 11, color: 'var(--gray-400)', marginBottom: 4 }}>Taxa padrao</div>
+                      <div style={{ fontWeight: 600, color: 'var(--gray-700)' }}>{fmtPercent(defaults.taxaPadraoPct)} ({fmtMoney(previsao.taxaValor)})</div>
+                    </div>
+                    <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 8, padding: '10px 12px' }}>
+                      <div style={{ fontSize: 11, color: 'var(--green)', marginBottom: 4 }}>Novo valor liquido</div>
+                      <div style={{ fontWeight: 700, color: 'var(--green)' }}>{fmtMoney(previsao.valorLiq)}</div>
+                    </div>
+                  </div>
+
+                  {item._erro && <div style={{ fontSize: 12, color: 'var(--red)', marginBottom: 8 }}>{item._erro}</div>}
+
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      onClick={() => aprovarCancelamento(realIdx)}
+                      disabled={item._aprovandoCancelamento}
+                      style={{ ...s.btn, background: '#b91c1c', color: '#fff', opacity: item._aprovandoCancelamento ? 0.6 : 1 }}
+                    >
+                      {item._aprovandoCancelamento ? 'Aplicando...' : 'Aprovar cancelamento'}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         {pendentes.length > 0 && (
           <div style={{ marginBottom: 24 }}>
             <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--amber)', marginBottom: 12 }}>Vendas pendentes de baixa - {pendentes.length}</div>
@@ -293,65 +352,6 @@ export default function VendasBlingPage() {
                     </button>
                     <button onClick={() => updateItem(realIdx, 'jaVendida', true)} style={{ ...s.btn, background: 'var(--gray-100)', color: 'var(--gray-500)', border: '1px solid var(--border)' }}>
                       Ignorar
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {cancelPendentes.length > 0 && (
-          <div style={{ marginBottom: 24 }}>
-            <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--red)', marginBottom: 12 }}>Cancelamentos pendentes - {cancelPendentes.length}</div>
-            {cancelPendentes.map((item) => {
-              const realIdx = itens.indexOf(item);
-              const precoBase = Number(item.precoMLAtual ?? item.precoVenda ?? 0);
-              const previsao = calcularLiq(precoBase, defaults.fretePadrao, defaults.taxaPadraoPct);
-
-              return (
-                <div key={`${item.pedidoId}-${item.idPeca}-cancelamento`} style={{ ...s.card, borderLeft: '3px solid #ef4444' }}>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
-                    <span style={{ background: '#fee2e2', color: '#b91c1c', padding: '2px 10px', borderRadius: 6, fontSize: 12, fontFamily: 'JetBrains Mono, monospace', fontWeight: 600 }}>Pedido #{item.pedidoNum}</span>
-                    <span style={{ background: 'var(--blue-100)', color: 'var(--blue-500)', padding: '2px 10px', borderRadius: 6, fontSize: 12, fontFamily: 'JetBrains Mono, monospace' }}>{item.idPeca}</span>
-                    <span style={{ fontSize: 11, background: '#fee2e2', color: '#b91c1c', padding: '2px 8px', borderRadius: 5 }}>{item.statusLabel}</span>
-                    {item.moto && <span style={{ color: 'var(--gray-500)', fontSize: 12 }}>{item.moto}</span>}
-                  </div>
-
-                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 10 }}>{item.descricao}</div>
-                  <div style={{ fontSize: 12, color: 'var(--gray-500)', lineHeight: 1.7, marginBottom: 12 }}>
-                    Ao aprovar o cancelamento, a peca volta para o estoque, a data da venda e removida e os valores
-                    financeiros voltam para os padroes configurados em Config. Produtos.
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 14 }}>
-                    <div style={{ background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
-                      <div style={{ fontSize: 11, color: 'var(--gray-400)', marginBottom: 4 }}>Preco base</div>
-                      <div style={{ fontWeight: 600, color: 'var(--gray-700)' }}>{fmtMoney(precoBase)}</div>
-                    </div>
-                    <div style={{ background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
-                      <div style={{ fontSize: 11, color: 'var(--gray-400)', marginBottom: 4 }}>Frete padrao</div>
-                      <div style={{ fontWeight: 600, color: 'var(--gray-700)' }}>{fmtMoney(defaults.fretePadrao)}</div>
-                    </div>
-                    <div style={{ background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
-                      <div style={{ fontSize: 11, color: 'var(--gray-400)', marginBottom: 4 }}>Taxa padrao</div>
-                      <div style={{ fontWeight: 600, color: 'var(--gray-700)' }}>{fmtPercent(defaults.taxaPadraoPct)} ({fmtMoney(previsao.taxaValor)})</div>
-                    </div>
-                    <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 8, padding: '10px 12px' }}>
-                      <div style={{ fontSize: 11, color: 'var(--green)', marginBottom: 4 }}>Novo valor liquido</div>
-                      <div style={{ fontWeight: 700, color: 'var(--green)' }}>{fmtMoney(previsao.valorLiq)}</div>
-                    </div>
-                  </div>
-
-                  {item._erro && <div style={{ fontSize: 12, color: 'var(--red)', marginBottom: 8 }}>{item._erro}</div>}
-
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button
-                      onClick={() => aprovarCancelamento(realIdx)}
-                      disabled={item._aprovandoCancelamento}
-                      style={{ ...s.btn, background: '#b91c1c', color: '#fff', opacity: item._aprovandoCancelamento ? 0.6 : 1 }}
-                    >
-                      {item._aprovandoCancelamento ? 'Aplicando...' : 'Aprovar cancelamento'}
                     </button>
                   </div>
                 </div>
