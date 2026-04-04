@@ -201,17 +201,23 @@ function matchesSku(idPeca: string, codigo: string) {
   return idPeca === codigo || idPeca.startsWith(`${codigo}-`);
 }
 
-function findMatchingPeca(
-  allPecas: any[],
-  exactMap: Map<string, any>,
-  skuBling: string,
-  idBling: string,
-  isCancelado: boolean,
-) {
-  for (const code of [skuBling, idBling]) {
-    if (code && exactMap.has(code)) return exactMap.get(code) || null;
-  }
+function findLinkedPecaByPedido(allPecas: any[], pedidoId: number, pedidoNum: string) {
+  const candidates = allPecas.filter((peca) =>
+    (pedidoId && Number(peca.blingPedidoId || 0) === Number(pedidoId))
+    || (pedidoNum && String(peca.blingPedidoNum || '') === String(pedidoNum)),
+  );
 
+  return candidates.sort((a, b) => {
+    const soldA = a.disponivel ? 0 : 1;
+    const soldB = b.disponivel ? 0 : 1;
+    if (soldA !== soldB) return soldB - soldA;
+
+    const diff = new Date(b.dataVenda || 0).getTime() - new Date(a.dataVenda || 0).getTime();
+    return diff || b.id - a.id;
+  })[0] || null;
+}
+
+function findSkuReferencePeca(allPecas: any[], skuBling: string, idBling: string) {
   const codigos = [skuBling, idBling].filter(Boolean);
   if (!codigos.length) return null;
 
@@ -219,24 +225,27 @@ function findMatchingPeca(
     codigos.some((codigo) => matchesSku(peca.idPeca, codigo)),
   );
 
-  if (!candidates.length) return null;
-
-  if (isCancelado) {
-    const soldCandidates = candidates
-      .filter((peca) => !peca.disponivel)
-      .sort((a, b) => {
-        const diff = new Date(b.dataVenda || 0).getTime() - new Date(a.dataVenda || 0).getTime();
-        return diff || b.id - a.id;
-      });
-    if (soldCandidates[0]) return soldCandidates[0];
-  } else {
-    const availableCandidates = candidates
-      .filter((peca) => peca.disponivel)
-      .sort((a, b) => a.id - b.id);
-    if (availableCandidates[0]) return availableCandidates[0];
-  }
-
   return candidates.sort((a, b) => a.id - b.id)[0] || null;
+}
+
+function findAvailablePecaForVenda(
+  allPecas: any[],
+  skuBling: string,
+  idBling: string,
+  reservedIds: Set<number>,
+) {
+  const codigos = [skuBling, idBling].filter(Boolean);
+  if (!codigos.length) return null;
+
+  const candidates = allPecas
+    .filter((peca) =>
+      peca.disponivel
+      && !reservedIds.has(peca.id)
+      && codigos.some((codigo) => matchesSku(peca.idPeca, codigo)),
+    )
+    .sort((a, b) => a.id - b.id);
+
+  return candidates[0] || null;
 }
 
 async function listPedidos(dataInicio?: string, dataFim?: string, situacoes?: number[]) {
@@ -566,10 +575,13 @@ blingRouter.post('/sync/vendas', async (req, res, next) => {
         valorTaxas: true,
         valorLiq: true,
         dataVenda: true,
+        blingPedidoId: true,
+        blingPedidoNum: true,
         moto: { select: { marca: true, modelo: true } },
       },
     });
-    const pecaMap = new Map(todasPecas.map((peca) => [peca.idPeca, peca]));
+    const reservedVendaPecaIds = new Set<number>();
+    const reservedCancelPecaIds = new Set<number>();
 
     const pedidosConcluidos = await listPedidos(dataInicio, dataFim, [STATUS_ID_CONCLUIDO]);
     const pedidosGerais = await listPedidos(dataInicio, dataFim);
@@ -592,6 +604,7 @@ blingRouter.post('/sync/vendas', async (req, res, next) => {
       const statusLabel = listSituacao?.label && listSituacao.label !== 'Sem situacao'
         ? listSituacao.label
         : (detailSituacao.label || 'Sem situacao');
+      const pedidoNum = pedido.numero || String(pedidoId);
 
       const dataVenda = (pedido.data || '').split('T')[0]
         || new Date().toISOString().split('T')[0];
@@ -607,7 +620,22 @@ blingRouter.post('/sync/vendas', async (req, res, next) => {
       for (const item of pedido.itens || []) {
         const skuBling = item.produto?.codigo || item.codigo || item.sku || '';
         const idBling = item.produto?.id ? `BL${String(item.produto.id).padStart(8, '0')}` : '';
-        const peca = findMatchingPeca(todasPecas, pecaMap, skuBling, idBling, isCancelado);
+        const pecaVinculada = findLinkedPecaByPedido(todasPecas, pedidoId, pedidoNum);
+        const pecaReferencia = findSkuReferencePeca(todasPecas, skuBling, idBling);
+
+        let peca = pecaVinculada;
+
+        if (isCancelado) {
+          if (peca && reservedCancelPecaIds.has(peca.id)) {
+            peca = null;
+          }
+          if (peca) reservedCancelPecaIds.add(peca.id);
+        } else {
+          if (!peca) {
+            peca = findAvailablePecaForVenda(todasPecas, skuBling, idBling, reservedVendaPecaIds);
+          }
+          if (peca) reservedVendaPecaIds.add(peca.id);
+        }
 
         const precoVenda = Number(item.valor) || 0;
         const taxaValorPedido = taxaComissao;
@@ -624,9 +652,9 @@ blingRouter.post('/sync/vendas', async (req, res, next) => {
           tipo: isCancelado ? 'CANCELAMENTO' : 'VENDA',
           statusLabel,
           pedidoId,
-          pedidoNum: pedido.numero || String(pedidoId),
+          pedidoNum,
           dataVenda,
-          idPeca: peca?.idPeca || skuBling || idBling,
+          idPeca: peca?.idPeca || pecaReferencia?.idPeca || skuBling || idBling,
           descricao: item.produto?.nome || item.descricao || '',
           skuBling,
           precoVenda,
@@ -635,10 +663,11 @@ blingRouter.post('/sync/vendas', async (req, res, next) => {
           taxaValor: taxaValorPedido,
           valorLiq: valorLiqPedido,
           encontrada: !!peca,
-          jaVendida: isCancelado ? false : (peca ? !peca.disponivel : false),
-          jaEstornada: isCancelado ? (peca ? peca.disponivel : false) : false,
+          baixaVinculada: isCancelado ? !!pecaVinculada : false,
+          jaVendida: isCancelado ? false : (pecaVinculada ? !pecaVinculada.disponivel : false),
+          jaEstornada: isCancelado ? (pecaVinculada ? pecaVinculada.disponivel : false) : false,
           pecaId: peca?.id || null,
-          moto: peca?.moto ? `${peca.moto.marca} ${peca.moto.modelo}` : null,
+          moto: (peca?.moto || pecaReferencia?.moto) ? `${(peca?.moto || pecaReferencia?.moto).marca} ${(peca?.moto || pecaReferencia?.moto).modelo}` : null,
           precoMLAtual: peca ? Number(peca.precoML) : null,
           fretePadrao: defaults.fretePadrao,
           taxaPadraoPct: defaults.taxaPadraoPct,
@@ -661,7 +690,7 @@ blingRouter.post('/sync/vendas', async (req, res, next) => {
 
 blingRouter.post('/baixar', async (req, res, next) => {
   try {
-    const { pecaId, dataVenda, precoVenda, frete, taxaValor, valorLiq } = req.body;
+    const { pecaId, pedidoId, pedidoNum, dataVenda, precoVenda, frete, taxaValor, valorLiq } = req.body;
     if (!pecaId || !dataVenda) {
       return res.status(400).json({ error: 'pecaId e dataVenda sao obrigatorios' });
     }
@@ -678,6 +707,8 @@ blingRouter.post('/baixar', async (req, res, next) => {
       data: {
         disponivel: false,
         dataVenda: new Date(dataVenda),
+        blingPedidoId: pedidoId ? Number(pedidoId) : null,
+        blingPedidoNum: pedidoNum ? String(pedidoNum) : null,
         precoML,
         valorFrete: freteN,
         valorTaxas: taxas,
@@ -713,6 +744,8 @@ blingRouter.post('/aprovar-cancelamento', async (req, res, next) => {
       data: {
         disponivel: true,
         dataVenda: null,
+        blingPedidoId: null,
+        blingPedidoNum: null,
         valorFrete: defaults.fretePadrao,
         valorTaxas: financials.taxaValor,
         valorLiq: financials.valorLiq,

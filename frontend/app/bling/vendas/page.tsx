@@ -31,6 +31,7 @@ type Item = {
   taxaValor: number;
   valorLiq: number;
   encontrada: boolean;
+  baixaVinculada?: boolean;
   jaVendida: boolean;
   jaEstornada: boolean;
   pecaId: number | null;
@@ -151,6 +152,8 @@ export default function VendasBlingPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           pecaId: item.pecaId,
+          pedidoId: item.pedidoId,
+          pedidoNum: item.pedidoNum,
           dataVenda: item._dataVenda,
           precoVenda: Number(item._precoML) || item.precoVenda,
           frete: Number(item._frete) || 0,
@@ -195,10 +198,11 @@ export default function VendasBlingPage() {
   const confirmados = itens.filter((item) => item.tipo === 'VENDA' && item._confirmado);
   const naoAchados = itens.filter((item) => item.tipo === 'VENDA' && !item.encontrada);
 
-  const cancelPendentes = itens.filter((item) => item.tipo === 'CANCELAMENTO' && item.encontrada && !item.jaEstornada && !item._cancelamentoAprovado);
+  const cancelPendentes = itens.filter((item) => item.tipo === 'CANCELAMENTO' && item.baixaVinculada && item.encontrada && !item.jaEstornada && !item._cancelamentoAprovado);
   const cancelAprovados = itens.filter((item) => item.tipo === 'CANCELAMENTO' && item._cancelamentoAprovado);
-  const cancelJaAplicados = itens.filter((item) => item.tipo === 'CANCELAMENTO' && item.jaEstornada && !item._cancelamentoAprovado);
-  const cancelNaoAchados = itens.filter((item) => item.tipo === 'CANCELAMENTO' && !item.encontrada);
+  const cancelJaAplicados = itens.filter((item) => item.tipo === 'CANCELAMENTO' && item.baixaVinculada && item.jaEstornada && !item._cancelamentoAprovado);
+  const cancelSemBaixa = itens.filter((item) => item.tipo === 'CANCELAMENTO' && !item.baixaVinculada);
+  const cancelNaoAchados = itens.filter((item) => item.tipo === 'CANCELAMENTO' && item.baixaVinculada && !item.encontrada);
 
   return (
     <>
@@ -421,6 +425,23 @@ export default function VendasBlingPage() {
           </div>
         )}
 
+        {cancelSemBaixa.length > 0 && (
+          <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10, padding: '16px 18px', marginBottom: 20 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--blue-500)', marginBottom: 8 }}>Cancelamentos sem baixa vinculada ({cancelSemBaixa.length})</div>
+            <div style={{ fontSize: 12, color: 'var(--blue-500)', marginBottom: 10 }}>
+              O pedido veio cancelado no Bling, mas nao existe baixa confirmada desse mesmo pedido no ANB. Nenhuma acao no estoque e necessaria.
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {cancelSemBaixa.slice(0, 8).map((item) => (
+                <div key={`${item.pedidoId}-${item.idPeca}-cancel-sem-baixa`} style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--blue-500)' }}>
+                  #{item.pedidoNum} - {item.idPeca} - {item.descricao}
+                </div>
+              ))}
+              {cancelSemBaixa.length > 8 && <div style={{ fontSize: 12, color: 'var(--blue-500)' }}>+{cancelSemBaixa.length - 8} mais...</div>}
+            </div>
+          </div>
+        )}
+
         {cancelJaAplicados.length > 0 && (
           <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10, padding: '16px 18px', marginBottom: 20 }}>
             <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--blue-500)', marginBottom: 8 }}>Cancelamentos sem acao necessaria ({cancelJaAplicados.length})</div>
@@ -465,7 +486,7 @@ export default function VendasBlingPage() {
           </div>
         )}
 
-        {buscou && pendentes.length === 0 && confirmados.length === 0 && naoAchados.length === 0 && cancelPendentes.length === 0 && cancelAprovados.length === 0 && cancelJaAplicados.length === 0 && cancelNaoAchados.length === 0 && (
+        {buscou && pendentes.length === 0 && confirmados.length === 0 && naoAchados.length === 0 && cancelPendentes.length === 0 && cancelAprovados.length === 0 && cancelSemBaixa.length === 0 && cancelJaAplicados.length === 0 && cancelNaoAchados.length === 0 && (
           <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--gray-400)', fontSize: 14 }}>Nenhuma venda ou cancelamento encontrado no periodo.</div>
         )}
       </div>

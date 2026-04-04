@@ -37,6 +37,8 @@ model Peca {
   valorTaxas  Decimal  @default(0) @db.Decimal(12, 2)
   disponivel  Boolean  @default(true)
   dataVenda   DateTime?
+  blingPedidoId  Int?
+  blingPedidoNum String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
