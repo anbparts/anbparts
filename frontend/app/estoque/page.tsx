@@ -3,7 +3,21 @@ import { useEffect, useState, useCallback } from 'react';
 import { api } from '@/lib/api';
 
 function fmt(v: number) { return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }); }
-function today() { return new Date().toISOString().split('T')[0]; }
+function dateInputValue(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+function today() { return dateInputValue(new Date()); }
+function addDays(date: Date, days: number) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+function startOfMonth(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
 
 const pageSizeOptions = [10, 20, 50, 100, 250];
 
@@ -171,6 +185,33 @@ export default function EstoquePage() {
     setVendaModal(false); setVendaPeca(null); load();
   }
 
+  function applyDatePreset(kind: 'today' | '7days' | '30days' | 'month') {
+    const now = new Date();
+    const to = dateInputValue(now);
+
+    if (kind === 'today') {
+      setFilters({ ...filters, dataVendaFrom: to, dataVendaTo: to, page: 1 });
+      return;
+    }
+
+    if (kind === '7days') {
+      setFilters({ ...filters, dataVendaFrom: dateInputValue(addDays(now, -6)), dataVendaTo: to, page: 1 });
+      return;
+    }
+
+    if (kind === '30days') {
+      setFilters({ ...filters, dataVendaFrom: dateInputValue(addDays(now, -29)), dataVendaTo: to, page: 1 });
+      return;
+    }
+
+    setFilters({ ...filters, dataVendaFrom: dateInputValue(startOfMonth(now)), dataVendaTo: to, page: 1 });
+  }
+
+  function clearFilters() {
+    setFilters({ ...filters, motoId: '', disponivel: '', search: '', dataVendaFrom: '', dataVendaTo: '', page: 1 });
+  }
+
+  const hasActiveFilters = Boolean(filters.motoId || filters.disponivel !== '' || filters.search || filters.dataVendaFrom || filters.dataVendaTo);
   const totalPages = Math.max(1, Math.ceil((data.total || 0) / filters.perPage));
   const hasPrevPage = filters.page > 1;
   const hasNextPage = filters.page < totalPages;
@@ -234,6 +275,23 @@ export default function EstoquePage() {
               </select>
               <button style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)', padding: '6px 14px', fontSize: 13 }} onClick={() => { setEditPeca(null); setModal(true); }}>+ Nova peça</button>
             </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 18px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', gap: 10, background: '#fcfcfd' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '0.5px', textTransform: 'uppercase' }}>Periodo rapido</span>
+              <button onClick={() => applyDatePreset('today')} style={{ ...cs.btn, padding: '4px 10px', fontSize: 12, background: 'var(--white)', borderColor: 'var(--border)', color: 'var(--ink-soft)' }}>Hoje</button>
+              <button onClick={() => applyDatePreset('7days')} style={{ ...cs.btn, padding: '4px 10px', fontSize: 12, background: 'var(--white)', borderColor: 'var(--border)', color: 'var(--ink-soft)' }}>7 dias</button>
+              <button onClick={() => applyDatePreset('30days')} style={{ ...cs.btn, padding: '4px 10px', fontSize: 12, background: 'var(--white)', borderColor: 'var(--border)', color: 'var(--ink-soft)' }}>30 dias</button>
+              <button onClick={() => applyDatePreset('month')} style={{ ...cs.btn, padding: '4px 10px', fontSize: 12, background: 'var(--white)', borderColor: 'var(--border)', color: 'var(--ink-soft)' }}>Este mes</button>
+            </div>
+            <button
+              onClick={clearFilters}
+              disabled={!hasActiveFilters}
+              style={{ ...cs.btn, padding: '4px 10px', fontSize: 12, background: 'var(--white)', borderColor: 'var(--border)', color: hasActiveFilters ? 'var(--ink-soft)' : 'var(--ink-muted)', opacity: hasActiveFilters ? 1 : 0.6 }}
+            >
+              Limpar filtros
+            </button>
           </div>
 
           <div style={{ overflowX: 'auto' }}>
