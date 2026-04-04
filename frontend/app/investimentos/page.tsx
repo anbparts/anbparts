@@ -1,38 +1,125 @@
 'use client';
+
 import { useEffect, useState } from 'react';
+import { ChartPanel, ColumnChart, DonutChart, HorizontalBarChart, ViewModeSwitch, type ViewMode } from '@/components/finance/Charts';
 
 const BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3333';
-const fmt  = (v: number) => v?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-const today = () => new Date().toISOString().split('T')[0];
 const SOCIOS = ['Bruno', 'Nelson', 'Alex'];
+const SOCIO_COLORS: Record<string, string> = {
+  Bruno: '#2563eb',
+  Nelson: '#16a34a',
+  Alex: '#f59e0b',
+};
+
+function fmt(value: number) {
+  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+function today() {
+  return new Date().toISOString().split('T')[0];
+}
+
+function monthKey(dateValue: string) {
+  const date = new Date(dateValue);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function monthLabel(dateValue: string) {
+  const date = new Date(dateValue);
+  return date.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }).replace('.', '');
+}
 
 export default function InvestimentosPage() {
-  const [rows, setRows]       = useState<any[]>([]);
+  const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filtroS, setFiltroS] = useState('');
+  const [filtroSocio, setFiltroSocio] = useState('');
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm]       = useState({ data: today(), socio: 'Bruno', moto: '', valor: '' });
-  const [saving, setSaving]   = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [modo, setModo] = useState<ViewMode>('relatorio');
+  const [form, setForm] = useState({ data: today(), socio: 'Bruno', moto: '', valor: '' });
 
-  const load = () => {
-    setLoading(true);
-    fetch(`${BASE}/financeiro/investimentos`).then(r => r.json()).then(setRows).finally(() => setLoading(false));
+  const inputStyle: any = {
+    background: 'var(--white)',
+    border: '1px solid var(--border)',
+    borderRadius: 7,
+    padding: '8px 12px',
+    fontSize: 13,
+    fontFamily: 'Geist, sans-serif',
+    outline: 'none',
+    color: 'var(--ink)',
+    width: '100%',
   };
+
+  function load() {
+    setLoading(true);
+    fetch(`${BASE}/financeiro/investimentos`)
+      .then((response) => response.json())
+      .then(setRows)
+      .finally(() => setLoading(false));
+  }
+
   useEffect(load, []);
 
-  const filtradas  = filtroS ? rows.filter(r => r.socio === filtroS) : rows;
-  const totalGeral = rows.reduce((s, r) => s + r.valor, 0);
+  const filtradas = filtroSocio ? rows.filter((item) => item.socio === filtroSocio) : rows;
+  const totalGeral = rows.reduce((sum, item) => sum + Number(item.valor || 0), 0);
+  const totalFiltro = filtradas.reduce((sum, item) => sum + Number(item.valor || 0), 0);
 
-  // Total por sócio
-  const porSocio: Record<string, number> = {};
-  rows.forEach(r => { porSocio[r.socio] = (porSocio[r.socio] || 0) + r.valor; });
+  const porSocioMap = new Map<string, number>();
+  const porMesMap = new Map<string, { label: string; value: number }>();
+
+  rows.forEach((item) => {
+    const socio = item.socio || 'Outros';
+    porSocioMap.set(socio, (porSocioMap.get(socio) || 0) + Number(item.valor || 0));
+  });
+
+  filtradas.forEach((item) => {
+    const key = monthKey(item.data);
+    const current = porMesMap.get(key) || { label: monthLabel(item.data), value: 0 };
+    current.value += Number(item.valor || 0);
+    porMesMap.set(key, current);
+  });
+
+  const sociosChart = Array.from(porSocioMap.entries())
+    .map(([label, value]) => ({
+      label,
+      value,
+      color: SOCIO_COLORS[label],
+      note: `${(totalGeral ? (value / totalGeral) * 100 : 0).toFixed(1).replace('.', ',')}%`,
+    }))
+    .sort((a, b) => b.value - a.value);
+
+  const sociosFiltro = filtradas.reduce((map, item) => {
+    const current = map.get(item.socio) || 0;
+    map.set(item.socio, current + Number(item.valor || 0));
+    return map;
+  }, new Map<string, number>());
+
+  const rankingFiltro = Array.from(sociosFiltro.entries())
+    .map(([label, value]) => ({
+      label,
+      value,
+      color: SOCIO_COLORS[label],
+      note: `${(filtradas.filter((item) => item.socio === label)).length} aportes`,
+    }))
+    .sort((a, b) => b.value - a.value);
+
+  const linhaTempo = Array.from(porMesMap.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([, value]) => value)
+    .slice(-8);
 
   async function salvar() {
     if (!form.valor) return;
     setSaving(true);
-    await fetch(`${BASE}/financeiro/investimentos`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: form.data, socio: form.socio, moto: form.moto || null, valor: Number(form.valor) }) });
+    await fetch(`${BASE}/financeiro/investimentos`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data: form.data, socio: form.socio, moto: form.moto || null, valor: Number(form.valor) }),
+    });
     setForm({ data: today(), socio: 'Bruno', moto: '', valor: '' });
-    setShowForm(false); setSaving(false); load();
+    setShowForm(false);
+    setSaving(false);
+    load();
   }
 
   async function excluir(id: number) {
@@ -41,99 +128,145 @@ export default function InvestimentosPage() {
     load();
   }
 
-  const inp = { background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 7, padding: '8px 12px', fontSize: 13, fontFamily: 'Inter, sans-serif', outline: 'none', color: 'var(--gray-800)', width: '100%' };
-  const CORES_SOCIO: Record<string, string> = { Bruno: 'var(--blue-500)', Nelson: 'var(--green)', Alex: 'var(--amber)' };
-
   return (
     <>
       <div style={{ height: 'var(--topbar-h)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 28px', background: 'var(--white)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, zIndex: 50 }}>
         <div>
-          <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)', letterSpacing: '-0.3px' }}>Investimentos</div>
-          <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>Aportes por sócio</div>
+          <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)', letterSpacing: '-0.3px' }}>Investimentos</div>
+          <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>Aportes por socio</div>
         </div>
-        <button onClick={() => setShowForm(v => !v)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 7, background: 'var(--blue-500)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
-          {showForm ? '✕ Fechar' : '+ Novo investimento'}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <ViewModeSwitch value={modo} onChange={setModo} />
+          <button
+            onClick={() => setShowForm((value) => !value)}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 7, background: 'var(--blue-500)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}
+          >
+            {showForm ? 'Fechar' : '+ Novo investimento'}
+          </button>
+        </div>
       </div>
 
       <div style={{ padding: 28 }}>
-        {/* Cards por sócio */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 14, marginBottom: 20 }}>
           <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, padding: '16px 18px' }}>
-            <div style={{ fontSize: 11, fontFamily: 'JetBrains Mono, monospace', color: 'var(--gray-400)', letterSpacing: '.6px', textTransform: 'uppercase', marginBottom: 8 }}>Total geral</div>
+            <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '.6px', textTransform: 'uppercase', marginBottom: 8 }}>Total geral</div>
             <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--blue-500)', letterSpacing: '-0.4px' }}>{fmt(totalGeral)}</div>
           </div>
-          {SOCIOS.map(s => (
-            <div key={s} style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, padding: '16px 18px' }}>
-              <div style={{ fontSize: 11, fontFamily: 'JetBrains Mono, monospace', color: 'var(--gray-400)', letterSpacing: '.6px', textTransform: 'uppercase', marginBottom: 8 }}>{s}</div>
-              <div style={{ fontSize: 22, fontWeight: 700, color: CORES_SOCIO[s], letterSpacing: '-0.4px' }}>{fmt(porSocio[s] || 0)}</div>
-              <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 4, fontFamily: 'JetBrains Mono, monospace' }}>
-                {totalGeral ? ((porSocio[s] || 0) / totalGeral * 100).toFixed(1) : '0'}%
-              </div>
-            </div>
-          ))}
+          <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, padding: '16px 18px' }}>
+            <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '.6px', textTransform: 'uppercase', marginBottom: 8 }}>Total no filtro</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--green)', letterSpacing: '-0.4px' }}>{fmt(totalFiltro)}</div>
+          </div>
+          <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, padding: '16px 18px' }}>
+            <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '.6px', textTransform: 'uppercase', marginBottom: 8 }}>Maior investidor</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.4px' }}>{sociosChart[0]?.label || '--'}</div>
+            <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginTop: 6 }}>{sociosChart[0] ? fmt(sociosChart[0].value) : 'Sem dados'}</div>
+          </div>
         </div>
 
-        {/* Formulário */}
         {showForm && (
           <div style={{ background: 'var(--white)', border: '1px solid var(--blue-200)', borderRadius: 10, padding: 20, marginBottom: 20 }}>
             <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 14 }}>Novo investimento</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr auto', gap: 10, alignItems: 'end' }}>
-              <div><div style={{ fontSize: 12, fontWeight: 500, color: 'var(--gray-500)', marginBottom: 5 }}>Data</div><input style={inp} type="date" value={form.data} onChange={e => setForm(f => ({ ...f, data: e.target.value }))} /></div>
               <div>
-                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--gray-500)', marginBottom: 5 }}>Sócio</div>
-                <select style={{ ...inp, cursor: 'pointer' }} value={form.socio} onChange={e => setForm(f => ({ ...f, socio: e.target.value }))}>
-                  {SOCIOS.map(s => <option key={s}>{s}</option>)}
+                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Data</div>
+                <input style={inputStyle} type="date" value={form.data} onChange={(e) => setForm((value) => ({ ...value, data: e.target.value }))} />
+              </div>
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Socio</div>
+                <select style={{ ...inputStyle, cursor: 'pointer' }} value={form.socio} onChange={(e) => setForm((value) => ({ ...value, socio: e.target.value }))}>
+                  {SOCIOS.map((socio) => <option key={socio}>{socio}</option>)}
                 </select>
               </div>
-              <div><div style={{ fontSize: 12, fontWeight: 500, color: 'var(--gray-500)', marginBottom: 5 }}>Moto / Item</div><input style={inp} placeholder="Ex: ID 3, Pallet..." value={form.moto} onChange={e => setForm(f => ({ ...f, moto: e.target.value }))} /></div>
-              <div><div style={{ fontSize: 12, fontWeight: 500, color: 'var(--gray-500)', marginBottom: 5 }}>Valor (R$) *</div><input style={inp} type="number" step="0.01" placeholder="0,00" value={form.valor} onChange={e => setForm(f => ({ ...f, valor: e.target.value }))} /></div>
-              <button onClick={salvar} disabled={saving || !form.valor} style={{ padding: '8px 18px', background: 'var(--blue-500)', color: '#fff', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                {saving ? '...' : '✓ Salvar'}
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Moto / Item</div>
+                <input style={inputStyle} placeholder="Ex: ID 3, pallet..." value={form.moto} onChange={(e) => setForm((value) => ({ ...value, moto: e.target.value }))} />
+              </div>
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Valor (R$) *</div>
+                <input style={inputStyle} type="number" step="0.01" placeholder="0,00" value={form.valor} onChange={(e) => setForm((value) => ({ ...value, valor: e.target.value }))} />
+              </div>
+              <button
+                onClick={salvar}
+                disabled={saving || !form.valor}
+                style={{ padding: '8px 18px', background: 'var(--blue-500)', color: '#fff', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap' }}
+              >
+                {saving ? 'Salvando...' : 'Salvar'}
               </button>
             </div>
           </div>
         )}
 
-        {/* Tabela */}
-        <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+        <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden', marginBottom: 20 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 18px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', gap: 10 }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)' }}>Aportes <span style={{ fontSize: 12, color: 'var(--gray-400)', fontWeight: 400 }}>— {filtradas.length}</span></div>
-            <select style={{ ...inp, width: 'auto', cursor: 'pointer' }} value={filtroS} onChange={e => setFiltroS(e.target.value)}>
-              <option value="">Todos os sócios</option>
-              {SOCIOS.map(s => <option key={s}>{s}</option>)}
+            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>
+              Visualizacao <span style={{ fontSize: 12, color: 'var(--ink-muted)', fontWeight: 400 }}>- {filtradas.length} registros</span>
+            </div>
+            <select style={{ ...inputStyle, width: 'auto', cursor: 'pointer' }} value={filtroSocio} onChange={(e) => setFiltroSocio(e.target.value)}>
+              <option value="">Todos os socios</option>
+              {SOCIOS.map((socio) => <option key={socio}>{socio}</option>)}
             </select>
           </div>
-          {loading ? <div style={{ padding: 28, color: 'var(--gray-400)', fontSize: 13 }}>Carregando...</div> : (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
-                  <tr>
-                    {['Data', 'Sócio', 'Moto / Item', 'Valor', ''].map(h => (
-                      <th key={h} style={{ padding: '9px 16px', textAlign: h === 'Valor' ? 'right' : 'left', fontFamily: 'JetBrains Mono, monospace', fontSize: 10, letterSpacing: '.7px', textTransform: 'uppercase', color: 'var(--gray-400)', fontWeight: 500 }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtradas.map(r => (
-                    <tr key={r.id} style={{ borderBottom: '1px solid var(--gray-100)' }}>
-                      <td style={{ padding: '9px 16px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--gray-500)' }}>{new Date(r.data).toLocaleDateString('pt-BR')}</td>
-                      <td style={{ padding: '9px 16px' }}>
-                        <span style={{ fontWeight: 600, color: CORES_SOCIO[r.socio] || 'var(--gray-800)' }}>{r.socio}</span>
-                      </td>
-                      <td style={{ padding: '9px 16px', color: 'var(--gray-500)', fontFamily: 'JetBrains Mono, monospace', fontSize: 12 }}>{r.moto || '—'}</td>
-                      <td style={{ padding: '9px 16px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontSize: 13, color: 'var(--blue-500)', fontWeight: 600 }}>{fmt(r.valor)}</td>
-                      <td style={{ padding: '9px 10px', width: 40 }}>
-                        <button onClick={() => excluir(r.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--gray-300)', fontSize: 14, padding: '2px 6px', borderRadius: 4 }} title="Excluir">🗑</button>
-                      </td>
-                    </tr>
-                  ))}
-                  {!filtradas.length && <tr><td colSpan={5} style={{ padding: '36px 16px', textAlign: 'center', color: 'var(--gray-400)', fontSize: 13 }}>Nenhum investimento registrado</td></tr>}
-                </tbody>
-              </table>
-            </div>
-          )}
         </div>
+
+        {modo === 'grafico' ? (
+          loading ? (
+            <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, padding: 28, color: 'var(--ink-muted)' }}>Carregando visualizacao...</div>
+          ) : (
+            <div style={{ display: 'grid', gap: 18 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1.1fr)', gap: 18 }}>
+                <ChartPanel title="Participacao dos socios" subtitle="Quanto cada socio representa no capital investido." accent="#2563eb">
+                  <DonutChart items={sociosChart} totalLabel="Investido" totalDisplay={fmt(totalGeral)} valueFormatter={fmt} emptyText="Sem investimentos para distribuir." />
+                </ChartPanel>
+                <ChartPanel title="Ranking no filtro" subtitle="Comparativo de aportes considerando o filtro atual." accent="#16a34a">
+                  <HorizontalBarChart items={rankingFiltro} valueFormatter={fmt} emptyText="Sem investimentos para comparar." />
+                </ChartPanel>
+              </div>
+              <ChartPanel title="Linha do tempo dos aportes" subtitle="Volume investido por mes no filtro atual." accent="#f59e0b">
+                <ColumnChart items={linhaTempo} valueFormatter={fmt} emptyText="Sem linha do tempo para mostrar." />
+              </ChartPanel>
+            </div>
+          )
+        ) : (
+          <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+            {loading ? (
+              <div style={{ padding: 28, color: 'var(--ink-muted)', fontSize: 13 }}>Carregando...</div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
+                    <tr>
+                      {['Data', 'Socio', 'Moto / Item', 'Valor', ''].map((header) => (
+                        <th key={header} style={{ padding: '9px 16px', textAlign: header === 'Valor' ? 'right' : 'left', fontFamily: 'Geist Mono, monospace', fontSize: 10, letterSpacing: '.7px', textTransform: 'uppercase', color: 'var(--ink-muted)', fontWeight: 500 }}>
+                          {header}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtradas.map((item) => (
+                      <tr key={item.id} style={{ borderBottom: '1px solid var(--gray-100)' }}>
+                        <td style={{ padding: '9px 16px', fontFamily: 'Geist Mono, monospace', fontSize: 12, color: 'var(--ink-muted)' }}>{new Date(item.data).toLocaleDateString('pt-BR')}</td>
+                        <td style={{ padding: '9px 16px' }}>
+                          <span style={{ fontWeight: 600, color: SOCIO_COLORS[item.socio] || 'var(--ink)' }}>{item.socio}</span>
+                        </td>
+                        <td style={{ padding: '9px 16px', color: 'var(--ink-muted)', fontFamily: 'Geist Mono, monospace', fontSize: 12 }}>{item.moto || '--'}</td>
+                        <td style={{ padding: '9px 16px', textAlign: 'right', fontFamily: 'Geist Mono, monospace', fontSize: 13, color: 'var(--blue-500)', fontWeight: 600 }}>{fmt(Number(item.valor || 0))}</td>
+                        <td style={{ padding: '9px 10px', width: 40 }}>
+                          <button onClick={() => excluir(item.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-muted)', fontSize: 14, padding: '2px 6px', borderRadius: 4 }} title="Excluir">
+                            x
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                    {!filtradas.length && (
+                      <tr><td colSpan={5} style={{ padding: '36px 16px', textAlign: 'center', color: 'var(--ink-muted)', fontSize: 13 }}>Nenhum investimento registrado</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </>
   );

@@ -1,45 +1,127 @@
 'use client';
+
 import { useEffect, useState } from 'react';
+import { ChartPanel, ColumnChart, DonutChart, HorizontalBarChart, ViewModeSwitch, type ViewMode } from '@/components/finance/Charts';
 
 const BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3333';
-const fmt  = (v: number) => v?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-const today = () => new Date().toISOString().split('T')[0];
+const CATEGORIAS = ['Insumo', 'Servicos', 'Taxas', 'Aluguel', 'Sistemas', 'Contador', 'Moto', 'Outros'];
 
-const CATEGS = ['Insumo', 'Serviços', 'Taxas', 'Aluguel', 'Sistemas', 'Contador', 'Moto', 'Outros'];
 const CATEG_COLORS: Record<string, string> = {
-  Insumo: '#dbeafe:#1e56a0', Serviços: '#fef3c7:#d97706', Taxas: '#fee2e2:#dc2626',
-  Aluguel: '#f1f5f9:#64748b', Sistemas: '#dbeafe:#2563eb', Contador: '#f1f5f9:#475569',
-  Moto: '#dcfce7:#16a34a', Outros: '#f1f5f9:#64748b',
+  Insumo: '#2563eb',
+  Servicos: '#f59e0b',
+  Taxas: '#ef4444',
+  Aluguel: '#64748b',
+  Sistemas: '#0ea5e9',
+  Contador: '#475569',
+  Moto: '#16a34a',
+  Outros: '#8b5cf6',
 };
 
-function CategBadge({ cat }: { cat: string }) {
-  const [bg, color] = (CATEG_COLORS[cat] || '#f1f5f9:#64748b').split(':');
-  return <span style={{ background: bg, color, padding: '2px 10px', borderRadius: 99, fontSize: 11, fontFamily: 'JetBrains Mono, monospace', fontWeight: 500 }}>{cat}</span>;
+function fmt(value: number) {
+  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+function today() {
+  return new Date().toISOString().split('T')[0];
+}
+
+function monthKey(dateValue: string) {
+  const date = new Date(dateValue);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function monthLabel(dateValue: string) {
+  const date = new Date(dateValue);
+  return date.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }).replace('.', '');
+}
+
+function CategBadge({ categoria }: { categoria: string }) {
+  const color = CATEG_COLORS[categoria] || '#64748b';
+  return (
+    <span
+      style={{
+        background: `${color}18`,
+        color,
+        padding: '2px 10px',
+        borderRadius: 99,
+        fontSize: 11,
+        fontFamily: 'Geist Mono, monospace',
+        fontWeight: 500,
+      }}
+    >
+      {categoria}
+    </span>
+  );
 }
 
 export default function DespesasPage() {
-  const [rows, setRows]       = useState<any[]>([]);
+  const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filtroC, setFiltroC] = useState('');
+  const [filtroCategoria, setFiltroCategoria] = useState('');
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm]       = useState({ data: today(), detalhes: '', categoria: 'Insumo', valor: '' });
-  const [saving, setSaving]   = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [modo, setModo] = useState<ViewMode>('relatorio');
+  const [form, setForm] = useState({ data: today(), detalhes: '', categoria: 'Insumo', valor: '' });
 
-  const load = () => {
-    setLoading(true);
-    fetch(`${BASE}/financeiro/despesas`).then(r => r.json()).then(setRows).finally(() => setLoading(false));
+  const inputStyle: any = {
+    background: 'var(--white)',
+    border: '1px solid var(--border)',
+    borderRadius: 7,
+    padding: '8px 12px',
+    fontSize: 13,
+    fontFamily: 'Geist, sans-serif',
+    outline: 'none',
+    color: 'var(--ink)',
   };
+
+  function load() {
+    setLoading(true);
+    fetch(`${BASE}/financeiro/despesas`)
+      .then((response) => response.json())
+      .then(setRows)
+      .finally(() => setLoading(false));
+  }
+
   useEffect(load, []);
 
-  const filtradas = filtroC ? rows.filter(r => r.categoria === filtroC) : rows;
-  const total     = filtradas.reduce((s, r) => s + r.valor, 0);
+  const filtradas = filtroCategoria ? rows.filter((item) => item.categoria === filtroCategoria) : rows;
+  const total = filtradas.reduce((sum, item) => sum + Number(item.valor || 0), 0);
+
+  const porCategoriaMap = new Map<string, number>();
+  const porMesMap = new Map<string, { label: string; value: number }>();
+
+  filtradas.forEach((item) => {
+    const categoria = item.categoria || 'Outros';
+    const valor = Number(item.valor || 0);
+    porCategoriaMap.set(categoria, (porCategoriaMap.get(categoria) || 0) + valor);
+
+    const key = monthKey(item.data);
+    const current = porMesMap.get(key) || { label: monthLabel(item.data), value: 0 };
+    current.value += valor;
+    porMesMap.set(key, current);
+  });
+
+  const categoriasOrdenadas = Array.from(porCategoriaMap.entries())
+    .map(([label, value]) => ({ label, value, color: CATEG_COLORS[label], note: `${((value / Math.max(total, 1)) * 100).toFixed(1).replace('.', ',')}%` }))
+    .sort((a, b) => b.value - a.value);
+
+  const linhaTempo = Array.from(porMesMap.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([, value]) => value)
+    .slice(-8);
 
   async function salvar() {
     if (!form.detalhes || !form.valor) return;
     setSaving(true);
-    await fetch(`${BASE}/financeiro/despesas`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...form, valor: Number(form.valor) }) });
+    await fetch(`${BASE}/financeiro/despesas`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...form, valor: Number(form.valor) }),
+    });
     setForm({ data: today(), detalhes: '', categoria: 'Insumo', valor: '' });
-    setShowForm(false); setSaving(false); load();
+    setShowForm(false);
+    setSaving(false);
+    load();
   }
 
   async function excluir(id: number) {
@@ -48,100 +130,145 @@ export default function DespesasPage() {
     load();
   }
 
-  const inp = { background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 7, padding: '8px 12px', fontSize: 13, fontFamily: 'Inter, sans-serif', outline: 'none', color: 'var(--gray-800)' };
-
   return (
     <>
       <div style={{ height: 'var(--topbar-h)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 28px', background: 'var(--white)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, zIndex: 50 }}>
         <div>
-          <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)', letterSpacing: '-0.3px' }}>Despesas</div>
-          <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>Despesas operacionais</div>
+          <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)', letterSpacing: '-0.3px' }}>Despesas</div>
+          <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>Despesas operacionais</div>
         </div>
-        <button onClick={() => setShowForm(v => !v)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 7, background: 'var(--blue-500)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
-          {showForm ? '✕ Fechar' : '+ Nova despesa'}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <ViewModeSwitch value={modo} onChange={setModo} />
+          <button
+            onClick={() => setShowForm((value) => !value)}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 7, background: 'var(--blue-500)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}
+          >
+            {showForm ? 'Fechar' : '+ Nova despesa'}
+          </button>
+        </div>
       </div>
 
       <div style={{ padding: 28 }}>
-        {/* Stats */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 14, marginBottom: 20 }}>
           <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, padding: '16px 18px' }}>
-            <div style={{ fontSize: 11, fontFamily: 'JetBrains Mono, monospace', color: 'var(--gray-400)', letterSpacing: '.6px', textTransform: 'uppercase', marginBottom: 8 }}>Total despesas</div>
+            <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '.6px', textTransform: 'uppercase', marginBottom: 8 }}>Total despesas</div>
             <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--red)', letterSpacing: '-0.4px' }}>{fmt(total)}</div>
           </div>
           <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, padding: '16px 18px' }}>
-            <div style={{ fontSize: 11, fontFamily: 'JetBrains Mono, monospace', color: 'var(--gray-400)', letterSpacing: '.6px', textTransform: 'uppercase', marginBottom: 8 }}>Lançamentos</div>
-            <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--gray-800)', letterSpacing: '-0.4px' }}>{filtradas.length}</div>
+            <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '.6px', textTransform: 'uppercase', marginBottom: 8 }}>Lancamentos</div>
+            <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.4px' }}>{filtradas.length}</div>
+          </div>
+          <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, padding: '16px 18px' }}>
+            <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '.6px', textTransform: 'uppercase', marginBottom: 8 }}>Maior categoria</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--blue-500)', letterSpacing: '-0.4px' }}>
+              {categoriasOrdenadas[0]?.label || '--'}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginTop: 6 }}>{categoriasOrdenadas[0] ? fmt(categoriasOrdenadas[0].value) : 'Sem dados'}</div>
           </div>
         </div>
 
-        {/* Formulário */}
         {showForm && (
           <div style={{ background: 'var(--white)', border: '1px solid var(--blue-200)', borderRadius: 10, padding: 20, marginBottom: 20 }}>
-            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 14, color: 'var(--gray-800)' }}>Nova despesa</div>
+            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 14, color: 'var(--ink)' }}>Nova despesa</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 1fr 1fr auto', gap: 10, alignItems: 'end' }}>
               <div>
-                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--gray-500)', marginBottom: 5 }}>Data</div>
-                <input style={{ ...inp, width: '100%' }} type="date" value={form.data} onChange={e => setForm(f => ({ ...f, data: e.target.value }))} />
+                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Data</div>
+                <input style={{ ...inputStyle, width: '100%' }} type="date" value={form.data} onChange={(e) => setForm((value) => ({ ...value, data: e.target.value }))} />
               </div>
               <div>
-                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--gray-500)', marginBottom: 5 }}>Detalhes *</div>
-                <input style={{ ...inp, width: '100%' }} placeholder="Ex: Bobina plástico bolha" value={form.detalhes} onChange={e => setForm(f => ({ ...f, detalhes: e.target.value }))} />
+                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Detalhes *</div>
+                <input style={{ ...inputStyle, width: '100%' }} placeholder="Ex: Bobina plastico bolha" value={form.detalhes} onChange={(e) => setForm((value) => ({ ...value, detalhes: e.target.value }))} />
               </div>
               <div>
-                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--gray-500)', marginBottom: 5 }}>Categoria</div>
-                <select style={{ ...inp, width: '100%', cursor: 'pointer' }} value={form.categoria} onChange={e => setForm(f => ({ ...f, categoria: e.target.value }))}>
-                  {CATEGS.map(c => <option key={c}>{c}</option>)}
+                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Categoria</div>
+                <select style={{ ...inputStyle, width: '100%', cursor: 'pointer' }} value={form.categoria} onChange={(e) => setForm((value) => ({ ...value, categoria: e.target.value }))}>
+                  {CATEGORIAS.map((categoria) => <option key={categoria}>{categoria}</option>)}
                 </select>
               </div>
               <div>
-                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--gray-500)', marginBottom: 5 }}>Valor (R$) *</div>
-                <input style={{ ...inp, width: '100%' }} type="number" step="0.01" placeholder="0,00" value={form.valor} onChange={e => setForm(f => ({ ...f, valor: e.target.value }))} />
+                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Valor (R$) *</div>
+                <input style={{ ...inputStyle, width: '100%' }} type="number" step="0.01" placeholder="0,00" value={form.valor} onChange={(e) => setForm((value) => ({ ...value, valor: e.target.value }))} />
               </div>
-              <button onClick={salvar} disabled={saving || !form.detalhes || !form.valor} style={{ padding: '8px 18px', background: 'var(--blue-500)', color: '#fff', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                {saving ? '...' : '✓ Salvar'}
+              <button
+                onClick={salvar}
+                disabled={saving || !form.detalhes || !form.valor}
+                style={{ padding: '8px 18px', background: 'var(--blue-500)', color: '#fff', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap' }}
+              >
+                {saving ? 'Salvando...' : 'Salvar'}
               </button>
             </div>
           </div>
         )}
 
-        {/* Tabela */}
-        <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+        <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden', marginBottom: 20 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 18px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', gap: 10 }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)' }}>Lançamentos <span style={{ fontSize: 12, color: 'var(--gray-400)', fontWeight: 400 }}>— {filtradas.length}</span></div>
-            <select style={{ ...inp, cursor: 'pointer' }} value={filtroC} onChange={e => setFiltroC(e.target.value)}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>
+              Visualizacao <span style={{ fontSize: 12, color: 'var(--ink-muted)', fontWeight: 400 }}>- {filtradas.length} registros</span>
+            </div>
+            <select style={{ ...inputStyle, cursor: 'pointer' }} value={filtroCategoria} onChange={(e) => setFiltroCategoria(e.target.value)}>
               <option value="">Todas categorias</option>
-              {CATEGS.map(c => <option key={c}>{c}</option>)}
+              {CATEGORIAS.map((categoria) => <option key={categoria}>{categoria}</option>)}
             </select>
           </div>
-          {loading ? <div style={{ padding: 28, color: 'var(--gray-400)', fontSize: 13 }}>Carregando...</div> : (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
-                  <tr>
-                    {['Data', 'Detalhes', 'Categoria', 'Valor', ''].map(h => (
-                      <th key={h} style={{ padding: '9px 16px', textAlign: h === 'Valor' ? 'right' : 'left', fontFamily: 'JetBrains Mono, monospace', fontSize: 10, letterSpacing: '.7px', textTransform: 'uppercase', color: 'var(--gray-400)', fontWeight: 500 }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtradas.map(r => (
-                    <tr key={r.id} style={{ borderBottom: '1px solid var(--gray-100)' }}>
-                      <td style={{ padding: '9px 16px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--gray-500)' }}>{new Date(r.data).toLocaleDateString('pt-BR')}</td>
-                      <td style={{ padding: '9px 16px', color: 'var(--gray-700)' }}>{r.detalhes}</td>
-                      <td style={{ padding: '9px 16px' }}><CategBadge cat={r.categoria} /></td>
-                      <td style={{ padding: '9px 16px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontSize: 13, color: 'var(--red)', fontWeight: 500 }}>{fmt(r.valor)}</td>
-                      <td style={{ padding: '9px 10px', width: 40 }}>
-                        <button onClick={() => excluir(r.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--gray-300)', fontSize: 14, padding: '2px 6px', borderRadius: 4 }} title="Excluir">🗑</button>
-                      </td>
-                    </tr>
-                  ))}
-                  {!filtradas.length && <tr><td colSpan={5} style={{ padding: '36px 16px', textAlign: 'center', color: 'var(--gray-400)', fontSize: 13 }}>Nenhuma despesa encontrada</td></tr>}
-                </tbody>
-              </table>
-            </div>
-          )}
         </div>
+
+        {modo === 'grafico' ? (
+          loading ? (
+            <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, padding: 28, color: 'var(--ink-muted)' }}>Carregando visualizacao...</div>
+          ) : (
+            <div style={{ display: 'grid', gap: 18 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1.1fr)', gap: 18 }}>
+                <ChartPanel title="Distribuicao por categoria" subtitle="Entenda onde o caixa esta sendo consumido." accent="#ef4444">
+                  <DonutChart items={categoriasOrdenadas} totalLabel="Despesas" totalDisplay={fmt(total)} valueFormatter={fmt} emptyText="Sem despesas para distribuir." />
+                </ChartPanel>
+                <ChartPanel title="Ranking de categorias" subtitle="As categorias mais pesadas dentro do filtro atual." accent="#2563eb">
+                  <HorizontalBarChart items={categoriasOrdenadas} valueFormatter={fmt} emptyText="Sem categorias para comparar." />
+                </ChartPanel>
+              </div>
+              <ChartPanel title="Evolucao por mes" subtitle="Barras mensais para comparar concentracao e ritmo das despesas." accent="#f59e0b">
+                <ColumnChart items={linhaTempo} valueFormatter={fmt} emptyText="Sem linha do tempo para mostrar." />
+              </ChartPanel>
+            </div>
+          )
+        ) : (
+          <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+            {loading ? (
+              <div style={{ padding: 28, color: 'var(--ink-muted)', fontSize: 13 }}>Carregando...</div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
+                    <tr>
+                      {['Data', 'Detalhes', 'Categoria', 'Valor', ''].map((header) => (
+                        <th key={header} style={{ padding: '9px 16px', textAlign: header === 'Valor' ? 'right' : 'left', fontFamily: 'Geist Mono, monospace', fontSize: 10, letterSpacing: '.7px', textTransform: 'uppercase', color: 'var(--ink-muted)', fontWeight: 500 }}>
+                          {header}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtradas.map((item) => (
+                      <tr key={item.id} style={{ borderBottom: '1px solid var(--gray-100)' }}>
+                        <td style={{ padding: '9px 16px', fontFamily: 'Geist Mono, monospace', fontSize: 12, color: 'var(--ink-muted)' }}>{new Date(item.data).toLocaleDateString('pt-BR')}</td>
+                        <td style={{ padding: '9px 16px', color: 'var(--ink)' }}>{item.detalhes}</td>
+                        <td style={{ padding: '9px 16px' }}><CategBadge categoria={item.categoria} /></td>
+                        <td style={{ padding: '9px 16px', textAlign: 'right', fontFamily: 'Geist Mono, monospace', fontSize: 13, color: 'var(--red)', fontWeight: 500 }}>{fmt(Number(item.valor || 0))}</td>
+                        <td style={{ padding: '9px 10px', width: 40 }}>
+                          <button onClick={() => excluir(item.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-muted)', fontSize: 14, padding: '2px 6px', borderRadius: 4 }} title="Excluir">
+                            x
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                    {!filtradas.length && (
+                      <tr><td colSpan={5} style={{ padding: '36px 16px', textAlign: 'center', color: 'var(--ink-muted)', fontSize: 13 }}>Nenhuma despesa encontrada</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </>
   );
