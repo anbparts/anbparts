@@ -25,6 +25,9 @@ type Item = {
   idPeca: string;
   descricao: string;
   skuBling: string;
+  quantidade: number;
+  quantidadePedido?: number;
+  quantidadeJaBaixada?: number;
   precoVenda: number;
   frete: number;
   taxaPct: number;
@@ -35,6 +38,7 @@ type Item = {
   jaVendida: boolean;
   jaEstornada: boolean;
   pecaId: number | null;
+  pecaIds?: number[];
   moto: string | null;
   precoMLAtual: number | null;
   fretePadrao: number;
@@ -143,7 +147,7 @@ export default function VendasBlingPage() {
 
   async function baixarItem(idx: number) {
     const item = itens[idx];
-    if (!item.pecaId || !item._dataVenda) return;
+    if ((!item.pecaIds?.length && !item.pecaId) || !item._dataVenda) return;
 
     updateItem(idx, '_baixando', true);
     try {
@@ -151,6 +155,7 @@ export default function VendasBlingPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          pecaIds: item.pecaIds?.length ? item.pecaIds : undefined,
           pecaId: item.pecaId,
           pedidoId: item.pedidoId,
           pedidoNum: item.pedidoNum,
@@ -172,14 +177,17 @@ export default function VendasBlingPage() {
 
   async function aprovarCancelamento(idx: number) {
     const item = itens[idx];
-    if (!item.pecaId) return;
+    if ((!item.pecaIds?.length && !item.pecaId)) return;
 
     updateItem(idx, '_aprovandoCancelamento', true);
     try {
       const response = await fetch(`${API}/bling/aprovar-cancelamento`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pecaId: item.pecaId }),
+        body: JSON.stringify({
+          pecaIds: item.pecaIds?.length ? item.pecaIds : undefined,
+          pecaId: item.pecaId,
+        }),
       });
       const data = await response.json();
       if (data.ok) {
@@ -255,6 +263,7 @@ export default function VendasBlingPage() {
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
                     <span style={{ background: '#fee2e2', color: '#b91c1c', padding: '2px 10px', borderRadius: 6, fontSize: 12, fontFamily: 'JetBrains Mono, monospace', fontWeight: 600 }}>Pedido #{item.pedidoNum}</span>
                     <span style={{ background: 'var(--blue-100)', color: 'var(--blue-500)', padding: '2px 10px', borderRadius: 6, fontSize: 12, fontFamily: 'JetBrains Mono, monospace' }}>{item.idPeca}</span>
+                    {item.quantidade > 1 && <span style={{ fontSize: 11, background: '#fee2e2', color: '#b91c1c', padding: '2px 8px', borderRadius: 5, fontWeight: 600 }}>{item.quantidade}x</span>}
                     <span style={{ fontSize: 11, background: '#fee2e2', color: '#b91c1c', padding: '2px 8px', borderRadius: 5 }}>{item.statusLabel}</span>
                     {item.moto && <span style={{ color: 'var(--gray-500)', fontSize: 12 }}>{item.moto}</span>}
                   </div>
@@ -311,9 +320,16 @@ export default function VendasBlingPage() {
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
                     <span style={{ background: 'var(--amber-light)', color: 'var(--amber)', padding: '2px 10px', borderRadius: 6, fontSize: 12, fontFamily: 'JetBrains Mono, monospace', fontWeight: 600 }}>Pedido #{item.pedidoNum}</span>
                     <span style={{ background: 'var(--blue-100)', color: 'var(--blue-500)', padding: '2px 10px', borderRadius: 6, fontSize: 12, fontFamily: 'JetBrains Mono, monospace' }}>{item.idPeca}</span>
+                    {item.quantidade > 1 && <span style={{ fontSize: 11, background: 'var(--amber-light)', color: 'var(--amber)', padding: '2px 8px', borderRadius: 5, fontWeight: 600 }}>{item.quantidade}x</span>}
                     <span style={{ fontSize: 11, background: 'var(--gray-100)', color: 'var(--gray-500)', padding: '2px 8px', borderRadius: 5 }}>{item.statusLabel}</span>
                     {item.moto && <span style={{ color: 'var(--gray-500)', fontSize: 12 }}>{item.moto}</span>}
                   </div>
+
+                  {item.quantidadeJaBaixada ? (
+                    <div style={{ fontSize: 12, color: 'var(--gray-500)', marginBottom: 10 }}>
+                      Ja baixadas neste pedido: {item.quantidadeJaBaixada} de {item.quantidadePedido || item.quantidade}
+                    </div>
+                  ) : null}
 
                   <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 16 }}>{item.descricao}</div>
 
@@ -380,7 +396,7 @@ export default function VendasBlingPage() {
                   {confirmados.map((item) => (
                     <tr key={`${item.pedidoId}-${item.idPeca}-confirmado`} style={{ borderTop: '1px solid var(--gray-100)' }}>
                       <td style={{ padding: '9px 14px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12 }}>#{item.pedidoNum}</td>
-                      <td style={{ padding: '9px 14px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--gray-500)' }}>{item.idPeca}</td>
+                      <td style={{ padding: '9px 14px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--gray-500)' }}>{item.idPeca}{item.quantidade > 1 ? ` (${item.quantidade}x)` : ''}</td>
                       <td style={{ padding: '9px 14px', color: 'var(--gray-700)' }}>{item.descricao}</td>
                       <td style={{ padding: '9px 14px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12 }}>{item._dataVenda}</td>
                       <td style={{ padding: '9px 14px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--gray-700)' }}>{fmtMoney(item._precoML)}</td>
@@ -411,7 +427,7 @@ export default function VendasBlingPage() {
                   {cancelAprovados.map((item) => (
                     <tr key={`${item.pedidoId}-${item.idPeca}-cancelado`} style={{ borderTop: '1px solid var(--gray-100)' }}>
                       <td style={{ padding: '9px 14px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12 }}>#{item.pedidoNum}</td>
-                      <td style={{ padding: '9px 14px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--gray-500)' }}>{item.idPeca}</td>
+                      <td style={{ padding: '9px 14px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--gray-500)' }}>{item.idPeca}{item.quantidade > 1 ? ` (${item.quantidade}x)` : ''}</td>
                       <td style={{ padding: '9px 14px', color: 'var(--gray-700)' }}>{item.descricao}</td>
                       <td style={{ padding: '9px 14px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12 }}>{fmtMoney(item.precoMLAtual || item.precoVenda)}</td>
                       <td style={{ padding: '9px 14px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12 }}>{fmtMoney(defaults.fretePadrao)}</td>

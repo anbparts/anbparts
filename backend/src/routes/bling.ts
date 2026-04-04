@@ -21,6 +21,50 @@ function roundMoney(value: number) {
   return Math.round(value * 100) / 100;
 }
 
+function splitEvenly(total: number, parts: number) {
+  if (parts <= 0) return [];
+
+  const normalizedTotal = roundMoney(total);
+  const base = roundMoney(normalizedTotal / parts);
+  const values = Array.from({ length: parts }, () => base);
+  let allocated = roundMoney(values.reduce((sum, value) => sum + value, 0));
+  let diff = roundMoney(normalizedTotal - allocated);
+  let index = parts - 1;
+
+  while (Math.abs(diff) >= 0.01 && index >= 0) {
+    values[index] = roundMoney(values[index] + diff);
+    allocated = roundMoney(values.reduce((sum, value) => sum + value, 0));
+    diff = roundMoney(normalizedTotal - allocated);
+    index -= 1;
+  }
+
+  return values;
+}
+
+function distributeProportionally(total: number, weights: number[]) {
+  if (!weights.length) return [];
+
+  const normalizedTotal = roundMoney(total);
+  const safeWeights = weights.map((weight) => Math.max(0, roundMoney(weight)));
+  const totalWeight = roundMoney(safeWeights.reduce((sum, weight) => sum + weight, 0));
+
+  if (totalWeight <= 0) return splitEvenly(normalizedTotal, safeWeights.length);
+
+  const values = safeWeights.map((weight) => roundMoney(normalizedTotal * (weight / totalWeight)));
+  let allocated = roundMoney(values.reduce((sum, value) => sum + value, 0));
+  let diff = roundMoney(normalizedTotal - allocated);
+  let index = values.length - 1;
+
+  while (Math.abs(diff) >= 0.01 && index >= 0) {
+    values[index] = roundMoney(values[index] + diff);
+    allocated = roundMoney(values.reduce((sum, value) => sum + value, 0));
+    diff = roundMoney(normalizedTotal - allocated);
+    index -= 1;
+  }
+
+  return values;
+}
+
 function calculateFinancials(precoML: number, frete: number, taxaPct: number) {
   const taxaValor = roundMoney(precoML * taxaPct / 100);
   const valorLiq = roundMoney(precoML - frete - taxaValor);
@@ -201,11 +245,24 @@ function matchesSku(idPeca: string, codigo: string) {
   return idPeca === codigo || idPeca.startsWith(`${codigo}-`);
 }
 
-function findLinkedPecaByPedido(allPecas: any[], pedidoId: number | string, pedidoNum: string) {
-  const candidates = allPecas.filter((peca) =>
-    (pedidoId && String(peca.blingPedidoId || '') === String(pedidoId))
-    || (pedidoNum && String(peca.blingPedidoNum || '') === String(pedidoNum)),
-  );
+function findLinkedPecasByPedido(
+  allPecas: any[],
+  pedidoId: number | string,
+  pedidoNum: string,
+  skuBling: string,
+  idBling: string,
+  reservedIds: Set<number> = new Set<number>(),
+) {
+  const codigos = [skuBling, idBling].filter(Boolean);
+  const candidates = allPecas.filter((peca) => {
+    const samePedido = (pedidoId && String(peca.blingPedidoId || '') === String(pedidoId))
+      || (pedidoNum && String(peca.blingPedidoNum || '') === String(pedidoNum));
+
+    if (!samePedido || reservedIds.has(peca.id)) return false;
+    if (!codigos.length) return true;
+
+    return codigos.some((codigo) => matchesSku(peca.idPeca, codigo));
+  });
 
   return candidates.sort((a, b) => {
     const soldA = a.disponivel ? 0 : 1;
@@ -214,7 +271,7 @@ function findLinkedPecaByPedido(allPecas: any[], pedidoId: number | string, pedi
 
     const diff = new Date(b.dataVenda || 0).getTime() - new Date(a.dataVenda || 0).getTime();
     return diff || b.id - a.id;
-  })[0] || null;
+  });
 }
 
 function findSkuReferencePeca(allPecas: any[], skuBling: string, idBling: string) {
@@ -246,6 +303,26 @@ function findAvailablePecaForVenda(
     .sort((a, b) => a.id - b.id);
 
   return candidates[0] || null;
+}
+
+function findAvailablePecasForVenda(
+  allPecas: any[],
+  skuBling: string,
+  idBling: string,
+  reservedIds: Set<number>,
+  quantidade: number,
+) {
+  const selected: any[] = [];
+  const quantidadeDesejada = Math.max(0, Number(quantidade) || 0);
+
+  for (let i = 0; i < quantidadeDesejada; i += 1) {
+    const peca = findAvailablePecaForVenda(allPecas, skuBling, idBling, reservedIds);
+    if (!peca) break;
+    reservedIds.add(peca.id);
+    selected.push(peca);
+  }
+
+  return selected;
 }
 
 async function listPedidos(dataInicio?: string, dataFim?: string, situacoes?: number[]) {
@@ -617,62 +694,139 @@ blingRouter.post('/sync/vendas', async (req, res, next) => {
       const freteBruto = Number(pedido.transporte?.frete || 0);
       const fretePositivo = custoFrete > 0 ? custoFrete : Math.abs(freteBruto);
 
-      for (const item of pedido.itens || []) {
+      const itensPedido = (pedido.itens || []).map((item: any) => {
         const skuBling = item.produto?.codigo || item.codigo || item.sku || '';
         const idBling = item.produto?.id ? `BL${String(item.produto.id).padStart(8, '0')}` : '';
-        const pecaVinculada = findLinkedPecaByPedido(todasPecas, pedidoId, pedidoNum);
-        const pecaReferencia = findSkuReferencePeca(todasPecas, skuBling, idBling);
-
-        let peca = pecaVinculada;
-
-        if (isCancelado) {
-          if (peca && reservedCancelPecaIds.has(peca.id)) {
-            peca = null;
-          }
-          if (peca) reservedCancelPecaIds.add(peca.id);
-        } else {
-          if (!peca) {
-            peca = findAvailablePecaForVenda(todasPecas, skuBling, idBling, reservedVendaPecaIds);
-          }
-          if (peca) reservedVendaPecaIds.add(peca.id);
-        }
-
-        const precoVenda = Number(item.valor) || 0;
-        const taxaValorPedido = taxaComissao;
-        const valorLiqPedido = roundMoney(precoVenda - fretePositivo - taxaValorPedido);
-
-        const precoBaseCancelamento = toNumber(peca?.precoML, precoVenda);
-        const valoresCancelamento = calculateFinancials(
-          precoBaseCancelamento,
-          defaults.fretePadrao,
-          defaults.taxaPadraoPct,
+        const quantidade = Math.max(1, Math.round(toNumber(item.quantidade, 1)));
+        const precoVenda = toNumber(
+          item.valorUnitario ?? item.valor ?? item.preco ?? item.precoUnitario,
+          0,
+        );
+        const subtotal = roundMoney(
+          toNumber(item.valorTotal, roundMoney(precoVenda * quantidade)),
         );
 
+        return {
+          original: item,
+          skuBling,
+          idBling,
+          quantidade,
+          precoVenda,
+          subtotal,
+        };
+      });
+
+      const subtotais = itensPedido.map((item: any) => item.subtotal);
+      const fretesPorLinha = distributeProportionally(fretePositivo, subtotais);
+      const taxasPorLinha = distributeProportionally(taxaComissao, subtotais);
+
+      for (const [lineIndex, itemInfo] of itensPedido.entries()) {
+        const { original: item, skuBling, idBling, quantidade, precoVenda } = itemInfo;
+        const linkedPecas = findLinkedPecasByPedido(
+          todasPecas,
+          pedidoId,
+          pedidoNum,
+          skuBling,
+          idBling,
+          isCancelado ? reservedCancelPecaIds : new Set<number>(),
+        );
+        const linkedVendidas = linkedPecas.filter((peca) => !peca.disponivel);
+        const pecaReferencia = findSkuReferencePeca(todasPecas, skuBling, idBling);
+
+        const freteLinha = fretesPorLinha[lineIndex] || 0;
+        const taxaLinha = taxasPorLinha[lineIndex] || 0;
+        const fretesUnitarios = splitEvenly(freteLinha, quantidade);
+        const taxasUnitarias = splitEvenly(taxaLinha, quantidade);
+        const valorLiqUnitario = fretesUnitarios.map((freteUnitario, unitIndex) =>
+          roundMoney(precoVenda - freteUnitario - (taxasUnitarias[unitIndex] || 0)));
+
+        if (isCancelado) {
+          const pecasParaCancelar = linkedVendidas.slice(0, quantidade).filter((peca) => !reservedCancelPecaIds.has(peca.id));
+          pecasParaCancelar.forEach((peca) => reservedCancelPecaIds.add(peca.id));
+
+          const pecaDisplay = pecasParaCancelar[0] || pecaReferencia;
+          const precoBaseCancelamento = toNumber(pecaDisplay?.precoML, precoVenda);
+          const valoresCancelamento = calculateFinancials(
+            precoBaseCancelamento,
+            defaults.fretePadrao,
+            defaults.taxaPadraoPct,
+          );
+
+          itens.push({
+            tipo: 'CANCELAMENTO',
+            statusLabel,
+            pedidoId,
+            pedidoNum,
+            dataVenda,
+            idPeca: skuBling || idBling || pecaDisplay?.idPeca || '',
+            descricao: item.produto?.nome || item.descricao || '',
+            skuBling,
+            quantidade: pecasParaCancelar.length || quantidade,
+            quantidadePedido: quantidade,
+            precoVenda,
+            frete: fretesUnitarios[0] || 0,
+            taxaPct,
+            taxaValor: taxasUnitarias[0] || 0,
+            valorLiq: valorLiqUnitario[0] || roundMoney(precoVenda),
+            encontrada: pecasParaCancelar.length > 0,
+            baixaVinculada: pecasParaCancelar.length > 0,
+            jaVendida: false,
+            jaEstornada: pecasParaCancelar.length > 0 ? pecasParaCancelar.every((peca) => peca.disponivel) : false,
+            pecaId: pecasParaCancelar[0]?.id || null,
+            pecaIds: pecasParaCancelar.map((peca) => peca.id),
+            moto: (pecasParaCancelar[0]?.moto || pecaReferencia?.moto) ? `${(pecasParaCancelar[0]?.moto || pecaReferencia?.moto).marca} ${(pecasParaCancelar[0]?.moto || pecaReferencia?.moto).modelo}` : null,
+            precoMLAtual: pecasParaCancelar[0] ? Number(pecasParaCancelar[0].precoML) : null,
+            fretePadrao: defaults.fretePadrao,
+            taxaPadraoPct: defaults.taxaPadraoPct,
+            taxaPadraoValor: valoresCancelamento.taxaValor,
+            valorLiqPadrao: valoresCancelamento.valorLiq,
+          });
+          continue;
+        }
+
+        const quantidadeJaBaixada = linkedVendidas.length;
+        const quantidadePendente = Math.max(0, quantidade - quantidadeJaBaixada);
+        if (quantidadePendente <= 0) continue;
+
+        const pecasParaVenda = findAvailablePecasForVenda(
+          todasPecas,
+          skuBling,
+          idBling,
+          reservedVendaPecaIds,
+          quantidadePendente,
+        );
+
+        const pecaDisplay = pecasParaVenda[0] || linkedVendidas[0] || pecaReferencia;
+
         itens.push({
-          tipo: isCancelado ? 'CANCELAMENTO' : 'VENDA',
+          tipo: 'VENDA',
           statusLabel,
           pedidoId,
           pedidoNum,
           dataVenda,
-          idPeca: peca?.idPeca || pecaReferencia?.idPeca || skuBling || idBling,
+          idPeca: skuBling || idBling || pecaDisplay?.idPeca || '',
           descricao: item.produto?.nome || item.descricao || '',
           skuBling,
+          quantidade: quantidadePendente,
+          quantidadePedido: quantidade,
+          quantidadeJaBaixada,
           precoVenda,
-          frete: fretePositivo,
+          frete: fretesUnitarios[0] || 0,
           taxaPct,
-          taxaValor: taxaValorPedido,
-          valorLiq: valorLiqPedido,
-          encontrada: !!peca,
-          baixaVinculada: isCancelado ? !!pecaVinculada : false,
-          jaVendida: isCancelado ? false : (pecaVinculada ? !pecaVinculada.disponivel : false),
-          jaEstornada: isCancelado ? (pecaVinculada ? pecaVinculada.disponivel : false) : false,
-          pecaId: peca?.id || null,
-          moto: (peca?.moto || pecaReferencia?.moto) ? `${(peca?.moto || pecaReferencia?.moto).marca} ${(peca?.moto || pecaReferencia?.moto).modelo}` : null,
-          precoMLAtual: peca ? Number(peca.precoML) : null,
+          taxaValor: taxasUnitarias[0] || 0,
+          valorLiq: valorLiqUnitario[0] || roundMoney(precoVenda),
+          encontrada: pecasParaVenda.length === quantidadePendente,
+          baixaVinculada: false,
+          jaVendida: quantidadePendente <= 0,
+          jaEstornada: false,
+          pecaId: pecasParaVenda[0]?.id || null,
+          pecaIds: pecasParaVenda.map((peca) => peca.id),
+          moto: (pecasParaVenda[0]?.moto || pecaDisplay?.moto) ? `${(pecasParaVenda[0]?.moto || pecaDisplay?.moto).marca} ${(pecasParaVenda[0]?.moto || pecaDisplay?.moto).modelo}` : null,
+          precoMLAtual: pecaDisplay ? Number(pecaDisplay.precoML) : null,
           fretePadrao: defaults.fretePadrao,
           taxaPadraoPct: defaults.taxaPadraoPct,
-          taxaPadraoValor: valoresCancelamento.taxaValor,
-          valorLiqPadrao: valoresCancelamento.valorLiq,
+          taxaPadraoValor: taxasUnitarias[0] || 0,
+          valorLiqPadrao: valorLiqUnitario[0] || roundMoney(precoVenda),
         });
       }
     }
@@ -690,9 +844,13 @@ blingRouter.post('/sync/vendas', async (req, res, next) => {
 
 blingRouter.post('/baixar', async (req, res, next) => {
   try {
-    const { pecaId, pedidoId, pedidoNum, dataVenda, precoVenda, frete, taxaValor, valorLiq } = req.body;
-    if (!pecaId || !dataVenda) {
-      return res.status(400).json({ error: 'pecaId e dataVenda sao obrigatorios' });
+    const { pecaId, pecaIds, pedidoId, pedidoNum, dataVenda, precoVenda, frete, taxaValor, valorLiq } = req.body;
+    const ids = Array.isArray(pecaIds) && pecaIds.length
+      ? pecaIds.map((id) => Number(id)).filter(Boolean)
+      : (pecaId ? [Number(pecaId)] : []);
+
+    if (!ids.length || !dataVenda) {
+      return res.status(400).json({ error: 'pecaId/pecaIds e dataVenda sao obrigatorios' });
     }
 
     const precoML = toNumber(precoVenda);
@@ -702,8 +860,8 @@ blingRouter.post('/baixar', async (req, res, next) => {
       ? toNumber(valorLiq)
       : roundMoney(precoML - freteN - taxas);
 
-    await prisma.peca.update({
-      where: { id: Number(pecaId) },
+    await prisma.peca.updateMany({
+      where: { id: { in: ids } },
       data: {
         disponivel: false,
         dataVenda: new Date(dataVenda),
@@ -724,13 +882,16 @@ blingRouter.post('/baixar', async (req, res, next) => {
 
 blingRouter.post('/aprovar-cancelamento', async (req, res, next) => {
   try {
-    const { pecaId } = req.body;
-    if (!pecaId) return res.status(400).json({ error: 'pecaId obrigatorio' });
+    const { pecaId, pecaIds } = req.body;
+    const ids = Array.isArray(pecaIds) && pecaIds.length
+      ? pecaIds.map((id) => Number(id)).filter(Boolean)
+      : (pecaId ? [Number(pecaId)] : []);
+    if (!ids.length) return res.status(400).json({ error: 'pecaId/pecaIds obrigatorio' });
 
     const cfg = await getConfig();
     const defaults = getProdutoDefaults(cfg);
-    const peca = await prisma.peca.findUnique({
-      where: { id: Number(pecaId) },
+    const peca = await prisma.peca.findFirst({
+      where: { id: { in: ids } },
       select: { id: true, precoML: true },
     });
 
@@ -739,8 +900,8 @@ blingRouter.post('/aprovar-cancelamento', async (req, res, next) => {
     const precoML = toNumber(peca.precoML);
     const financials = calculateFinancials(precoML, defaults.fretePadrao, defaults.taxaPadraoPct);
 
-    const updated = await prisma.peca.update({
-      where: { id: Number(pecaId) },
+    await prisma.peca.updateMany({
+      where: { id: { in: ids } },
       data: {
         disponivel: true,
         dataVenda: null,
@@ -754,7 +915,7 @@ blingRouter.post('/aprovar-cancelamento', async (req, res, next) => {
 
     res.json({
       ok: true,
-      peca: updated,
+      ids,
       defaults,
     });
   } catch (e) {
