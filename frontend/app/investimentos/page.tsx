@@ -35,7 +35,7 @@ export default function InvestimentosPage() {
   const [filtroSocio, setFiltroSocio] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [modo, setModo] = useState<ViewMode>('relatorio');
+  const [modo, setModo] = useState<ViewMode>('grafico');
   const [form, setForm] = useState({ data: today(), socio: 'Bruno', moto: '', valor: '' });
 
   const inputStyle: any = {

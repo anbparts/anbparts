@@ -61,11 +61,11 @@ export function ViewModeSwitch({
 
   return (
     <div style={wrap}>
-      <button type="button" style={button(value === 'relatorio')} onClick={() => onChange('relatorio')}>
-        Relatorio
-      </button>
       <button type="button" style={button(value === 'grafico')} onClick={() => onChange('grafico')}>
         Grafico
+      </button>
+      <button type="button" style={button(value === 'relatorio')} onClick={() => onChange('relatorio')}>
+        Relatorio
       </button>
     </div>
   );

@@ -60,7 +60,7 @@ export default function DespesasPage() {
   const [filtroCategoria, setFiltroCategoria] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [modo, setModo] = useState<ViewMode>('relatorio');
+  const [modo, setModo] = useState<ViewMode>('grafico');
   const [form, setForm] = useState({ data: today(), detalhes: '', categoria: 'Insumo', valor: '' });
 
   const inputStyle: any = {

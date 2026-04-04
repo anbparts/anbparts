@@ -66,7 +66,7 @@ export default function FaturamentoGeralPage() {
   const [data, setData] = useState<any[]>([]);
   const [filtAno, setFiltAno] = useState('');
   const [loading, setLoading] = useState(true);
-  const [modo, setModo] = useState<ViewMode>('relatorio');
+  const [modo, setModo] = useState<ViewMode>('grafico');
 
   useEffect(() => {
     api.faturamento.geral().then((response) => {
