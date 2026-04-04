@@ -234,7 +234,7 @@ function findMatchingPeca(
   return candidates.sort((a, b) => a.id - b.id)[0] || null;
 }
 
-async function listPedidoIds(dataInicio?: string, dataFim?: string) {
+async function listPedidoIds(dataInicio?: string, dataFim?: string, situacoes?: number[]) {
   const ids = new Set<number>();
   let pagina = 1;
 
@@ -242,6 +242,11 @@ async function listPedidoIds(dataInicio?: string, dataFim?: string) {
     let url = `/pedidos/vendas?pagina=${pagina}&limite=100`;
     if (dataInicio) url += `&dataInicial=${dataInicio}`;
     if (dataFim) url += `&dataFinal=${dataFim}`;
+    if (situacoes?.length) {
+      for (const situacao of situacoes) {
+        url += `&situacoes[]=${situacao}`;
+      }
+    }
 
     const data = await blingReq(url) as any;
     const pedidos = data?.data || [];
@@ -556,7 +561,10 @@ blingRouter.post('/sync/vendas', async (req, res, next) => {
     });
     const pecaMap = new Map(todasPecas.map((peca) => [peca.idPeca, peca]));
 
-    const pedidoIds = await listPedidoIds(dataInicio, dataFim);
+    const pedidoIdsConcluidos = await listPedidoIds(dataInicio, dataFim, [STATUS_ID_CONCLUIDO]);
+    const pedidoIdsGerais = await listPedidoIds(dataInicio, dataFim);
+    const pedidoIdsConcluidosSet = new Set(pedidoIdsConcluidos);
+    const pedidoIds = Array.from(new Set([...pedidoIdsConcluidos, ...pedidoIdsGerais]));
     const itens: any[] = [];
 
     for (const pedidoId of pedidoIds) {
@@ -565,7 +573,8 @@ blingRouter.post('/sync/vendas', async (req, res, next) => {
       const detalhe = await blingReq(`/pedidos/vendas/${pedidoId}`) as any;
       const pedido = detalhe?.data || {};
       const situacao = classifyOrderSituation(pedido);
-      if (!situacao.isConcluido && !situacao.isCancelado) continue;
+      const isVendaConcluida = pedidoIdsConcluidosSet.has(pedidoId) || situacao.isConcluido;
+      if (!isVendaConcluida && !situacao.isCancelado) continue;
 
       const dataVenda = (pedido.data || '').split('T')[0]
         || new Date().toISOString().split('T')[0];
