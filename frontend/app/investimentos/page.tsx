@@ -88,7 +88,7 @@ export default function InvestimentosPage() {
     }))
     .sort((a, b) => b.value - a.value);
 
-  const sociosFiltro = filtradas.reduce((map, item) => {
+  const sociosFiltro = filtradas.reduce<Map<string, number>>((map, item) => {
     const current = map.get(item.socio) || 0;
     map.set(item.socio, current + Number(item.valor || 0));
     return map;
