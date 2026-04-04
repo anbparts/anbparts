@@ -5,6 +5,8 @@ import { api } from '@/lib/api';
 function fmt(v: number) { return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }); }
 function today() { return new Date().toISOString().split('T')[0]; }
 
+const pageSizeOptions = [10, 20, 50, 100];
+
 const cs: any = {
   topbar: { height: 'var(--topbar-h)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 28px', background: 'var(--white)', borderBottom: '1px solid var(--border)', position: 'sticky' as const, top: 0, zIndex: 50 },
   title:  { fontFamily: 'Fraunces, serif', fontSize: 17, fontWeight: 600, letterSpacing: '-0.3px' },
@@ -142,11 +144,11 @@ export default function EstoquePage() {
   const [editPeca, setEditPeca] = useState<any>(null);
   const [vendaModal, setVendaModal] = useState(false);
   const [vendaPeca, setVendaPeca]   = useState<any>(null);
-  const [filters, setFilters] = useState({ motoId: '', disponivel: '', search: '', page: 1 });
+  const [filters, setFilters] = useState({ motoId: '', disponivel: '', search: '', page: 1, perPage: 20 });
 
   const load = useCallback(async () => {
     setLoading(true);
-    const params: any = { page: filters.page, per: 20 };
+    const params: any = { page: filters.page, per: filters.perPage };
     if (filters.motoId)    params.motoId    = filters.motoId;
     if (filters.disponivel !== '') params.disponivel = filters.disponivel;
     if (filters.search)    params.search    = filters.search;
@@ -167,8 +169,9 @@ export default function EstoquePage() {
     setVendaModal(false); setVendaPeca(null); load();
   }
 
-  const pecasDisp = data.data.filter((p: any) => p.disponivel);
-  const pecasVend = data.data.filter((p: any) => !p.disponivel);
+  const totalPages = Math.max(1, Math.ceil((data.total || 0) / filters.perPage));
+  const hasPrevPage = filters.page > 1;
+  const hasNextPage = filters.page < totalPages;
 
   return (
     <>
@@ -195,13 +198,7 @@ export default function EstoquePage() {
             <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>Peças</div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <select style={cs.sel} value={filters.motoId} onChange={e => setFilters({ ...filters, motoId: e.target.value, page: 1 })}>
-                <option value="">Todas motos</option></select>
-<select value={perPage} onChange={(e)=>{setPerPage(Number(e.target.value));setPage(1);}}>
-<option value={10}>10</option>
-<option value={20}>20</option>
-<option value={50}>50</option>
-<option value={100}>100</option>
-</select><select><option></option>
+                <option value="">Todas motos</option>
                 {motos.map((m: any) => <option key={m.id} value={m.id}>ID {m.id} — {m.marca} {m.modelo}</option>)}
               </select>
               <select style={cs.sel} value={filters.disponivel} onChange={e => setFilters({ ...filters, disponivel: e.target.value, page: 1 })}>
@@ -210,6 +207,9 @@ export default function EstoquePage() {
                 <option value="false">Vendido</option>
               </select>
               <input style={{ ...cs.sel, paddingLeft: 11 }} placeholder="🔍 ID ou descrição..." value={filters.search} onChange={e => setFilters({ ...filters, search: e.target.value, page: 1 })} />
+              <select style={cs.sel} value={String(filters.perPage)} onChange={e => setFilters({ ...filters, perPage: Number(e.target.value), page: 1 })}>
+                {pageSizeOptions.map(size => <option key={size} value={size}>{size} por pagina</option>)}
+              </select>
               <button style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)', padding: '6px 14px', fontSize: 13 }} onClick={() => { setEditPeca(null); setModal(true); }}>+ Nova peça</button>
             </div>
           </div>
@@ -260,10 +260,10 @@ export default function EstoquePage() {
 
           {/* Pagination */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 18px', borderTop: '1px solid var(--border)', fontSize: 12, color: 'var(--ink-muted)', fontFamily: 'Geist Mono, monospace' }}>
-            <span>Página {filters.page} · {data.total} total</span>
+            <span>Página {filters.page} de {totalPages} · {data.total} total · {filters.perPage} por pagina</span>
             <div style={{ display: 'flex', gap: 6 }}>
-              <button disabled={filters.page <= 1} onClick={() => setFilters({ ...filters, page: filters.page - 1 })} style={{ ...cs.btn, padding: '5px 10px', fontSize: 12, background: 'var(--white)', borderColor: 'var(--border)', color: 'var(--ink-soft)' }}>‹ Anterior</button>
-              <button disabled={data.data.length < 20} onClick={() => setFilters({ ...filters, page: filters.page + 1 })} style={{ ...cs.btn, padding: '5px 10px', fontSize: 12, background: 'var(--white)', borderColor: 'var(--border)', color: 'var(--ink-soft)' }}>Próxima ›</button>
+              <button disabled={!hasPrevPage} onClick={() => setFilters({ ...filters, page: filters.page - 1 })} style={{ ...cs.btn, padding: '5px 10px', fontSize: 12, background: 'var(--white)', borderColor: 'var(--border)', color: 'var(--ink-soft)' }}>‹ Anterior</button>
+              <button disabled={!hasNextPage} onClick={() => setFilters({ ...filters, page: filters.page + 1 })} style={{ ...cs.btn, padding: '5px 10px', fontSize: 12, background: 'var(--white)', borderColor: 'var(--border)', color: 'var(--ink-soft)' }}>Próxima ›</button>
             </div>
           </div>
         </div>
@@ -273,7 +273,3 @@ export default function EstoquePage() {
     </>
   );
 }
-
-
-// ADDED perPage control
-// const [perPage, setPerPage] = useState(10);
