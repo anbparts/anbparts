@@ -201,9 +201,9 @@ function matchesSku(idPeca: string, codigo: string) {
   return idPeca === codigo || idPeca.startsWith(`${codigo}-`);
 }
 
-function findLinkedPecaByPedido(allPecas: any[], pedidoId: number, pedidoNum: string) {
+function findLinkedPecaByPedido(allPecas: any[], pedidoId: number | string, pedidoNum: string) {
   const candidates = allPecas.filter((peca) =>
-    (pedidoId && Number(peca.blingPedidoId || 0) === Number(pedidoId))
+    (pedidoId && String(peca.blingPedidoId || '') === String(pedidoId))
     || (pedidoNum && String(peca.blingPedidoNum || '') === String(pedidoNum)),
   );
 
@@ -707,7 +707,7 @@ blingRouter.post('/baixar', async (req, res, next) => {
       data: {
         disponivel: false,
         dataVenda: new Date(dataVenda),
-        blingPedidoId: pedidoId ? Number(pedidoId) : null,
+        blingPedidoId: pedidoId ? String(pedidoId) : null,
         blingPedidoNum: pedidoNum ? String(pedidoNum) : null,
         precoML,
         valorFrete: freteN,
