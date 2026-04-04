@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
-import { z } from 'zod';
 
 export const importRouter = Router();
 
@@ -42,12 +41,25 @@ importRouter.post('/pecas', async (req, res, next) => {
     if (!Array.isArray(raw)) return res.status(400).json({ error: 'Dados inválidos' });
 
     let imported = 0;
+    let skippedInvalidMoto = 0;
+    const invalidMotoSamples: { idPeca: string; motoId: any }[] = [];
+    const motos = await prisma.moto.findMany({ select: { id: true } });
+    const validMotoIds = new Set(motos.map(m => m.id));
 
     for (const p of raw) {
       if (!p.idPeca || !p.motoId) continue;
 
+      const motoId = Number(p.motoId);
+      if (!Number.isInteger(motoId) || !validMotoIds.has(motoId)) {
+        skippedInvalidMoto++;
+        if (invalidMotoSamples.length < 10) {
+          invalidMotoSamples.push({ idPeca: String(p.idPeca), motoId: p.motoId });
+        }
+        continue;
+      }
+
       const data = {
-        motoId:     Number(p.motoId) || 1,
+        motoId,
         idPeca:     String(p.idPeca),
         descricao:  String(p.descricao || ''),
         precoML:    Number(p.precoML)    || 0,
@@ -75,7 +87,7 @@ importRouter.post('/pecas', async (req, res, next) => {
       imported++;
     }
 
-    res.json({ imported });
+    res.json({ imported, skippedInvalidMoto, invalidMotoSamples });
   } catch (e) { next(e); }
 });
 
@@ -92,9 +104,10 @@ importRouter.post('/despesas', async (req, res, next) => {
       valor:     Number(r.valor) || 0,
     }));
 
-    // Limpa e reimporta (evita duplicata)
-    await prisma.despesa.deleteMany();
-    await prisma.despesa.createMany({ data: rows });
+    await prisma.$transaction(async (tx) => {
+      await tx.despesa.deleteMany();
+      if (rows.length) await tx.despesa.createMany({ data: rows });
+    });
     res.json({ imported: rows.length });
   } catch (e) { next(e); }
 });
@@ -112,8 +125,10 @@ importRouter.post('/prejuizos', async (req, res, next) => {
       frete:  Number(r.frete) || 0,
     }));
 
-    await prisma.prejuizo.deleteMany();
-    await prisma.prejuizo.createMany({ data: rows });
+    await prisma.$transaction(async (tx) => {
+      await tx.prejuizo.deleteMany();
+      if (rows.length) await tx.prejuizo.createMany({ data: rows });
+    });
     res.json({ imported: rows.length });
   } catch (e) { next(e); }
 });
@@ -131,8 +146,10 @@ importRouter.post('/investimentos', async (req, res, next) => {
       valor: Number(r.valor) || 0,
     }));
 
-    await prisma.investimento.deleteMany();
-    await prisma.investimento.createMany({ data: rows });
+    await prisma.$transaction(async (tx) => {
+      await tx.investimento.deleteMany();
+      if (rows.length) await tx.investimento.createMany({ data: rows });
+    });
     res.json({ imported: rows.length });
   } catch (e) { next(e); }
 });

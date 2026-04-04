@@ -4,6 +4,9 @@ import { z } from 'zod';
 
 export const pecasRouter = Router();
 
+const DEFAULT_SELL_FRETE = 29.9;
+const DEFAULT_TAXA_PCT = 17;
+
 const pecaSchema = z.object({
   motoId:      z.number().int(),
   descricao:   z.string().min(1),
@@ -31,6 +34,31 @@ function parseDateStart(date: string) {
 function parseDateEnd(date: string) {
   const [year, month, day] = date.split('-').map(Number);
   return new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999));
+}
+
+function roundMoney(value: number) {
+  return parseFloat(value.toFixed(2));
+}
+
+function calculateManualSaleValues(peca: { precoML: any; valorFrete: any; valorTaxas: any }, nextPrecoML?: number) {
+  const precoAtual = Number(peca.precoML) || 0;
+  const precoVenda = nextPrecoML !== undefined ? Number(nextPrecoML) || 0 : precoAtual;
+  const freteAtual = Number(peca.valorFrete) || 0;
+  const taxasAtuais = Number(peca.valorTaxas) || 0;
+
+  const valorFrete = freteAtual > 0 ? roundMoney(freteAtual) : DEFAULT_SELL_FRETE;
+  const taxaPct = precoAtual > 0 && taxasAtuais > 0
+    ? (taxasAtuais / precoAtual) * 100
+    : DEFAULT_TAXA_PCT;
+  const valorTaxas = roundMoney(precoVenda * taxaPct / 100);
+  const valorLiq = roundMoney(precoVenda - valorFrete - valorTaxas);
+
+  return {
+    precoML: precoVenda,
+    valorFrete,
+    valorTaxas,
+    valorLiq,
+  };
 }
 
 // GET /pecas
@@ -104,12 +132,22 @@ pecasRouter.put('/:id', async (req, res, next) => {
 pecasRouter.patch('/:id/vender', async (req, res, next) => {
   try {
     const { dataVenda, precoML } = req.body;
+    const current = await prisma.peca.findUnique({
+      where: { id: Number(req.params.id) },
+      select: { id: true, precoML: true, valorFrete: true, valorTaxas: true }
+    });
+    if (!current) return res.status(404).json({ error: 'Peça não encontrada' });
+
+    const financials = calculateManualSaleValues(current, precoML !== undefined ? Number(precoML) : undefined);
     const peca = await prisma.peca.update({
       where: { id: Number(req.params.id) },
       data: {
         disponivel: false,
         dataVenda: dataVenda ? new Date(dataVenda) : new Date(),
-        ...(precoML ? { precoML } : {}),
+        precoML: financials.precoML,
+        valorFrete: financials.valorFrete,
+        valorTaxas: financials.valorTaxas,
+        valorLiq: financials.valorLiq,
       }
     });
     res.json(peca);

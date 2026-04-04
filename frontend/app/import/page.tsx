@@ -88,10 +88,11 @@ export default function ImportPage() {
             .filter((r: any) => r['ID Peça'])
             .map((r: any) => {
               const skuBase = String(r['ID Peça']);
+              const motoIdExcel = Number(r['ID Moto']);
               skuCount[skuBase] = (skuCount[skuBase] || 0) + 1;
               const idPeca = skuCount[skuBase] === 1 ? skuBase : `${skuBase}-${skuCount[skuBase]}`;
               return {
-                motoId:     motoMap[Number(r['ID Moto'])] || 1,
+                motoId:     motoMap[motoIdExcel] ?? motoIdExcel,
                 idPeca,
                 descricao:  String(r['Descrição Peça'] || ''),
                 precoML:    Number(r['Preço ML'])      || 0,
@@ -105,13 +106,28 @@ export default function ImportPage() {
             });
 
           let pecasImported = 0;
+          let pecasSkippedInvalidMoto = 0;
+          const invalidMotoExamples: string[] = [];
           for (let i = 0; i < pecas.length; i += 200) {
             const batch = pecas.slice(i, i + 200);
             addLog(`Peças... ${Math.min(i + 200, pecas.length)} / ${pecas.length}`);
             const res = await postImport('pecas', batch);
             pecasImported += res.imported;
+            pecasSkippedInvalidMoto += res.skippedInvalidMoto || 0;
+            if (Array.isArray(res.invalidMotoSamples)) {
+              for (const sample of res.invalidMotoSamples) {
+                if (invalidMotoExamples.length >= 5) break;
+                invalidMotoExamples.push(`${sample.idPeca} (moto ${sample.motoId})`);
+              }
+            }
           }
           addLog(`✓ Peças: ${pecasImported} importadas`, 'ok');
+          if (pecasSkippedInvalidMoto > 0) {
+            addLog(`⚠ Peças ignoradas por moto inválida: ${pecasSkippedInvalidMoto}`, 'err');
+            if (invalidMotoExamples.length > 0) {
+              addLog(`Exemplos: ${invalidMotoExamples.join(', ')}`, 'err');
+            }
+          }
         } else addLog('⚠ Aba "Estoque" não encontrada', 'err');
 
         // ── 3. DESPESAS ───────────────────────────────────────────────────
