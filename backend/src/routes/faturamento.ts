@@ -65,7 +65,7 @@ faturamentoRouter.get('/dashboard', async (req, res, next) => {
       prisma.moto.count(),
       prisma.peca.count(),
       prisma.peca.findMany({ where: { disponivel: false }, select: { precoML: true, valorLiq: true, valorTaxas: true, valorFrete: true } }),
-      prisma.peca.findMany({ where: { disponivel: true  }, select: { precoML: true } }),
+      prisma.peca.findMany({ where: { disponivel: true  }, select: { precoML: true, valorLiq: true } }),
       prisma.moto.findMany({ select: { precoCompra: true } }),
       prisma.despesa.findMany({ select: { valor: true, categoria: true } }),
     ]);
@@ -75,6 +75,7 @@ faturamentoRouter.get('/dashboard', async (req, res, next) => {
     const comissaoML    = pecasVendidas.reduce((s, p) => s + Number(p.valorTaxas), 0);
     const frete         = pecasVendidas.reduce((s, p) => s + Number(p.valorFrete), 0);
     const valorEst      = pecasDisp.reduce((s, p) => s + Number(p.precoML), 0);
+    const valorEstLiq   = pecasDisp.reduce((s, p) => s + Number(p.valorLiq), 0);
 
     // CMV = preços de compra + despesas categoria Moto
     const investido     = motos.reduce((s, m) => s + Number(m.precoCompra), 0);
@@ -94,6 +95,7 @@ faturamentoRouter.get('/dashboard', async (req, res, next) => {
       comissaoML,
       frete,
       valorEst,
+      valorEstLiq,
       investido,
       cmv,
       totalDesp,
