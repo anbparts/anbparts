@@ -40,6 +40,20 @@ function roundMoney(value: number) {
   return parseFloat(value.toFixed(2));
 }
 
+function calculatePecaFinancialValues(
+  current: { precoML: any; valorFrete: any; valorTaxas: any },
+  nextPrecoML?: number,
+  nextFrete?: number,
+  nextTaxaValor?: number,
+) {
+  const precoML = roundMoney(Math.max(0, nextPrecoML !== undefined ? Number(nextPrecoML) || 0 : Number(current.precoML) || 0));
+  const valorFrete = roundMoney(Math.max(0, nextFrete !== undefined ? Number(nextFrete) || 0 : Number(current.valorFrete) || 0));
+  const valorTaxas = roundMoney(Math.max(0, nextTaxaValor !== undefined ? Number(nextTaxaValor) || 0 : Number(current.valorTaxas) || 0));
+  const valorLiq = roundMoney(precoML - valorFrete - valorTaxas);
+
+  return { precoML, valorFrete, valorTaxas, valorLiq };
+}
+
 function calculateManualSaleValues(
   peca: { precoML: any; valorFrete: any; valorTaxas: any },
   nextPrecoML?: number,
@@ -127,10 +141,26 @@ pecasRouter.post('/', async (req, res, next) => {
 pecasRouter.put('/:id', async (req, res, next) => {
   try {
     const data = pecaSchema.partial().parse(req.body);
+    const current = await prisma.peca.findUnique({
+      where: { id: Number(req.params.id) },
+      select: { id: true, precoML: true, valorFrete: true, valorTaxas: true },
+    });
+    if (!current) return res.status(404).json({ error: 'Peca nao encontrada' });
+
+    const financials = calculatePecaFinancialValues(
+      current,
+      data.precoML !== undefined ? Number(data.precoML) : undefined,
+      data.valorFrete !== undefined ? Number(data.valorFrete) : undefined,
+      data.valorTaxas !== undefined ? Number(data.valorTaxas) : undefined,
+    );
     const peca = await prisma.peca.update({
       where: { id: Number(req.params.id) },
       data: {
         ...data,
+        precoML: financials.precoML,
+        valorFrete: financials.valorFrete,
+        valorTaxas: financials.valorTaxas,
+        valorLiq: financials.valorLiq,
         cadastro:  data.cadastro  ? new Date(data.cadastro)  : undefined,
         dataVenda: data.dataVenda ? new Date(data.dataVenda) : null,
       }

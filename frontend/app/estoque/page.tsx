@@ -17,6 +17,23 @@ function today() {
   return dateInputValue(new Date());
 }
 
+function roundMoney(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
+function calculatePecaPreview(precoML: string, valorFrete: string, valorTaxas: string) {
+  const preco = Number(precoML) || 0;
+  const frete = Number(valorFrete) || 0;
+  const taxas = Number(valorTaxas) || 0;
+
+  return {
+    precoML: preco,
+    valorFrete: frete,
+    valorTaxas: taxas,
+    valorLiq: roundMoney(preco - frete - taxas),
+  };
+}
+
 function addDays(date: Date, days: number) {
   const next = new Date(date);
   next.setDate(next.getDate() + days);
@@ -58,6 +75,7 @@ function PecaModal({ open, onClose, onSave, peca, motos }: any) {
   const [form, setForm] = useState(empty);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
+  const preview = calculatePecaPreview(form.precoML, form.valorFrete, form.valorTaxas);
 
   useEffect(() => {
     if (peca) {
@@ -91,10 +109,10 @@ function PecaModal({ open, onClose, onSave, peca, motos }: any) {
       await onSave({
         motoId: Number(form.motoId),
         descricao: form.descricao,
-        precoML: Number(form.precoML) || 0,
-        valorLiq: Number(form.valorLiq) || 0,
-        valorFrete: Number(form.valorFrete) || 0,
-        valorTaxas: Number(form.valorTaxas) || 0,
+        precoML: preview.precoML,
+        valorLiq: preview.valorLiq,
+        valorFrete: preview.valorFrete,
+        valorTaxas: preview.valorTaxas,
         disponivel: form.disponivel === 'true',
         dataVenda: form.dataVenda || null,
         cadastro: form.cadastro,
@@ -122,7 +140,10 @@ function PecaModal({ open, onClose, onSave, peca, motos }: any) {
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }}>
       <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 16, width: '100%', maxWidth: 540, maxHeight: '92vh', overflowY: 'auto', boxShadow: '0 12px 32px rgba(0,0,0,.10)' }}>
         <div style={{ padding: '22px 24px 16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ fontFamily: 'Fraunces, serif', fontSize: 18, fontWeight: 600 }}>{peca ? 'Editar peca' : 'Nova peca'}</div>
+          <div>
+            <div style={{ fontFamily: 'Fraunces, serif', fontSize: 18, fontWeight: 600 }}>{peca ? 'Editar peca' : 'Nova peca'}</div>
+            {peca?.idPeca && <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 4 }}>ID da peca: {peca.idPeca}</div>}
+          </div>
           <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer' }}>X</button>
         </div>
         <div style={{ padding: '22px 24px' }}>
@@ -137,9 +158,17 @@ function PecaModal({ open, onClose, onSave, peca, motos }: any) {
           {renderField('Descricao da peca *', 'descricao', 'text', 'Ex: Tampa lateral direita')}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             {renderField('Preco ML (R$)', 'precoML', 'number', '0,00')}
-            {renderField('Valor liquido (R$)', 'valorLiq', 'number', '0,00')}
             {renderField('Frete (R$)', 'valorFrete', 'number', '0,00')}
             {renderField('Taxas (R$)', 'valorTaxas', 'number', '0,00')}
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--sage)' }}>Valor liquido (R$)</label>
+              <input
+                style={{ ...cs.fi, background: '#f0fdf4', borderColor: '#86efac', color: 'var(--sage)', fontWeight: 600 }}
+                type="text"
+                readOnly
+                value={fmt(preview.valorLiq)}
+              />
+            </div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div style={{ marginBottom: 14 }}>
