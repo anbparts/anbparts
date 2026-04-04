@@ -267,3 +267,7 @@ export default function EstoquePage() {
     </>
   );
 }
+
+
+// ADDED perPage control
+// const [perPage, setPerPage] = useState(10);
