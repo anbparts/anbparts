@@ -234,8 +234,8 @@ function findMatchingPeca(
   return candidates.sort((a, b) => a.id - b.id)[0] || null;
 }
 
-async function listPedidoIds(dataInicio?: string, dataFim?: string, situacoes?: number[]) {
-  const ids = new Set<number>();
+async function listPedidos(dataInicio?: string, dataFim?: string, situacoes?: number[]) {
+  const pedidosMap = new Map<number, { id: number; situacao: ReturnType<typeof classifyOrderSituation> }>();
   let pagina = 1;
 
   while (true) {
@@ -254,7 +254,12 @@ async function listPedidoIds(dataInicio?: string, dataFim?: string, situacoes?: 
 
     for (const pedido of pedidos) {
       const id = Number(pedido?.id);
-      if (id) ids.add(id);
+      if (id) {
+        pedidosMap.set(id, {
+          id,
+          situacao: classifyOrderSituation(pedido),
+        });
+      }
     }
 
     if (pedidos.length < 100) break;
@@ -262,7 +267,7 @@ async function listPedidoIds(dataInicio?: string, dataFim?: string, situacoes?: 
     await sleep(300);
   }
 
-  return Array.from(ids);
+  return Array.from(pedidosMap.values());
 }
 
 blingRouter.get('/config', async (_req, res, next) => {
@@ -561,10 +566,15 @@ blingRouter.post('/sync/vendas', async (req, res, next) => {
     });
     const pecaMap = new Map(todasPecas.map((peca) => [peca.idPeca, peca]));
 
-    const pedidoIdsConcluidos = await listPedidoIds(dataInicio, dataFim, [STATUS_ID_CONCLUIDO]);
-    const pedidoIdsGerais = await listPedidoIds(dataInicio, dataFim);
-    const pedidoIdsConcluidosSet = new Set(pedidoIdsConcluidos);
-    const pedidoIds = Array.from(new Set([...pedidoIdsConcluidos, ...pedidoIdsGerais]));
+    const pedidosConcluidos = await listPedidos(dataInicio, dataFim, [STATUS_ID_CONCLUIDO]);
+    const pedidosGerais = await listPedidos(dataInicio, dataFim);
+    const pedidoIdsConcluidosSet = new Set(pedidosConcluidos.map((pedido) => pedido.id));
+    const pedidosGeraisMap = new Map(pedidosGerais.map((pedido) => [pedido.id, pedido]));
+    const pedidosConcluidosMap = new Map(pedidosConcluidos.map((pedido) => [pedido.id, pedido]));
+    const pedidoIds = Array.from(new Set([
+      ...pedidosConcluidos.map((pedido) => pedido.id),
+      ...pedidosGerais.map((pedido) => pedido.id),
+    ]));
     const itens: any[] = [];
 
     for (const pedidoId of pedidoIds) {
@@ -572,9 +582,17 @@ blingRouter.post('/sync/vendas', async (req, res, next) => {
 
       const detalhe = await blingReq(`/pedidos/vendas/${pedidoId}`) as any;
       const pedido = detalhe?.data || {};
-      const situacao = classifyOrderSituation(pedido);
-      const isVendaConcluida = pedidoIdsConcluidosSet.has(pedidoId) || situacao.isConcluido;
-      if (!isVendaConcluida && !situacao.isCancelado) continue;
+      const listSituacao = pedidosGeraisMap.get(pedidoId)?.situacao || pedidosConcluidosMap.get(pedidoId)?.situacao;
+      const detailSituacao = classifyOrderSituation(pedido);
+      const isVendaConcluida = pedidoIdsConcluidosSet.has(pedidoId)
+        || detailSituacao.isConcluido
+        || !!listSituacao?.isConcluido;
+      const isCancelado = detailSituacao.isCancelado || !!listSituacao?.isCancelado;
+      const statusLabel = detailSituacao.label !== 'Sem situacao'
+        ? detailSituacao.label
+        : (listSituacao?.label || 'Sem situacao');
+
+      if (!isVendaConcluida && !isCancelado) continue;
 
       const dataVenda = (pedido.data || '').split('T')[0]
         || new Date().toISOString().split('T')[0];
@@ -590,7 +608,7 @@ blingRouter.post('/sync/vendas', async (req, res, next) => {
       for (const item of pedido.itens || []) {
         const skuBling = item.produto?.codigo || item.codigo || item.sku || '';
         const idBling = item.produto?.id ? `BL${String(item.produto.id).padStart(8, '0')}` : '';
-        const peca = findMatchingPeca(todasPecas, pecaMap, skuBling, idBling, situacao.isCancelado);
+        const peca = findMatchingPeca(todasPecas, pecaMap, skuBling, idBling, isCancelado);
 
         const precoVenda = Number(item.valor) || 0;
         const taxaValorPedido = taxaComissao;
@@ -604,8 +622,8 @@ blingRouter.post('/sync/vendas', async (req, res, next) => {
         );
 
         itens.push({
-          tipo: situacao.isCancelado ? 'CANCELAMENTO' : 'VENDA',
-          statusLabel: situacao.label,
+          tipo: isCancelado ? 'CANCELAMENTO' : 'VENDA',
+          statusLabel,
           pedidoId,
           pedidoNum: pedido.numero || String(pedidoId),
           dataVenda,

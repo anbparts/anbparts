@@ -423,7 +423,7 @@ export default function VendasBlingPage() {
 
         {cancelJaAplicados.length > 0 && (
           <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10, padding: '16px 18px', marginBottom: 20 }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--blue-500)', marginBottom: 8 }}>Cancelamentos ja aplicados ({cancelJaAplicados.length})</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--blue-500)', marginBottom: 8 }}>Cancelamentos sem acao necessaria ({cancelJaAplicados.length})</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               {cancelJaAplicados.slice(0, 8).map((item) => (
                 <div key={`${item.pedidoId}-${item.idPeca}-ja-aplicado`} style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--blue-500)' }}>
