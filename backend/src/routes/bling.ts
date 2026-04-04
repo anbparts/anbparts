@@ -8,6 +8,7 @@ const BLING_OAUTH = 'https://www.bling.com.br/Api/v3/oauth/token';
 const DEFAULT_FRETE_PADRAO = 29.9;
 const DEFAULT_TAXA_PADRAO_PCT = 17;
 const STATUS_ID_CONCLUIDO = 9;
+const STATUS_IDS_CANCELADO = new Set([12]);
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -81,11 +82,15 @@ function extractSituationIds(value: any, acc: number[] = []): number[] {
 
 function classifyOrderSituation(detail: any) {
   const source = detail?.situacao ?? detail?.situacaoPedido ?? detail?.situacoes ?? {};
-  const rawText = extractSituationText(source);
+  const rawText = extractSituationText(source)
+    || extractSituationText(detail?.situacao)
+    || extractSituationText(detail?.situacaoPedido)
+    || extractSituationText(detail?.situacoes);
   const normalized = normalizeText(rawText);
   const ids = extractSituationIds(source);
 
-  const isCancelado = /cancel/.test(normalized);
+  const isCancelado = ids.some((id) => STATUS_IDS_CANCELADO.has(id))
+    || /cancel|anulad|reembols|estorn/.test(normalized);
   const isConcluido = ids.includes(STATUS_ID_CONCLUIDO)
     || /atendid|concluid|finaliz|faturad|entregue/.test(normalized);
 
@@ -568,7 +573,6 @@ blingRouter.post('/sync/vendas', async (req, res, next) => {
 
     const pedidosConcluidos = await listPedidos(dataInicio, dataFim, [STATUS_ID_CONCLUIDO]);
     const pedidosGerais = await listPedidos(dataInicio, dataFim);
-    const pedidoIdsConcluidosSet = new Set(pedidosConcluidos.map((pedido) => pedido.id));
     const pedidosGeraisMap = new Map(pedidosGerais.map((pedido) => [pedido.id, pedido]));
     const pedidosConcluidosMap = new Map(pedidosConcluidos.map((pedido) => [pedido.id, pedido]));
     const pedidoIds = Array.from(new Set([
@@ -584,15 +588,10 @@ blingRouter.post('/sync/vendas', async (req, res, next) => {
       const pedido = detalhe?.data || {};
       const listSituacao = pedidosGeraisMap.get(pedidoId)?.situacao || pedidosConcluidosMap.get(pedidoId)?.situacao;
       const detailSituacao = classifyOrderSituation(pedido);
-      const isVendaConcluida = pedidoIdsConcluidosSet.has(pedidoId)
-        || detailSituacao.isConcluido
-        || !!listSituacao?.isConcluido;
-      const isCancelado = detailSituacao.isCancelado || !!listSituacao?.isCancelado;
-      const statusLabel = detailSituacao.label !== 'Sem situacao'
-        ? detailSituacao.label
-        : (listSituacao?.label || 'Sem situacao');
-
-      if (!isVendaConcluida && !isCancelado) continue;
+      const isCancelado = !!listSituacao?.isCancelado || detailSituacao.isCancelado;
+      const statusLabel = listSituacao?.label && listSituacao.label !== 'Sem situacao'
+        ? listSituacao.label
+        : (detailSituacao.label || 'Sem situacao');
 
       const dataVenda = (pedido.data || '').split('T')[0]
         || new Date().toISOString().split('T')[0];
