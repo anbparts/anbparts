@@ -13,6 +13,17 @@ const STATUS_IDS_CANCELADO = new Set([12]);
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function toNumber(value: any, fallback = 0) {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return fallback;
+
+    const normalized = trimmed.includes(',') && trimmed.includes('.')
+      ? trimmed.replace(/\./g, '').replace(',', '.')
+      : trimmed.replace(',', '.');
+    const parsedString = Number(normalized);
+    return Number.isFinite(parsedString) ? parsedString : fallback;
+  }
+
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
 }
@@ -122,6 +133,46 @@ function extractSituationIds(value: any, acc: number[] = []): number[] {
     }
   }
   return acc;
+}
+
+function collectFreightValues(value: any, acc: number[] = []): number[] {
+  if (value === null || value === undefined) return acc;
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectFreightValues(item, acc));
+    return acc;
+  }
+
+  if (typeof value === 'object') {
+    for (const [key, nested] of Object.entries(value)) {
+      if (/frete/i.test(key)) {
+        const freightValue = toNumber(nested, NaN);
+        if (Number.isFinite(freightValue) && Math.abs(freightValue) > 0) {
+          acc.push(freightValue);
+        }
+      }
+      collectFreightValues(nested, acc);
+    }
+  }
+
+  return acc;
+}
+
+function resolvePedidoFrete(pedido: any) {
+  const freightCandidates = [
+    ...collectFreightValues(pedido?.transportador),
+    ...collectFreightValues(pedido?.transportadora),
+    ...collectFreightValues(pedido?.transporte?.transportador),
+    ...collectFreightValues(pedido?.transporte),
+  ]
+    .map((value) => roundMoney(Math.abs(toNumber(value, 0))))
+    .filter((value) => value > 0);
+
+  const transportadorFrete = freightCandidates.sort((a, b) => b - a)[0] || 0;
+  const custoFrete = roundMoney(Math.abs(toNumber(pedido?.taxas?.custoFrete, 0)));
+
+  if (transportadorFrete > 0) return transportadorFrete;
+  if (custoFrete > 0) return custoFrete;
+  return roundMoney(Math.abs(toNumber(pedido?.transporte?.frete, 0)));
 }
 
 function classifyOrderSituation(detail: any) {
@@ -686,13 +737,11 @@ blingRouter.post('/sync/vendas', async (req, res, next) => {
       const dataVenda = (pedido.data || '').split('T')[0]
         || new Date().toISOString().split('T')[0];
       const taxaComissao = Number(pedido.taxas?.taxaComissao || 0);
-      const custoFrete = Number(pedido.taxas?.custoFrete || 0);
       const valorBase = Number(pedido.taxas?.valorBase || 0);
       const taxaPct = valorBase > 0
         ? roundMoney((taxaComissao / valorBase) * 100)
         : 0;
-      const freteBruto = Number(pedido.transporte?.frete || 0);
-      const fretePositivo = custoFrete > 0 ? custoFrete : Math.abs(freteBruto);
+      const fretePositivo = resolvePedidoFrete(pedido);
 
       const itensPedido = (pedido.itens || []).map((item: any) => {
         const skuBling = item.produto?.codigo || item.codigo || item.sku || '';
