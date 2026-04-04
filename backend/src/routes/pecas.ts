@@ -40,17 +40,27 @@ function roundMoney(value: number) {
   return parseFloat(value.toFixed(2));
 }
 
-function calculateManualSaleValues(peca: { precoML: any; valorFrete: any; valorTaxas: any }, nextPrecoML?: number) {
+function calculateManualSaleValues(
+  peca: { precoML: any; valorFrete: any; valorTaxas: any },
+  nextPrecoML?: number,
+  nextFrete?: number,
+  nextTaxaValor?: number,
+) {
   const precoAtual = Number(peca.precoML) || 0;
   const precoVenda = nextPrecoML !== undefined ? Number(nextPrecoML) || 0 : precoAtual;
   const freteAtual = Number(peca.valorFrete) || 0;
   const taxasAtuais = Number(peca.valorTaxas) || 0;
 
-  const valorFrete = freteAtual > 0 ? roundMoney(freteAtual) : DEFAULT_SELL_FRETE;
-  const taxaPct = precoAtual > 0 && taxasAtuais > 0
-    ? (taxasAtuais / precoAtual) * 100
-    : DEFAULT_TAXA_PCT;
-  const valorTaxas = roundMoney(precoVenda * taxaPct / 100);
+  const valorFrete = nextFrete !== undefined
+    ? roundMoney(Math.max(0, Number(nextFrete) || 0))
+    : (freteAtual > 0 ? roundMoney(freteAtual) : DEFAULT_SELL_FRETE);
+  const valorTaxas = nextTaxaValor !== undefined
+    ? roundMoney(Math.max(0, Number(nextTaxaValor) || 0))
+    : roundMoney(precoVenda * (
+      precoAtual > 0 && taxasAtuais > 0
+        ? (taxasAtuais / precoAtual)
+        : (DEFAULT_TAXA_PCT / 100)
+    ));
   const valorLiq = roundMoney(precoVenda - valorFrete - valorTaxas);
 
   return {
@@ -71,6 +81,7 @@ pecasRouter.get('/', async (req, res, next) => {
     if (search) where.OR = [
       { idPeca: { contains: search, mode: 'insensitive' } },
       { descricao: { contains: search, mode: 'insensitive' } },
+      { blingPedidoNum: { contains: search, mode: 'insensitive' } },
     ];
     if (dataVendaFrom || dataVendaTo) {
       where.dataVenda = {};
@@ -131,19 +142,29 @@ pecasRouter.put('/:id', async (req, res, next) => {
 // PATCH /pecas/:id/vender
 pecasRouter.patch('/:id/vender', async (req, res, next) => {
   try {
-    const { dataVenda, precoML } = req.body;
+    const { dataVenda, pedidoNum, precoML, frete, taxaValor } = req.body;
+    if (!pedidoNum || !String(pedidoNum).trim()) {
+      return res.status(400).json({ error: 'Numero do pedido e obrigatorio' });
+    }
     const current = await prisma.peca.findUnique({
       where: { id: Number(req.params.id) },
       select: { id: true, precoML: true, valorFrete: true, valorTaxas: true }
     });
     if (!current) return res.status(404).json({ error: 'Peça não encontrada' });
 
-    const financials = calculateManualSaleValues(current, precoML !== undefined ? Number(precoML) : undefined);
+    const financials = calculateManualSaleValues(
+      current,
+      precoML !== undefined ? Number(precoML) : undefined,
+      frete !== undefined ? Number(frete) : undefined,
+      taxaValor !== undefined ? Number(taxaValor) : undefined,
+    );
     const peca = await prisma.peca.update({
       where: { id: Number(req.params.id) },
       data: {
         disponivel: false,
         dataVenda: dataVenda ? new Date(dataVenda) : new Date(),
+        blingPedidoId: null,
+        blingPedidoNum: String(pedidoNum).trim(),
         precoML: financials.precoML,
         valorFrete: financials.valorFrete,
         valorTaxas: financials.valorTaxas,
