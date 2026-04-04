@@ -195,7 +195,13 @@ export default function EstoquePage() {
             <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>Peças</div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <select style={cs.sel} value={filters.motoId} onChange={e => setFilters({ ...filters, motoId: e.target.value, page: 1 })}>
-                <option value="">Todas motos</option>
+                <option value="">Todas motos</option></select>
+<select value={perPage} onChange={(e)=>{setPerPage(Number(e.target.value));setPage(1);}}>
+<option value={10}>10</option>
+<option value={20}>20</option>
+<option value={50}>50</option>
+<option value={100}>100</option>
+</select><select><option></option>
                 {motos.map((m: any) => <option key={m.id} value={m.id}>ID {m.id} — {m.marca} {m.modelo}</option>)}
               </select>
               <select style={cs.sel} value={filters.disponivel} onChange={e => setFilters({ ...filters, disponivel: e.target.value, page: 1 })}>
