@@ -17,6 +17,7 @@ type Defaults = {
 };
 
 type Item = {
+  entryKey: string;
   tipo: 'VENDA' | 'CANCELAMENTO';
   statusLabel: string;
   pedidoId: number;
@@ -259,7 +260,7 @@ export default function VendasBlingPage() {
               const previsao = calcularLiq(precoBase, defaults.fretePadrao, defaults.taxaPadraoPct);
 
               return (
-                <div key={`${item.pedidoId}-${item.idPeca}-cancelamento`} style={{ ...s.card, borderLeft: '3px solid #ef4444' }}>
+                <div key={item.entryKey} style={{ ...s.card, borderLeft: '3px solid #ef4444' }}>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
                     <span style={{ background: '#fee2e2', color: '#b91c1c', padding: '2px 10px', borderRadius: 6, fontSize: 12, fontFamily: 'JetBrains Mono, monospace', fontWeight: 600 }}>Pedido #{item.pedidoNum}</span>
                     <span style={{ background: 'var(--blue-100)', color: 'var(--blue-500)', padding: '2px 10px', borderRadius: 6, fontSize: 12, fontFamily: 'JetBrains Mono, monospace' }}>{item.idPeca}</span>
@@ -316,7 +317,7 @@ export default function VendasBlingPage() {
             {pendentes.map((item) => {
               const realIdx = itens.indexOf(item);
               return (
-                <div key={`${item.pedidoId}-${item.idPeca}-venda`} style={{ ...s.card, borderLeft: '3px solid var(--amber)' }}>
+                <div key={item.entryKey} style={{ ...s.card, borderLeft: '3px solid var(--amber)' }}>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
                     <span style={{ background: 'var(--amber-light)', color: 'var(--amber)', padding: '2px 10px', borderRadius: 6, fontSize: 12, fontFamily: 'JetBrains Mono, monospace', fontWeight: 600 }}>Pedido #{item.pedidoNum}</span>
                     <span style={{ background: 'var(--blue-100)', color: 'var(--blue-500)', padding: '2px 10px', borderRadius: 6, fontSize: 12, fontFamily: 'JetBrains Mono, monospace' }}>{item.idPeca}</span>
@@ -394,7 +395,7 @@ export default function VendasBlingPage() {
                 </thead>
                 <tbody>
                   {confirmados.map((item) => (
-                    <tr key={`${item.pedidoId}-${item.idPeca}-confirmado`} style={{ borderTop: '1px solid var(--gray-100)' }}>
+                    <tr key={item.entryKey} style={{ borderTop: '1px solid var(--gray-100)' }}>
                       <td style={{ padding: '9px 14px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12 }}>#{item.pedidoNum}</td>
                       <td style={{ padding: '9px 14px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--gray-500)' }}>{item.idPeca}{item.quantidade > 1 ? ` (${item.quantidade}x)` : ''}</td>
                       <td style={{ padding: '9px 14px', color: 'var(--gray-700)' }}>{item.descricao}</td>
@@ -425,7 +426,7 @@ export default function VendasBlingPage() {
                 </thead>
                 <tbody>
                   {cancelAprovados.map((item) => (
-                    <tr key={`${item.pedidoId}-${item.idPeca}-cancelado`} style={{ borderTop: '1px solid var(--gray-100)' }}>
+                    <tr key={item.entryKey} style={{ borderTop: '1px solid var(--gray-100)' }}>
                       <td style={{ padding: '9px 14px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12 }}>#{item.pedidoNum}</td>
                       <td style={{ padding: '9px 14px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--gray-500)' }}>{item.idPeca}{item.quantidade > 1 ? ` (${item.quantidade}x)` : ''}</td>
                       <td style={{ padding: '9px 14px', color: 'var(--gray-700)' }}>{item.descricao}</td>
@@ -449,7 +450,7 @@ export default function VendasBlingPage() {
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               {cancelSemBaixa.slice(0, 8).map((item) => (
-                <div key={`${item.pedidoId}-${item.idPeca}-cancel-sem-baixa`} style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--blue-500)' }}>
+                <div key={item.entryKey} style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--blue-500)' }}>
                   #{item.pedidoNum} - {item.idPeca} - {item.descricao}
                 </div>
               ))}
@@ -463,7 +464,7 @@ export default function VendasBlingPage() {
             <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--blue-500)', marginBottom: 8 }}>Cancelamentos sem acao necessaria ({cancelJaAplicados.length})</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               {cancelJaAplicados.slice(0, 8).map((item) => (
-                <div key={`${item.pedidoId}-${item.idPeca}-ja-aplicado`} style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--blue-500)' }}>
+                <div key={item.entryKey} style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--blue-500)' }}>
                   #{item.pedidoNum} - {item.idPeca} - {item.descricao}
                 </div>
               ))}
@@ -478,7 +479,7 @@ export default function VendasBlingPage() {
             <div style={{ fontSize: 12, color: 'var(--red)', marginBottom: 10 }}>Esses produtos estao no Bling mas nao foram localizados no estoque do ANB.</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               {naoAchados.slice(0, 5).map((item) => (
-                <div key={`${item.pedidoId}-${item.idPeca}-nao-achado`} style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--red)' }}>
+                <div key={item.entryKey} style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--red)' }}>
                   {item.idPeca} - {item.descricao.slice(0, 40)}...
                 </div>
               ))}
@@ -493,7 +494,7 @@ export default function VendasBlingPage() {
             <div style={{ fontSize: 12, color: '#b91c1c', marginBottom: 10 }}>O pedido veio como cancelado no Bling, mas a peca correspondente nao foi localizada no ANB para estorno automatico.</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               {cancelNaoAchados.slice(0, 5).map((item) => (
-                <div key={`${item.pedidoId}-${item.idPeca}-cancel-nao-achado`} style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: '#b91c1c' }}>
+                <div key={item.entryKey} style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: '#b91c1c' }}>
                   {item.idPeca} - {item.descricao.slice(0, 40)}...
                 </div>
               ))}

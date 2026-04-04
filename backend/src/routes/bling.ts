@@ -698,13 +698,16 @@ blingRouter.post('/sync/vendas', async (req, res, next) => {
         const skuBling = item.produto?.codigo || item.codigo || item.sku || '';
         const idBling = item.produto?.id ? `BL${String(item.produto.id).padStart(8, '0')}` : '';
         const quantidade = Math.max(1, Math.round(toNumber(item.quantidade, 1)));
-        const precoVenda = toNumber(
-          item.valorUnitario ?? item.valor ?? item.preco ?? item.precoUnitario,
-          0,
+        const totalItem = roundMoney(
+          toNumber(item.valorTotal ?? item.total ?? item.valorTotalItem, 0),
         );
-        const subtotal = roundMoney(
-          toNumber(item.valorTotal, roundMoney(precoVenda * quantidade)),
-        );
+        const precoVenda = roundMoney(toNumber(
+          item.valorUnitario ?? item.precoUnitario ?? item.valor ?? item.preco,
+          totalItem > 0 ? totalItem / quantidade : 0,
+        ));
+        const subtotal = totalItem > 0
+          ? totalItem
+          : roundMoney(precoVenda * quantidade);
 
         return {
           original: item,
@@ -739,95 +742,108 @@ blingRouter.post('/sync/vendas', async (req, res, next) => {
         const taxasUnitarias = splitEvenly(taxaLinha, quantidade);
         const valorLiqUnitario = fretesUnitarios.map((freteUnitario, unitIndex) =>
           roundMoney(precoVenda - freteUnitario - (taxasUnitarias[unitIndex] || 0)));
+        const baseKey = `${pedidoId}-${skuBling || idBling || 'item'}-${lineIndex}`;
+
+        const getFallbackIdPeca = (unitIndex: number) => {
+          const baseSku = skuBling || idBling || pecaReferencia?.idPeca || 'SEM-SKU';
+          return quantidade > 1 ? `${baseSku} [${unitIndex + 1}]` : baseSku;
+        };
 
         if (isCancelado) {
-          const pecasParaCancelar = linkedVendidas.slice(0, quantidade).filter((peca) => !reservedCancelPecaIds.has(peca.id));
-          pecasParaCancelar.forEach((peca) => reservedCancelPecaIds.add(peca.id));
+          for (let unitIndex = 0; unitIndex < quantidade; unitIndex += 1) {
+            const pecaCancelada = linkedVendidas[unitIndex];
+            const pecaDisplay = pecaCancelada || pecaReferencia;
+            const precoBaseCancelamento = toNumber(pecaDisplay?.precoML, precoVenda);
+            const valoresCancelamento = calculateFinancials(
+              precoBaseCancelamento,
+              defaults.fretePadrao,
+              defaults.taxaPadraoPct,
+            );
 
-          const pecaDisplay = pecasParaCancelar[0] || pecaReferencia;
-          const precoBaseCancelamento = toNumber(pecaDisplay?.precoML, precoVenda);
-          const valoresCancelamento = calculateFinancials(
-            precoBaseCancelamento,
-            defaults.fretePadrao,
-            defaults.taxaPadraoPct,
-          );
+            if (pecaCancelada && !reservedCancelPecaIds.has(pecaCancelada.id)) {
+              reservedCancelPecaIds.add(pecaCancelada.id);
+            }
 
-          itens.push({
-            tipo: 'CANCELAMENTO',
-            statusLabel,
-            pedidoId,
-            pedidoNum,
-            dataVenda,
-            idPeca: skuBling || idBling || pecaDisplay?.idPeca || '',
-            descricao: item.produto?.nome || item.descricao || '',
-            skuBling,
-            quantidade: pecasParaCancelar.length || quantidade,
-            quantidadePedido: quantidade,
-            precoVenda,
-            frete: fretesUnitarios[0] || 0,
-            taxaPct,
-            taxaValor: taxasUnitarias[0] || 0,
-            valorLiq: valorLiqUnitario[0] || roundMoney(precoVenda),
-            encontrada: pecasParaCancelar.length > 0,
-            baixaVinculada: pecasParaCancelar.length > 0,
-            jaVendida: false,
-            jaEstornada: pecasParaCancelar.length > 0 ? pecasParaCancelar.every((peca) => peca.disponivel) : false,
-            pecaId: pecasParaCancelar[0]?.id || null,
-            pecaIds: pecasParaCancelar.map((peca) => peca.id),
-            moto: (pecasParaCancelar[0]?.moto || pecaReferencia?.moto) ? `${(pecasParaCancelar[0]?.moto || pecaReferencia?.moto).marca} ${(pecasParaCancelar[0]?.moto || pecaReferencia?.moto).modelo}` : null,
-            precoMLAtual: pecasParaCancelar[0] ? Number(pecasParaCancelar[0].precoML) : null,
-            fretePadrao: defaults.fretePadrao,
-            taxaPadraoPct: defaults.taxaPadraoPct,
-            taxaPadraoValor: valoresCancelamento.taxaValor,
-            valorLiqPadrao: valoresCancelamento.valorLiq,
-          });
+            itens.push({
+              entryKey: `${baseKey}-cancel-${unitIndex}`,
+              tipo: 'CANCELAMENTO',
+              statusLabel,
+              pedidoId,
+              pedidoNum,
+              dataVenda,
+              idPeca: pecaCancelada?.idPeca || getFallbackIdPeca(unitIndex),
+              descricao: item.produto?.nome || item.descricao || '',
+              skuBling,
+              quantidade: 1,
+              quantidadePedido: quantidade,
+              precoVenda,
+              frete: fretesUnitarios[unitIndex] || 0,
+              taxaPct,
+              taxaValor: taxasUnitarias[unitIndex] || 0,
+              valorLiq: valorLiqUnitario[unitIndex] || roundMoney(precoVenda),
+              encontrada: !!pecaCancelada,
+              baixaVinculada: !!pecaCancelada,
+              jaVendida: false,
+              jaEstornada: false,
+              pecaId: pecaCancelada?.id || null,
+              pecaIds: pecaCancelada ? [pecaCancelada.id] : [],
+              moto: (pecaCancelada?.moto || pecaReferencia?.moto) ? `${(pecaCancelada?.moto || pecaReferencia?.moto).marca} ${(pecaCancelada?.moto || pecaReferencia?.moto).modelo}` : null,
+              precoMLAtual: pecaCancelada ? Number(pecaCancelada.precoML) : null,
+              fretePadrao: defaults.fretePadrao,
+              taxaPadraoPct: defaults.taxaPadraoPct,
+              taxaPadraoValor: valoresCancelamento.taxaValor,
+              valorLiqPadrao: valoresCancelamento.valorLiq,
+            });
+          }
           continue;
         }
 
         const quantidadeJaBaixada = linkedVendidas.length;
-        const quantidadePendente = Math.max(0, quantidade - quantidadeJaBaixada);
-        if (quantidadePendente <= 0) continue;
-
         const pecasParaVenda = findAvailablePecasForVenda(
           todasPecas,
           skuBling,
           idBling,
           reservedVendaPecaIds,
-          quantidadePendente,
+          Math.max(0, quantidade - quantidadeJaBaixada),
         );
 
-        const pecaDisplay = pecasParaVenda[0] || linkedVendidas[0] || pecaReferencia;
+        for (let unitIndex = quantidadeJaBaixada; unitIndex < quantidade; unitIndex += 1) {
+          const pendingIndex = unitIndex - quantidadeJaBaixada;
+          const pecaVenda = pecasParaVenda[pendingIndex];
+          const pecaDisplay = pecaVenda || pecaReferencia;
 
-        itens.push({
-          tipo: 'VENDA',
-          statusLabel,
-          pedidoId,
-          pedidoNum,
-          dataVenda,
-          idPeca: skuBling || idBling || pecaDisplay?.idPeca || '',
-          descricao: item.produto?.nome || item.descricao || '',
-          skuBling,
-          quantidade: quantidadePendente,
-          quantidadePedido: quantidade,
-          quantidadeJaBaixada,
-          precoVenda,
-          frete: fretesUnitarios[0] || 0,
-          taxaPct,
-          taxaValor: taxasUnitarias[0] || 0,
-          valorLiq: valorLiqUnitario[0] || roundMoney(precoVenda),
-          encontrada: pecasParaVenda.length === quantidadePendente,
-          baixaVinculada: false,
-          jaVendida: quantidadePendente <= 0,
-          jaEstornada: false,
-          pecaId: pecasParaVenda[0]?.id || null,
-          pecaIds: pecasParaVenda.map((peca) => peca.id),
-          moto: (pecasParaVenda[0]?.moto || pecaDisplay?.moto) ? `${(pecasParaVenda[0]?.moto || pecaDisplay?.moto).marca} ${(pecasParaVenda[0]?.moto || pecaDisplay?.moto).modelo}` : null,
-          precoMLAtual: pecaDisplay ? Number(pecaDisplay.precoML) : null,
-          fretePadrao: defaults.fretePadrao,
-          taxaPadraoPct: defaults.taxaPadraoPct,
-          taxaPadraoValor: taxasUnitarias[0] || 0,
-          valorLiqPadrao: valorLiqUnitario[0] || roundMoney(precoVenda),
-        });
+          itens.push({
+            entryKey: `${baseKey}-sale-${unitIndex}`,
+            tipo: 'VENDA',
+            statusLabel,
+            pedidoId,
+            pedidoNum,
+            dataVenda,
+            idPeca: pecaVenda?.idPeca || getFallbackIdPeca(unitIndex),
+            descricao: item.produto?.nome || item.descricao || '',
+            skuBling,
+            quantidade: 1,
+            quantidadePedido: quantidade,
+            quantidadeJaBaixada,
+            precoVenda,
+            frete: fretesUnitarios[unitIndex] || 0,
+            taxaPct,
+            taxaValor: taxasUnitarias[unitIndex] || 0,
+            valorLiq: valorLiqUnitario[unitIndex] || roundMoney(precoVenda),
+            encontrada: !!pecaVenda,
+            baixaVinculada: false,
+            jaVendida: false,
+            jaEstornada: false,
+            pecaId: pecaVenda?.id || null,
+            pecaIds: pecaVenda ? [pecaVenda.id] : [],
+            moto: (pecaVenda?.moto || pecaDisplay?.moto) ? `${(pecaVenda?.moto || pecaDisplay?.moto).marca} ${(pecaVenda?.moto || pecaDisplay?.moto).modelo}` : null,
+            precoMLAtual: pecaDisplay ? Number(pecaDisplay.precoML) : null,
+            fretePadrao: defaults.fretePadrao,
+            taxaPadraoPct: defaults.taxaPadraoPct,
+            taxaPadraoValor: taxasUnitarias[unitIndex] || 0,
+            valorLiqPadrao: valorLiqUnitario[unitIndex] || roundMoney(precoVenda),
+          });
+        }
       }
     }
 
