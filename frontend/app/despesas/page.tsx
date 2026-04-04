@@ -58,6 +58,7 @@ export default function DespesasPage() {
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filtroCategoria, setFiltroCategoria] = useState('');
+  const [filtroAno, setFiltroAno] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [modo, setModo] = useState<ViewMode>('grafico');
@@ -84,7 +85,15 @@ export default function DespesasPage() {
 
   useEffect(load, []);
 
-  const filtradas = filtroCategoria ? rows.filter((item) => item.categoria === filtroCategoria) : rows;
+  const anos = Array.from(new Set(
+    rows.map((item) => new Date(item.data).getFullYear()).filter((ano) => Number.isFinite(ano)),
+  )).sort((a, b) => b - a);
+
+  const filtradas = rows.filter((item) => {
+    const ano = new Date(item.data).getFullYear();
+    return (!filtroCategoria || item.categoria === filtroCategoria)
+      && (!filtroAno || ano === Number(filtroAno));
+  });
   const total = filtradas.reduce((sum, item) => sum + Number(item.valor || 0), 0);
 
   const porCategoriaMap = new Map<string, number>();
@@ -205,10 +214,16 @@ export default function DespesasPage() {
             <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>
               Visualizacao <span style={{ fontSize: 12, color: 'var(--ink-muted)', fontWeight: 400 }}>- {filtradas.length} registros</span>
             </div>
-            <select style={{ ...inputStyle, cursor: 'pointer' }} value={filtroCategoria} onChange={(e) => setFiltroCategoria(e.target.value)}>
-              <option value="">Todas categorias</option>
-              {CATEGORIAS.map((categoria) => <option key={categoria}>{categoria}</option>)}
-            </select>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <select style={{ ...inputStyle, width: 'auto', cursor: 'pointer' }} value={filtroAno} onChange={(e) => setFiltroAno(e.target.value)}>
+                <option value="">Todos os anos</option>
+                {anos.map((ano) => <option key={ano} value={ano}>{ano}</option>)}
+              </select>
+              <select style={{ ...inputStyle, cursor: 'pointer' }} value={filtroCategoria} onChange={(e) => setFiltroCategoria(e.target.value)}>
+                <option value="">Todas categorias</option>
+                {CATEGORIAS.map((categoria) => <option key={categoria}>{categoria}</option>)}
+              </select>
+            </div>
           </div>
         </div>
 

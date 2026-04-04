@@ -33,6 +33,7 @@ export default function InvestimentosPage() {
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filtroSocio, setFiltroSocio] = useState('');
+  const [filtroAno, setFiltroAno] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [modo, setModo] = useState<ViewMode>('grafico');
@@ -60,7 +61,15 @@ export default function InvestimentosPage() {
 
   useEffect(load, []);
 
-  const filtradas = filtroSocio ? rows.filter((item) => item.socio === filtroSocio) : rows;
+  const anos = Array.from(new Set(
+    rows.map((item) => new Date(item.data).getFullYear()).filter((ano) => Number.isFinite(ano)),
+  )).sort((a, b) => b - a);
+
+  const filtradas = rows.filter((item) => {
+    const ano = new Date(item.data).getFullYear();
+    return (!filtroSocio || item.socio === filtroSocio)
+      && (!filtroAno || ano === Number(filtroAno));
+  });
   const totalGeral = rows.reduce((sum, item) => sum + Number(item.valor || 0), 0);
   const totalFiltro = filtradas.reduce((sum, item) => sum + Number(item.valor || 0), 0);
 
@@ -201,10 +210,16 @@ export default function InvestimentosPage() {
             <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>
               Visualizacao <span style={{ fontSize: 12, color: 'var(--ink-muted)', fontWeight: 400 }}>- {filtradas.length} registros</span>
             </div>
-            <select style={{ ...inputStyle, width: 'auto', cursor: 'pointer' }} value={filtroSocio} onChange={(e) => setFiltroSocio(e.target.value)}>
-              <option value="">Todos os socios</option>
-              {SOCIOS.map((socio) => <option key={socio}>{socio}</option>)}
-            </select>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <select style={{ ...inputStyle, width: 'auto', cursor: 'pointer' }} value={filtroAno} onChange={(e) => setFiltroAno(e.target.value)}>
+                <option value="">Todos os anos</option>
+                {anos.map((ano) => <option key={ano} value={ano}>{ano}</option>)}
+              </select>
+              <select style={{ ...inputStyle, width: 'auto', cursor: 'pointer' }} value={filtroSocio} onChange={(e) => setFiltroSocio(e.target.value)}>
+                <option value="">Todos os socios</option>
+                {SOCIOS.map((socio) => <option key={socio}>{socio}</option>)}
+              </select>
+            </div>
           </div>
         </div>
 
