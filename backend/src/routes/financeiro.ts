@@ -1,11 +1,28 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
+import { z } from 'zod';
 
 export const financeiroRouter = Router();
 
 const fmt = (v: any) => Number(v) || 0;
 const DEFAULT_FRETE_PADRAO = 29.9;
 const DEFAULT_TAXA_PADRAO_PCT = 17;
+const PREJUIZO_MOTIVOS = new Set([
+  'Extravio no Envio',
+  'Defeito',
+  'SKU Cancelado',
+  'Peca Restrita - Sem Revenda',
+  'Peça Restrita - Sem Revenda',
+  'Extravio no Estoque',
+]);
+
+const prejuizoUpdateSchema = z.object({
+  data: z.string().min(1),
+  motivo: z.string().min(1),
+  valor: z.number().min(0),
+  frete: z.number().min(0),
+  observacao: z.string().optional().nullable(),
+});
 
 function roundMoney(value: number) {
   return Math.round(value * 100) / 100;
@@ -132,6 +149,56 @@ financeiroRouter.delete('/prejuizos/:id', async (req, res, next) => {
     });
 
     res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+financeiroRouter.patch('/prejuizos/:id', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const payload = prejuizoUpdateSchema.parse(req.body || {});
+    const motivo = String(payload.motivo || '').trim();
+    if (!PREJUIZO_MOTIVOS.has(motivo)) {
+      return res.status(400).json({ error: 'Motivo do prejuizo invalido' });
+    }
+
+    const row = await prisma.prejuizo.findUnique({
+      where: { id },
+      select: { id: true, pecaId: true },
+    });
+    if (!row) return res.status(404).json({ error: 'Prejuizo nao encontrado' });
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const prejuizo = await tx.prejuizo.update({
+        where: { id },
+        data: {
+          data: new Date(payload.data),
+          motivo,
+          valor: payload.valor,
+          frete: payload.frete,
+          observacao: payload.observacao ? String(payload.observacao).trim() : null,
+        },
+      });
+
+      if (row.pecaId) {
+        const peca = await tx.peca.findUnique({
+          where: { id: row.pecaId },
+          select: { valorTaxas: true },
+        });
+        const valorTaxas = Number(peca?.valorTaxas) || 0;
+        await tx.peca.update({
+          where: { id: row.pecaId },
+          data: {
+            precoML: payload.valor,
+            valorFrete: payload.frete,
+            valorLiq: roundMoney(payload.valor - payload.frete - valorTaxas),
+          },
+        });
+      }
+
+      return prejuizo;
+    });
+
+    res.json({ ...updated, valor: fmt(updated.valor), frete: fmt(updated.frete) });
   } catch (e) { next(e); }
 });
 

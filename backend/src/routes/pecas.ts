@@ -106,10 +106,11 @@ function calculateManualSaleValues(
 // GET /pecas
 pecasRouter.get('/', async (req, res, next) => {
   try {
-    const { motoId, disponivel, search, dataVendaFrom, dataVendaTo, page = '1', per = '20' } = req.query as any;
+    const { motoId, disponivel, search, dataVendaFrom, dataVendaTo, precoMlZero, page = '1', per = '20' } = req.query as any;
     const where: any = { emPrejuizo: false };
     if (motoId) where.motoId = Number(motoId);
     if (disponivel !== undefined) where.disponivel = disponivel === 'true';
+    if (precoMlZero === 'true') where.precoML = 0;
     if (search) where.OR = [
       { idPeca: { contains: search, mode: 'insensitive' } },
       { descricao: { contains: search, mode: 'insensitive' } },

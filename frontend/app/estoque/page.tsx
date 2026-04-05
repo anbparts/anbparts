@@ -402,13 +402,14 @@ export default function EstoquePage() {
   const [editPeca, setEditPeca] = useState<any>(null);
   const [vendaModal, setVendaModal] = useState(false);
   const [vendaPeca, setVendaPeca] = useState<any>(null);
-  const [filters, setFilters] = useState({ motoId: '', disponivel: '', search: '', dataVendaFrom: '', dataVendaTo: '', page: 1, perPage: 20 });
+  const [filters, setFilters] = useState({ motoId: '', disponivel: '', precoMlZero: '', search: '', dataVendaFrom: '', dataVendaTo: '', page: 1, perPage: 20 });
 
   const load = useCallback(async () => {
     setLoading(true);
     const params: any = { page: filters.page, per: filters.perPage };
     if (filters.motoId) params.motoId = filters.motoId;
     if (filters.disponivel !== '') params.disponivel = filters.disponivel;
+    if (filters.precoMlZero !== '') params.precoMlZero = filters.precoMlZero;
     if (filters.search) params.search = filters.search;
     if (filters.dataVendaFrom) params.dataVendaFrom = filters.dataVendaFrom;
     if (filters.dataVendaTo) params.dataVendaTo = filters.dataVendaTo;
@@ -475,10 +476,10 @@ export default function EstoquePage() {
   }
 
   function clearFilters() {
-    setFilters({ ...filters, motoId: '', disponivel: '', search: '', dataVendaFrom: '', dataVendaTo: '', page: 1 });
+    setFilters({ ...filters, motoId: '', disponivel: '', precoMlZero: '', search: '', dataVendaFrom: '', dataVendaTo: '', page: 1 });
   }
 
-  const hasActiveFilters = Boolean(filters.motoId || filters.disponivel !== '' || filters.search || filters.dataVendaFrom || filters.dataVendaTo);
+  const hasActiveFilters = Boolean(filters.motoId || filters.disponivel !== '' || filters.precoMlZero !== '' || filters.search || filters.dataVendaFrom || filters.dataVendaTo);
   const totalPages = Math.max(1, Math.ceil((data.total || 0) / filters.perPage));
   const hasPrevPage = filters.page > 1;
   const hasNextPage = filters.page < totalPages;
@@ -517,6 +518,10 @@ export default function EstoquePage() {
                 <option value="">Todos status</option>
                 <option value="true">Em estoque</option>
                 <option value="false">Vendido</option>
+              </select>
+              <select style={cs.sel} value={filters.precoMlZero} onChange={(e) => setFilters({ ...filters, precoMlZero: e.target.value, page: 1 })}>
+                <option value="">Preco ML</option>
+                <option value="true">Preco ML zero</option>
               </select>
               <input style={{ ...cs.sel, paddingLeft: 11 }} placeholder="ID, descricao ou pedido..." value={filters.search} onChange={(e) => setFilters({ ...filters, search: e.target.value, page: 1 })} />
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 10px', background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 6, minHeight: 32 }}>

@@ -41,6 +41,7 @@ export const api = {
   financeiro: {
     prejuizos: {
       list: () => req<any[]>('/financeiro/prejuizos'),
+      update: (id: number, data: any) => req<any>(`/financeiro/prejuizos/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
       delete: (id: number) => req<any>(`/financeiro/prejuizos/${id}`, { method: 'DELETE' }),
     },
   },

@@ -61,6 +61,7 @@ model Prejuizo {
   data       DateTime
   detalhe    String
   motivo     String?
+  observacao String?
   pecaId     Int?     @unique
   valor      Decimal  @default(0) @db.Decimal(12, 2)
   frete      Decimal  @default(0) @db.Decimal(12, 2)

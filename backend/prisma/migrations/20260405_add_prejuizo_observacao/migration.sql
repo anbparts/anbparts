@@ -1,0 +1,2 @@
+ALTER TABLE "Prejuizo"
+ADD COLUMN IF NOT EXISTS "observacao" TEXT;
