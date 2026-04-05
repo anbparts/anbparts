@@ -496,9 +496,18 @@ async function findBlingProductDetailsByIds(ids: number[]) {
 function classifyMarketplaceStatusText(text: string) {
   const label = String(text || '').trim();
   const normalized = normalizeText(label);
+  const upper = label.toUpperCase();
 
   if (!label) {
     return { label: null, normalized: '', kind: 'unknown' as const };
+  }
+
+  if (upper === 'A' || upper === 'ATIVO' || upper === 'PUBLICADO') {
+    return { label, normalized, kind: 'active' as const };
+  }
+
+  if (['P', 'PAUSADO', 'INATIVO', 'FINALIZADO', 'ENCERRADO', 'CANCELADO', 'RASCUNHO', 'BLOQUEADO', 'SUSPENSO'].includes(upper)) {
+    return { label, normalized, kind: 'inactive' as const };
   }
 
   if (/inativ|pausad|finaliz|encerrad|cancel|exclu|rascunh|reprov|bloque|suspens|erro/.test(normalized)) {
