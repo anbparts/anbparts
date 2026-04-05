@@ -185,7 +185,7 @@ export default function BlingProdutosPage() {
   const [csvComparando, setCsvComparando] = useState(false);
   const [csvComparacao, setCsvComparacao] = useState<CsvComparacao | null>(null);
 
-  async function carregarCsv(files: FileList | File[]) {
+  async function carregarCsv(files: File[]) {
     setCsvCarregando(true);
     setCsvComparacao(null);
     try {
@@ -193,6 +193,11 @@ export default function BlingProdutosPage() {
       const arquivos = Array.from(files || []);
       const todosArquivos: CsvArquivoCarregado[] = [];
       const linhasPorChave = new Map<string, CsvLinha>();
+
+      if (!arquivos.length) {
+        setCsvCarregando(false);
+        return;
+      }
 
       for (const file of arquivos) {
         const csvText = await file.text();
@@ -542,7 +547,8 @@ export default function BlingProdutosPage() {
                 multiple
                 onChange={(e) => {
                   if (!e.target.files?.length) return;
-                  carregarCsv(e.target.files);
+                  const arquivos = Array.from(e.target.files);
+                  carregarCsv(arquivos);
                   e.target.value = '';
                 }}
               />
