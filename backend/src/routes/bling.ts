@@ -118,6 +118,29 @@ function extractSituationText(value: any): string {
   return '';
 }
 
+function extractSearchableText(value: any): string {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map(extractSearchableText).filter(Boolean).join(' ');
+  }
+  if (typeof value === 'object') {
+    return Object.entries(value)
+      .map(([key, nested]) => `${key} ${extractSearchableText(nested)}`.trim())
+      .filter(Boolean)
+      .join(' ');
+  }
+  return '';
+}
+
+function hasMercadoLivreMarker(text: string) {
+  const raw = String(text || '');
+  const normalized = normalizeText(raw);
+  return /mercado livre|mercadolivre|mlb\d+/i.test(raw) || /mercado livre|mercadolivre|mlb\d+/.test(normalized);
+}
+
 function extractSituationIds(value: any, acc: number[] = []): number[] {
   if (value === null || value === undefined) return acc;
   if (Array.isArray(value)) {
@@ -521,20 +544,58 @@ function classifyMarketplaceStatusText(text: string) {
   return { label, normalized, kind: 'unknown' as const };
 }
 
-function collectMercadoLivreTexts(value: any, acc: string[] = []) {
+function inferMarketplaceStatusFromText(text: string) {
+  const label = String(text || '').trim();
+  const normalized = normalizeText(label);
+  const hasMlContext = hasMercadoLivreMarker(label);
+
+  if (!hasMlContext) {
+    return {
+      label: null,
+      normalized,
+      isActive: false,
+      found: false,
+    };
+  }
+
+  if (/pausad|inativ|finaliz|encerrad|cancel|exclu|rascunh|reprov|bloque|suspens|desativ/.test(normalized)) {
+    return {
+      label,
+      normalized,
+      isActive: false,
+      found: true,
+    };
+  }
+
+  if (/(^|[^a-z])(ativo|publicado|publicada|anuncio ativo|anuncio publicado)([^a-z]|$)/.test(normalized) || /\bA\b/.test(label)) {
+    return {
+      label,
+      normalized,
+      isActive: true,
+      found: true,
+    };
+  }
+
+  return {
+    label: null,
+    normalized,
+    isActive: false,
+    found: false,
+  };
+}
+
+function collectMercadoLivreTexts(value: any, acc: string[] = [], inMlContext = false) {
   if (value === null || value === undefined) return acc;
   if (Array.isArray(value)) {
-    value.forEach((item) => collectMercadoLivreTexts(item, acc));
+    value.forEach((item) => collectMercadoLivreTexts(item, acc, inMlContext));
     return acc;
   }
   if (typeof value !== 'object') return acc;
 
-  const entriesText = Object.entries(value)
-    .map(([key, nested]) => `${key} ${extractSituationText(nested)}`.trim())
-    .join(' ');
-  const normalizedEntries = normalizeText(entriesText);
+  const entriesText = extractSearchableText(value);
+  const currentMlContext = inMlContext || hasMercadoLivreMarker(entriesText);
 
-  if (/mercado livre|mercadolivre/.test(normalizedEntries)) {
+  if (currentMlContext) {
     const candidates = [
       extractSituationText((value as any).situacao),
       extractSituationText((value as any).status),
@@ -542,10 +603,20 @@ function collectMercadoLivreTexts(value: any, acc: string[] = []) {
       extractSituationText((value as any).situacaoMarketplace),
       extractSituationText((value as any).statusMarketplace),
       extractSituationText((value as any).statusIntegracao),
+      extractSituationText((value as any).situacaoAnuncio),
+      extractSituationText((value as any).statusAnuncio),
+      extractSituationText((value as any).anuncio),
+      extractSituationText((value as any).anuncios),
+      extractSituationText((value as any).vinculo),
+      extractSituationText((value as any).vinculos),
       extractSituationText((value as any).marketplace),
       extractSituationText((value as any).canalVenda),
       extractSituationText((value as any).loja),
+      extractSituationText((value as any).lojaVirtual),
+      extractSituationText((value as any).codigoIntegracao),
+      extractSituationText((value as any).idIntegracao),
       extractSituationText(value),
+      extractSearchableText(value),
     ]
       .map((item) => String(item || '').trim())
       .filter(Boolean);
@@ -553,7 +624,7 @@ function collectMercadoLivreTexts(value: any, acc: string[] = []) {
     acc.push(...candidates);
   }
 
-  Object.values(value).forEach((nested) => collectMercadoLivreTexts(nested, acc));
+  Object.values(value).forEach((nested) => collectMercadoLivreTexts(nested, acc, currentMlContext));
   return acc;
 }
 
@@ -564,16 +635,37 @@ function resolveMercadoLivreStatus(produtoDetalhe: any) {
       .filter(Boolean),
   ));
 
+  let fallbackActiveCandidate: { label: string; normalized: string; isActive: boolean; found: boolean } | null = null;
+
   for (const candidate of candidates) {
     const classified = classifyMarketplaceStatusText(candidate);
-    if (classified.kind !== 'unknown') {
+    if (classified.kind === 'inactive') {
       return {
         label: classified.label,
         normalized: classified.normalized,
-        isActive: classified.kind === 'active',
+        isActive: false,
         found: true,
       };
     }
+
+    if (classified.kind === 'active' && !fallbackActiveCandidate) {
+      fallbackActiveCandidate = {
+        label: classified.label,
+        normalized: classified.normalized,
+        isActive: true,
+        found: true,
+      };
+    }
+  }
+
+  if (fallbackActiveCandidate) {
+    return fallbackActiveCandidate;
+  }
+
+  const flattenedText = extractSearchableText(produtoDetalhe);
+  const inferredFromFlat = inferMarketplaceStatusFromText(flattenedText);
+  if (inferredFromFlat.found) {
+    return inferredFromFlat;
   }
 
   if (candidates.length) {
