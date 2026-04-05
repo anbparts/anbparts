@@ -475,6 +475,115 @@ async function findBlingProductsByCodes(codes: string[]) {
   return found;
 }
 
+async function findBlingProductDetailsByIds(ids: number[]) {
+  const uniqueIds = Array.from(new Set(ids.map((id) => Number(id)).filter(Boolean)));
+  const details = new Map<number, any>();
+
+  for (const id of uniqueIds) {
+    try {
+      const data = await blingReq(`/produtos/${id}`) as any;
+      details.set(id, data?.data || null);
+    } catch {
+      details.set(id, null);
+    }
+
+    await sleep(400);
+  }
+
+  return details;
+}
+
+function classifyMarketplaceStatusText(text: string) {
+  const label = String(text || '').trim();
+  const normalized = normalizeText(label);
+
+  if (!label) {
+    return { label: null, normalized: '', kind: 'unknown' as const };
+  }
+
+  if (/inativ|pausad|finaliz|encerrad|cancel|exclu|rascunh|reprov|bloque|suspens|erro/.test(normalized)) {
+    return { label, normalized, kind: 'inactive' as const };
+  }
+
+  if (/(^|[^a-z])(ativo|publicado|publicada|anuncio ativo|anuncio publicado)([^a-z]|$)/.test(normalized)) {
+    return { label, normalized, kind: 'active' as const };
+  }
+
+  return { label, normalized, kind: 'unknown' as const };
+}
+
+function collectMercadoLivreTexts(value: any, acc: string[] = []) {
+  if (value === null || value === undefined) return acc;
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectMercadoLivreTexts(item, acc));
+    return acc;
+  }
+  if (typeof value !== 'object') return acc;
+
+  const entriesText = Object.entries(value)
+    .map(([key, nested]) => `${key} ${extractSituationText(nested)}`.trim())
+    .join(' ');
+  const normalizedEntries = normalizeText(entriesText);
+
+  if (/mercado livre|mercadolivre/.test(normalizedEntries)) {
+    const candidates = [
+      extractSituationText((value as any).situacao),
+      extractSituationText((value as any).status),
+      extractSituationText((value as any).descricaoSituacao),
+      extractSituationText((value as any).situacaoMarketplace),
+      extractSituationText((value as any).statusMarketplace),
+      extractSituationText((value as any).statusIntegracao),
+      extractSituationText((value as any).marketplace),
+      extractSituationText((value as any).canalVenda),
+      extractSituationText((value as any).loja),
+      extractSituationText(value),
+    ]
+      .map((item) => String(item || '').trim())
+      .filter(Boolean);
+
+    acc.push(...candidates);
+  }
+
+  Object.values(value).forEach((nested) => collectMercadoLivreTexts(nested, acc));
+  return acc;
+}
+
+function resolveMercadoLivreStatus(produtoDetalhe: any) {
+  const candidates = Array.from(new Set(
+    collectMercadoLivreTexts(produtoDetalhe)
+      .map((text) => String(text || '').trim())
+      .filter(Boolean),
+  ));
+
+  for (const candidate of candidates) {
+    const classified = classifyMarketplaceStatusText(candidate);
+    if (classified.kind !== 'unknown') {
+      return {
+        label: classified.label,
+        normalized: classified.normalized,
+        isActive: classified.kind === 'active',
+        found: true,
+      };
+    }
+  }
+
+  if (candidates.length) {
+    return {
+      label: candidates[0],
+      normalized: normalizeText(candidates[0]),
+      isActive: false,
+      found: true,
+    };
+  }
+
+  return {
+    label: null,
+    normalized: '',
+    isActive: false,
+    found: false,
+  };
+}
+
 blingRouter.get('/config', async (_req, res, next) => {
   try {
     const cfg = await getConfig();
@@ -738,6 +847,24 @@ blingRouter.post('/comparar-produtos', async (req, res, next) => {
       findBlingProductsByCodes(codigos),
     ]);
 
+    const produtoIdsParaStatus = Array.from(new Set(
+      codigos
+        .map((codigo) => {
+          const produto = produtosBling.get(codigo);
+          if (!produto) return 0;
+
+          const qtdBling = toNumber(produto?.estoque?.saldoVirtualTotal ?? produto?.estoque?.saldo ?? 0);
+          const local = pecas
+            .filter((peca) => getBaseSku(peca.idPeca) === codigo)
+            .reduce((acc, peca) => acc + (peca.disponivel && !peca.emPrejuizo ? 1 : 0), 0);
+
+          return (qtdBling > 0 || local > 0) ? Number(produto.id) : 0;
+        })
+        .filter(Boolean),
+    ));
+
+    const produtosDetalhe = await findBlingProductDetailsByIds(produtoIdsParaStatus);
+
     const localMap = new Map<string, any>();
 
     for (const codigo of codigos) {
@@ -783,6 +910,10 @@ blingRouter.post('/comparar-produtos', async (req, res, next) => {
       const produtoBling = produtosBling.get(codigo);
       const qtdBling = produtoBling ? toNumber(produtoBling?.estoque?.saldoVirtualTotal ?? produtoBling?.estoque?.saldo ?? 0) : 0;
       const descricaoBling = produtoBling?.nome || null;
+      const statusMercadoLivre = produtoBling?.id
+        ? resolveMercadoLivreStatus(produtosDetalhe.get(Number(produtoBling.id)))
+        : { label: null, normalized: '', isActive: false, found: false };
+      const temEstoqueEmAlgumSistema = local.qtdDisponivelAnb > 0 || qtdBling > 0;
 
       if (!produtoBling) {
         return [{
@@ -797,6 +928,26 @@ blingRouter.post('/comparar-produtos', async (req, res, next) => {
           descricaoAnb: local.descricaoAnb,
           descricaoBling,
           moto: local.moto,
+          statusMercadoLivre: null,
+          statusMercadoLivreAtivo: null,
+        }];
+      }
+
+      if (temEstoqueEmAlgumSistema && statusMercadoLivre.found && !statusMercadoLivre.isActive) {
+        return [{
+          sku: codigo,
+          tipo: 'status_ml_nao_ativo',
+          titulo: 'Anuncio ML nao ativo',
+          detalhe: 'Existe estoque no ANB ou no Bling, mas o status do Mercado Livre esta diferente de ativo.',
+          estoqueAnb: local.qtdDisponivelAnb,
+          estoqueBling: qtdBling,
+          qtdTotalAnb: local.qtdTotalAnb,
+          qtdVendidasAnb: local.qtdVendidasAnb,
+          descricaoAnb: local.descricaoAnb,
+          descricaoBling,
+          moto: local.moto,
+          statusMercadoLivre: statusMercadoLivre.label,
+          statusMercadoLivreAtivo: false,
         }];
       }
 
@@ -813,6 +964,8 @@ blingRouter.post('/comparar-produtos', async (req, res, next) => {
           descricaoAnb: null,
           descricaoBling,
           moto: null,
+          statusMercadoLivre: statusMercadoLivre.label,
+          statusMercadoLivreAtivo: statusMercadoLivre.found ? statusMercadoLivre.isActive : null,
         }];
       }
 
@@ -829,6 +982,8 @@ blingRouter.post('/comparar-produtos', async (req, res, next) => {
           descricaoAnb: local.descricaoAnb,
           descricaoBling,
           moto: local.moto,
+          statusMercadoLivre: statusMercadoLivre.label,
+          statusMercadoLivreAtivo: statusMercadoLivre.found ? statusMercadoLivre.isActive : null,
         }];
       }
 
@@ -845,6 +1000,8 @@ blingRouter.post('/comparar-produtos', async (req, res, next) => {
           descricaoAnb: local.descricaoAnb,
           descricaoBling,
           moto: local.moto,
+          statusMercadoLivre: statusMercadoLivre.label,
+          statusMercadoLivreAtivo: statusMercadoLivre.found ? statusMercadoLivre.isActive : null,
         }];
       }
 

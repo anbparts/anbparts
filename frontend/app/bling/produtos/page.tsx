@@ -52,6 +52,8 @@ type Divergencia = {
   descricaoAnb: string | null;
   descricaoBling: string | null;
   moto: string | null;
+  statusMercadoLivre?: string | null;
+  statusMercadoLivreAtivo?: boolean | null;
 };
 
 type Comparacao = {
@@ -314,7 +316,7 @@ export default function BlingProdutosPage() {
               {comparando ? 'Comparando...' : 'Comparar lista / moto'}
             </button>
             <span style={{ fontSize: 12, color: 'var(--gray-400)' }}>
-              Use essa revisao para encontrar divergencias de estoque entre a base do ANB e o saldo atual do Bling.
+              Use essa revisao para encontrar divergencias de estoque entre a base do ANB e o saldo atual do Bling, incluindo alertas de anuncio do Mercado Livre fora do status ativo.
             </span>
           </div>
         </div>
@@ -344,6 +346,8 @@ export default function BlingProdutosPage() {
                     ? 'var(--amber)'
                     : item.tipo === 'nao_encontrado_anb'
                       ? 'var(--blue-500)'
+                      : item.tipo === 'status_ml_nao_ativo'
+                        ? 'var(--red)'
                       : 'var(--red)';
 
                   return (
@@ -355,6 +359,11 @@ export default function BlingProdutosPage() {
                         <span style={{ fontSize: 12, background: '#fef2f2', color: borderColor, padding: '2px 8px', borderRadius: 5 }}>
                           {item.titulo}
                         </span>
+                        {item.statusMercadoLivre && (
+                          <span style={{ fontSize: 12, background: item.statusMercadoLivreAtivo ? '#ecfdf3' : '#fef2f2', color: item.statusMercadoLivreAtivo ? 'var(--green)' : 'var(--red)', padding: '2px 8px', borderRadius: 5 }}>
+                            ML: {item.statusMercadoLivre}
+                          </span>
+                        )}
                         {item.moto && <span style={{ fontSize: 12, color: 'var(--gray-400)' }}>{item.moto}</span>}
                       </div>
 
@@ -381,6 +390,12 @@ export default function BlingProdutosPage() {
                         <div style={{ background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
                           <div style={s.label}>Vendidas no ANB</div>
                           <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--gray-700)' }}>{item.qtdVendidasAnb}</div>
+                        </div>
+                        <div style={{ background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
+                          <div style={s.label}>Status ML</div>
+                          <div style={{ fontSize: 15, fontWeight: 700, color: item.statusMercadoLivreAtivo === false ? 'var(--red)' : 'var(--gray-700)' }}>
+                            {item.statusMercadoLivre || 'Nao identificado'}
+                          </div>
                         </div>
                       </div>
                     </div>
