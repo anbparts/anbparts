@@ -516,9 +516,9 @@ async function findBlingProductDetailsByIds(ids: number[]) {
   return details;
 }
 
-function normalizeApiArray(data: any) {
-  if (Array.isArray(data)) return data;
-  if (Array.isArray(data?.data)) return data.data;
+function normalizeApiArray(data: any): any[] {
+  if (Array.isArray(data)) return data as any[];
+  if (Array.isArray(data?.data)) return data.data as any[];
   if (data && typeof data === 'object') return [data];
   return [];
 }
@@ -542,8 +542,8 @@ async function findProdutoLojaIdsByProductIds(ids: number[]) {
   for (const productId of uniqueIds) {
     try {
       const data = await blingReq(`/produtos/lojas?pagina=1&limite=100&idProduto=${productId}`) as any;
-      const rows = normalizeApiArray(data?.data);
-      const lojaIds = Array.from(new Set(
+      const rows: any[] = normalizeApiArray(data?.data);
+      const lojaIds: number[] = Array.from(new Set(
         rows
           .map((row: any) => Number(row?.loja?.id || row?.idLoja || 0))
           .filter(Boolean),
