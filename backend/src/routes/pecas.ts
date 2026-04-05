@@ -27,6 +27,13 @@ const pecaSchema = z.object({
   cadastro:    z.string().optional().nullable(),
 });
 
+const prejuizoPayloadSchema = z.object({
+  motivo: z.string().min(1),
+  precoML: z.number().optional(),
+  valorFrete: z.number().optional(),
+  valorTaxas: z.number().optional(),
+});
+
 async function gerarIdPeca(): Promise<string> {
   const last = await prisma.peca.findFirst({ orderBy: { idPeca: 'desc' } });
   if (!last) return 'PN0001';
@@ -251,7 +258,8 @@ pecasRouter.patch('/:id/vender', async (req, res, next) => {
 // PATCH /pecas/:id/prejuizo
 pecasRouter.patch('/:id/prejuizo', async (req, res, next) => {
   try {
-    const motivo = String(req.body?.motivo || '').trim();
+    const payload = prejuizoPayloadSchema.parse(req.body || {});
+    const motivo = String(payload.motivo || '').trim();
     if (!motivo) return res.status(400).json({ error: 'Motivo do prejuizo e obrigatorio' });
     if (!PREJUIZO_MOTIVOS.has(motivo)) {
       return res.status(400).json({ error: 'Motivo do prejuizo invalido' });
@@ -266,6 +274,7 @@ pecasRouter.patch('/:id/prejuizo', async (req, res, next) => {
         descricao: true,
         precoML: true,
         valorFrete: true,
+        valorTaxas: true,
         disponivel: true,
         emPrejuizo: true,
       },
@@ -274,27 +283,38 @@ pecasRouter.patch('/:id/prejuizo', async (req, res, next) => {
     if (peca.emPrejuizo) return res.status(400).json({ error: 'Peca ja esta em prejuizo' });
     if (!peca.disponivel) return res.status(400).json({ error: 'So e possivel marcar prejuizo para pecas em estoque' });
 
+    const financials = calculatePecaFinancialValues(
+      peca,
+      payload.precoML !== undefined ? Number(payload.precoML) : undefined,
+      payload.valorFrete !== undefined ? Number(payload.valorFrete) : undefined,
+      payload.valorTaxas !== undefined ? Number(payload.valorTaxas) : undefined,
+    );
+
     const detalhe = `${peca.idPeca} - ${peca.descricao}`;
     const result = await prisma.$transaction(async (tx) => {
+      await tx.peca.update({
+        where: { id: peca.id },
+        data: {
+          precoML: financials.precoML,
+          valorFrete: financials.valorFrete,
+          valorTaxas: financials.valorTaxas,
+          valorLiq: financials.valorLiq,
+          disponivel: false,
+          emPrejuizo: true,
+          dataVenda: null,
+          blingPedidoId: null,
+          blingPedidoNum: null,
+        },
+      });
+
       const prejuizo = await tx.prejuizo.create({
         data: {
           data: new Date(),
           detalhe,
           motivo,
           pecaId: peca.id,
-          valor: Number(peca.precoML) || 0,
-          frete: Number(peca.valorFrete) || 0,
-        },
-      });
-
-      await tx.peca.update({
-        where: { id: peca.id },
-        data: {
-          disponivel: false,
-          emPrejuizo: true,
-          dataVenda: null,
-          blingPedidoId: null,
-          blingPedidoNum: null,
+          valor: financials.precoML,
+          frete: financials.valorFrete,
         },
       });
 

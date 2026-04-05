@@ -29,7 +29,7 @@ export const api = {
     create: (data: any)     => req<any>('/pecas', { method: 'POST', body: JSON.stringify(data) }),
     update: (id: number, data: any) => req<any>(`/pecas/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
     vender: (id: number, data: any) => req<any>(`/pecas/${id}/vender`, { method: 'PATCH', body: JSON.stringify(data) }),
-    marcarPrejuizo: (id: number, motivo: string) => req<any>(`/pecas/${id}/prejuizo`, { method: 'PATCH', body: JSON.stringify({ motivo }) }),
+    marcarPrejuizo: (id: number, data: any) => req<any>(`/pecas/${id}/prejuizo`, { method: 'PATCH', body: JSON.stringify(data) }),
     cancelarVenda: (id: number) => req<any>(`/pecas/${id}/cancelar-venda`, { method: 'PATCH' }),
     delete: (id: number)    => req<any>(`/pecas/${id}`, { method: 'DELETE' }),
   },

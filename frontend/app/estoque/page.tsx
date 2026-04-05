@@ -274,7 +274,14 @@ function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, peca, 
         onConfirm={async (motivo: string) => {
           setSaving(true);
           try {
-            await onMarkPrejuizo(peca, motivo);
+            await onMarkPrejuizo({
+              id: peca.id,
+              motivo,
+              precoML: preview.precoML,
+              valorFrete: preview.valorFrete,
+              valorTaxas: preview.valorTaxas,
+              valorLiq: preview.valorLiq,
+            });
           } catch (e: any) {
             setErr(e.message || 'Erro ao registrar prejuízo');
             setSaving(false);
@@ -435,8 +442,8 @@ export default function EstoquePage() {
     load();
   }
 
-  async function handleMarkPrejuizo(peca: any, motivo: string) {
-    await api.pecas.marcarPrejuizo(peca.id, motivo);
+  async function handleMarkPrejuizo(payload: any) {
+    await api.pecas.marcarPrejuizo(payload.id, payload);
     setModal(false);
     setEditPeca(null);
     load();

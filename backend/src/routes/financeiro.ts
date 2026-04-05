@@ -4,6 +4,12 @@ import { prisma } from '../lib/prisma';
 export const financeiroRouter = Router();
 
 const fmt = (v: any) => Number(v) || 0;
+const DEFAULT_FRETE_PADRAO = 29.9;
+const DEFAULT_TAXA_PADRAO_PCT = 17;
+
+function roundMoney(value: number) {
+  return Math.round(value * 100) / 100;
+}
 
 function buildSkuMotoMap(prefixos: any): Record<number, string> {
   const grouped: Record<number, string[]> = {};
@@ -93,6 +99,22 @@ financeiroRouter.delete('/prejuizos/:id', async (req, res, next) => {
     await prisma.$transaction(async (tx) => {
       await tx.prejuizo.delete({ where: { id } });
       if (row.pecaId) {
+        const [peca, cfg] = await Promise.all([
+          tx.peca.findUnique({
+            where: { id: row.pecaId },
+            select: { id: true, precoML: true },
+          }),
+          tx.blingConfig.findFirst({
+            select: { fretePadrao: true, taxaPadraoPct: true },
+          }),
+        ]);
+
+        const precoML = Number(peca?.precoML) || 0;
+        const valorFrete = roundMoney(Number(cfg?.fretePadrao) || DEFAULT_FRETE_PADRAO);
+        const taxaPct = Number(cfg?.taxaPadraoPct) || DEFAULT_TAXA_PADRAO_PCT;
+        const valorTaxas = roundMoney(precoML * (taxaPct / 100));
+        const valorLiq = roundMoney(precoML - valorFrete - valorTaxas);
+
         await tx.peca.update({
           where: { id: row.pecaId },
           data: {
@@ -101,6 +123,9 @@ financeiroRouter.delete('/prejuizos/:id', async (req, res, next) => {
             dataVenda: null,
             blingPedidoId: null,
             blingPedidoNum: null,
+            valorFrete,
+            valorTaxas,
+            valorLiq,
           },
         });
       }
