@@ -3,30 +3,29 @@ import { prisma } from '../lib/prisma';
 
 export const importRouter = Router();
 
-// POST /import/motos  — recebe array de motos do frontend (já parseado do Excel)
+// POST /import/motos
 importRouter.post('/motos', async (req, res, next) => {
   try {
     const raw = req.body as any[];
-    if (!Array.isArray(raw)) return res.status(400).json({ error: 'Dados inválidos' });
+    if (!Array.isArray(raw)) return res.status(400).json({ error: 'Dados invalidos' });
 
     const motos = raw
-      .filter(m => m.marca || m.modelo)
-      .map(m => ({
-        marca:       String(m.marca || 'SEM MARCA').trim(),
-        modelo:      String(m.modelo || 'SEM MODELO').trim(),
-        ano:         m.ano ? Number(m.ano) : null,
+      .filter((m) => m.marca || m.modelo)
+      .map((m) => ({
+        marca: String(m.marca || 'SEM MARCA').trim(),
+        modelo: String(m.modelo || 'SEM MODELO').trim(),
+        ano: m.ano ? Number(m.ano) : null,
         precoCompra: Number(m.precoCompra) || 0,
       }));
 
     let imported = 0;
-    for (const m of motos) {
-      // Evita duplicata pela combinação marca+modelo+ano
+    for (const moto of motos) {
       const exists = await prisma.moto.findFirst({
-        where: { marca: m.marca, modelo: m.modelo, ano: m.ano }
+        where: { marca: moto.marca, modelo: moto.modelo, ano: moto.ano },
       });
       if (!exists) {
-        await prisma.moto.create({ data: m });
-        imported++;
+        await prisma.moto.create({ data: moto });
+        imported += 1;
       }
     }
 
@@ -34,24 +33,24 @@ importRouter.post('/motos', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// POST /import/pecas  — recebe array de peças do frontend (já parseado do Excel)
+// POST /import/pecas
 importRouter.post('/pecas', async (req, res, next) => {
   try {
     const raw = req.body as any[];
-    if (!Array.isArray(raw)) return res.status(400).json({ error: 'Dados inválidos' });
+    if (!Array.isArray(raw)) return res.status(400).json({ error: 'Dados invalidos' });
 
     let imported = 0;
     let skippedInvalidMoto = 0;
     const invalidMotoSamples: { idPeca: string; motoId: any }[] = [];
     const motos = await prisma.moto.findMany({ select: { id: true } });
-    const validMotoIds = new Set(motos.map(m => m.id));
+    const validMotoIds = new Set(motos.map((m) => m.id));
 
     for (const p of raw) {
       if (!p.idPeca || !p.motoId) continue;
 
       const motoId = Number(p.motoId);
       if (!Number.isInteger(motoId) || !validMotoIds.has(motoId)) {
-        skippedInvalidMoto++;
+        skippedInvalidMoto += 1;
         if (invalidMotoSamples.length < 10) {
           invalidMotoSamples.push({ idPeca: String(p.idPeca), motoId: p.motoId });
         }
@@ -60,31 +59,32 @@ importRouter.post('/pecas', async (req, res, next) => {
 
       const data = {
         motoId,
-        idPeca:     String(p.idPeca),
-        descricao:  String(p.descricao || ''),
-        precoML:    Number(p.precoML)    || 0,
-        valorLiq:   Number(p.valorLiq)   || 0,
+        idPeca: String(p.idPeca),
+        descricao: String(p.descricao || ''),
+        precoML: Number(p.precoML) || 0,
+        valorLiq: Number(p.valorLiq) || 0,
         valorFrete: Number(p.valorFrete) || 0,
         valorTaxas: Number(p.valorTaxas) || 0,
         disponivel: p.disponivel === true || p.disponivel === 'Sim',
-        cadastro:   p.cadastro  ? new Date(p.cadastro)  : new Date(),
-        dataVenda:  p.dataVenda ? new Date(p.dataVenda) : null,
+        emPrejuizo: false,
+        cadastro: p.cadastro ? new Date(p.cadastro) : new Date(),
+        dataVenda: p.dataVenda ? new Date(p.dataVenda) : null,
       };
 
       await prisma.peca.upsert({
-        where:  { idPeca: data.idPeca },
+        where: { idPeca: data.idPeca },
         create: data,
         update: {
           disponivel: data.disponivel,
-          dataVenda:  data.dataVenda,
-          precoML:    data.precoML,
-          valorLiq:   data.valorLiq,
+          dataVenda: data.dataVenda,
+          precoML: data.precoML,
+          valorLiq: data.valorLiq,
           valorFrete: data.valorFrete,
           valorTaxas: data.valorTaxas,
-          descricao:  data.descricao,
+          descricao: data.descricao,
         },
       });
-      imported++;
+      imported += 1;
     }
 
     res.json({ imported, skippedInvalidMoto, invalidMotoSamples });
@@ -95,13 +95,13 @@ importRouter.post('/pecas', async (req, res, next) => {
 importRouter.post('/despesas', async (req, res, next) => {
   try {
     const raw = req.body as any[];
-    if (!Array.isArray(raw)) return res.status(400).json({ error: 'Dados inválidos' });
+    if (!Array.isArray(raw)) return res.status(400).json({ error: 'Dados invalidos' });
 
-    const rows = raw.filter(r => r.data && r.detalhes).map(r => ({
-      data:      new Date(r.data),
-      detalhes:  String(r.detalhes),
+    const rows = raw.filter((r) => r.data && r.detalhes).map((r) => ({
+      data: new Date(r.data),
+      detalhes: String(r.detalhes),
       categoria: String(r.categoria || 'Outros'),
-      valor:     Number(r.valor) || 0,
+      valor: Number(r.valor) || 0,
     }));
 
     await prisma.$transaction(async (tx) => {
@@ -112,37 +112,16 @@ importRouter.post('/despesas', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// POST /import/prejuizos
-importRouter.post('/prejuizos', async (req, res, next) => {
-  try {
-    const raw = req.body as any[];
-    if (!Array.isArray(raw)) return res.status(400).json({ error: 'Dados inválidos' });
-
-    const rows = raw.filter(r => r.data && r.detalhe).map(r => ({
-      data:   new Date(r.data),
-      detalhe: String(r.detalhe),
-      valor:  Number(r.valor) || 0,
-      frete:  Number(r.frete) || 0,
-    }));
-
-    await prisma.$transaction(async (tx) => {
-      await tx.prejuizo.deleteMany();
-      if (rows.length) await tx.prejuizo.createMany({ data: rows });
-    });
-    res.json({ imported: rows.length });
-  } catch (e) { next(e); }
-});
-
 // POST /import/investimentos
 importRouter.post('/investimentos', async (req, res, next) => {
   try {
     const raw = req.body as any[];
-    if (!Array.isArray(raw)) return res.status(400).json({ error: 'Dados inválidos' });
+    if (!Array.isArray(raw)) return res.status(400).json({ error: 'Dados invalidos' });
 
-    const rows = raw.filter(r => r.data && r.socio).map(r => ({
-      data:  new Date(r.data),
+    const rows = raw.filter((r) => r.data && r.socio).map((r) => ({
+      data: new Date(r.data),
       socio: String(r.socio),
-      moto:  r.moto ? String(r.moto) : null,
+      moto: r.moto ? String(r.moto) : null,
       valor: Number(r.valor) || 0,
     }));
 

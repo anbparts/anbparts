@@ -6,6 +6,13 @@ export const pecasRouter = Router();
 
 const DEFAULT_SELL_FRETE = 29.9;
 const DEFAULT_TAXA_PCT = 17;
+const PREJUIZO_MOTIVOS = new Set([
+  'Extravio no Envio',
+  'Defeito',
+  'SKU Cancelado',
+  'Peça Restrita - Sem Revenda',
+  'Extravio no Estoque',
+]);
 
 const pecaSchema = z.object({
   motoId:      z.number().int(),
@@ -90,7 +97,7 @@ function calculateManualSaleValues(
 pecasRouter.get('/', async (req, res, next) => {
   try {
     const { motoId, disponivel, search, dataVendaFrom, dataVendaTo, page = '1', per = '20' } = req.query as any;
-    const where: any = {};
+    const where: any = { emPrejuizo: false };
     if (motoId) where.motoId = Number(motoId);
     if (disponivel !== undefined) where.disponivel = disponivel === 'true';
     if (search) where.OR = [
@@ -113,8 +120,8 @@ pecasRouter.get('/', async (req, res, next) => {
         skip: (Number(page) - 1) * Number(per),
         take: Number(per),
       }),
-      prisma.peca.count({ where: { ...where, disponivel: true  } }),
-      prisma.peca.count({ where: { ...where, disponivel: false } }),
+      prisma.peca.count({ where: { ...where, disponivel: true } }),
+      prisma.peca.count({ where: { ...where, disponivel: false, dataVenda: { not: null } } }),
     ]);
 
     res.json({ total, totalDisp, totalVend, page: Number(page), per: Number(per), data: pecas });
@@ -129,6 +136,7 @@ pecasRouter.post('/', async (req, res, next) => {
     const peca = await prisma.peca.create({
       data: {
         ...data,
+        emPrejuizo: false,
         blingPedidoNum: data.blingPedidoNum ? String(data.blingPedidoNum).trim() : null,
         idPeca,
         cadastro:  data.cadastro  ? new Date(data.cadastro)  : new Date(),
@@ -188,6 +196,7 @@ pecasRouter.patch('/:id/cancelar-venda', async (req, res, next) => {
       where: { id: Number(req.params.id) },
       data: {
         disponivel: true,
+        emPrejuizo: false,
         dataVenda: null,
         blingPedidoId: null,
         blingPedidoNum: null,
@@ -225,6 +234,7 @@ pecasRouter.patch('/:id/vender', async (req, res, next) => {
       where: { id: Number(req.params.id) },
       data: {
         disponivel: false,
+        emPrejuizo: false,
         dataVenda: dataVenda ? new Date(dataVenda) : new Date(),
         blingPedidoId: null,
         blingPedidoNum: String(pedidoNum).trim(),
@@ -235,6 +245,63 @@ pecasRouter.patch('/:id/vender', async (req, res, next) => {
       }
     });
     res.json(peca);
+  } catch (e) { next(e); }
+});
+
+// PATCH /pecas/:id/prejuizo
+pecasRouter.patch('/:id/prejuizo', async (req, res, next) => {
+  try {
+    const motivo = String(req.body?.motivo || '').trim();
+    if (!motivo) return res.status(400).json({ error: 'Motivo do prejuizo e obrigatorio' });
+    if (!PREJUIZO_MOTIVOS.has(motivo)) {
+      return res.status(400).json({ error: 'Motivo do prejuizo invalido' });
+    }
+
+    const peca = await prisma.peca.findUnique({
+      where: { id: Number(req.params.id) },
+      select: {
+        id: true,
+        idPeca: true,
+        motoId: true,
+        descricao: true,
+        precoML: true,
+        valorFrete: true,
+        disponivel: true,
+        emPrejuizo: true,
+      },
+    });
+    if (!peca) return res.status(404).json({ error: 'Peca nao encontrada' });
+    if (peca.emPrejuizo) return res.status(400).json({ error: 'Peca ja esta em prejuizo' });
+    if (!peca.disponivel) return res.status(400).json({ error: 'So e possivel marcar prejuizo para pecas em estoque' });
+
+    const detalhe = `${peca.idPeca} - ${peca.descricao}`;
+    const result = await prisma.$transaction(async (tx) => {
+      const prejuizo = await tx.prejuizo.create({
+        data: {
+          data: new Date(),
+          detalhe,
+          motivo,
+          pecaId: peca.id,
+          valor: Number(peca.precoML) || 0,
+          frete: Number(peca.valorFrete) || 0,
+        },
+      });
+
+      await tx.peca.update({
+        where: { id: peca.id },
+        data: {
+          disponivel: false,
+          emPrejuizo: true,
+          dataVenda: null,
+          blingPedidoId: null,
+          blingPedidoNum: null,
+        },
+      });
+
+      return prejuizo;
+    });
+
+    res.json(result);
   } catch (e) { next(e); }
 });
 

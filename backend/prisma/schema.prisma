@@ -36,6 +36,7 @@ model Peca {
   valorFrete  Decimal  @default(0) @db.Decimal(12, 2)
   valorTaxas  Decimal  @default(0) @db.Decimal(12, 2)
   disponivel  Boolean  @default(true)
+  emPrejuizo  Boolean  @default(false)
   dataVenda   DateTime?
   blingPedidoId  String?
   blingPedidoNum String?
@@ -43,6 +44,7 @@ model Peca {
   updatedAt   DateTime @updatedAt
 
   moto        Moto     @relation(fields: [motoId], references: [id])
+  prejuizo    Prejuizo?
 }
 
 model Despesa {
@@ -58,9 +60,13 @@ model Prejuizo {
   id         Int      @id @default(autoincrement())
   data       DateTime
   detalhe    String
+  motivo     String?
+  pecaId     Int?     @unique
   valor      Decimal  @default(0) @db.Decimal(12, 2)
   frete      Decimal  @default(0) @db.Decimal(12, 2)
   createdAt  DateTime @default(now())
+
+  peca       Peca?    @relation(fields: [pecaId], references: [id], onDelete: Cascade)
 }
 
 model Investimento {

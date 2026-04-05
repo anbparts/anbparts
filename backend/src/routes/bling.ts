@@ -333,8 +333,8 @@ function findLinkedPecasByPedido(
   });
 
   return candidates.sort((a, b) => {
-    const soldA = a.disponivel ? 0 : 1;
-    const soldB = b.disponivel ? 0 : 1;
+    const soldA = !a.disponivel && !a.emPrejuizo ? 1 : 0;
+    const soldB = !b.disponivel && !b.emPrejuizo ? 1 : 0;
     if (soldA !== soldB) return soldB - soldA;
 
     const diff = new Date(b.dataVenda || 0).getTime() - new Date(a.dataVenda || 0).getTime();
@@ -365,6 +365,7 @@ function findAvailablePecaForVenda(
   const candidates = allPecas
     .filter((peca) =>
       peca.disponivel
+      && !peca.emPrejuizo
       && !reservedIds.has(peca.id)
       && codigos.some((codigo) => matchesSku(peca.idPeca, codigo)),
     )
@@ -699,6 +700,7 @@ blingRouter.post('/comparar-produtos', async (req, res, next) => {
           idPeca: true,
           descricao: true,
           disponivel: true,
+          emPrejuizo: true,
           moto: { select: { marca: true, modelo: true } },
         },
         orderBy: { idPeca: 'asc' },
@@ -731,8 +733,8 @@ blingRouter.post('/comparar-produtos', async (req, res, next) => {
       };
 
       current.qtdTotalAnb += 1;
-      current.qtdDisponivelAnb += peca.disponivel ? 1 : 0;
-      current.qtdVendidasAnb += peca.disponivel ? 0 : 1;
+      current.qtdDisponivelAnb += peca.disponivel && !peca.emPrejuizo ? 1 : 0;
+      current.qtdVendidasAnb += !peca.disponivel && !peca.emPrejuizo ? 1 : 0;
       if (!current.descricaoAnb) current.descricaoAnb = peca.descricao || null;
       if (!current.moto && peca.moto) current.moto = `${peca.moto.marca} ${peca.moto.modelo}`;
 
@@ -892,6 +894,7 @@ blingRouter.post('/sync/vendas', async (req, res, next) => {
         id: true,
         idPeca: true,
         disponivel: true,
+        emPrejuizo: true,
         precoML: true,
         valorFrete: true,
         valorTaxas: true,
@@ -976,7 +979,7 @@ blingRouter.post('/sync/vendas', async (req, res, next) => {
           idBling,
           isCancelado ? reservedCancelPecaIds : new Set<number>(),
         );
-        const linkedVendidas = linkedPecas.filter((peca) => !peca.disponivel);
+        const linkedVendidas = linkedPecas.filter((peca) => !peca.disponivel && !peca.emPrejuizo);
         const pecaReferencia = findSkuReferencePeca(todasPecas, skuBling, idBling);
 
         const freteLinha = fretesPorLinha[lineIndex] || 0;
@@ -1123,6 +1126,7 @@ blingRouter.post('/baixar', async (req, res, next) => {
       where: { id: { in: ids } },
       data: {
         disponivel: false,
+        emPrejuizo: false,
         dataVenda: new Date(dataVenda),
         blingPedidoId: pedidoId ? String(pedidoId) : null,
         blingPedidoNum: pedidoNum ? String(pedidoNum) : null,
@@ -1163,6 +1167,7 @@ blingRouter.post('/aprovar-cancelamento', async (req, res, next) => {
       where: { id: { in: ids } },
       data: {
         disponivel: true,
+        emPrejuizo: false,
         dataVenda: null,
         blingPedidoId: null,
         blingPedidoNum: null,

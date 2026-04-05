@@ -5,6 +5,23 @@ export const financeiroRouter = Router();
 
 const fmt = (v: any) => Number(v) || 0;
 
+function buildSkuMotoMap(prefixos: any): Record<number, string> {
+  const grouped: Record<number, string[]> = {};
+  const rows = Array.isArray(prefixos) ? prefixos : [];
+
+  for (const item of rows) {
+    const motoId = Number(item?.motoId);
+    const prefixo = String(item?.prefixo || '').trim().toUpperCase();
+    if (!motoId || !prefixo) continue;
+    if (!grouped[motoId]) grouped[motoId] = [];
+    if (!grouped[motoId].includes(prefixo)) grouped[motoId].push(prefixo);
+  }
+
+  return Object.fromEntries(
+    Object.entries(grouped).map(([motoId, skus]) => [Number(motoId), skus.join(' / ')]),
+  );
+}
+
 // ── DESPESAS ────────────────────────────────────────────────────────────────
 financeiroRouter.get('/despesas', async (req, res, next) => {
   try {
@@ -31,22 +48,64 @@ financeiroRouter.delete('/despesas/:id', async (req, res, next) => {
 // ── PREJUÍZOS ────────────────────────────────────────────────────────────────
 financeiroRouter.get('/prejuizos', async (req, res, next) => {
   try {
-    const rows = await prisma.prejuizo.findMany({ orderBy: { data: 'desc' } });
-    res.json(rows.map(r => ({ ...r, valor: fmt(r.valor), frete: fmt(r.frete) })));
-  } catch (e) { next(e); }
-});
+    const [rows, cfg] = await Promise.all([
+      prisma.prejuizo.findMany({
+        include: {
+          peca: {
+            select: {
+              id: true,
+              idPeca: true,
+              motoId: true,
+              descricao: true,
+              moto: { select: { marca: true, modelo: true } },
+            },
+          },
+        },
+        orderBy: [{ data: 'desc' }, { id: 'desc' }],
+      }),
+      prisma.blingConfig.findFirst({ select: { prefixos: true } }),
+    ]);
 
-financeiroRouter.post('/prejuizos', async (req, res, next) => {
-  try {
-    const { data, detalhe, valor, frete } = req.body;
-    const row = await prisma.prejuizo.create({ data: { data: new Date(data), detalhe, valor: valor || 0, frete: frete || 0 } });
-    res.json(row);
+    const skuMotoMap = buildSkuMotoMap(cfg?.prefixos);
+    res.json(rows.map((row) => ({
+      ...row,
+      valor: fmt(row.valor),
+      frete: fmt(row.frete),
+      total: fmt(row.valor) + fmt(row.frete),
+      idMoto: row.peca?.motoId || null,
+      skuMoto: row.peca?.motoId ? (skuMotoMap[row.peca.motoId] || null) : null,
+      idPeca: row.peca?.idPeca || null,
+      descricaoPeca: row.peca?.descricao || row.detalhe,
+      moto: row.peca?.moto ? `${row.peca.moto.marca} ${row.peca.moto.modelo}` : null,
+    })));
   } catch (e) { next(e); }
 });
 
 financeiroRouter.delete('/prejuizos/:id', async (req, res, next) => {
   try {
-    await prisma.prejuizo.delete({ where: { id: Number(req.params.id) } });
+    const id = Number(req.params.id);
+    const row = await prisma.prejuizo.findUnique({
+      where: { id },
+      select: { id: true, pecaId: true },
+    });
+    if (!row) return res.status(404).json({ error: 'Prejuizo nao encontrado' });
+
+    await prisma.$transaction(async (tx) => {
+      await tx.prejuizo.delete({ where: { id } });
+      if (row.pecaId) {
+        await tx.peca.update({
+          where: { id: row.pecaId },
+          data: {
+            emPrejuizo: false,
+            disponivel: true,
+            dataVenda: null,
+            blingPedidoId: null,
+            blingPedidoNum: null,
+          },
+        });
+      }
+    });
+
     res.json({ ok: true });
   } catch (e) { next(e); }
 });
@@ -78,7 +137,7 @@ financeiroRouter.delete('/investimentos/:id', async (req, res, next) => {
 financeiroRouter.get('/dre', async (req, res, next) => {
   try {
     const [pecasVendidas, despesas, prejuizos, motos] = await Promise.all([
-      prisma.peca.findMany({ where: { disponivel: false }, select: { precoML: true, valorLiq: true, valorFrete: true, valorTaxas: true } }),
+      prisma.peca.findMany({ where: { disponivel: false, emPrejuizo: false, dataVenda: { not: null } }, select: { precoML: true, valorLiq: true, valorFrete: true, valorTaxas: true } }),
       prisma.despesa.findMany({ select: { valor: true, categoria: true } }),
       prisma.prejuizo.findMany({ select: { valor: true, frete: true } }),
       prisma.moto.findMany({ select: { precoCompra: true } }),

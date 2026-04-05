@@ -29,6 +29,7 @@ export const api = {
     create: (data: any)     => req<any>('/pecas', { method: 'POST', body: JSON.stringify(data) }),
     update: (id: number, data: any) => req<any>(`/pecas/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
     vender: (id: number, data: any) => req<any>(`/pecas/${id}/vender`, { method: 'PATCH', body: JSON.stringify(data) }),
+    marcarPrejuizo: (id: number, motivo: string) => req<any>(`/pecas/${id}/prejuizo`, { method: 'PATCH', body: JSON.stringify({ motivo }) }),
     cancelarVenda: (id: number) => req<any>(`/pecas/${id}/cancelar-venda`, { method: 'PATCH' }),
     delete: (id: number)    => req<any>(`/pecas/${id}`, { method: 'DELETE' }),
   },
@@ -36,6 +37,12 @@ export const api = {
     dashboard: () => req<any>('/faturamento/dashboard'),
     geral:     () => req<any[]>('/faturamento/geral'),
     porMoto:   () => req<any[]>('/faturamento/por-moto'),
+  },
+  financeiro: {
+    prejuizos: {
+      list: () => req<any[]>('/financeiro/prejuizos'),
+      delete: (id: number) => req<any>(`/financeiro/prejuizos/${id}`, { method: 'DELETE' }),
+    },
   },
   import: {
     motos: (data: any[]) => req<any>('/import/motos', { method: 'POST', body: JSON.stringify(data) }),

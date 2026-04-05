@@ -45,6 +45,13 @@ function startOfMonth(date: Date) {
 }
 
 const pageSizeOptions = [10, 20, 50, 100, 250];
+const PREJUIZO_OPTIONS = [
+  'Extravio no Envio',
+  'Defeito',
+  'SKU Cancelado',
+  'Peça Restrita - Sem Revenda',
+  'Extravio no Estoque',
+];
 
 const cs: any = {
   topbar: { height: 'var(--topbar-h)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 28px', background: 'var(--white)', borderBottom: '1px solid var(--border)', position: 'sticky' as const, top: 0, zIndex: 50 },
@@ -59,7 +66,42 @@ const cs: any = {
   fi: { width: '100%', background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13.5, fontFamily: 'Geist, sans-serif', outline: 'none', marginTop: 5, color: 'var(--ink)' },
 };
 
-function PecaModal({ open, onClose, onSave, onCancelSale, peca, motos }: any) {
+function PrejuizoReasonModal({ open, peca, saving, onClose, onConfirm }: any) {
+  const [motivo, setMotivo] = useState(PREJUIZO_OPTIONS[0]);
+
+  useEffect(() => {
+    if (open) setMotivo(PREJUIZO_OPTIONS[0]);
+  }, [open]);
+
+  if (!open || !peca) return null;
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 240, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }}>
+      <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 16, width: '100%', maxWidth: 420, boxShadow: '0 12px 32px rgba(0,0,0,.10)' }}>
+        <div style={{ padding: '20px 22px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div style={{ fontFamily: 'Fraunces, serif', fontSize: 18, fontWeight: 600 }}>Marcar prejuízo</div>
+            <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 4 }}>{peca.idPeca} - {peca.descricao}</div>
+          </div>
+          <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer' }}>X</button>
+        </div>
+        <div style={{ padding: '20px 22px' }}>
+          <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginBottom: 12 }}>Selecione o motivo do prejuízo para remover a peça do estoque e registrar no relatório.</div>
+          <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-soft)' }}>Motivo *</label>
+          <select style={{ ...cs.fi, cursor: 'pointer' }} value={motivo} onChange={(e) => setMotivo(e.target.value)}>
+            {PREJUIZO_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+          </select>
+        </div>
+        <div style={{ padding: '14px 22px 20px', display: 'flex', gap: 8, justifyContent: 'flex-end', borderTop: '1px solid var(--border)' }}>
+          <button onClick={onClose} style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink-soft)', borderColor: 'var(--border-strong)' }}>Cancelar</button>
+          <button onClick={() => onConfirm(motivo)} disabled={saving} style={{ ...cs.btn, background: '#fee2e2', color: '#b91c1c', borderColor: '#fecaca' }}>{saving ? 'Salvando...' : 'Confirmar prejuízo'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, peca, motos }: any) {
   const empty = {
     motoId: '',
     descricao: '',
@@ -76,6 +118,7 @@ function PecaModal({ open, onClose, onSave, onCancelSale, peca, motos }: any) {
   const [form, setForm] = useState(empty);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
+  const [showPrejuizoModal, setShowPrejuizoModal] = useState(false);
   const preview = calculatePecaPreview(form.precoML, form.valorFrete, form.valorTaxas);
 
   useEffect(() => {
@@ -96,6 +139,7 @@ function PecaModal({ open, onClose, onSave, onCancelSale, peca, motos }: any) {
       setForm(empty);
     }
     setErr('');
+    setShowPrejuizoModal(false);
   }, [peca, open]);
 
   if (!open) return null;
@@ -206,6 +250,15 @@ function PecaModal({ open, onClose, onSave, onCancelSale, peca, motos }: any) {
                 Cancelar venda
               </button>
             )}
+            {peca && peca.disponivel && (
+              <button
+                onClick={() => setShowPrejuizoModal(true)}
+                disabled={saving}
+                style={{ ...cs.btn, background: '#fff7ed', color: '#c2410c', borderColor: '#fed7aa' }}
+              >
+                Prejuízo
+              </button>
+            )}
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={onClose} style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink-soft)', borderColor: 'var(--border-strong)' }}>Cancelar</button>
@@ -213,6 +266,24 @@ function PecaModal({ open, onClose, onSave, onCancelSale, peca, motos }: any) {
           </div>
         </div>
       </div>
+      <PrejuizoReasonModal
+        open={showPrejuizoModal}
+        peca={peca}
+        saving={saving}
+        onClose={() => setShowPrejuizoModal(false)}
+        onConfirm={async (motivo: string) => {
+          setSaving(true);
+          try {
+            await onMarkPrejuizo(peca, motivo);
+          } catch (e: any) {
+            setErr(e.message || 'Erro ao registrar prejuízo');
+            setSaving(false);
+            return;
+          }
+          setSaving(false);
+          setShowPrejuizoModal(false);
+        }}
+      />
     </div>
   );
 }
@@ -359,6 +430,13 @@ export default function EstoquePage() {
 
   async function handleCancelSale(peca: any) {
     await api.pecas.cancelarVenda(peca.id);
+    setModal(false);
+    setEditPeca(null);
+    load();
+  }
+
+  async function handleMarkPrejuizo(peca: any, motivo: string) {
+    await api.pecas.marcarPrejuizo(peca.id, motivo);
     setModal(false);
     setEditPeca(null);
     load();
@@ -530,7 +608,7 @@ export default function EstoquePage() {
         </div>
       </div>
 
-      <PecaModal open={modal} onClose={() => { setModal(false); setEditPeca(null); }} onSave={handleSavePeca} onCancelSale={handleCancelSale} peca={editPeca} motos={motos} />
+      <PecaModal open={modal} onClose={() => { setModal(false); setEditPeca(null); }} onSave={handleSavePeca} onCancelSale={handleCancelSale} onMarkPrejuizo={handleMarkPrejuizo} peca={editPeca} motos={motos} />
       <VendaModal open={vendaModal} peca={vendaPeca} onClose={() => setVendaModal(false)} onConfirm={handleVenda} />
     </>
   );

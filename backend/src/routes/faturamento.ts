@@ -7,7 +7,7 @@ export const faturamentoRouter = Router();
 faturamentoRouter.get('/geral', async (req, res, next) => {
   try {
     const pecas = await prisma.peca.findMany({
-      where: { disponivel: false, dataVenda: { not: null } },
+      where: { disponivel: false, emPrejuizo: false, dataVenda: { not: null } },
       select: { valorLiq: true, precoML: true, dataVenda: true }
     });
 
@@ -32,7 +32,7 @@ faturamentoRouter.get('/geral', async (req, res, next) => {
 faturamentoRouter.get('/por-moto', async (req, res, next) => {
   try {
     const pecas = await prisma.peca.findMany({
-      where: { disponivel: false, dataVenda: { not: null } },
+      where: { disponivel: false, emPrejuizo: false, dataVenda: { not: null } },
       select: { valorLiq: true, precoML: true, dataVenda: true, moto: { select: { id: true, marca: true, modelo: true } } }
     });
 
@@ -64,8 +64,8 @@ faturamentoRouter.get('/dashboard', async (req, res, next) => {
     const [totalMotos, totalPecas, pecasVendidas, pecasDisp, motos, despesas] = await Promise.all([
       prisma.moto.count(),
       prisma.peca.count(),
-      prisma.peca.findMany({ where: { disponivel: false }, select: { precoML: true, valorLiq: true, valorTaxas: true, valorFrete: true } }),
-      prisma.peca.findMany({ where: { disponivel: true  }, select: { precoML: true, valorLiq: true } }),
+      prisma.peca.findMany({ where: { disponivel: false, emPrejuizo: false, dataVenda: { not: null } }, select: { precoML: true, valorLiq: true, valorTaxas: true, valorFrete: true } }),
+      prisma.peca.findMany({ where: { disponivel: true, emPrejuizo: false }, select: { precoML: true, valorLiq: true } }),
       prisma.moto.findMany({ select: { precoCompra: true } }),
       prisma.despesa.findMany({ select: { valor: true, categoria: true } }),
     ]);

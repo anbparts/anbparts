@@ -23,15 +23,15 @@ motosRouter.get('/', async (req, res, next) => {
     const motos = await prisma.moto.findMany({
       include: {
         pecas: {
-          select: { id: true, disponivel: true, precoML: true, valorLiq: true }
+          select: { id: true, disponivel: true, emPrejuizo: true, precoML: true, valorLiq: true }
         }
       },
       orderBy: { id: 'asc' }
     });
 
     const result = motos.map(m => {
-      const disponiveis = m.pecas.filter(p => p.disponivel);
-      const vendidas    = m.pecas.filter(p => !p.disponivel);
+      const disponiveis = m.pecas.filter(p => p.disponivel && !p.emPrejuizo);
+      const vendidas    = m.pecas.filter(p => !p.disponivel && !p.emPrejuizo);
 
       // Receita = Preço ML das vendidas (valor bruto)
       const receita = vendidas.reduce((s, p) => s + Number(p.precoML), 0);
