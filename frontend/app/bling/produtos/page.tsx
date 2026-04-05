@@ -67,11 +67,17 @@ type Comparacao = {
 };
 
 type CsvLinha = {
+  id?: string;
   codigo: string;
   descricao: string;
   situacao: string;
   estoque: number;
   preco: number;
+};
+
+type CsvArquivoCarregado = {
+  nome: string;
+  totalLinhas: number;
 };
 
 type CsvEscopoAnb = 'full' | 'com_estoque' | 'sem_estoque';
@@ -171,7 +177,7 @@ export default function BlingProdutosPage() {
   const [motoComparacaoId, setMotoComparacaoId] = useState('');
   const [comparando, setComparando] = useState(false);
   const [comparacao, setComparacao] = useState<Comparacao | null>(null);
-  const [csvArquivoNome, setCsvArquivoNome] = useState('');
+  const [csvArquivos, setCsvArquivos] = useState<CsvArquivoCarregado[]>([]);
   const [csvLinhas, setCsvLinhas] = useState<CsvLinha[]>([]);
   const [csvEscopoAnb, setCsvEscopoAnb] = useState<CsvEscopoAnb>('full');
   const [csvEscopoArquivo, setCsvEscopoArquivo] = useState<CsvEscopoArquivo>('full');
@@ -179,51 +185,83 @@ export default function BlingProdutosPage() {
   const [csvComparando, setCsvComparando] = useState(false);
   const [csvComparacao, setCsvComparacao] = useState<CsvComparacao | null>(null);
 
-  async function carregarCsv(file: File) {
+  async function carregarCsv(files: FileList | File[]) {
     setCsvCarregando(true);
     setCsvComparacao(null);
     try {
       const XLSX = await import('xlsx');
-      const csvText = await file.text();
-      const workbook = XLSX.read(csvText, {
-        type: 'string',
-        FS: ';',
-        raw: true,
-        cellText: false,
-        cellNF: false,
-      });
-      const firstSheetName = workbook.SheetNames[0];
+      const arquivos = Array.from(files || []);
+      const todosArquivos: CsvArquivoCarregado[] = [];
+      const linhasPorChave = new Map<string, CsvLinha>();
 
-      if (!firstSheetName) {
-        alert('Nao foi possivel identificar uma planilha valida no CSV');
-        setCsvLinhas([]);
-        setCsvArquivoNome('');
-        return;
+      for (const file of arquivos) {
+        const csvText = await file.text();
+        const workbook = XLSX.read(csvText, {
+          type: 'string',
+          FS: ';',
+          raw: true,
+          cellText: false,
+          cellNF: false,
+        });
+        const firstSheetName = workbook.SheetNames[0];
+
+        if (!firstSheetName) continue;
+
+        const sheet = workbook.Sheets[firstSheetName];
+        const rawRows = XLSX.utils.sheet_to_json<Record<string, any>>(sheet, { defval: '', raw: true });
+        const linhas = rawRows
+          .map((row) => {
+            const id = String(getCsvField(row, 'id') || '').trim();
+            const codigo = String(getCsvField(row, 'codigo') || '').trim().replace(/\s+/g, '');
+            return {
+              id,
+              codigo,
+              descricao: String(getCsvField(row, 'descricao') || '').trim(),
+              situacao: String(getCsvField(row, 'situacao') || '').trim(),
+              estoque: toCsvNumber(getCsvField(row, 'estoque')),
+              preco: toCsvNumber(getCsvField(row, 'preco')),
+            };
+          })
+          .filter((item) => item.codigo);
+
+        todosArquivos.push({
+          nome: file.name,
+          totalLinhas: linhas.length,
+        });
+
+        for (const linha of linhas) {
+          const key = linha.id || linha.codigo;
+          linhasPorChave.set(key, linha);
+        }
       }
 
-      const sheet = workbook.Sheets[firstSheetName];
-      const rawRows = XLSX.utils.sheet_to_json<Record<string, any>>(sheet, { defval: '', raw: true });
-      const linhas = rawRows
-        .map((row) => {
-          const codigo = String(getCsvField(row, 'codigo') || '').trim().replace(/\s+/g, '');
-          return {
-            codigo,
-            descricao: String(getCsvField(row, 'descricao') || '').trim(),
-            situacao: String(getCsvField(row, 'situacao') || '').trim(),
-            estoque: toCsvNumber(getCsvField(row, 'estoque')),
-            preco: toCsvNumber(getCsvField(row, 'preco')),
-          };
-        })
-        .filter((item) => item.codigo);
-
-      setCsvLinhas(linhas);
-      setCsvArquivoNome(file.name);
+      setCsvLinhas((prev) => {
+        const merged = new Map<string, CsvLinha>();
+        for (const linha of prev) {
+          const key = linha.id || linha.codigo;
+          merged.set(key, linha);
+        }
+        for (const [key, linha] of linhasPorChave.entries()) {
+          merged.set(key, linha);
+        }
+        return Array.from(merged.values());
+      });
+      setCsvArquivos((prev) => {
+        const merged = new Map<string, CsvArquivoCarregado>();
+        for (const item of prev) merged.set(item.nome, item);
+        for (const item of todosArquivos) merged.set(item.nome, item);
+        return Array.from(merged.values());
+      });
     } catch (e: any) {
       alert(`Erro ao ler CSV: ${e.message}`);
-      setCsvLinhas([]);
-      setCsvArquivoNome('');
     }
     setCsvCarregando(false);
+  }
+
+  function limparCsvCarregado() {
+    setCsvArquivos([]);
+    setCsvLinhas([]);
+    setCsvComparacao(null);
   }
 
   useEffect(() => {
@@ -499,10 +537,11 @@ export default function BlingProdutosPage() {
                 style={{ ...s.input, width: '100%', padding: '6px 10px' }}
                 type="file"
                 accept=".csv,text/csv"
+                multiple
                 onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (!file) return;
-                  carregarCsv(file);
+                  if (!e.target.files?.length) return;
+                  carregarCsv(e.target.files);
+                  e.target.value = '';
                 }}
               />
             </div>
@@ -540,12 +579,40 @@ export default function BlingProdutosPage() {
             >
               {csvComparando ? 'Comparando CSV...' : 'Comparar CSV'}
             </button>
+            <button
+              style={{ ...s.btn, background: 'var(--gray-100)', color: 'var(--gray-500)', border: '1px solid var(--border)' }}
+              type="button"
+              onClick={limparCsvCarregado}
+              disabled={csvCarregando || csvComparando || (!csvArquivos.length && !csvLinhas.length)}
+            >
+              Limpar arquivos
+            </button>
             <span style={{ fontSize: 12, color: 'var(--gray-400)' }}>
-              {csvArquivoNome
-                ? `${csvArquivoNome} - ${csvLinhas.length} linha(s) valida(s) carregada(s)`
+              {csvArquivos.length
+                ? `${csvArquivos.length} arquivo(s) carregado(s) - ${csvLinhas.length} linha(s) valida(s) unificadas`
                 : 'Nenhum CSV carregado ainda'}
             </span>
           </div>
+
+          {csvArquivos.length > 0 && (
+            <div style={{ marginTop: 14, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {csvArquivos.map((arquivo) => (
+                <span
+                  key={arquivo.nome}
+                  style={{
+                    fontSize: 12,
+                    background: 'var(--gray-100)',
+                    color: 'var(--gray-500)',
+                    padding: '4px 8px',
+                    borderRadius: 6,
+                    fontFamily: 'JetBrains Mono, monospace',
+                  }}
+                >
+                  {arquivo.nome} - {arquivo.totalLinhas} linha(s)
+                </span>
+              ))}
+            </div>
+          )}
         </div>
 
         {comparacao && (
