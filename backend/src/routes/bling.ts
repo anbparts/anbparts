@@ -11,6 +11,35 @@ const STATUS_ID_CONCLUIDO = 9;
 const STATUS_IDS_CANCELADO = new Set([12]);
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const PRODUCT_STORE_LINK_CACHE_TTL_MS = 10 * 60 * 1000;
+const BLING_PRODUCT_CACHE_TTL_MS = 2 * 60 * 1000;
+const MERCADO_LIVRE_STATUS_CONCURRENCY = 4;
+const produtoLojaLinksCache = new Map<number, { expiresAt: number; rows: any[] }>();
+const blingProductByCodeCache = new Map<string, { expiresAt: number; value: any | null }>();
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<R>,
+) {
+  if (!items.length) return [] as R[];
+
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+
+  const run = async () => {
+    while (true) {
+      const current = nextIndex;
+      nextIndex += 1;
+      if (current >= items.length) break;
+      results[current] = await worker(items[current], current);
+    }
+  };
+
+  const poolSize = Math.max(1, Math.min(concurrency, items.length));
+  await Promise.all(Array.from({ length: poolSize }, () => run()));
+  return results;
+}
 
 function toNumber(value: any, fallback = 0) {
   if (typeof value === 'string') {
@@ -479,9 +508,20 @@ async function listPedidos(dataInicio?: string, dataFim?: string, situacoes?: nu
 }
 
 async function findBlingProductsByCodes(codes: string[]) {
-  const targetCodes = new Set(codes.map((code) => getBaseSku(code)));
+  const uniqueCodes = Array.from(new Set(codes.map((code) => getBaseSku(code)).filter(Boolean)));
   const found = new Map<string, any>();
+  const targetCodes = new Set<string>();
   let pagina = 1;
+
+  for (const code of uniqueCodes) {
+    const cached = blingProductByCodeCache.get(code);
+    if (cached && cached.expiresAt > Date.now() && cached.value) {
+      found.set(code, cached.value);
+      continue;
+    }
+
+    targetCodes.add(code);
+  }
 
   while (targetCodes.size > 0) {
     const data = await blingReq(`/produtos?pagina=${pagina}&limite=100&criterio=2`) as any;
@@ -493,6 +533,10 @@ async function findBlingProductsByCodes(codes: string[]) {
       if (!code || !targetCodes.has(code) || found.has(code)) continue;
 
       found.set(code, produto);
+      blingProductByCodeCache.set(code, {
+        expiresAt: Date.now() + BLING_PRODUCT_CACHE_TTL_MS,
+        value: produto,
+      });
       targetCodes.delete(code);
     }
 
@@ -563,30 +607,58 @@ function parseAnuncioStatus(value: any) {
   return null;
 }
 
-async function findProdutoLojaIdsByProductIds(ids: number[]) {
+function getProdutoLojaId(row: any) {
+  const lojaId = Number(row?.loja?.id || row?.idLoja || 0);
+  return Number.isFinite(lojaId) && lojaId > 0 ? lojaId : 0;
+}
+
+function getProdutoLojaIds(rows: any[]) {
+  return Array.from(new Set(
+    rows
+      .map((row) => getProdutoLojaId(row))
+      .filter((id): id is number => Number.isFinite(id) && id > 0),
+  ));
+}
+
+function isLikelyMercadoLivreLink(row: any) {
+  const codigo = String(row?.codigo || row?.codigoLoja || '').trim().toUpperCase();
+  const lojaNome = normalizeText(String(row?.loja?.nome || row?.nomeLoja || ''));
+  return /^ML[A-Z0-9]/.test(codigo) || /mercado ?livre/.test(lojaNome);
+}
+
+async function fetchProdutoLojaLinksByProductId(productId: number) {
+  const cached = produtoLojaLinksCache.get(productId);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.rows;
+  }
+
+  const data = await blingReq(`/produtos/lojas?pagina=1&limite=100&idProduto=${productId}`) as any;
+  const rows: any[] = normalizeApiArray(data?.data);
+  produtoLojaLinksCache.set(productId, {
+    expiresAt: Date.now() + PRODUCT_STORE_LINK_CACHE_TTL_MS,
+    rows,
+  });
+  return rows;
+}
+
+async function findProdutoLojaLinksByProductIds(ids: number[]) {
   const uniqueIds: number[] = Array.from(new Set(
     ids
       .map((id) => Number(id))
       .filter((id): id is number => Number.isFinite(id) && id > 0),
   ));
-  const links = new Map<number, number[]>();
+  const links = new Map<number, any[]>();
 
-  for (const productId of uniqueIds) {
+  await mapWithConcurrency(uniqueIds, MERCADO_LIVRE_STATUS_CONCURRENCY, async (productId) => {
     try {
-      const data = await blingReq(`/produtos/lojas?pagina=1&limite=100&idProduto=${productId}`) as any;
-      const rows: any[] = normalizeApiArray(data?.data);
-      const lojaIds: number[] = Array.from(new Set(
-        rows
-          .map((row: any) => Number(row?.loja?.id || row?.idLoja || 0))
-          .filter((id: number): id is number => Number.isFinite(id) && id > 0),
-      ));
-      links.set(productId, lojaIds);
+      const rows = await fetchProdutoLojaLinksByProductId(productId);
+      links.set(productId, rows);
     } catch {
       links.set(productId, []);
     }
 
-    await sleep(120);
-  }
+    return null;
+  });
 
   return links;
 }
@@ -660,7 +732,7 @@ async function collectMercadoLivreStatusByProductIds(ids: number[], withDebug = 
       .map((id) => Number(id))
       .filter((id): id is number => Number.isFinite(id) && id > 0),
   ));
-  const productStoreIds = await findProdutoLojaIdsByProductIds(uniqueIds);
+  const productStoreLinks = await findProdutoLojaLinksByProductIds(uniqueIds);
   const statuses = new Map<number, {
     found: boolean;
     label: string | null;
@@ -682,8 +754,79 @@ async function collectMercadoLivreStatusByProductIds(ids: number[], withDebug = 
     }>;
   }>();
 
+  if (!withDebug) {
+    await mapWithConcurrency(uniqueIds, MERCADO_LIVRE_STATUS_CONCURRENCY, async (productId) => {
+      const lojaRows = productStoreLinks.get(productId) || [];
+      const lojaIds = getProdutoLojaIds(lojaRows);
+      const mercadoLivreRows = lojaRows.filter((row) => isLikelyMercadoLivreLink(row));
+      const candidateRows = (mercadoLivreRows.length ? mercadoLivreRows : lojaRows)
+        .filter((row) => {
+          const anuncioId = Number(row?.id || row?.idAnuncio || 0);
+          const lojaId = getProdutoLojaId(row);
+          return Number.isFinite(anuncioId) && anuncioId > 0 && lojaId > 0;
+        });
+      const uniqueLinkRows = Array.from(new Map(
+        candidateRows.map((row) => {
+          const anuncioId = Number(row?.id || row?.idAnuncio || 0);
+          const lojaId = getProdutoLojaId(row);
+          return [`${lojaId}:${anuncioId}`, row];
+        }),
+      ).values());
+      const collected: Array<{ code: number; label: string; isActive: boolean; anuncioId: number | null; lojaId: number }> = [];
+
+      await mapWithConcurrency(uniqueLinkRows, Math.min(3, MERCADO_LIVRE_STATUS_CONCURRENCY), async (row) => {
+        const anuncioId = Number(row?.id || row?.idAnuncio || 0);
+        const lojaId = getProdutoLojaId(row);
+
+        try {
+          const detalhe = await getMercadoLivreAnuncioDetail(anuncioId, lojaId);
+          const parsed = parseAnuncioStatus(detalhe?.status ?? detalhe?.situacao ?? row?.status ?? row?.situacao);
+          if (parsed) {
+            collected.push({
+              ...parsed,
+              anuncioId,
+              lojaId,
+            });
+          }
+        } catch {
+          // Ignora falhas individuais e segue com os demais vinculos.
+        }
+
+        return null;
+      });
+
+      const prioritized = collected.find((item) => !item.isActive) || collected.find((item) => item.isActive) || null;
+
+      statuses.set(productId, prioritized
+        ? {
+            found: true,
+            label: prioritized.label,
+            isActive: prioritized.isActive,
+            code: prioritized.code,
+            anuncioIds: Array.from(new Set(collected.map((item) => item.anuncioId).filter(Boolean))) as number[],
+            lojaIds: Array.from(new Set(collected.map((item) => item.lojaId))),
+          }
+        : {
+            found: false,
+            label: null,
+            isActive: false,
+            code: null,
+            anuncioIds: [],
+            lojaIds,
+          });
+
+      return null;
+    });
+
+    return {
+      statuses,
+      debugByProductId,
+    };
+  }
+
   for (const productId of uniqueIds) {
-    const lojaIds = productStoreIds.get(productId) || [];
+    const lojaRows = productStoreLinks.get(productId) || [];
+    const lojaIds = getProdutoLojaIds(lojaRows);
     const collected: Array<{ code: number; label: string; isActive: boolean; anuncioId: number | null; lojaId: number }> = [];
     const consultas: Array<{
       lojaId: number;
@@ -1241,39 +1384,7 @@ blingRouter.post('/comparar-produtos', async (req, res, next) => {
       findBlingProductsByCodes(codigos),
     ]);
 
-    const produtoIdsParaStatus = Array.from(new Set(
-      codigos
-        .map((codigo) => {
-          const produto = produtosBling.get(codigo);
-          if (!produto) return 0;
-
-          const qtdBling = toNumber(produto?.estoque?.saldoVirtualTotal ?? produto?.estoque?.saldo ?? 0);
-          const local = pecas
-            .filter((peca) => getBaseSku(peca.idPeca) === codigo)
-            .reduce((acc, peca) => acc + (peca.disponivel && !peca.emPrejuizo ? 1 : 0), 0);
-
-          return (qtdBling > 0 || local > 0) ? Number(produto.id) : 0;
-        })
-        .filter(Boolean),
-    ));
-
-    const statusMercadoLivreByProductId = await findMercadoLivreStatusByProductIds(produtoIdsParaStatus);
-
     const localMap = new Map<string, any>();
-
-    for (const codigo of codigos) {
-      localMap.set(codigo, {
-        sku: codigo,
-        qtdTotalAnb: 0,
-        qtdDisponivelAnb: 0,
-        qtdVendidasAnb: 0,
-        qtdPrejuizoAnb: 0,
-        idsPecaPrejuizo: [] as string[],
-        motivosPrejuizo: [] as string[],
-        descricaoAnb: null,
-        moto: null,
-      });
-    }
 
     for (const peca of pecas) {
       const baseSku = getBaseSku(peca.idPeca);
@@ -1302,6 +1413,38 @@ blingRouter.post('/comparar-produtos', async (req, res, next) => {
 
       localMap.set(baseSku, current);
     }
+
+    for (const codigo of codigos) {
+      if (!localMap.has(codigo)) {
+        localMap.set(codigo, {
+          sku: codigo,
+          qtdTotalAnb: 0,
+          qtdDisponivelAnb: 0,
+          qtdVendidasAnb: 0,
+          qtdPrejuizoAnb: 0,
+          idsPecaPrejuizo: [] as string[],
+          motivosPrejuizo: [] as string[],
+          descricaoAnb: null,
+          moto: null,
+        });
+      }
+    }
+
+    const produtoIdsParaStatus = Array.from(new Set(
+      codigos
+        .map((codigo) => {
+          const produto = produtosBling.get(codigo);
+          if (!produto) return 0;
+
+          const qtdBling = toNumber(produto?.estoque?.saldoVirtualTotal ?? produto?.estoque?.saldo ?? 0);
+          const local = localMap.get(codigo)?.qtdDisponivelAnb || 0;
+
+          return (qtdBling > 0 || local > 0) ? Number(produto.id) : 0;
+        })
+        .filter(Boolean),
+    ));
+
+    const statusMercadoLivreByProductId = await findMercadoLivreStatusByProductIds(produtoIdsParaStatus);
 
     const divergencias = codigos.flatMap((codigo) => {
       const local = localMap.get(codigo) || {
