@@ -524,19 +524,45 @@ function normalizeApiArray(data: any): any[] {
 }
 
 function parseAnuncioStatus(value: any) {
-  const code = Number(value);
-  if (!Number.isFinite(code)) return null;
+  const rawCode = typeof value === 'object'
+    ? Number(value?.id ?? value?.codigo ?? value?.value ?? value?.valor)
+    : Number(value);
+  const code = Number.isFinite(rawCode) ? rawCode : NaN;
 
-  if (code === 1) return { code, label: 'Publicado', isActive: true };
-  if (code === 2) return { code, label: 'Rascunho', isActive: false };
-  if (code === 3) return { code, label: 'Com problema', isActive: false };
-  if (code === 4) return { code, label: 'Pausado', isActive: false };
+  if (Number.isFinite(code)) {
+    if (code === 1) return { code, label: 'Publicado', isActive: true };
+    if (code === 2) return { code, label: 'Rascunho', isActive: false };
+    if (code === 3) return { code, label: 'Com problema', isActive: false };
+    if (code === 4) return { code, label: 'Pausado', isActive: false };
+    return { code, label: String(value), isActive: false };
+  }
 
-  return { code, label: String(value), isActive: false };
+  const text = String(extractSituationText(value) || '').trim();
+  const normalized = normalizeText(text);
+  if (!text) return null;
+
+  if (/(^|[^a-z])(publicado|ativo)([^a-z]|$)/.test(normalized)) {
+    return { code: 1, label: text, isActive: true };
+  }
+  if (/(^|[^a-z])(pausado|pausada)([^a-z]|$)/.test(normalized)) {
+    return { code: 4, label: text, isActive: false };
+  }
+  if (/rascunh/.test(normalized)) {
+    return { code: 2, label: text, isActive: false };
+  }
+  if (/problema|erro|reprov/.test(normalized)) {
+    return { code: 3, label: text, isActive: false };
+  }
+
+  return null;
 }
 
 async function findProdutoLojaIdsByProductIds(ids: number[]) {
-  const uniqueIds = Array.from(new Set(ids.map((id) => Number(id)).filter(Boolean)));
+  const uniqueIds: number[] = Array.from(new Set(
+    ids
+      .map((id) => Number(id))
+      .filter((id): id is number => Number.isFinite(id) && id > 0),
+  ));
   const links = new Map<number, number[]>();
 
   for (const productId of uniqueIds) {
@@ -546,7 +572,7 @@ async function findProdutoLojaIdsByProductIds(ids: number[]) {
       const lojaIds: number[] = Array.from(new Set(
         rows
           .map((row: any) => Number(row?.loja?.id || row?.idLoja || 0))
-          .filter(Boolean),
+          .filter((id: number): id is number => Number.isFinite(id) && id > 0),
       ));
       links.set(productId, lojaIds);
     } catch {
@@ -559,8 +585,35 @@ async function findProdutoLojaIdsByProductIds(ids: number[]) {
   return links;
 }
 
-async function findMercadoLivreStatusByProductIds(ids: number[]) {
-  const uniqueIds = Array.from(new Set(ids.map((id) => Number(id)).filter(Boolean)));
+const MERCADO_LIVRE_SITUACOES = [1, 2, 3, 4];
+
+async function listMercadoLivreAnunciosByProductStoreSituation(productId: number, lojaId: number, situacao: number) {
+  const anuncios: any[] = [];
+  let pagina = 1;
+
+  while (true) {
+    const data = await blingReq(
+      `/anuncios?pagina=${pagina}&limite=100&idProduto=${productId}&tipoIntegracao=MercadoLivre&idLoja=${lojaId}&situacao=${situacao}`,
+    ) as any;
+    const rows = normalizeApiArray(data?.data);
+    if (!rows.length) break;
+
+    anuncios.push(...rows);
+
+    if (rows.length < 100) break;
+    pagina += 1;
+    await sleep(120);
+  }
+
+  return anuncios;
+}
+
+async function collectMercadoLivreStatusByProductIds(ids: number[], withDebug = false) {
+  const uniqueIds: number[] = Array.from(new Set(
+    ids
+      .map((id) => Number(id))
+      .filter((id): id is number => Number.isFinite(id) && id > 0),
+  ));
   const productStoreIds = await findProdutoLojaIdsByProductIds(uniqueIds);
   const statuses = new Map<number, {
     found: boolean;
@@ -570,31 +623,77 @@ async function findMercadoLivreStatusByProductIds(ids: number[]) {
     anuncioIds: number[];
     lojaIds: number[];
   }>();
+  const debugByProductId = new Map<number, {
+    lojaIds: number[];
+    consultas: Array<{
+      lojaId: number;
+      situacao: number;
+      total: number;
+      anuncioIds: number[];
+      labels: string[];
+      rows: Array<{ id: number | null; situacao: any; status: any }>;
+    }>;
+  }>();
 
   for (const productId of uniqueIds) {
     const lojaIds = productStoreIds.get(productId) || [];
     const collected: Array<{ code: number; label: string; isActive: boolean; anuncioId: number | null; lojaId: number }> = [];
+    const consultas: Array<{
+      lojaId: number;
+      situacao: number;
+      total: number;
+      anuncioIds: number[];
+      labels: string[];
+      rows: Array<{ id: number | null; situacao: any; status: any }>;
+    }> = [];
 
     for (const lojaId of lojaIds) {
-      try {
-        const data = await blingReq(`/anuncios?pagina=1&limite=100&idProduto=${productId}&tipoIntegracao=MercadoLivre&idLoja=${lojaId}`) as any;
-        const anuncios = normalizeApiArray(data?.data);
+      for (const situacao of MERCADO_LIVRE_SITUACOES) {
+        try {
+          const anuncios = await listMercadoLivreAnunciosByProductStoreSituation(productId, lojaId, situacao);
 
-        for (const anuncio of anuncios) {
-          const parsed = parseAnuncioStatus(anuncio?.situacao ?? anuncio?.status);
-          if (!parsed) continue;
-
-          collected.push({
-            ...parsed,
-            anuncioId: Number(anuncio?.id) || null,
+          consultas.push({
             lojaId,
+            situacao,
+            total: anuncios.length,
+            anuncioIds: anuncios
+              .map((anuncio) => Number(anuncio?.id || 0))
+              .filter((id: number): id is number => Number.isFinite(id) && id > 0),
+            labels: anuncios
+              .map((anuncio) => String(extractSituationText(anuncio?.situacao ?? anuncio?.status ?? situacao) || '').trim())
+              .filter((label: string): label is string => Boolean(label)),
+            rows: anuncios.map((anuncio) => ({
+              id: Number(anuncio?.id) || null,
+              situacao: anuncio?.situacao ?? null,
+              status: anuncio?.status ?? null,
+            })),
           });
-        }
-      } catch {
-        // Ignora lojas que nao tenham anuncios do Mercado Livre para esse produto.
-      }
 
-      await sleep(120);
+          for (const anuncio of anuncios) {
+            const parsed = parseAnuncioStatus(anuncio?.situacao ?? anuncio?.status ?? situacao);
+            if (!parsed) continue;
+
+            collected.push({
+              ...parsed,
+              anuncioId: Number(anuncio?.id) || null,
+              lojaId,
+            });
+          }
+        } catch {
+          if (withDebug) {
+            consultas.push({
+              lojaId,
+              situacao,
+              total: -1,
+              anuncioIds: [],
+              labels: ['erro'],
+              rows: [],
+            });
+          }
+        }
+
+        await sleep(120);
+      }
     }
 
     const prioritized = collected.find((item) => !item.isActive) || collected.find((item) => item.isActive) || null;
@@ -616,8 +715,23 @@ async function findMercadoLivreStatusByProductIds(ids: number[]) {
           anuncioIds: [],
           lojaIds,
         });
+
+    if (withDebug) {
+      debugByProductId.set(productId, {
+        lojaIds,
+        consultas,
+      });
+    }
   }
 
+  return {
+    statuses,
+    debugByProductId,
+  };
+}
+
+async function findMercadoLivreStatusByProductIds(ids: number[]) {
+  const { statuses } = await collectMercadoLivreStatusByProductIds(ids, false);
   return statuses;
 }
 
@@ -1325,7 +1439,8 @@ blingRouter.post('/debug-status-produto', async (req, res, next) => {
 
     const detalhes = await findBlingProductDetailsByIds([Number(produto.id)]);
     const detalhe = detalhes.get(Number(produto.id)) || null;
-    const anuncioStatuses = await findMercadoLivreStatusByProductIds([Number(produto.id)]);
+    const anuncioStatusData = await collectMercadoLivreStatusByProductIds([Number(produto.id)], true);
+    const anuncioStatuses = anuncioStatusData.statuses;
     const candidates = Array.from(new Set(
       collectMercadoLivreTexts(detalhe)
         .map((text) => String(text || '').trim())
@@ -1341,6 +1456,7 @@ blingRouter.post('/debug-status-produto', async (req, res, next) => {
       nome: produto.nome || null,
       estoqueBling: toNumber(produto?.estoque?.saldoVirtualTotal ?? produto?.estoque?.saldo ?? 0),
       statusAnunciosApi: anuncioStatuses.get(Number(produto.id)) || null,
+      anunciosApiDebug: anuncioStatusData.debugByProductId.get(Number(produto.id)) || null,
       statusResolvido: resolveMercadoLivreStatus(detalhe),
       candidates: candidates.slice(0, 50),
       hasMlMarkerInFlatText: hasMercadoLivreMarker(flattenedText),
