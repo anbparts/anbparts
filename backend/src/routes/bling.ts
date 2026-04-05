@@ -89,6 +89,12 @@ function normalizeText(value: string) {
     .toLowerCase();
 }
 
+function normalizeTitle(value: string) {
+  return normalizeText(String(value || ''))
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function extractSituationText(value: any): string {
   if (value === null || value === undefined) return '';
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
@@ -608,6 +614,46 @@ async function listMercadoLivreAnunciosByProductStoreSituation(productId: number
   return anuncios;
 }
 
+async function listMercadoLivreAnunciosByStoreSituation(lojaId: number, situacao: number) {
+  const anuncios: any[] = [];
+  let pagina = 1;
+
+  while (true) {
+    const data = await blingReq(
+      `/anuncios?pagina=${pagina}&limite=100&tipoIntegracao=MercadoLivre&idLoja=${lojaId}&situacao=${situacao}`,
+    ) as any;
+    const rows = normalizeApiArray(data?.data);
+    if (!rows.length) break;
+
+    anuncios.push(...rows);
+
+    if (rows.length < 100) break;
+    pagina += 1;
+    await sleep(120);
+  }
+
+  return anuncios;
+}
+
+async function getMercadoLivreAnuncioDetail(idAnuncio: number, lojaId: number) {
+  const data = await blingReq(`/anuncios/${idAnuncio}?tipoIntegracao=MercadoLivre&idLoja=${lojaId}`) as any;
+  return data?.data || null;
+}
+
+function isLikelySameAnuncioTitle(produtoNome: string, anuncioTitulo: string) {
+  const produto = normalizeTitle(produtoNome);
+  const anuncio = normalizeTitle(anuncioTitulo);
+  if (!produto || !anuncio) return false;
+  if (produto === anuncio || produto.includes(anuncio) || anuncio.includes(produto)) return true;
+
+  const tokens = produto.split(' ').filter((token) => token.length >= 4);
+  if (!tokens.length) return false;
+
+  const matched = tokens.filter((token) => anuncio.includes(token)).length;
+  const minimum = Math.min(3, tokens.length);
+  return matched >= minimum && matched >= Math.ceil(tokens.length * 0.6);
+}
+
 async function collectMercadoLivreStatusByProductIds(ids: number[], withDebug = false) {
   const uniqueIds: number[] = Array.from(new Set(
     ids
@@ -632,6 +678,7 @@ async function collectMercadoLivreStatusByProductIds(ids: number[], withDebug = 
       anuncioIds: number[];
       labels: string[];
       rows: Array<{ id: number | null; situacao: any; status: any }>;
+      error?: string | null;
     }>;
   }>();
 
@@ -645,6 +692,7 @@ async function collectMercadoLivreStatusByProductIds(ids: number[], withDebug = 
       anuncioIds: number[];
       labels: string[];
       rows: Array<{ id: number | null; situacao: any; status: any }>;
+      error?: string | null;
     }> = [];
 
     for (const lojaId of lojaIds) {
@@ -667,6 +715,7 @@ async function collectMercadoLivreStatusByProductIds(ids: number[], withDebug = 
               situacao: anuncio?.situacao ?? null,
               status: anuncio?.status ?? null,
             })),
+            error: null,
           });
 
           for (const anuncio of anuncios) {
@@ -679,7 +728,7 @@ async function collectMercadoLivreStatusByProductIds(ids: number[], withDebug = 
               lojaId,
             });
           }
-        } catch {
+        } catch (e: any) {
           if (withDebug) {
             consultas.push({
               lojaId,
@@ -688,6 +737,7 @@ async function collectMercadoLivreStatusByProductIds(ids: number[], withDebug = 
               anuncioIds: [],
               labels: ['erro'],
               rows: [],
+              error: e?.message || String(e),
             });
           }
         }
@@ -1441,6 +1491,79 @@ blingRouter.post('/debug-status-produto', async (req, res, next) => {
     const detalhe = detalhes.get(Number(produto.id)) || null;
     const anuncioStatusData = await collectMercadoLivreStatusByProductIds([Number(produto.id)], true);
     const anuncioStatuses = anuncioStatusData.statuses;
+    const produtoLojaLinks = await blingReq(`/produtos/lojas?pagina=1&limite=100&idProduto=${Number(produto.id)}`) as any;
+    const lojaRows = normalizeApiArray(produtoLojaLinks?.data);
+    const targetLojaIds = Array.from(new Set(
+      lojaRows
+        .map((row: any) => Number(row?.loja?.id || row?.idLoja || 0))
+        .filter((id: number): id is number => Number.isFinite(id) && id > 0),
+    ));
+    const anunciosStoreWideDebug: Array<{
+      lojaId: number;
+      situacao: number;
+      total: number;
+      sample: Array<{ id: number | null; titulo: string | null; situacao: any }>;
+      matchesByTitle: Array<{
+        id: number | null;
+        titulo: string | null;
+        situacao: any;
+        detalhe?: any;
+      }>;
+      error?: string | null;
+    }> = [];
+
+    for (const lojaId of targetLojaIds) {
+      for (const situacao of MERCADO_LIVRE_SITUACOES) {
+        try {
+          const anuncios = await listMercadoLivreAnunciosByStoreSituation(lojaId, situacao);
+          const matches = anuncios.filter((anuncio) => isLikelySameAnuncioTitle(produto.nome || '', String(anuncio?.titulo || '')));
+          const detailedMatches = [];
+
+          for (const anuncio of matches.slice(0, 5)) {
+            let detalheAnuncio = null;
+            const anuncioId = Number(anuncio?.id || 0);
+            if (anuncioId) {
+              try {
+                detalheAnuncio = await getMercadoLivreAnuncioDetail(anuncioId, lojaId);
+              } catch (detailError: any) {
+                detalheAnuncio = { error: detailError?.message || String(detailError) };
+              }
+            }
+
+            detailedMatches.push({
+              id: anuncioId || null,
+              titulo: String(anuncio?.titulo || '') || null,
+              situacao: anuncio?.situacao ?? null,
+              detalhe: detalheAnuncio,
+            });
+          }
+
+          anunciosStoreWideDebug.push({
+            lojaId,
+            situacao,
+            total: anuncios.length,
+            sample: anuncios.slice(0, 5).map((anuncio) => ({
+              id: Number(anuncio?.id) || null,
+              titulo: String(anuncio?.titulo || '') || null,
+              situacao: anuncio?.situacao ?? null,
+            })),
+            matchesByTitle: detailedMatches,
+            error: null,
+          });
+        } catch (e: any) {
+          anunciosStoreWideDebug.push({
+            lojaId,
+            situacao,
+            total: -1,
+            sample: [],
+            matchesByTitle: [],
+            error: e?.message || String(e),
+          });
+        }
+
+        await sleep(120);
+      }
+    }
     const candidates = Array.from(new Set(
       collectMercadoLivreTexts(detalhe)
         .map((text) => String(text || '').trim())
@@ -1455,8 +1578,10 @@ blingRouter.post('/debug-status-produto', async (req, res, next) => {
       produtoId: Number(produto.id),
       nome: produto.nome || null,
       estoqueBling: toNumber(produto?.estoque?.saldoVirtualTotal ?? produto?.estoque?.saldo ?? 0),
+      produtoLojaLinks: lojaRows,
       statusAnunciosApi: anuncioStatuses.get(Number(produto.id)) || null,
       anunciosApiDebug: anuncioStatusData.debugByProductId.get(Number(produto.id)) || null,
+      anunciosStoreWideDebug,
       statusResolvido: resolveMercadoLivreStatus(detalhe),
       candidates: candidates.slice(0, 50),
       hasMlMarkerInFlatText: hasMercadoLivreMarker(flattenedText),
