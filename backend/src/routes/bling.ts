@@ -299,6 +299,25 @@ function getBaseSku(value: any) {
     .replace(/-\d+$/, '');
 }
 
+function parseDateStart(date: string) {
+  const [year, month, day] = String(date || '').split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
+}
+
+function parseDateEnd(date: string) {
+  const [year, month, day] = String(date || '').split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999));
+}
+
+function formatDateOnly(value: Date | string | null | undefined) {
+  if (!value) return '';
+
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+
+  return date.toISOString().split('T')[0];
+}
+
 function parseSkuList(value: any) {
   const raw = Array.isArray(value) ? value.join('\n') : String(value || '');
   const codes = raw
@@ -838,6 +857,155 @@ blingRouter.post('/comparar-produtos', async (req, res, next) => {
       totalDivergencias: divergencias.length,
       totalSemDivergencia: codigos.length - divergencias.length,
       divergencias,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+blingRouter.get('/relatorio-vendas', async (req, res, next) => {
+  try {
+    const dataDe = String(req.query?.dataDe || '').trim();
+    const dataAte = String(req.query?.dataAte || '').trim();
+    const pedido = String(req.query?.pedido || '').trim();
+    const idPeca = String(req.query?.idPeca || '').trim().toUpperCase();
+
+    const andFilters: any[] = [
+      { dataVenda: { not: null } },
+      { blingPedidoId: { not: null } },
+      { blingPedidoNum: { not: null } },
+      { disponivel: false },
+      { emPrejuizo: false },
+    ];
+
+    if (dataDe) andFilters.push({ dataVenda: { gte: parseDateStart(dataDe) } });
+    if (dataAte) andFilters.push({ dataVenda: { lte: parseDateEnd(dataAte) } });
+    if (pedido) {
+      andFilters.push({
+        blingPedidoNum: {
+          contains: pedido,
+          mode: 'insensitive',
+        },
+      });
+    }
+    if (idPeca) {
+      andFilters.push({
+        idPeca: {
+          contains: idPeca,
+          mode: 'insensitive',
+        },
+      });
+    }
+
+    const pecas = await prisma.peca.findMany({
+      where: { AND: andFilters },
+      select: {
+        id: true,
+        idPeca: true,
+        descricao: true,
+        precoML: true,
+        valorTaxas: true,
+        valorFrete: true,
+        valorLiq: true,
+        dataVenda: true,
+        blingPedidoId: true,
+        blingPedidoNum: true,
+        moto: {
+          select: {
+            id: true,
+            marca: true,
+            modelo: true,
+          },
+        },
+      },
+      orderBy: [
+        { dataVenda: 'desc' },
+        { blingPedidoNum: 'desc' },
+        { idPeca: 'asc' },
+      ],
+    });
+
+    const pedidosMap = new Map<string, any>();
+    const totaisGerais = {
+      totalPedidos: 0,
+      totalItens: 0,
+      precoML: 0,
+      valorTaxas: 0,
+      valorFrete: 0,
+      valorLiq: 0,
+    };
+
+    for (const peca of pecas) {
+      const pedidoNum = String(peca.blingPedidoNum || '').trim();
+      if (!pedidoNum) continue;
+
+      const item = {
+        id: peca.id,
+        idPeca: peca.idPeca,
+        descricao: peca.descricao,
+        dataVenda: formatDateOnly(peca.dataVenda),
+        pedidoId: peca.blingPedidoId ? String(peca.blingPedidoId) : null,
+        pedidoNum,
+        motoId: peca.moto?.id ?? null,
+        moto: peca.moto ? `${peca.moto.marca} ${peca.moto.modelo}` : null,
+        precoML: roundMoney(toNumber(peca.precoML)),
+        valorTaxas: roundMoney(toNumber(peca.valorTaxas)),
+        valorFrete: roundMoney(toNumber(peca.valorFrete)),
+        valorLiq: roundMoney(toNumber(peca.valorLiq)),
+      };
+
+      if (!pedidosMap.has(pedidoNum)) {
+        pedidosMap.set(pedidoNum, {
+          pedidoNum,
+          pedidoId: item.pedidoId,
+          dataVenda: item.dataVenda,
+          quantidadeItens: 0,
+          subtotalPrecoML: 0,
+          subtotalTaxas: 0,
+          subtotalFrete: 0,
+          subtotalValorLiq: 0,
+          itens: [],
+        });
+      }
+
+      const pedidoGroup = pedidosMap.get(pedidoNum);
+      pedidoGroup.itens.push(item);
+      pedidoGroup.quantidadeItens += 1;
+      pedidoGroup.subtotalPrecoML = roundMoney(pedidoGroup.subtotalPrecoML + item.precoML);
+      pedidoGroup.subtotalTaxas = roundMoney(pedidoGroup.subtotalTaxas + item.valorTaxas);
+      pedidoGroup.subtotalFrete = roundMoney(pedidoGroup.subtotalFrete + item.valorFrete);
+      pedidoGroup.subtotalValorLiq = roundMoney(pedidoGroup.subtotalValorLiq + item.valorLiq);
+
+      totaisGerais.totalItens += 1;
+      totaisGerais.precoML = roundMoney(totaisGerais.precoML + item.precoML);
+      totaisGerais.valorTaxas = roundMoney(totaisGerais.valorTaxas + item.valorTaxas);
+      totaisGerais.valorFrete = roundMoney(totaisGerais.valorFrete + item.valorFrete);
+      totaisGerais.valorLiq = roundMoney(totaisGerais.valorLiq + item.valorLiq);
+    }
+
+    const pedidos = Array.from(pedidosMap.values())
+      .map((pedidoGroup) => ({
+        ...pedidoGroup,
+        itens: pedidoGroup.itens.sort((a: any, b: any) => a.idPeca.localeCompare(b.idPeca)),
+      }))
+      .sort((a, b) => {
+        const dateDiff = new Date(b.dataVenda || 0).getTime() - new Date(a.dataVenda || 0).getTime();
+        if (dateDiff) return dateDiff;
+        return String(b.pedidoNum).localeCompare(String(a.pedidoNum), 'pt-BR', { numeric: true });
+      });
+
+    totaisGerais.totalPedidos = pedidos.length;
+
+    res.json({
+      ok: true,
+      filtros: {
+        dataDe,
+        dataAte,
+        pedido,
+        idPeca,
+      },
+      totaisGerais,
+      pedidos,
     });
   } catch (e) {
     next(e);

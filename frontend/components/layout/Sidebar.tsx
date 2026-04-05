@@ -21,6 +21,7 @@ const NAV = [
   ]},
   { section: 'Bling ERP', items: [
     { href: '/bling/vendas',         icon: '💸', label: 'Vendas'            },
+    { href: '/bling/relatorio-vendas', icon: 'R$', label: 'Relatorio de Vendas' },
     { href: '/bling/produtos',       icon: '📦', label: 'Produtos'          },
     { href: '/bling/config-produtos',icon: '🗺', label: 'Config. Produtos'  },
     { href: '/bling',                icon: '🔗', label: 'Configuração'      },
