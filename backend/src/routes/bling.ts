@@ -1090,6 +1090,203 @@ blingRouter.post('/comparar-produtos', async (req, res, next) => {
   }
 });
 
+blingRouter.post('/comparar-produtos-csv', async (req, res, next) => {
+  try {
+    const linhas = Array.isArray(req.body?.linhas) ? req.body.linhas : [];
+    const escopoAnb = String(req.body?.escopoAnb || 'full');
+    const escopoArquivo = String(req.body?.escopoArquivo || 'full');
+
+    if (!linhas.length) {
+      return res.status(400).json({ error: 'Envie um CSV com pelo menos uma linha valida' });
+    }
+
+    const pecas = await prisma.peca.findMany({
+      select: {
+        idPeca: true,
+        descricao: true,
+        disponivel: true,
+        emPrejuizo: true,
+        moto: { select: { marca: true, modelo: true } },
+      },
+      orderBy: { idPeca: 'asc' },
+    });
+
+    const localMap = new Map<string, any>();
+    for (const peca of pecas) {
+      const baseSku = getBaseSku(peca.idPeca);
+      if (!baseSku) continue;
+
+      const current = localMap.get(baseSku) || {
+        sku: baseSku,
+        qtdTotalAnb: 0,
+        qtdDisponivelAnb: 0,
+        qtdVendidasAnb: 0,
+        descricaoAnb: null,
+        moto: null,
+      };
+
+      current.qtdTotalAnb += 1;
+      current.qtdDisponivelAnb += peca.disponivel && !peca.emPrejuizo ? 1 : 0;
+      current.qtdVendidasAnb += !peca.disponivel && !peca.emPrejuizo ? 1 : 0;
+      if (!current.descricaoAnb) current.descricaoAnb = peca.descricao || null;
+      if (!current.moto && peca.moto) current.moto = `${peca.moto.marca} ${peca.moto.modelo}`;
+
+      localMap.set(baseSku, current);
+    }
+
+    const arquivoMap = new Map<string, any>();
+    for (const linha of linhas) {
+      const baseSku = getBaseSku(linha?.codigo);
+      if (!baseSku) continue;
+
+      const current = arquivoMap.get(baseSku) || {
+        sku: baseSku,
+        estoqueArquivo: 0,
+        descricaoArquivo: null,
+        situacaoArquivo: null,
+        precoArquivo: null,
+      };
+
+      current.estoqueArquivo = roundMoney(current.estoqueArquivo + toNumber(linha?.estoque, 0));
+      if (!current.descricaoArquivo && linha?.descricao) current.descricaoArquivo = String(linha.descricao).trim();
+      if (!current.situacaoArquivo && linha?.situacao) current.situacaoArquivo = String(linha.situacao).trim();
+      if (current.precoArquivo === null && linha?.preco !== undefined && linha?.preco !== null && String(linha.preco).trim() !== '') {
+        current.precoArquivo = roundMoney(toNumber(linha.preco, 0));
+      }
+
+      arquivoMap.set(baseSku, current);
+    }
+
+    const filtraAnb = (item: any) => {
+      if (escopoAnb === 'com_estoque') return item.qtdDisponivelAnb > 0;
+      if (escopoAnb === 'sem_estoque') return item.qtdDisponivelAnb === 0;
+      return true;
+    };
+
+    const filtraArquivo = (item: any) => {
+      if (escopoArquivo === 'estoque_maior_zero') return item.estoqueArquivo > 0;
+      if (escopoArquivo === 'estoque_igual_zero') return item.estoqueArquivo === 0;
+      return true;
+    };
+
+    const skusAnb = Array.from(localMap.entries())
+      .filter(([, item]) => filtraAnb(item))
+      .map(([sku]) => sku);
+    const skusArquivo = Array.from(arquivoMap.entries())
+      .filter(([, item]) => filtraArquivo(item))
+      .map(([sku]) => sku);
+    const consultados = Array.from(new Set([...skusAnb, ...skusArquivo])).sort((a, b) =>
+      a.localeCompare(b, 'pt-BR', { numeric: true }),
+    );
+
+    const divergencias = consultados.flatMap((sku) => {
+      const local = localMap.get(sku) || {
+        sku,
+        qtdTotalAnb: 0,
+        qtdDisponivelAnb: 0,
+        qtdVendidasAnb: 0,
+        descricaoAnb: null,
+        moto: null,
+      };
+      const arquivo = arquivoMap.get(sku) || {
+        sku,
+        estoqueArquivo: 0,
+        descricaoArquivo: null,
+        situacaoArquivo: null,
+        precoArquivo: null,
+      };
+      const existeNoAnbFiltrado = skusAnb.includes(sku);
+      const existeNoArquivoFiltrado = skusArquivo.includes(sku);
+
+      if (existeNoAnbFiltrado && !existeNoArquivoFiltrado) {
+        return [{
+          sku,
+          tipo: 'nao_encontrado_csv',
+          titulo: 'Nao encontrado no CSV filtrado',
+          detalhe: 'Esse SKU aparece no recorte atual do ANB, mas nao apareceu no CSV do Bling dentro do filtro selecionado.',
+          estoqueAnb: local.qtdDisponivelAnb,
+          estoqueArquivo: arquivo.estoqueArquivo || 0,
+          qtdTotalAnb: local.qtdTotalAnb,
+          qtdVendidasAnb: local.qtdVendidasAnb,
+          descricaoAnb: local.descricaoAnb,
+          descricaoArquivo: arquivo.descricaoArquivo,
+          moto: local.moto,
+          situacaoArquivo: arquivo.situacaoArquivo,
+          precoArquivo: arquivo.precoArquivo,
+        }];
+      }
+
+      if (!existeNoAnbFiltrado && existeNoArquivoFiltrado) {
+        return [{
+          sku,
+          tipo: 'nao_encontrado_anb',
+          titulo: 'Nao encontrado no ANB filtrado',
+          detalhe: 'Esse SKU aparece no CSV do Bling dentro do filtro selecionado, mas nao foi encontrado no recorte atual do ANB.',
+          estoqueAnb: local.qtdDisponivelAnb,
+          estoqueArquivo: arquivo.estoqueArquivo,
+          qtdTotalAnb: local.qtdTotalAnb,
+          qtdVendidasAnb: local.qtdVendidasAnb,
+          descricaoAnb: local.descricaoAnb,
+          descricaoArquivo: arquivo.descricaoArquivo,
+          moto: local.moto,
+          situacaoArquivo: arquivo.situacaoArquivo,
+          precoArquivo: arquivo.precoArquivo,
+        }];
+      }
+
+      if (local.qtdDisponivelAnb > arquivo.estoqueArquivo) {
+        return [{
+          sku,
+          tipo: 'estoque_anb_maior',
+          titulo: 'Estoque ANB maior que CSV',
+          detalhe: 'O ANB mostra mais pecas disponiveis que o estoque encontrado no CSV do Bling.',
+          estoqueAnb: local.qtdDisponivelAnb,
+          estoqueArquivo: arquivo.estoqueArquivo,
+          qtdTotalAnb: local.qtdTotalAnb,
+          qtdVendidasAnb: local.qtdVendidasAnb,
+          descricaoAnb: local.descricaoAnb,
+          descricaoArquivo: arquivo.descricaoArquivo,
+          moto: local.moto,
+          situacaoArquivo: arquivo.situacaoArquivo,
+          precoArquivo: arquivo.precoArquivo,
+        }];
+      }
+
+      if (local.qtdDisponivelAnb < arquivo.estoqueArquivo) {
+        return [{
+          sku,
+          tipo: 'estoque_csv_maior',
+          titulo: 'Estoque CSV maior que ANB',
+          detalhe: 'O CSV do Bling mostra mais saldo que a quantidade disponivel no ANB.',
+          estoqueAnb: local.qtdDisponivelAnb,
+          estoqueArquivo: arquivo.estoqueArquivo,
+          qtdTotalAnb: local.qtdTotalAnb,
+          qtdVendidasAnb: local.qtdVendidasAnb,
+          descricaoAnb: local.descricaoAnb,
+          descricaoArquivo: arquivo.descricaoArquivo,
+          moto: local.moto,
+          situacaoArquivo: arquivo.situacaoArquivo,
+          precoArquivo: arquivo.precoArquivo,
+        }];
+      }
+
+      return [];
+    });
+
+    res.json({
+      ok: true,
+      totalConsultados: consultados.length,
+      totalDivergencias: divergencias.length,
+      totalSemDivergencia: consultados.length - divergencias.length,
+      totalAnbFiltrados: skusAnb.length,
+      totalArquivoFiltrados: skusArquivo.length,
+      divergencias,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
 blingRouter.get('/relatorio-vendas', async (req, res, next) => {
   try {
     const dataDe = String(req.query?.dataDe || '').trim();

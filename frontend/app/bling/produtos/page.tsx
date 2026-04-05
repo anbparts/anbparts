@@ -66,6 +66,42 @@ type Comparacao = {
   divergencias: Divergencia[];
 };
 
+type CsvLinha = {
+  codigo: string;
+  descricao: string;
+  situacao: string;
+  estoque: number;
+  preco: number;
+};
+
+type CsvEscopoAnb = 'full' | 'com_estoque' | 'sem_estoque';
+type CsvEscopoArquivo = 'full' | 'estoque_maior_zero' | 'estoque_igual_zero';
+
+type CsvDivergencia = {
+  sku: string;
+  tipo: string;
+  titulo: string;
+  detalhe: string;
+  estoqueAnb: number;
+  estoqueArquivo: number;
+  qtdTotalAnb: number;
+  qtdVendidasAnb: number;
+  descricaoAnb: string | null;
+  descricaoArquivo: string | null;
+  moto: string | null;
+  situacaoArquivo: string | null;
+  precoArquivo: number | null;
+};
+
+type CsvComparacao = {
+  totalConsultados: number;
+  totalDivergencias: number;
+  totalSemDivergencia: number;
+  totalAnbFiltrados: number;
+  totalArquivoFiltrados: number;
+  divergencias: CsvDivergencia[];
+};
+
 function calcLiq(preco: number, frete: number, taxaPct: number) {
   const taxaVal = parseFloat((preco * taxaPct / 100).toFixed(2));
   const valorLiq = parseFloat((preco - frete - taxaVal).toFixed(2));
@@ -96,6 +132,31 @@ function defaultDateRange() {
   };
 }
 
+function normalizeHeader(value: string) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '');
+}
+
+function getCsvField(row: Record<string, any>, target: string) {
+  const entries = Object.entries(row || {});
+  const match = entries.find(([key]) => normalizeHeader(key) === target);
+  return match ? match[1] : '';
+}
+
+function toCsvNumber(value: any) {
+  const text = String(value ?? '').trim();
+  if (!text) return 0;
+
+  const normalized = text.includes(',') && text.includes('.')
+    ? text.replace(/\./g, '').replace(',', '.')
+    : text.replace(',', '.');
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 export default function BlingProdutosPage() {
   const [motos, setMotos] = useState<any[]>([]);
   const [connected, setConnected] = useState<boolean | null>(null);
@@ -110,6 +171,54 @@ export default function BlingProdutosPage() {
   const [motoComparacaoId, setMotoComparacaoId] = useState('');
   const [comparando, setComparando] = useState(false);
   const [comparacao, setComparacao] = useState<Comparacao | null>(null);
+  const [csvArquivoNome, setCsvArquivoNome] = useState('');
+  const [csvLinhas, setCsvLinhas] = useState<CsvLinha[]>([]);
+  const [csvEscopoAnb, setCsvEscopoAnb] = useState<CsvEscopoAnb>('full');
+  const [csvEscopoArquivo, setCsvEscopoArquivo] = useState<CsvEscopoArquivo>('full');
+  const [csvCarregando, setCsvCarregando] = useState(false);
+  const [csvComparando, setCsvComparando] = useState(false);
+  const [csvComparacao, setCsvComparacao] = useState<CsvComparacao | null>(null);
+
+  async function carregarCsv(file: File) {
+    setCsvCarregando(true);
+    setCsvComparacao(null);
+    try {
+      const XLSX = await import('xlsx');
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: 'array' });
+      const firstSheetName = workbook.SheetNames[0];
+
+      if (!firstSheetName) {
+        alert('Nao foi possivel identificar uma planilha valida no CSV');
+        setCsvLinhas([]);
+        setCsvArquivoNome('');
+        return;
+      }
+
+      const sheet = workbook.Sheets[firstSheetName];
+      const rawRows = XLSX.utils.sheet_to_json<Record<string, any>>(sheet, { defval: '' });
+      const linhas = rawRows
+        .map((row) => {
+          const codigo = String(getCsvField(row, 'codigo') || '').trim().replace(/\s+/g, '');
+          return {
+            codigo,
+            descricao: String(getCsvField(row, 'descricao') || '').trim(),
+            situacao: String(getCsvField(row, 'situacao') || '').trim(),
+            estoque: toCsvNumber(getCsvField(row, 'estoque')),
+            preco: toCsvNumber(getCsvField(row, 'preco')),
+          };
+        })
+        .filter((item) => item.codigo);
+
+      setCsvLinhas(linhas);
+      setCsvArquivoNome(file.name);
+    } catch (e: any) {
+      alert(`Erro ao ler CSV: ${e.message}`);
+      setCsvLinhas([]);
+      setCsvArquivoNome('');
+    }
+    setCsvCarregando(false);
+  }
 
   useEffect(() => {
     api.motos.list().then(setMotos).catch(() => {});
@@ -193,6 +302,37 @@ export default function BlingProdutosPage() {
       alert(`Erro: ${e.message}`);
     }
     setComparando(false);
+  }
+
+  async function compararCsv() {
+    if (!csvLinhas.length) {
+      alert('Selecione um CSV valido do Bling antes de comparar');
+      return;
+    }
+
+    setCsvComparando(true);
+    setCsvComparacao(null);
+    try {
+      const response = await fetch(`${API}/bling/comparar-produtos-csv`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          linhas: csvLinhas,
+          escopoAnb: csvEscopoAnb,
+          escopoArquivo: csvEscopoArquivo,
+        }),
+      });
+      const data = await response.json();
+      if (!data.ok) {
+        alert(data.error || 'Erro ao comparar CSV');
+        return;
+      }
+
+      setCsvComparacao(data);
+    } catch (e: any) {
+      alert(`Erro: ${e.message}`);
+    }
+    setCsvComparando(false);
   }
 
   function updateItem(idx: number, field: string, value: any) {
@@ -340,6 +480,68 @@ export default function BlingProdutosPage() {
           </div>
         </div>
 
+        <div style={s.card}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 8 }}>Comparar CSV exportado do Bling</div>
+          <div style={{ fontSize: 12, color: 'var(--gray-400)', marginBottom: 14 }}>
+            Envie o CSV exportado do Bling nesse layout de produtos e compare o saldo dele com a base do ANB sem alterar o fluxo atual de consulta online. O sistema agrupa sufixos como <span style={{ fontFamily: 'JetBrains Mono, monospace' }}>-2</span>, <span style={{ fontFamily: 'JetBrains Mono, monospace' }}>-3</span> e compara pelo SKU-base.
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 12 }}>
+            <div>
+              <label style={s.label}>CSV exportado do Bling</label>
+              <input
+                style={{ ...s.input, width: '100%', padding: '6px 10px' }}
+                type="file"
+                accept=".csv,text/csv"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  carregarCsv(file);
+                }}
+              />
+            </div>
+            <div>
+              <label style={s.label}>Escopo ANB</label>
+              <select
+                style={{ ...s.input, width: '100%', cursor: 'pointer' }}
+                value={csvEscopoAnb}
+                onChange={(e) => setCsvEscopoAnb(e.target.value as CsvEscopoAnb)}
+              >
+                <option value="full">Full</option>
+                <option value="com_estoque">Itens com estoque</option>
+                <option value="sem_estoque">Itens sem estoque</option>
+              </select>
+            </div>
+            <div>
+              <label style={s.label}>Escopo CSV / Bling</label>
+              <select
+                style={{ ...s.input, width: '100%', cursor: 'pointer' }}
+                value={csvEscopoArquivo}
+                onChange={(e) => setCsvEscopoArquivo(e.target.value as CsvEscopoArquivo)}
+              >
+                <option value="full">Full</option>
+                <option value="estoque_maior_zero">Estoque maior que zero</option>
+                <option value="estoque_igual_zero">Estoque igual a zero</option>
+              </select>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <button
+              style={{ ...s.btn, background: 'var(--blue-500)', color: '#fff', opacity: (csvComparando || csvCarregando || !csvLinhas.length) ? 0.6 : 1 }}
+              onClick={compararCsv}
+              disabled={csvComparando || csvCarregando || !csvLinhas.length}
+            >
+              {csvComparando ? 'Comparando CSV...' : 'Comparar CSV'}
+            </button>
+            <span style={{ fontSize: 12, color: 'var(--gray-400)' }}>
+              {csvArquivoNome
+                ? `${csvArquivoNome} - ${csvLinhas.length} linha(s) valida(s) carregada(s)`
+                : 'Nenhum CSV carregado ainda'}
+            </span>
+          </div>
+        </div>
+
         {comparacao && (
           <>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12, marginBottom: 20 }}>
@@ -436,6 +638,96 @@ export default function BlingProdutosPage() {
             ) : (
               <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 10, padding: '18px 20px', color: 'var(--green)', fontSize: 14, fontWeight: 600, marginBottom: 20 }}>
                 Nenhuma divergencia encontrada nessa lista.
+              </div>
+            )}
+          </>
+        )}
+
+        {csvComparacao && (
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12, marginBottom: 20 }}>
+              {[
+                { label: 'Consultados', value: csvComparacao.totalConsultados, color: 'var(--gray-700)' },
+                { label: 'ANB filtrados', value: csvComparacao.totalAnbFiltrados, color: 'var(--blue-500)' },
+                { label: 'CSV filtrados', value: csvComparacao.totalArquivoFiltrados, color: 'var(--amber)' },
+                { label: 'Divergentes', value: csvComparacao.totalDivergencias, color: 'var(--red)' },
+                { label: 'Sem divergencia', value: csvComparacao.totalSemDivergencia, color: 'var(--green)' },
+              ].map((item) => (
+                <div key={`csv-${item.label}`} style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 9, padding: '14px 16px' }}>
+                  <div style={{ fontSize: 11, fontFamily: 'JetBrains Mono, monospace', color: 'var(--gray-400)', letterSpacing: '.6px', textTransform: 'uppercase', marginBottom: 6 }}>{item.label}</div>
+                  <div style={{ fontSize: 22, fontWeight: 700, color: item.color }}>{item.value}</div>
+                </div>
+              ))}
+            </div>
+
+            {csvComparacao.divergencias.length > 0 ? (
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--red)', marginBottom: 12 }}>
+                  Divergencias no CSV - {csvComparacao.divergencias.length}
+                </div>
+                {csvComparacao.divergencias.map((item) => {
+                  const borderColor = item.tipo === 'nao_encontrado_csv'
+                    ? 'var(--amber)'
+                    : item.tipo === 'nao_encontrado_anb'
+                      ? 'var(--blue-500)'
+                      : 'var(--red)';
+
+                  return (
+                    <div key={`csv-${item.tipo}-${item.sku}`} style={{ ...s.card, borderLeft: `3px solid ${borderColor}` }}>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
+                        <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, background: 'var(--gray-100)', color: 'var(--gray-500)', padding: '2px 8px', borderRadius: 5 }}>
+                          {item.sku}
+                        </span>
+                        <span style={{ fontSize: 12, background: '#fef2f2', color: borderColor, padding: '2px 8px', borderRadius: 5 }}>
+                          {item.titulo}
+                        </span>
+                        {item.moto && <span style={{ fontSize: 12, color: 'var(--gray-400)' }}>{item.moto}</span>}
+                      </div>
+
+                      <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 6 }}>
+                        {item.descricaoAnb || item.descricaoArquivo || 'Sem descricao'}
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--gray-400)', marginBottom: 14 }}>
+                        {item.detalhe}
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
+                        <div style={{ background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
+                          <div style={s.label}>Estoque ANB</div>
+                          <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--gray-700)' }}>{item.estoqueAnb}</div>
+                        </div>
+                        <div style={{ background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
+                          <div style={s.label}>Estoque CSV</div>
+                          <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--gray-700)' }}>{item.estoqueArquivo}</div>
+                        </div>
+                        <div style={{ background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
+                          <div style={s.label}>Total no ANB</div>
+                          <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--gray-700)' }}>{item.qtdTotalAnb}</div>
+                        </div>
+                        <div style={{ background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
+                          <div style={s.label}>Vendidas no ANB</div>
+                          <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--gray-700)' }}>{item.qtdVendidasAnb}</div>
+                        </div>
+                        <div style={{ background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
+                          <div style={s.label}>Situacao CSV</div>
+                          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--gray-700)' }}>
+                            {item.situacaoArquivo || 'Nao informado'}
+                          </div>
+                        </div>
+                        <div style={{ background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
+                          <div style={s.label}>Preco CSV</div>
+                          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--gray-700)' }}>
+                            {item.precoArquivo !== null ? fmtMoney(item.precoArquivo) : 'Nao informado'}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 10, padding: '18px 20px', color: 'var(--green)', fontSize: 14, fontWeight: 600, marginBottom: 20 }}>
+                Nenhuma divergencia encontrada no comparativo por CSV.
               </div>
             )}
           </>
