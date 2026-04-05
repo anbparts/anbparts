@@ -29,6 +29,9 @@ const pecaSchema = z.object({
 
 const prejuizoPayloadSchema = z.object({
   motivo: z.string().min(1),
+  motoId: z.number().int().optional(),
+  descricao: z.string().min(1).optional(),
+  cadastro: z.string().optional().nullable(),
   precoML: z.number().optional(),
   valorFrete: z.number().optional(),
   valorTaxas: z.number().optional(),
@@ -283,6 +286,7 @@ pecasRouter.patch('/:id/prejuizo', async (req, res, next) => {
     if (peca.emPrejuizo) return res.status(400).json({ error: 'Peca ja esta em prejuizo' });
     if (!peca.disponivel) return res.status(400).json({ error: 'So e possivel marcar prejuizo para pecas em estoque' });
 
+    const descricao = payload.descricao ? String(payload.descricao).trim() : peca.descricao;
     const financials = calculatePecaFinancialValues(
       peca,
       payload.precoML !== undefined ? Number(payload.precoML) : undefined,
@@ -290,11 +294,14 @@ pecasRouter.patch('/:id/prejuizo', async (req, res, next) => {
       payload.valorTaxas !== undefined ? Number(payload.valorTaxas) : undefined,
     );
 
-    const detalhe = `${peca.idPeca} - ${peca.descricao}`;
+    const detalhe = `${peca.idPeca} - ${descricao}`;
     const result = await prisma.$transaction(async (tx) => {
       await tx.peca.update({
         where: { id: peca.id },
         data: {
+          motoId: payload.motoId !== undefined ? Number(payload.motoId) : undefined,
+          descricao,
+          cadastro: payload.cadastro ? new Date(payload.cadastro) : undefined,
           precoML: financials.precoML,
           valorFrete: financials.valorFrete,
           valorTaxas: financials.valorTaxas,
