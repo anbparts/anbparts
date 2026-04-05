@@ -3,6 +3,13 @@ import { prisma } from '../lib/prisma';
 
 export const faturamentoRouter = Router();
 
+function getBaseSku(value: string | null | undefined) {
+  return String(value || '')
+    .trim()
+    .toUpperCase()
+    .replace(/-\d+$/, '');
+}
+
 // GET /faturamento/geral — receita líquida mensal (Valor Líquido = já descontado taxa+frete)
 faturamentoRouter.get('/geral', async (req, res, next) => {
   try {
@@ -65,7 +72,7 @@ faturamentoRouter.get('/dashboard', async (req, res, next) => {
       prisma.moto.count(),
       prisma.peca.count(),
       prisma.peca.findMany({ where: { disponivel: false, emPrejuizo: false, dataVenda: { not: null } }, select: { precoML: true, valorLiq: true, valorTaxas: true, valorFrete: true } }),
-      prisma.peca.findMany({ where: { disponivel: true, emPrejuizo: false }, select: { precoML: true, valorLiq: true } }),
+      prisma.peca.findMany({ where: { disponivel: true, emPrejuizo: false }, select: { idPeca: true, precoML: true, valorLiq: true } }),
       prisma.moto.findMany({ select: { precoCompra: true } }),
       prisma.despesa.findMany({ select: { valor: true, categoria: true } }),
     ]);
@@ -76,6 +83,11 @@ faturamentoRouter.get('/dashboard', async (req, res, next) => {
     const frete         = pecasVendidas.reduce((s, p) => s + Number(p.valorFrete), 0);
     const valorEst      = pecasDisp.reduce((s, p) => s + Number(p.precoML), 0);
     const valorEstLiq   = pecasDisp.reduce((s, p) => s + Number(p.valorLiq), 0);
+    const totalIdsDisponiveis = new Set(
+      pecasDisp
+        .map((p) => getBaseSku(p.idPeca))
+        .filter(Boolean),
+    ).size;
 
     // CMV = preços de compra + despesas categoria Moto
     const investido     = motos.reduce((s, m) => s + Number(m.precoCompra), 0);
@@ -89,6 +101,7 @@ faturamentoRouter.get('/dashboard', async (req, res, next) => {
       totalMotos,
       totalPecas,
       totalDisponivel: pecasDisp.length,
+      totalIdsDisponiveis,
       totalVendidas:   pecasVendidas.length,
       receitaBruta,
       receitaLiq,

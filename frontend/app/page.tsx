@@ -125,7 +125,7 @@ export default function DashboardPage() {
       label: 'Pecas em estoque',
       val: (dash?.totalDisponivel || 0).toLocaleString('pt-BR'),
       color: 'var(--blue-500)',
-      sub: 'pecas disponiveis para venda',
+      sub: `${dash?.totalIdsDisponiveis || 0} IDs/SKUs-base unicos`,
     },
   ];
 
