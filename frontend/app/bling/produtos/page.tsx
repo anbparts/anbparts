@@ -241,15 +241,17 @@ export default function BlingProdutosPage() {
           const key = linha.id || linha.codigo;
           merged.set(key, linha);
         }
-        for (const [key, linha] of linhasPorChave.entries()) {
+        linhasPorChave.forEach((linha, key) => {
           merged.set(key, linha);
-        }
+        });
         return Array.from(merged.values());
       });
       setCsvArquivos((prev) => {
         const merged = new Map<string, CsvArquivoCarregado>();
         for (const item of prev) merged.set(item.nome, item);
-        for (const item of todosArquivos) merged.set(item.nome, item);
+        todosArquivos.forEach((item) => {
+          merged.set(item.nome, item);
+        });
         return Array.from(merged.values());
       });
     } catch (e: any) {
