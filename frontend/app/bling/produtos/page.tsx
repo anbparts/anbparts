@@ -184,8 +184,14 @@ export default function BlingProdutosPage() {
     setCsvComparacao(null);
     try {
       const XLSX = await import('xlsx');
-      const buffer = await file.arrayBuffer();
-      const workbook = XLSX.read(buffer, { type: 'array' });
+      const csvText = await file.text();
+      const workbook = XLSX.read(csvText, {
+        type: 'string',
+        FS: ';',
+        raw: true,
+        cellText: false,
+        cellNF: false,
+      });
       const firstSheetName = workbook.SheetNames[0];
 
       if (!firstSheetName) {
@@ -196,7 +202,7 @@ export default function BlingProdutosPage() {
       }
 
       const sheet = workbook.Sheets[firstSheetName];
-      const rawRows = XLSX.utils.sheet_to_json<Record<string, any>>(sheet, { defval: '' });
+      const rawRows = XLSX.utils.sheet_to_json<Record<string, any>>(sheet, { defval: '', raw: true });
       const linhas = rawRows
         .map((row) => {
           const codigo = String(getCsvField(row, 'codigo') || '').trim().replace(/\s+/g, '');
