@@ -1099,7 +1099,6 @@ blingRouter.get('/relatorio-vendas', async (req, res, next) => {
 
     const andFilters: any[] = [
       { dataVenda: { not: null } },
-      { blingPedidoId: { not: null } },
       { blingPedidoNum: { not: null } },
       { disponivel: false },
       { emPrejuizo: false },

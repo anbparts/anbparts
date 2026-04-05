@@ -172,7 +172,7 @@ export default function RelatorioVendasPage() {
       <div style={s.topbar}>
         <div>
           <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)', letterSpacing: '-0.3px' }}>Relatorio de Vendas</div>
-          <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>Consulte as vendas integradas registradas no sistema com subtotais por pedido Bling.</div>
+          <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>Consulte as vendas registradas no sistema com subtotais por pedido Bling.</div>
         </div>
         {buscou && relatorio && (
           <div style={{ display: 'flex', gap: 12, fontSize: 13, flexWrap: 'wrap' }}>
