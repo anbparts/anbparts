@@ -939,8 +939,12 @@ blingRouter.post('/comparar-produtos', async (req, res, next) => {
         : { label: null, normalized: '', isActive: false, found: false };
       const temEstoqueEmAlgumSistema = local.qtdDisponivelAnb > 0 || qtdBling > 0;
       const divergenciasSku: any[] = [];
+      const deveAlertarPrejuizo = local.qtdPrejuizoAnb > 0 && (
+        qtdBling > 0
+        || (statusMercadoLivre.found && statusMercadoLivre.isActive)
+      );
 
-      if (local.qtdPrejuizoAnb > 0) {
+      if (deveAlertarPrejuizo) {
         divergenciasSku.push({
           sku: codigo,
           tipo: 'peca_em_prejuizo',
