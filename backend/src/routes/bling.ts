@@ -849,6 +849,7 @@ blingRouter.post('/comparar-produtos', async (req, res, next) => {
           descricao: true,
           disponivel: true,
           emPrejuizo: true,
+          prejuizo: { select: { motivo: true } },
           moto: { select: { marca: true, modelo: true } },
         },
         orderBy: { idPeca: 'asc' },
@@ -882,6 +883,9 @@ blingRouter.post('/comparar-produtos', async (req, res, next) => {
         qtdTotalAnb: 0,
         qtdDisponivelAnb: 0,
         qtdVendidasAnb: 0,
+        qtdPrejuizoAnb: 0,
+        idsPecaPrejuizo: [] as string[],
+        motivosPrejuizo: [] as string[],
         descricaoAnb: null,
         moto: null,
       });
@@ -894,6 +898,9 @@ blingRouter.post('/comparar-produtos', async (req, res, next) => {
         qtdTotalAnb: 0,
         qtdDisponivelAnb: 0,
         qtdVendidasAnb: 0,
+        qtdPrejuizoAnb: 0,
+        idsPecaPrejuizo: [] as string[],
+        motivosPrejuizo: [] as string[],
         descricaoAnb: null,
         moto: null,
       };
@@ -901,6 +908,11 @@ blingRouter.post('/comparar-produtos', async (req, res, next) => {
       current.qtdTotalAnb += 1;
       current.qtdDisponivelAnb += peca.disponivel && !peca.emPrejuizo ? 1 : 0;
       current.qtdVendidasAnb += !peca.disponivel && !peca.emPrejuizo ? 1 : 0;
+      if (peca.emPrejuizo) {
+        current.qtdPrejuizoAnb += 1;
+        current.idsPecaPrejuizo.push(peca.idPeca);
+        if (peca.prejuizo?.motivo) current.motivosPrejuizo.push(peca.prejuizo.motivo);
+      }
       if (!current.descricaoAnb) current.descricaoAnb = peca.descricao || null;
       if (!current.moto && peca.moto) current.moto = `${peca.moto.marca} ${peca.moto.modelo}`;
 
@@ -913,6 +925,9 @@ blingRouter.post('/comparar-produtos', async (req, res, next) => {
         qtdTotalAnb: 0,
         qtdDisponivelAnb: 0,
         qtdVendidasAnb: 0,
+        qtdPrejuizoAnb: 0,
+        idsPecaPrejuizo: [],
+        motivosPrejuizo: [],
         descricaoAnb: null,
         moto: null,
       };
@@ -923,9 +938,31 @@ blingRouter.post('/comparar-produtos', async (req, res, next) => {
         ? resolveMercadoLivreStatus(produtosDetalhe.get(Number(produtoBling.id)))
         : { label: null, normalized: '', isActive: false, found: false };
       const temEstoqueEmAlgumSistema = local.qtdDisponivelAnb > 0 || qtdBling > 0;
+      const divergenciasSku: any[] = [];
+
+      if (local.qtdPrejuizoAnb > 0) {
+        divergenciasSku.push({
+          sku: codigo,
+          tipo: 'peca_em_prejuizo',
+          titulo: 'Peca em prejuizo no ANB',
+          detalhe: `Esse SKU possui ${local.qtdPrejuizoAnb} item(ns) registrado(s) em prejuizo e precisa ser revisado na equalizacao.`,
+          estoqueAnb: local.qtdDisponivelAnb,
+          estoqueBling: qtdBling,
+          qtdTotalAnb: local.qtdTotalAnb,
+          qtdVendidasAnb: local.qtdVendidasAnb,
+          qtdPrejuizoAnb: local.qtdPrejuizoAnb,
+          idsPecaPrejuizo: Array.from(new Set(local.idsPecaPrejuizo)),
+          motivosPrejuizo: Array.from(new Set(local.motivosPrejuizo)),
+          descricaoAnb: local.descricaoAnb,
+          descricaoBling,
+          moto: local.moto,
+          statusMercadoLivre: statusMercadoLivre.label,
+          statusMercadoLivreAtivo: statusMercadoLivre.found ? statusMercadoLivre.isActive : null,
+        });
+      }
 
       if (!produtoBling) {
-        return [{
+        divergenciasSku.push({
           sku: codigo,
           tipo: 'nao_encontrado_bling',
           titulo: 'Nao encontrado no Bling',
@@ -934,16 +971,20 @@ blingRouter.post('/comparar-produtos', async (req, res, next) => {
           estoqueBling: 0,
           qtdTotalAnb: local.qtdTotalAnb,
           qtdVendidasAnb: local.qtdVendidasAnb,
+          qtdPrejuizoAnb: local.qtdPrejuizoAnb,
+          idsPecaPrejuizo: Array.from(new Set(local.idsPecaPrejuizo)),
+          motivosPrejuizo: Array.from(new Set(local.motivosPrejuizo)),
           descricaoAnb: local.descricaoAnb,
           descricaoBling,
           moto: local.moto,
           statusMercadoLivre: null,
           statusMercadoLivreAtivo: null,
-        }];
+        });
+        return divergenciasSku;
       }
 
       if (temEstoqueEmAlgumSistema && statusMercadoLivre.found && !statusMercadoLivre.isActive) {
-        return [{
+        divergenciasSku.push({
           sku: codigo,
           tipo: 'status_ml_nao_ativo',
           titulo: 'Anuncio ML nao ativo',
@@ -952,16 +993,20 @@ blingRouter.post('/comparar-produtos', async (req, res, next) => {
           estoqueBling: qtdBling,
           qtdTotalAnb: local.qtdTotalAnb,
           qtdVendidasAnb: local.qtdVendidasAnb,
+          qtdPrejuizoAnb: local.qtdPrejuizoAnb,
+          idsPecaPrejuizo: Array.from(new Set(local.idsPecaPrejuizo)),
+          motivosPrejuizo: Array.from(new Set(local.motivosPrejuizo)),
           descricaoAnb: local.descricaoAnb,
           descricaoBling,
           moto: local.moto,
           statusMercadoLivre: statusMercadoLivre.label,
           statusMercadoLivreAtivo: false,
-        }];
+        });
+        return divergenciasSku;
       }
 
       if (!local.qtdTotalAnb) {
-        return [{
+        divergenciasSku.push({
           sku: codigo,
           tipo: 'nao_encontrado_anb',
           titulo: 'Nao encontrado no ANB',
@@ -970,16 +1015,20 @@ blingRouter.post('/comparar-produtos', async (req, res, next) => {
           estoqueBling: qtdBling,
           qtdTotalAnb: 0,
           qtdVendidasAnb: 0,
+          qtdPrejuizoAnb: 0,
+          idsPecaPrejuizo: [],
+          motivosPrejuizo: [],
           descricaoAnb: null,
           descricaoBling,
           moto: null,
           statusMercadoLivre: statusMercadoLivre.label,
           statusMercadoLivreAtivo: statusMercadoLivre.found ? statusMercadoLivre.isActive : null,
-        }];
+        });
+        return divergenciasSku;
       }
 
       if (local.qtdDisponivelAnb > qtdBling) {
-        return [{
+        divergenciasSku.push({
           sku: codigo,
           tipo: 'estoque_anb_maior',
           titulo: 'Estoque ANB maior que Bling',
@@ -988,16 +1037,20 @@ blingRouter.post('/comparar-produtos', async (req, res, next) => {
           estoqueBling: qtdBling,
           qtdTotalAnb: local.qtdTotalAnb,
           qtdVendidasAnb: local.qtdVendidasAnb,
+          qtdPrejuizoAnb: local.qtdPrejuizoAnb,
+          idsPecaPrejuizo: Array.from(new Set(local.idsPecaPrejuizo)),
+          motivosPrejuizo: Array.from(new Set(local.motivosPrejuizo)),
           descricaoAnb: local.descricaoAnb,
           descricaoBling,
           moto: local.moto,
           statusMercadoLivre: statusMercadoLivre.label,
           statusMercadoLivreAtivo: statusMercadoLivre.found ? statusMercadoLivre.isActive : null,
-        }];
+        });
+        return divergenciasSku;
       }
 
       if (local.qtdDisponivelAnb < qtdBling) {
-        return [{
+        divergenciasSku.push({
           sku: codigo,
           tipo: 'estoque_bling_maior',
           titulo: 'Estoque Bling maior que ANB',
@@ -1006,15 +1059,19 @@ blingRouter.post('/comparar-produtos', async (req, res, next) => {
           estoqueBling: qtdBling,
           qtdTotalAnb: local.qtdTotalAnb,
           qtdVendidasAnb: local.qtdVendidasAnb,
+          qtdPrejuizoAnb: local.qtdPrejuizoAnb,
+          idsPecaPrejuizo: Array.from(new Set(local.idsPecaPrejuizo)),
+          motivosPrejuizo: Array.from(new Set(local.motivosPrejuizo)),
           descricaoAnb: local.descricaoAnb,
           descricaoBling,
           moto: local.moto,
           statusMercadoLivre: statusMercadoLivre.label,
           statusMercadoLivreAtivo: statusMercadoLivre.found ? statusMercadoLivre.isActive : null,
-        }];
+        });
+        return divergenciasSku;
       }
 
-      return [];
+      return divergenciasSku;
     });
 
     res.json({

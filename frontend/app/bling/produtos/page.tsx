@@ -49,6 +49,9 @@ type Divergencia = {
   estoqueBling: number;
   qtdTotalAnb: number;
   qtdVendidasAnb: number;
+  qtdPrejuizoAnb?: number;
+  idsPecaPrejuizo?: string[];
+  motivosPrejuizo?: string[];
   descricaoAnb: string | null;
   descricaoBling: string | null;
   moto: string | null;
@@ -346,6 +349,8 @@ export default function BlingProdutosPage() {
                     ? 'var(--amber)'
                     : item.tipo === 'nao_encontrado_anb'
                       ? 'var(--blue-500)'
+                      : item.tipo === 'peca_em_prejuizo'
+                        ? '#b91c1c'
                       : item.tipo === 'status_ml_nao_ativo'
                         ? 'var(--red)'
                       : 'var(--red)';
@@ -373,6 +378,12 @@ export default function BlingProdutosPage() {
                       <div style={{ fontSize: 12, color: 'var(--gray-400)', marginBottom: 14 }}>
                         {item.detalhe}
                       </div>
+                      {item.tipo === 'peca_em_prejuizo' && (
+                        <div style={{ fontSize: 12, color: '#b91c1c', marginBottom: 14 }}>
+                          IDs em prejuizo: {(item.idsPecaPrejuizo || []).join(', ') || 'Nao informado'}
+                          {item.motivosPrejuizo && item.motivosPrejuizo.length > 0 && ` - Motivos: ${item.motivosPrejuizo.join(', ')}`}
+                        </div>
+                      )}
 
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
                         <div style={{ background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
@@ -390,6 +401,10 @@ export default function BlingProdutosPage() {
                         <div style={{ background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
                           <div style={s.label}>Vendidas no ANB</div>
                           <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--gray-700)' }}>{item.qtdVendidasAnb}</div>
+                        </div>
+                        <div style={{ background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
+                          <div style={s.label}>Em prejuizo no ANB</div>
+                          <div style={{ fontSize: 18, fontWeight: 700, color: item.qtdPrejuizoAnb ? '#b91c1c' : 'var(--gray-700)' }}>{item.qtdPrejuizoAnb || 0}</div>
                         </div>
                         <div style={{ background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
                           <div style={s.label}>Status ML</div>
