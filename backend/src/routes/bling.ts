@@ -628,6 +628,29 @@ function collectMercadoLivreTexts(value: any, acc: string[] = [], inMlContext = 
   return acc;
 }
 
+function collectMercadoLivreDebugSections(value: any, path = 'root', acc: Array<{ path: string; text: string }> = []) {
+  if (value === null || value === undefined) return acc;
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => collectMercadoLivreDebugSections(item, `${path}[${index}]`, acc));
+    return acc;
+  }
+  if (typeof value !== 'object') return acc;
+
+  const entriesText = extractSearchableText(value).trim();
+  if (entriesText && hasMercadoLivreMarker(entriesText)) {
+    acc.push({
+      path,
+      text: entriesText.slice(0, 1200),
+    });
+  }
+
+  for (const [key, nested] of Object.entries(value)) {
+    collectMercadoLivreDebugSections(nested, `${path}.${key}`, acc);
+  }
+
+  return acc;
+}
+
 function resolveMercadoLivreStatus(produtoDetalhe: any) {
   const candidates = Array.from(new Set(
     collectMercadoLivreTexts(produtoDetalhe)
@@ -1176,6 +1199,46 @@ blingRouter.post('/comparar-produtos', async (req, res, next) => {
       totalDivergencias: divergencias.length,
       totalSemDivergencia: codigos.length - divergencias.length,
       divergencias,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+blingRouter.post('/debug-status-produto', async (req, res, next) => {
+  try {
+    const codigo = getBaseSku(req.body?.codigo || req.body?.sku);
+    if (!codigo) {
+      return res.status(400).json({ error: 'Informe um codigo / SKU' });
+    }
+
+    const produtos = await findBlingProductsByCodes([codigo]);
+    const produto = produtos.get(codigo);
+    if (!produto?.id) {
+      return res.status(404).json({ error: 'Produto nao encontrado no Bling', codigo });
+    }
+
+    const detalhes = await findBlingProductDetailsByIds([Number(produto.id)]);
+    const detalhe = detalhes.get(Number(produto.id)) || null;
+    const candidates = Array.from(new Set(
+      collectMercadoLivreTexts(detalhe)
+        .map((text) => String(text || '').trim())
+        .filter(Boolean),
+    ));
+    const flattenedText = extractSearchableText(detalhe);
+    const sections = collectMercadoLivreDebugSections(detalhe).slice(0, 40);
+
+    res.json({
+      ok: true,
+      codigo,
+      produtoId: Number(produto.id),
+      nome: produto.nome || null,
+      estoqueBling: toNumber(produto?.estoque?.saldoVirtualTotal ?? produto?.estoque?.saldo ?? 0),
+      statusResolvido: resolveMercadoLivreStatus(detalhe),
+      candidates: candidates.slice(0, 50),
+      hasMlMarkerInFlatText: hasMercadoLivreMarker(flattenedText),
+      flatTextExcerpt: flattenedText.slice(0, 4000),
+      mlSections: sections,
     });
   } catch (e) {
     next(e);
