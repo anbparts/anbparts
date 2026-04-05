@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3333';
 
@@ -149,6 +149,11 @@ export default function RelatorioVendasPage() {
     setBuscando(false);
   }
 
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!buscando) buscarRelatorio();
+  }
+
   function limparFiltros() {
     setDataDe('');
     setDataAte('');
@@ -184,7 +189,7 @@ export default function RelatorioVendasPage() {
       </div>
 
       <div style={{ padding: 28 }}>
-        <div style={s.card}>
+        <form style={s.card} onSubmit={handleSubmit}>
           <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 14 }}>Filtros do relatorio</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 12 }}>
             <div>
@@ -205,14 +210,14 @@ export default function RelatorioVendasPage() {
             </div>
           </div>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            <button style={{ ...s.btn, background: '#FF6900', color: '#fff', opacity: buscando ? 0.7 : 1 }} onClick={buscarRelatorio} disabled={buscando}>
+            <button type="submit" style={{ ...s.btn, background: '#FF6900', color: '#fff', opacity: buscando ? 0.7 : 1 }} disabled={buscando}>
               {buscando ? 'Buscando...' : 'Buscar relatorio'}
             </button>
-            <button style={{ ...s.btn, background: 'var(--white)', color: 'var(--gray-700)', borderColor: 'var(--border)' }} onClick={limparFiltros}>
+            <button type="button" style={{ ...s.btn, background: 'var(--white)', color: 'var(--gray-700)', borderColor: 'var(--border)' }} onClick={limparFiltros}>
               Limpar filtros
             </button>
           </div>
-        </div>
+        </form>
 
         {relatorio && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12, marginBottom: 14 }}>
