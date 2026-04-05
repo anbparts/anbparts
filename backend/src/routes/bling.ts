@@ -292,8 +292,25 @@ function resolverMotoId(sku: string, prefixos: any[]): number | null {
   return null;
 }
 
+function getBaseSku(value: any) {
+  return String(value || '')
+    .trim()
+    .toUpperCase()
+    .replace(/-\d+$/, '');
+}
+
+function parseSkuList(value: any) {
+  const raw = Array.isArray(value) ? value.join('\n') : String(value || '');
+  const codes = raw
+    .split(/[\n,;\t\r ]+/)
+    .map((item) => getBaseSku(item))
+    .filter(Boolean);
+
+  return Array.from(new Set(codes));
+}
+
 function matchesSku(idPeca: string, codigo: string) {
-  return idPeca === codigo || idPeca.startsWith(`${codigo}-`);
+  return getBaseSku(idPeca) === getBaseSku(codigo);
 }
 
 function findLinkedPecasByPedido(
@@ -410,6 +427,32 @@ async function listPedidos(dataInicio?: string, dataFim?: string, situacoes?: nu
   }
 
   return Array.from(pedidosMap.values());
+}
+
+async function findBlingProductsByCodes(codes: string[]) {
+  const targetCodes = new Set(codes.map((code) => getBaseSku(code)));
+  const found = new Map<string, any>();
+  let pagina = 1;
+
+  while (targetCodes.size > 0) {
+    const data = await blingReq(`/produtos?pagina=${pagina}&limite=100&criterio=2`) as any;
+    const produtos = data?.data || [];
+    if (!produtos.length) break;
+
+    for (const produto of produtos) {
+      const code = getBaseSku(produto?.codigo);
+      if (!code || !targetCodes.has(code) || found.has(code)) continue;
+
+      found.set(code, produto);
+      targetCodes.delete(code);
+    }
+
+    if (produtos.length < 100) break;
+    pagina += 1;
+    await sleep(250);
+  }
+
+  return found;
 }
 
 blingRouter.get('/config', async (_req, res, next) => {
@@ -632,6 +675,157 @@ blingRouter.post('/sync/produtos', async (req, res, next) => {
     }
 
     res.json({ ok: true, total: itens.length, itens });
+  } catch (e) {
+    next(e);
+  }
+});
+
+blingRouter.post('/comparar-produtos', async (req, res, next) => {
+  try {
+    const codigos = parseSkuList(req.body?.codigos || req.body?.texto || req.body?.skus);
+    if (!codigos.length) {
+      return res.status(400).json({ error: 'Informe pelo menos um ID de peca / SKU para comparar' });
+    }
+
+    const whereOr = codigos.flatMap((codigo) => [
+      { idPeca: codigo },
+      { idPeca: { startsWith: `${codigo}-` } },
+    ]);
+
+    const [pecas, produtosBling] = await Promise.all([
+      prisma.peca.findMany({
+        where: { OR: whereOr },
+        select: {
+          idPeca: true,
+          descricao: true,
+          disponivel: true,
+          moto: { select: { marca: true, modelo: true } },
+        },
+        orderBy: { idPeca: 'asc' },
+      }),
+      findBlingProductsByCodes(codigos),
+    ]);
+
+    const localMap = new Map<string, any>();
+
+    for (const codigo of codigos) {
+      localMap.set(codigo, {
+        sku: codigo,
+        qtdTotalAnb: 0,
+        qtdDisponivelAnb: 0,
+        qtdVendidasAnb: 0,
+        descricaoAnb: null,
+        moto: null,
+      });
+    }
+
+    for (const peca of pecas) {
+      const baseSku = getBaseSku(peca.idPeca);
+      const current = localMap.get(baseSku) || {
+        sku: baseSku,
+        qtdTotalAnb: 0,
+        qtdDisponivelAnb: 0,
+        qtdVendidasAnb: 0,
+        descricaoAnb: null,
+        moto: null,
+      };
+
+      current.qtdTotalAnb += 1;
+      current.qtdDisponivelAnb += peca.disponivel ? 1 : 0;
+      current.qtdVendidasAnb += peca.disponivel ? 0 : 1;
+      if (!current.descricaoAnb) current.descricaoAnb = peca.descricao || null;
+      if (!current.moto && peca.moto) current.moto = `${peca.moto.marca} ${peca.moto.modelo}`;
+
+      localMap.set(baseSku, current);
+    }
+
+    const divergencias = codigos.flatMap((codigo) => {
+      const local = localMap.get(codigo) || {
+        sku: codigo,
+        qtdTotalAnb: 0,
+        qtdDisponivelAnb: 0,
+        qtdVendidasAnb: 0,
+        descricaoAnb: null,
+        moto: null,
+      };
+      const produtoBling = produtosBling.get(codigo);
+      const qtdBling = produtoBling ? toNumber(produtoBling?.estoque?.saldoVirtualTotal ?? produtoBling?.estoque?.saldo ?? 0) : 0;
+      const descricaoBling = produtoBling?.nome || null;
+
+      if (!produtoBling) {
+        return [{
+          sku: codigo,
+          tipo: 'nao_encontrado_bling',
+          titulo: 'Nao encontrado no Bling',
+          detalhe: 'Esse SKU existe no ANB, mas nao foi encontrado na busca do catalogo do Bling.',
+          estoqueAnb: local.qtdDisponivelAnb,
+          estoqueBling: 0,
+          qtdTotalAnb: local.qtdTotalAnb,
+          qtdVendidasAnb: local.qtdVendidasAnb,
+          descricaoAnb: local.descricaoAnb,
+          descricaoBling,
+          moto: local.moto,
+        }];
+      }
+
+      if (!local.qtdTotalAnb) {
+        return [{
+          sku: codigo,
+          tipo: 'nao_encontrado_anb',
+          titulo: 'Nao encontrado no ANB',
+          detalhe: 'Esse SKU foi encontrado no Bling, mas nao existe na sua base de pecas do ANB.',
+          estoqueAnb: 0,
+          estoqueBling: qtdBling,
+          qtdTotalAnb: 0,
+          qtdVendidasAnb: 0,
+          descricaoAnb: null,
+          descricaoBling,
+          moto: null,
+        }];
+      }
+
+      if (local.qtdDisponivelAnb > qtdBling) {
+        return [{
+          sku: codigo,
+          tipo: 'estoque_anb_maior',
+          titulo: 'Estoque ANB maior que Bling',
+          detalhe: 'O ANB mostra mais pecas disponiveis que o saldo atual do Bling.',
+          estoqueAnb: local.qtdDisponivelAnb,
+          estoqueBling: qtdBling,
+          qtdTotalAnb: local.qtdTotalAnb,
+          qtdVendidasAnb: local.qtdVendidasAnb,
+          descricaoAnb: local.descricaoAnb,
+          descricaoBling,
+          moto: local.moto,
+        }];
+      }
+
+      if (local.qtdDisponivelAnb < qtdBling) {
+        return [{
+          sku: codigo,
+          tipo: 'estoque_bling_maior',
+          titulo: 'Estoque Bling maior que ANB',
+          detalhe: 'O Bling mostra mais saldo disponivel que a quantidade em estoque no ANB.',
+          estoqueAnb: local.qtdDisponivelAnb,
+          estoqueBling: qtdBling,
+          qtdTotalAnb: local.qtdTotalAnb,
+          qtdVendidasAnb: local.qtdVendidasAnb,
+          descricaoAnb: local.descricaoAnb,
+          descricaoBling,
+          moto: local.moto,
+        }];
+      }
+
+      return [];
+    });
+
+    res.json({
+      ok: true,
+      totalConsultados: codigos.length,
+      totalDivergencias: divergencias.length,
+      totalSemDivergencia: codigos.length - divergencias.length,
+      divergencias,
+    });
   } catch (e) {
     next(e);
   }

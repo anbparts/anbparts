@@ -40,6 +40,27 @@ type Item = {
   _erro?: string;
 };
 
+type Divergencia = {
+  sku: string;
+  tipo: string;
+  titulo: string;
+  detalhe: string;
+  estoqueAnb: number;
+  estoqueBling: number;
+  qtdTotalAnb: number;
+  qtdVendidasAnb: number;
+  descricaoAnb: string | null;
+  descricaoBling: string | null;
+  moto: string | null;
+};
+
+type Comparacao = {
+  totalConsultados: number;
+  totalDivergencias: number;
+  totalSemDivergencia: number;
+  divergencias: Divergencia[];
+};
+
 function calcLiq(preco: number, frete: number, taxaPct: number) {
   const taxaVal = parseFloat((preco * taxaPct / 100).toFixed(2));
   const valorLiq = parseFloat((preco - frete - taxaVal).toFixed(2));
@@ -64,6 +85,9 @@ export default function BlingProdutosPage() {
   const [dataFim, setDataFim] = useState('');
   const [motoFallback, setMotoFallback] = useState('');
   const [defaults, setDefaults] = useState<Defaults>({ fretePadrao: 29.9, taxaPadraoPct: 17 });
+  const [listaComparacao, setListaComparacao] = useState('');
+  const [comparando, setComparando] = useState(false);
+  const [comparacao, setComparacao] = useState<Comparacao | null>(null);
 
   useEffect(() => {
     api.motos.list().then(setMotos).catch(() => {});
@@ -117,6 +141,33 @@ export default function BlingProdutosPage() {
       alert(`Erro: ${e.message}`);
     }
     setBuscando(false);
+  }
+
+  async function compararProdutos() {
+    if (!listaComparacao.trim()) {
+      alert('Informe pelo menos um ID de peca / SKU para comparar');
+      return;
+    }
+
+    setComparando(true);
+    setComparacao(null);
+    try {
+      const response = await fetch(`${API}/bling/comparar-produtos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ codigos: listaComparacao }),
+      });
+      const data = await response.json();
+      if (!data.ok) {
+        alert(data.error || 'Erro ao comparar produtos');
+        return;
+      }
+
+      setComparacao(data);
+    } catch (e: any) {
+      alert(`Erro: ${e.message}`);
+    }
+    setComparando(false);
   }
 
   function updateItem(idx: number, field: string, value: any) {
@@ -225,6 +276,107 @@ export default function BlingProdutosPage() {
             Frete padrao: {fmtMoney(defaults.fretePadrao)} · Taxa padrao: {fmtPercent(defaults.taxaPadraoPct)}
           </span>
         </div>
+
+        <div style={s.card}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 8 }}>Comparar lista de IDs de peca / SKUs</div>
+          <div style={{ fontSize: 12, color: 'var(--gray-400)', marginBottom: 14 }}>
+            Cole uma lista com PN, HD01_xxx, BM01_xxx ou outros IDs. O sistema agrupa sufixos como <span style={{ fontFamily: 'JetBrains Mono, monospace' }}>-2</span> no SKU base e mostra somente os produtos divergentes entre ANB e Bling.
+          </div>
+          <textarea
+            style={{ ...s.input, width: '100%', minHeight: 120, resize: 'vertical', fontFamily: 'JetBrains Mono, monospace', lineHeight: 1.5 }}
+            placeholder={`Exemplo:\nPN0001\nHD01_0122\nBM01_0050`}
+            value={listaComparacao}
+            onChange={(e) => setListaComparacao(e.target.value)}
+          />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginTop: 14 }}>
+            <button
+              style={{ ...s.btn, background: 'var(--blue-500)', color: '#fff', opacity: (comparando || !connected) ? 0.6 : 1 }}
+              onClick={compararProdutos}
+              disabled={comparando || !connected}
+            >
+              {comparando ? 'Comparando...' : 'Comparar lista'}
+            </button>
+            <span style={{ fontSize: 12, color: 'var(--gray-400)' }}>
+              Use essa revisao para encontrar divergencias de estoque entre a base do ANB e o saldo atual do Bling.
+            </span>
+          </div>
+        </div>
+
+        {comparacao && (
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12, marginBottom: 20 }}>
+              {[
+                { label: 'Consultados', value: comparacao.totalConsultados, color: 'var(--gray-700)' },
+                { label: 'Divergentes', value: comparacao.totalDivergencias, color: 'var(--red)' },
+                { label: 'Sem divergencia', value: comparacao.totalSemDivergencia, color: 'var(--green)' },
+              ].map((item) => (
+                <div key={item.label} style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 9, padding: '14px 16px' }}>
+                  <div style={{ fontSize: 11, fontFamily: 'JetBrains Mono, monospace', color: 'var(--gray-400)', letterSpacing: '.6px', textTransform: 'uppercase', marginBottom: 6 }}>{item.label}</div>
+                  <div style={{ fontSize: 22, fontWeight: 700, color: item.color }}>{item.value}</div>
+                </div>
+              ))}
+            </div>
+
+            {comparacao.divergencias.length > 0 ? (
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--red)', marginBottom: 12 }}>
+                  Produtos divergentes - {comparacao.divergencias.length}
+                </div>
+                {comparacao.divergencias.map((item) => {
+                  const borderColor = item.tipo === 'nao_encontrado_bling'
+                    ? 'var(--amber)'
+                    : item.tipo === 'nao_encontrado_anb'
+                      ? 'var(--blue-500)'
+                      : 'var(--red)';
+
+                  return (
+                    <div key={`${item.tipo}-${item.sku}`} style={{ ...s.card, borderLeft: `3px solid ${borderColor}` }}>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
+                        <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, background: 'var(--gray-100)', color: 'var(--gray-500)', padding: '2px 8px', borderRadius: 5 }}>
+                          {item.sku}
+                        </span>
+                        <span style={{ fontSize: 12, background: '#fef2f2', color: borderColor, padding: '2px 8px', borderRadius: 5 }}>
+                          {item.titulo}
+                        </span>
+                        {item.moto && <span style={{ fontSize: 12, color: 'var(--gray-400)' }}>{item.moto}</span>}
+                      </div>
+
+                      <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 6 }}>
+                        {item.descricaoAnb || item.descricaoBling || 'Sem descricao'}
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--gray-400)', marginBottom: 14 }}>
+                        {item.detalhe}
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
+                        <div style={{ background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
+                          <div style={s.label}>Estoque ANB</div>
+                          <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--gray-700)' }}>{item.estoqueAnb}</div>
+                        </div>
+                        <div style={{ background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
+                          <div style={s.label}>Estoque Bling</div>
+                          <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--gray-700)' }}>{item.estoqueBling}</div>
+                        </div>
+                        <div style={{ background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
+                          <div style={s.label}>Total no ANB</div>
+                          <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--gray-700)' }}>{item.qtdTotalAnb}</div>
+                        </div>
+                        <div style={{ background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
+                          <div style={s.label}>Vendidas no ANB</div>
+                          <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--gray-700)' }}>{item.qtdVendidasAnb}</div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 10, padding: '18px 20px', color: 'var(--green)', fontSize: 14, fontWeight: 600, marginBottom: 20 }}>
+                Nenhuma divergencia encontrada nessa lista.
+              </div>
+            )}
+          </>
+        )}
 
         {buscou && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12, marginBottom: 20 }}>
