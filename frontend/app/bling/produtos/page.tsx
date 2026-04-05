@@ -86,6 +86,7 @@ export default function BlingProdutosPage() {
   const [motoFallback, setMotoFallback] = useState('');
   const [defaults, setDefaults] = useState<Defaults>({ fretePadrao: 29.9, taxaPadraoPct: 17 });
   const [listaComparacao, setListaComparacao] = useState('');
+  const [motoComparacaoId, setMotoComparacaoId] = useState('');
   const [comparando, setComparando] = useState(false);
   const [comparacao, setComparacao] = useState<Comparacao | null>(null);
 
@@ -144,8 +145,8 @@ export default function BlingProdutosPage() {
   }
 
   async function compararProdutos() {
-    if (!listaComparacao.trim()) {
-      alert('Informe pelo menos um ID de peca / SKU para comparar');
+    if (!listaComparacao.trim() && !motoComparacaoId) {
+      alert('Informe uma lista de IDs de peca / SKU ou selecione uma moto para comparar');
       return;
     }
 
@@ -155,7 +156,10 @@ export default function BlingProdutosPage() {
       const response = await fetch(`${API}/bling/comparar-produtos`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ codigos: listaComparacao }),
+        body: JSON.stringify({
+          codigos: listaComparacao,
+          motoId: motoComparacaoId ? Number(motoComparacaoId) : null,
+        }),
       });
       const data = await response.json();
       if (!data.ok) {
@@ -280,7 +284,20 @@ export default function BlingProdutosPage() {
         <div style={s.card}>
           <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 8 }}>Comparar lista de IDs de peca / SKUs</div>
           <div style={{ fontSize: 12, color: 'var(--gray-400)', marginBottom: 14 }}>
-            Cole uma lista com PN, HD01_xxx, BM01_xxx ou outros IDs. O sistema agrupa sufixos como <span style={{ fontFamily: 'JetBrains Mono, monospace' }}>-2</span> no SKU base e mostra somente os produtos divergentes entre ANB e Bling.
+            Cole uma lista com PN, HD01_xxx, BM01_xxx ou outros IDs, ou selecione uma moto cadastrada para consultar todos os SKUs-base dela. O sistema agrupa sufixos como <span style={{ fontFamily: 'JetBrains Mono, monospace' }}>-2</span> no SKU base e mostra somente os produtos divergentes entre ANB e Bling.
+          </div>
+          <div style={{ marginBottom: 12 }}>
+            <label style={s.label}>Moto cadastrada para comparar tudo</label>
+            <select
+              style={{ ...s.input, width: '100%', cursor: 'pointer' }}
+              value={motoComparacaoId}
+              onChange={(e) => setMotoComparacaoId(e.target.value)}
+            >
+              <option value="">Selecionar moto opcionalmente</option>
+              {motos.map((moto: any) => (
+                <option key={moto.id} value={moto.id}>ID {moto.id} - {moto.marca} {moto.modelo}</option>
+              ))}
+            </select>
           </div>
           <textarea
             style={{ ...s.input, width: '100%', minHeight: 120, resize: 'vertical', fontFamily: 'JetBrains Mono, monospace', lineHeight: 1.5 }}
@@ -294,7 +311,7 @@ export default function BlingProdutosPage() {
               onClick={compararProdutos}
               disabled={comparando || !connected}
             >
-              {comparando ? 'Comparando...' : 'Comparar lista'}
+              {comparando ? 'Comparando...' : 'Comparar lista / moto'}
             </button>
             <span style={{ fontSize: 12, color: 'var(--gray-400)' }}>
               Use essa revisao para encontrar divergencias de estoque entre a base do ANB e o saldo atual do Bling.
