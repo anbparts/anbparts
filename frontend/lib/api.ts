@@ -26,6 +26,7 @@ export const api = {
       const qs = params ? '?' + new URLSearchParams(params).toString() : '';
       return req<any>(`/pecas${qs}`);
     },
+    sugerirId: (motoId: number) => req<any>(`/pecas/sugestao-id?motoId=${motoId}`),
     create: (data: any)     => req<any>('/pecas', { method: 'POST', body: JSON.stringify(data) }),
     update: (id: number, data: any) => req<any>(`/pecas/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
     vender: (id: number, data: any) => req<any>(`/pecas/${id}/vender`, { method: 'PATCH', body: JSON.stringify(data) }),

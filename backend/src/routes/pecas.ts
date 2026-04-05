@@ -14,7 +14,7 @@ const PREJUIZO_MOTIVOS = new Set([
   'Extravio no Estoque',
 ]);
 
-const pecaSchema = z.object({
+const pecaBaseSchema = z.object({
   motoId:      z.number().int(),
   descricao:   z.string().min(1),
   precoML:     z.number().default(0),
@@ -26,6 +26,12 @@ const pecaSchema = z.object({
   dataVenda:   z.string().optional().nullable(),
   cadastro:    z.string().optional().nullable(),
 });
+
+const createPecaSchema = pecaBaseSchema.extend({
+  idPeca: z.string().trim().min(1).optional().nullable(),
+});
+
+const updatePecaSchema = pecaBaseSchema.partial();
 
 const prejuizoPayloadSchema = z.object({
   motivo: z.string().min(1),
@@ -42,6 +48,107 @@ async function gerarIdPeca(): Promise<string> {
   if (!last) return 'PN0001';
   const num = parseInt(last.idPeca.replace('PN', '')) + 1;
   return 'PN' + String(num).padStart(4, '0');
+}
+
+function inferDefaultIdFormat(prefixo: string) {
+  return prefixo.toUpperCase() === 'PN' ? 'plain' : 'underscore';
+}
+
+function normalizeIdPeca(value: string) {
+  return String(value || '').trim().toUpperCase();
+}
+
+function extractSequenceForPrefix(idPeca: string, prefixo: string) {
+  const normalizedId = normalizeIdPeca(idPeca);
+  const normalizedPrefix = normalizeIdPeca(prefixo);
+  const withoutSuffix = normalizedId.replace(/-\d+$/, '');
+
+  if (withoutSuffix.startsWith(`${normalizedPrefix}_`)) {
+    const numericPart = withoutSuffix.slice(normalizedPrefix.length + 1);
+    if (/^\d+$/.test(numericPart)) {
+      return {
+        number: Number(numericPart),
+        width: numericPart.length,
+        format: 'underscore' as const,
+      };
+    }
+  }
+
+  if (withoutSuffix.startsWith(normalizedPrefix)) {
+    const numericPart = withoutSuffix.slice(normalizedPrefix.length);
+    if (/^\d+$/.test(numericPart)) {
+      return {
+        number: Number(numericPart),
+        width: numericPart.length,
+        format: 'plain' as const,
+      };
+    }
+  }
+
+  return null;
+}
+
+function buildSuggestedId(prefixo: string, nextNumber: number, width: number, format: 'plain' | 'underscore') {
+  const padded = String(nextNumber).padStart(width, '0');
+  return format === 'underscore' ? `${prefixo}_${padded}` : `${prefixo}${padded}`;
+}
+
+async function getProdutoConfig() {
+  const cfg = await prisma.blingConfig.findFirst();
+  const prefixos = cfg && Array.isArray(cfg.prefixos) ? (cfg.prefixos as any[]) : [];
+
+  return {
+    prefixos,
+    fretePadrao: roundMoney(Math.max(0, Number(cfg?.fretePadrao) || DEFAULT_SELL_FRETE)),
+    taxaPadraoPct: roundMoney(Math.max(0, Number(cfg?.taxaPadraoPct) || DEFAULT_TAXA_PCT)),
+  };
+}
+
+async function suggestIdPecaForMoto(motoId: number) {
+  const cfg = await getProdutoConfig();
+  const prefixoConfig = cfg.prefixos.find((item) => Number(item?.motoId) === Number(motoId));
+  const prefixo = prefixoConfig?.prefixo ? normalizeIdPeca(prefixoConfig.prefixo) : '';
+
+  if (!prefixo) {
+    return {
+      prefixo: null,
+      sugestao: await gerarIdPeca(),
+      fretePadrao: cfg.fretePadrao,
+      taxaPadraoPct: cfg.taxaPadraoPct,
+    };
+  }
+
+  const candidates = await prisma.peca.findMany({
+    where: {
+      OR: [
+        { motoId: Number(motoId) },
+        { idPeca: { startsWith: prefixo } },
+      ],
+    },
+    select: { idPeca: true, motoId: true },
+  });
+
+  const motoMatches = candidates
+    .filter((item) => item.motoId === Number(motoId))
+    .map((item) => extractSequenceForPrefix(item.idPeca, prefixo))
+    .filter(Boolean) as Array<{ number: number; width: number; format: 'plain' | 'underscore' }>;
+
+  const prefixMatches = candidates
+    .map((item) => extractSequenceForPrefix(item.idPeca, prefixo))
+    .filter(Boolean) as Array<{ number: number; width: number; format: 'plain' | 'underscore' }>;
+
+  const referenceMatches = motoMatches.length ? motoMatches : prefixMatches;
+  const highest = [...referenceMatches].sort((a, b) => b.number - a.number)[0];
+  const nextNumber = (highest?.number || 0) + 1;
+  const width = highest?.width || 4;
+  const format = highest?.format || inferDefaultIdFormat(prefixo);
+
+  return {
+    prefixo,
+    sugestao: buildSuggestedId(prefixo, nextNumber, width, format),
+    fretePadrao: cfg.fretePadrao,
+    taxaPadraoPct: cfg.taxaPadraoPct,
+  };
 }
 
 function parseDateStart(date: string) {
@@ -139,14 +246,45 @@ pecasRouter.get('/', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// GET /pecas/sugestao-id
+pecasRouter.get('/sugestao-id', async (req, res, next) => {
+  try {
+    const motoId = Number(req.query.motoId);
+    if (!Number.isInteger(motoId) || motoId <= 0) {
+      return res.status(400).json({ error: 'Moto invalida para gerar sugestao' });
+    }
+
+    const sugestao = await suggestIdPecaForMoto(motoId);
+    res.json(sugestao);
+  } catch (e) { next(e); }
+});
+
 // POST /pecas
 pecasRouter.post('/', async (req, res, next) => {
   try {
-    const data = pecaSchema.parse(req.body);
-    const idPeca = await gerarIdPeca();
+    const data = createPecaSchema.parse(req.body);
+    const suggested = await suggestIdPecaForMoto(Number(data.motoId));
+    const idPeca = data.idPeca ? normalizeIdPeca(data.idPeca) : suggested.sugestao;
+    const existing = await prisma.peca.findUnique({ where: { idPeca } });
+    if (existing) {
+      return res.status(400).json({ error: 'ID da peca ja existe no sistema' });
+    }
+
+    const financials = calculatePecaFinancialValues(
+      data,
+      Number(data.precoML),
+      Number(data.valorFrete),
+      Number(data.valorTaxas),
+    );
     const peca = await prisma.peca.create({
       data: {
-        ...data,
+        motoId: data.motoId,
+        descricao: data.descricao,
+        precoML: financials.precoML,
+        valorLiq: financials.valorLiq,
+        valorFrete: financials.valorFrete,
+        valorTaxas: financials.valorTaxas,
+        disponivel: data.disponivel,
         emPrejuizo: false,
         blingPedidoNum: data.blingPedidoNum ? String(data.blingPedidoNum).trim() : null,
         idPeca,
@@ -161,7 +299,7 @@ pecasRouter.post('/', async (req, res, next) => {
 // PUT /pecas/:id
 pecasRouter.put('/:id', async (req, res, next) => {
   try {
-    const data = pecaSchema.partial().parse(req.body);
+    const data = updatePecaSchema.parse(req.body);
     const current = await prisma.peca.findUnique({
       where: { id: Number(req.params.id) },
       select: { id: true, precoML: true, valorFrete: true, valorTaxas: true },

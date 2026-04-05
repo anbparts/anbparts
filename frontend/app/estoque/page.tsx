@@ -34,6 +34,10 @@ function calculatePecaPreview(precoML: string, valorFrete: string, valorTaxas: s
   };
 }
 
+function moneyInputValue(value: number) {
+  return String(roundMoney(value));
+}
+
 function addDays(date: Date, days: number) {
   const next = new Date(date);
   next.setDate(next.getDate() + days);
@@ -103,6 +107,7 @@ function PrejuizoReasonModal({ open, peca, saving, onClose, onConfirm }: any) {
 
 function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, peca, motos }: any) {
   const empty = {
+    idPeca: '',
     motoId: '',
     descricao: '',
     precoML: '',
@@ -119,11 +124,17 @@ function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, peca, 
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
   const [showPrejuizoModal, setShowPrejuizoModal] = useState(false);
+  const [suggestion, setSuggestion] = useState<any>(null);
+  const [loadingSuggestion, setLoadingSuggestion] = useState(false);
+  const [, setIdPecaTouched] = useState(false);
+  const [, setFreteTouched] = useState(false);
+  const [taxasTouched, setTaxasTouched] = useState(false);
   const preview = calculatePecaPreview(form.precoML, form.valorFrete, form.valorTaxas);
 
   useEffect(() => {
     if (peca) {
       setForm({
+        idPeca: peca.idPeca || '',
         motoId: String(peca.motoId),
         descricao: peca.descricao || '',
         precoML: String(Number(peca.precoML || 0)),
@@ -140,19 +151,67 @@ function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, peca, 
     }
     setErr('');
     setShowPrejuizoModal(false);
+    setSuggestion(null);
+    setLoadingSuggestion(false);
+    setIdPecaTouched(false);
+    setFreteTouched(false);
+    setTaxasTouched(false);
   }, [peca, open]);
+
+  useEffect(() => {
+    if (!open || peca || !form.motoId) return;
+
+    let cancelled = false;
+    setLoadingSuggestion(true);
+
+    api.pecas.sugerirId(Number(form.motoId))
+      .then((info) => {
+        if (cancelled) return;
+
+        setSuggestion(info);
+        setForm((prev: any) => {
+          const next = { ...prev };
+
+          if (!String(prev.idPeca || '').trim()) {
+            next.idPeca = info?.sugestao || prev.idPeca;
+          }
+
+          if (!String(prev.valorFrete || '').trim()) {
+            next.valorFrete = moneyInputValue(Number(info?.fretePadrao || 0));
+          }
+
+          if (!String(prev.valorTaxas || '').trim()) {
+            const precoAtual = Number(prev.precoML) || 0;
+            next.valorTaxas = moneyInputValue(precoAtual * (Number(info?.taxaPadraoPct || 0) / 100));
+          }
+
+          return next;
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setSuggestion(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingSuggestion(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, peca, form.motoId]);
 
   if (!open) return null;
 
   async function save() {
-    if (!form.descricao || !form.motoId) {
-      setErr('Moto e descricao sao obrigatorios');
+    if (!form.descricao || !form.motoId || !String(form.idPeca || '').trim()) {
+      setErr('Moto, ID da peca e descricao sao obrigatorios');
       return;
     }
 
     setSaving(true);
     try {
       await onSave({
+        idPeca: String(form.idPeca || '').trim(),
         motoId: Number(form.motoId),
         descricao: form.descricao,
         precoML: preview.precoML,
@@ -183,6 +242,49 @@ function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, peca, 
     </div>
   );
 
+  function handleMotoChange(value: string) {
+    if (peca) {
+      setForm({ ...form, motoId: value });
+      return;
+    }
+
+    setIdPecaTouched(false);
+    setFreteTouched(false);
+    setTaxasTouched(false);
+    setForm((prev: any) => ({
+      ...prev,
+      motoId: value,
+      idPeca: '',
+      valorFrete: '',
+      valorTaxas: '',
+    }));
+  }
+
+  function handleIdPecaChange(value: string) {
+    setIdPecaTouched(true);
+    setForm({ ...form, idPeca: value.toUpperCase() });
+  }
+
+  function handlePrecoMlChange(value: string) {
+    setForm((prev: any) => {
+      const next = { ...prev, precoML: value };
+      if (!peca && !taxasTouched && suggestion?.taxaPadraoPct !== undefined) {
+        next.valorTaxas = moneyInputValue((Number(value) || 0) * (Number(suggestion?.taxaPadraoPct || 0) / 100));
+      }
+      return next;
+    });
+  }
+
+  function handleFreteChange(value: string) {
+    setFreteTouched(true);
+    setForm({ ...form, valorFrete: value });
+  }
+
+  function handleTaxasChange(value: string) {
+    setTaxasTouched(true);
+    setForm({ ...form, valorTaxas: value });
+  }
+
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }}>
       <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 16, width: '100%', maxWidth: 540, maxHeight: '92vh', overflowY: 'auto', boxShadow: '0 12px 32px rgba(0,0,0,.10)' }}>
@@ -196,18 +298,74 @@ function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, peca, 
         <div style={{ padding: '22px 24px' }}>
           <div style={{ marginBottom: 14 }}>
             <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-soft)' }}>Moto *</label>
-            <select style={{ ...cs.fi, cursor: 'pointer' }} value={form.motoId} onChange={(e) => setForm({ ...form, motoId: e.target.value })}>
+            <select style={{ ...cs.fi, cursor: 'pointer' }} value={form.motoId} onChange={(e) => handleMotoChange(e.target.value)}>
               <option value="">Selecione...</option>
               {motos.map((m: any) => <option key={m.id} value={m.id}>ID {m.id} - {m.marca} {m.modelo}</option>)}
             </select>
           </div>
+          {!peca && (
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-soft)' }}>ID da peca *</label>
+              <input
+                style={cs.fi}
+                type="text"
+                placeholder="Ex: BM01_0123"
+                value={form.idPeca}
+                onChange={(e) => handleIdPecaChange(e.target.value)}
+              />
+              <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginTop: 4 }}>
+                {loadingSuggestion
+                  ? 'Buscando sugestao automatica...'
+                  : suggestion?.sugestao
+                    ? `Sugestao automatica: ${suggestion.sugestao}${suggestion?.prefixo ? ` - Prefixo ${suggestion.prefixo}` : ''}`
+                    : 'Voce pode informar qualquer ID de peca manualmente.'}
+              </div>
+            </div>
+          )}
           {renderField('Data de cadastro', 'cadastro', 'date')}
           {renderField('Descricao da peca *', 'descricao', 'text', 'Ex: Tampa lateral direita')}
           {renderField('Pedido Bling', 'blingPedidoNum', 'text', 'Ex: 449')}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            {renderField('Preco ML (R$)', 'precoML', 'number', '0,00')}
-            {renderField('Frete (R$)', 'valorFrete', 'number', '0,00')}
-            {renderField('Taxas (R$)', 'valorTaxas', 'number', '0,00')}
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-soft)' }}>Preco ML (R$)</label>
+              <input
+                style={cs.fi}
+                type="number"
+                placeholder="0,00"
+                value={form.precoML}
+                onChange={(e) => handlePrecoMlChange(e.target.value)}
+              />
+            </div>
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-soft)' }}>Frete (R$)</label>
+              <input
+                style={cs.fi}
+                type="number"
+                placeholder="0,00"
+                value={form.valorFrete}
+                onChange={(e) => handleFreteChange(e.target.value)}
+              />
+              {!peca && suggestion?.fretePadrao !== undefined && (
+                <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginTop: 4 }}>
+                  Frete padrao atual: {fmt(Number(suggestion.fretePadrao || 0))}
+                </div>
+              )}
+            </div>
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-soft)' }}>Taxas (R$)</label>
+              <input
+                style={cs.fi}
+                type="number"
+                placeholder="0,00"
+                value={form.valorTaxas}
+                onChange={(e) => handleTaxasChange(e.target.value)}
+              />
+              {!peca && suggestion?.taxaPadraoPct !== undefined && (
+                <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginTop: 4 }}>
+                  Taxa padrao atual: {Number(suggestion.taxaPadraoPct || 0)}%
+                </div>
+              )}
+            </div>
             <div style={{ marginBottom: 14 }}>
               <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--sage)' }}>Valor liquido (R$)</label>
               <input
