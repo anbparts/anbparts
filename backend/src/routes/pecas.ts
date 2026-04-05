@@ -15,6 +15,7 @@ const pecaSchema = z.object({
   valorFrete:  z.number().default(0),
   valorTaxas:  z.number().default(0),
   disponivel:  z.boolean().default(true),
+  blingPedidoNum: z.string().optional().nullable(),
   dataVenda:   z.string().optional().nullable(),
   cadastro:    z.string().optional().nullable(),
 });
@@ -128,6 +129,7 @@ pecasRouter.post('/', async (req, res, next) => {
     const peca = await prisma.peca.create({
       data: {
         ...data,
+        blingPedidoNum: data.blingPedidoNum ? String(data.blingPedidoNum).trim() : null,
         idPeca,
         cadastro:  data.cadastro  ? new Date(data.cadastro)  : new Date(),
         dataVenda: data.dataVenda ? new Date(data.dataVenda) : null,
@@ -161,10 +163,41 @@ pecasRouter.put('/:id', async (req, res, next) => {
         valorFrete: financials.valorFrete,
         valorTaxas: financials.valorTaxas,
         valorLiq: financials.valorLiq,
+        blingPedidoNum: data.blingPedidoNum !== undefined
+          ? (data.blingPedidoNum ? String(data.blingPedidoNum).trim() : null)
+          : undefined,
         cadastro:  data.cadastro  ? new Date(data.cadastro)  : undefined,
         dataVenda: data.dataVenda ? new Date(data.dataVenda) : null,
       }
     });
+    res.json(peca);
+  } catch (e) { next(e); }
+});
+
+// PATCH /pecas/:id/cancelar-venda
+pecasRouter.patch('/:id/cancelar-venda', async (req, res, next) => {
+  try {
+    const current = await prisma.peca.findUnique({
+      where: { id: Number(req.params.id) },
+      select: { id: true, precoML: true, valorFrete: true, valorTaxas: true }
+    });
+    if (!current) return res.status(404).json({ error: 'Peca nao encontrada' });
+
+    const financials = calculatePecaFinancialValues(current);
+    const peca = await prisma.peca.update({
+      where: { id: Number(req.params.id) },
+      data: {
+        disponivel: true,
+        dataVenda: null,
+        blingPedidoId: null,
+        blingPedidoNum: null,
+        precoML: financials.precoML,
+        valorFrete: financials.valorFrete,
+        valorTaxas: financials.valorTaxas,
+        valorLiq: financials.valorLiq,
+      }
+    });
+
     res.json(peca);
   } catch (e) { next(e); }
 });

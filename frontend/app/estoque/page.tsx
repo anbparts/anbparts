@@ -59,7 +59,7 @@ const cs: any = {
   fi: { width: '100%', background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13.5, fontFamily: 'Geist, sans-serif', outline: 'none', marginTop: 5, color: 'var(--ink)' },
 };
 
-function PecaModal({ open, onClose, onSave, peca, motos }: any) {
+function PecaModal({ open, onClose, onSave, onCancelSale, peca, motos }: any) {
   const empty = {
     motoId: '',
     descricao: '',
@@ -67,6 +67,7 @@ function PecaModal({ open, onClose, onSave, peca, motos }: any) {
     valorLiq: '',
     valorFrete: '',
     valorTaxas: '',
+    blingPedidoNum: '',
     disponivel: 'true',
     dataVenda: '',
     cadastro: today(),
@@ -86,6 +87,7 @@ function PecaModal({ open, onClose, onSave, peca, motos }: any) {
         valorLiq: String(Number(peca.valorLiq || 0)),
         valorFrete: String(Number(peca.valorFrete || 0)),
         valorTaxas: String(Number(peca.valorTaxas || 0)),
+        blingPedidoNum: String(peca.blingPedidoNum || ''),
         disponivel: peca.disponivel ? 'true' : 'false',
         dataVenda: peca.dataVenda?.split('T')[0] || '',
         cadastro: peca.cadastro?.split('T')[0] || today(),
@@ -113,6 +115,7 @@ function PecaModal({ open, onClose, onSave, peca, motos }: any) {
         valorLiq: preview.valorLiq,
         valorFrete: preview.valorFrete,
         valorTaxas: preview.valorTaxas,
+        blingPedidoNum: form.blingPedidoNum.trim() || null,
         disponivel: form.disponivel === 'true',
         dataVenda: form.dataVenda || null,
         cadastro: form.cadastro,
@@ -156,6 +159,7 @@ function PecaModal({ open, onClose, onSave, peca, motos }: any) {
           </div>
           {renderField('Data de cadastro', 'cadastro', 'date')}
           {renderField('Descricao da peca *', 'descricao', 'text', 'Ex: Tampa lateral direita')}
+          {renderField('Pedido Bling', 'blingPedidoNum', 'text', 'Ex: 449')}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             {renderField('Preco ML (R$)', 'precoML', 'number', '0,00')}
             {renderField('Frete (R$)', 'valorFrete', 'number', '0,00')}
@@ -182,9 +186,31 @@ function PecaModal({ open, onClose, onSave, peca, motos }: any) {
           </div>
           {err && <div style={{ fontSize: 12, color: 'var(--red)' }}>! {err}</div>}
         </div>
-        <div style={{ padding: '16px 24px 22px', display: 'flex', gap: 8, justifyContent: 'flex-end', borderTop: '1px solid var(--border)' }}>
+        <div style={{ padding: '16px 24px 22px', display: 'flex', gap: 8, justifyContent: 'space-between', borderTop: '1px solid var(--border)', flexWrap: 'wrap' }}>
+          <div>
+            {peca && !peca.disponivel && (
+              <button
+                onClick={async () => {
+                  if (!confirm(`Cancelar a venda da peca ${peca.idPeca}?`)) return;
+                  setSaving(true);
+                  try {
+                    await onCancelSale(peca);
+                  } catch (e: any) {
+                    setErr(e.message || 'Erro ao cancelar venda');
+                  }
+                  setSaving(false);
+                }}
+                disabled={saving}
+                style={{ ...cs.btn, background: '#fff1f2', color: 'var(--red)', borderColor: '#fecdd3' }}
+              >
+                Cancelar venda
+              </button>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={onClose} style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink-soft)', borderColor: 'var(--border-strong)' }}>Cancelar</button>
           <button onClick={save} disabled={saving} style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)' }}>{saving ? 'Salvando...' : 'Salvar peca'}</button>
+          </div>
         </div>
       </div>
     </div>
@@ -328,6 +354,13 @@ export default function EstoquePage() {
     await api.pecas.vender(vendaPeca.id, formData);
     setVendaModal(false);
     setVendaPeca(null);
+    load();
+  }
+
+  async function handleCancelSale(peca: any) {
+    await api.pecas.cancelarVenda(peca.id);
+    setModal(false);
+    setEditPeca(null);
     load();
   }
 
@@ -497,7 +530,7 @@ export default function EstoquePage() {
         </div>
       </div>
 
-      <PecaModal open={modal} onClose={() => { setModal(false); setEditPeca(null); }} onSave={handleSavePeca} peca={editPeca} motos={motos} />
+      <PecaModal open={modal} onClose={() => { setModal(false); setEditPeca(null); }} onSave={handleSavePeca} onCancelSale={handleCancelSale} peca={editPeca} motos={motos} />
       <VendaModal open={vendaModal} peca={vendaPeca} onClose={() => setVendaModal(false)} onConfirm={handleVenda} />
     </>
   );
