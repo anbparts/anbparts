@@ -11,6 +11,10 @@ function fmt(value: number) {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+function currentYear() {
+  return String(new Date().getFullYear());
+}
+
 function quarterLabel(mes: number) {
   if (mes <= 3) return '1T';
   if (mes <= 6) return '2T';
@@ -64,7 +68,7 @@ const cs: any = {
 
 export default function FaturamentoGeralPage() {
   const [data, setData] = useState<any[]>([]);
-  const [filtAno, setFiltAno] = useState('');
+  const [filtAno, setFiltAno] = useState(currentYear());
   const [loading, setLoading] = useState(true);
   const [modo, setModo] = useState<ViewMode>('grafico');
 
@@ -75,7 +79,7 @@ export default function FaturamentoGeralPage() {
     });
   }, []);
 
-  const anos = Array.from(new Set(data.map((item: any) => item.ano))).sort();
+  const anos = Array.from(new Set(data.map((item: any) => item.ano))).sort((a, b) => b - a);
   const filtered = data.filter((item) => !filtAno || item.ano === Number(filtAno));
 
   const totalReceita = filtered.reduce((sum, item) => sum + Number(item.receitaLiq || item.receita || 0), 0);

@@ -80,14 +80,30 @@ function fmtPercent(value: number) {
   return `${value.toLocaleString('pt-BR', { minimumFractionDigits: value % 1 ? 2 : 0, maximumFractionDigits: 2 })}%`;
 }
 
+function inputDateString(date: Date) {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().split('T')[0];
+}
+
+function defaultDateRange() {
+  const end = new Date();
+  const start = new Date();
+  start.setDate(start.getDate() - 7);
+
+  return {
+    dataInicio: inputDateString(start),
+    dataFim: inputDateString(end),
+  };
+}
+
 export default function BlingProdutosPage() {
   const [motos, setMotos] = useState<any[]>([]);
   const [connected, setConnected] = useState<boolean | null>(null);
   const [buscando, setBuscando] = useState(false);
   const [itens, setItens] = useState<Item[]>([]);
   const [buscou, setBuscou] = useState(false);
-  const [dataInicio, setDataInicio] = useState('');
-  const [dataFim, setDataFim] = useState('');
+  const [dataInicio, setDataInicio] = useState(() => defaultDateRange().dataInicio);
+  const [dataFim, setDataFim] = useState(() => defaultDateRange().dataFim);
   const [motoFallback, setMotoFallback] = useState('');
   const [defaults, setDefaults] = useState<Defaults>({ fretePadrao: 29.9, taxaPadraoPct: 17 });
   const [listaComparacao, setListaComparacao] = useState('');

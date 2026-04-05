@@ -25,6 +25,10 @@ function today() {
   return new Date().toISOString().split('T')[0];
 }
 
+function currentYear() {
+  return String(new Date().getFullYear());
+}
+
 function monthKey(dateValue: string) {
   const date = new Date(dateValue);
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
@@ -58,7 +62,7 @@ export default function DespesasPage() {
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filtroCategoria, setFiltroCategoria] = useState('');
-  const [filtroAno, setFiltroAno] = useState('');
+  const [filtroAno, setFiltroAno] = useState(currentYear());
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [modo, setModo] = useState<ViewMode>('grafico');

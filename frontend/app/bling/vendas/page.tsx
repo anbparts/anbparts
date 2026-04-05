@@ -73,9 +73,25 @@ function fmtPercent(value: number) {
   return `${value.toLocaleString('pt-BR', { minimumFractionDigits: value % 1 ? 2 : 0, maximumFractionDigits: 2 })}%`;
 }
 
+function inputDateString(date: Date) {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().split('T')[0];
+}
+
+function defaultDateRange() {
+  const end = new Date();
+  const start = new Date();
+  start.setDate(start.getDate() - 7);
+
+  return {
+    dataInicio: inputDateString(start),
+    dataFim: inputDateString(end),
+  };
+}
+
 export default function VendasBlingPage() {
-  const [dataInicio, setDataInicio] = useState('');
-  const [dataFim, setDataFim] = useState('');
+  const [dataInicio, setDataInicio] = useState(() => defaultDateRange().dataInicio);
+  const [dataFim, setDataFim] = useState(() => defaultDateRange().dataFim);
   const [buscando, setBuscando] = useState(false);
   const [itens, setItens] = useState<Item[]>([]);
   const [buscou, setBuscou] = useState(false);

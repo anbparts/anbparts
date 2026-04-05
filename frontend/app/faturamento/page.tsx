@@ -12,6 +12,10 @@ function fmt(value: number) {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+function currentYear() {
+  return String(new Date().getFullYear());
+}
+
 function periodKey(ano: number, mes: number) {
   return `${ano}-${String(mes).padStart(2, '0')}`;
 }
@@ -61,7 +65,7 @@ export default function FaturamentoMotoPage() {
   const [data, setData] = useState<any[]>([]);
   const [skuPorMoto, setSkuPorMoto] = useState<Record<number, string[]>>({});
   const [filtMoto, setFiltMoto] = useState('');
-  const [filtAno, setFiltAno] = useState('');
+  const [filtAno, setFiltAno] = useState(currentYear());
   const [loading, setLoading] = useState(true);
   const [modo, setModo] = useState<ViewMode>('grafico');
 
@@ -88,7 +92,7 @@ export default function FaturamentoMotoPage() {
   }, []);
 
   const motos = Array.from(new Set(data.map((item: any) => item.moto))).sort();
-  const anos = Array.from(new Set(data.map((item: any) => item.ano))).sort();
+  const anos = Array.from(new Set(data.map((item: any) => item.ano))).sort((a, b) => b - a);
 
   const filtered = data.filter((item) => (
     (!filtMoto || item.moto === filtMoto) &&
