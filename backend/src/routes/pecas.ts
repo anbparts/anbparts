@@ -221,7 +221,18 @@ function calculateManualSaleValues(
 // GET /pecas
 pecasRouter.get('/', async (req, res, next) => {
   try {
-    const { motoId, disponivel, search, dataVendaFrom, dataVendaTo, precoMlZero, page = '1', per = '20' } = req.query as any;
+    const {
+      motoId,
+      disponivel,
+      search,
+      dataVendaFrom,
+      dataVendaTo,
+      precoMlZero,
+      page = '1',
+      per = '20',
+      orderBy = 'cadastro',
+      orderDir = 'desc',
+    } = req.query as any;
     const where: any = { emPrejuizo: false };
     if (motoId) where.motoId = Number(motoId);
     if (disponivel !== undefined) where.disponivel = disponivel === 'true';
@@ -237,12 +248,33 @@ pecasRouter.get('/', async (req, res, next) => {
       if (dataVendaTo) where.dataVenda.lte = parseDateEnd(dataVendaTo);
     }
 
+    const normalizedOrderDir = String(orderDir).toLowerCase() === 'asc' ? 'asc' : 'desc';
+    const orderByMap: Record<string, any> = {
+      motoId: { motoId: normalizedOrderDir },
+      idPeca: { idPeca: normalizedOrderDir },
+      descricao: { descricao: normalizedOrderDir },
+      cadastro: { cadastro: normalizedOrderDir },
+      precoML: { precoML: normalizedOrderDir },
+      valorLiq: { valorLiq: normalizedOrderDir },
+      valorFrete: { valorFrete: normalizedOrderDir },
+      valorTaxas: { valorTaxas: normalizedOrderDir },
+      dataVenda: { dataVenda: normalizedOrderDir },
+      blingPedidoNum: { blingPedidoNum: normalizedOrderDir },
+      disponivel: { disponivel: normalizedOrderDir },
+      moto: [
+        { moto: { marca: normalizedOrderDir } },
+        { moto: { modelo: normalizedOrderDir } },
+      ],
+    };
+    const normalizedOrderBy = String(orderBy || 'cadastro');
+    const prismaOrderBy = orderByMap[normalizedOrderBy] || orderByMap.cadastro;
+
     const [total, pecas, totalDisp, totalVend] = await Promise.all([
       prisma.peca.count({ where }),
       prisma.peca.findMany({
         where,
         include: { moto: { select: { marca: true, modelo: true } } },
-        orderBy: { idPeca: 'asc' },
+        orderBy: prismaOrderBy,
         skip: (Number(page) - 1) * Number(per),
         take: Number(per),
       }),

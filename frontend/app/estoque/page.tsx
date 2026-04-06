@@ -575,11 +575,27 @@ export default function EstoquePage() {
   const [editPeca, setEditPeca] = useState<any>(null);
   const [vendaModal, setVendaModal] = useState(false);
   const [vendaPeca, setVendaPeca] = useState<any>(null);
-  const [filters, setFilters] = useState({ motoId: '', disponivel: '', precoMlZero: '', search: '', dataVendaFrom: '', dataVendaTo: '', page: 1, perPage: 20 });
+  const [filters, setFilters] = useState({
+    motoId: '',
+    disponivel: '',
+    precoMlZero: '',
+    search: '',
+    dataVendaFrom: '',
+    dataVendaTo: '',
+    page: 1,
+    perPage: 20,
+    orderBy: 'cadastro',
+    orderDir: 'desc' as 'asc' | 'desc',
+  });
 
   const load = useCallback(async () => {
     setLoading(true);
-    const params: any = { page: filters.page, per: filters.perPage };
+    const params: any = {
+      page: filters.page,
+      per: filters.perPage,
+      orderBy: filters.orderBy,
+      orderDir: filters.orderDir,
+    };
     if (filters.motoId) params.motoId = filters.motoId;
     if (filters.disponivel !== '') params.disponivel = filters.disponivel;
     if (filters.precoMlZero !== '') params.precoMlZero = filters.precoMlZero;
@@ -624,6 +640,20 @@ export default function EstoquePage() {
     setModal(false);
     setEditPeca(null);
     load();
+  }
+
+  function toggleSort(column: string) {
+    setFilters((current) => ({
+      ...current,
+      page: 1,
+      orderBy: column,
+      orderDir: current.orderBy === column && current.orderDir === 'desc' ? 'asc' : 'desc',
+    }));
+  }
+
+  function sortIndicator(column: string) {
+    if (filters.orderBy !== column) return ' ';
+    return filters.orderDir === 'desc' ? '↓' : '↑';
   }
 
   function applyDatePreset(kind: 'today' | '7days' | '30days' | 'month') {
@@ -745,8 +775,48 @@ export default function EstoquePage() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
                 <tr>
-                  {['ID Moto', 'ID Peca', 'Moto', 'Descricao', 'Cadastro', 'Preco ML', 'Vl. Liq.', 'Frete', 'Taxas', 'Data Venda', 'Pedido Bling', 'Status', ''].map((header) => (
-                    <th key={header} style={cs.th}>{header}</th>
+                  {[
+                    { label: 'ID Moto', sort: 'motoId' },
+                    { label: 'ID Peca', sort: 'idPeca' },
+                    { label: 'Moto', sort: 'moto' },
+                    { label: 'Descricao', sort: 'descricao' },
+                    { label: 'Cadastro', sort: 'cadastro' },
+                    { label: 'Preco ML', sort: 'precoML' },
+                    { label: 'Vl. Liq.', sort: 'valorLiq' },
+                    { label: 'Frete', sort: 'valorFrete' },
+                    { label: 'Taxas', sort: 'valorTaxas' },
+                    { label: 'Data Venda', sort: 'dataVenda' },
+                    { label: 'Pedido Bling', sort: 'blingPedidoNum' },
+                    { label: 'Status', sort: 'disponivel' },
+                    { label: '', sort: null },
+                  ].map((header) => (
+                    <th key={header.label || 'actions'} style={cs.th}>
+                      {header.sort ? (
+                        <button
+                          type="button"
+                          onClick={() => toggleSort(header.sort!)}
+                          style={{
+                            border: 'none',
+                            background: 'transparent',
+                            padding: 0,
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 5,
+                            font: 'inherit',
+                            color: filters.orderBy === header.sort ? 'var(--ink)' : 'var(--ink-muted)',
+                            textTransform: 'inherit',
+                            letterSpacing: 'inherit',
+                          }}
+                          title={`Ordenar por ${header.label}`}
+                        >
+                          <span>{header.label}</span>
+                          <span style={{ fontSize: 11, minWidth: 10 }}>{sortIndicator(header.sort)}</span>
+                        </button>
+                      ) : (
+                        header.label
+                      )}
+                    </th>
                   ))}
                 </tr>
               </thead>
@@ -787,7 +857,7 @@ export default function EstoquePage() {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 18px', borderTop: '1px solid var(--border)', fontSize: 12, color: 'var(--ink-muted)', fontFamily: 'Geist Mono, monospace' }}>
-            <span>Pagina {filters.page} de {totalPages} · {data.total} total · {filters.perPage} por pagina</span>
+            <span>Pagina {filters.page} de {totalPages} · {data.total} total · {filters.perPage} por pagina · Ordenado por {filters.orderBy} ({filters.orderDir})</span>
             <div style={{ display: 'flex', gap: 6 }}>
               <button disabled={!hasPrevPage} onClick={() => setFilters({ ...filters, page: filters.page - 1 })} style={{ ...cs.btn, padding: '5px 10px', fontSize: 12, background: 'var(--white)', borderColor: 'var(--border)', color: 'var(--ink-soft)' }}>Anterior</button>
               <button disabled={!hasNextPage} onClick={() => setFilters({ ...filters, page: filters.page + 1 })} style={{ ...cs.btn, padding: '5px 10px', fontSize: 12, background: 'var(--white)', borderColor: 'var(--border)', color: 'var(--ink-soft)' }}>Proxima</button>

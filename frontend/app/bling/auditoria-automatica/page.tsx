@@ -248,6 +248,7 @@ export default function AuditoriaAutomaticaPage() {
     () => (filtroTipo ? divergenciasAtuais.filter((item) => item.tipo === filtroTipo) : divergenciasAtuais),
     [divergenciasAtuais, filtroTipo],
   );
+  const canDeleteLogs = !config?.executandoAgora;
 
   useEffect(() => {
     setFiltroTipo(null);
@@ -568,14 +569,20 @@ export default function AuditoriaAutomaticaPage() {
                       </div>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
-                      <button
-                        type="button"
-                        style={{ ...s.btnDanger, padding: '6px 10px', fontSize: 11, opacity: deletingExecutionId === item.id ? 0.7 : 1 }}
-                        onClick={() => excluirExecucao(item.id)}
-                        disabled={deletingExecutionId === item.id || (item.status === 'executando' && !!config?.executandoAgora)}
-                      >
-                        {deletingExecutionId === item.id ? 'Excluindo...' : 'Excluir'}
-                      </button>
+                      {canDeleteLogs ? (
+                        <button
+                          type="button"
+                          style={{ ...s.btnDanger, padding: '6px 10px', fontSize: 11, opacity: deletingExecutionId === item.id ? 0.7 : 1 }}
+                          onClick={() => excluirExecucao(item.id)}
+                          disabled={deletingExecutionId === item.id}
+                        >
+                          {deletingExecutionId === item.id ? 'Excluindo...' : 'Excluir'}
+                        </button>
+                      ) : (
+                        <span style={{ fontSize: 11, color: 'var(--gray-400)', fontWeight: 600 }}>
+                          Exclusao indisponivel durante execucao
+                        </span>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -596,14 +603,20 @@ export default function AuditoriaAutomaticaPage() {
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                       <div style={{ fontSize: 13, fontWeight: 700, color: statusColor(execucaoSelecionada.status) }}>{statusLabel(execucaoSelecionada.status)}</div>
-                      <button
-                        type="button"
-                        style={{ ...s.btnDanger, opacity: deletingExecutionId === execucaoSelecionada.id ? 0.7 : 1 }}
-                        onClick={() => excluirExecucao(execucaoSelecionada.id)}
-                        disabled={deletingExecutionId === execucaoSelecionada.id || (execucaoSelecionada.status === 'executando' && !!config?.executandoAgora)}
-                      >
-                        {deletingExecutionId === execucaoSelecionada.id ? 'Excluindo...' : 'Excluir execucao'}
-                      </button>
+                      {canDeleteLogs ? (
+                        <button
+                          type="button"
+                          style={{ ...s.btnDanger, opacity: deletingExecutionId === execucaoSelecionada.id ? 0.7 : 1 }}
+                          onClick={() => excluirExecucao(execucaoSelecionada.id)}
+                          disabled={deletingExecutionId === execucaoSelecionada.id}
+                        >
+                          {deletingExecutionId === execucaoSelecionada.id ? 'Excluindo...' : 'Excluir execucao'}
+                        </button>
+                      ) : (
+                        <span style={{ fontSize: 12, color: 'var(--gray-400)', fontWeight: 600 }}>
+                          Execucao em andamento nao pode ser removida
+                        </span>
+                      )}
                     </div>
                   </div>
 
