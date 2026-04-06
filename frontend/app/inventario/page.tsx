@@ -207,6 +207,8 @@ export default function InventarioPage() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [reloading, setReloading] = useState(false);
+  const [cancelandoInventario, setCancelandoInventario] = useState(false);
+  const [excluindoLogId, setExcluindoLogId] = useState<number | null>(null);
   const [finalizandoCaixa, setFinalizandoCaixa] = useState(false);
   const [finalizandoInventario, setFinalizandoInventario] = useState(false);
   const [busyItemId, setBusyItemId] = useState<number | null>(null);
@@ -382,6 +384,37 @@ export default function InventarioPage() {
     setReloading(false);
   }
 
+  async function handleCancelarInventario() {
+    if (!inventario?.id) return;
+    if (!confirm(`Cancelar o inventario #${inventario.id}? Isso vai apagar a conferencia atual sem registrar log.`)) return;
+
+    setCancelandoInventario(true);
+    try {
+      await api.inventario.cancelarAtual();
+      setCaixaDetalhe(null);
+      setSelectedCaixa('');
+      await loadAtual();
+      alert('Inventario cancelado com sucesso.');
+    } catch (e: any) {
+      alert(e.message || 'Erro ao cancelar inventario');
+    }
+    setCancelandoInventario(false);
+  }
+
+  async function handleExcluirLog(logId: number) {
+    if (!confirm(`Excluir o log do inventario #${logId}? Essa acao nao pode ser desfeita.`)) return;
+
+    setExcluindoLogId(logId);
+    try {
+      await api.inventario.excluirLog(logId);
+      const nextSelectedId = logSelecionado?.id === logId ? undefined : logSelecionado?.id;
+      await loadLogs(nextSelectedId);
+    } catch (e: any) {
+      alert(e.message || 'Erro ao excluir log do inventario');
+    }
+    setExcluindoLogId(null);
+  }
+
   if (loading) {
     return (
       <div style={{ padding: 28 }}>
@@ -392,22 +425,33 @@ export default function InventarioPage() {
 
   return (
     <>
-      <div style={s.topbar}>
-        <div>
-          <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)', letterSpacing: '-0.3px' }}>Inventario</div>
-          <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>
-            Confira caixa por caixa e registre somente as diferencas encontradas
+        <div style={s.topbar}>
+          <div>
+            <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)', letterSpacing: '-0.3px' }}>Inventario</div>
+            <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>
+              Confira caixa por caixa e registre somente as diferencas encontradas
+            </div>
           </div>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          {!inventario && (
+            <button
+              onClick={handleNovoInventario}
+              disabled={creating}
+              style={{ ...s.btn, background: 'var(--blue-500)', color: '#fff', opacity: creating ? 0.7 : 1 }}
+            >
+              {creating ? 'Criando...' : 'Novo Inventario'}
+            </button>
+          )}
+          {inventario && (
+            <button
+              onClick={handleCancelarInventario}
+              disabled={cancelandoInventario}
+              style={{ ...s.btn, background: '#fef2f2', color: '#b91c1c', borderColor: '#fecaca', opacity: cancelandoInventario ? 0.7 : 1 }}
+            >
+              {cancelandoInventario ? 'Cancelando...' : 'Cancelar Inventario'}
+            </button>
+          )}
         </div>
-        {!inventario && (
-          <button
-            onClick={handleNovoInventario}
-            disabled={creating}
-            style={{ ...s.btn, background: 'var(--blue-500)', color: '#fff', opacity: creating ? 0.7 : 1 }}
-          >
-            {creating ? 'Criando...' : 'Novo Inventario'}
-          </button>
-        )}
       </div>
 
       <div style={{ padding: 28 }}>
@@ -435,6 +479,15 @@ export default function InventarioPage() {
                 style={{ ...s.btn, background: 'var(--green)', color: '#fff', opacity: finalizandoInventario ? 0.7 : 1 }}
               >
                 {finalizandoInventario ? 'Finalizando...' : 'Finalizar Inventario'}
+              </button>
+            )}
+            {inventario && !inventario.podeFinalizarInventario && (
+              <button
+                onClick={handleCancelarInventario}
+                disabled={cancelandoInventario}
+                style={{ ...s.btn, background: '#fef2f2', color: '#b91c1c', borderColor: '#fecaca', opacity: cancelandoInventario ? 0.7 : 1 }}
+              >
+                {cancelandoInventario ? 'Cancelando...' : 'Cancelar Inventario'}
               </button>
             )}
           </div>
@@ -648,30 +701,50 @@ export default function InventarioPage() {
                 logs.map((log) => {
                   const active = logSelecionado?.id === log.id;
                   return (
-                    <button
+                    <div
                       key={log.id}
-                      onClick={async () => {
-                        const detalhe = await api.inventario.log(log.id);
-                        setLogSelecionado(detalhe.log || null);
-                      }}
                       style={{
-                        textAlign: 'left',
                         border: active ? '1px solid var(--blue-500)' : '1px solid var(--border)',
                         background: active ? '#eff6ff' : 'var(--white)',
                         borderRadius: 10,
                         padding: 14,
-                        cursor: 'pointer',
                       }}
                     >
-                      <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 6 }}>
-                        Inventario #{log.id}
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        onClick={async () => {
+                          const detalhe = await api.inventario.log(log.id);
+                          setLogSelecionado(detalhe.log || null);
+                        }}
+                        onKeyDown={async (event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            const detalhe = await api.inventario.log(log.id);
+                            setLogSelecionado(detalhe.log || null);
+                          }
+                        }}
+                        style={{ textAlign: 'left', cursor: 'pointer' }}
+                      >
+                        <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 6 }}>
+                          Inventario #{log.id}
+                        </div>
+                        <div style={{ fontSize: 12, color: 'var(--gray-500)', display: 'grid', gap: 4 }}>
+                          <div>Finalizado: {fmtDateTime(log.finishedAt)}</div>
+                          <div>Caixas: {log.caixasFinalizadas}/{log.totalCaixas}</div>
+                          <div>Diferencas: {log.totalDiferencas}</div>
+                        </div>
                       </div>
-                      <div style={{ fontSize: 12, color: 'var(--gray-500)', display: 'grid', gap: 4 }}>
-                        <div>Finalizado: {fmtDateTime(log.finishedAt)}</div>
-                        <div>Caixas: {log.caixasFinalizadas}/{log.totalCaixas}</div>
-                        <div>Diferencas: {log.totalDiferencas}</div>
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
+                        <button
+                          onClick={() => handleExcluirLog(log.id)}
+                          disabled={excluindoLogId === log.id}
+                          style={{ ...s.btn, background: '#fef2f2', color: '#b91c1c', borderColor: '#fecaca', padding: '6px 12px', fontSize: 12, opacity: excluindoLogId === log.id ? 0.7 : 1 }}
+                        >
+                          {excluindoLogId === log.id ? 'Excluindo...' : 'Excluir'}
+                        </button>
                       </div>
-                    </button>
+                    </div>
                   );
                 })
               )}
@@ -695,6 +768,15 @@ export default function InventarioPage() {
                       <div>Status: <strong>{logSelecionado.statusLabel}</strong></div>
                       <div>Diferencas: <strong>{logSelecionado.totalDiferencas}</strong></div>
                     </div>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 14 }}>
+                    <button
+                      onClick={() => handleExcluirLog(logSelecionado.id)}
+                      disabled={excluindoLogId === logSelecionado.id}
+                      style={{ ...s.btn, background: '#fef2f2', color: '#b91c1c', borderColor: '#fecaca', opacity: excluindoLogId === logSelecionado.id ? 0.7 : 1 }}
+                    >
+                      {excluindoLogId === logSelecionado.id ? 'Excluindo...' : 'Excluir log do inventario'}
+                    </button>
                   </div>
 
                   {logSelecionado.diferencas.length === 0 ? (

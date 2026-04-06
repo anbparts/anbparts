@@ -401,6 +401,23 @@ inventarioRouter.post('/novo', async (_req, res, next) => {
   }
 });
 
+inventarioRouter.delete('/atual', async (_req, res, next) => {
+  try {
+    const inventarioAberto = await findInventarioAberto();
+    if (!inventarioAberto) {
+      return res.status(404).json({ error: 'Nao existe inventario em andamento para cancelar' });
+    }
+
+    await prisma.inventario.delete({
+      where: { id: inventarioAberto.id },
+    });
+
+    res.json({ ok: true });
+  } catch (e) {
+    next(e);
+  }
+});
+
 inventarioRouter.get('/caixas/:caixa', async (req, res, next) => {
   try {
     const inventarioId = Number(req.query?.inventarioId);
@@ -713,6 +730,34 @@ inventarioRouter.get('/logs/:id', async (req, res, next) => {
       ok: true,
       log: serializeInventarioLog(inventario),
     });
+  } catch (e) {
+    next(e);
+  }
+});
+
+inventarioRouter.delete('/logs/:id', async (req, res, next) => {
+  try {
+    const inventarioId = Number(req.params.id);
+    if (!inventarioId) return res.status(400).json({ error: 'Inventario invalido' });
+
+    const inventario = await prisma.inventario.findUnique({
+      where: { id: inventarioId },
+      select: {
+        id: true,
+        status: true,
+      },
+    });
+
+    if (!inventario) return res.status(404).json({ error: 'Inventario nao encontrado' });
+    if (inventario.status !== INVENTARIO_STATUS_FINALIZADO) {
+      return res.status(400).json({ error: 'Somente inventarios finalizados podem ser excluidos pelos logs' });
+    }
+
+    await prisma.inventario.delete({
+      where: { id: inventarioId },
+    });
+
+    res.json({ ok: true });
   } catch (e) {
     next(e);
   }

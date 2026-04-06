@@ -37,6 +37,7 @@ export const api = {
   inventario: {
     atual: () => req<any>('/inventario/atual'),
     novo: () => req<any>('/inventario/novo', { method: 'POST' }),
+    cancelarAtual: () => req<any>('/inventario/atual', { method: 'DELETE' }),
     caixa: (caixa: string, inventarioId?: number) => {
       const qs = inventarioId ? `?inventarioId=${inventarioId}` : '';
       return req<any>(`/inventario/caixas/${encodeURIComponent(caixa)}${qs}`);
@@ -56,6 +57,7 @@ export const api = {
       return req<any>(`/inventario/logs${qs}`);
     },
     log: (id: number) => req<any>(`/inventario/logs/${id}`),
+    excluirLog: (id: number) => req<any>(`/inventario/logs/${id}`, { method: 'DELETE' }),
   },
   faturamento: {
     dashboard: () => req<any>('/faturamento/dashboard'),
