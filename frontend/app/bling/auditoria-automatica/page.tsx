@@ -278,7 +278,7 @@ export default function AuditoriaAutomaticaPage() {
       <div style={s.topbar}>
         <div>
           <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)', letterSpacing: '-0.3px' }}>Auditoria Automatica</div>
-          <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>Monitora divergencias de estoque e anuncios em segundo plano</div>
+          <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>Monitora divergencias de estoque, anuncios e sincroniza localizacao em segundo plano</div>
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           <button style={{ ...s.btn, background: 'var(--gray-100)', color: 'var(--gray-700)', border: '1px solid var(--border)' }} onClick={salvarConfiguracao} disabled={saving}>

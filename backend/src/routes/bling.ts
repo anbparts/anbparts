@@ -408,6 +408,56 @@ function getBaseSku(value: any) {
     .replace(/-\d+$/, '');
 }
 
+function normalizeLocation(value: any) {
+  const text = String(value ?? '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return text || null;
+}
+
+function getNestedValue(source: any, path: string[]) {
+  return path.reduce((current, key) => (current === null || current === undefined ? undefined : current[key]), source);
+}
+
+function hasNestedProperty(source: any, path: string[]) {
+  let current = source;
+  for (const key of path) {
+    if (current === null || current === undefined || !(key in current)) {
+      return false;
+    }
+    current = current[key];
+  }
+  return true;
+}
+
+function resolveBlingLocation(produto: any, detail?: any) {
+  const candidates = [
+    { source: produto, path: ['localizacao'] },
+    { source: produto, path: ['estoque', 'localizacao'] },
+    { source: produto, path: ['deposito', 'localizacao'] },
+    { source: produto, path: ['armazenagem', 'localizacao'] },
+    { source: detail, path: ['localizacao'] },
+    { source: detail, path: ['estoque', 'localizacao'] },
+    { source: detail, path: ['deposito', 'localizacao'] },
+    { source: detail, path: ['armazenagem', 'localizacao'] },
+  ];
+
+  let resolved = false;
+
+  for (const candidate of candidates) {
+    if (!candidate.source) continue;
+    if (!hasNestedProperty(candidate.source, candidate.path)) continue;
+
+    resolved = true;
+    const normalized = normalizeLocation(getNestedValue(candidate.source, candidate.path));
+    if (normalized) {
+      return { location: normalized, resolved: true };
+    }
+  }
+
+  return { location: null, resolved };
+}
+
 function parseDateStart(date: string) {
   const [year, month, day] = String(date || '').split('-').map(Number);
   return new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
@@ -1165,8 +1215,10 @@ async function listPecasForComparacaoByCodes(codigos: string[]) {
   return prisma.peca.findMany({
     where: { OR: whereOr },
     select: {
+      id: true,
       idPeca: true,
       descricao: true,
+      localizacao: true,
       disponivel: true,
       emPrejuizo: true,
       prejuizo: { select: { motivo: true } },
@@ -1181,6 +1233,7 @@ async function loadLocalSkuResumoByCodes(codigos: string[]) {
   const pecas = uniqueCodes.length ? await listPecasForComparacaoByCodes(uniqueCodes) : [];
   return {
     codigos: uniqueCodes,
+    pecas,
     localMap: buildLocalSkuResumoMap(uniqueCodes, pecas),
   };
 }
@@ -1188,8 +1241,10 @@ async function loadLocalSkuResumoByCodes(codigos: string[]) {
 async function loadAllLocalSkuResumo() {
   const pecas = await prisma.peca.findMany({
     select: {
+      id: true,
       idPeca: true,
       descricao: true,
+      localizacao: true,
       disponivel: true,
       emPrejuizo: true,
       prejuizo: { select: { motivo: true } },
@@ -1206,6 +1261,7 @@ async function loadAllLocalSkuResumo() {
 
   return {
     codigos,
+    pecas,
     localMap: buildLocalSkuResumoMap(codigos, pecas),
   };
 }
@@ -1236,9 +1292,75 @@ function buildDivergenciaPayload(
   };
 }
 
+async function syncPecaLocalizacoesFromBling(
+  localPecas: any[],
+  produtosBling: Map<string, any>,
+  detalhesBlingByProductId: Map<number, any>,
+) {
+  if (!localPecas.length) return 0;
+
+  const targetBySku = new Map<string, { location: string | null; resolved: boolean }>();
+  for (const peca of localPecas) {
+    const skuBase = getBaseSku(peca.idPeca);
+    if (!skuBase || targetBySku.has(skuBase)) continue;
+
+    const produto = produtosBling.get(skuBase);
+    if (!produto) continue;
+
+    const detail = produto?.id ? (detalhesBlingByProductId.get(Number(produto.id)) || null) : null;
+    const locationMeta = resolveBlingLocation(produto, detail);
+    if (locationMeta.resolved) {
+      targetBySku.set(skuBase, locationMeta);
+    }
+  }
+
+  if (!targetBySku.size) return 0;
+
+  const idsParaLimpar: number[] = [];
+  const idsPorLocalizacao = new Map<string, number[]>();
+
+  for (const peca of localPecas) {
+    const skuBase = getBaseSku(peca.idPeca);
+    if (!skuBase) continue;
+
+    const target = targetBySku.get(skuBase);
+    if (!target) continue;
+
+    const current = normalizeLocation(peca.localizacao);
+    if (current === target.location) continue;
+
+    if (target.location) {
+      const ids = idsPorLocalizacao.get(target.location) || [];
+      ids.push(Number(peca.id));
+      idsPorLocalizacao.set(target.location, ids);
+    } else {
+      idsParaLimpar.push(Number(peca.id));
+    }
+  }
+
+  const operations: any[] = [];
+  if (idsParaLimpar.length) {
+    operations.push(prisma.peca.updateMany({
+      where: { id: { in: idsParaLimpar } },
+      data: { localizacao: null },
+    }));
+  }
+
+  for (const [localizacao, ids] of idsPorLocalizacao.entries()) {
+    operations.push(prisma.peca.updateMany({
+      where: { id: { in: ids } },
+      data: { localizacao },
+    }));
+  }
+
+  if (!operations.length) return 0;
+  await prisma.$transaction(operations);
+  return idsParaLimpar.length + Array.from(idsPorLocalizacao.values()).reduce((sum, ids) => sum + ids.length, 0);
+}
+
 async function compareProdutosBlingCodes(
   codigosInput: string[],
-  options?: { batchSize?: number; pauseMs?: number; localMap?: Map<string, any> },
+  options?: { batchSize?: number; pauseMs?: number; localMap?: Map<string, any>; localPecas?: any[]; syncLocalizacao?: boolean },
 ) {
   const codigos = Array.from(new Set(codigosInput.map((codigo) => getBaseSku(codigo)).filter(Boolean)));
   if (!codigos.length) {
@@ -1251,7 +1373,11 @@ async function compareProdutosBlingCodes(
     };
   }
 
-  const localMap = options?.localMap || (await loadLocalSkuResumoByCodes(codigos)).localMap;
+  const localLoaded = !options?.localMap || !options?.localPecas
+    ? await loadLocalSkuResumoByCodes(codigos)
+    : null;
+  const localMap = options?.localMap || localLoaded?.localMap || new Map<string, any>();
+  const localPecas = options?.localPecas || localLoaded?.pecas || [];
   const produtosBling = await findBlingProductsByCodes(codigos);
   const produtoIdsParaStatus = Array.from(new Set(
     codigos
@@ -1265,7 +1391,9 @@ async function compareProdutosBlingCodes(
         if (!produto?.id) return 0;
 
         const qtdBling = toNumber(produto?.estoque?.saldoVirtualTotal ?? produto?.estoque?.saldo ?? 0);
-        return qtdBling > 0 ? Number(produto.id) : 0;
+        const locationMeta = resolveBlingLocation(produto);
+        const needsLocationDetail = !!options?.syncLocalizacao && !locationMeta.resolved;
+        return qtdBling > 0 || needsLocationDetail ? Number(produto.id) : 0;
       })
       .filter((id): id is number => Number.isFinite(id) && id > 0),
   ));
@@ -1274,6 +1402,10 @@ async function compareProdutosBlingCodes(
     findMercadoLivreStatusByProductIds(produtoIdsParaStatus, options),
     findBlingProductDetailsByIds(produtoIdsParaDetalhe, options),
   ]);
+
+  if (options?.syncLocalizacao && localPecas.length) {
+    await syncPecaLocalizacoesFromBling(localPecas, produtosBling, detalhesBlingByProductId);
+  }
 
   const divergencias = codigos.flatMap((codigo) => {
     const local = localMap.get(codigo) || createLocalSkuResumo(codigo);
@@ -1709,6 +1841,8 @@ async function executeAuditoriaAutomatica(origem: 'manual' | 'auto' = 'manual') 
   try {
     const resultado = await compareProdutosBlingCodes(local.codigos, {
       localMap: local.localMap,
+      localPecas: local.pecas,
+      syncLocalizacao: true,
       batchSize: cfg.auditoriaTamanhoLote,
       pauseMs: cfg.auditoriaPausaMs,
     });
@@ -2098,8 +2232,14 @@ blingRouter.post('/sync/produtos', async (req, res, next) => {
     const prefixos = cfg.prefixos || [];
     const { motoIdFallback, dataInicio, dataFim } = req.body;
 
-    const existentes = await prisma.peca.findMany({ select: { idPeca: true } });
+    const [existentes, motos] = await Promise.all([
+      prisma.peca.findMany({ select: { idPeca: true } }),
+      prisma.moto.findMany({
+        select: { id: true, marca: true, modelo: true },
+      }),
+    ]);
     const skusExistentes = new Set(existentes.map((peca) => peca.idPeca));
+    const motosMap = new Map(motos.map((moto) => [moto.id, moto]));
 
     let pagina = 1;
     const itens: any[] = [];
@@ -2121,19 +2261,16 @@ blingRouter.post('/sync/produtos', async (req, res, next) => {
         let motoId = resolverMotoId(sku, prefixos);
         if (!motoId && motoIdFallback) motoId = Number(motoIdFallback);
 
-        const moto = motoId
-          ? await prisma.moto.findUnique({
-            where: { id: motoId },
-            select: { marca: true, modelo: true },
-          })
-          : null;
+        const moto = motoId ? motosMap.get(Number(motoId)) : null;
 
         const qtdEstoque = Number(produto.estoque?.saldoVirtualTotal || produto.estoque?.saldo || 0);
+        const localizacao = resolveBlingLocation(produto).location;
 
         itens.push({
           id: produto.id,
           sku,
           nome: produto.nome || '',
+          localizacao,
           preco: Number(produto.preco) || 0,
           qtdEstoque,
           motoId: motoId || null,
@@ -2644,7 +2781,7 @@ blingRouter.get('/relatorio-vendas', async (req, res, next) => {
 
 blingRouter.post('/importar-produto', async (req, res, next) => {
   try {
-    const { id, sku, nome, preco, motoId, frete, taxaPct, qtd } = req.body;
+    const { id, sku, nome, preco, motoId, frete, taxaPct, qtd, localizacao } = req.body;
     if (!motoId) return res.status(400).json({ error: 'motoId obrigatorio' });
 
     const cfg = await getConfig();
@@ -2654,6 +2791,16 @@ blingRouter.post('/importar-produto', async (req, res, next) => {
     const taxa = roundMoney(toNumber(taxaPct, defaults.taxaPadraoPct) || defaults.taxaPadraoPct);
     const { taxaValor, valorLiq } = calculateFinancials(precoML, freteN, taxa);
     const quantidade = Math.max(1, Number(qtd) || 1);
+    let localizacaoNormalizada = normalizeLocation(localizacao);
+
+    if (!localizacaoNormalizada && Number(id) > 0) {
+      try {
+        const detail = await fetchBlingProductDetailById(Number(id));
+        localizacaoNormalizada = resolveBlingLocation(null, detail).location;
+      } catch {
+        localizacaoNormalizada = null;
+      }
+    }
 
     const skippedAll: boolean[] = [];
     for (let i = 0; i < quantidade; i += 1) {
@@ -2674,6 +2821,7 @@ blingRouter.post('/importar-produto', async (req, res, next) => {
           valorFrete: freteN,
           valorTaxas: taxaValor,
           valorLiq,
+          localizacao: localizacaoNormalizada,
           disponivel: true,
           cadastro: new Date(),
         },

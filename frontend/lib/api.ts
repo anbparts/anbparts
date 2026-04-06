@@ -34,6 +34,29 @@ export const api = {
     cancelarVenda: (id: number) => req<any>(`/pecas/${id}/cancelar-venda`, { method: 'PATCH' }),
     delete: (id: number)    => req<any>(`/pecas/${id}`, { method: 'DELETE' }),
   },
+  inventario: {
+    atual: () => req<any>('/inventario/atual'),
+    novo: () => req<any>('/inventario/novo', { method: 'POST' }),
+    caixa: (caixa: string, inventarioId?: number) => {
+      const qs = inventarioId ? `?inventarioId=${inventarioId}` : '';
+      return req<any>(`/inventario/caixas/${encodeURIComponent(caixa)}${qs}`);
+    },
+    confirmarItem: (id: number) => req<any>(`/inventario/itens/${id}/confirmar`, { method: 'POST' }),
+    registrarDiferenca: (id: number, tipo: 'nao_localizado' | 'diferenca_estoque') => req<any>(`/inventario/itens/${id}/diferenca`, {
+      method: 'POST',
+      body: JSON.stringify({ tipo }),
+    }),
+    finalizarCaixa: (caixa: string, inventarioId: number) => req<any>(`/inventario/caixas/${encodeURIComponent(caixa)}/finalizar`, {
+      method: 'POST',
+      body: JSON.stringify({ inventarioId }),
+    }),
+    finalizar: (id: number) => req<any>(`/inventario/${id}/finalizar`, { method: 'POST' }),
+    logs: (params?: Record<string, any>) => {
+      const qs = params ? '?' + new URLSearchParams(params).toString() : '';
+      return req<any>(`/inventario/logs${qs}`);
+    },
+    log: (id: number) => req<any>(`/inventario/logs/${id}`),
+  },
   faturamento: {
     dashboard: () => req<any>('/faturamento/dashboard'),
     geral:     () => req<any[]>('/faturamento/geral'),

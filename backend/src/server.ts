@@ -7,6 +7,7 @@ import { faturamentoRouter } from './routes/faturamento';
 import { importRouter } from './routes/import';
 import { blingRouter, startBlingAuditoriaScheduler } from './routes/bling';
 import { financeiroRouter } from './routes/financeiro';
+import { inventarioRouter } from './routes/inventario';
 import { errorMiddleware } from './middlewares/error';
 
 const app = express();
@@ -26,6 +27,7 @@ app.use('/faturamento', faturamentoRouter);
 app.use('/import', importRouter);
 app.use('/bling', blingRouter);
 app.use('/financeiro', financeiroRouter);
+app.use('/inventario', inventarioRouter);
 
 app.use(errorMiddleware);
 

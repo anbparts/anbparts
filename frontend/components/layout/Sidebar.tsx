@@ -63,7 +63,10 @@ export function Sidebar({ onLogout, user }: { onLogout?: () => void; user?: stri
               color: 'rgba(255,255,255,.3)', letterSpacing: '1.2px',
               textTransform: 'uppercase', padding: '10px 8px 4px',
             }}>{group.section}</div>
-            {group.items.map(item => {
+            {(group.section === 'Principal'
+              ? [...group.items, { href: '/inventario', icon: 'INV', label: 'Inventario' }]
+              : group.items
+            ).map(item => {
               const active = path === item.href;
               return (
                 <Link key={item.href} href={item.href} style={{

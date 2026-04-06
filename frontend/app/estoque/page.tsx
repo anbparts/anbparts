@@ -110,6 +110,7 @@ function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, peca, 
     idPeca: '',
     motoId: '',
     descricao: '',
+    localizacao: '',
     precoML: '',
     valorLiq: '',
     valorFrete: '',
@@ -137,6 +138,7 @@ function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, peca, 
         idPeca: peca.idPeca || '',
         motoId: String(peca.motoId),
         descricao: peca.descricao || '',
+        localizacao: String(peca.localizacao || ''),
         precoML: String(Number(peca.precoML || 0)),
         valorLiq: String(Number(peca.valorLiq || 0)),
         valorFrete: String(Number(peca.valorFrete || 0)),
@@ -219,6 +221,7 @@ function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, peca, 
         valorFrete: preview.valorFrete,
         valorTaxas: preview.valorTaxas,
         blingPedidoNum: form.blingPedidoNum.trim() || null,
+        localizacao: form.localizacao || null,
         disponivel: form.disponivel === 'true',
         dataVenda: form.dataVenda || null,
         cadastro: form.cadastro,
@@ -323,6 +326,18 @@ function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, peca, 
             </div>
           )}
           {renderField('Data de cadastro', 'cadastro', 'date')}
+          {peca && (
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-soft)' }}>Localizacao no Bling</label>
+              <input
+                style={{ ...cs.fi, background: 'var(--gray-50)', color: 'var(--ink-muted)' }}
+                type="text"
+                readOnly
+                value={form.localizacao || ''}
+                placeholder="Sem localizacao sincronizada"
+              />
+            </div>
+          )}
           {renderField('Descricao da peca *', 'descricao', 'text', 'Ex: Tampa lateral direita')}
           {renderField('Pedido Bling', 'blingPedidoNum', 'text', 'Ex: 449')}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>

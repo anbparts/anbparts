@@ -21,6 +21,7 @@ type Item = {
   id: number;
   sku: string;
   nome: string;
+  localizacao?: string | null;
   preco: number;
   qtdEstoque: number;
   motoId: number | null;
@@ -418,6 +419,7 @@ export default function BlingProdutosPage() {
           id: item.id,
           sku: item.sku,
           nome: item.nome,
+          localizacao: item.localizacao,
           preco: Number(item._preco) || item.preco,
           frete: Number(item._frete) || defaults.fretePadrao,
           taxaPct: Number(item._taxaPct) || defaults.taxaPadraoPct,

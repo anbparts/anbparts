@@ -17,6 +17,7 @@ const PREJUIZO_MOTIVOS = new Set([
 const pecaBaseSchema = z.object({
   motoId:      z.number().int(),
   descricao:   z.string().min(1),
+  localizacao: z.string().optional().nullable(),
   precoML:     z.number().default(0),
   valorLiq:    z.number().default(0),
   valorFrete:  z.number().default(0),
@@ -165,6 +166,13 @@ function roundMoney(value: number) {
   return parseFloat(value.toFixed(2));
 }
 
+function normalizePecaLocalizacao(value: unknown) {
+  const text = String(value ?? '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return text || null;
+}
+
 function calculatePecaFinancialValues(
   current: { precoML: any; valorFrete: any; valorTaxas: any },
   nextPrecoML?: number,
@@ -287,6 +295,7 @@ pecasRouter.post('/', async (req, res, next) => {
         disponivel: data.disponivel,
         emPrejuizo: false,
         blingPedidoNum: data.blingPedidoNum ? String(data.blingPedidoNum).trim() : null,
+        localizacao: normalizePecaLocalizacao(data.localizacao),
         idPeca,
         cadastro:  data.cadastro  ? new Date(data.cadastro)  : new Date(),
         dataVenda: data.dataVenda ? new Date(data.dataVenda) : null,
@@ -322,6 +331,9 @@ pecasRouter.put('/:id', async (req, res, next) => {
         valorLiq: financials.valorLiq,
         blingPedidoNum: data.blingPedidoNum !== undefined
           ? (data.blingPedidoNum ? String(data.blingPedidoNum).trim() : null)
+          : undefined,
+        localizacao: data.localizacao !== undefined
+          ? normalizePecaLocalizacao(data.localizacao)
           : undefined,
         cadastro:  data.cadastro  ? new Date(data.cadastro)  : undefined,
         dataVenda: data.dataVenda ? new Date(data.dataVenda) : null,

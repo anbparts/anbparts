@@ -30,6 +30,7 @@ model Peca {
   idPeca      String   @unique
   motoId      Int
   descricao   String
+  localizacao String?
   cadastro    DateTime @default(now())
   precoML     Decimal  @default(0) @db.Decimal(12, 2)
   valorLiq    Decimal  @default(0) @db.Decimal(12, 2)
@@ -45,6 +46,8 @@ model Peca {
 
   moto        Moto     @relation(fields: [motoId], references: [id])
   prejuizo    Prejuizo?
+
+  @@index([localizacao])
 }
 
 model Despesa {
@@ -117,4 +120,59 @@ model AuditoriaAutomaticaExecucao {
   erro               String?
   resumo             Json?
   divergencias       Json?
+}
+
+model Inventario {
+  id         Int      @id @default(autoincrement())
+  status     String   @default("em_andamento")
+  startedAt  DateTime @default(now())
+  finishedAt DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  caixas     InventarioCaixa[]
+  itens      InventarioItem[]
+
+  @@index([status])
+  @@index([startedAt])
+  @@index([finishedAt])
+}
+
+model InventarioCaixa {
+  id           Int      @id @default(autoincrement())
+  inventarioId Int
+  caixa        String
+  status       String   @default("pendente")
+  finishedAt   DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  inventario   Inventario @relation(fields: [inventarioId], references: [id], onDelete: Cascade)
+
+  @@unique([inventarioId, caixa])
+  @@index([caixa])
+  @@index([status])
+}
+
+model InventarioItem {
+  id                Int      @id @default(autoincrement())
+  inventarioId      Int
+  caixa             String
+  skuBase           String
+  motoId            Int?
+  idPecaReferencia  String?
+  descricao         String
+  quantidadeEstoque Int      @default(0)
+  status            String   @default("pendente")
+  tipoDiferenca     String?
+  decidedAt         DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  inventario        Inventario @relation(fields: [inventarioId], references: [id], onDelete: Cascade)
+
+  @@unique([inventarioId, caixa, skuBase])
+  @@index([inventarioId, caixa, status])
+  @@index([status])
+  @@index([tipoDiferenca])
 }
