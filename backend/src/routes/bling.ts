@@ -597,6 +597,62 @@ async function getProdutoCustomFieldIdsByNormalizedNameFromRows(rows: any[], tar
     .map(({ id }) => id);
 }
 
+async function debugProdutoCustomFieldRows(rows: any[]) {
+  const fieldIds = Array.from(new Set(
+    rows
+      .map((row) => getProdutoCustomFieldId(row))
+      .filter((id): id is number => Number.isFinite(id) && id > 0),
+  ));
+
+  const fieldDebug = await mapWithConcurrency(fieldIds, 4, async (id) => {
+    try {
+      const data = await blingReq(`/campos-customizados/${id}`) as any;
+      const field = data?.data || null;
+      return {
+        idCampoCustomizado: id,
+        ok: true,
+        nome: field?.nome || null,
+        modulo: field?.modulo || null,
+        tipoCampo: field?.tipoCampo || null,
+      };
+    } catch (e: any) {
+      return {
+        idCampoCustomizado: id,
+        ok: false,
+        error: e?.message || String(e),
+      };
+    }
+  });
+
+  let moduleDetranFields: any[] = [];
+  let moduleDetranError: string | null = null;
+
+  try {
+    moduleDetranFields = await getProdutoCustomFieldsByNormalizedName('DETRAN');
+  } catch (e: any) {
+    moduleDetranError = e?.message || String(e);
+  }
+
+  return {
+    rows: rows.map((row) => ({
+      idCampoCustomizado: getProdutoCustomFieldId(row) || null,
+      idVinculo: Number(row?.idVinculo || 0) || null,
+      valor: getProdutoCustomFieldValue(row),
+      item: row?.item ?? null,
+      raw: row,
+    })),
+    fieldDebug,
+    moduleDetranFields: moduleDetranFields.map((field) => ({
+      id: Number(field?.id || 0) || null,
+      nome: field?.nome || null,
+      situacao: field?.situacao ?? null,
+      modulo: field?.modulo || null,
+      tipoCampo: field?.tipoCampo || null,
+    })),
+    moduleDetranError,
+  };
+}
+
 async function getProdutoCustomFieldsByNormalizedName(targetName: string) {
   const moduleInfo = await findProdutoCustomFieldModule();
   const normalizedTarget = normalizeText(targetName);
@@ -2603,6 +2659,7 @@ blingRouter.post('/debug-status-produto', async (req, res, next) => {
     const detalhes = await findBlingProductDetailsByIds([Number(produto.id)]);
     const detalhe = detalhes.get(Number(produto.id)) || null;
     const detranMeta = await resolveBlingDetranEtiqueta(produto, detalhe);
+    const customFieldDebug = await debugProdutoCustomFieldRows(collectProdutoCustomFieldRows(detalhe, produto));
     const anuncioStatusData = await collectMercadoLivreStatusByProductIds([Number(produto.id)], true);
     const anuncioStatuses = anuncioStatusData.statuses;
     const produtoLojaLinks = await blingReq(`/produtos/lojas?pagina=1&limite=100&idProduto=${Number(produto.id)}`) as any;
@@ -2695,10 +2752,15 @@ blingRouter.post('/debug-status-produto', async (req, res, next) => {
       detranEtiqueta: detranMeta.etiqueta,
       detranResolved: detranMeta.resolved,
       detranFieldIds: detranMeta.fieldIds,
-      detranCustomFields: collectProdutoCustomFieldRows(detalhe, produto).map((row) => ({
-        idCampoCustomizado: getProdutoCustomFieldId(row) || null,
-        valor: getProdutoCustomFieldValue(row),
+      detranCustomFields: customFieldDebug.rows.map((row) => ({
+        idCampoCustomizado: row.idCampoCustomizado,
+        valor: row.valor,
       })),
+      detranFieldDebug: customFieldDebug.fieldDebug,
+      detranModuleFields: customFieldDebug.moduleDetranFields,
+      detranModuleError: customFieldDebug.moduleDetranError,
+      detalheCamposCustomizadosRaw: detalhe?.camposCustomizados ?? null,
+      produtoCamposCustomizadosRaw: produto?.camposCustomizados ?? null,
       produtoLojaLinks: lojaRows,
       statusAnunciosApi: anuncioStatuses.get(Number(produto.id)) || null,
       anunciosApiDebug: anuncioStatusData.debugByProductId.get(Number(produto.id)) || null,
