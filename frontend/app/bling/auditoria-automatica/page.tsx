@@ -52,6 +52,34 @@ const s: any = {
     display: 'block',
     marginBottom: 4,
   },
+  btnDanger: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    padding: '8px 14px',
+    borderRadius: 7,
+    fontSize: 12,
+    fontWeight: 600,
+    cursor: 'pointer',
+    border: '1px solid #fecaca',
+    background: '#fef2f2',
+    color: 'var(--red)',
+    fontFamily: 'Inter, sans-serif',
+  },
+  btnGhost: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    padding: '8px 14px',
+    borderRadius: 7,
+    fontSize: 12,
+    fontWeight: 600,
+    cursor: 'pointer',
+    border: '1px solid var(--border)',
+    background: 'var(--white)',
+    color: 'var(--gray-700)',
+    fontFamily: 'Inter, sans-serif',
+  },
 };
 
 type Resumo = {
@@ -149,6 +177,8 @@ export default function AuditoriaAutomaticaPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [executando, setExecutando] = useState(false);
+  const [deletingExecutionId, setDeletingExecutionId] = useState<number | null>(null);
+  const [clearingHistory, setClearingHistory] = useState(false);
   const [config, setConfig] = useState<Config | null>(null);
   const [execucoes, setExecucoes] = useState<Execucao[]>([]);
   const [execucaoSelecionada, setExecucaoSelecionada] = useState<Execucao | null>(null);
@@ -177,7 +207,8 @@ export default function AuditoriaAutomaticaPage() {
     const rows = Array.isArray(data.execucoes) ? data.execucoes : [];
     setExecucoes(rows);
 
-    const targetId = selectId || execucaoSelecionada?.id || rows[0]?.id;
+    const preferredId = selectId || execucaoSelecionada?.id || rows[0]?.id;
+    const targetId = rows.some((item: Execucao) => item.id === preferredId) ? preferredId : rows[0]?.id;
     if (targetId) {
       await loadExecucaoDetalhe(targetId);
     } else {
@@ -260,6 +291,65 @@ export default function AuditoriaAutomaticaPage() {
       alert(`Erro ao executar: ${e.message}`);
     }
     setExecutando(false);
+  }
+
+  async function excluirExecucao(id: number) {
+    const execucao = execucoes.find((item) => item.id === id) || execucaoSelecionada;
+    const statusAtual = execucao?.status === 'executando' && !config?.executandoAgora
+      ? 'Essa execucao parece ter ficado presa por interrupcao ou deploy.'
+      : null;
+
+    const confirmed = window.confirm([
+      `Excluir a execucao #${id}?`,
+      statusAtual,
+      'Essa acao remove o log da tela e nao pode ser desfeita.',
+    ].filter(Boolean).join('\n\n'));
+
+    if (!confirmed) return;
+
+    setDeletingExecutionId(id);
+    try {
+      const response = await fetch(`${API}/bling/auditoria-automatica/execucoes/${id}`, {
+        method: 'DELETE',
+      });
+      const data = await response.json().catch(() => ({ error: 'Erro ao excluir a execucao' }));
+      if (!response.ok) {
+        alert(data.error || 'Erro ao excluir a execucao');
+        return;
+      }
+
+      await loadConfig();
+      await loadExecucoes(execucaoSelecionada?.id === id ? undefined : execucaoSelecionada?.id);
+    } catch (e: any) {
+      alert(`Erro ao excluir: ${e.message}`);
+    } finally {
+      setDeletingExecutionId(null);
+    }
+  }
+
+  async function limparHistorico() {
+    const confirmed = window.confirm('Limpar todo o historico de execucoes da auditoria automatica?');
+    if (!confirmed) return;
+
+    setClearingHistory(true);
+    try {
+      const response = await fetch(`${API}/bling/auditoria-automatica/execucoes`, {
+        method: 'DELETE',
+      });
+      const data = await response.json().catch(() => ({ error: 'Erro ao limpar o historico' }));
+      if (!response.ok) {
+        alert(data.error || 'Erro ao limpar o historico');
+        return;
+      }
+
+      setExecucaoSelecionada(null);
+      await loadConfig();
+      await loadExecucoes();
+    } catch (e: any) {
+      alert(`Erro ao limpar historico: ${e.message}`);
+    } finally {
+      setClearingHistory(false);
+    }
   }
 
   if (loading) {
@@ -384,38 +474,63 @@ export default function AuditoriaAutomaticaPage() {
 
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 360px) minmax(0, 1fr)', gap: 12, alignItems: 'start' }}>
           <div style={s.card}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 12 }}>Historico de execucoes</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)' }}>Historico de execucoes</div>
+              {execucoes.length > 0 && (
+                <button style={{ ...s.btnGhost, opacity: clearingHistory ? 0.7 : 1 }} onClick={limparHistorico} disabled={clearingHistory || !!config?.executandoAgora}>
+                  {clearingHistory ? 'Limpando...' : 'Limpar historico'}
+                </button>
+              )}
+            </div>
             {execucoes.length === 0 ? (
               <div style={{ fontSize: 13, color: 'var(--gray-400)' }}>Nenhuma execucao registrada ainda.</div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {execucoes.map((item) => (
-                  <button
+                  <div
                     key={item.id}
-                    type="button"
-                    onClick={() => loadExecucaoDetalhe(item.id)}
                     style={{
-                      textAlign: 'left',
-                      width: '100%',
                       background: execucaoSelecionada?.id === item.id ? 'var(--blue-50)' : 'var(--white)',
                       border: `1px solid ${execucaoSelecionada?.id === item.id ? 'var(--blue-200)' : 'var(--border)'}`,
                       borderRadius: 10,
                       padding: '12px 14px',
-                      cursor: 'pointer',
                     }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginBottom: 6 }}>
-                      <strong style={{ color: 'var(--gray-800)', fontSize: 13 }}>#{item.id} - {item.origem === 'auto' ? 'Automatica' : 'Manual'}</strong>
-                      <span style={{ fontSize: 12, color: statusColor(item.status), fontWeight: 700 }}>{statusLabel(item.status)}</span>
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => loadExecucaoDetalhe(item.id)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          loadExecucaoDetalhe(item.id);
+                        }
+                      }}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginBottom: 6 }}>
+                        <strong style={{ color: 'var(--gray-800)', fontSize: 13 }}>#{item.id} - {item.origem === 'auto' ? 'Automatica' : 'Manual'}</strong>
+                        <span style={{ fontSize: 12, color: statusColor(item.status), fontWeight: 700 }}>{statusLabel(item.status)}</span>
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--gray-400)', marginBottom: 6 }}>{fmtDateTime(item.startedAt)}</div>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 12, color: 'var(--gray-700)' }}>{item.totalSkus} SKU(s)</span>
+                        <span style={{ fontSize: 12, color: (item.totalDivergencias || 0) > 0 ? 'var(--red)' : 'var(--green)' }}>{item.totalDivergencias} divergencia(s)</span>
+                        {item.emailEnviado && <span style={{ fontSize: 12, color: 'var(--green)' }}>email enviado</span>}
+                        {item.emailErro && <span style={{ fontSize: 12, color: 'var(--amber)' }}>email com erro</span>}
+                      </div>
                     </div>
-                    <div style={{ fontSize: 12, color: 'var(--gray-400)', marginBottom: 6 }}>{fmtDateTime(item.startedAt)}</div>
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: 12, color: 'var(--gray-700)' }}>{item.totalSkus} SKU(s)</span>
-                      <span style={{ fontSize: 12, color: (item.totalDivergencias || 0) > 0 ? 'var(--red)' : 'var(--green)' }}>{item.totalDivergencias} divergencia(s)</span>
-                      {item.emailEnviado && <span style={{ fontSize: 12, color: 'var(--green)' }}>email enviado</span>}
-                      {item.emailErro && <span style={{ fontSize: 12, color: 'var(--amber)' }}>email com erro</span>}
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
+                      <button
+                        type="button"
+                        style={{ ...s.btnDanger, padding: '6px 10px', fontSize: 11, opacity: deletingExecutionId === item.id ? 0.7 : 1 }}
+                        onClick={() => excluirExecucao(item.id)}
+                        disabled={deletingExecutionId === item.id || (item.status === 'executando' && !!config?.executandoAgora)}
+                      >
+                        {deletingExecutionId === item.id ? 'Excluindo...' : 'Excluir'}
+                      </button>
                     </div>
-                  </button>
+                  </div>
                 ))}
               </div>
             )}
@@ -432,7 +547,17 @@ export default function AuditoriaAutomaticaPage() {
                         {execucaoSelecionada.origem === 'auto' ? 'Rotina automatica' : 'Execucao manual'} - {fmtDateTime(execucaoSelecionada.startedAt)}
                       </div>
                     </div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: statusColor(execucaoSelecionada.status) }}>{statusLabel(execucaoSelecionada.status)}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: statusColor(execucaoSelecionada.status) }}>{statusLabel(execucaoSelecionada.status)}</div>
+                      <button
+                        type="button"
+                        style={{ ...s.btnDanger, opacity: deletingExecutionId === execucaoSelecionada.id ? 0.7 : 1 }}
+                        onClick={() => excluirExecucao(execucaoSelecionada.id)}
+                        disabled={deletingExecutionId === execucaoSelecionada.id || (execucaoSelecionada.status === 'executando' && !!config?.executandoAgora)}
+                      >
+                        {deletingExecutionId === execucaoSelecionada.id ? 'Excluindo...' : 'Excluir execucao'}
+                      </button>
+                    </div>
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, marginBottom: 12 }}>

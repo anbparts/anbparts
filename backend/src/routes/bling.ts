@@ -2114,6 +2114,47 @@ blingRouter.get('/auditoria-automatica/execucoes/:id', async (req, res, next) =>
   }
 });
 
+blingRouter.delete('/auditoria-automatica/execucoes', async (_req, res, next) => {
+  try {
+    if (auditoriaSchedulerState.running) {
+      return res.status(409).json({ error: 'Nao e possivel limpar o historico durante uma execucao em andamento' });
+    }
+
+    const deleted = await prisma.auditoriaAutomaticaExecucao.deleteMany({});
+    res.json({ ok: true, deleted: deleted.count });
+  } catch (e) {
+    next(e);
+  }
+});
+
+blingRouter.delete('/auditoria-automatica/execucoes/:id', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ error: 'ID invalido' });
+
+    const execucao = await prisma.auditoriaAutomaticaExecucao.findUnique({
+      where: { id },
+      select: { id: true, status: true },
+    });
+
+    if (!execucao) {
+      return res.status(404).json({ error: 'Execucao nao encontrada' });
+    }
+
+    if (execucao.status === 'executando' && auditoriaSchedulerState.running) {
+      return res.status(409).json({ error: 'Nao e possivel excluir uma execucao em andamento' });
+    }
+
+    await prisma.auditoriaAutomaticaExecucao.delete({
+      where: { id },
+    });
+
+    res.json({ ok: true });
+  } catch (e) {
+    next(e);
+  }
+});
+
 blingRouter.post('/auditoria-automatica/executar', async (_req, res, next) => {
   try {
     if (auditoriaSchedulerState.running) {
