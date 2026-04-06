@@ -731,8 +731,8 @@ function parseAnuncioStatus(value: any) {
   if (Number.isFinite(code)) {
     if (code === 1) return { code, label: 'Publicado', isActive: true };
     if (code === 2) return { code, label: 'Rascunho', isActive: false };
-    if (code === 3) return { code, label: 'Com problema', isActive: false };
-    if (code === 4) return { code, label: 'Pausado', isActive: false };
+    if (code === 3) return { code, label: 'Pausado', isActive: false };
+    if (code === 4) return { code, label: 'Com problema', isActive: false };
     return { code, label: String(value), isActive: false };
   }
 
@@ -744,13 +744,13 @@ function parseAnuncioStatus(value: any) {
     return { code: 1, label: text, isActive: true };
   }
   if (/(^|[^a-z])(pausado|pausada)([^a-z]|$)/.test(normalized)) {
-    return { code: 4, label: text, isActive: false };
+    return { code: 3, label: text, isActive: false };
   }
   if (/rascunh/.test(normalized)) {
     return { code: 2, label: text, isActive: false };
   }
   if (/problema|erro|reprov/.test(normalized)) {
-    return { code: 3, label: text, isActive: false };
+    return { code: 4, label: text, isActive: false };
   }
 
   return null;
