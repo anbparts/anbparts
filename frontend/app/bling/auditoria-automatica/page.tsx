@@ -173,12 +173,19 @@ function getBorderColor(tipo: string) {
   return 'var(--red)';
 }
 
+function formatTipoResumo(tipo: string) {
+  return String(tipo || '')
+    .replaceAll('_', ' ')
+    .replace(/\bml\b/gi, 'ML');
+}
+
 export default function AuditoriaAutomaticaPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [executando, setExecutando] = useState(false);
   const [deletingExecutionId, setDeletingExecutionId] = useState<number | null>(null);
   const [clearingHistory, setClearingHistory] = useState(false);
+  const [filtroTipo, setFiltroTipo] = useState<string | null>(null);
   const [config, setConfig] = useState<Config | null>(null);
   const [execucoes, setExecucoes] = useState<Execucao[]>([]);
   const [execucaoSelecionada, setExecucaoSelecionada] = useState<Execucao | null>(null);
@@ -237,6 +244,14 @@ export default function AuditoriaAutomaticaPage() {
 
   const resumoAtual = useMemo(() => (execucaoSelecionada?.resumo || config?.ultimaExecucao?.resumo || null), [config, execucaoSelecionada]);
   const divergenciasAtuais = useMemo(() => Array.isArray(execucaoSelecionada?.divergencias) ? execucaoSelecionada?.divergencias : [], [execucaoSelecionada]);
+  const divergenciasFiltradas = useMemo(
+    () => (filtroTipo ? divergenciasAtuais.filter((item) => item.tipo === filtroTipo) : divergenciasAtuais),
+    [divergenciasAtuais, filtroTipo],
+  );
+
+  useEffect(() => {
+    setFiltroTipo(null);
+  }, [execucaoSelecionada?.id]);
 
   async function salvarConfiguracao() {
     setSaving(true);
@@ -464,10 +479,42 @@ export default function AuditoriaAutomaticaPage() {
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {Object.entries(resumoAtual.porTipo || {}).map(([tipo, total]) => (
-                <span key={tipo} style={{ fontSize: 12, borderRadius: 999, padding: '5px 10px', background: 'var(--gray-100)', color: 'var(--gray-700)' }}>
-                  {tipo}: {total}
-                </span>
+                <button
+                  key={tipo}
+                  type="button"
+                  onClick={() => setFiltroTipo((current) => (current === tipo ? null : tipo))}
+                  style={{
+                    fontSize: 12,
+                    borderRadius: 999,
+                    padding: '5px 10px',
+                    background: filtroTipo === tipo ? 'var(--blue-500)' : 'var(--gray-100)',
+                    color: filtroTipo === tipo ? '#fff' : 'var(--gray-700)',
+                    border: `1px solid ${filtroTipo === tipo ? 'var(--blue-500)' : 'var(--border)'}`,
+                    cursor: 'pointer',
+                    transition: 'all .15s ease',
+                  }}
+                  title="Clique para filtrar as divergencias por esse tipo"
+                >
+                  {formatTipoResumo(tipo)}: {total}
+                </button>
               ))}
+              {filtroTipo && (
+                <button
+                  type="button"
+                  onClick={() => setFiltroTipo(null)}
+                  style={{
+                    fontSize: 12,
+                    borderRadius: 999,
+                    padding: '5px 10px',
+                    background: '#fef2f2',
+                    color: 'var(--red)',
+                    border: '1px solid #fecaca',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Limpar filtro
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -595,10 +642,17 @@ export default function AuditoriaAutomaticaPage() {
 
                 {divergenciasAtuais.length > 0 ? (
                   <div style={{ marginBottom: 20 }}>
-                    <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--red)', marginBottom: 12 }}>
-                      Produtos divergentes - {divergenciasAtuais.length}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
+                      <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--red)' }}>
+                        Produtos divergentes - {divergenciasFiltradas.length}
+                      </div>
+                      {filtroTipo && (
+                        <div style={{ fontSize: 12, color: 'var(--gray-500)' }}>
+                          Filtro ativo: <strong style={{ color: 'var(--blue-500)' }}>{formatTipoResumo(filtroTipo)}</strong>
+                        </div>
+                      )}
                     </div>
-                    {divergenciasAtuais.map((item) => {
+                    {divergenciasFiltradas.map((item) => {
                       const borderColor = getBorderColor(item.tipo);
                       return (
                         <div key={`${execucaoSelecionada.id}-${item.tipo}-${item.sku}`} style={{ ...s.card, borderLeft: `3px solid ${borderColor}` }}>
@@ -662,6 +716,11 @@ export default function AuditoriaAutomaticaPage() {
                         </div>
                       );
                     })}
+                    {filtroTipo && divergenciasFiltradas.length === 0 && (
+                      <div style={{ background: '#eff6ff', border: '1px solid #93c5fd', borderRadius: 10, padding: '18px 20px', color: 'var(--blue-500)', fontSize: 14, fontWeight: 600 }}>
+                        Nenhuma divergencia desse tipo foi encontrada nesta execucao.
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 10, padding: '18px 20px', color: 'var(--green)', fontSize: 14, fontWeight: 600 }}>
