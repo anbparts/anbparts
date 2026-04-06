@@ -2291,10 +2291,10 @@ blingRouter.post('/sync/produtos', async (req, res, next) => {
   }
 });
 
-blingRouter.post('/comparar-produtos', async (req, res, next) => {
-  try {
-    const codigosManuais = parseSkuList(req.body?.codigos || req.body?.texto || req.body?.skus);
-    const motoId = Number(req.body?.motoId) || 0;
+  blingRouter.post('/comparar-produtos', async (req, res, next) => {
+    try {
+      const codigosManuais = parseSkuList(req.body?.codigos || req.body?.texto || req.body?.skus);
+      const motoId = Number(req.body?.motoId) || 0;
     const pecasDaMoto = motoId
       ? await prisma.peca.findMany({
           where: { motoId },
@@ -2305,15 +2305,17 @@ blingRouter.post('/comparar-produtos', async (req, res, next) => {
     const codigosDaMoto = pecasDaMoto.map((peca) => getBaseSku(peca.idPeca)).filter(Boolean);
     const codigos = Array.from(new Set([...codigosManuais, ...codigosDaMoto]));
 
-    if (!codigos.length) {
-      return res.status(400).json({ error: 'Informe pelo menos um ID de peca / SKU ou selecione uma moto para comparar' });
+      if (!codigos.length) {
+        return res.status(400).json({ error: 'Informe pelo menos um ID de peca / SKU ou selecione uma moto para comparar' });
+      }
+      const resultado = await compareProdutosBlingCodes(codigos, {
+        syncLocalizacao: true,
+      });
+      res.json(resultado);
+    } catch (e) {
+      next(e);
     }
-    const resultado = await compareProdutosBlingCodes(codigos);
-    res.json(resultado);
-  } catch (e) {
-    next(e);
-  }
-});
+  });
 
 blingRouter.post('/debug-status-produto', async (req, res, next) => {
   try {
