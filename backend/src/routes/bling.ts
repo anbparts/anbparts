@@ -22,6 +22,7 @@ const PRODUCT_STORE_LINK_CACHE_TTL_MS = 10 * 60 * 1000;
 const BLING_PRODUCT_CACHE_TTL_MS = 2 * 60 * 1000;
 const BLING_PRODUCT_DETAIL_CACHE_TTL_MS = 2 * 60 * 1000;
 const BLING_CUSTOM_FIELDS_CACHE_TTL_MS = 30 * 60 * 1000;
+const BLING_DETRAN_CUSTOM_FIELD_IDS = new Set([5979929]);
 const MERCADO_LIVRE_STATUS_CONCURRENCY = 4;
 const produtoLojaLinksCache = new Map<number, { expiresAt: number; rows: any[] }>();
 const blingProductByCodeCache = new Map<string, { expiresAt: number; value: any | null }>();
@@ -672,7 +673,15 @@ async function resolveBlingDetranEtiqueta(produto: any, detail?: any) {
   }
 
   try {
-    let fieldIds = await getProdutoCustomFieldIdsByNormalizedNameFromRows(rows, 'DETRAN');
+    let fieldIds = Array.from(new Set(
+      rows
+        .map((row) => getProdutoCustomFieldId(row))
+        .filter((id): id is number => Number.isFinite(id) && id > 0 && BLING_DETRAN_CUSTOM_FIELD_IDS.has(id)),
+    ));
+
+    if (!fieldIds.length) {
+      fieldIds = await getProdutoCustomFieldIdsByNormalizedNameFromRows(rows, 'DETRAN');
+    }
     if (!fieldIds.length) {
       const fields = await getProdutoCustomFieldsByNormalizedName('DETRAN');
       fieldIds = Array.from(new Set(
