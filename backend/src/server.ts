@@ -5,7 +5,7 @@ import { motosRouter } from './routes/motos';
 import { pecasRouter } from './routes/pecas';
 import { faturamentoRouter } from './routes/faturamento';
 import { importRouter } from './routes/import';
-import { blingRouter } from './routes/bling';
+import { blingRouter, startBlingAuditoriaScheduler } from './routes/bling';
 import { financeiroRouter } from './routes/financeiro';
 import { errorMiddleware } from './middlewares/error';
 
@@ -30,4 +30,7 @@ app.use('/financeiro', financeiroRouter);
 app.use(errorMiddleware);
 
 const port = Number(process.env.PORT) || 3333;
-app.listen(port, () => console.log(`ANB Backend rodando na porta ${port}`));
+app.listen(port, () => {
+  startBlingAuditoriaScheduler();
+  console.log(`ANB Backend rodando na porta ${port}`);
+});

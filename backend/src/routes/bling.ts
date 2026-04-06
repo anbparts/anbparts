@@ -7,6 +7,13 @@ const BLING_API = 'https://www.bling.com.br/Api/v3';
 const BLING_OAUTH = 'https://www.bling.com.br/Api/v3/oauth/token';
 const DEFAULT_FRETE_PADRAO = 29.9;
 const DEFAULT_TAXA_PADRAO_PCT = 17;
+const AUDITORIA_DEFAULT_HORARIO = '03:00';
+const AUDITORIA_DEFAULT_EMAIL_FROM = 'alertas@mail.anbparts.com.br';
+const AUDITORIA_DEFAULT_TAMANHO_LOTE = 100;
+const AUDITORIA_DEFAULT_PAUSA_MS = 400;
+const AUDITORIA_EMAIL_SUBJECT = 'ALERTA ANB Parts - Divergência de Produtos / Anúncios - Verifique';
+const AUDITORIA_TIMEZONE = 'America/Sao_Paulo';
+const AUDITORIA_SCHEDULER_INTERVAL_MS = 60 * 1000;
 const STATUS_ID_CONCLUIDO = 9;
 const STATUS_IDS_CANCELADO = new Set([12]);
 
@@ -18,6 +25,10 @@ const MERCADO_LIVRE_STATUS_CONCURRENCY = 4;
 const produtoLojaLinksCache = new Map<number, { expiresAt: number; rows: any[] }>();
 const blingProductByCodeCache = new Map<string, { expiresAt: number; value: any | null }>();
 const blingProductDetailCache = new Map<number, { expiresAt: number; value: any | null }>();
+const auditoriaSchedulerState = {
+  started: false,
+  running: false,
+};
 
 async function mapWithConcurrency<T, R>(
   items: T[],
@@ -41,6 +52,24 @@ async function mapWithConcurrency<T, R>(
   const poolSize = Math.max(1, Math.min(concurrency, items.length));
   await Promise.all(Array.from({ length: poolSize }, () => run()));
   return results;
+}
+
+async function processInBatches<T>(
+  items: T[],
+  batchSize: number,
+  pauseMs: number,
+  worker: (batch: T[], batchIndex: number) => Promise<void>,
+) {
+  if (!items.length) return;
+
+  const safeBatchSize = Math.max(1, batchSize || items.length);
+  for (let offset = 0, batchIndex = 0; offset < items.length; offset += safeBatchSize, batchIndex += 1) {
+    const batch = items.slice(offset, offset + safeBatchSize);
+    await worker(batch, batchIndex);
+    if (pauseMs > 0 && offset + safeBatchSize < items.length) {
+      await sleep(pauseMs);
+    }
+  }
 }
 
 function toNumber(value: any, fallback = 0) {
@@ -263,6 +292,25 @@ function getProdutoDefaults(cfg: any) {
   };
 }
 
+function normalizeHorarioAuditoria(value: any) {
+  const text = String(value || '').trim();
+  return /^\d{2}:\d{2}$/.test(text) ? text : AUDITORIA_DEFAULT_HORARIO;
+}
+
+function getAuditoriaDefaults(cfg: any) {
+  return {
+    auditoriaAtiva: !!cfg?.auditoriaAtiva,
+    auditoriaHorario: normalizeHorarioAuditoria(cfg?.auditoriaHorario),
+    auditoriaEmailDestinatario: String(cfg?.auditoriaEmailDestinatario || '').trim(),
+    auditoriaResendApiKey: String(cfg?.auditoriaResendApiKey || '').trim(),
+    auditoriaResendFrom: String(cfg?.auditoriaResendFrom || AUDITORIA_DEFAULT_EMAIL_FROM).trim() || AUDITORIA_DEFAULT_EMAIL_FROM,
+    auditoriaTamanhoLote: Math.max(10, Math.min(500, Math.round(toNumber(cfg?.auditoriaTamanhoLote, AUDITORIA_DEFAULT_TAMANHO_LOTE)))),
+    auditoriaPausaMs: Math.max(0, Math.min(15000, Math.round(toNumber(cfg?.auditoriaPausaMs, AUDITORIA_DEFAULT_PAUSA_MS)))),
+    auditoriaUltimaExecucaoChave: cfg?.auditoriaUltimaExecucaoChave || null,
+    auditoriaUltimaExecucaoEm: cfg?.auditoriaUltimaExecucaoEm || null,
+  };
+}
+
 async function getConfig(): Promise<any> {
   let cfg = await prisma.blingConfig.findFirst();
   if (!cfg) cfg = await prisma.blingConfig.create({ data: {} });
@@ -271,6 +319,7 @@ async function getConfig(): Promise<any> {
     ...cfg,
     prefixos: Array.isArray(cfg.prefixos) ? (cfg.prefixos as any[]) : [],
     ...getProdutoDefaults(cfg),
+    ...getAuditoriaDefaults(cfg),
   };
 }
 
@@ -565,19 +614,37 @@ async function fetchBlingProductDetailById(id: number) {
   return detail;
 }
 
-async function findBlingProductDetailsByIds(ids: number[]) {
+function getRuntimeBatchOptions(options?: { batchSize?: number; pauseMs?: number }) {
+  return {
+    batchSize: Math.max(1, Number(options?.batchSize || 0) || 0),
+    pauseMs: Math.max(0, Number(options?.pauseMs || 0) || 0),
+  };
+}
+
+async function findBlingProductDetailsByIds(
+  ids: number[],
+  options?: { batchSize?: number; pauseMs?: number },
+) {
   const uniqueIds = Array.from(new Set(ids.map((id) => Number(id)).filter(Boolean)));
   const details = new Map<number, any>();
 
-  await mapWithConcurrency(uniqueIds, MERCADO_LIVRE_STATUS_CONCURRENCY, async (id) => {
-    try {
-      details.set(id, await fetchBlingProductDetailById(id));
-    } catch {
-      details.set(id, null);
-    }
+  const runtime = getRuntimeBatchOptions(options);
+  await processInBatches(
+    uniqueIds,
+    runtime.batchSize || uniqueIds.length || 1,
+    runtime.pauseMs,
+    async (batch) => {
+      await mapWithConcurrency(batch, MERCADO_LIVRE_STATUS_CONCURRENCY, async (id) => {
+        try {
+          details.set(id, await fetchBlingProductDetailById(id));
+        } catch {
+          details.set(id, null);
+        }
 
-    return null;
-  });
+        return null;
+      });
+    },
+  );
 
   return details;
 }
@@ -758,12 +825,17 @@ function isLikelySameAnuncioTitle(produtoNome: string, anuncioTitulo: string) {
   return matched >= minimum && matched >= Math.ceil(tokens.length * 0.6);
 }
 
-async function collectMercadoLivreStatusByProductIds(ids: number[], withDebug = false) {
+async function collectMercadoLivreStatusByProductIds(
+  ids: number[],
+  withDebug = false,
+  options?: { batchSize?: number; pauseMs?: number },
+) {
   const uniqueIds: number[] = Array.from(new Set(
     ids
       .map((id) => Number(id))
       .filter((id): id is number => Number.isFinite(id) && id > 0),
   ));
+  const runtime = getRuntimeBatchOptions(options);
   const productStoreLinks = await findProdutoLojaLinksByProductIds(uniqueIds);
   const statuses = new Map<number, {
     found: boolean;
@@ -787,68 +859,75 @@ async function collectMercadoLivreStatusByProductIds(ids: number[], withDebug = 
   }>();
 
   if (!withDebug) {
-    await mapWithConcurrency(uniqueIds, MERCADO_LIVRE_STATUS_CONCURRENCY, async (productId) => {
-      const lojaRows = productStoreLinks.get(productId) || [];
-      const lojaIds = getProdutoLojaIds(lojaRows);
-      const mercadoLivreRows = lojaRows.filter((row) => isLikelyMercadoLivreLink(row));
-      const candidateRows = (mercadoLivreRows.length ? mercadoLivreRows : lojaRows)
-        .filter((row) => {
-          const anuncioId = Number(row?.id || row?.idAnuncio || 0);
-          const lojaId = getProdutoLojaId(row);
-          return Number.isFinite(anuncioId) && anuncioId > 0 && lojaId > 0;
-        });
-      const uniqueLinkRows = Array.from(new Map(
-        candidateRows.map((row) => {
-          const anuncioId = Number(row?.id || row?.idAnuncio || 0);
-          const lojaId = getProdutoLojaId(row);
-          return [`${lojaId}:${anuncioId}`, row];
-        }),
-      ).values());
-      const collected: Array<{ code: number; label: string; isActive: boolean; anuncioId: number | null; lojaId: number }> = [];
-
-      await mapWithConcurrency(uniqueLinkRows, Math.min(3, MERCADO_LIVRE_STATUS_CONCURRENCY), async (row) => {
-        const anuncioId = Number(row?.id || row?.idAnuncio || 0);
-        const lojaId = getProdutoLojaId(row);
-
-        try {
-          const detalhe = await getMercadoLivreAnuncioDetail(anuncioId, lojaId);
-          const parsed = parseAnuncioStatus(detalhe?.status ?? detalhe?.situacao ?? row?.status ?? row?.situacao);
-          if (parsed) {
-            collected.push({
-              ...parsed,
-              anuncioId,
-              lojaId,
+    await processInBatches(
+      uniqueIds,
+      runtime.batchSize || uniqueIds.length || 1,
+      runtime.pauseMs,
+      async (batch) => {
+        await mapWithConcurrency(batch, MERCADO_LIVRE_STATUS_CONCURRENCY, async (productId) => {
+          const lojaRows = productStoreLinks.get(productId) || [];
+          const lojaIds = getProdutoLojaIds(lojaRows);
+          const mercadoLivreRows = lojaRows.filter((row) => isLikelyMercadoLivreLink(row));
+          const candidateRows = (mercadoLivreRows.length ? mercadoLivreRows : lojaRows)
+            .filter((row) => {
+              const anuncioId = Number(row?.id || row?.idAnuncio || 0);
+              const lojaId = getProdutoLojaId(row);
+              return Number.isFinite(anuncioId) && anuncioId > 0 && lojaId > 0;
             });
-          }
-        } catch {
-          // Ignora falhas individuais e segue com os demais vinculos.
-        }
+          const uniqueLinkRows = Array.from(new Map(
+            candidateRows.map((row) => {
+              const anuncioId = Number(row?.id || row?.idAnuncio || 0);
+              const lojaId = getProdutoLojaId(row);
+              return [`${lojaId}:${anuncioId}`, row];
+            }),
+          ).values());
+          const collected: Array<{ code: number; label: string; isActive: boolean; anuncioId: number | null; lojaId: number }> = [];
 
-        return null;
-      });
+          await mapWithConcurrency(uniqueLinkRows, Math.min(3, MERCADO_LIVRE_STATUS_CONCURRENCY), async (row) => {
+            const anuncioId = Number(row?.id || row?.idAnuncio || 0);
+            const lojaId = getProdutoLojaId(row);
 
-      const prioritized = collected.find((item) => !item.isActive) || collected.find((item) => item.isActive) || null;
+            try {
+              const detalhe = await getMercadoLivreAnuncioDetail(anuncioId, lojaId);
+              const parsed = parseAnuncioStatus(detalhe?.status ?? detalhe?.situacao ?? row?.status ?? row?.situacao);
+              if (parsed) {
+                collected.push({
+                  ...parsed,
+                  anuncioId,
+                  lojaId,
+                });
+              }
+            } catch {
+              // Ignora falhas individuais e segue com os demais vinculos.
+            }
 
-      statuses.set(productId, prioritized
-        ? {
-            found: true,
-            label: prioritized.label,
-            isActive: prioritized.isActive,
-            code: prioritized.code,
-            anuncioIds: Array.from(new Set(collected.map((item) => item.anuncioId).filter(Boolean))) as number[],
-            lojaIds: Array.from(new Set(collected.map((item) => item.lojaId))),
-          }
-        : {
-            found: false,
-            label: null,
-            isActive: false,
-            code: null,
-            anuncioIds: [],
-            lojaIds,
+            return null;
           });
 
-      return null;
-    });
+          const prioritized = collected.find((item) => !item.isActive) || collected.find((item) => item.isActive) || null;
+
+          statuses.set(productId, prioritized
+            ? {
+                found: true,
+                label: prioritized.label,
+                isActive: prioritized.isActive,
+                code: prioritized.code,
+                anuncioIds: Array.from(new Set(collected.map((item) => item.anuncioId).filter(Boolean))) as number[],
+                lojaIds: Array.from(new Set(collected.map((item) => item.lojaId))),
+              }
+            : {
+                found: false,
+                label: null,
+                isActive: false,
+                code: null,
+                anuncioIds: [],
+                lojaIds,
+              });
+
+          return null;
+        });
+      },
+    );
 
     return {
       statuses,
@@ -955,8 +1034,11 @@ async function collectMercadoLivreStatusByProductIds(ids: number[], withDebug = 
   };
 }
 
-async function findMercadoLivreStatusByProductIds(ids: number[]) {
-  const { statuses } = await collectMercadoLivreStatusByProductIds(ids, false);
+async function findMercadoLivreStatusByProductIds(
+  ids: number[],
+  options?: { batchSize?: number; pauseMs?: number },
+) {
+  const { statuses } = await collectMercadoLivreStatusByProductIds(ids, false, options);
   return statuses;
 }
 
@@ -1025,6 +1107,284 @@ function inferMarketplaceStatusFromText(text: string) {
     normalized,
     isActive: false,
     found: false,
+  };
+}
+
+function createLocalSkuResumo(sku: string) {
+  return {
+    sku,
+    qtdTotalAnb: 0,
+    qtdDisponivelAnb: 0,
+    qtdVendidasAnb: 0,
+    qtdPrejuizoAnb: 0,
+    idsPecaPrejuizo: [] as string[],
+    motivosPrejuizo: [] as string[],
+    descricaoAnb: null as string | null,
+    moto: null as string | null,
+  };
+}
+
+function buildLocalSkuResumoMap(codigos: string[], pecas: any[]) {
+  const localMap = new Map<string, any>();
+
+  for (const peca of pecas) {
+    const baseSku = getBaseSku(peca.idPeca);
+    if (!baseSku) continue;
+
+    const current = localMap.get(baseSku) || createLocalSkuResumo(baseSku);
+    current.qtdTotalAnb += 1;
+    current.qtdDisponivelAnb += peca.disponivel && !peca.emPrejuizo ? 1 : 0;
+    current.qtdVendidasAnb += !peca.disponivel && !peca.emPrejuizo ? 1 : 0;
+
+    if (peca.emPrejuizo) {
+      current.qtdPrejuizoAnb += 1;
+      current.idsPecaPrejuizo.push(peca.idPeca);
+      if (peca.prejuizo?.motivo) current.motivosPrejuizo.push(peca.prejuizo.motivo);
+    }
+
+    if (!current.descricaoAnb) current.descricaoAnb = peca.descricao || null;
+    if (!current.moto && peca.moto) current.moto = `${peca.moto.marca} ${peca.moto.modelo}`;
+    localMap.set(baseSku, current);
+  }
+
+  for (const codigo of codigos) {
+    if (!localMap.has(codigo)) {
+      localMap.set(codigo, createLocalSkuResumo(codigo));
+    }
+  }
+
+  return localMap;
+}
+
+async function listPecasForComparacaoByCodes(codigos: string[]) {
+  const whereOr = codigos.flatMap((codigo) => [
+    { idPeca: codigo },
+    { idPeca: { startsWith: `${codigo}-` } },
+  ]);
+
+  return prisma.peca.findMany({
+    where: { OR: whereOr },
+    select: {
+      idPeca: true,
+      descricao: true,
+      disponivel: true,
+      emPrejuizo: true,
+      prejuizo: { select: { motivo: true } },
+      moto: { select: { marca: true, modelo: true } },
+    },
+    orderBy: { idPeca: 'asc' },
+  });
+}
+
+async function loadLocalSkuResumoByCodes(codigos: string[]) {
+  const uniqueCodes = Array.from(new Set(codigos.map((codigo) => getBaseSku(codigo)).filter(Boolean)));
+  const pecas = uniqueCodes.length ? await listPecasForComparacaoByCodes(uniqueCodes) : [];
+  return {
+    codigos: uniqueCodes,
+    localMap: buildLocalSkuResumoMap(uniqueCodes, pecas),
+  };
+}
+
+async function loadAllLocalSkuResumo() {
+  const pecas = await prisma.peca.findMany({
+    select: {
+      idPeca: true,
+      descricao: true,
+      disponivel: true,
+      emPrejuizo: true,
+      prejuizo: { select: { motivo: true } },
+      moto: { select: { marca: true, modelo: true } },
+    },
+    orderBy: { idPeca: 'asc' },
+  });
+
+  const codigos = Array.from(new Set(
+    pecas
+      .map((peca) => getBaseSku(peca.idPeca))
+      .filter(Boolean),
+  )).sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true }));
+
+  return {
+    codigos,
+    localMap: buildLocalSkuResumoMap(codigos, pecas),
+  };
+}
+
+function buildDivergenciaPayload(
+  codigo: string,
+  local: any,
+  qtdBling: number,
+  descricaoBling: string | null,
+  statusMercadoLivre: any,
+  overrides: any,
+) {
+  return {
+    sku: codigo,
+    estoqueAnb: local.qtdDisponivelAnb,
+    estoqueBling: qtdBling,
+    qtdTotalAnb: local.qtdTotalAnb,
+    qtdVendidasAnb: local.qtdVendidasAnb,
+    qtdPrejuizoAnb: local.qtdPrejuizoAnb,
+    idsPecaPrejuizo: Array.from(new Set(local.idsPecaPrejuizo)),
+    motivosPrejuizo: Array.from(new Set(local.motivosPrejuizo)),
+    descricaoAnb: local.descricaoAnb,
+    descricaoBling,
+    moto: local.moto,
+    statusMercadoLivre: statusMercadoLivre.label,
+    statusMercadoLivreAtivo: statusMercadoLivre.found ? statusMercadoLivre.isActive : null,
+    ...overrides,
+  };
+}
+
+async function compareProdutosBlingCodes(
+  codigosInput: string[],
+  options?: { batchSize?: number; pauseMs?: number; localMap?: Map<string, any> },
+) {
+  const codigos = Array.from(new Set(codigosInput.map((codigo) => getBaseSku(codigo)).filter(Boolean)));
+  if (!codigos.length) {
+    return {
+      ok: true,
+      totalConsultados: 0,
+      totalDivergencias: 0,
+      totalSemDivergencia: 0,
+      divergencias: [],
+    };
+  }
+
+  const localMap = options?.localMap || (await loadLocalSkuResumoByCodes(codigos)).localMap;
+  const produtosBling = await findBlingProductsByCodes(codigos);
+  const produtoIdsParaStatus = Array.from(new Set(
+    codigos
+      .map((codigo) => Number(produtosBling.get(codigo)?.id || 0))
+      .filter((id): id is number => Number.isFinite(id) && id > 0),
+  ));
+  const produtoIdsParaDetalhe = Array.from(new Set(
+    codigos
+      .map((codigo) => {
+        const produto = produtosBling.get(codigo);
+        if (!produto?.id) return 0;
+
+        const qtdBling = toNumber(produto?.estoque?.saldoVirtualTotal ?? produto?.estoque?.saldo ?? 0);
+        return qtdBling > 0 ? Number(produto.id) : 0;
+      })
+      .filter((id): id is number => Number.isFinite(id) && id > 0),
+  ));
+
+  const [statusMercadoLivreByProductId, detalhesBlingByProductId] = await Promise.all([
+    findMercadoLivreStatusByProductIds(produtoIdsParaStatus, options),
+    findBlingProductDetailsByIds(produtoIdsParaDetalhe, options),
+  ]);
+
+  const divergencias = codigos.flatMap((codigo) => {
+    const local = localMap.get(codigo) || createLocalSkuResumo(codigo);
+    const produtoBling = produtosBling.get(codigo);
+    const qtdBling = produtoBling ? toNumber(produtoBling?.estoque?.saldoVirtualTotal ?? produtoBling?.estoque?.saldo ?? 0) : 0;
+    const descricaoBling = produtoBling?.nome || null;
+    const statusMercadoLivre = produtoBling?.id
+      ? (statusMercadoLivreByProductId.get(Number(produtoBling.id)) || { found: false, label: null, isActive: false, code: null, anuncioIds: [], lojaIds: [] })
+      : { found: false, label: null, isActive: false, code: null, anuncioIds: [], lojaIds: [] };
+    const estoqueMaximoBling = produtoBling?.id
+      ? getBlingStockMaximum(detalhesBlingByProductId.get(Number(produtoBling.id)) || null)
+      : null;
+    const temEstoqueEmAlgumSistema = local.qtdDisponivelAnb > 0 || qtdBling > 0;
+    const divergenciasSku: any[] = [];
+    const deveAlertarPrejuizo = local.qtdPrejuizoAnb > 0 && (
+      qtdBling > 0
+      || (statusMercadoLivre.found && statusMercadoLivre.isActive)
+    );
+
+    if (deveAlertarPrejuizo) {
+      divergenciasSku.push(buildDivergenciaPayload(codigo, local, qtdBling, descricaoBling, statusMercadoLivre, {
+        tipo: 'peca_em_prejuizo',
+        titulo: 'Peca em prejuizo no ANB',
+        detalhe: `Esse SKU possui ${local.qtdPrejuizoAnb} item(ns) registrado(s) em prejuizo e precisa ser revisado na equalizacao.`,
+      }));
+    }
+
+    if (!produtoBling) {
+      divergenciasSku.push(buildDivergenciaPayload(codigo, local, 0, descricaoBling, statusMercadoLivre, {
+        tipo: 'nao_encontrado_bling',
+        titulo: 'Nao encontrado no Bling',
+        detalhe: 'Esse SKU existe no ANB, mas nao foi encontrado na busca do catalogo do Bling.',
+        statusMercadoLivre: null,
+        statusMercadoLivreAtivo: null,
+      }));
+      return divergenciasSku;
+    }
+
+    if (temEstoqueEmAlgumSistema && statusMercadoLivre.found && !statusMercadoLivre.isActive) {
+      divergenciasSku.push(buildDivergenciaPayload(codigo, local, qtdBling, descricaoBling, statusMercadoLivre, {
+        tipo: 'status_ml_nao_ativo',
+        titulo: 'Anuncio ML nao ativo',
+        detalhe: 'Existe estoque no ANB ou no Bling, mas o status do Mercado Livre esta diferente de ativo.',
+        statusMercadoLivreAtivo: false,
+      }));
+      return divergenciasSku;
+    }
+
+    if (!temEstoqueEmAlgumSistema && statusMercadoLivre.found && statusMercadoLivre.isActive) {
+      divergenciasSku.push(buildDivergenciaPayload(codigo, local, qtdBling, descricaoBling, statusMercadoLivre, {
+        tipo: 'status_ml_publicado_sem_estoque',
+        titulo: 'Anuncio ML publicado sem estoque',
+        detalhe: 'Nao ha estoque disponivel no ANB nem no Bling, mas o anuncio do Mercado Livre segue publicado.',
+        statusMercadoLivreAtivo: true,
+      }));
+      return divergenciasSku;
+    }
+
+    if (!local.qtdTotalAnb) {
+      divergenciasSku.push(buildDivergenciaPayload(codigo, local, qtdBling, descricaoBling, statusMercadoLivre, {
+        tipo: 'nao_encontrado_anb',
+        titulo: 'Nao encontrado no ANB',
+        detalhe: 'Esse SKU foi encontrado no Bling, mas nao existe na sua base de pecas do ANB.',
+        estoqueAnb: 0,
+        qtdTotalAnb: 0,
+        qtdVendidasAnb: 0,
+        qtdPrejuizoAnb: 0,
+        idsPecaPrejuizo: [],
+        motivosPrejuizo: [],
+        descricaoAnb: null,
+        moto: null,
+      }));
+      return divergenciasSku;
+    }
+
+    if (local.qtdDisponivelAnb > qtdBling) {
+      divergenciasSku.push(buildDivergenciaPayload(codigo, local, qtdBling, descricaoBling, statusMercadoLivre, {
+        tipo: 'estoque_anb_maior',
+        titulo: 'Estoque ANB maior que Bling',
+        detalhe: 'O ANB mostra mais pecas disponiveis que o saldo atual do Bling.',
+      }));
+      return divergenciasSku;
+    }
+
+    if (estoqueMaximoBling !== null && qtdBling > estoqueMaximoBling) {
+      divergenciasSku.push(buildDivergenciaPayload(codigo, local, qtdBling, descricaoBling, statusMercadoLivre, {
+        tipo: 'estoque_bling_acima_maximo',
+        titulo: 'Estoque Bling acima do maximo',
+        detalhe: `O Bling esta com saldo ${qtdBling}, mas o estoque maximo configurado para esse produto e ${estoqueMaximoBling}.`,
+      }));
+      return divergenciasSku;
+    }
+
+    if (local.qtdDisponivelAnb < qtdBling) {
+      divergenciasSku.push(buildDivergenciaPayload(codigo, local, qtdBling, descricaoBling, statusMercadoLivre, {
+        tipo: 'estoque_bling_maior',
+        titulo: 'Estoque Bling maior que o permitido',
+        detalhe: 'O Bling mostra mais saldo disponivel que a quantidade permitida pelo estoque atual do ANB.',
+      }));
+      return divergenciasSku;
+    }
+
+    return divergenciasSku;
+  });
+
+  return {
+    ok: true,
+    totalConsultados: codigos.length,
+    totalDivergencias: divergencias.length,
+    totalSemDivergencia: codigos.length - divergencias.length,
+    divergencias,
   };
 }
 
@@ -1152,6 +1512,290 @@ function resolveMercadoLivreStatus(produtoDetalhe: any) {
   };
 }
 
+function escapeHtml(value: any) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function formatDateTimePtBr(value: Date | string | null | undefined) {
+  if (!value) return '';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+
+  return new Intl.DateTimeFormat('pt-BR', {
+    timeZone: AUDITORIA_TIMEZONE,
+    dateStyle: 'short',
+    timeStyle: 'short',
+  }).format(date);
+}
+
+function getTimezoneDateParts(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: AUDITORIA_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(date);
+
+  const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const dateKey = `${map.year}-${map.month}-${map.day}`;
+  const timeKey = `${map.hour}:${map.minute}`;
+  return {
+    dateKey,
+    timeKey,
+    runKey: `${dateKey}|${timeKey}`,
+  };
+}
+
+function buildAuditoriaResumo(resultado: any) {
+  const porTipo = (resultado?.divergencias || []).reduce((acc: Record<string, number>, item: any) => {
+    const key = String(item?.tipo || 'outros');
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+
+  const porMoto = (resultado?.divergencias || []).reduce((acc: Record<string, number>, item: any) => {
+    const key = String(item?.moto || 'Sem moto');
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+
+  return {
+    totalConsultados: Number(resultado?.totalConsultados || 0),
+    totalDivergencias: Number(resultado?.totalDivergencias || 0),
+    totalSemDivergencia: Number(resultado?.totalSemDivergencia || 0),
+    porTipo,
+    porMoto,
+  };
+}
+
+function renderAuditoriaMetricCard(label: string, value: any, color = '#1f2937') {
+  return `
+    <div style="background:#f8fafc;border:1px solid #dbe3ef;border-radius:10px;padding:12px 14px;min-width:140px;">
+      <div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#64748b;margin-bottom:6px;">${escapeHtml(label)}</div>
+      <div style="font-size:24px;font-weight:700;color:${escapeHtml(color)};">${escapeHtml(value)}</div>
+    </div>
+  `;
+}
+
+function renderAuditoriaEmailHtml(resultado: any, executedAt: Date | string) {
+  const divergencias = Array.isArray(resultado?.divergencias) ? resultado.divergencias : [];
+  const cards = divergencias.map((item: any) => {
+    const statusColor = item?.statusMercadoLivreAtivo === false ? '#dc2626' : '#16a34a';
+    const borderColor = item?.tipo === 'peca_em_prejuizo'
+      ? '#b91c1c'
+      : item?.tipo === 'nao_encontrado_anb'
+        ? '#2563eb'
+        : item?.tipo === 'nao_encontrado_bling'
+          ? '#d97706'
+          : '#dc2626';
+
+    return `
+      <div style="background:#ffffff;border:1px solid #dbe3ef;border-left:4px solid ${borderColor};border-radius:14px;padding:20px 20px 18px;margin-bottom:18px;">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">
+          <span style="font-family:monospace;font-size:12px;background:#f1f5f9;color:#64748b;padding:4px 8px;border-radius:6px;">${escapeHtml(item?.sku)}</span>
+          <span style="font-size:12px;background:#fef2f2;color:${borderColor};padding:4px 8px;border-radius:6px;">${escapeHtml(item?.titulo)}</span>
+          ${item?.statusMercadoLivre ? `<span style="font-size:12px;background:${item?.statusMercadoLivreAtivo === false ? '#fef2f2' : '#ecfdf3'};color:${statusColor};padding:4px 8px;border-radius:6px;">ML: ${escapeHtml(item.statusMercadoLivre)}</span>` : ''}
+          ${item?.moto ? `<span style="font-size:12px;color:#94a3b8;">${escapeHtml(item.moto)}</span>` : ''}
+        </div>
+        <div style="font-size:18px;font-weight:700;color:#0f172a;margin-bottom:6px;">${escapeHtml(item?.descricaoAnb || item?.descricaoBling || 'Sem descricao')}</div>
+        <div style="font-size:13px;color:#64748b;line-height:1.6;margin-bottom:14px;">${escapeHtml(item?.detalhe || '')}</div>
+        <div style="display:grid;grid-template-columns:repeat(3,minmax(120px,1fr));gap:10px;">
+          ${renderAuditoriaMetricCard('Estoque ANB', item?.estoqueAnb ?? 0)}
+          ${renderAuditoriaMetricCard('Estoque Bling', item?.estoqueBling ?? 0)}
+          ${renderAuditoriaMetricCard('Total no ANB', item?.qtdTotalAnb ?? 0)}
+          ${renderAuditoriaMetricCard('Vendidas no ANB', item?.qtdVendidasAnb ?? 0)}
+          ${renderAuditoriaMetricCard('Em prejuizo', item?.qtdPrejuizoAnb ?? 0, item?.qtdPrejuizoAnb ? '#b91c1c' : '#1f2937')}
+          ${renderAuditoriaMetricCard('Status ML', item?.statusMercadoLivre || 'Nao identificado', statusColor)}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <div style="background:#f8fafc;padding:24px;font-family:Inter,Arial,sans-serif;color:#0f172a;">
+      <div style="max-width:1040px;margin:0 auto;">
+        <div style="background:#ffffff;border:1px solid #dbe3ef;border-radius:18px;padding:24px;margin-bottom:18px;">
+          <div style="font-size:28px;font-weight:800;color:#dc2626;margin-bottom:8px;">ALERTA ANB Parts</div>
+          <div style="font-size:16px;color:#334155;margin-bottom:8px;">Divergência de Produtos / Anúncios - Verifique</div>
+          <div style="font-size:13px;color:#64748b;">Execução: ${escapeHtml(formatDateTimePtBr(executedAt))}</div>
+        </div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px;">
+          ${renderAuditoriaMetricCard('Consultados', resultado?.totalConsultados || 0)}
+          ${renderAuditoriaMetricCard('Divergentes', resultado?.totalDivergencias || 0, '#dc2626')}
+          ${renderAuditoriaMetricCard('Sem divergencia', resultado?.totalSemDivergencia || 0, '#16a34a')}
+        </div>
+        ${cards || '<div style="background:#ecfdf3;border:1px solid #86efac;border-radius:14px;padding:18px 20px;color:#16a34a;font-weight:700;">Nenhuma divergência encontrada nesta execução.</div>'}
+      </div>
+    </div>
+  `;
+}
+
+function renderAuditoriaEmailText(resultado: any, executedAt: Date | string) {
+  const divergencias = Array.isArray(resultado?.divergencias) ? resultado.divergencias : [];
+  const header = [
+    'ALERTA ANB Parts - Divergência de Produtos / Anúncios - Verifique',
+    `Execução: ${formatDateTimePtBr(executedAt)}`,
+    `Consultados: ${resultado?.totalConsultados || 0}`,
+    `Divergentes: ${resultado?.totalDivergencias || 0}`,
+    `Sem divergência: ${resultado?.totalSemDivergencia || 0}`,
+    '',
+  ];
+
+  const body = divergencias.map((item: any) => [
+    `${item?.sku || 'SEM-SKU'} - ${item?.titulo || 'Divergência'}`,
+    `${item?.descricaoAnb || item?.descricaoBling || 'Sem descricao'}`,
+    `${item?.detalhe || ''}`,
+    `Estoque ANB: ${item?.estoqueAnb ?? 0} | Estoque Bling: ${item?.estoqueBling ?? 0} | Total ANB: ${item?.qtdTotalAnb ?? 0} | Vendidas ANB: ${item?.qtdVendidasAnb ?? 0} | Prejuízo ANB: ${item?.qtdPrejuizoAnb ?? 0}`,
+    `Status ML: ${item?.statusMercadoLivre || 'Nao identificado'}`,
+    item?.moto ? `Moto: ${item.moto}` : '',
+    '',
+  ].filter(Boolean).join('\n')).join('\n');
+
+  return [...header, body || 'Nenhuma divergência encontrada.'].join('\n');
+}
+
+async function sendAuditoriaEmail(cfg: any, resultado: any, executedAt: Date | string) {
+  const apiKey = String(cfg?.auditoriaResendApiKey || '').trim();
+  const to = String(cfg?.auditoriaEmailDestinatario || '').trim();
+  const from = String(cfg?.auditoriaResendFrom || AUDITORIA_DEFAULT_EMAIL_FROM).trim() || AUDITORIA_DEFAULT_EMAIL_FROM;
+
+  if (!apiKey) throw new Error('API Key do Resend nao configurada');
+  if (!to) throw new Error('Email destinatario da auditoria nao configurado');
+
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from,
+      to: [to],
+      subject: AUDITORIA_EMAIL_SUBJECT,
+      html: renderAuditoriaEmailHtml(resultado, executedAt),
+      text: renderAuditoriaEmailText(resultado, executedAt),
+    }),
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload?.message || payload?.error || `Resend ${response.status}`);
+  }
+
+  return payload;
+}
+
+async function executeAuditoriaAutomatica(origem: 'manual' | 'auto' = 'manual') {
+  const cfg = await getConfig();
+  const local = await loadAllLocalSkuResumo();
+  const execution = await prisma.auditoriaAutomaticaExecucao.create({
+    data: {
+      origem,
+      status: 'executando',
+      emailDestinatario: cfg.auditoriaEmailDestinatario || null,
+      emailAssunto: AUDITORIA_EMAIL_SUBJECT,
+      totalSkus: local.codigos.length,
+    },
+  });
+
+  try {
+    const resultado = await compareProdutosBlingCodes(local.codigos, {
+      localMap: local.localMap,
+      batchSize: cfg.auditoriaTamanhoLote,
+      pauseMs: cfg.auditoriaPausaMs,
+    });
+    const resumo = buildAuditoriaResumo(resultado);
+    let emailEnviado = false;
+    let emailErro: string | null = null;
+
+    if (resultado.totalDivergencias > 0 && cfg.auditoriaEmailDestinatario && cfg.auditoriaResendApiKey) {
+      try {
+        await sendAuditoriaEmail(cfg, resultado, new Date());
+        emailEnviado = true;
+      } catch (error: any) {
+        emailErro = error?.message || String(error);
+      }
+    }
+
+    const updated = await prisma.auditoriaAutomaticaExecucao.update({
+      where: { id: execution.id },
+      data: {
+        status: emailErro ? 'sucesso_parcial' : 'sucesso',
+        finishedAt: new Date(),
+        totalSkus: resultado.totalConsultados,
+        totalDivergencias: resultado.totalDivergencias,
+        totalSemDivergencia: resultado.totalSemDivergencia,
+        emailEnviado,
+        emailErro,
+        resumo,
+        divergencias: resultado.divergencias,
+      },
+    });
+
+    return {
+      ...updated,
+      resumo,
+      divergencias: resultado.divergencias,
+    };
+  } catch (error: any) {
+    const updated = await prisma.auditoriaAutomaticaExecucao.update({
+      where: { id: execution.id },
+      data: {
+        status: 'erro',
+        finishedAt: new Date(),
+        erro: error?.message || String(error),
+      },
+    });
+
+    return updated;
+  }
+}
+
+async function tickAuditoriaAutomatica() {
+  if (auditoriaSchedulerState.running) return;
+
+  const cfg = await getConfig();
+  if (!cfg.auditoriaAtiva) return;
+
+  const now = getTimezoneDateParts(new Date());
+  if (now.timeKey !== cfg.auditoriaHorario) return;
+  if (cfg.auditoriaUltimaExecucaoChave === now.runKey) return;
+
+  auditoriaSchedulerState.running = true;
+  try {
+    await saveConfig({
+      auditoriaUltimaExecucaoChave: now.runKey,
+      auditoriaUltimaExecucaoEm: new Date(),
+    });
+    await executeAuditoriaAutomatica('auto');
+  } finally {
+    auditoriaSchedulerState.running = false;
+  }
+}
+
+export function startBlingAuditoriaScheduler() {
+  if (auditoriaSchedulerState.started) return;
+  auditoriaSchedulerState.started = true;
+
+  const runTick = () => {
+    tickAuditoriaAutomatica().catch((error) => {
+      console.error('Falha na auditoria automatica do Bling:', error);
+      auditoriaSchedulerState.running = false;
+    });
+  };
+
+  setTimeout(runTick, 10000);
+  setInterval(runTick, AUDITORIA_SCHEDULER_INTERVAL_MS);
+}
+
 blingRouter.get('/config', async (_req, res, next) => {
   try {
     const cfg = await getConfig();
@@ -1216,6 +1860,139 @@ blingRouter.post('/config-produtos', async (req, res, next) => {
     });
 
     res.json({ ok: true });
+  } catch (e) {
+    next(e);
+  }
+});
+
+blingRouter.get('/auditoria-automatica/config', async (_req, res, next) => {
+  try {
+    const cfg = await getConfig();
+    const ultimaExecucao = await prisma.auditoriaAutomaticaExecucao.findFirst({
+      orderBy: { startedAt: 'desc' },
+      select: {
+        id: true,
+        origem: true,
+        status: true,
+        startedAt: true,
+        finishedAt: true,
+        totalSkus: true,
+        totalDivergencias: true,
+        totalSemDivergencia: true,
+        emailDestinatario: true,
+        emailEnviado: true,
+        emailErro: true,
+        erro: true,
+        resumo: true,
+      },
+    });
+
+    res.json({
+      auditoriaAtiva: cfg.auditoriaAtiva,
+      auditoriaHorario: cfg.auditoriaHorario,
+      auditoriaEmailDestinatario: cfg.auditoriaEmailDestinatario,
+      auditoriaResendFrom: cfg.auditoriaResendFrom,
+      auditoriaTamanhoLote: cfg.auditoriaTamanhoLote,
+      auditoriaPausaMs: cfg.auditoriaPausaMs,
+      resendApiKeyConfigured: !!cfg.auditoriaResendApiKey,
+      auditoriaUltimaExecucaoChave: cfg.auditoriaUltimaExecucaoChave,
+      auditoriaUltimaExecucaoEm: cfg.auditoriaUltimaExecucaoEm,
+      executandoAgora: auditoriaSchedulerState.running,
+      ultimaExecucao,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+blingRouter.post('/auditoria-automatica/config', async (req, res, next) => {
+  try {
+    const auditoriaAtiva = !!req.body?.auditoriaAtiva;
+    const auditoriaHorario = normalizeHorarioAuditoria(req.body?.auditoriaHorario);
+    const auditoriaEmailDestinatario = String(req.body?.auditoriaEmailDestinatario || '').trim();
+    const auditoriaResendFrom = String(req.body?.auditoriaResendFrom || AUDITORIA_DEFAULT_EMAIL_FROM).trim() || AUDITORIA_DEFAULT_EMAIL_FROM;
+    const auditoriaTamanhoLote = Math.max(10, Math.min(500, Math.round(toNumber(req.body?.auditoriaTamanhoLote, AUDITORIA_DEFAULT_TAMANHO_LOTE))));
+    const auditoriaPausaMs = Math.max(0, Math.min(15000, Math.round(toNumber(req.body?.auditoriaPausaMs, AUDITORIA_DEFAULT_PAUSA_MS))));
+    const auditoriaResendApiKey = String(req.body?.auditoriaResendApiKey || '').trim();
+
+    const data: any = {
+      auditoriaAtiva,
+      auditoriaHorario,
+      auditoriaEmailDestinatario,
+      auditoriaResendFrom,
+      auditoriaTamanhoLote,
+      auditoriaPausaMs,
+    };
+
+    if (auditoriaResendApiKey) {
+      data.auditoriaResendApiKey = auditoriaResendApiKey;
+    }
+
+    await saveConfig(data);
+    res.json({ ok: true });
+  } catch (e) {
+    next(e);
+  }
+});
+
+blingRouter.get('/auditoria-automatica/execucoes', async (req, res, next) => {
+  try {
+    const limit = Math.max(1, Math.min(50, Math.round(toNumber(req.query?.limit, 20))));
+    const execucoes = await prisma.auditoriaAutomaticaExecucao.findMany({
+      orderBy: { startedAt: 'desc' },
+      take: limit,
+      select: {
+        id: true,
+        origem: true,
+        status: true,
+        startedAt: true,
+        finishedAt: true,
+        totalSkus: true,
+        totalDivergencias: true,
+        totalSemDivergencia: true,
+        emailDestinatario: true,
+        emailEnviado: true,
+        emailErro: true,
+        erro: true,
+        resumo: true,
+      },
+    });
+
+    res.json({ ok: true, execucoes });
+  } catch (e) {
+    next(e);
+  }
+});
+
+blingRouter.get('/auditoria-automatica/execucoes/:id', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ error: 'ID invalido' });
+
+    const execucao = await prisma.auditoriaAutomaticaExecucao.findUnique({
+      where: { id },
+    });
+
+    if (!execucao) return res.status(404).json({ error: 'Execucao nao encontrada' });
+    res.json({ ok: true, execucao });
+  } catch (e) {
+    next(e);
+  }
+});
+
+blingRouter.post('/auditoria-automatica/executar', async (_req, res, next) => {
+  try {
+    if (auditoriaSchedulerState.running) {
+      return res.status(409).json({ error: 'Ja existe uma auditoria em andamento' });
+    }
+
+    auditoriaSchedulerState.running = true;
+    try {
+      const execucao = await executeAuditoriaAutomatica('manual');
+      res.json({ ok: true, execucao });
+    } finally {
+      auditoriaSchedulerState.running = false;
+    }
   } catch (e) {
     next(e);
   }
@@ -1394,309 +2171,8 @@ blingRouter.post('/comparar-produtos', async (req, res, next) => {
     if (!codigos.length) {
       return res.status(400).json({ error: 'Informe pelo menos um ID de peca / SKU ou selecione uma moto para comparar' });
     }
-
-    const whereOr = codigos.flatMap((codigo) => [
-      { idPeca: codigo },
-      { idPeca: { startsWith: `${codigo}-` } },
-    ]);
-
-    const [pecas, produtosBling] = await Promise.all([
-      prisma.peca.findMany({
-        where: { OR: whereOr },
-        select: {
-          idPeca: true,
-          descricao: true,
-          disponivel: true,
-          emPrejuizo: true,
-          prejuizo: { select: { motivo: true } },
-          moto: { select: { marca: true, modelo: true } },
-        },
-        orderBy: { idPeca: 'asc' },
-      }),
-      findBlingProductsByCodes(codigos),
-    ]);
-
-    const localMap = new Map<string, any>();
-
-    for (const peca of pecas) {
-      const baseSku = getBaseSku(peca.idPeca);
-      const current = localMap.get(baseSku) || {
-        sku: baseSku,
-        qtdTotalAnb: 0,
-        qtdDisponivelAnb: 0,
-        qtdVendidasAnb: 0,
-        qtdPrejuizoAnb: 0,
-        idsPecaPrejuizo: [] as string[],
-        motivosPrejuizo: [] as string[],
-        descricaoAnb: null,
-        moto: null,
-      };
-
-      current.qtdTotalAnb += 1;
-      current.qtdDisponivelAnb += peca.disponivel && !peca.emPrejuizo ? 1 : 0;
-      current.qtdVendidasAnb += !peca.disponivel && !peca.emPrejuizo ? 1 : 0;
-      if (peca.emPrejuizo) {
-        current.qtdPrejuizoAnb += 1;
-        current.idsPecaPrejuizo.push(peca.idPeca);
-        if (peca.prejuizo?.motivo) current.motivosPrejuizo.push(peca.prejuizo.motivo);
-      }
-      if (!current.descricaoAnb) current.descricaoAnb = peca.descricao || null;
-      if (!current.moto && peca.moto) current.moto = `${peca.moto.marca} ${peca.moto.modelo}`;
-
-      localMap.set(baseSku, current);
-    }
-
-    for (const codigo of codigos) {
-      if (!localMap.has(codigo)) {
-        localMap.set(codigo, {
-          sku: codigo,
-          qtdTotalAnb: 0,
-          qtdDisponivelAnb: 0,
-          qtdVendidasAnb: 0,
-          qtdPrejuizoAnb: 0,
-          idsPecaPrejuizo: [] as string[],
-          motivosPrejuizo: [] as string[],
-          descricaoAnb: null,
-          moto: null,
-        });
-      }
-    }
-
-    const produtoIdsParaStatus = Array.from(new Set(
-      codigos
-        .map((codigo) => Number(produtosBling.get(codigo)?.id || 0))
-        .filter((id): id is number => Number.isFinite(id) && id > 0),
-    ));
-    const produtoIdsParaDetalhe = Array.from(new Set(
-      codigos
-        .map((codigo) => {
-          const produto = produtosBling.get(codigo);
-          if (!produto?.id) return 0;
-
-          const qtdBling = toNumber(produto?.estoque?.saldoVirtualTotal ?? produto?.estoque?.saldo ?? 0);
-          return qtdBling > 0 ? Number(produto.id) : 0;
-        })
-        .filter((id): id is number => Number.isFinite(id) && id > 0),
-    ));
-
-    const [statusMercadoLivreByProductId, detalhesBlingByProductId] = await Promise.all([
-      findMercadoLivreStatusByProductIds(produtoIdsParaStatus),
-      findBlingProductDetailsByIds(produtoIdsParaDetalhe),
-    ]);
-
-    const divergencias = codigos.flatMap((codigo) => {
-      const local = localMap.get(codigo) || {
-        sku: codigo,
-        qtdTotalAnb: 0,
-        qtdDisponivelAnb: 0,
-        qtdVendidasAnb: 0,
-        qtdPrejuizoAnb: 0,
-        idsPecaPrejuizo: [],
-        motivosPrejuizo: [],
-        descricaoAnb: null,
-        moto: null,
-      };
-      const produtoBling = produtosBling.get(codigo);
-      const qtdBling = produtoBling ? toNumber(produtoBling?.estoque?.saldoVirtualTotal ?? produtoBling?.estoque?.saldo ?? 0) : 0;
-      const descricaoBling = produtoBling?.nome || null;
-      const statusMercadoLivre = produtoBling?.id
-        ? (statusMercadoLivreByProductId.get(Number(produtoBling.id)) || { found: false, label: null, isActive: false, code: null, anuncioIds: [], lojaIds: [] })
-        : { label: null, normalized: '', isActive: false, found: false };
-      const estoqueMaximoBling = produtoBling?.id
-        ? getBlingStockMaximum(detalhesBlingByProductId.get(Number(produtoBling.id)) || null)
-        : null;
-      const temEstoqueEmAlgumSistema = local.qtdDisponivelAnb > 0 || qtdBling > 0;
-      const divergenciasSku: any[] = [];
-      const deveAlertarPrejuizo = local.qtdPrejuizoAnb > 0 && (
-        qtdBling > 0
-        || (statusMercadoLivre.found && statusMercadoLivre.isActive)
-      );
-
-      if (deveAlertarPrejuizo) {
-        divergenciasSku.push({
-          sku: codigo,
-          tipo: 'peca_em_prejuizo',
-          titulo: 'Peca em prejuizo no ANB',
-          detalhe: `Esse SKU possui ${local.qtdPrejuizoAnb} item(ns) registrado(s) em prejuizo e precisa ser revisado na equalizacao.`,
-          estoqueAnb: local.qtdDisponivelAnb,
-          estoqueBling: qtdBling,
-          qtdTotalAnb: local.qtdTotalAnb,
-          qtdVendidasAnb: local.qtdVendidasAnb,
-          qtdPrejuizoAnb: local.qtdPrejuizoAnb,
-          idsPecaPrejuizo: Array.from(new Set(local.idsPecaPrejuizo)),
-          motivosPrejuizo: Array.from(new Set(local.motivosPrejuizo)),
-          descricaoAnb: local.descricaoAnb,
-          descricaoBling,
-          moto: local.moto,
-          statusMercadoLivre: statusMercadoLivre.label,
-          statusMercadoLivreAtivo: statusMercadoLivre.found ? statusMercadoLivre.isActive : null,
-        });
-      }
-
-      if (!produtoBling) {
-        divergenciasSku.push({
-          sku: codigo,
-          tipo: 'nao_encontrado_bling',
-          titulo: 'Nao encontrado no Bling',
-          detalhe: 'Esse SKU existe no ANB, mas nao foi encontrado na busca do catalogo do Bling.',
-          estoqueAnb: local.qtdDisponivelAnb,
-          estoqueBling: 0,
-          qtdTotalAnb: local.qtdTotalAnb,
-          qtdVendidasAnb: local.qtdVendidasAnb,
-          qtdPrejuizoAnb: local.qtdPrejuizoAnb,
-          idsPecaPrejuizo: Array.from(new Set(local.idsPecaPrejuizo)),
-          motivosPrejuizo: Array.from(new Set(local.motivosPrejuizo)),
-          descricaoAnb: local.descricaoAnb,
-          descricaoBling,
-          moto: local.moto,
-          statusMercadoLivre: null,
-          statusMercadoLivreAtivo: null,
-        });
-        return divergenciasSku;
-      }
-
-      if (temEstoqueEmAlgumSistema && statusMercadoLivre.found && !statusMercadoLivre.isActive) {
-        divergenciasSku.push({
-          sku: codigo,
-          tipo: 'status_ml_nao_ativo',
-          titulo: 'Anuncio ML nao ativo',
-          detalhe: 'Existe estoque no ANB ou no Bling, mas o status do Mercado Livre esta diferente de ativo.',
-          estoqueAnb: local.qtdDisponivelAnb,
-          estoqueBling: qtdBling,
-          qtdTotalAnb: local.qtdTotalAnb,
-          qtdVendidasAnb: local.qtdVendidasAnb,
-          qtdPrejuizoAnb: local.qtdPrejuizoAnb,
-          idsPecaPrejuizo: Array.from(new Set(local.idsPecaPrejuizo)),
-          motivosPrejuizo: Array.from(new Set(local.motivosPrejuizo)),
-          descricaoAnb: local.descricaoAnb,
-          descricaoBling,
-          moto: local.moto,
-          statusMercadoLivre: statusMercadoLivre.label,
-          statusMercadoLivreAtivo: false,
-        });
-        return divergenciasSku;
-      }
-
-      if (!temEstoqueEmAlgumSistema && statusMercadoLivre.found && statusMercadoLivre.isActive) {
-        divergenciasSku.push({
-          sku: codigo,
-          tipo: 'status_ml_publicado_sem_estoque',
-          titulo: 'Anuncio ML publicado sem estoque',
-          detalhe: 'Nao ha estoque disponivel no ANB nem no Bling, mas o anuncio do Mercado Livre segue publicado.',
-          estoqueAnb: local.qtdDisponivelAnb,
-          estoqueBling: qtdBling,
-          qtdTotalAnb: local.qtdTotalAnb,
-          qtdVendidasAnb: local.qtdVendidasAnb,
-          qtdPrejuizoAnb: local.qtdPrejuizoAnb,
-          idsPecaPrejuizo: Array.from(new Set(local.idsPecaPrejuizo)),
-          motivosPrejuizo: Array.from(new Set(local.motivosPrejuizo)),
-          descricaoAnb: local.descricaoAnb,
-          descricaoBling,
-          moto: local.moto,
-          statusMercadoLivre: statusMercadoLivre.label,
-          statusMercadoLivreAtivo: true,
-        });
-        return divergenciasSku;
-      }
-
-      if (!local.qtdTotalAnb) {
-        divergenciasSku.push({
-          sku: codigo,
-          tipo: 'nao_encontrado_anb',
-          titulo: 'Nao encontrado no ANB',
-          detalhe: 'Esse SKU foi encontrado no Bling, mas nao existe na sua base de pecas do ANB.',
-          estoqueAnb: 0,
-          estoqueBling: qtdBling,
-          qtdTotalAnb: 0,
-          qtdVendidasAnb: 0,
-          qtdPrejuizoAnb: 0,
-          idsPecaPrejuizo: [],
-          motivosPrejuizo: [],
-          descricaoAnb: null,
-          descricaoBling,
-          moto: null,
-          statusMercadoLivre: statusMercadoLivre.label,
-          statusMercadoLivreAtivo: statusMercadoLivre.found ? statusMercadoLivre.isActive : null,
-        });
-        return divergenciasSku;
-      }
-
-      if (local.qtdDisponivelAnb > qtdBling) {
-        divergenciasSku.push({
-          sku: codigo,
-          tipo: 'estoque_anb_maior',
-          titulo: 'Estoque ANB maior que Bling',
-          detalhe: 'O ANB mostra mais pecas disponiveis que o saldo atual do Bling.',
-          estoqueAnb: local.qtdDisponivelAnb,
-          estoqueBling: qtdBling,
-          qtdTotalAnb: local.qtdTotalAnb,
-          qtdVendidasAnb: local.qtdVendidasAnb,
-          qtdPrejuizoAnb: local.qtdPrejuizoAnb,
-          idsPecaPrejuizo: Array.from(new Set(local.idsPecaPrejuizo)),
-          motivosPrejuizo: Array.from(new Set(local.motivosPrejuizo)),
-          descricaoAnb: local.descricaoAnb,
-          descricaoBling,
-          moto: local.moto,
-          statusMercadoLivre: statusMercadoLivre.label,
-          statusMercadoLivreAtivo: statusMercadoLivre.found ? statusMercadoLivre.isActive : null,
-        });
-        return divergenciasSku;
-      }
-
-      if (estoqueMaximoBling !== null && qtdBling > estoqueMaximoBling) {
-        divergenciasSku.push({
-          sku: codigo,
-          tipo: 'estoque_bling_acima_maximo',
-          titulo: 'Estoque Bling acima do maximo',
-          detalhe: `O Bling esta com saldo ${qtdBling}, mas o estoque maximo configurado para esse produto e ${estoqueMaximoBling}.`,
-          estoqueAnb: local.qtdDisponivelAnb,
-          estoqueBling: qtdBling,
-          qtdTotalAnb: local.qtdTotalAnb,
-          qtdVendidasAnb: local.qtdVendidasAnb,
-          qtdPrejuizoAnb: local.qtdPrejuizoAnb,
-          idsPecaPrejuizo: Array.from(new Set(local.idsPecaPrejuizo)),
-          motivosPrejuizo: Array.from(new Set(local.motivosPrejuizo)),
-          descricaoAnb: local.descricaoAnb,
-          descricaoBling,
-          moto: local.moto,
-          statusMercadoLivre: statusMercadoLivre.label,
-          statusMercadoLivreAtivo: statusMercadoLivre.found ? statusMercadoLivre.isActive : null,
-        });
-        return divergenciasSku;
-      }
-
-      if (local.qtdDisponivelAnb < qtdBling) {
-        divergenciasSku.push({
-          sku: codigo,
-          tipo: 'estoque_bling_maior',
-          titulo: 'Estoque Bling maior que o permitido',
-          detalhe: 'O Bling mostra mais saldo disponivel que a quantidade permitida pelo estoque atual do ANB.',
-          estoqueAnb: local.qtdDisponivelAnb,
-          estoqueBling: qtdBling,
-          qtdTotalAnb: local.qtdTotalAnb,
-          qtdVendidasAnb: local.qtdVendidasAnb,
-          qtdPrejuizoAnb: local.qtdPrejuizoAnb,
-          idsPecaPrejuizo: Array.from(new Set(local.idsPecaPrejuizo)),
-          motivosPrejuizo: Array.from(new Set(local.motivosPrejuizo)),
-          descricaoAnb: local.descricaoAnb,
-          descricaoBling,
-          moto: local.moto,
-          statusMercadoLivre: statusMercadoLivre.label,
-          statusMercadoLivreAtivo: statusMercadoLivre.found ? statusMercadoLivre.isActive : null,
-        });
-        return divergenciasSku;
-      }
-
-      return divergenciasSku;
-    });
-
-    res.json({
-      ok: true,
-      totalConsultados: codigos.length,
-      totalDivergencias: divergencias.length,
-      totalSemDivergencia: codigos.length - divergencias.length,
-      divergencias,
-    });
+    const resultado = await compareProdutosBlingCodes(codigos);
+    res.json(resultado);
   } catch (e) {
     next(e);
   }
