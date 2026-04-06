@@ -31,6 +31,7 @@ const blingCustomFieldModuleCache = {
   value: [] as any[],
 };
 const blingCustomFieldsByModuleCache = new Map<number, { expiresAt: number; value: any[] }>();
+const blingCustomFieldByIdCache = new Map<number, { expiresAt: number; value: any | null }>();
 const auditoriaSchedulerState = {
   started: false,
   running: false,
@@ -545,6 +546,57 @@ async function listBlingCustomFieldsByModule(moduleId: number) {
   return fields;
 }
 
+async function getBlingCustomFieldById(fieldId: number) {
+  const id = Number(fieldId);
+  if (!Number.isFinite(id) || id <= 0) return null;
+
+  const cached = blingCustomFieldByIdCache.get(id);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.value;
+  }
+
+  try {
+    const data = await blingReq(`/campos-customizados/${id}`) as any;
+    const field = data?.data || null;
+    blingCustomFieldByIdCache.set(id, {
+      expiresAt: Date.now() + BLING_CUSTOM_FIELDS_CACHE_TTL_MS,
+      value: field,
+    });
+    return field;
+  } catch {
+    blingCustomFieldByIdCache.set(id, {
+      expiresAt: Date.now() + 60 * 1000,
+      value: null,
+    });
+    return null;
+  }
+}
+
+async function getProdutoCustomFieldIdsByNormalizedNameFromRows(rows: any[], targetName: string) {
+  const normalizedTarget = normalizeText(targetName);
+  const fieldIds = Array.from(new Set(
+    rows
+      .map((row) => getProdutoCustomFieldId(row))
+      .filter((id): id is number => Number.isFinite(id) && id > 0),
+  ));
+
+  if (!fieldIds.length) return [];
+
+  const resolvedFields = await mapWithConcurrency(fieldIds, 4, async (id) => ({
+    id,
+    field: await getBlingCustomFieldById(id),
+  }));
+
+  const exact = resolvedFields
+    .filter(({ field }) => normalizeText(String(field?.nome || '')) === normalizedTarget)
+    .map(({ id }) => id);
+  if (exact.length) return exact;
+
+  return resolvedFields
+    .filter(({ field }) => normalizeText(String(field?.nome || '')).includes(normalizedTarget))
+    .map(({ id }) => id);
+}
+
 async function getProdutoCustomFieldsByNormalizedName(targetName: string) {
   const moduleInfo = await findProdutoCustomFieldModule();
   const normalizedTarget = normalizeText(targetName);
@@ -564,12 +616,15 @@ async function resolveBlingDetranEtiqueta(produto: any, detail?: any) {
   }
 
   try {
-    const fields = await getProdutoCustomFieldsByNormalizedName('DETRAN');
-    const fieldIds = Array.from(new Set(
-      fields
-        .map((field) => Number(field?.id || 0))
-        .filter((id): id is number => Number.isFinite(id) && id > 0),
-    ));
+    let fieldIds = await getProdutoCustomFieldIdsByNormalizedNameFromRows(rows, 'DETRAN');
+    if (!fieldIds.length) {
+      const fields = await getProdutoCustomFieldsByNormalizedName('DETRAN');
+      fieldIds = Array.from(new Set(
+        fields
+          .map((field) => Number(field?.id || 0))
+          .filter((id): id is number => Number.isFinite(id) && id > 0),
+      ));
+    }
 
     if (!fieldIds.length) {
       return { etiqueta: null, resolved: false, fieldIds: [] as number[] };
