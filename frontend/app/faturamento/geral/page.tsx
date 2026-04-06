@@ -15,6 +15,10 @@ function currentYear() {
   return String(new Date().getFullYear());
 }
 
+function currentMonth() {
+  return new Date().getMonth() + 1;
+}
+
 function quarterLabel(mes: number) {
   if (mes <= 3) return '1T';
   if (mes <= 6) return '2T';
@@ -81,14 +85,12 @@ export default function FaturamentoGeralPage() {
 
   const anos = Array.from(new Set(data.map((item: any) => item.ano))).sort((a, b) => b - a);
   const filtered = data.filter((item) => !filtAno || item.ano === Number(filtAno));
+  const mesAtual = currentMonth();
+  const anoCardAtual = filtAno ? Number(filtAno) : new Date().getFullYear();
 
   const totalReceita = filtered.reduce((sum, item) => sum + Number(item.receitaLiq || item.receita || 0), 0);
   const totalQtd = filtered.reduce((sum, item) => sum + Number(item.qtd || 0), 0);
-  const melhor = filtered.reduce((best: any, item) => {
-    const receitaAtual = Number(item.receitaLiq || item.receita || 0);
-    const receitaBest = Number(best?.receitaLiq || best?.receita || 0);
-    return receitaAtual > receitaBest ? item : best;
-  }, null);
+  const mesCorrente = filtered.find((item) => item.ano === anoCardAtual && item.mes === mesAtual) || null;
 
   const timeline = filtered
     .slice()
@@ -138,10 +140,10 @@ export default function FaturamentoGeralPage() {
             { label: 'Receita total', value: fmt(totalReceita), color: 'var(--sage)' },
             { label: 'Pecas vendidas', value: totalQtd.toLocaleString('pt-BR'), color: 'var(--ink)' },
             {
-              label: 'Melhor periodo',
-              value: melhor ? `${MESES[melhor.mes - 1]}/${melhor.ano}` : '--',
+              label: 'Mes corrente',
+              value: `${MESES[mesAtual - 1]}/${anoCardAtual}`,
               color: 'var(--amber)',
-              sub: melhor ? fmt(Number(melhor.receitaLiq || melhor.receita || 0)) : '',
+              sub: fmt(Number(mesCorrente?.receitaLiq || mesCorrente?.receita || 0)),
             },
           ].map((card) => (
             <div key={card.label} style={cs.sCard}>
