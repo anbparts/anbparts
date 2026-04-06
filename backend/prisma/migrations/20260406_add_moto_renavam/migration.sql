@@ -1,0 +1,2 @@
+ALTER TABLE "Moto"
+ADD COLUMN "renavam" TEXT;

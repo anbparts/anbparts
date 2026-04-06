@@ -11,11 +11,20 @@ const motoSchema = z.object({
   cor:          z.string().optional().nullable(),
   placa:        z.string().optional().nullable(),
   chassi:       z.string().optional().nullable(),
+  renavam:      z.string().optional().nullable(),
   dataCompra:   z.string().optional().nullable(),
   precoCompra:  z.number().default(0),
   origemCompra: z.string().optional().nullable(),
   observacoes:  z.string().optional().nullable(),
 });
+
+function normalizeDetranEtiqueta(value: unknown) {
+  const text = String(value ?? '')
+    .replace(/\s+/g, '')
+    .trim()
+    .toUpperCase();
+  return text || null;
+}
 
 // GET /motos
 motosRouter.get('/', async (req, res, next) => {
@@ -23,7 +32,7 @@ motosRouter.get('/', async (req, res, next) => {
     const motos = await prisma.moto.findMany({
       include: {
         pecas: {
-          select: { id: true, disponivel: true, emPrejuizo: true, precoML: true, valorLiq: true }
+          select: { id: true, disponivel: true, emPrejuizo: true, precoML: true, valorLiq: true, detranEtiqueta: true }
         }
       },
       orderBy: { id: 'asc' }
@@ -45,6 +54,7 @@ motosRouter.get('/', async (req, res, next) => {
       const vlVendidas  = vendidas.reduce((s, p) => s + Number(p.valorLiq), 0);
       const vlEstoque   = disponiveis.reduce((s, p) => s + Number(p.valorLiq), 0);
       const lucro       = (vlVendidas + vlEstoque) - Number(m.precoCompra);
+      const detranCount = m.pecas.filter((p) => normalizeDetranEtiqueta(p.detranEtiqueta)).length;
 
       // % recuperada = quanto do investimento já voltou (valor líq. vendidas / preço compra)
       const pctRecuperada = Number(m.precoCompra) > 0
@@ -62,11 +72,54 @@ motosRouter.get('/', async (req, res, next) => {
         vlEstoque,
         lucro,
         pctRecuperada,
+        qtdRelacionadas: m.pecas.length,
+        detranCount,
+        temDetran: detranCount > 0,
         pecas: undefined,
       };
     });
 
     res.json(result);
+  } catch (e) { next(e); }
+});
+
+// GET /motos/:id/detran-etiquetas
+motosRouter.get('/:id/detran-etiquetas', async (req, res, next) => {
+  try {
+    const motoId = Number(req.params.id);
+    if (!Number.isInteger(motoId) || motoId <= 0) {
+      return res.status(400).json({ error: 'Moto invalida' });
+    }
+
+    const pecas = await prisma.peca.findMany({
+      where: {
+        motoId,
+        detranEtiqueta: { not: null },
+      },
+      select: {
+        id: true,
+        idPeca: true,
+        descricao: true,
+        detranEtiqueta: true,
+      },
+      orderBy: { idPeca: 'asc' },
+    });
+
+    const itens = pecas
+      .map((peca) => ({
+        id: peca.id,
+        idPeca: peca.idPeca,
+        descricao: peca.descricao,
+        detranEtiqueta: normalizeDetranEtiqueta(peca.detranEtiqueta),
+      }))
+      .filter((peca) => peca.detranEtiqueta);
+
+    res.json({
+      ok: true,
+      motoId,
+      total: itens.length,
+      itens,
+    });
   } catch (e) { next(e); }
 });
 

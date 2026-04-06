@@ -21,10 +21,16 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const PRODUCT_STORE_LINK_CACHE_TTL_MS = 10 * 60 * 1000;
 const BLING_PRODUCT_CACHE_TTL_MS = 2 * 60 * 1000;
 const BLING_PRODUCT_DETAIL_CACHE_TTL_MS = 2 * 60 * 1000;
+const BLING_CUSTOM_FIELDS_CACHE_TTL_MS = 30 * 60 * 1000;
 const MERCADO_LIVRE_STATUS_CONCURRENCY = 4;
 const produtoLojaLinksCache = new Map<number, { expiresAt: number; rows: any[] }>();
 const blingProductByCodeCache = new Map<string, { expiresAt: number; value: any | null }>();
 const blingProductDetailCache = new Map<number, { expiresAt: number; value: any | null }>();
+const blingCustomFieldModuleCache = {
+  expiresAt: 0,
+  value: [] as any[],
+};
+const blingCustomFieldsByModuleCache = new Map<number, { expiresAt: number; value: any[] }>();
 const auditoriaSchedulerState = {
   started: false,
   running: false,
@@ -415,6 +421,14 @@ function normalizeLocation(value: any) {
   return text || null;
 }
 
+function normalizeDetranEtiqueta(value: any) {
+  const text = String(value ?? '')
+    .replace(/\s+/g, '')
+    .trim()
+    .toUpperCase();
+  return text || null;
+}
+
 function getNestedValue(source: any, path: string[]) {
   return path.reduce((current, key) => (current === null || current === undefined ? undefined : current[key]), source);
 }
@@ -456,6 +470,125 @@ function resolveBlingLocation(produto: any, detail?: any) {
   }
 
   return { location: null, resolved };
+}
+
+function collectProdutoCustomFieldRows(...sources: any[]) {
+  const rows: any[] = [];
+
+  for (const source of sources) {
+    const customFields = source?.camposCustomizados;
+    if (!Array.isArray(customFields)) continue;
+
+    for (const row of customFields) {
+      if (row && typeof row === 'object') rows.push(row);
+    }
+  }
+
+  return rows;
+}
+
+function getProdutoCustomFieldId(row: any) {
+  const id = Number(row?.idCampoCustomizado ?? row?.campoCustomizado?.id ?? row?.campo?.id ?? 0);
+  return Number.isFinite(id) && id > 0 ? id : 0;
+}
+
+function getProdutoCustomFieldValue(row: any) {
+  return row?.valor ?? row?.value ?? row?.conteudo ?? null;
+}
+
+async function listBlingCustomFieldModules() {
+  if (blingCustomFieldModuleCache.expiresAt > Date.now() && blingCustomFieldModuleCache.value.length) {
+    return blingCustomFieldModuleCache.value;
+  }
+
+  const data = await blingReq('/campos-customizados/modulos') as any;
+  const modules = normalizeApiArray(data?.data);
+  blingCustomFieldModuleCache.expiresAt = Date.now() + BLING_CUSTOM_FIELDS_CACHE_TTL_MS;
+  blingCustomFieldModuleCache.value = modules;
+  return modules;
+}
+
+async function findProdutoCustomFieldModule() {
+  const modules = await listBlingCustomFieldModules();
+  const exact = modules.find((item) => normalizeText(String(item?.modulo || '')) === 'produtos');
+  if (exact) return exact;
+
+  return modules.find((item) => /produto/.test(normalizeText(`${item?.nome || ''} ${item?.modulo || ''}`))) || null;
+}
+
+async function listBlingCustomFieldsByModule(moduleId: number) {
+  const cached = blingCustomFieldsByModuleCache.get(moduleId);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.value;
+  }
+
+  const fields: any[] = [];
+  let pagina = 1;
+
+  while (true) {
+    const data = await blingReq(`/campos-customizados/modulos/${moduleId}?pagina=${pagina}&limite=100`) as any;
+    const rows = normalizeApiArray(data?.data);
+    if (!rows.length) break;
+
+    fields.push(...rows);
+    if (rows.length < 100) break;
+
+    pagina += 1;
+    await sleep(150);
+  }
+
+  blingCustomFieldsByModuleCache.set(moduleId, {
+    expiresAt: Date.now() + BLING_CUSTOM_FIELDS_CACHE_TTL_MS,
+    value: fields,
+  });
+
+  return fields;
+}
+
+async function getProdutoCustomFieldsByNormalizedName(targetName: string) {
+  const moduleInfo = await findProdutoCustomFieldModule();
+  const normalizedTarget = normalizeText(targetName);
+  if (!moduleInfo?.id) return [];
+
+  const fields = await listBlingCustomFieldsByModule(Number(moduleInfo.id));
+  const exact = fields.filter((field) => normalizeText(String(field?.nome || '')) === normalizedTarget);
+  if (exact.length) return exact;
+
+  return fields.filter((field) => normalizeText(String(field?.nome || '')).includes(normalizedTarget));
+}
+
+async function resolveBlingDetranEtiqueta(produto: any, detail?: any) {
+  const rows = collectProdutoCustomFieldRows(detail, produto);
+  if (!rows.length) {
+    return { etiqueta: null, resolved: false, fieldIds: [] as number[] };
+  }
+
+  try {
+    const fields = await getProdutoCustomFieldsByNormalizedName('DETRAN');
+    const fieldIds = Array.from(new Set(
+      fields
+        .map((field) => Number(field?.id || 0))
+        .filter((id): id is number => Number.isFinite(id) && id > 0),
+    ));
+
+    if (!fieldIds.length) {
+      return { etiqueta: null, resolved: false, fieldIds: [] as number[] };
+    }
+
+    for (const row of rows) {
+      const rowFieldId = getProdutoCustomFieldId(row);
+      if (!rowFieldId || !fieldIds.includes(rowFieldId)) continue;
+
+      const etiqueta = normalizeDetranEtiqueta(getProdutoCustomFieldValue(row));
+      if (etiqueta) {
+        return { etiqueta, resolved: true, fieldIds };
+      }
+    }
+
+    return { etiqueta: null, resolved: true, fieldIds };
+  } catch {
+    return { etiqueta: null, resolved: false, fieldIds: [] as number[] };
+  }
 }
 
 function parseDateStart(date: string) {
@@ -1219,6 +1352,7 @@ async function listPecasForComparacaoByCodes(codigos: string[]) {
       idPeca: true,
       descricao: true,
       localizacao: true,
+      detranEtiqueta: true,
       disponivel: true,
       emPrejuizo: true,
       prejuizo: { select: { motivo: true } },
@@ -1245,6 +1379,7 @@ async function loadAllLocalSkuResumo() {
       idPeca: true,
       descricao: true,
       localizacao: true,
+      detranEtiqueta: true,
       disponivel: true,
       emPrejuizo: true,
       prejuizo: { select: { motivo: true } },
@@ -1292,14 +1427,20 @@ function buildDivergenciaPayload(
   };
 }
 
-async function syncPecaLocalizacoesFromBling(
+async function syncPecaMetadataFromBling(
   localPecas: any[],
   produtosBling: Map<string, any>,
   detalhesBlingByProductId: Map<number, any>,
+  options?: { syncLocalizacao?: boolean; syncDetran?: boolean },
 ) {
   if (!localPecas.length) return 0;
 
-  const targetBySku = new Map<string, { location: string | null; resolved: boolean }>();
+  const targetBySku = new Map<string, {
+    location: string | null;
+    locationResolved: boolean;
+    detranEtiqueta: string | null;
+    detranResolved: boolean;
+  }>();
   for (const peca of localPecas) {
     const skuBase = getBaseSku(peca.idPeca);
     if (!skuBase || targetBySku.has(skuBase)) continue;
@@ -1309,15 +1450,23 @@ async function syncPecaLocalizacoesFromBling(
 
     const detail = produto?.id ? (detalhesBlingByProductId.get(Number(produto.id)) || null) : null;
     const locationMeta = resolveBlingLocation(produto, detail);
-    if (locationMeta.resolved) {
-      targetBySku.set(skuBase, locationMeta);
-    }
+    const detranMeta = options?.syncDetran
+      ? await resolveBlingDetranEtiqueta(produto, detail)
+      : { etiqueta: null, resolved: false };
+
+    if (!locationMeta.resolved && !detranMeta.resolved) continue;
+
+    targetBySku.set(skuBase, {
+      location: locationMeta.location,
+      locationResolved: locationMeta.resolved,
+      detranEtiqueta: detranMeta.etiqueta,
+      detranResolved: detranMeta.resolved,
+    });
   }
 
   if (!targetBySku.size) return 0;
 
-  const idsParaLimpar: number[] = [];
-  const idsPorLocalizacao = new Map<string, number[]>();
+  const groupedUpdates = new Map<string, { ids: number[]; data: { localizacao?: string | null; detranEtiqueta?: string | null } }>();
 
   for (const peca of localPecas) {
     const skuBase = getBaseSku(peca.idPeca);
@@ -1326,41 +1475,59 @@ async function syncPecaLocalizacoesFromBling(
     const target = targetBySku.get(skuBase);
     if (!target) continue;
 
-    const current = normalizeLocation(peca.localizacao);
-    if (current === target.location) continue;
+    const data: { localizacao?: string | null; detranEtiqueta?: string | null } = {};
 
-    if (target.location) {
-      const ids = idsPorLocalizacao.get(target.location) || [];
-      ids.push(Number(peca.id));
-      idsPorLocalizacao.set(target.location, ids);
-    } else {
-      idsParaLimpar.push(Number(peca.id));
+    if (options?.syncLocalizacao && target.locationResolved) {
+      const currentLocation = normalizeLocation(peca.localizacao);
+      if (currentLocation !== target.location) {
+        data.localizacao = target.location;
+      }
+    }
+
+    if (options?.syncDetran && target.detranResolved) {
+      const currentDetran = normalizeDetranEtiqueta(peca.detranEtiqueta);
+      if (currentDetran !== target.detranEtiqueta) {
+        data.detranEtiqueta = target.detranEtiqueta;
+      }
+    }
+
+    if (!Object.keys(data).length) continue;
+
+    const key = JSON.stringify(data);
+    const currentGroup = groupedUpdates.get(key) || { ids: [], data };
+    currentGroup.ids.push(Number(peca.id));
+    groupedUpdates.set(key, currentGroup);
+  }
+
+  if (!groupedUpdates.size) return 0;
+
+  await prisma.$transaction(
+    Array.from(groupedUpdates.values()).map((group) => prisma.peca.updateMany({
+      where: { id: { in: group.ids } },
+      data: group.data,
+    })),
+  );
+
+  return Array.from(groupedUpdates.values()).reduce((sum, group) => sum + group.ids.length, 0);
+}
+
+function getSkusMissingDetran(localPecas: any[]) {
+  const pending = new Set<string>();
+
+  for (const peca of localPecas) {
+    const skuBase = getBaseSku(peca.idPeca);
+    if (!skuBase) continue;
+    if (!normalizeDetranEtiqueta(peca.detranEtiqueta)) {
+      pending.add(skuBase);
     }
   }
 
-  const operations: any[] = [];
-  if (idsParaLimpar.length) {
-    operations.push(prisma.peca.updateMany({
-      where: { id: { in: idsParaLimpar } },
-      data: { localizacao: null },
-    }));
-  }
-
-  for (const [localizacao, ids] of idsPorLocalizacao.entries()) {
-    operations.push(prisma.peca.updateMany({
-      where: { id: { in: ids } },
-      data: { localizacao },
-    }));
-  }
-
-  if (!operations.length) return 0;
-  await prisma.$transaction(operations);
-  return idsParaLimpar.length + Array.from(idsPorLocalizacao.values()).reduce((sum, ids) => sum + ids.length, 0);
+  return pending;
 }
 
 async function compareProdutosBlingCodes(
   codigosInput: string[],
-  options?: { batchSize?: number; pauseMs?: number; localMap?: Map<string, any>; localPecas?: any[]; syncLocalizacao?: boolean },
+  options?: { batchSize?: number; pauseMs?: number; localMap?: Map<string, any>; localPecas?: any[]; syncLocalizacao?: boolean; syncDetran?: boolean },
 ) {
   const codigos = Array.from(new Set(codigosInput.map((codigo) => getBaseSku(codigo)).filter(Boolean)));
   if (!codigos.length) {
@@ -1378,6 +1545,7 @@ async function compareProdutosBlingCodes(
     : null;
   const localMap = options?.localMap || localLoaded?.localMap || new Map<string, any>();
   const localPecas = options?.localPecas || localLoaded?.pecas || [];
+  const skusMissingDetran = options?.syncDetran ? getSkusMissingDetran(localPecas) : new Set<string>();
   const produtosBling = await findBlingProductsByCodes(codigos);
   const produtoIdsParaStatus = Array.from(new Set(
     codigos
@@ -1393,7 +1561,8 @@ async function compareProdutosBlingCodes(
         const qtdBling = toNumber(produto?.estoque?.saldoVirtualTotal ?? produto?.estoque?.saldo ?? 0);
         const locationMeta = resolveBlingLocation(produto);
         const needsLocationDetail = !!options?.syncLocalizacao && !locationMeta.resolved;
-        return qtdBling > 0 || needsLocationDetail ? Number(produto.id) : 0;
+        const needsDetranDetail = !!options?.syncDetran && skusMissingDetran.has(codigo);
+        return qtdBling > 0 || needsLocationDetail || needsDetranDetail ? Number(produto.id) : 0;
       })
       .filter((id): id is number => Number.isFinite(id) && id > 0),
   ));
@@ -1403,8 +1572,11 @@ async function compareProdutosBlingCodes(
     findBlingProductDetailsByIds(produtoIdsParaDetalhe, options),
   ]);
 
-  if (options?.syncLocalizacao && localPecas.length) {
-    await syncPecaLocalizacoesFromBling(localPecas, produtosBling, detalhesBlingByProductId);
+  if ((options?.syncLocalizacao || options?.syncDetran) && localPecas.length) {
+    await syncPecaMetadataFromBling(localPecas, produtosBling, detalhesBlingByProductId, {
+      syncLocalizacao: options?.syncLocalizacao,
+      syncDetran: options?.syncDetran,
+    });
   }
 
   const divergencias = codigos.flatMap((codigo) => {
@@ -1843,6 +2015,7 @@ async function executeAuditoriaAutomatica(origem: 'manual' | 'auto' = 'manual') 
       localMap: local.localMap,
       localPecas: local.pecas,
       syncLocalizacao: true,
+      syncDetran: true,
       batchSize: cfg.auditoriaTamanhoLote,
       pauseMs: cfg.auditoriaPausaMs,
     });
@@ -2351,6 +2524,7 @@ blingRouter.post('/sync/produtos', async (req, res, next) => {
       }
       const resultado = await compareProdutosBlingCodes(codigos, {
         syncLocalizacao: true,
+        syncDetran: true,
       });
       res.json(resultado);
     } catch (e) {
@@ -2373,6 +2547,7 @@ blingRouter.post('/debug-status-produto', async (req, res, next) => {
 
     const detalhes = await findBlingProductDetailsByIds([Number(produto.id)]);
     const detalhe = detalhes.get(Number(produto.id)) || null;
+    const detranMeta = await resolveBlingDetranEtiqueta(produto, detalhe);
     const anuncioStatusData = await collectMercadoLivreStatusByProductIds([Number(produto.id)], true);
     const anuncioStatuses = anuncioStatusData.statuses;
     const produtoLojaLinks = await blingReq(`/produtos/lojas?pagina=1&limite=100&idProduto=${Number(produto.id)}`) as any;
@@ -2462,6 +2637,13 @@ blingRouter.post('/debug-status-produto', async (req, res, next) => {
       produtoId: Number(produto.id),
       nome: produto.nome || null,
       estoqueBling: toNumber(produto?.estoque?.saldoVirtualTotal ?? produto?.estoque?.saldo ?? 0),
+      detranEtiqueta: detranMeta.etiqueta,
+      detranResolved: detranMeta.resolved,
+      detranFieldIds: detranMeta.fieldIds,
+      detranCustomFields: collectProdutoCustomFieldRows(detalhe, produto).map((row) => ({
+        idCampoCustomizado: getProdutoCustomFieldId(row) || null,
+        valor: getProdutoCustomFieldValue(row),
+      })),
       produtoLojaLinks: lojaRows,
       statusAnunciosApi: anuncioStatuses.get(Number(produto.id)) || null,
       anunciosApiDebug: anuncioStatusData.debugByProductId.get(Number(produto.id)) || null,
@@ -2835,13 +3017,18 @@ blingRouter.post('/importar-produto', async (req, res, next) => {
     const { taxaValor, valorLiq } = calculateFinancials(precoML, freteN, taxa);
     const quantidade = Math.max(1, Number(qtd) || 1);
     let localizacaoNormalizada = normalizeLocation(localizacao);
+    let detranEtiqueta = null;
+    let detail: any = null;
 
-    if (!localizacaoNormalizada && Number(id) > 0) {
+    if (Number(id) > 0) {
       try {
-        const detail = await fetchBlingProductDetailById(Number(id));
-        localizacaoNormalizada = resolveBlingLocation(null, detail).location;
+        detail = await fetchBlingProductDetailById(Number(id));
+        detranEtiqueta = (await resolveBlingDetranEtiqueta(null, detail)).etiqueta;
+        if (!localizacaoNormalizada) {
+          localizacaoNormalizada = resolveBlingLocation(null, detail).location;
+        }
       } catch {
-        localizacaoNormalizada = null;
+        if (!localizacaoNormalizada) localizacaoNormalizada = null;
       }
     }
 
@@ -2865,6 +3052,7 @@ blingRouter.post('/importar-produto', async (req, res, next) => {
           valorTaxas: taxaValor,
           valorLiq,
           localizacao: localizacaoNormalizada,
+          detranEtiqueta,
           disponivel: true,
           cadastro: new Date(),
         },

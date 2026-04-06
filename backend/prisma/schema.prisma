@@ -15,6 +15,7 @@ model Moto {
   cor          String?
   placa        String?
   chassi       String?
+  renavam      String?
   dataCompra   DateTime?
   precoCompra  Decimal  @default(0) @db.Decimal(12, 2)
   origemCompra String?
@@ -31,6 +32,7 @@ model Peca {
   motoId      Int
   descricao   String
   localizacao String?
+  detranEtiqueta String?
   cadastro    DateTime @default(now())
   precoML     Decimal  @default(0) @db.Decimal(12, 2)
   valorLiq    Decimal  @default(0) @db.Decimal(12, 2)
@@ -48,6 +50,7 @@ model Peca {
   prejuizo    Prejuizo?
 
   @@index([localizacao])
+  @@index([motoId, detranEtiqueta])
 }
 
 model Despesa {

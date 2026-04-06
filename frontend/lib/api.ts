@@ -17,6 +17,7 @@ export const api = {
   motos: {
     list:   ()              => req<any[]>('/motos'),
     get:    (id: number)    => req<any>(`/motos/${id}`),
+    detranEtiquetas: (id: number) => req<any>(`/motos/${id}/detran-etiquetas`),
     create: (data: any)     => req<any>('/motos', { method: 'POST', body: JSON.stringify(data) }),
     update: (id: number, data: any) => req<any>(`/motos/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
     delete: (id: number)    => req<any>(`/motos/${id}`, { method: 'DELETE' }),

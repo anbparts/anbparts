@@ -111,6 +111,7 @@ function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, peca, 
     motoId: '',
     descricao: '',
     localizacao: '',
+    detranEtiqueta: '',
     precoML: '',
     valorLiq: '',
     valorFrete: '',
@@ -139,6 +140,7 @@ function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, peca, 
         motoId: String(peca.motoId),
         descricao: peca.descricao || '',
         localizacao: String(peca.localizacao || ''),
+        detranEtiqueta: String(peca.detranEtiqueta || ''),
         precoML: String(Number(peca.precoML || 0)),
         valorLiq: String(Number(peca.valorLiq || 0)),
         valorFrete: String(Number(peca.valorFrete || 0)),
@@ -327,15 +329,27 @@ function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, peca, 
           )}
           {renderField('Data de cadastro', 'cadastro', 'date')}
           {peca && (
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-soft)' }}>Localizacao no Bling</label>
-              <input
-                style={{ ...cs.fi, background: 'var(--gray-50)', color: 'var(--ink-muted)' }}
-                type="text"
-                readOnly
-                value={form.localizacao || ''}
-                placeholder="Sem localizacao sincronizada"
-              />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-soft)' }}>Localizacao no Bling</label>
+                <input
+                  style={{ ...cs.fi, background: 'var(--gray-50)', color: 'var(--ink-muted)' }}
+                  type="text"
+                  readOnly
+                  value={form.localizacao || ''}
+                  placeholder="Sem localizacao sincronizada"
+                />
+              </div>
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-soft)' }}>DETRAN</label>
+                <input
+                  style={{ ...cs.fi, background: 'var(--gray-50)', color: 'var(--ink-muted)' }}
+                  type="text"
+                  readOnly
+                  value={form.detranEtiqueta || ''}
+                  placeholder="Sem etiqueta sincronizada"
+                />
+              </div>
             </div>
           )}
           {renderField('Descricao da peca *', 'descricao', 'text', 'Ex: Tampa lateral direita')}
