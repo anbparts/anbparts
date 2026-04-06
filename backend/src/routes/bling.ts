@@ -1685,7 +1685,7 @@ async function sendAuditoriaEmail(cfg: any, resultado: any, executedAt: Date | s
     }),
   });
 
-  const payload = await response.json().catch(() => ({}));
+  const payload: any = await response.json().catch(() => ({}));
   if (!response.ok) {
     throw new Error(payload?.message || payload?.error || `Resend ${response.status}`);
   }
