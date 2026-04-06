@@ -13,9 +13,11 @@ const STATUS_IDS_CANCELADO = new Set([12]);
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const PRODUCT_STORE_LINK_CACHE_TTL_MS = 10 * 60 * 1000;
 const BLING_PRODUCT_CACHE_TTL_MS = 2 * 60 * 1000;
+const BLING_PRODUCT_DETAIL_CACHE_TTL_MS = 2 * 60 * 1000;
 const MERCADO_LIVRE_STATUS_CONCURRENCY = 4;
 const produtoLojaLinksCache = new Map<number, { expiresAt: number; rows: any[] }>();
 const blingProductByCodeCache = new Map<string, { expiresAt: number; value: any | null }>();
+const blingProductDetailCache = new Map<number, { expiresAt: number; value: any | null }>();
 
 async function mapWithConcurrency<T, R>(
   items: T[],
@@ -548,22 +550,52 @@ async function findBlingProductsByCodes(codes: string[]) {
   return found;
 }
 
+async function fetchBlingProductDetailById(id: number) {
+  const cached = blingProductDetailCache.get(id);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.value;
+  }
+
+  const data = await blingReq(`/produtos/${id}`) as any;
+  const detail = data?.data || null;
+  blingProductDetailCache.set(id, {
+    expiresAt: Date.now() + BLING_PRODUCT_DETAIL_CACHE_TTL_MS,
+    value: detail,
+  });
+  return detail;
+}
+
 async function findBlingProductDetailsByIds(ids: number[]) {
   const uniqueIds = Array.from(new Set(ids.map((id) => Number(id)).filter(Boolean)));
   const details = new Map<number, any>();
 
-  for (const id of uniqueIds) {
+  await mapWithConcurrency(uniqueIds, MERCADO_LIVRE_STATUS_CONCURRENCY, async (id) => {
     try {
-      const data = await blingReq(`/produtos/${id}`) as any;
-      details.set(id, data?.data || null);
+      details.set(id, await fetchBlingProductDetailById(id));
     } catch {
       details.set(id, null);
     }
 
-    await sleep(400);
-  }
+    return null;
+  });
 
   return details;
+}
+
+function getBlingStockMaximum(detail: any) {
+  const candidates = [
+    detail?.estoque?.maximo,
+    detail?.estoque?.saldoMaximo,
+    detail?.estoqueMaximo,
+    detail?.maximo,
+  ];
+
+  for (const candidate of candidates) {
+    const value = toNumber(candidate, NaN);
+    if (Number.isFinite(value) && value >= 0) return value;
+  }
+
+  return null;
 }
 
 function normalizeApiArray(data: any): any[] {
@@ -1432,19 +1464,25 @@ blingRouter.post('/comparar-produtos', async (req, res, next) => {
 
     const produtoIdsParaStatus = Array.from(new Set(
       codigos
+        .map((codigo) => Number(produtosBling.get(codigo)?.id || 0))
+        .filter((id): id is number => Number.isFinite(id) && id > 0),
+    ));
+    const produtoIdsParaDetalhe = Array.from(new Set(
+      codigos
         .map((codigo) => {
           const produto = produtosBling.get(codigo);
-          if (!produto) return 0;
+          if (!produto?.id) return 0;
 
           const qtdBling = toNumber(produto?.estoque?.saldoVirtualTotal ?? produto?.estoque?.saldo ?? 0);
-          const local = localMap.get(codigo)?.qtdDisponivelAnb || 0;
-
-          return (qtdBling > 0 || local > 0) ? Number(produto.id) : 0;
+          return qtdBling > 0 ? Number(produto.id) : 0;
         })
-        .filter(Boolean),
+        .filter((id): id is number => Number.isFinite(id) && id > 0),
     ));
 
-    const statusMercadoLivreByProductId = await findMercadoLivreStatusByProductIds(produtoIdsParaStatus);
+    const [statusMercadoLivreByProductId, detalhesBlingByProductId] = await Promise.all([
+      findMercadoLivreStatusByProductIds(produtoIdsParaStatus),
+      findBlingProductDetailsByIds(produtoIdsParaDetalhe),
+    ]);
 
     const divergencias = codigos.flatMap((codigo) => {
       const local = localMap.get(codigo) || {
@@ -1464,6 +1502,9 @@ blingRouter.post('/comparar-produtos', async (req, res, next) => {
       const statusMercadoLivre = produtoBling?.id
         ? (statusMercadoLivreByProductId.get(Number(produtoBling.id)) || { found: false, label: null, isActive: false, code: null, anuncioIds: [], lojaIds: [] })
         : { label: null, normalized: '', isActive: false, found: false };
+      const estoqueMaximoBling = produtoBling?.id
+        ? getBlingStockMaximum(detalhesBlingByProductId.get(Number(produtoBling.id)) || null)
+        : null;
       const temEstoqueEmAlgumSistema = local.qtdDisponivelAnb > 0 || qtdBling > 0;
       const divergenciasSku: any[] = [];
       const deveAlertarPrejuizo = local.qtdPrejuizoAnb > 0 && (
@@ -1536,6 +1577,28 @@ blingRouter.post('/comparar-produtos', async (req, res, next) => {
         return divergenciasSku;
       }
 
+      if (!temEstoqueEmAlgumSistema && statusMercadoLivre.found && statusMercadoLivre.isActive) {
+        divergenciasSku.push({
+          sku: codigo,
+          tipo: 'status_ml_publicado_sem_estoque',
+          titulo: 'Anuncio ML publicado sem estoque',
+          detalhe: 'Nao ha estoque disponivel no ANB nem no Bling, mas o anuncio do Mercado Livre segue publicado.',
+          estoqueAnb: local.qtdDisponivelAnb,
+          estoqueBling: qtdBling,
+          qtdTotalAnb: local.qtdTotalAnb,
+          qtdVendidasAnb: local.qtdVendidasAnb,
+          qtdPrejuizoAnb: local.qtdPrejuizoAnb,
+          idsPecaPrejuizo: Array.from(new Set(local.idsPecaPrejuizo)),
+          motivosPrejuizo: Array.from(new Set(local.motivosPrejuizo)),
+          descricaoAnb: local.descricaoAnb,
+          descricaoBling,
+          moto: local.moto,
+          statusMercadoLivre: statusMercadoLivre.label,
+          statusMercadoLivreAtivo: true,
+        });
+        return divergenciasSku;
+      }
+
       if (!local.qtdTotalAnb) {
         divergenciasSku.push({
           sku: codigo,
@@ -1580,12 +1643,34 @@ blingRouter.post('/comparar-produtos', async (req, res, next) => {
         return divergenciasSku;
       }
 
+      if (estoqueMaximoBling !== null && qtdBling > estoqueMaximoBling) {
+        divergenciasSku.push({
+          sku: codigo,
+          tipo: 'estoque_bling_acima_maximo',
+          titulo: 'Estoque Bling acima do maximo',
+          detalhe: `O Bling esta com saldo ${qtdBling}, mas o estoque maximo configurado para esse produto e ${estoqueMaximoBling}.`,
+          estoqueAnb: local.qtdDisponivelAnb,
+          estoqueBling: qtdBling,
+          qtdTotalAnb: local.qtdTotalAnb,
+          qtdVendidasAnb: local.qtdVendidasAnb,
+          qtdPrejuizoAnb: local.qtdPrejuizoAnb,
+          idsPecaPrejuizo: Array.from(new Set(local.idsPecaPrejuizo)),
+          motivosPrejuizo: Array.from(new Set(local.motivosPrejuizo)),
+          descricaoAnb: local.descricaoAnb,
+          descricaoBling,
+          moto: local.moto,
+          statusMercadoLivre: statusMercadoLivre.label,
+          statusMercadoLivreAtivo: statusMercadoLivre.found ? statusMercadoLivre.isActive : null,
+        });
+        return divergenciasSku;
+      }
+
       if (local.qtdDisponivelAnb < qtdBling) {
         divergenciasSku.push({
           sku: codigo,
           tipo: 'estoque_bling_maior',
-          titulo: 'Estoque Bling maior que ANB',
-          detalhe: 'O Bling mostra mais saldo disponivel que a quantidade em estoque no ANB.',
+          titulo: 'Estoque Bling maior que o permitido',
+          detalhe: 'O Bling mostra mais saldo disponivel que a quantidade permitida pelo estoque atual do ANB.',
           estoqueAnb: local.qtdDisponivelAnb,
           estoqueBling: qtdBling,
           qtdTotalAnb: local.qtdTotalAnb,
