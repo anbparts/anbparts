@@ -248,7 +248,7 @@ export default function DashboardPage() {
                     { label: 'Em estoque', value: moto.qtdDisp, color: 'var(--sage)' },
                     { label: 'Vendidas', value: moto.qtdVendidas, color: 'var(--ink)' },
                     { label: 'Preco compra', value: fmt(moto.precoCompra || 0), color: 'var(--blue-500)', sm: true },
-                    { label: 'Receita', value: fmt(moto.receitaTotal || 0), color: 'var(--amber)', sm: true },
+                    { label: 'Receita liq.', value: fmt(moto.vlVendidas || 0), color: 'var(--amber)', sm: true },
                     {
                       label: 'Lucro prev.',
                       value: fmt(moto.lucro || 0),
