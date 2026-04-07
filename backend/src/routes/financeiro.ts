@@ -24,6 +24,14 @@ const prejuizoUpdateSchema = z.object({
   observacao: z.string().optional().nullable(),
 });
 
+const investimentoSchema = z.object({
+  data: z.string().min(1),
+  socio: z.string().min(1),
+  tipo: z.string().trim().min(1).default('Aporte geral'),
+  moto: z.string().trim().optional().nullable(),
+  valor: z.number().min(0),
+});
+
 function roundMoney(value: number) {
   return Math.round(value * 100) / 100;
 }
@@ -206,14 +214,22 @@ financeiroRouter.patch('/prejuizos/:id', async (req, res, next) => {
 financeiroRouter.get('/investimentos', async (req, res, next) => {
   try {
     const rows = await prisma.investimento.findMany({ orderBy: { data: 'desc' } });
-    res.json(rows.map(r => ({ ...r, valor: fmt(r.valor) })));
+    res.json(rows.map(r => ({ ...r, tipo: r.tipo || 'Aporte geral', valor: fmt(r.valor) })));
   } catch (e) { next(e); }
 });
 
 financeiroRouter.post('/investimentos', async (req, res, next) => {
   try {
-    const { data, socio, moto, valor } = req.body;
-    const row = await prisma.investimento.create({ data: { data: new Date(data), socio, moto: moto || null, valor } });
+    const payload = investimentoSchema.parse(req.body || {});
+    const row = await prisma.investimento.create({
+      data: {
+        data: new Date(payload.data),
+        socio: payload.socio,
+        tipo: payload.tipo || 'Aporte geral',
+        moto: payload.moto || null,
+        valor: payload.valor,
+      },
+    });
     res.json(row);
   } catch (e) { next(e); }
 });

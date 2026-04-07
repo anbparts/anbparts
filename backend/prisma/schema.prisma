@@ -82,6 +82,7 @@ model Investimento {
   id        Int      @id @default(autoincrement())
   data      DateTime
   socio     String
+  tipo      String   @default("Aporte geral")
   moto      String?
   valor     Decimal  @default(0) @db.Decimal(12, 2)
   createdAt DateTime @default(now())

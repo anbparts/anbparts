@@ -21,6 +21,10 @@ function roundMoney(value: number) {
   return Math.round(value * 100) / 100;
 }
 
+function hasDetranEtiqueta(value: any) {
+  return Boolean(String(value || '').trim());
+}
+
 function calculatePecaPreview(precoML: string, valorFrete: string, valorTaxas: string) {
   const preco = Number(precoML) || 0;
   const frete = Number(valorFrete) || 0;
@@ -99,6 +103,118 @@ function PrejuizoReasonModal({ open, peca, saving, onClose, onConfirm }: any) {
         <div style={{ padding: '14px 22px 20px', display: 'flex', gap: 8, justifyContent: 'flex-end', borderTop: '1px solid var(--border)' }}>
           <button onClick={onClose} style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink-soft)', borderColor: 'var(--border-strong)' }}>Cancelar</button>
           <button onClick={() => onConfirm(motivo)} disabled={saving} style={{ ...cs.btn, background: '#fee2e2', color: '#b91c1c', borderColor: '#fecaca' }}>{saving ? 'Salvando...' : 'Confirmar prejuízo'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ActionIconButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      title="Acoes da peca"
+      style={{
+        width: 30,
+        height: 30,
+        borderRadius: 8,
+        border: '1px solid var(--border)',
+        background: 'var(--white)',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        cursor: 'pointer',
+        color: 'var(--ink-soft)',
+      }}
+    >
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M12 20h9" />
+        <path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5Z" />
+      </svg>
+    </button>
+  );
+}
+
+function DetranBadge({ ativo }: { ativo: boolean }) {
+  if (ativo) {
+    return (
+      <span
+        title="Com etiqueta DETRAN"
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: 24,
+          height: 24,
+          borderRadius: 999,
+          background: '#ecfdf3',
+          border: '1px solid #86efac',
+          color: '#16a34a',
+        }}
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M6 3h9l3 3v11l-6-3-6 3V3Z" />
+        </svg>
+      </span>
+    );
+  }
+
+  return (
+    <span
+      title="Sem etiqueta DETRAN"
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: 24,
+        height: 24,
+        borderRadius: 999,
+        background: '#fef2f2',
+        border: '1px solid #fecaca',
+        color: '#dc2626',
+        fontFamily: 'Geist Mono, monospace',
+        fontSize: 12,
+        fontWeight: 700,
+        lineHeight: 1,
+      }}
+    >
+      X
+    </span>
+  );
+}
+
+function PecaActionsModal({ open, peca, onClose, onEdit, onSell, onDelete }: any) {
+  if (!open || !peca) return null;
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 230, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }}>
+      <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 16, width: '100%', maxWidth: 360, boxShadow: '0 12px 32px rgba(0,0,0,.10)' }}>
+        <div style={{ padding: '20px 22px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div style={{ fontFamily: 'Fraunces, serif', fontSize: 18, fontWeight: 600 }}>Acoes da peca</div>
+            <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 4 }}>{peca.idPeca} - {peca.descricao}</div>
+          </div>
+          <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer' }}>X</button>
+        </div>
+        <div style={{ padding: '20px 22px', display: 'grid', gap: 10 }}>
+          <button onClick={onEdit} style={{ ...cs.btn, width: '100%', justifyContent: 'center', background: 'var(--white)', color: 'var(--ink)', borderColor: 'var(--border-strong)' }}>
+            Editar
+          </button>
+          {peca.disponivel ? (
+            <button onClick={onSell} style={{ ...cs.btn, width: '100%', justifyContent: 'center', background: 'var(--amber-light)', color: 'var(--amber)', borderColor: 'var(--amber-mid)' }}>
+              Vender
+            </button>
+          ) : (
+            <div style={{ fontSize: 12, color: 'var(--ink-muted)', textAlign: 'center' }}>
+              Esta peca ja esta vendida.
+            </div>
+          )}
+          <button onClick={onDelete} style={{ ...cs.btn, width: '100%', justifyContent: 'center', background: '#fff1f2', color: 'var(--red)', borderColor: '#fecdd3' }}>
+            Deletar
+          </button>
+        </div>
+        <div style={{ padding: '0 22px 20px', display: 'flex', justifyContent: 'flex-end' }}>
+          <button onClick={onClose} style={{ ...cs.btn, background: 'transparent', color: 'var(--ink-soft)', borderColor: 'transparent' }}>Fechar</button>
         </div>
       </div>
     </div>
@@ -589,6 +705,8 @@ export default function EstoquePage() {
   const [editPeca, setEditPeca] = useState<any>(null);
   const [vendaModal, setVendaModal] = useState(false);
   const [vendaPeca, setVendaPeca] = useState<any>(null);
+  const [actionPeca, setActionPeca] = useState<any>(null);
+  const [selectedPecaIds, setSelectedPecaIds] = useState<number[]>([]);
   const [filters, setFilters] = useState({
     motoId: '',
     disponivel: '',
@@ -627,6 +745,11 @@ export default function EstoquePage() {
     load();
   }, [load]);
 
+  useEffect(() => {
+    const visibleIds = new Set((data.data || []).map((p: any) => p.id));
+    setSelectedPecaIds((current) => current.filter((id) => visibleIds.has(id)));
+  }, [data.data]);
+
   async function handleSavePeca(formData: any) {
     if (editPeca) await api.pecas.update(editPeca.id, formData);
     else await api.pecas.create(formData);
@@ -654,6 +777,34 @@ export default function EstoquePage() {
     setModal(false);
     setEditPeca(null);
     load();
+  }
+
+  async function handleDeletePeca(peca: any) {
+    if (!confirm(`Excluir peca ${peca.idPeca}?`)) return;
+    await api.pecas.delete(peca.id);
+    setActionPeca(null);
+    setSelectedPecaIds((current) => current.filter((id) => id !== peca.id));
+    load();
+  }
+
+  async function handleDeleteSelecionadas() {
+    if (!selectedPecaIds.length) return;
+    if (!confirm(`Excluir ${selectedPecaIds.length} peca(s) selecionada(s)?`)) return;
+    await Promise.all(selectedPecaIds.map((id) => api.pecas.delete(id)));
+    setSelectedPecaIds([]);
+    load();
+  }
+
+  function toggleSelectedPeca(id: number) {
+    setSelectedPecaIds((current) => (
+      current.includes(id) ? current.filter((item) => item !== id) : [...current, id]
+    ));
+  }
+
+  function toggleSelectAllVisible() {
+    const visibleIds = (data.data || []).map((p: any) => p.id);
+    const allSelected = visibleIds.length > 0 && visibleIds.every((id: number) => selectedPecaIds.includes(id));
+    setSelectedPecaIds(allSelected ? [] : visibleIds);
   }
 
   function toggleSort(column: string) {
@@ -700,6 +851,8 @@ export default function EstoquePage() {
   const totalPages = Math.max(1, Math.ceil((data.total || 0) / filters.perPage));
   const hasPrevPage = filters.page > 1;
   const hasNextPage = filters.page < totalPages;
+  const visiblePecaIds = (data.data || []).map((p: any) => p.id);
+  const allVisibleSelected = visiblePecaIds.length > 0 && visiblePecaIds.every((id: number) => selectedPecaIds.includes(id));
 
   return (
     <>
@@ -764,6 +917,21 @@ export default function EstoquePage() {
               <select style={cs.sel} value={String(filters.perPage)} onChange={(e) => setFilters({ ...filters, perPage: Number(e.target.value), page: 1 })}>
                 {pageSizeOptions.map((size) => <option key={size} value={size}>{size} por pagina</option>)}
               </select>
+              <button
+                disabled={!selectedPecaIds.length}
+                onClick={handleDeleteSelecionadas}
+                style={{
+                  ...cs.btn,
+                  background: selectedPecaIds.length ? '#fff1f2' : 'var(--gray-50)',
+                  color: selectedPecaIds.length ? 'var(--red)' : 'var(--ink-muted)',
+                  borderColor: selectedPecaIds.length ? '#fecdd3' : 'var(--border)',
+                  padding: '6px 14px',
+                  fontSize: 13,
+                  opacity: selectedPecaIds.length ? 1 : 0.7,
+                }}
+              >
+                Deletar em massa{selectedPecaIds.length ? ` (${selectedPecaIds.length})` : ''}
+              </button>
               <button style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)', padding: '6px 14px', fontSize: 13 }} onClick={() => { setEditPeca(null); setModal(true); }}>+ Nova peca</button>
             </div>
           </div>
@@ -790,6 +958,7 @@ export default function EstoquePage() {
               <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
                 <tr>
                   {[
+                    { label: '', sort: null, kind: 'select' },
                     { label: 'ID Moto', sort: 'motoId' },
                     { label: 'ID Peca', sort: 'idPeca' },
                     { label: 'Moto', sort: 'moto' },
@@ -801,11 +970,20 @@ export default function EstoquePage() {
                     { label: 'Taxas', sort: 'valorTaxas' },
                     { label: 'Data Venda', sort: 'dataVenda' },
                     { label: 'Pedido Bling', sort: 'blingPedidoNum' },
+                    { label: 'Detran', sort: null },
                     { label: 'Status', sort: 'disponivel' },
                     { label: '', sort: null },
-                  ].map((header) => (
-                    <th key={header.label || 'actions'} style={cs.th}>
-                      {header.sort ? (
+                  ].map((header, index) => (
+                    <th key={`${header.label || 'actions'}-${index}`} style={cs.th}>
+                      {header.kind === 'select' ? (
+                        <input
+                          type="checkbox"
+                          checked={allVisibleSelected}
+                          onChange={toggleSelectAllVisible}
+                          aria-label="Selecionar todas as pecas visiveis"
+                          style={{ width: 14, height: 14, cursor: 'pointer' }}
+                        />
+                      ) : header.sort ? (
                         <button
                           type="button"
                           onClick={() => toggleSort(header.sort!)}
@@ -836,11 +1014,20 @@ export default function EstoquePage() {
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={13} style={{ ...cs.td, textAlign: 'center', color: 'var(--ink-muted)', borderBottom: 'none' }}>Carregando...</td></tr>
+                  <tr><td colSpan={15} style={{ ...cs.td, textAlign: 'center', color: 'var(--ink-muted)', borderBottom: 'none' }}>Carregando...</td></tr>
                 ) : data.data.length === 0 ? (
-                  <tr><td colSpan={13} style={{ ...cs.td, textAlign: 'center', color: 'var(--ink-muted)', padding: '40px 20px', borderBottom: 'none' }}>Nenhuma peca encontrada</td></tr>
+                  <tr><td colSpan={15} style={{ ...cs.td, textAlign: 'center', color: 'var(--ink-muted)', padding: '40px 20px', borderBottom: 'none' }}>Nenhuma peca encontrada</td></tr>
                 ) : data.data.map((p: any) => (
                   <tr key={p.id}>
+                    <td style={{ ...cs.td, width: 36 }}>
+                      <input
+                        type="checkbox"
+                        checked={selectedPecaIds.includes(p.id)}
+                        onChange={() => toggleSelectedPeca(p.id)}
+                        aria-label={`Selecionar peca ${p.idPeca}`}
+                        style={{ width: 14, height: 14, cursor: 'pointer' }}
+                      />
+                    </td>
                     <td style={cs.td}><span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 12, color: 'var(--ink-muted)' }}>#{p.motoId}</span></td>
                     <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, color: 'var(--blue)' }}>{p.idPeca}</td>
                     <td style={{ ...cs.td, color: 'var(--ink-muted)', fontSize: 12 }}>{p.moto?.marca} {p.moto?.modelo}</td>
@@ -853,16 +1040,15 @@ export default function EstoquePage() {
                     <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 11, color: 'var(--ink-muted)' }}>{p.dataVenda?.split('T')[0] || '-'}</td>
                     <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 11, color: p.blingPedidoNum ? 'var(--blue)' : 'var(--ink-muted)' }}>{p.blingPedidoNum || '-'}</td>
                     <td style={cs.td}>
+                      <DetranBadge ativo={hasDetranEtiqueta(p.detranEtiqueta)} />
+                    </td>
+                    <td style={cs.td}>
                       {p.disponivel
                         ? <span style={{ background: 'var(--sage-light)', color: 'var(--sage)', border: '1px solid var(--sage-mid)', padding: '2px 8px', borderRadius: 99, fontSize: 11, fontFamily: 'Geist Mono, monospace' }}>Estoque</span>
                         : <span style={{ background: 'var(--gray-100)', color: 'var(--ink-muted)', border: '1px solid var(--border)', padding: '2px 8px', borderRadius: 99, fontSize: 11, fontFamily: 'Geist Mono, monospace' }}>Vendido</span>}
                     </td>
                     <td style={cs.td}>
-                      <div style={{ display: 'flex', gap: 4 }}>
-                        <button onClick={() => { setEditPeca(p); setModal(true); }} style={{ ...cs.btn, padding: '4px 8px', fontSize: 11, background: 'transparent', borderColor: 'transparent', color: 'var(--ink-muted)' }} title="Editar">Edit</button>
-                        {p.disponivel && <button onClick={() => { setVendaPeca(p); setVendaModal(true); }} style={{ ...cs.btn, padding: '4px 9px', fontSize: 11, background: 'var(--amber-light)', color: 'var(--amber)', borderColor: 'var(--amber-mid)' }}>Vender</button>}
-                        <button onClick={async () => { if (!confirm(`Excluir peca ${p.idPeca}?`)) return; await api.pecas.delete(p.id); load(); }} style={{ ...cs.btn, padding: '4px 8px', fontSize: 11, background: 'transparent', borderColor: 'transparent', color: '#fca5a5' }} title="Excluir">Del</button>
-                      </div>
+                      <ActionIconButton onClick={() => setActionPeca(p)} />
                     </td>
                   </tr>
                 ))}
@@ -882,6 +1068,23 @@ export default function EstoquePage() {
 
       <PecaModal open={modal} onClose={() => { setModal(false); setEditPeca(null); }} onSave={handleSavePeca} onCancelSale={handleCancelSale} onMarkPrejuizo={handleMarkPrejuizo} peca={editPeca} motos={motos} />
       <VendaModal open={vendaModal} peca={vendaPeca} onClose={() => setVendaModal(false)} onConfirm={handleVenda} />
+      <PecaActionsModal
+        open={Boolean(actionPeca)}
+        peca={actionPeca}
+        onClose={() => setActionPeca(null)}
+        onEdit={() => {
+          setEditPeca(actionPeca);
+          setActionPeca(null);
+          setModal(true);
+        }}
+        onSell={() => {
+          if (!actionPeca?.disponivel) return;
+          setVendaPeca(actionPeca);
+          setActionPeca(null);
+          setVendaModal(true);
+        }}
+        onDelete={() => handleDeletePeca(actionPeca)}
+      />
     </>
   );
 }

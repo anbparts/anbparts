@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ChartPanel, ColumnChart, DonutChart, HorizontalBarChart, ViewModeSwitch, type ViewMode } from '@/components/finance/Charts';
+import { ChartPanel, DonutChart, HeatmapChart, HorizontalBarChart, ViewModeSwitch, type ViewMode } from '@/components/finance/Charts';
 
 const BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3333';
 const SOCIOS = ['Bruno', 'Nelson', 'Alex'];
@@ -10,6 +10,8 @@ const SOCIO_COLORS: Record<string, string> = {
   Nelson: '#16a34a',
   Alex: '#f59e0b',
 };
+const TIPO_PADRAO = 'Aporte geral';
+const MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
 function fmt(value: number) {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -19,14 +21,20 @@ function today() {
   return new Date().toISOString().split('T')[0];
 }
 
+function normalizeTipo(value: any) {
+  const normalized = String(value || '').trim();
+  return normalized || TIPO_PADRAO;
+}
+
 function monthKey(dateValue: string) {
   const date = new Date(dateValue);
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 }
 
-function monthLabel(dateValue: string) {
-  const date = new Date(dateValue);
-  return date.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }).replace('.', '');
+function monthLabelFromKey(key: string) {
+  const [ano, mes] = key.split('-');
+  const date = new Date(Number(ano), Number(mes) - 1, 1);
+  return date.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '');
 }
 
 export default function InvestimentosPage() {
@@ -37,7 +45,7 @@ export default function InvestimentosPage() {
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [modo, setModo] = useState<ViewMode>('grafico');
-  const [form, setForm] = useState({ data: today(), socio: 'Bruno', moto: '', valor: '' });
+  const [form, setForm] = useState({ data: today(), socio: 'Bruno', tipo: TIPO_PADRAO, moto: '', valor: '' });
 
   const inputStyle: any = {
     background: 'var(--white)',
@@ -61,6 +69,10 @@ export default function InvestimentosPage() {
 
   useEffect(load, []);
 
+  const tiposDisponiveis = Array.from(
+    new Set([TIPO_PADRAO, ...rows.map((item) => normalizeTipo(item.tipo))]),
+  ).sort((a, b) => a.localeCompare(b));
+
   const anos = Array.from(new Set(
     rows.map((item) => new Date(item.data).getFullYear()).filter((ano) => Number.isFinite(ano)),
   )).sort((a, b) => b - a);
@@ -70,22 +82,14 @@ export default function InvestimentosPage() {
     return (!filtroSocio || item.socio === filtroSocio)
       && (!filtroAno || ano === Number(filtroAno));
   });
+
   const totalGeral = rows.reduce((sum, item) => sum + Number(item.valor || 0), 0);
   const totalFiltro = filtradas.reduce((sum, item) => sum + Number(item.valor || 0), 0);
 
   const porSocioMap = new Map<string, number>();
-  const porMesMap = new Map<string, { label: string; value: number }>();
-
   rows.forEach((item) => {
     const socio = item.socio || 'Outros';
     porSocioMap.set(socio, (porSocioMap.get(socio) || 0) + Number(item.valor || 0));
-  });
-
-  filtradas.forEach((item) => {
-    const key = monthKey(item.data);
-    const current = porMesMap.get(key) || { label: monthLabel(item.data), value: 0 };
-    current.value += Number(item.valor || 0);
-    porMesMap.set(key, current);
   });
 
   const sociosChart = Array.from(porSocioMap.entries())
@@ -97,25 +101,76 @@ export default function InvestimentosPage() {
     }))
     .sort((a, b) => b.value - a.value);
 
-  const sociosFiltro = filtradas.reduce<Map<string, number>>((map, item) => {
-    const current = map.get(item.socio) || 0;
-    map.set(item.socio, current + Number(item.valor || 0));
+  const tiposFiltroMap = filtradas.reduce<Map<string, { value: number; count: number }>>((map, item) => {
+    const tipo = normalizeTipo(item.tipo);
+    const current = map.get(tipo) || { value: 0, count: 0 };
+    current.value += Number(item.valor || 0);
+    current.count += 1;
+    map.set(tipo, current);
     return map;
-  }, new Map<string, number>());
+  }, new Map());
 
-  const rankingFiltro = Array.from(sociosFiltro.entries())
-    .map(([label, value]) => ({
+  const rankingTipos = Array.from(tiposFiltroMap.entries())
+    .map(([label, info]) => ({
       label,
-      value,
-      color: SOCIO_COLORS[label],
-      note: `${(filtradas.filter((item) => item.socio === label)).length} aportes`,
+      value: info.value,
+      note: `${info.count} aporte${info.count === 1 ? '' : 's'}`,
+      share: `${(((info.value || 0) / (totalFiltro || 1)) * 100).toFixed(1).replace('.', ',')}% do filtro`,
     }))
     .sort((a, b) => b.value - a.value);
 
-  const linhaTempo = Array.from(porMesMap.entries())
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([, value]) => value)
-    .slice(-8);
+  const periodos = filtroAno
+    ? Array.from({ length: 12 }, (_, index) => ({
+        key: `${filtroAno}-${String(index + 1).padStart(2, '0')}`,
+        label: MESES[index],
+      }))
+    : Array.from(new Set(filtradas.map((item) => monthKey(item.data))))
+        .sort((a, b) => a.localeCompare(b))
+        .slice(-12)
+        .map((key) => ({
+          key,
+          label: monthLabelFromKey(key),
+        }));
+
+  const porTipoPeriodoMap = new Map<string, {
+    total: number;
+    count: number;
+    cells: Map<string, { value: number; count: number }>;
+  }>();
+
+  filtradas.forEach((item) => {
+    const tipo = normalizeTipo(item.tipo);
+    const periodo = monthKey(item.data);
+    const valor = Number(item.valor || 0);
+    const current = porTipoPeriodoMap.get(tipo) || {
+      total: 0,
+      count: 0,
+      cells: new Map<string, { value: number; count: number }>(),
+    };
+    current.total += valor;
+    current.count += 1;
+    const cell = current.cells.get(periodo) || { value: 0, count: 0 };
+    cell.value += valor;
+    cell.count += 1;
+    current.cells.set(periodo, cell);
+    porTipoPeriodoMap.set(tipo, current);
+  });
+
+  const painelMensalTipos = Array.from(porTipoPeriodoMap.entries())
+    .sort((a, b) => b[1].total - a[1].total)
+    .map(([tipo, info]) => ({
+      label: tipo,
+      note: `${info.count} aporte${info.count === 1 ? '' : 's'} · ${fmt(info.total)}`,
+      cells: periodos.map((periodo) => {
+        const cell = info.cells.get(periodo.key) || { value: 0, count: 0 };
+        return {
+          label: periodo.label,
+          value: cell.value,
+          displayValue: cell.value > 0 ? fmt(cell.value) : '--',
+          note: cell.count > 0 ? `${cell.count} ap.` : '',
+        };
+      }),
+    }));
 
   async function salvar() {
     if (!form.valor) return;
@@ -123,9 +178,15 @@ export default function InvestimentosPage() {
     await fetch(`${BASE}/financeiro/investimentos`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ data: form.data, socio: form.socio, moto: form.moto || null, valor: Number(form.valor) }),
+      body: JSON.stringify({
+        data: form.data,
+        socio: form.socio,
+        tipo: normalizeTipo(form.tipo),
+        moto: form.moto || null,
+        valor: Number(form.valor),
+      }),
     });
-    setForm({ data: today(), socio: 'Bruno', moto: '', valor: '' });
+    setForm({ data: today(), socio: 'Bruno', tipo: TIPO_PADRAO, moto: '', valor: '' });
     setShowForm(false);
     setSaving(false);
     load();
@@ -175,7 +236,7 @@ export default function InvestimentosPage() {
         {showForm && (
           <div style={{ background: 'var(--white)', border: '1px solid var(--blue-200)', borderRadius: 10, padding: 20, marginBottom: 20 }}>
             <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 14 }}>Novo investimento</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr auto', gap: 10, alignItems: 'end' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(140px, 1fr)) auto', gap: 10, alignItems: 'end' }}>
               <div>
                 <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Data</div>
                 <input style={inputStyle} type="date" value={form.data} onChange={(e) => setForm((value) => ({ ...value, data: e.target.value }))} />
@@ -185,6 +246,19 @@ export default function InvestimentosPage() {
                 <select style={{ ...inputStyle, cursor: 'pointer' }} value={form.socio} onChange={(e) => setForm((value) => ({ ...value, socio: e.target.value }))}>
                   {SOCIOS.map((socio) => <option key={socio}>{socio}</option>)}
                 </select>
+              </div>
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Tipo do aporte</div>
+                <input
+                  list="tipos-aporte"
+                  style={inputStyle}
+                  placeholder="Ex: Compra de moto"
+                  value={form.tipo}
+                  onChange={(e) => setForm((value) => ({ ...value, tipo: e.target.value }))}
+                />
+                <datalist id="tipos-aporte">
+                  {tiposDisponiveis.map((tipo) => <option key={tipo} value={tipo} />)}
+                </datalist>
               </div>
               <div>
                 <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Moto / Item</div>
@@ -232,12 +306,12 @@ export default function InvestimentosPage() {
                 <ChartPanel title="Participacao dos socios" subtitle="Quanto cada socio representa no capital investido." accent="#2563eb">
                   <DonutChart items={sociosChart} totalLabel="Investido" totalDisplay={fmt(totalGeral)} valueFormatter={fmt} emptyText="Sem investimentos para distribuir." />
                 </ChartPanel>
-                <ChartPanel title="Ranking no filtro" subtitle="Comparativo de aportes considerando o filtro atual." accent="#16a34a">
-                  <HorizontalBarChart items={rankingFiltro} valueFormatter={fmt} emptyText="Sem investimentos para comparar." />
+                <ChartPanel title="Tipos de aportes" subtitle="Quantidade, valor e peso de cada tipo considerando o filtro atual." accent="#16a34a">
+                  <HorizontalBarChart items={rankingTipos} valueFormatter={fmt} emptyText="Sem aportes para comparar." />
                 </ChartPanel>
               </div>
-              <ChartPanel title="Linha do tempo dos aportes" subtitle="Volume investido por mes no filtro atual." accent="#f59e0b">
-                <ColumnChart items={linhaTempo} valueFormatter={fmt} emptyText="Sem linha do tempo para mostrar." />
+              <ChartPanel title="Painel mensal dos aportes" subtitle="Matriz compacta com todos os meses para comparar o volume investido por tipo dentro do filtro atual." accent="#f59e0b">
+                <HeatmapChart rows={painelMensalTipos} valueFormatter={fmt} emptyText="Sem periodos para exibir." />
               </ChartPanel>
             </div>
           )
@@ -250,7 +324,7 @@ export default function InvestimentosPage() {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
                     <tr>
-                      {['Data', 'Socio', 'Moto / Item', 'Valor', ''].map((header) => (
+                      {['Data', 'Socio', 'Tipo', 'Moto / Item', 'Valor', ''].map((header) => (
                         <th key={header} style={{ padding: '9px 16px', textAlign: header === 'Valor' ? 'right' : 'left', fontFamily: 'Geist Mono, monospace', fontSize: 10, letterSpacing: '.7px', textTransform: 'uppercase', color: 'var(--ink-muted)', fontWeight: 500 }}>
                           {header}
                         </th>
@@ -264,6 +338,7 @@ export default function InvestimentosPage() {
                         <td style={{ padding: '9px 16px' }}>
                           <span style={{ fontWeight: 600, color: SOCIO_COLORS[item.socio] || 'var(--ink)' }}>{item.socio}</span>
                         </td>
+                        <td style={{ padding: '9px 16px', color: 'var(--ink)' }}>{normalizeTipo(item.tipo)}</td>
                         <td style={{ padding: '9px 16px', color: 'var(--ink-muted)', fontFamily: 'Geist Mono, monospace', fontSize: 12 }}>{item.moto || '--'}</td>
                         <td style={{ padding: '9px 16px', textAlign: 'right', fontFamily: 'Geist Mono, monospace', fontSize: 13, color: 'var(--blue-500)', fontWeight: 600 }}>{fmt(Number(item.valor || 0))}</td>
                         <td style={{ padding: '9px 10px', width: 40 }}>
@@ -274,7 +349,7 @@ export default function InvestimentosPage() {
                       </tr>
                     ))}
                     {!filtradas.length && (
-                      <tr><td colSpan={5} style={{ padding: '36px 16px', textAlign: 'center', color: 'var(--ink-muted)', fontSize: 13 }}>Nenhum investimento registrado</td></tr>
+                      <tr><td colSpan={6} style={{ padding: '36px 16px', textAlign: 'center', color: 'var(--ink-muted)', fontSize: 13 }}>Nenhum investimento registrado</td></tr>
                     )}
                   </tbody>
                 </table>
