@@ -13,6 +13,12 @@ function normalizeInvestimentoTipo(value: any) {
   return 'Operacional';
 }
 
+function parseDateOnlyInput(value: any) {
+  const text = String(value || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return new Date(text);
+  return new Date(`${text}T00:00:00.000Z`);
+}
+
 // POST /import/motos
 importRouter.post('/motos', async (req, res, next) => {
   try {
@@ -108,12 +114,12 @@ importRouter.post('/despesas', async (req, res, next) => {
     if (!Array.isArray(raw)) return res.status(400).json({ error: 'Dados invalidos' });
 
     const rows = raw.filter((r) => r.data && r.detalhes).map((r) => ({
-      data: new Date(r.data),
+      data: parseDateOnlyInput(r.data),
       detalhes: String(r.detalhes),
       categoria: String(r.categoria || 'Outros'),
       valor: Number(r.valor) || 0,
       statusPagamento: 'pago',
-      dataPagamento: r.data ? new Date(r.data) : new Date(),
+      dataPagamento: r.data ? parseDateOnlyInput(r.data) : new Date(),
       chavePix: r.chavePix ? String(r.chavePix) : null,
       codigoBarras: r.codigoBarras ? String(r.codigoBarras) : null,
       observacao: r.observacao ? String(r.observacao) : null,
@@ -134,7 +140,7 @@ importRouter.post('/investimentos', async (req, res, next) => {
     if (!Array.isArray(raw)) return res.status(400).json({ error: 'Dados invalidos' });
 
     const rows = raw.filter((r) => r.data && r.socio).map((r) => ({
-      data: new Date(r.data),
+      data: parseDateOnlyInput(r.data),
       socio: String(r.socio),
       tipo: normalizeInvestimentoTipo(r.tipo),
       moto: r.moto ? String(r.moto) : null,

@@ -33,13 +33,28 @@ function currentYear() {
 }
 
 function monthKey(dateValue: string) {
-  const date = new Date(dateValue);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+  const key = dateKey(dateValue);
+  return key ? key.slice(0, 7) : '';
 }
 
 function monthLabel(dateValue: string) {
-  const date = new Date(dateValue);
-  return date.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }).replace('.', '');
+  const key = dateKey(dateValue);
+  if (!key) return '';
+  const [year, month] = key.split('-');
+  const date = new Date(`${year}-${month}-01T00:00:00.000Z`);
+  return date.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit', timeZone: 'UTC' }).replace('.', '');
+}
+
+function dateKey(value: any) {
+  if (!value) return '';
+  return new Date(value).toISOString().split('T')[0];
+}
+
+function formatDateBr(value: any) {
+  const key = dateKey(value);
+  if (!key) return '';
+  const [year, month, day] = key.split('-');
+  return `${day}/${month}/${year}`;
 }
 
 async function fileToDataUrl(file: File) {
@@ -293,11 +308,11 @@ export default function DespesasPage() {
   useEffect(() => { load(); }, []);
 
   const anos = Array.from(new Set(
-    rows.map((item) => new Date(item.data).getFullYear()).filter((ano) => Number.isFinite(ano)),
+    rows.map((item) => Number(dateKey(item.data).slice(0, 4))).filter((ano) => Number.isFinite(ano)),
   )).sort((a, b) => b - a);
 
   const filtradas = rows.filter((item) => {
-    const ano = new Date(item.data).getFullYear();
+    const ano = Number(dateKey(item.data).slice(0, 4));
     return (!filtroCategoria || item.categoria === filtroCategoria)
       && (!filtroStatus || item.statusPagamento === filtroStatus)
       && (!filtroAno || ano === Number(filtroAno));
@@ -378,7 +393,7 @@ export default function DespesasPage() {
 
   const resumoPendenteHoje = useMemo(() => {
     const todayKey = today();
-    return rows.filter((item) => item.statusPagamento === 'pendente' && String(item.data).split('T')[0] === todayKey).length;
+    return rows.filter((item) => item.statusPagamento === 'pendente' && dateKey(item.data) === todayKey).length;
   }, [rows]);
 
   return (
@@ -531,7 +546,7 @@ export default function DespesasPage() {
                   <tbody>
                     {filtradas.map((item) => (
                       <tr key={item.id} style={{ borderBottom: '1px solid var(--gray-100)' }}>
-                        <td style={{ padding: '9px 16px', fontFamily: 'Geist Mono, monospace', fontSize: 12, color: 'var(--ink-muted)' }}>{new Date(item.data).toLocaleDateString('pt-BR')}</td>
+                        <td style={{ padding: '9px 16px', fontFamily: 'Geist Mono, monospace', fontSize: 12, color: 'var(--ink-muted)' }}>{formatDateBr(item.data)}</td>
                         <td style={{ padding: '9px 16px', color: 'var(--ink)' }}>{item.detalhes}</td>
                         <td style={{ padding: '9px 16px' }}><CategBadge categoria={item.categoria} /></td>
                         <td style={{ padding: '9px 16px', textAlign: 'right', fontFamily: 'Geist Mono, monospace', fontSize: 13, color: 'var(--red)', fontWeight: 500 }}>{fmt(Number(item.valor || 0))}</td>
@@ -553,7 +568,7 @@ export default function DespesasPage() {
                           <StatusBadge status={item.statusPagamento} onClick={() => setPagamentoDespesa(item)} />
                         </td>
                         <td style={{ padding: '9px 16px', fontFamily: 'Geist Mono, monospace', fontSize: 12, color: 'var(--ink-muted)' }}>
-                          {item.dataPagamento ? new Date(item.dataPagamento).toLocaleDateString('pt-BR') : '-'}
+                          {item.dataPagamento ? formatDateBr(item.dataPagamento) : '-'}
                         </td>
                         <td style={{ padding: '9px 10px', width: 40 }}>
                           <button onClick={() => excluir(item.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-muted)', fontSize: 14, padding: '2px 6px', borderRadius: 4 }} title="Excluir">

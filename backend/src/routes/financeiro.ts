@@ -99,6 +99,12 @@ function normalizeAttachment(value: any) {
   return { name, dataUrl };
 }
 
+function parseDateOnlyInput(value: any) {
+  const text = String(value || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return new Date(text);
+  return new Date(`${text}T00:00:00.000Z`);
+}
+
 function mapAttachmentFields(prefix: 'anexo' | 'comprovante', attachment: ReturnType<typeof normalizeAttachment>) {
   return {
     [`${prefix}Nome`]: attachment?.name || null,
@@ -152,17 +158,23 @@ function getTimezoneDateParts(date = new Date(), timeZone = FINANCEIRO_TIMEZONE)
   };
 }
 
-function toDateKey(date: Date, timeZone = FINANCEIRO_TIMEZONE) {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(new Date(date));
+function currentDateKey(timeZone = FINANCEIRO_TIMEZONE) {
+  return getTimezoneDateParts(new Date(), timeZone).dateKey;
+}
+
+function toStoredDateKey(date: Date | string | null | undefined) {
+  if (!date) return '';
+  const parsed = new Date(date);
+  if (Number.isNaN(parsed.getTime())) return '';
+  return parsed.toISOString().split('T')[0];
+}
+
+function hasReachedScheduleTime(currentTime: string, scheduledTime: string) {
+  return currentTime >= scheduledTime;
 }
 
 function isPastOrToday(date: Date, timeZone = FINANCEIRO_TIMEZONE) {
-  return toDateKey(date, timeZone) <= getTimezoneDateParts(new Date(), timeZone).dateKey;
+  return toStoredDateKey(date) <= currentDateKey(timeZone);
 }
 
 function mapDespesaRow(row: any) {
@@ -179,16 +191,16 @@ async function tickDespesasEmailScheduler() {
   if (!config.despesasEmailAtivo || !config.despesasEmailConfigurado) return;
 
   const now = getTimezoneDateParts(new Date(), FINANCEIRO_TIMEZONE);
-  if (now.timeKey !== config.despesasEmailHorario) return;
-  if (config.despesasEmailUltimaExecucaoChave === now.runKey) return;
+  if (!hasReachedScheduleTime(now.timeKey, config.despesasEmailHorario)) return;
+  if (String(config.despesasEmailUltimaExecucaoChave || '').startsWith(now.dateKey)) return;
 
   despesasSchedulerState.running = true;
   try {
+    await sendDespesasDoDiaEmailIfNeeded(now.dateKey, FINANCEIRO_TIMEZONE);
     await saveConfiguracaoGeral({
       despesasEmailUltimaExecucaoChave: now.runKey,
       despesasEmailUltimaExecucaoEm: new Date(),
     });
-    await sendDespesasDoDiaEmailIfNeeded(now.dateKey, FINANCEIRO_TIMEZONE);
   } finally {
     despesasSchedulerState.running = false;
   }
@@ -227,12 +239,12 @@ financeiroRouter.post('/despesas', async (req, res, next) => {
     const anexo = normalizeAttachment(payload.anexo);
     const statusPagamento = payload.statusPagamento || 'pendente';
     const dataPagamento = statusPagamento === 'pago'
-      ? (payload.dataPagamento ? new Date(payload.dataPagamento) : new Date(payload.data))
+      ? (payload.dataPagamento ? parseDateOnlyInput(payload.dataPagamento) : parseDateOnlyInput(payload.data))
       : null;
 
     const row = await prisma.despesa.create({
       data: {
-        data: new Date(payload.data),
+        data: parseDateOnlyInput(payload.data),
         detalhes: payload.detalhes,
         categoria: payload.categoria || 'Outros',
         valor: payload.valor,
@@ -261,13 +273,17 @@ financeiroRouter.put('/despesas/:id', async (req, res, next) => {
     const anexo = payload.anexo !== undefined ? normalizeAttachment(payload.anexo) : undefined;
     const statusPagamento = payload.statusPagamento ?? current.statusPagamento;
     const dataPagamento = statusPagamento === 'pago'
-      ? (payload.dataPagamento ? new Date(payload.dataPagamento) : current.dataPagamento || new Date(payload.data || current.data))
+      ? (
+          payload.dataPagamento
+            ? parseDateOnlyInput(payload.dataPagamento)
+            : current.dataPagamento || parseDateOnlyInput(payload.data || toStoredDateKey(current.data))
+        )
       : null;
 
     const row = await prisma.despesa.update({
       where: { id },
       data: {
-        data: payload.data ? new Date(payload.data) : undefined,
+        data: payload.data ? parseDateOnlyInput(payload.data) : undefined,
         detalhes: payload.detalhes ?? undefined,
         categoria: payload.categoria ?? undefined,
         valor: payload.valor ?? undefined,
@@ -299,7 +315,7 @@ financeiroRouter.patch('/despesas/:id/status', async (req, res, next) => {
       data: payload.statusPagamento === 'pago'
         ? {
             statusPagamento: 'pago',
-            dataPagamento: payload.dataPagamento ? new Date(payload.dataPagamento) : new Date(),
+            dataPagamento: payload.dataPagamento ? parseDateOnlyInput(payload.dataPagamento) : parseDateOnlyInput(currentDateKey()),
             ...mapAttachmentFields('comprovante', comprovante),
           }
         : {

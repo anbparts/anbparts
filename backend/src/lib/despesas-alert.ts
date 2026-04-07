@@ -27,16 +27,13 @@ function formatCurrency(value: number) {
 }
 
 function formatDate(date: Date) {
-  return new Date(date).toLocaleDateString('pt-BR');
+  const key = new Date(date).toISOString().split('T')[0];
+  const [year, month, day] = key.split('-');
+  return `${day}/${month}/${year}`;
 }
 
-function formatDateKey(date: Date, timeZone = 'America/Sao_Paulo') {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(date);
+function formatDateKey(date: Date) {
+  return new Date(date).toISOString().split('T')[0];
 }
 
 function renderItemHtml(item: DespesaEmailItem) {
@@ -112,7 +109,7 @@ export async function sendDespesasDoDiaEmailIfNeeded(todayKey: string, timeZone 
   });
 
   const items = rows
-    .filter((row) => formatDateKey(row.data, timeZone) === todayKey)
+    .filter((row) => formatDateKey(row.data) === todayKey)
     .map((row) => ({
       id: row.id,
       data: row.data,
