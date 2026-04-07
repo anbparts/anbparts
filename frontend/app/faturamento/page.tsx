@@ -195,6 +195,20 @@ export default function FaturamentoMotoPage() {
       }),
     }));
 
+  const totalMensalRow = {
+    label: 'Total do mes',
+    note: `${totalQtd} pecas · ${fmt(totalReceita)}`,
+    cells: heatmapPeriods.map((period) => {
+      const current = porPeriodoMap.get(period.key) || { receita: 0, qtd: 0, label: period.label, mes: 0, ano: 0 };
+      return {
+        label: period.label,
+        value: current.receita,
+        displayValue: fmt(current.receita),
+        note: current.qtd > 0 ? `${current.qtd}p` : '',
+      };
+    }),
+  };
+
   return (
     <>
       <div style={cs.topbar}>
@@ -253,7 +267,7 @@ export default function FaturamentoMotoPage() {
                 subtitle="Matriz compacta com todos os meses para comparar a receita liquida entre as motos."
                 accent="#f59e0b"
               >
-                <HeatmapChart rows={heatmapRows} rowHeaderLabel="Moto" valueFormatter={fmt} emptyText="Sem periodos para exibir." />
+                <HeatmapChart rows={[totalMensalRow, ...heatmapRows]} rowHeaderLabel="Moto" valueFormatter={fmt} emptyText="Sem periodos para exibir." />
               </ChartPanel>
 
               <ChartPanel
