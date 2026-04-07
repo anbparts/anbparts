@@ -183,6 +183,35 @@ function DetranBadge({ ativo }: { ativo: boolean }) {
   );
 }
 
+function DetranEtiquetaModal({ open, peca, onClose }: any) {
+  if (!open || !peca) return null;
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 235, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }}>
+      <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 16, width: '100%', maxWidth: 380, boxShadow: '0 12px 32px rgba(0,0,0,.10)' }}>
+        <div style={{ padding: '20px 22px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div style={{ fontFamily: 'Fraunces, serif', fontSize: 18, fontWeight: 600 }}>Etiqueta DETRAN</div>
+            <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 4 }}>{peca.idPeca} - {peca.descricao}</div>
+          </div>
+          <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer' }}>X</button>
+        </div>
+        <div style={{ padding: '20px 22px' }}>
+          <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '.6px', textTransform: 'uppercase', marginBottom: 8 }}>
+            Numero da etiqueta
+          </div>
+          <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 18, fontWeight: 700, color: 'var(--blue-500)' }}>
+            {peca.detranEtiqueta}
+          </div>
+        </div>
+        <div style={{ padding: '0 22px 20px', display: 'flex', justifyContent: 'flex-end' }}>
+          <button onClick={onClose} style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink-soft)', borderColor: 'var(--border-strong)' }}>Fechar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PecaActionsModal({ open, peca, onClose, onEdit, onSell, onDelete }: any) {
   if (!open || !peca) return null;
 
@@ -706,6 +735,7 @@ export default function EstoquePage() {
   const [vendaModal, setVendaModal] = useState(false);
   const [vendaPeca, setVendaPeca] = useState<any>(null);
   const [actionPeca, setActionPeca] = useState<any>(null);
+  const [detranPeca, setDetranPeca] = useState<any>(null);
   const [selectedPecaIds, setSelectedPecaIds] = useState<number[]>([]);
   const [filters, setFilters] = useState({
     motoId: '',
@@ -1040,7 +1070,17 @@ export default function EstoquePage() {
                     <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 11, color: 'var(--ink-muted)' }}>{p.dataVenda?.split('T')[0] || '-'}</td>
                     <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 11, color: p.blingPedidoNum ? 'var(--blue)' : 'var(--ink-muted)' }}>{p.blingPedidoNum || '-'}</td>
                     <td style={cs.td}>
-                      <DetranBadge ativo={hasDetranEtiqueta(p.detranEtiqueta)} />
+                      {hasDetranEtiqueta(p.detranEtiqueta) ? (
+                        <button
+                          onClick={() => setDetranPeca(p)}
+                          title="Ver etiqueta DETRAN"
+                          style={{ border: 'none', background: 'transparent', padding: 0, cursor: 'pointer' }}
+                        >
+                          <DetranBadge ativo />
+                        </button>
+                      ) : (
+                        <DetranBadge ativo={false} />
+                      )}
                     </td>
                     <td style={cs.td}>
                       {p.disponivel
@@ -1068,6 +1108,7 @@ export default function EstoquePage() {
 
       <PecaModal open={modal} onClose={() => { setModal(false); setEditPeca(null); }} onSave={handleSavePeca} onCancelSale={handleCancelSale} onMarkPrejuizo={handleMarkPrejuizo} peca={editPeca} motos={motos} />
       <VendaModal open={vendaModal} peca={vendaPeca} onClose={() => setVendaModal(false)} onConfirm={handleVenda} />
+      <DetranEtiquetaModal open={Boolean(detranPeca)} peca={detranPeca} onClose={() => setDetranPeca(null)} />
       <PecaActionsModal
         open={Boolean(actionPeca)}
         peca={actionPeca}
