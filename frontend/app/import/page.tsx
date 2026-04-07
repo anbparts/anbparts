@@ -1,8 +1,7 @@
 'use client';
+
 import { useRef, useState } from 'react';
 import { api } from '@/lib/api';
-
-const BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3333';
 
 const cs: any = {
   topbar: { height: 'var(--topbar-h)', display: 'flex', alignItems: 'center', padding: '0 28px', background: 'var(--white)', borderBottom: '1px solid var(--border)' },
@@ -11,10 +10,27 @@ const cs: any = {
   btn: { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 18px', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', border: '1px solid transparent', fontFamily: 'Inter, sans-serif' },
 };
 
-function fmtD(v: any): string {
-  if (!v) return '';
-  if (v instanceof Date) return isNaN(v.getTime()) ? '' : v.toISOString().split('T')[0];
-  return String(v).split('T')[0];
+function fmtD(value: any): string {
+  if (!value) return '';
+  if (value instanceof Date) return isNaN(value.getTime()) ? '' : value.toISOString().split('T')[0];
+  return String(value).split('T')[0];
+}
+
+function normalizeKey(value: any) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function getRowValue(row: Record<string, any>, aliases: string[]) {
+  const normalizedAliases = aliases.map(normalizeKey);
+  for (const [key, value] of Object.entries(row || {})) {
+    if (normalizedAliases.includes(normalizeKey(key))) return value;
+  }
+  return null;
 }
 
 export default function ImportPage() {
@@ -27,21 +43,8 @@ export default function ImportPage() {
     setLog((prev) => [...prev, { msg, type }]);
   }
 
-  async function postImport(path: string, data: any[]) {
-    const response = await fetch(`${BASE}/import/${path}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(error.error || response.statusText);
-    }
-    return response.json();
-  }
-
-  async function handleFile(e: any) {
-    const file = e.target.files?.[0];
+  async function handleFile(event: any) {
+    const file = event.target.files?.[0];
     if (!file) return;
 
     setLoading(true);
@@ -63,96 +66,23 @@ export default function ImportPage() {
         const XLSX = (window as any).XLSX;
         const workbook = XLSX.read(ev.target!.result, { type: 'binary', cellDates: true });
 
-        addLog('Importando motos...');
-        const motosSheet = workbook.Sheets.Motos;
-        if (motosSheet) {
-          const raw = XLSX.utils.sheet_to_json(motosSheet, { defval: null });
-          const motos = raw
-            .filter((row: any) => row['ID Moto'] && !isNaN(row['ID Moto']))
-            .map((row: any) => ({
-              marca: String(row.Marca || '').trim(),
-              modelo: String(row.Modelo || '').trim(),
-              ano: row.Ano ? Number(row.Ano) : null,
-              precoCompra: Number(row['Preço Compra']) || 0,
-            }));
-          const result = await postImport('motos', motos);
-          addLog(`OK Motos: ${result.imported} importadas`, 'ok');
-        } else {
-          addLog('Aba "Motos" nao encontrada', 'err');
-        }
-
-        addLog('Importando pecas...');
-        const estoqueSheet = workbook.Sheets.Estoque;
-        if (estoqueSheet) {
-          const motosDB = await api.motos.list();
-          const motoMap: Record<number, number> = {};
-          motosDB.forEach((m: any, index: number) => { motoMap[index + 1] = m.id; });
-          motosDB.forEach((m: any) => { motoMap[m.id] = m.id; });
-
-          const raw = XLSX.utils.sheet_to_json(estoqueSheet, { defval: null });
-          const skuCount: Record<string, number> = {};
-          const pecas = raw
-            .filter((row: any) => row['ID Peça'])
-            .map((row: any) => {
-              const skuBase = String(row['ID Peça']);
-              const motoIdExcel = Number(row['ID Moto']);
-              skuCount[skuBase] = (skuCount[skuBase] || 0) + 1;
-              const idPeca = skuCount[skuBase] === 1 ? skuBase : `${skuBase}-${skuCount[skuBase]}`;
-
-              return {
-                motoId: motoMap[motoIdExcel] ?? motoIdExcel,
-                idPeca,
-                descricao: String(row['Descrição Peça'] || ''),
-                precoML: Number(row['Preço ML']) || 0,
-                valorLiq: Number(row['Valor Líquido']) || 0,
-                valorFrete: Number(row['Valor Frete']) || 0,
-                valorTaxas: Number(row['Valor Taxas']) || 0,
-                disponivel: row['Disponível'] === 'Sim',
-                cadastro: fmtD(row.Cadastro) || null,
-                dataVenda: fmtD(row['Data Venda']) || null,
-              };
-            });
-
-          let pecasImported = 0;
-          let pecasSkippedInvalidMoto = 0;
-          const invalidMotoExamples: string[] = [];
-          for (let i = 0; i < pecas.length; i += 200) {
-            const batch = pecas.slice(i, i + 200);
-            addLog(`Pecas... ${Math.min(i + 200, pecas.length)} / ${pecas.length}`);
-            const result = await postImport('pecas', batch);
-            pecasImported += result.imported;
-            pecasSkippedInvalidMoto += result.skippedInvalidMoto || 0;
-            if (Array.isArray(result.invalidMotoSamples)) {
-              for (const sample of result.invalidMotoSamples) {
-                if (invalidMotoExamples.length >= 5) break;
-                invalidMotoExamples.push(`${sample.idPeca} (moto ${sample.motoId})`);
-              }
-            }
-          }
-
-          addLog(`OK Pecas: ${pecasImported} importadas`, 'ok');
-          if (pecasSkippedInvalidMoto > 0) {
-            addLog(`Pecas ignoradas por moto invalida: ${pecasSkippedInvalidMoto}`, 'err');
-            if (invalidMotoExamples.length > 0) addLog(`Exemplos: ${invalidMotoExamples.join(', ')}`, 'err');
-          }
-        } else {
-          addLog('Aba "Estoque" nao encontrada', 'err');
-        }
-
         addLog('Importando despesas...');
         const despesasSheet = workbook.Sheets.Detalhamento;
         if (despesasSheet) {
           const raw = XLSX.utils.sheet_to_json(despesasSheet, { defval: null });
           const rows = raw
-            .filter((row: any) => row['Data'] && row['Detalhes'])
+            .filter((row: any) => getRowValue(row, ['Data']) && getRowValue(row, ['Detalhes']))
             .map((row: any) => ({
-              data: fmtD(row['Data']),
-              detalhes: String(row['Detalhes'] || ''),
-              categoria: String(row['Categoria'] || 'Outros'),
-              valor: Number(row['Valor']) || 0,
+              data: fmtD(getRowValue(row, ['Data'])),
+              detalhes: String(getRowValue(row, ['Detalhes']) || '').trim(),
+              categoria: String(getRowValue(row, ['Categoria']) || 'Outros').trim(),
+              valor: Number(getRowValue(row, ['Valor'])) || 0,
+              chavePix: getRowValue(row, ['Chave PIX', 'Chave Pix']) ? String(getRowValue(row, ['Chave PIX', 'Chave Pix'])).trim() : null,
+              codigoBarras: getRowValue(row, ['Codigo de Barras']) ? String(getRowValue(row, ['Codigo de Barras'])).trim() : null,
+              observacao: getRowValue(row, ['Observacao']) ? String(getRowValue(row, ['Observacao'])).trim() : null,
             }));
-          const result = await postImport('despesas', rows);
-          addLog(`OK Despesas: ${result.imported} importadas`, 'ok');
+          const result = await api.import.despesas(rows);
+          addLog(`OK Despesas: ${result.imported} importadas como pagas`, 'ok');
         } else {
           addLog('Aba "Detalhamento" nao encontrada', 'err');
         }
@@ -162,14 +92,17 @@ export default function ImportPage() {
         if (investimentosSheet) {
           const raw = XLSX.utils.sheet_to_json(investimentosSheet, { defval: null });
           const rows = raw
-            .filter((row: any) => row['Período'] && row['Detalhes'] && row['Valor'] && ['Bruno', 'Nelson', 'Alex'].includes(String(row['Detalhes']).trim()))
+            .filter((row: any) => getRowValue(row, ['Periodo']) && getRowValue(row, ['Detalhes']))
             .map((row: any) => ({
-              data: fmtD(row['Período']),
-              socio: String(row['Detalhes']).trim(),
-              moto: row['ID Moto'] ? String(row['ID Moto']) : null,
-              valor: Number(row['Valor']) || 0,
-            }));
-          const result = await postImport('investimentos', rows);
+              data: fmtD(getRowValue(row, ['Periodo'])),
+              socio: String(getRowValue(row, ['Detalhes']) || '').trim(),
+              tipo: String(getRowValue(row, ['Tipo', 'ID Moto']) || '').trim(),
+              moto: getRowValue(row, ['Moto / Item', 'Moto Item', 'Item']) ? String(getRowValue(row, ['Moto / Item', 'Moto Item', 'Item'])).trim() : null,
+              valor: Number(getRowValue(row, ['Valor'])) || 0,
+            }))
+            .filter((row: any) => row.data && row.socio && row.valor);
+
+          const result = await api.import.investimentos(rows);
           addLog(`OK Investimentos: ${result.imported} importados`, 'ok');
         } else {
           addLog('Aba "Investimento" nao encontrada', 'err');
@@ -177,8 +110,8 @@ export default function ImportPage() {
 
         addLog('Importacao completa!', 'ok');
         setDone(true);
-      } catch (err: any) {
-        addLog(`Erro: ${err.message}`, 'err');
+      } catch (error: any) {
+        addLog(`Erro: ${error.message}`, 'err');
       } finally {
         setLoading(false);
       }
@@ -192,20 +125,18 @@ export default function ImportPage() {
       <div style={cs.topbar}>
         <div>
           <div style={cs.title}>Importar Excel</div>
-          <div style={cs.sub}>Migre os dados base para o banco</div>
+          <div style={cs.sub}>Migre despesas e investimentos base para o banco</div>
         </div>
       </div>
       <div style={{ padding: 28, maxWidth: 620 }}>
         <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, padding: 28, marginBottom: 16 }}>
           <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 8 }}>Importar planilha ANB</div>
           <p style={{ fontSize: 13.5, color: 'var(--gray-500)', lineHeight: 1.7, marginBottom: 16 }}>
-            Selecione o arquivo <strong>.xlsm</strong>. As abas abaixo sao importadas automaticamente:
+            Selecione o arquivo <strong>.xlsm</strong>. No momento, somente as abas abaixo sao importadas:
           </p>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 20 }}>
             {[
-              { icon: 'M', label: 'Motos', sub: 'Aba "Motos"' },
-              { icon: 'E', label: 'Estoque', sub: 'Aba "Estoque"' },
               { icon: 'D', label: 'Despesas', sub: 'Aba "Detalhamento"' },
               { icon: 'I', label: 'Investimentos', sub: 'Aba "Investimento"' },
             ].map((item) => (
@@ -220,7 +151,7 @@ export default function ImportPage() {
           </div>
 
           <div style={{ background: 'var(--amber-light)', border: '1px solid var(--amber-mid)', borderRadius: 8, padding: '10px 14px', marginBottom: 20, fontSize: 13, color: 'var(--amber)', lineHeight: 1.6 }}>
-            <strong>Motos e Pecas</strong> nao duplicam. <strong>Despesas e Investimentos</strong> sao substituidos a cada importacao. <strong>Prejuizos</strong> agora sao controlados pela tela de Estoque.
+            <strong>Despesas e Investimentos</strong> sao substituidos a cada importacao. Na carga do Excel, todas as <strong>despesas entram como pagas</strong> usando a data do lancamento como data de pagamento.
           </div>
 
           <input ref={inputRef} type="file" accept=".xlsx,.xlsm,.xls" style={{ display: 'none' }} onChange={handleFile} />

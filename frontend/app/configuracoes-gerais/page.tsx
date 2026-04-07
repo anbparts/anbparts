@@ -1,4 +1,5 @@
 'use client';
+
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 
@@ -16,9 +17,14 @@ type ConfiguracaoGeral = {
   auditoriaEmailTitulo: string;
   detranEmailDestinatario: string;
   detranEmailTitulo: string;
+  despesasEmailAtivo: boolean;
+  despesasEmailHorario: string;
+  despesasEmailDestinatario: string;
+  despesasEmailTitulo: string;
   resendApiKeyConfigured: boolean;
   auditoriaEmailConfigurado: boolean;
   detranEmailConfigurado: boolean;
+  despesasEmailConfigurado: boolean;
 };
 
 export default function ConfiguracoesGeraisPage() {
@@ -31,6 +37,10 @@ export default function ConfiguracoesGeraisPage() {
   const [auditoriaEmailTitulo, setAuditoriaEmailTitulo] = useState('');
   const [detranEmailDestinatario, setDetranEmailDestinatario] = useState('');
   const [detranEmailTitulo, setDetranEmailTitulo] = useState('');
+  const [despesasEmailAtivo, setDespesasEmailAtivo] = useState(false);
+  const [despesasEmailHorario, setDespesasEmailHorario] = useState('07:00');
+  const [despesasEmailDestinatario, setDespesasEmailDestinatario] = useState('');
+  const [despesasEmailTitulo, setDespesasEmailTitulo] = useState('');
 
   async function loadConfig() {
     const data = await api.configuracoesGerais.get();
@@ -41,6 +51,10 @@ export default function ConfiguracoesGeraisPage() {
     setAuditoriaEmailTitulo(data.auditoriaEmailTitulo || '');
     setDetranEmailDestinatario(data.detranEmailDestinatario || '');
     setDetranEmailTitulo(data.detranEmailTitulo || '');
+    setDespesasEmailAtivo(!!data.despesasEmailAtivo);
+    setDespesasEmailHorario(data.despesasEmailHorario || '07:00');
+    setDespesasEmailDestinatario(data.despesasEmailDestinatario || '');
+    setDespesasEmailTitulo(data.despesasEmailTitulo || '');
   }
 
   useEffect(() => {
@@ -59,6 +73,10 @@ export default function ConfiguracoesGeraisPage() {
         auditoriaEmailTitulo,
         detranEmailDestinatario,
         detranEmailTitulo,
+        despesasEmailAtivo,
+        despesasEmailHorario,
+        despesasEmailDestinatario,
+        despesasEmailTitulo,
       });
       await loadConfig();
       alert('Configuracoes gerais salvas.');
@@ -69,7 +87,16 @@ export default function ConfiguracoesGeraisPage() {
     }
   }
 
-  if (loading) return <><div style={s.topbar}><div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)' }}>Configuracoes Gerais</div></div><div style={{ padding: 28, color: 'var(--gray-400)', fontSize: 13 }}>Carregando...</div></>;
+  if (loading) {
+    return (
+      <>
+        <div style={s.topbar}>
+          <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)' }}>Configuracoes Gerais</div>
+        </div>
+        <div style={{ padding: 28, color: 'var(--gray-400)', fontSize: 13 }}>Carregando...</div>
+      </>
+    );
+  }
 
   return (
     <>
@@ -85,14 +112,20 @@ export default function ConfiguracoesGeraisPage() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 12 }}>
           {[
             { label: 'Resend', value: config?.resendApiKeyConfigured ? 'Configurado' : 'Nao configurado', color: config?.resendApiKeyConfigured ? 'var(--green)' : 'var(--amber)' },
-            { label: 'Email auditoria', value: config?.auditoriaEmailConfigurado ? 'Configurado' : 'Revisar', color: config?.auditoriaEmailConfigurado ? 'var(--green)' : 'var(--amber)' },
-            { label: 'Email DETRAN', value: config?.detranEmailConfigurado ? 'Configurado' : 'Revisar', color: config?.detranEmailConfigurado ? 'var(--green)' : 'var(--amber)' },
-          ].map((item) => <div key={item.label} style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 9, padding: '14px 16px' }}><div style={{ fontSize: 11, fontFamily: 'JetBrains Mono, monospace', color: 'var(--gray-400)', letterSpacing: '.6px', textTransform: 'uppercase', marginBottom: 6 }}>{item.label}</div><div style={{ fontSize: 20, fontWeight: 700, color: item.color }}>{item.value}</div></div>)}
+            { label: 'Auditoria', value: config?.auditoriaEmailConfigurado ? 'Configurado' : 'Revisar', color: config?.auditoriaEmailConfigurado ? 'var(--green)' : 'var(--amber)' },
+            { label: 'Detran', value: config?.detranEmailConfigurado ? 'Configurado' : 'Revisar', color: config?.detranEmailConfigurado ? 'var(--green)' : 'var(--amber)' },
+            { label: 'Despesas', value: config?.despesasEmailConfigurado ? 'Configurado' : 'Revisar', color: config?.despesasEmailConfigurado ? 'var(--green)' : 'var(--amber)' },
+          ].map((item) => (
+            <div key={item.label} style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 9, padding: '14px 16px' }}>
+              <div style={{ fontSize: 11, fontFamily: 'JetBrains Mono, monospace', color: 'var(--gray-400)', letterSpacing: '.6px', textTransform: 'uppercase', marginBottom: 6 }}>{item.label}</div>
+              <div style={{ fontSize: 20, fontWeight: 700, color: item.color }}>{item.value}</div>
+            </div>
+          ))}
         </div>
 
         <div style={s.card}>
           <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 8 }}>Infra de envio</div>
-          <div style={{ fontSize: 12, color: 'var(--gray-400)', marginBottom: 16 }}>Essas configuracoes alimentam os fluxos de email da auditoria automatica e do alerta de baixa de etiqueta DETRAN.</div>
+          <div style={{ fontSize: 12, color: 'var(--gray-400)', marginBottom: 16 }}>Essas configuracoes alimentam os fluxos de email da auditoria automatica, do alerta de baixa de etiqueta DETRAN e das despesas do dia.</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
             <div>
               <label style={s.label}>API Key do Resend</label>
@@ -132,6 +165,32 @@ export default function ConfiguracoesGeraisPage() {
             <div>
               <label style={s.label}>Titulo do email da baixa DETRAN</label>
               <input style={{ ...s.input, width: '100%' }} value={detranEmailTitulo} onChange={(e) => setDetranEmailTitulo(e.target.value)} placeholder="ALERTA ANB Parts - Baixa de Etiqueta DETRAN - Verifique" />
+            </div>
+          </div>
+        </div>
+
+        <div style={{ ...s.card, background: '#eff6ff', borderColor: '#bfdbfe' }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 6 }}>Processo: Despesas do dia</div>
+          <div style={{ fontSize: 12, color: 'var(--gray-500)', marginBottom: 14 }}>Essa rotina envia por email as despesas pendentes que vencem no dia configurado abaixo.</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 12 }}>
+            <div>
+              <label style={s.label}>Rotina ativa</label>
+              <select style={{ ...s.input, width: '100%', cursor: 'pointer' }} value={despesasEmailAtivo ? 'ativa' : 'pausada'} onChange={(e) => setDespesasEmailAtivo(e.target.value === 'ativa')}>
+                <option value="pausada">Pausada</option>
+                <option value="ativa">Ativa</option>
+              </select>
+            </div>
+            <div>
+              <label style={s.label}>Horario da rotina</label>
+              <input style={{ ...s.input, width: '100%' }} type="time" value={despesasEmailHorario} onChange={(e) => setDespesasEmailHorario(e.target.value)} />
+            </div>
+            <div>
+              <label style={s.label}>Email destinatario das despesas</label>
+              <input style={{ ...s.input, width: '100%' }} value={despesasEmailDestinatario} onChange={(e) => setDespesasEmailDestinatario(e.target.value)} placeholder="financeiro@empresa.com.br" />
+            </div>
+            <div>
+              <label style={s.label}>Titulo do email das despesas</label>
+              <input style={{ ...s.input, width: '100%' }} value={despesasEmailTitulo} onChange={(e) => setDespesasEmailTitulo(e.target.value)} placeholder="ALERTA ANB Parts - Despesas do Dia - Verifique" />
             </div>
           </div>
         </div>

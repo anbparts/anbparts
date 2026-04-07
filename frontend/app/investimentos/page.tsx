@@ -3,14 +3,13 @@
 import { useEffect, useState } from 'react';
 import { ChartPanel, DonutChart, HeatmapChart, HorizontalBarChart, ViewModeSwitch, type ViewMode } from '@/components/finance/Charts';
 import { api } from '@/lib/api';
-
-const BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3333';
 const SOCIOS = ['Bruno', 'Nelson', 'Alex'];
 const SOCIO_COLORS: Record<string, string> = {
   Bruno: '#2563eb',
   Nelson: '#16a34a',
   Alex: '#f59e0b',
 };
+const TIPOS_APORTE = ['Moto', 'Insumos', 'Infra-Estrutura', 'Obra', 'Operacional'] as const;
 const TIPO_PADRAO = 'Aporte geral';
 const MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
@@ -75,7 +74,7 @@ export default function InvestimentosPage() {
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [modo, setModo] = useState<ViewMode>('grafico');
-  const [form, setForm] = useState({ data: today(), socio: 'Bruno', moto: '', valor: '' });
+  const [form, setForm] = useState({ data: today(), socio: 'Bruno', tipo: 'Moto', moto: '', valor: '' });
 
   const inputStyle: any = {
     background: 'var(--white)',
@@ -92,7 +91,7 @@ export default function InvestimentosPage() {
   function load() {
     setLoading(true);
     Promise.all([
-      fetch(`${BASE}/financeiro/investimentos`).then((response) => response.json()),
+      api.financeiro.investimentos.list(),
       api.motos.list().catch(() => []),
     ])
       .then(([investimentos, motosResponse]) => {
@@ -136,7 +135,7 @@ export default function InvestimentosPage() {
     .sort((a, b) => b.value - a.value);
 
   const tiposFiltroMap = filtradas.reduce<Map<string, { value: number; count: number }>>((map, item) => {
-    const label = resolveAporteLabel(item.moto, item.tipo, motosMap);
+    const label = normalizeTipo(item.tipo);
     const current = map.get(label) || { value: 0, count: 0 };
     current.value += Number(item.valor || 0);
     current.count += 1;
@@ -209,25 +208,36 @@ export default function InvestimentosPage() {
   async function salvar() {
     if (!form.valor) return;
     setSaving(true);
-    await fetch(`${BASE}/financeiro/investimentos`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        data: form.data,
-        socio: form.socio,
-        moto: form.moto || null,
-        valor: Number(form.valor),
-      }),
+    await api.financeiro.investimentos.create({
+      data: form.data,
+      socio: form.socio,
+      tipo: form.tipo,
+      moto: form.moto || null,
+      valor: Number(form.valor),
     });
-    setForm({ data: today(), socio: 'Bruno', moto: '', valor: '' });
+    setForm({ data: today(), socio: 'Bruno', tipo: 'Moto', moto: '', valor: '' });
     setShowForm(false);
     setSaving(false);
     load();
   }
 
+  async function limparBase() {
+    if (!confirm('Limpar toda a base de investimentos? Essa acao remove os registros atuais para permitir uma reimportacao organizada.')) return;
+    setSaving(true);
+    try {
+      await api.financeiro.investimentos.clear();
+      await load();
+      alert('Base de investimentos limpa.');
+    } catch (error: any) {
+      alert(error.message || 'Erro ao limpar a base de investimentos');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function excluir(id: number) {
     if (!confirm('Excluir investimento?')) return;
-    await fetch(`${BASE}/financeiro/investimentos/${id}`, { method: 'DELETE' });
+    await api.financeiro.investimentos.delete(id);
     load();
   }
 
@@ -240,6 +250,13 @@ export default function InvestimentosPage() {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <ViewModeSwitch value={modo} onChange={setModo} />
+          <button
+            onClick={limparBase}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 7, background: '#fff7ed', color: 'var(--amber)', border: '1px solid #fdba74', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+            disabled={saving}
+          >
+            Limpar base
+          </button>
           <button
             onClick={() => setShowForm((value) => !value)}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 7, background: 'var(--blue-500)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}
@@ -269,7 +286,7 @@ export default function InvestimentosPage() {
         {showForm && (
           <div style={{ background: 'var(--white)', border: '1px solid var(--blue-200)', borderRadius: 10, padding: 20, marginBottom: 20 }}>
             <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 14 }}>Novo investimento</div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(140px, 1fr)) auto', gap: 10, alignItems: 'end' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(140px, 1fr)) auto', gap: 10, alignItems: 'end' }}>
               <div>
                 <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Data</div>
                 <input style={inputStyle} type="date" value={form.data} onChange={(e) => setForm((value) => ({ ...value, data: e.target.value }))} />
@@ -281,7 +298,13 @@ export default function InvestimentosPage() {
                 </select>
               </div>
               <div>
-                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Moto / Item</div>
+                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Tipo do aporte</div>
+                <select style={{ ...inputStyle, cursor: 'pointer' }} value={form.tipo} onChange={(e) => setForm((value) => ({ ...value, tipo: e.target.value }))}>
+                  {TIPOS_APORTE.map((tipo) => <option key={tipo}>{tipo}</option>)}
+                </select>
+              </div>
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Moto / Item (opcional)</div>
                 <input style={inputStyle} placeholder="Ex: 3, pallet, guincho..." value={form.moto} onChange={(e) => setForm((value) => ({ ...value, moto: e.target.value }))} />
               </div>
               <div>
@@ -326,12 +349,12 @@ export default function InvestimentosPage() {
                 <ChartPanel title="Participacao dos socios" subtitle="Quanto cada socio representa no capital investido." accent="#2563eb">
                   <DonutChart items={sociosChart} totalLabel="Investido" totalDisplay={fmt(totalGeral)} valueFormatter={fmt} emptyText="Sem investimentos para distribuir." />
                 </ChartPanel>
-                <ChartPanel title="Tipos de aportes" subtitle="Agrupado pelo detalhamento informado em Moto / Item, resolvendo IDs das motos quando houver correspondencia." accent="#16a34a">
+                <ChartPanel title="Tipos de aportes" subtitle="Quantidade, valor e peso de cada tipo padronizado dentro do filtro atual." accent="#16a34a">
                   <HorizontalBarChart items={rankingTipos} valueFormatter={fmt} emptyText="Sem aportes para comparar." />
                 </ChartPanel>
               </div>
               <ChartPanel title="Painel mensal dos aportes" subtitle="Matriz compacta com os valores por periodo, agrupada por socio dentro do filtro atual." accent="#f59e0b">
-                <HeatmapChart rows={painelMensalTipos} valueFormatter={fmt} emptyText="Sem periodos para exibir." />
+                <HeatmapChart rows={painelMensalTipos} rowHeaderLabel="Socio" valueFormatter={fmt} emptyText="Sem periodos para exibir." />
               </ChartPanel>
             </div>
           )
@@ -344,7 +367,7 @@ export default function InvestimentosPage() {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
                     <tr>
-                      {['Data', 'Socio', 'Moto / Item', 'Valor', ''].map((header) => (
+                      {['Data', 'Socio', 'Tipo', 'Moto / Item', 'Valor', ''].map((header) => (
                         <th key={header} style={{ padding: '9px 16px', textAlign: header === 'Valor' ? 'right' : 'left', fontFamily: 'Geist Mono, monospace', fontSize: 10, letterSpacing: '.7px', textTransform: 'uppercase', color: 'var(--ink-muted)', fontWeight: 500 }}>
                           {header}
                         </th>
@@ -358,6 +381,7 @@ export default function InvestimentosPage() {
                         <td style={{ padding: '9px 16px' }}>
                           <span style={{ fontWeight: 600, color: SOCIO_COLORS[item.socio] || 'var(--ink)' }}>{item.socio}</span>
                         </td>
+                        <td style={{ padding: '9px 16px', color: 'var(--ink)', fontWeight: 600 }}>{normalizeTipo(item.tipo)}</td>
                         <td style={{ padding: '9px 16px', color: 'var(--ink-muted)', fontFamily: 'Geist Mono, monospace', fontSize: 12 }}>{resolveAporteLabel(item.moto, item.tipo, motosMap)}</td>
                         <td style={{ padding: '9px 16px', textAlign: 'right', fontFamily: 'Geist Mono, monospace', fontSize: 13, color: 'var(--blue-500)', fontWeight: 600 }}>{fmt(Number(item.valor || 0))}</td>
                         <td style={{ padding: '9px 10px', width: 40 }}>
@@ -368,7 +392,7 @@ export default function InvestimentosPage() {
                       </tr>
                     ))}
                     {!filtradas.length && (
-                      <tr><td colSpan={5} style={{ padding: '36px 16px', textAlign: 'center', color: 'var(--ink-muted)', fontSize: 13 }}>Nenhum investimento registrado</td></tr>
+                      <tr><td colSpan={6} style={{ padding: '36px 16px', textAlign: 'center', color: 'var(--ink-muted)', fontSize: 13 }}>Nenhum investimento registrado</td></tr>
                     )}
                   </tbody>
                 </table>

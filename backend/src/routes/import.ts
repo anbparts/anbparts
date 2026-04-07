@@ -2,6 +2,16 @@ import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 
 export const importRouter = Router();
+const INVESTIMENTO_TIPOS = ['Moto', 'Insumos', 'Infra-Estrutura', 'Obra', 'Operacional'] as const;
+
+function normalizeInvestimentoTipo(value: any) {
+  const raw = String(value || '').trim();
+  if (!raw) return 'Operacional';
+  const match = INVESTIMENTO_TIPOS.find((item) => item.toLowerCase() === raw.toLowerCase());
+  if (match) return match;
+  if (/^\d+$/.test(raw) || /^id\s*\d+$/i.test(raw) || /^#\d+$/i.test(raw)) return 'Moto';
+  return 'Operacional';
+}
 
 // POST /import/motos
 importRouter.post('/motos', async (req, res, next) => {
@@ -102,6 +112,11 @@ importRouter.post('/despesas', async (req, res, next) => {
       detalhes: String(r.detalhes),
       categoria: String(r.categoria || 'Outros'),
       valor: Number(r.valor) || 0,
+      statusPagamento: 'pago',
+      dataPagamento: r.data ? new Date(r.data) : new Date(),
+      chavePix: r.chavePix ? String(r.chavePix) : null,
+      codigoBarras: r.codigoBarras ? String(r.codigoBarras) : null,
+      observacao: r.observacao ? String(r.observacao) : null,
     }));
 
     await prisma.$transaction(async (tx) => {
@@ -121,6 +136,7 @@ importRouter.post('/investimentos', async (req, res, next) => {
     const rows = raw.filter((r) => r.data && r.socio).map((r) => ({
       data: new Date(r.data),
       socio: String(r.socio),
+      tipo: normalizeInvestimentoTipo(r.tipo),
       moto: r.moto ? String(r.moto) : null,
       valor: Number(r.valor) || 0,
     }));

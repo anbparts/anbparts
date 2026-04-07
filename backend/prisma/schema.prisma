@@ -61,7 +61,20 @@ model Despesa {
   detalhes   String
   categoria  String   @default("Outros")
   valor      Decimal  @default(0) @db.Decimal(12, 2)
+  statusPagamento String @default("pendente")
+  dataPagamento DateTime?
+  chavePix   String?
+  codigoBarras String?
+  observacao String?
+  anexoNome  String?
+  anexoArquivo String? @db.Text
+  comprovanteNome String?
+  comprovanteArquivo String? @db.Text
   createdAt  DateTime @default(now())
+
+  @@index([statusPagamento])
+  @@index([data])
+  @@index([dataPagamento])
 }
 
 model Prejuizo {
@@ -137,6 +150,12 @@ model ConfiguracaoGeral {
   auditoriaEmailTitulo      String   @default("ALERTA ANB Parts - Divergência de Produtos / Anúncios - Verifique")
   detranEmailDestinatario   String   @default("")
   detranEmailTitulo         String   @default("ALERTA ANB Parts - Baixa de Etiqueta DETRAN - Verifique")
+  despesasEmailAtivo        Boolean  @default(false)
+  despesasEmailHorario      String   @default("07:00")
+  despesasEmailDestinatario String   @default("")
+  despesasEmailTitulo       String   @default("ALERTA ANB Parts - Despesas do Dia - Verifique")
+  despesasEmailUltimaExecucaoChave String?
+  despesasEmailUltimaExecucaoEm DateTime?
   createdAt                 DateTime @default(now())
   updatedAt                 DateTime @updatedAt
 }

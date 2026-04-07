@@ -70,6 +70,19 @@ export const api = {
     porMoto:   () => req<any[]>('/faturamento/por-moto'),
   },
   financeiro: {
+    despesas: {
+      list: () => req<any[]>('/financeiro/despesas'),
+      create: (data: any) => req<any>('/financeiro/despesas', { method: 'POST', body: JSON.stringify(data) }),
+      update: (id: number, data: any) => req<any>(`/financeiro/despesas/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+      setStatus: (id: number, data: any) => req<any>(`/financeiro/despesas/${id}/status`, { method: 'PATCH', body: JSON.stringify(data) }),
+      delete: (id: number) => req<any>(`/financeiro/despesas/${id}`, { method: 'DELETE' }),
+    },
+    investimentos: {
+      list: () => req<any[]>('/financeiro/investimentos'),
+      create: (data: any) => req<any>('/financeiro/investimentos', { method: 'POST', body: JSON.stringify(data) }),
+      clear: () => req<any>('/financeiro/investimentos', { method: 'DELETE' }),
+      delete: (id: number) => req<any>(`/financeiro/investimentos/${id}`, { method: 'DELETE' }),
+    },
     prejuizos: {
       list: () => req<any[]>('/financeiro/prejuizos'),
       update: (id: number, data: any) => req<any>(`/financeiro/prejuizos/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
@@ -83,5 +96,7 @@ export const api = {
   import: {
     motos: (data: any[]) => req<any>('/import/motos', { method: 'POST', body: JSON.stringify(data) }),
     pecas: (data: any[]) => req<any>('/import/pecas', { method: 'POST', body: JSON.stringify(data) }),
+    despesas: (data: any[]) => req<any>('/import/despesas', { method: 'POST', body: JSON.stringify(data) }),
+    investimentos: (data: any[]) => req<any>('/import/investimentos', { method: 'POST', body: JSON.stringify(data) }),
   },
 };

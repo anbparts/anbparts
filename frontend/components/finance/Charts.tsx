@@ -359,11 +359,13 @@ export function HeatmapChart({
   emptyText,
   valueFormatter,
   normalizeByRow = false,
+  rowHeaderLabel = 'Linha',
 }: {
   rows: HeatmapRow[];
   emptyText?: string;
   valueFormatter?: (value: number) => string;
   normalizeByRow?: boolean;
+  rowHeaderLabel?: string;
 }) {
   if (!rows.length) return emptyBlock(emptyText || 'Sem dados para exibir.');
 
@@ -423,7 +425,7 @@ export function HeatmapChart({
             letterSpacing: '0.7px',
           }}
         >
-          Moto
+          {rowHeaderLabel}
         </div>
 
         {columns.map((column) => (

@@ -6,7 +6,7 @@ import { pecasRouter } from './routes/pecas';
 import { faturamentoRouter } from './routes/faturamento';
 import { importRouter } from './routes/import';
 import { blingRouter, startBlingAuditoriaScheduler } from './routes/bling';
-import { financeiroRouter } from './routes/financeiro';
+import { financeiroRouter, startFinanceiroSchedulers } from './routes/financeiro';
 import { inventarioRouter } from './routes/inventario';
 import { configuracoesGeraisRouter } from './routes/configuracoes-gerais';
 import { errorMiddleware } from './middlewares/error';
@@ -18,7 +18,7 @@ app.use(cors({
   credentials: true,
 }));
 
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '25mb' }));
 
 app.get('/health', (_, res) => res.json({ ok: true, ts: new Date() }));
 
@@ -36,5 +36,6 @@ app.use(errorMiddleware);
 const port = Number(process.env.PORT) || 3333;
 app.listen(port, () => {
   startBlingAuditoriaScheduler();
+  startFinanceiroSchedulers();
   console.log(`ANB Backend rodando na porta ${port}`);
 });

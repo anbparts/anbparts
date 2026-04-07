@@ -240,7 +240,7 @@ export default function FaturamentoGeralPage() {
                 subtitle="Matriz compacta com receita, volume e ticket medio ao longo do periodo."
                 accent="#16a34a"
               >
-                <HeatmapChart rows={painelMensalRows} normalizeByRow emptyText="Sem periodos para exibir." />
+                <HeatmapChart rows={painelMensalRows} rowHeaderLabel="Indicador" normalizeByRow emptyText="Sem periodos para exibir." />
               </ChartPanel>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1.2fr)', gap: 18 }}>

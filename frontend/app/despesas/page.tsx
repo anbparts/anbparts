@@ -1,11 +1,14 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ChartPanel, ColumnChart, DonutChart, HorizontalBarChart, ViewModeSwitch, type ViewMode } from '@/components/finance/Charts';
+import { api } from '@/lib/api';
 
-const BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3333';
 const CATEGORIAS = ['Insumo', 'Servicos', 'Taxas', 'Aluguel', 'Sistemas', 'Contador', 'Moto', 'Outros'];
-
+const STATUS_COLORS: Record<string, string> = {
+  pago: 'var(--green)',
+  pendente: 'var(--red)',
+};
 const CATEG_COLORS: Record<string, string> = {
   Insumo: '#2563eb',
   Servicos: '#f59e0b',
@@ -39,6 +42,24 @@ function monthLabel(dateValue: string) {
   return date.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }).replace('.', '');
 }
 
+async function fileToDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function downloadDataUrl(dataUrl: string, fileName: string) {
+  const link = document.createElement('a');
+  link.href = dataUrl;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
 function CategBadge({ categoria }: { categoria: string }) {
   const color = CATEG_COLORS[categoria] || '#64748b';
   return (
@@ -58,15 +79,195 @@ function CategBadge({ categoria }: { categoria: string }) {
   );
 }
 
+function StatusBadge({ status, onClick }: { status: 'pago' | 'pendente'; onClick: () => void }) {
+  const color = STATUS_COLORS[status];
+  const background = status === 'pago' ? '#ecfdf3' : '#fef2f2';
+  const border = status === 'pago' ? '#86efac' : '#fecaca';
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        background,
+        color,
+        border: `1px solid ${border}`,
+        borderRadius: 999,
+        padding: '4px 10px',
+        fontSize: 11,
+        fontWeight: 700,
+        cursor: 'pointer',
+      }}
+    >
+      {status === 'pago' ? 'Pago' : 'Pendente'}
+    </button>
+  );
+}
+
+function InfoPill({ label, title }: { label: string; title: string }) {
+  return (
+    <span
+      title={title}
+      style={{
+        padding: '3px 8px',
+        borderRadius: 999,
+        fontSize: 10,
+        fontWeight: 700,
+        background: 'var(--gray-50)',
+        border: '1px solid var(--border)',
+        color: 'var(--gray-700)',
+        cursor: 'help',
+      }}
+    >
+      {label}
+    </span>
+  );
+}
+
+function FileButton({ label, dataUrl, fileName }: { label: string; dataUrl?: string | null; fileName?: string | null }) {
+  if (!dataUrl) return <span style={{ color: 'var(--gray-300)' }}>-</span>;
+  return (
+    <button
+      type="button"
+      onClick={() => downloadDataUrl(dataUrl, fileName || `${label}.pdf`)}
+      style={{
+        border: '1px solid var(--border)',
+        background: 'var(--white)',
+        color: 'var(--blue-500)',
+        borderRadius: 7,
+        padding: '4px 9px',
+        fontSize: 11,
+        fontWeight: 700,
+        cursor: 'pointer',
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+function PaymentModal({
+  despesa,
+  onClose,
+  onConfirm,
+}: {
+  despesa: any;
+  onClose: () => void;
+  onConfirm: (payload: { statusPagamento: 'pago' | 'pendente'; dataPagamento?: string | null; comprovante?: { name: string; dataUrl: string } | null }) => Promise<void>;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [dataPagamento, setDataPagamento] = useState(despesa.dataPagamento ? String(despesa.dataPagamento).split('T')[0] : today());
+  const [comprovante, setComprovante] = useState<{ name: string; dataUrl: string } | null>(null);
+
+  async function handleComprovanteChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const dataUrl = await fileToDataUrl(file);
+    setComprovante({ name: file.name, dataUrl });
+  }
+
+  async function confirmarPago() {
+    setSaving(true);
+    try {
+      await onConfirm({ statusPagamento: 'pago', dataPagamento, comprovante });
+      onClose();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function reverterPendente() {
+    if (!confirm('Reverter esta despesa para pendente?')) return;
+    setSaving(true);
+    try {
+      await onConfirm({ statusPagamento: 'pendente', dataPagamento: null, comprovante: null });
+      onClose();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, zIndex: 1000 }}>
+      <div style={{ width: 'min(620px, 100%)', background: 'var(--white)', borderRadius: 16, border: '1px solid var(--border)', boxShadow: '0 20px 60px rgba(15,23,42,.18)', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 22px', borderBottom: '1px solid var(--border)' }}>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--ink)' }}>Pagamento da despesa</div>
+            <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 4 }}>{despesa.detalhes}</div>
+          </div>
+          <button type="button" onClick={onClose} style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, width: 34, height: 34, cursor: 'pointer', color: 'var(--gray-700)' }}>X</button>
+        </div>
+
+        <div style={{ padding: 22, display: 'grid', gap: 14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
+            <div style={{ background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px' }}>
+              <div style={{ fontSize: 11, color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: '.7px', marginBottom: 6 }}>Status atual</div>
+              <div style={{ fontSize: 17, fontWeight: 700, color: STATUS_COLORS[despesa.statusPagamento] }}>{despesa.statusPagamento === 'pago' ? 'Pago' : 'Pendente'}</div>
+            </div>
+            <div style={{ background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px' }}>
+              <div style={{ fontSize: 11, color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: '.7px', marginBottom: 6 }}>Valor</div>
+              <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--red)' }}>{fmt(Number(despesa.valor || 0))}</div>
+            </div>
+          </div>
+
+          <div>
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--ink-muted)', marginBottom: 6 }}>Data do pagamento</label>
+            <input
+              type="date"
+              value={dataPagamento}
+              onChange={(event) => setDataPagamento(event.target.value)}
+              style={{ width: '100%', background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', fontSize: 13 }}
+            />
+          </div>
+
+          <div>
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--ink-muted)', marginBottom: 6 }}>Comprovante do pagamento</label>
+            <input type="file" accept=".pdf,image/*" onChange={handleComprovanteChange} />
+            <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 6 }}>
+              {comprovante?.name || despesa.comprovanteNome || 'Nenhum comprovante anexado'}
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '0 22px 22px' }}>
+          <div>
+            {despesa.statusPagamento === 'pago' && (
+              <button type="button" onClick={reverterPendente} disabled={saving} style={{ padding: '10px 14px', borderRadius: 8, border: '1px solid #fecaca', background: '#fef2f2', color: 'var(--red)', fontWeight: 700, cursor: 'pointer' }}>
+                Reverter para pendente
+              </button>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button type="button" onClick={onClose} style={{ padding: '10px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', color: 'var(--gray-700)', fontWeight: 600, cursor: 'pointer' }}>Fechar</button>
+            <button type="button" onClick={confirmarPago} disabled={saving} style={{ padding: '10px 14px', borderRadius: 8, border: '1px solid transparent', background: 'var(--blue-500)', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
+              {saving ? 'Salvando...' : despesa.statusPagamento === 'pago' ? 'Atualizar pagamento' : 'Confirmar como pago'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function DespesasPage() {
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filtroCategoria, setFiltroCategoria] = useState('');
+  const [filtroStatus, setFiltroStatus] = useState('');
   const [filtroAno, setFiltroAno] = useState(currentYear());
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [modo, setModo] = useState<ViewMode>('grafico');
-  const [form, setForm] = useState({ data: today(), detalhes: '', categoria: 'Insumo', valor: '' });
+  const [pagamentoDespesa, setPagamentoDespesa] = useState<any | null>(null);
+  const [form, setForm] = useState({
+    data: today(),
+    detalhes: '',
+    categoria: 'Insumo',
+    valor: '',
+    chavePix: '',
+    codigoBarras: '',
+    observacao: '',
+    anexo: null as { name: string; dataUrl: string } | null,
+  });
 
   const inputStyle: any = {
     background: 'var(--white)',
@@ -79,15 +280,17 @@ export default function DespesasPage() {
     color: 'var(--ink)',
   };
 
-  function load() {
+  async function load() {
     setLoading(true);
-    fetch(`${BASE}/financeiro/despesas`)
-      .then((response) => response.json())
-      .then(setRows)
-      .finally(() => setLoading(false));
+    try {
+      const data = await api.financeiro.despesas.list();
+      setRows(data);
+    } finally {
+      setLoading(false);
+    }
   }
 
-  useEffect(load, []);
+  useEffect(() => { load(); }, []);
 
   const anos = Array.from(new Set(
     rows.map((item) => new Date(item.data).getFullYear()).filter((ano) => Number.isFinite(ano)),
@@ -96,9 +299,13 @@ export default function DespesasPage() {
   const filtradas = rows.filter((item) => {
     const ano = new Date(item.data).getFullYear();
     return (!filtroCategoria || item.categoria === filtroCategoria)
+      && (!filtroStatus || item.statusPagamento === filtroStatus)
       && (!filtroAno || ano === Number(filtroAno));
   });
+
   const total = filtradas.reduce((sum, item) => sum + Number(item.valor || 0), 0);
+  const totalPendentes = filtradas.filter((item) => item.statusPagamento === 'pendente').length;
+  const totalPagas = filtradas.filter((item) => item.statusPagamento === 'pago').length;
 
   const porCategoriaMap = new Map<string, number>();
   const porMesMap = new Map<string, { label: string; value: number }>();
@@ -115,7 +322,12 @@ export default function DespesasPage() {
   });
 
   const categoriasOrdenadas = Array.from(porCategoriaMap.entries())
-    .map(([label, value]) => ({ label, value, color: CATEG_COLORS[label], note: `${((value / Math.max(total, 1)) * 100).toFixed(1).replace('.', ',')}%` }))
+    .map(([label, value]) => ({
+      label,
+      value,
+      color: CATEG_COLORS[label],
+      note: `${((value / Math.max(total, 1)) * 100).toFixed(1).replace('.', ',')}%`,
+    }))
     .sort((a, b) => b.value - a.value);
 
   const linhaTempo = Array.from(porMesMap.entries())
@@ -123,32 +335,58 @@ export default function DespesasPage() {
     .map(([, value]) => value)
     .slice(-8);
 
+  async function handleAnexoChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const dataUrl = await fileToDataUrl(file);
+    setForm((current) => ({ ...current, anexo: { name: file.name, dataUrl } }));
+  }
+
   async function salvar() {
     if (!form.detalhes || !form.valor) return;
     setSaving(true);
-    await fetch(`${BASE}/financeiro/despesas`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...form, valor: Number(form.valor) }),
-    });
-    setForm({ data: today(), detalhes: '', categoria: 'Insumo', valor: '' });
-    setShowForm(false);
-    setSaving(false);
-    load();
+    try {
+      await api.financeiro.despesas.create({
+        data: form.data,
+        detalhes: form.detalhes,
+        categoria: form.categoria,
+        valor: Number(form.valor),
+        chavePix: form.chavePix || null,
+        codigoBarras: form.codigoBarras || null,
+        observacao: form.observacao || null,
+        anexo: form.anexo,
+      });
+      setForm({ data: today(), detalhes: '', categoria: 'Insumo', valor: '', chavePix: '', codigoBarras: '', observacao: '', anexo: null });
+      setShowForm(false);
+      await load();
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function excluir(id: number) {
     if (!confirm('Excluir despesa?')) return;
-    await fetch(`${BASE}/financeiro/despesas/${id}`, { method: 'DELETE' });
-    load();
+    await api.financeiro.despesas.delete(id);
+    await load();
   }
+
+  async function atualizarStatus(payload: { statusPagamento: 'pago' | 'pendente'; dataPagamento?: string | null; comprovante?: { name: string; dataUrl: string } | null }) {
+    if (!pagamentoDespesa) return;
+    await api.financeiro.despesas.setStatus(pagamentoDespesa.id, payload);
+    await load();
+  }
+
+  const resumoPendenteHoje = useMemo(() => {
+    const todayKey = today();
+    return rows.filter((item) => item.statusPagamento === 'pendente' && String(item.data).split('T')[0] === todayKey).length;
+  }, [rows]);
 
   return (
     <>
       <div style={{ height: 'var(--topbar-h)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 28px', background: 'var(--white)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, zIndex: 50 }}>
         <div>
           <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)', letterSpacing: '-0.3px' }}>Despesas</div>
-          <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>Despesas operacionais</div>
+          <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>Controle de vencimento, pagamento e comprovantes</div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <ViewModeSwitch value={modo} onChange={setModo} />
@@ -168,29 +406,30 @@ export default function DespesasPage() {
             <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--red)', letterSpacing: '-0.4px' }}>{fmt(total)}</div>
           </div>
           <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, padding: '16px 18px' }}>
-            <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '.6px', textTransform: 'uppercase', marginBottom: 8 }}>Lancamentos</div>
-            <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.4px' }}>{filtradas.length}</div>
+            <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '.6px', textTransform: 'uppercase', marginBottom: 8 }}>Pendentes no filtro</div>
+            <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--red)', letterSpacing: '-0.4px' }}>{totalPendentes}</div>
           </div>
           <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, padding: '16px 18px' }}>
-            <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '.6px', textTransform: 'uppercase', marginBottom: 8 }}>Maior categoria</div>
-            <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--blue-500)', letterSpacing: '-0.4px' }}>
-              {categoriasOrdenadas[0]?.label || '--'}
-            </div>
-            <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginTop: 6 }}>{categoriasOrdenadas[0] ? fmt(categoriasOrdenadas[0].value) : 'Sem dados'}</div>
+            <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '.6px', textTransform: 'uppercase', marginBottom: 8 }}>Pagas no filtro</div>
+            <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--green)', letterSpacing: '-0.4px' }}>{totalPagas}</div>
+          </div>
+          <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, padding: '16px 18px' }}>
+            <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '.6px', textTransform: 'uppercase', marginBottom: 8 }}>Vencem hoje</div>
+            <div style={{ fontSize: 24, fontWeight: 700, color: resumoPendenteHoje > 0 ? 'var(--amber)' : 'var(--gray-700)', letterSpacing: '-0.4px' }}>{resumoPendenteHoje}</div>
           </div>
         </div>
 
         {showForm && (
           <div style={{ background: 'var(--white)', border: '1px solid var(--blue-200)', borderRadius: 10, padding: 20, marginBottom: 20 }}>
             <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 14, color: 'var(--ink)' }}>Nova despesa</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 1fr 1fr auto', gap: 10, alignItems: 'end' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
               <div>
                 <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Data</div>
                 <input style={{ ...inputStyle, width: '100%' }} type="date" value={form.data} onChange={(e) => setForm((value) => ({ ...value, data: e.target.value }))} />
               </div>
-              <div>
+              <div style={{ gridColumn: 'span 2' }}>
                 <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Detalhes *</div>
-                <input style={{ ...inputStyle, width: '100%' }} placeholder="Ex: Bobina plastico bolha" value={form.detalhes} onChange={(e) => setForm((value) => ({ ...value, detalhes: e.target.value }))} />
+                <input style={{ ...inputStyle, width: '100%' }} placeholder="Ex: Boleto fornecedor pneus" value={form.detalhes} onChange={(e) => setForm((value) => ({ ...value, detalhes: e.target.value }))} />
               </div>
               <div>
                 <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Categoria</div>
@@ -202,6 +441,25 @@ export default function DespesasPage() {
                 <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Valor (R$) *</div>
                 <input style={{ ...inputStyle, width: '100%' }} type="number" step="0.01" placeholder="0,00" value={form.valor} onChange={(e) => setForm((value) => ({ ...value, valor: e.target.value }))} />
               </div>
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Chave PIX</div>
+                <input style={{ ...inputStyle, width: '100%' }} placeholder="Opcional" value={form.chavePix} onChange={(e) => setForm((value) => ({ ...value, chavePix: e.target.value }))} />
+              </div>
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Codigo de barras</div>
+                <input style={{ ...inputStyle, width: '100%' }} placeholder="Opcional" value={form.codigoBarras} onChange={(e) => setForm((value) => ({ ...value, codigoBarras: e.target.value }))} />
+              </div>
+              <div style={{ gridColumn: 'span 2' }}>
+                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Observacao</div>
+                <input style={{ ...inputStyle, width: '100%' }} placeholder="Opcional" value={form.observacao} onChange={(e) => setForm((value) => ({ ...value, observacao: e.target.value }))} />
+              </div>
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>PDF da despesa</div>
+                <input type="file" accept=".pdf" onChange={handleAnexoChange} />
+                <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 6 }}>{form.anexo?.name || 'Nenhum arquivo selecionado'}</div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
               <button
                 onClick={salvar}
                 disabled={saving || !form.detalhes || !form.valor}
@@ -226,6 +484,11 @@ export default function DespesasPage() {
               <select style={{ ...inputStyle, cursor: 'pointer' }} value={filtroCategoria} onChange={(e) => setFiltroCategoria(e.target.value)}>
                 <option value="">Todas categorias</option>
                 {CATEGORIAS.map((categoria) => <option key={categoria}>{categoria}</option>)}
+              </select>
+              <select style={{ ...inputStyle, cursor: 'pointer' }} value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value)}>
+                <option value="">Todos os status</option>
+                <option value="pendente">Pendentes</option>
+                <option value="pago">Pagas</option>
               </select>
             </div>
           </div>
@@ -258,7 +521,7 @@ export default function DespesasPage() {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
                     <tr>
-                      {['Data', 'Detalhes', 'Categoria', 'Valor', ''].map((header) => (
+                      {['Data', 'Detalhes', 'Categoria', 'Valor', 'Dados', 'Anexo', 'Comprovante', 'Status', 'Pagamento', ''].map((header) => (
                         <th key={header} style={{ padding: '9px 16px', textAlign: header === 'Valor' ? 'right' : 'left', fontFamily: 'Geist Mono, monospace', fontSize: 10, letterSpacing: '.7px', textTransform: 'uppercase', color: 'var(--ink-muted)', fontWeight: 500 }}>
                           {header}
                         </th>
@@ -272,6 +535,26 @@ export default function DespesasPage() {
                         <td style={{ padding: '9px 16px', color: 'var(--ink)' }}>{item.detalhes}</td>
                         <td style={{ padding: '9px 16px' }}><CategBadge categoria={item.categoria} /></td>
                         <td style={{ padding: '9px 16px', textAlign: 'right', fontFamily: 'Geist Mono, monospace', fontSize: 13, color: 'var(--red)', fontWeight: 500 }}>{fmt(Number(item.valor || 0))}</td>
+                        <td style={{ padding: '9px 16px' }}>
+                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                            {item.chavePix ? <InfoPill label="PIX" title={item.chavePix} /> : null}
+                            {item.codigoBarras ? <InfoPill label="Barras" title={item.codigoBarras} /> : null}
+                            {item.observacao ? <InfoPill label="Obs" title={item.observacao} /> : null}
+                            {!item.chavePix && !item.codigoBarras && !item.observacao ? <span style={{ color: 'var(--gray-300)' }}>-</span> : null}
+                          </div>
+                        </td>
+                        <td style={{ padding: '9px 16px' }}>
+                          <FileButton label="PDF" dataUrl={item.anexoArquivo} fileName={item.anexoNome} />
+                        </td>
+                        <td style={{ padding: '9px 16px' }}>
+                          <FileButton label="Comp." dataUrl={item.comprovanteArquivo} fileName={item.comprovanteNome} />
+                        </td>
+                        <td style={{ padding: '9px 16px' }}>
+                          <StatusBadge status={item.statusPagamento} onClick={() => setPagamentoDespesa(item)} />
+                        </td>
+                        <td style={{ padding: '9px 16px', fontFamily: 'Geist Mono, monospace', fontSize: 12, color: 'var(--ink-muted)' }}>
+                          {item.dataPagamento ? new Date(item.dataPagamento).toLocaleDateString('pt-BR') : '-'}
+                        </td>
                         <td style={{ padding: '9px 10px', width: 40 }}>
                           <button onClick={() => excluir(item.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-muted)', fontSize: 14, padding: '2px 6px', borderRadius: 4 }} title="Excluir">
                             x
@@ -280,7 +563,7 @@ export default function DespesasPage() {
                       </tr>
                     ))}
                     {!filtradas.length && (
-                      <tr><td colSpan={5} style={{ padding: '36px 16px', textAlign: 'center', color: 'var(--ink-muted)', fontSize: 13 }}>Nenhuma despesa encontrada</td></tr>
+                      <tr><td colSpan={10} style={{ padding: '36px 16px', textAlign: 'center', color: 'var(--ink-muted)', fontSize: 13 }}>Nenhuma despesa encontrada</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -289,6 +572,14 @@ export default function DespesasPage() {
           </div>
         )}
       </div>
+
+      {pagamentoDespesa && (
+        <PaymentModal
+          despesa={pagamentoDespesa}
+          onClose={() => setPagamentoDespesa(null)}
+          onConfirm={atualizarStatus}
+        />
+      )}
     </>
   );
 }

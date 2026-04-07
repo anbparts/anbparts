@@ -249,7 +249,7 @@ export default function FaturamentoMotoPage() {
                 subtitle="Matriz compacta com todos os meses para comparar a receita liquida entre as motos."
                 accent="#f59e0b"
               >
-                <HeatmapChart rows={heatmapRows} valueFormatter={fmt} emptyText="Sem periodos para exibir." />
+                <HeatmapChart rows={heatmapRows} rowHeaderLabel="Moto" valueFormatter={fmt} emptyText="Sem periodos para exibir." />
               </ChartPanel>
 
               <ChartPanel

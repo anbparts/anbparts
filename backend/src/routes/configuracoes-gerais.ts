@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import {
   DEFAULT_AUDITORIA_EMAIL_TITULO,
+  DEFAULT_DESPESAS_EMAIL_HORARIO,
+  DEFAULT_DESPESAS_EMAIL_TITULO,
   DEFAULT_DETRAN_EMAIL_TITULO,
   DEFAULT_RESEND_FROM,
   getConfiguracaoGeral,
@@ -18,9 +20,14 @@ configuracoesGeraisRouter.get('/', async (_req, res, next) => {
       auditoriaEmailTitulo: config.auditoriaEmailTitulo || DEFAULT_AUDITORIA_EMAIL_TITULO,
       detranEmailDestinatario: config.detranEmailDestinatario || '',
       detranEmailTitulo: config.detranEmailTitulo || DEFAULT_DETRAN_EMAIL_TITULO,
+      despesasEmailAtivo: !!config.despesasEmailAtivo,
+      despesasEmailHorario: config.despesasEmailHorario || DEFAULT_DESPESAS_EMAIL_HORARIO,
+      despesasEmailDestinatario: config.despesasEmailDestinatario || '',
+      despesasEmailTitulo: config.despesasEmailTitulo || DEFAULT_DESPESAS_EMAIL_TITULO,
       resendApiKeyConfigured: !!config.resendApiKey,
       auditoriaEmailConfigurado: !!config.auditoriaEmailConfigurado,
       detranEmailConfigurado: !!config.detranEmailConfigurado,
+      despesasEmailConfigurado: !!config.despesasEmailConfigurado,
     });
   } catch (e) {
     next(e);
@@ -35,6 +42,10 @@ configuracoesGeraisRouter.post('/', async (req, res, next) => {
       auditoriaEmailTitulo: req.body?.auditoriaEmailTitulo,
       detranEmailDestinatario: req.body?.detranEmailDestinatario,
       detranEmailTitulo: req.body?.detranEmailTitulo,
+      despesasEmailAtivo: req.body?.despesasEmailAtivo,
+      despesasEmailHorario: req.body?.despesasEmailHorario,
+      despesasEmailDestinatario: req.body?.despesasEmailDestinatario,
+      despesasEmailTitulo: req.body?.despesasEmailTitulo,
     };
 
     const resendApiKey = String(req.body?.resendApiKey || '').trim();
