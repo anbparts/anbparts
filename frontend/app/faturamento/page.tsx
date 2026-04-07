@@ -101,14 +101,9 @@ export default function FaturamentoMotoPage() {
 
   const totalReceita = filtered.reduce((sum, item) => sum + Number(item.receitaLiq || item.receita || 0), 0);
   const totalQtd = filtered.reduce((sum, item) => sum + Number(item.qtd || 0), 0);
-  const melhor = filtered.reduce((best: any, item) => {
-    const receitaAtual = Number(item.receitaLiq || item.receita || 0);
-    const receitaBest = Number(best?.receitaLiq || best?.receita || 0);
-    return receitaAtual > receitaBest ? item : best;
-  }, null);
 
   const porMotoMap = new Map<number, { nome: string; sku: string; receita: number; qtd: number }>();
-  const porPeriodoMap = new Map<string, { label: string; receita: number; qtd: number }>();
+  const porPeriodoMap = new Map<string, { label: string; receita: number; qtd: number; mes: number; ano: number }>();
   const heatmapMotoMap = new Map<number, {
     label: string;
     totalReceita: number;
@@ -135,6 +130,8 @@ export default function FaturamentoMotoPage() {
       label: `${MESES[item.mes - 1]}/${String(item.ano).slice(-2)}`,
       receita: 0,
       qtd: 0,
+      mes: item.mes,
+      ano: item.ano,
     };
     acumuladoPeriodo.receita += receita;
     acumuladoPeriodo.qtd += qtd;
@@ -155,6 +152,13 @@ export default function FaturamentoMotoPage() {
     heatmapMoto.cells.set(period, currentCell);
     heatmapMotoMap.set(motoKey, heatmapMoto);
   });
+
+  const melhorPeriodo = Array.from(porPeriodoMap.entries())
+    .map(([key, value]) => ({
+      key,
+      ...value,
+    }))
+    .sort((a, b) => b.receita - a.receita)[0] || null;
 
   const rankingMotos = Array.from(porMotoMap.entries())
     .map(([, value]) => ({
@@ -208,9 +212,9 @@ export default function FaturamentoMotoPage() {
             { label: 'Pecas vendidas', value: totalQtd.toLocaleString('pt-BR'), color: 'var(--ink)' },
             {
               label: 'Melhor periodo',
-              value: melhor ? `${MESES[melhor.mes - 1]}/${melhor.ano}` : '--',
+              value: melhorPeriodo ? `${MESES[melhorPeriodo.mes - 1]}/${melhorPeriodo.ano}` : '--',
               color: 'var(--amber)',
-              sub: melhor ? fmt(Number(melhor.receitaLiq || melhor.receita || 0)) : '',
+              sub: melhorPeriodo ? fmt(melhorPeriodo.receita) : '',
             },
           ].map((card) => (
             <div key={card.label} style={cs.sCard}>
