@@ -8,6 +8,7 @@ import { importRouter } from './routes/import';
 import { blingRouter, startBlingAuditoriaScheduler } from './routes/bling';
 import { financeiroRouter } from './routes/financeiro';
 import { inventarioRouter } from './routes/inventario';
+import { configuracoesGeraisRouter } from './routes/configuracoes-gerais';
 import { errorMiddleware } from './middlewares/error';
 
 const app = express();
@@ -28,6 +29,7 @@ app.use('/import', importRouter);
 app.use('/bling', blingRouter);
 app.use('/financeiro', financeiroRouter);
 app.use('/inventario', inventarioRouter);
+app.use('/configuracoes-gerais', configuracoesGeraisRouter);
 
 app.use(errorMiddleware);
 

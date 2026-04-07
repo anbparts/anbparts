@@ -97,6 +97,7 @@ model BlingConfig {
   taxaPadraoPct               Decimal  @default(17.00) @db.Decimal(5, 2)
   auditoriaAtiva              Boolean  @default(false)
   auditoriaHorario            String   @default("03:00")
+  auditoriaEscopo             String   @default("full")
   auditoriaEmailDestinatario  String   @default("")
   auditoriaResendApiKey       String   @default("")
   auditoriaResendFrom         String   @default("alertas@mail.anbparts.com.br")
@@ -123,6 +124,18 @@ model AuditoriaAutomaticaExecucao {
   erro               String?
   resumo             Json?
   divergencias       Json?
+}
+
+model ConfiguracaoGeral {
+  id                        Int      @id @default(autoincrement())
+  resendApiKey              String   @default("")
+  emailRemetente            String   @default("alertas@mail.anbparts.com.br")
+  auditoriaEmailDestinatario String  @default("")
+  auditoriaEmailTitulo      String   @default("ALERTA ANB Parts - Divergência de Produtos / Anúncios - Verifique")
+  detranEmailDestinatario   String   @default("")
+  detranEmailTitulo         String   @default("ALERTA ANB Parts - Baixa de Etiqueta DETRAN - Verifique")
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
 }
 
 model Inventario {

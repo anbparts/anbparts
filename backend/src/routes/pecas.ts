@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
+import { sendDetranBaixaEmailIfNeeded } from '../lib/detran-alert';
 import { z } from 'zod';
 
 export const pecasRouter = Router();
@@ -413,7 +414,17 @@ pecasRouter.patch('/:id/vender', async (req, res, next) => {
     }
     const current = await prisma.peca.findUnique({
       where: { id: Number(req.params.id) },
-      select: { id: true, precoML: true, valorFrete: true, valorTaxas: true }
+      select: {
+        id: true,
+        idPeca: true,
+        descricao: true,
+        detranEtiqueta: true,
+        motoId: true,
+        precoML: true,
+        valorFrete: true,
+        valorTaxas: true,
+        moto: { select: { marca: true, modelo: true } },
+      }
     });
     if (!current) return res.status(404).json({ error: 'Peça não encontrada' });
 
@@ -437,7 +448,24 @@ pecasRouter.patch('/:id/vender', async (req, res, next) => {
         valorLiq: financials.valorLiq,
       }
     });
-    res.json(peca);
+    let alertaDetranEmailEnviado = false;
+    let alertaDetranEmailErro: string | null = null;
+    try {
+      const resultadoEmailDetran = await sendDetranBaixaEmailIfNeeded([
+        {
+          idPeca: current.idPeca,
+          descricao: current.descricao,
+          detranEtiqueta: current.detranEtiqueta || '',
+          motoId: current.motoId,
+          moto: current.moto ? `${current.moto.marca} ${current.moto.modelo}`.trim() : null,
+        },
+      ]);
+      alertaDetranEmailEnviado = !!resultadoEmailDetran?.sent;
+    } catch (error: any) {
+      alertaDetranEmailErro = error?.message || String(error);
+    }
+
+    res.json({ ...peca, alertaDetranEmailEnviado, alertaDetranEmailErro });
   } catch (e) { next(e); }
 });
 

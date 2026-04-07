@@ -72,6 +72,10 @@ export const api = {
       delete: (id: number) => req<any>(`/financeiro/prejuizos/${id}`, { method: 'DELETE' }),
     },
   },
+  configuracoesGerais: {
+    get: () => req<any>('/configuracoes-gerais'),
+    save: (data: any) => req<any>('/configuracoes-gerais', { method: 'POST', body: JSON.stringify(data) }),
+  },
   import: {
     motos: (data: any[]) => req<any>('/import/motos', { method: 'POST', body: JSON.stringify(data) }),
     pecas: (data: any[]) => req<any>('/import/pecas', { method: 'POST', body: JSON.stringify(data) }),
