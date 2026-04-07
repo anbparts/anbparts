@@ -18,6 +18,10 @@ const motoSchema = z.object({
   observacoes:  z.string().optional().nullable(),
 });
 
+const detranEtiquetaStatusSchema = z.object({
+  status: z.enum(['ativa', 'baixada']),
+});
+
 function normalizeDetranEtiqueta(value: unknown) {
   const text = String(value ?? '')
     .replace(/\s+/g, '')
@@ -32,7 +36,15 @@ motosRouter.get('/', async (req, res, next) => {
     const motos = await prisma.moto.findMany({
       include: {
         pecas: {
-          select: { id: true, disponivel: true, emPrejuizo: true, precoML: true, valorLiq: true, detranEtiqueta: true }
+          select: {
+            id: true,
+            disponivel: true,
+            emPrejuizo: true,
+            precoML: true,
+            valorLiq: true,
+            detranEtiqueta: true,
+            detranBaixada: true,
+          }
         }
       },
       orderBy: { id: 'asc' }
@@ -54,7 +66,10 @@ motosRouter.get('/', async (req, res, next) => {
       const vlVendidas  = vendidas.reduce((s, p) => s + Number(p.valorLiq), 0);
       const vlEstoque   = disponiveis.reduce((s, p) => s + Number(p.valorLiq), 0);
       const lucro       = (vlVendidas + vlEstoque) - Number(m.precoCompra);
-      const detranCount = m.pecas.filter((p) => normalizeDetranEtiqueta(p.detranEtiqueta)).length;
+      const detranPecas = m.pecas.filter((p) => normalizeDetranEtiqueta(p.detranEtiqueta));
+      const detranCount = detranPecas.length;
+      const detranAtivas = detranPecas.filter((p) => !p.detranBaixada).length;
+      const detranBaixadas = detranPecas.filter((p) => p.detranBaixada).length;
 
       // % recuperada = quanto do investimento já voltou (valor líq. vendidas / preço compra)
       const pctRecuperada = Number(m.precoCompra) > 0
@@ -74,6 +89,8 @@ motosRouter.get('/', async (req, res, next) => {
         pctRecuperada,
         qtdRelacionadas: m.pecas.length,
         detranCount,
+        detranAtivas,
+        detranBaixadas,
         temDetran: detranCount > 0,
         pecas: undefined,
       };
@@ -101,6 +118,8 @@ motosRouter.get('/:id/detran-etiquetas', async (req, res, next) => {
         idPeca: true,
         descricao: true,
         detranEtiqueta: true,
+        detranBaixada: true,
+        detranBaixadaAt: true,
       },
       orderBy: { idPeca: 'asc' },
     });
@@ -111,6 +130,10 @@ motosRouter.get('/:id/detran-etiquetas', async (req, res, next) => {
         idPeca: peca.idPeca,
         descricao: peca.descricao,
         detranEtiqueta: normalizeDetranEtiqueta(peca.detranEtiqueta),
+        detranStatus: peca.detranBaixada ? 'baixada' : 'ativa',
+        detranStatusLabel: peca.detranBaixada ? 'Baixada' : 'Ativa',
+        detranBaixada: !!peca.detranBaixada,
+        detranBaixadaAt: peca.detranBaixadaAt,
       }))
       .filter((peca) => peca.detranEtiqueta);
 
@@ -119,6 +142,72 @@ motosRouter.get('/:id/detran-etiquetas', async (req, res, next) => {
       motoId,
       total: itens.length,
       itens,
+    });
+  } catch (e) { next(e); }
+});
+
+// PATCH /motos/pecas/:pecaId/detran-status
+motosRouter.patch('/pecas/:pecaId/detran-status', async (req, res, next) => {
+  try {
+    const pecaId = Number(req.params.pecaId);
+    if (!Number.isInteger(pecaId) || pecaId <= 0) {
+      return res.status(400).json({ error: 'Peca invalida' });
+    }
+
+    const payload = detranEtiquetaStatusSchema.parse(req.body || {});
+    const current = await prisma.peca.findUnique({
+      where: { id: pecaId },
+      select: {
+        id: true,
+        motoId: true,
+        idPeca: true,
+        descricao: true,
+        detranEtiqueta: true,
+        detranBaixada: true,
+        detranBaixadaAt: true,
+      },
+    });
+
+    if (!current) {
+      return res.status(404).json({ error: 'Peca nao encontrada' });
+    }
+
+    const detranEtiqueta = normalizeDetranEtiqueta(current.detranEtiqueta);
+    if (!detranEtiqueta) {
+      return res.status(400).json({ error: 'A peca nao possui etiqueta DETRAN' });
+    }
+
+    const detranBaixada = payload.status === 'baixada';
+    const updated = await prisma.peca.update({
+      where: { id: pecaId },
+      data: {
+        detranBaixada,
+        detranBaixadaAt: detranBaixada ? new Date() : null,
+      },
+      select: {
+        id: true,
+        motoId: true,
+        idPeca: true,
+        descricao: true,
+        detranEtiqueta: true,
+        detranBaixada: true,
+        detranBaixadaAt: true,
+      },
+    });
+
+    res.json({
+      ok: true,
+      item: {
+        id: updated.id,
+        motoId: updated.motoId,
+        idPeca: updated.idPeca,
+        descricao: updated.descricao,
+        detranEtiqueta: normalizeDetranEtiqueta(updated.detranEtiqueta),
+        detranStatus: updated.detranBaixada ? 'baixada' : 'ativa',
+        detranStatusLabel: updated.detranBaixada ? 'Baixada' : 'Ativa',
+        detranBaixada: !!updated.detranBaixada,
+        detranBaixadaAt: updated.detranBaixadaAt,
+      },
     });
   } catch (e) { next(e); }
 });

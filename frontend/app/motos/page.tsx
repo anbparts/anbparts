@@ -13,6 +13,13 @@ function fmtDate(value?: string | null) {
   return date.toLocaleDateString('pt-BR');
 }
 
+function fmtDateTime(value?: string | null) {
+  if (!value) return '--';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '--';
+  return date.toLocaleString('pt-BR');
+}
+
 const cs: any = {
   topbar: { height: 'var(--topbar-h)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 28px', background: 'var(--white)', borderBottom: '1px solid var(--border)', position: 'sticky' as const, top: 0, zIndex: 50 },
   title: { fontFamily: 'Fraunces, serif', fontSize: 17, fontWeight: 600, letterSpacing: '-0.3px' },
@@ -133,8 +140,12 @@ function Modal({ open, title, onClose, onSave, moto }: any) {
   );
 }
 
-function DetranModal({ open, moto, loading, data, onClose }: any) {
+function DetranModal({ open, moto, loading, data, updatingId, onToggleStatus, onClose }: any) {
   if (!open) return null;
+
+  const total = Array.isArray(data?.itens) ? data.itens.length : 0;
+  const ativas = Array.isArray(data?.itens) ? data.itens.filter((item: any) => item.detranStatus !== 'baixada').length : 0;
+  const baixadas = total - ativas;
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 220, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }}>
@@ -149,6 +160,17 @@ function DetranModal({ open, moto, loading, data, onClose }: any) {
           <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer' }}>X</button>
         </div>
         <div style={{ padding: 24, overflowY: 'auto', maxHeight: 'calc(90vh - 78px)' }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+            <span style={{ background: '#ecfdf3', color: 'var(--green)', border: '1px solid #86efac', padding: '5px 10px', borderRadius: 999, fontSize: 12, fontWeight: 700 }}>
+              Ativas: {ativas}
+            </span>
+            <span style={{ background: '#fef2f2', color: 'var(--red)', border: '1px solid #fca5a5', padding: '5px 10px', borderRadius: 999, fontSize: 12, fontWeight: 700 }}>
+              Baixadas: {baixadas}
+            </span>
+            <span style={{ background: 'var(--gray-50)', color: 'var(--ink-soft)', border: '1px solid var(--border)', padding: '5px 10px', borderRadius: 999, fontSize: 12, fontWeight: 700 }}>
+              Total: {total}
+            </span>
+          </div>
           {loading ? (
             <div style={{ fontSize: 13, color: 'var(--ink-muted)' }}>Carregando etiquetas...</div>
           ) : !data?.itens?.length ? (
@@ -158,7 +180,7 @@ function DetranModal({ open, moto, loading, data, onClose }: any) {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
                   <tr>
-                    {['ID Peca', 'Descricao', 'Numero da etiqueta'].map((head) => (
+                    {['ID Peca', 'Descricao', 'Numero da etiqueta', 'Status', 'Acao'].map((head) => (
                       <th key={head} style={cs.th}>{head}</th>
                     ))}
                   </tr>
@@ -169,6 +191,45 @@ function DetranModal({ open, moto, loading, data, onClose }: any) {
                       <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12.5 }}>{item.idPeca}</td>
                       <td style={cs.td}>{item.descricao}</td>
                       <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12.5, color: 'var(--blue-600)' }}>{item.detranEtiqueta}</td>
+                      <td style={cs.td}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          <span style={{
+                            display: 'inline-flex',
+                            alignSelf: 'flex-start',
+                            padding: '4px 10px',
+                            borderRadius: 999,
+                            fontSize: 11,
+                            fontWeight: 700,
+                            border: `1px solid ${item.detranBaixada ? '#fca5a5' : '#86efac'}`,
+                            background: item.detranBaixada ? '#fef2f2' : '#ecfdf3',
+                            color: item.detranBaixada ? 'var(--red)' : 'var(--green)',
+                          }}>
+                            {item.detranStatusLabel}
+                          </span>
+                          {item.detranBaixadaAt && (
+                            <span style={{ fontSize: 11, color: 'var(--ink-muted)' }}>
+                              Baixada em {fmtDateTime(item.detranBaixadaAt)}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td style={cs.td}>
+                        <button
+                          onClick={() => onToggleStatus(item, item.detranBaixada ? 'ativa' : 'baixada')}
+                          disabled={updatingId === item.id}
+                          style={{
+                            ...cs.btn,
+                            padding: '6px 10px',
+                            fontSize: 11,
+                            border: `1px solid ${item.detranBaixada ? '#86efac' : '#fca5a5'}`,
+                            background: item.detranBaixada ? '#ecfdf3' : '#fef2f2',
+                            color: item.detranBaixada ? 'var(--green)' : 'var(--red)',
+                            opacity: updatingId === item.id ? 0.7 : 1,
+                          }}
+                        >
+                          {updatingId === item.id ? 'Salvando...' : item.detranBaixada ? 'Reativar' : 'Confirmar baixa'}
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -192,6 +253,7 @@ export default function MotosPage() {
   const [detranMoto, setDetranMoto] = useState<any>(null);
   const [detranData, setDetranData] = useState<any>(null);
   const [detranLoading, setDetranLoading] = useState(false);
+  const [detranUpdatingId, setDetranUpdatingId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -252,6 +314,30 @@ export default function MotosPage() {
     setDetranMoto(null);
     setDetranData(null);
     setDetranLoading(false);
+    setDetranUpdatingId(null);
+  }
+
+  async function handleDetranStatusToggle(item: any, status: 'ativa' | 'baixada') {
+    setDetranUpdatingId(item.id);
+    try {
+      const response = await api.motos.setDetranEtiquetaStatus(item.id, status);
+      setDetranData((current: any) => {
+        if (!current?.itens?.length) return current;
+        return {
+          ...current,
+          itens: current.itens.map((row: any) => (
+            row.id === item.id
+              ? { ...row, ...response.item }
+              : row
+          )),
+        };
+      });
+      await load();
+    } catch (error: any) {
+      alert(error.message || 'Erro ao atualizar status da etiqueta DETRAN');
+    } finally {
+      setDetranUpdatingId(null);
+    }
   }
 
   return (
@@ -314,15 +400,15 @@ export default function MotosPage() {
                           ...cs.btn,
                           padding: '5px 10px',
                           fontSize: 11,
-                          borderColor: m.temDetran ? '#bfdbfe' : 'var(--border)',
-                          background: m.temDetran ? '#eff6ff' : 'var(--gray-50)',
-                          color: m.temDetran ? '#1d4ed8' : 'var(--ink-muted)',
+                          borderColor: !m.temDetran ? 'var(--border)' : (m.detranAtivas || 0) > 0 ? '#86efac' : '#fca5a5',
+                          background: !m.temDetran ? 'var(--gray-50)' : (m.detranAtivas || 0) > 0 ? '#ecfdf3' : '#fef2f2',
+                          color: !m.temDetran ? 'var(--ink-muted)' : (m.detranAtivas || 0) > 0 ? 'var(--green)' : 'var(--red)',
                           cursor: m.temDetran ? 'pointer' : 'not-allowed',
                           opacity: m.temDetran ? 1 : 0.7,
                         }}
                         title={m.temDetran ? 'Ver etiquetas DETRAN' : 'Nenhuma etiqueta DETRAN'}
                       >
-                        DT {m.detranCount || 0}
+                        DT {m.detranAtivas || 0}/{m.detranCount || 0}
                       </button>
                     </td>
                     <td style={cs.td}>
@@ -349,7 +435,7 @@ export default function MotosPage() {
         </div>
       </div>
       <Modal open={modal} title={editing ? 'Editar moto' : 'Nova moto'} onClose={() => { setModal(false); setEditing(null); }} onSave={handleSave} moto={editing} />
-      <DetranModal open={detranModalOpen} moto={detranMoto} loading={detranLoading} data={detranData} onClose={closeDetranModal} />
+      <DetranModal open={detranModalOpen} moto={detranMoto} loading={detranLoading} data={detranData} updatingId={detranUpdatingId} onToggleStatus={handleDetranStatusToggle} onClose={closeDetranModal} />
     </>
   );
 }

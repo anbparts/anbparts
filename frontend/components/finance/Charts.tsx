@@ -7,6 +7,7 @@ export type ChartItem = {
   value: number;
   note?: string;
   color?: string;
+  share?: string;
 };
 
 export type HeatmapCell = {
@@ -159,6 +160,7 @@ export function HorizontalBarChart({
               </div>
               <div style={{ fontSize: 12, color: color, fontFamily: 'Geist Mono, monospace', whiteSpace: 'nowrap' }}>
                 {valueFormatter ? valueFormatter(item.value) : compactCurrency(item.value)}
+                {item.share ? <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginTop: 2, textAlign: 'right' }}>{item.share}</div> : null}
               </div>
             </div>
             <div

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ChartPanel, DonutChart, HeatmapChart, HorizontalBarChart, ViewModeSwitch, type ViewMode } from '@/components/finance/Charts';
+import { ChartPanel, HeatmapChart, HorizontalBarChart, ViewModeSwitch, type ViewMode } from '@/components/finance/Charts';
 import { api } from '@/lib/api';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3333';
@@ -161,18 +161,10 @@ export default function FaturamentoMotoPage() {
       label: value.sku ? `${value.sku} - ${value.nome}` : value.nome,
       value: value.receita,
       note: `${value.qtd} pecas`,
+      share: `${(((value.receita || 0) / (totalReceita || 1)) * 100).toFixed(1).replace('.', ',')}% da receita`,
     }))
     .sort((a, b) => b.value - a.value)
     .slice(0, 8);
-
-  const participacaoMotos = Array.from(porMotoMap.entries())
-    .map(([, value]) => ({
-      label: value.sku || value.nome,
-      value: value.receita,
-      note: `${value.qtd} pecas`,
-    }))
-    .sort((a, b) => b.value - a.value)
-    .slice(0, 6);
 
   const heatmapPeriods = filtAno
     ? Array.from({ length: 12 }, (_, index) => ({
@@ -260,22 +252,13 @@ export default function FaturamentoMotoPage() {
                 <HeatmapChart rows={heatmapRows} valueFormatter={fmt} emptyText="Sem periodos para exibir." />
               </ChartPanel>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.4fr) minmax(0, 1fr)', gap: 18 }}>
-                <ChartPanel
-                  title={filtMoto ? `Performance de ${filtMoto}` : 'Ranking de motos'}
-                  subtitle="As motos com maior receita liquida dentro do filtro atual."
-                  accent="#16a34a"
-                >
-                  <HorizontalBarChart items={rankingMotos} valueFormatter={fmt} emptyText="Sem motos para exibir." />
-                </ChartPanel>
-                <ChartPanel
-                  title="Participacao na receita"
-                  subtitle="Como a receita se distribui entre as motos filtradas."
-                  accent="#2563eb"
-                >
-                  <DonutChart items={participacaoMotos} totalLabel="Receita" totalDisplay={fmt(totalReceita)} valueFormatter={fmt} emptyText="Sem participacao para mostrar." />
-                </ChartPanel>
-              </div>
+              <ChartPanel
+                title={filtMoto ? `Ranking e participacao de ${filtMoto}` : 'Ranking de motos e participacao na receita'}
+                subtitle="Cada linha mostra a receita liquida da moto no filtro atual e sua participacao dentro do total."
+                accent="#16a34a"
+              >
+                <HorizontalBarChart items={rankingMotos} valueFormatter={fmt} emptyText="Sem motos para exibir." />
+              </ChartPanel>
             </div>
           )
         ) : (

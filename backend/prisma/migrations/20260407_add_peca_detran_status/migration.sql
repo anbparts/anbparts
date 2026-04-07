@@ -1,0 +1,3 @@
+ALTER TABLE "Peca"
+ADD COLUMN "detranBaixada" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN "detranBaixadaAt" TIMESTAMP(3);

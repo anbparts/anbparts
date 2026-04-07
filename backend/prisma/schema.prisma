@@ -33,6 +33,8 @@ model Peca {
   descricao   String
   localizacao String?
   detranEtiqueta String?
+  detranBaixada  Boolean  @default(false)
+  detranBaixadaAt DateTime?
   cadastro    DateTime @default(now())
   precoML     Decimal  @default(0) @db.Decimal(12, 2)
   valorLiq    Decimal  @default(0) @db.Decimal(12, 2)
