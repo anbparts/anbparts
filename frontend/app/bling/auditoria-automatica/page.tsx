@@ -324,6 +324,11 @@ export default function AuditoriaAutomaticaPage() {
                         </button>
                       ) : (
                         <span style={{ fontSize: 11, color: 'var(--gray-400)', fontWeight: 600 }}>Exclusao indisponivel durante execucao</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
           <div>
