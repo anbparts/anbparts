@@ -59,6 +59,13 @@ function monthLabelFromKey(key: string) {
   return date.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '');
 }
 
+function periodLabelFromKey(key: string, includeYear = false) {
+  const [ano, mes] = key.split('-');
+  const date = new Date(Number(ano), Number(mes) - 1, 1);
+  const month = date.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '');
+  return includeYear ? `${month}/${String(ano).slice(-2)}` : month;
+}
+
 export default function InvestimentosPage() {
   const [rows, setRows] = useState<any[]>([]);
   const [motos, setMotos] = useState<any[]>([]);
@@ -156,20 +163,20 @@ export default function InvestimentosPage() {
         .slice(-12)
         .map((key) => ({
           key,
-          label: monthLabelFromKey(key),
+          label: periodLabelFromKey(key, true),
         }));
 
-  const porTipoPeriodoMap = new Map<string, {
+  const porSocioPeriodoMap = new Map<string, {
     total: number;
     count: number;
     cells: Map<string, { value: number; count: number }>;
   }>();
 
   filtradas.forEach((item) => {
-    const tipo = resolveAporteLabel(item.moto, item.tipo, motosMap);
+    const tipo = item.socio || 'Outros';
     const periodo = monthKey(item.data);
     const valor = Number(item.valor || 0);
-    const current = porTipoPeriodoMap.get(tipo) || {
+    const current = porSocioPeriodoMap.get(tipo) || {
       total: 0,
       count: 0,
       cells: new Map<string, { value: number; count: number }>(),
@@ -180,10 +187,10 @@ export default function InvestimentosPage() {
     cell.value += valor;
     cell.count += 1;
     current.cells.set(periodo, cell);
-    porTipoPeriodoMap.set(tipo, current);
+    porSocioPeriodoMap.set(tipo, current);
   });
 
-  const painelMensalTipos = Array.from(porTipoPeriodoMap.entries())
+  const painelMensalTipos = Array.from(porSocioPeriodoMap.entries())
     .sort((a, b) => b[1].total - a[1].total)
     .map(([tipo, info]) => ({
       label: tipo,
@@ -323,7 +330,7 @@ export default function InvestimentosPage() {
                   <HorizontalBarChart items={rankingTipos} valueFormatter={fmt} emptyText="Sem aportes para comparar." />
                 </ChartPanel>
               </div>
-              <ChartPanel title="Painel mensal dos aportes" subtitle="Matriz compacta com todos os meses comparando o volume investido por detalhamento de Moto / Item." accent="#f59e0b">
+              <ChartPanel title="Painel mensal dos aportes" subtitle="Matriz compacta com os valores por periodo, agrupada por socio dentro do filtro atual." accent="#f59e0b">
                 <HeatmapChart rows={painelMensalTipos} valueFormatter={fmt} emptyText="Sem periodos para exibir." />
               </ChartPanel>
             </div>
