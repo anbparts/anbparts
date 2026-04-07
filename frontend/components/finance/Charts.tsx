@@ -1,4 +1,4 @@
-import { Fragment, type CSSProperties, type ReactNode } from 'react';
+import { type CSSProperties, type ReactNode } from 'react';
 
 export type ViewMode = 'grafico' | 'relatorio';
 
@@ -13,6 +13,7 @@ export type HeatmapCell = {
   label: string;
   value: number;
   note?: string;
+  displayValue?: string;
 };
 
 export type HeatmapRow = {
@@ -27,12 +28,6 @@ function compactCurrency(value: number) {
   if (Math.abs(value) >= 1000000) return `R$ ${(value / 1000000).toFixed(1).replace('.', ',')} mi`;
   if (Math.abs(value) >= 1000) return `R$ ${(value / 1000).toFixed(1).replace('.', ',')} mil`;
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
-
-function compactHeatValue(value: number) {
-  if (value <= 0) return '--';
-  if (Math.abs(value) >= 1000) return `${(value / 1000).toFixed(1).replace('.', ',')}k`;
-  return Math.round(value).toLocaleString('pt-BR');
 }
 
 function toneColor(index: number, override?: string) {
@@ -361,55 +356,79 @@ export function HeatmapChart({
   rows,
   emptyText,
   valueFormatter,
+  normalizeByRow = false,
 }: {
   rows: HeatmapRow[];
   emptyText?: string;
   valueFormatter?: (value: number) => string;
+  normalizeByRow?: boolean;
 }) {
   if (!rows.length) return emptyBlock(emptyText || 'Sem dados para exibir.');
 
   const columns = rows[0]?.cells || [];
   if (!columns.length) return emptyBlock(emptyText || 'Sem dados para exibir.');
 
-  const values = rows.flatMap((row) => row.cells.map((cell) => cell.value));
-  const max = Math.max(...values, 1);
+  const globalMax = Math.max(...rows.flatMap((row) => row.cells.map((cell) => cell.value)), 1);
+  const rowMaxMap = new Map<string, number>(
+    rows.map((row) => [row.label, Math.max(...row.cells.map((cell) => cell.value), 1)]),
+  );
 
-  const cellTone = (value: number) => {
+  const cellTone = (value: number, rowLabel: string) => {
     if (value <= 0) {
       return {
-        background: 'var(--gray-50)',
-        borderColor: 'var(--border)',
+        background: 'var(--white)',
         textColor: 'var(--ink-muted)',
         noteColor: 'var(--ink-muted)',
       };
     }
 
-    const ratio = value / max;
-    const alpha = Math.min(0.86, 0.14 + ratio * 0.58);
-    const strong = alpha >= 0.42;
+    const max = normalizeByRow ? (rowMaxMap.get(rowLabel) || 1) : globalMax;
+    const ratio = max > 0 ? value / max : 0;
+    const alpha = Math.min(0.88, 0.18 + ratio * 0.56);
+    const strong = alpha >= 0.45;
 
     return {
       background: `rgba(37, 99, 235, ${alpha})`,
-      borderColor: `rgba(37, 99, 235, ${Math.max(alpha + 0.08, 0.22)})`,
-      textColor: strong ? '#ffffff' : '#17315c',
-      noteColor: strong ? 'rgba(255,255,255,0.84)' : 'rgba(23,49,92,0.72)',
+      textColor: strong ? '#ffffff' : '#163054',
+      noteColor: strong ? 'rgba(255,255,255,0.84)' : 'rgba(22,48,84,0.76)',
     };
   };
 
   return (
     <div style={{ overflowX: 'auto' }}>
-      <div style={{ minWidth: Math.max(1040, columns.length * 74 + 206) }}>
+      <div
+        style={{
+          minWidth: Math.max(1180, 190 + columns.length * 96),
+          display: 'grid',
+          gridTemplateColumns: `190px repeat(${columns.length}, 96px)`,
+          gap: 1,
+          background: 'var(--border)',
+          border: '1px solid var(--border)',
+          borderRadius: 14,
+          overflow: 'hidden',
+        }}
+      >
         <div
           style={{
-            display: 'grid',
-            gridTemplateColumns: `188px repeat(${columns.length}, 68px)`,
-            gap: 6,
-            alignItems: 'stretch',
+            padding: '10px 12px',
+            background: 'var(--gray-50)',
+            fontSize: 10,
+            fontFamily: 'Geist Mono, monospace',
+            color: 'var(--ink-muted)',
+            textTransform: 'uppercase',
+            letterSpacing: '0.7px',
           }}
         >
+          Moto
+        </div>
+
+        {columns.map((column) => (
           <div
+            key={`head-${column.label}`}
             style={{
-              padding: '4px 8px',
+              padding: '10px 4px',
+              background: 'var(--gray-50)',
+              textAlign: 'center',
               fontSize: 10,
               fontFamily: 'Geist Mono, monospace',
               color: 'var(--ink-muted)',
@@ -417,121 +436,105 @@ export function HeatmapChart({
               letterSpacing: '0.7px',
             }}
           >
-            Moto
+            {column.label}
           </div>
+        ))}
 
-          {columns.map((column) => (
+        {rows.flatMap((row, rowIndex) => {
+          const rowLabelCell = (
             <div
-              key={`head-${column.label}`}
+              key={`row-label-${rowIndex}`}
               style={{
-                padding: '4px 2px',
-                textAlign: 'center',
-                fontSize: 10,
-                fontFamily: 'Geist Mono, monospace',
-                color: 'var(--ink-muted)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.7px',
+                background: 'var(--white)',
+                padding: '10px 12px',
+                minHeight: 54,
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'center',
               }}
             >
-              {column.label}
-            </div>
-          ))}
-
-          {rows.map((row, rowIndex) => (
-            <Fragment key={`${row.label}-${rowIndex}`}>
               <div
                 style={{
-                  minHeight: 52,
-                  padding: '8px 10px',
-                  border: '1px solid var(--border)',
-                  borderRadius: 10,
-                  background: 'var(--white)',
+                  fontSize: 12,
+                  fontWeight: 700,
+                  color: 'var(--ink)',
+                  lineHeight: 1.15,
+                  display: '-webkit-box',
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
+                }}
+              >
+                {row.label}
+              </div>
+              {row.note ? (
+                <div
+                  style={{
+                    marginTop: 4,
+                    fontSize: 10,
+                    color: 'var(--ink-muted)',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
+                  {row.note}
+                </div>
+              ) : null}
+            </div>
+          );
+
+          const valueCells = row.cells.map((cell, cellIndex) => {
+            const tone = cellTone(cell.value, row.label);
+            const formatted = cell.displayValue || (valueFormatter ? valueFormatter(cell.value) : compactCurrency(cell.value));
+
+            return (
+              <div
+                key={`row-${rowIndex}-cell-${cellIndex}`}
+                title={`${row.label} - ${cell.label}${cell.note ? ` - ${cell.note}` : ''} - ${formatted}`}
+                style={{
+                  background: tone.background,
+                  minHeight: 54,
+                  padding: '8px 6px',
                   display: 'flex',
                   flexDirection: 'column',
                   justifyContent: 'center',
+                  alignItems: 'center',
+                  gap: 4,
+                  textAlign: 'center',
                 }}
               >
                 <div
                   style={{
-                    fontSize: 12,
+                    fontSize: 10.5,
                     fontWeight: 700,
-                    color: 'var(--ink)',
-                    lineHeight: 1.15,
-                    display: '-webkit-box',
-                    WebkitLineClamp: 2,
-                    WebkitBoxOrient: 'vertical',
-                    overflow: 'hidden',
+                    color: tone.textColor,
+                    lineHeight: 1.1,
+                    letterSpacing: '-0.1px',
+                    whiteSpace: 'nowrap',
                   }}
                 >
-                  {row.label}
+                  {formatted}
                 </div>
-                {row.note ? (
+                {cell.note ? (
                   <div
                     style={{
-                      marginTop: 4,
-                      fontSize: 10,
-                      color: 'var(--ink-muted)',
+                      fontSize: 9,
+                      color: tone.noteColor,
+                      lineHeight: 1,
+                      fontFamily: 'Geist Mono, monospace',
                       whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
                     }}
                   >
-                    {row.note}
+                    {cell.note}
                   </div>
                 ) : null}
               </div>
+            );
+          });
 
-              {row.cells.map((cell, cellIndex) => {
-                const tone = cellTone(cell.value);
-                const formatted = valueFormatter ? valueFormatter(cell.value) : compactCurrency(cell.value);
-                const compactNote = cell.value > 0 && cell.note ? cell.note.replace(' pecas', 'p') : '';
-
-                return (
-                  <div
-                    key={`${row.label}-${cell.label}-${cellIndex}`}
-                    title={`${row.label} - ${cell.label}${cell.note ? ` - ${cell.note}` : ''} - ${formatted}`}
-                    style={{
-                      minHeight: 52,
-                      padding: '6px 4px',
-                      borderRadius: 10,
-                      border: `1px solid ${tone.borderColor}`,
-                      background: tone.background,
-                      display: 'flex',
-                      flexDirection: 'column',
-                      justifyContent: 'center',
-                      alignItems: 'center',
-                      gap: 3,
-                    }}
-                  >
-                    <div
-                      style={{
-                        fontSize: 11,
-                        fontWeight: 700,
-                        color: tone.textColor,
-                        lineHeight: 1,
-                        fontFamily: 'Geist Mono, monospace',
-                      }}
-                    >
-                      {compactHeatValue(cell.value)}
-                    </div>
-                    {compactNote ? (
-                      <div
-                        style={{
-                          fontSize: 9,
-                          color: tone.noteColor,
-                          lineHeight: 1,
-                          fontFamily: 'Geist Mono, monospace',
-                        }}
-                      >
-                        {compactNote}
-                      </div>
-                    ) : null}
-                  </div>
-                );
-              })}
-            </Fragment>
-          ))}
-        </div>
+          return [rowLabelCell, ...valueCells];
+        })}
       </div>
     </div>
   );

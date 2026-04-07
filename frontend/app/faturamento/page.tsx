@@ -188,13 +188,13 @@ export default function FaturamentoMotoPage() {
     .sort((a, b) => b.totalReceita - a.totalReceita)
     .map((moto) => ({
       label: moto.label,
-      note: `${moto.totalQtd} pecas - ${fmt(moto.totalReceita)}`,
+      note: `${moto.totalQtd} pecas · ${fmt(moto.totalReceita)}`,
       cells: heatmapPeriods.map((period) => {
         const current = moto.cells.get(period.key) || { receita: 0, qtd: 0 };
         return {
           label: period.label,
           value: current.receita,
-          note: current.qtd > 0 ? `${current.qtd} pecas` : 'sem vendas',
+          note: current.qtd > 0 ? `${current.qtd}p` : '',
         };
       }),
     }));
@@ -253,8 +253,8 @@ export default function FaturamentoMotoPage() {
           ) : (
             <div style={{ display: 'grid', gap: 18 }}>
               <ChartPanel
-                title="Heatmap de faturamento por moto"
-                subtitle="Matriz mes x moto para comparar a evolucao da receita dentro do filtro atual."
+                title="Painel mensal por moto"
+                subtitle="Matriz compacta com todos os meses para comparar a receita liquida entre as motos."
                 accent="#f59e0b"
               >
                 <HeatmapChart rows={heatmapRows} valueFormatter={fmt} emptyText="Sem periodos para exibir." />

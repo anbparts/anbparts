@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ChartPanel, ColumnChart, DonutChart, HorizontalBarChart, ViewModeSwitch, type ViewMode } from '@/components/finance/Charts';
+import { ChartPanel, DonutChart, HeatmapChart, HorizontalBarChart, ViewModeSwitch, type ViewMode } from '@/components/finance/Charts';
 import { api } from '@/lib/api';
 
 const MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
@@ -92,15 +92,79 @@ export default function FaturamentoGeralPage() {
   const totalQtd = filtered.reduce((sum, item) => sum + Number(item.qtd || 0), 0);
   const mesCorrente = filtered.find((item) => item.ano === anoCardAtual && item.mes === mesAtual) || null;
 
-  const timeline = filtered
-    .slice()
-    .sort((a, b) => periodKey(a.ano, a.mes).localeCompare(periodKey(b.ano, b.mes)))
-    .map((item) => ({
-      label: `${MESES[item.mes - 1]}/${String(item.ano).slice(-2)}`,
-      value: Number(item.receitaLiq || item.receita || 0),
-      note: `${item.qtd} pecas`,
-    }))
-    .slice(-12);
+  const periodItems = filtAno
+    ? Array.from({ length: 12 }, (_, index) => ({
+        key: periodKey(Number(filtAno), index + 1),
+        label: MESES[index],
+      }))
+    : Array.from(
+        new Set(
+          filtered
+            .slice()
+            .sort((a, b) => periodKey(a.ano, a.mes).localeCompare(periodKey(b.ano, b.mes)))
+            .map((item) => periodKey(item.ano, item.mes)),
+        ),
+      )
+        .slice(-12)
+        .map((key) => {
+          const [ano, mes] = key.split('-');
+          return {
+            key,
+            label: `${MESES[Number(mes) - 1]}/${String(ano).slice(-2)}`,
+          };
+        });
+
+  const monthlyMap = new Map<string, { receita: number; qtd: number }>();
+  filtered.forEach((item) => {
+    const key = periodKey(item.ano, item.mes);
+    const current = monthlyMap.get(key) || { receita: 0, qtd: 0 };
+    current.receita += Number(item.receitaLiq || item.receita || 0);
+    current.qtd += Number(item.qtd || 0);
+    monthlyMap.set(key, current);
+  });
+
+  const painelMensalRows = [
+    {
+      label: 'Receita liquida',
+      note: fmt(totalReceita),
+      cells: periodItems.map((period) => {
+        const current = monthlyMap.get(period.key) || { receita: 0, qtd: 0 };
+        return {
+          label: period.label,
+          value: current.receita,
+          displayValue: current.receita > 0 ? fmt(current.receita) : '--',
+          note: current.qtd > 0 ? `${current.qtd} p` : '',
+        };
+      }),
+    },
+    {
+      label: 'Pecas vendidas',
+      note: `${totalQtd} pecas`,
+      cells: periodItems.map((period) => {
+        const current = monthlyMap.get(period.key) || { receita: 0, qtd: 0 };
+        return {
+          label: period.label,
+          value: current.qtd,
+          displayValue: current.qtd > 0 ? current.qtd.toLocaleString('pt-BR') : '--',
+          note: '',
+        };
+      }),
+    },
+    {
+      label: 'Ticket medio',
+      note: totalQtd > 0 ? fmt(totalReceita / totalQtd) : '--',
+      cells: periodItems.map((period) => {
+        const current = monthlyMap.get(period.key) || { receita: 0, qtd: 0 };
+        const ticket = current.qtd > 0 ? current.receita / current.qtd : 0;
+        return {
+          label: period.label,
+          value: ticket,
+          displayValue: current.qtd > 0 ? fmt(ticket) : '--',
+          note: current.qtd > 0 ? `${current.qtd} p` : '',
+        };
+      }),
+    },
+  ];
 
   const quarterMap = new Map<string, { receita: number; qtd: number }>();
   filtered.forEach((item) => {
@@ -172,11 +236,11 @@ export default function FaturamentoGeralPage() {
           ) : (
             <div style={{ display: 'grid', gap: 18 }}>
               <ChartPanel
-                title="Evolucao da receita"
-                subtitle="Barras por periodo para acompanhar a performance consolidada."
+                title="Painel mensal consolidado"
+                subtitle="Matriz compacta com receita, volume e ticket medio ao longo do periodo."
                 accent="#16a34a"
               >
-                <ColumnChart items={timeline} valueFormatter={fmt} emptyText="Sem periodos para exibir." />
+                <HeatmapChart rows={painelMensalRows} normalizeByRow emptyText="Sem periodos para exibir." />
               </ChartPanel>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1.2fr)', gap: 18 }}>
