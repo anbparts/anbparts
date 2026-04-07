@@ -176,6 +176,7 @@ export default function DashboardPage() {
             const totalPecasMoto = (moto.qtdDisp || 0) + (moto.qtdVendidas || 0);
             const pctVendida = totalPecasMoto > 0 ? Math.round(((moto.qtdVendidas || 0) / totalPecasMoto) * 100) : 0;
             const pctRecuperada = moto.pctRecuperada || 0;
+            const pctLucroPrev = (moto.precoCompra || 0) > 0 ? ((moto.lucro || 0) / moto.precoCompra) * 100 : 0;
             const skus = skuPorMoto[moto.id] || [];
 
             return (
@@ -253,6 +254,12 @@ export default function DashboardPage() {
                       label: 'Lucro prev.',
                       value: fmt(moto.lucro || 0),
                       color: (moto.lucro || 0) >= 0 ? 'var(--sage)' : 'var(--red)',
+                      sm: true,
+                    },
+                    {
+                      label: '% lucro prev.',
+                      value: `${pctLucroPrev.toFixed(1).replace('.', ',')}%`,
+                      color: pctLucroPrev >= 0 ? 'var(--sage)' : 'var(--red)',
                       sm: true,
                     },
                   ].map((stat) => (
