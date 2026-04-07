@@ -377,6 +377,7 @@ export function HeatmapChart({
     if (value <= 0) {
       return {
         background: 'var(--white)',
+        accent: 'transparent',
         textColor: 'var(--ink-muted)',
         noteColor: 'var(--ink-muted)',
       };
@@ -384,13 +385,14 @@ export function HeatmapChart({
 
     const max = normalizeByRow ? (rowMaxMap.get(rowLabel) || 1) : globalMax;
     const ratio = max > 0 ? value / max : 0;
-    const alpha = Math.min(0.88, 0.18 + ratio * 0.56);
-    const strong = alpha >= 0.45;
+    const alpha = Math.min(0.12, 0.025 + ratio * 0.095);
+    const accentAlpha = Math.min(0.3, 0.08 + ratio * 0.22);
 
     return {
-      background: `rgba(37, 99, 235, ${alpha})`,
-      textColor: strong ? '#ffffff' : '#163054',
-      noteColor: strong ? 'rgba(255,255,255,0.84)' : 'rgba(22,48,84,0.76)',
+      background: `rgba(15, 23, 42, ${alpha})`,
+      accent: `rgba(37, 99, 235, ${accentAlpha})`,
+      textColor: 'var(--ink)',
+      noteColor: 'var(--ink-muted)',
     };
   };
 
@@ -442,11 +444,11 @@ export function HeatmapChart({
 
         {rows.flatMap((row, rowIndex) => {
           const rowLabelCell = (
-            <div
-              key={`row-label-${rowIndex}`}
-              style={{
-                background: 'var(--white)',
-                padding: '10px 12px',
+              <div
+                key={`row-label-${rowIndex}`}
+                style={{
+                  background: 'var(--white)',
+                  padding: '10px 12px',
                 minHeight: 54,
                 display: 'flex',
                 flexDirection: 'column',
@@ -496,6 +498,7 @@ export function HeatmapChart({
                   background: tone.background,
                   minHeight: 54,
                   padding: '8px 6px',
+                  borderTop: `2px solid ${tone.accent}`,
                   display: 'flex',
                   flexDirection: 'column',
                   justifyContent: 'center',
