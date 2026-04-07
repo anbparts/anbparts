@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ChartPanel, ColumnChart, DonutChart, HorizontalBarChart, ViewModeSwitch, type ViewMode } from '@/components/finance/Charts';
+import { ChartPanel, DonutChart, HeatmapChart, HorizontalBarChart, ViewModeSwitch, type ViewMode } from '@/components/finance/Charts';
 import { api } from '@/lib/api';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3333';
@@ -109,13 +109,20 @@ export default function FaturamentoMotoPage() {
 
   const porMotoMap = new Map<number, { nome: string; sku: string; receita: number; qtd: number }>();
   const porPeriodoMap = new Map<string, { label: string; receita: number; qtd: number }>();
+  const heatmapMotoMap = new Map<number, {
+    label: string;
+    totalReceita: number;
+    totalQtd: number;
+    cells: Map<string, { receita: number; qtd: number }>;
+  }>();
 
   filtered.forEach((item) => {
     const motoKey = Number(item.motoId);
     const period = periodKey(item.ano, item.mes);
     const receita = Number(item.receitaLiq || item.receita || 0);
     const qtd = Number(item.qtd || 0);
-    const sku = (skuPorMoto[motoKey] || []).join(' · ');
+    const sku = (skuPorMoto[motoKey] || []).join(' - ');
+    const motoLabel = sku ? `${sku} - ${item.moto}` : item.moto;
 
     const acumuladoMoto = porMotoMap.get(motoKey) || { nome: item.moto, sku, receita: 0, qtd: 0 };
     acumuladoMoto.receita += receita;
@@ -132,11 +139,26 @@ export default function FaturamentoMotoPage() {
     acumuladoPeriodo.receita += receita;
     acumuladoPeriodo.qtd += qtd;
     porPeriodoMap.set(period, acumuladoPeriodo);
+
+    const heatmapMoto = heatmapMotoMap.get(motoKey) || {
+      label: motoLabel,
+      totalReceita: 0,
+      totalQtd: 0,
+      cells: new Map<string, { receita: number; qtd: number }>(),
+    };
+    heatmapMoto.label = motoLabel;
+    heatmapMoto.totalReceita += receita;
+    heatmapMoto.totalQtd += qtd;
+    const currentCell = heatmapMoto.cells.get(period) || { receita: 0, qtd: 0 };
+    currentCell.receita += receita;
+    currentCell.qtd += qtd;
+    heatmapMoto.cells.set(period, currentCell);
+    heatmapMotoMap.set(motoKey, heatmapMoto);
   });
 
   const rankingMotos = Array.from(porMotoMap.entries())
     .map(([, value]) => ({
-      label: value.sku ? `${value.sku} · ${value.nome}` : value.nome,
+      label: value.sku ? `${value.sku} - ${value.nome}` : value.nome,
       value: value.receita,
       note: `${value.qtd} pecas`,
     }))
@@ -152,10 +174,30 @@ export default function FaturamentoMotoPage() {
     .sort((a, b) => b.value - a.value)
     .slice(0, 6);
 
-  const linhaTempo = Array.from(porPeriodoMap.entries())
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([, value]) => ({ label: value.label, value: value.receita, note: `${value.qtd} pecas` }))
-    .slice(-10);
+  const heatmapPeriods = filtAno
+    ? Array.from({ length: 12 }, (_, index) => ({
+        key: periodKey(Number(filtAno), index + 1),
+        label: MESES[index],
+      }))
+    : Array.from(porPeriodoMap.entries())
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([key, value]) => ({ key, label: value.label }))
+        .slice(-12);
+
+  const heatmapRows = Array.from(heatmapMotoMap.values())
+    .sort((a, b) => b.totalReceita - a.totalReceita)
+    .map((moto) => ({
+      label: moto.label,
+      note: `${moto.totalQtd} pecas - ${fmt(moto.totalReceita)}`,
+      cells: heatmapPeriods.map((period) => {
+        const current = moto.cells.get(period.key) || { receita: 0, qtd: 0 };
+        return {
+          label: period.label,
+          value: current.receita,
+          note: current.qtd > 0 ? `${current.qtd} pecas` : 'sem vendas',
+        };
+      }),
+    }));
 
   return (
     <>
@@ -210,6 +252,14 @@ export default function FaturamentoMotoPage() {
             <div style={{ ...cs.card, padding: 28, color: 'var(--ink-muted)' }}>Carregando visualizacao...</div>
           ) : (
             <div style={{ display: 'grid', gap: 18 }}>
+              <ChartPanel
+                title="Heatmap de faturamento por moto"
+                subtitle="Matriz mes x moto para comparar a evolucao da receita dentro do filtro atual."
+                accent="#f59e0b"
+              >
+                <HeatmapChart rows={heatmapRows} valueFormatter={fmt} emptyText="Sem periodos para exibir." />
+              </ChartPanel>
+
               <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.4fr) minmax(0, 1fr)', gap: 18 }}>
                 <ChartPanel
                   title={filtMoto ? `Performance de ${filtMoto}` : 'Ranking de motos'}
@@ -226,14 +276,6 @@ export default function FaturamentoMotoPage() {
                   <DonutChart items={participacaoMotos} totalLabel="Receita" totalDisplay={fmt(totalReceita)} valueFormatter={fmt} emptyText="Sem participacao para mostrar." />
                 </ChartPanel>
               </div>
-
-              <ChartPanel
-                title="Linha do tempo das vendas"
-                subtitle="Evolucao da receita liquida por periodo. O filtro atual altera a serie."
-                accent="#f59e0b"
-              >
-                <ColumnChart items={linhaTempo} valueFormatter={fmt} emptyText="Sem periodos para exibir." />
-              </ChartPanel>
             </div>
           )
         ) : (

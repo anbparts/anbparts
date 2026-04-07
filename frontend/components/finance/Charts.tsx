@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from 'react';
+import { Fragment, type CSSProperties, type ReactNode } from 'react';
 
 export type ViewMode = 'grafico' | 'relatorio';
 
@@ -7,6 +7,18 @@ export type ChartItem = {
   value: number;
   note?: string;
   color?: string;
+};
+
+export type HeatmapCell = {
+  label: string;
+  value: number;
+  note?: string;
+};
+
+export type HeatmapRow = {
+  label: string;
+  note?: string;
+  cells: HeatmapCell[];
 };
 
 const palette = ['#2563eb', '#0ea5e9', '#10b981', '#f59e0b', '#f97316', '#8b5cf6', '#ec4899', '#14b8a6'];
@@ -281,6 +293,140 @@ export function DonutChart({
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+export function HeatmapChart({
+  rows,
+  emptyText,
+  valueFormatter,
+}: {
+  rows: HeatmapRow[];
+  emptyText?: string;
+  valueFormatter?: (value: number) => string;
+}) {
+  if (!rows.length) return emptyBlock(emptyText || 'Sem dados para exibir.');
+
+  const columns = rows[0]?.cells || [];
+  if (!columns.length) return emptyBlock(emptyText || 'Sem dados para exibir.');
+
+  const values = rows.flatMap((row) => row.cells.map((cell) => cell.value));
+  const max = Math.max(...values, 1);
+
+  const cellTone = (value: number) => {
+    if (value <= 0) {
+      return {
+        background: 'var(--gray-50)',
+        borderColor: 'var(--border)',
+        textColor: 'var(--ink-muted)',
+      };
+    }
+
+    const ratio = Math.max(0.16, value / max);
+    const alpha = Math.min(0.92, 0.18 + ratio * 0.72);
+    return {
+      background: `linear-gradient(180deg, rgba(37, 99, 235, ${alpha}), rgba(14, 165, 233, ${Math.max(alpha - 0.14, 0.12)}))`,
+      borderColor: `rgba(37, 99, 235, ${Math.max(alpha - 0.18, 0.18)})`,
+      textColor: '#ffffff',
+    };
+  };
+
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <div style={{ minWidth: Math.max(860, columns.length * 120 + 280) }}>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: `240px repeat(${columns.length}, minmax(110px, 1fr))`,
+            gap: 8,
+            alignItems: 'stretch',
+          }}
+        >
+          <div
+            style={{
+              padding: '10px 12px',
+              fontSize: 11,
+              fontFamily: 'Geist Mono, monospace',
+              color: 'var(--ink-muted)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.7px',
+            }}
+          >
+            Moto
+          </div>
+          {columns.map((column) => (
+            <div
+              key={`head-${column.label}`}
+              style={{
+                padding: '10px 8px',
+                textAlign: 'center',
+                fontSize: 11,
+                fontFamily: 'Geist Mono, monospace',
+                color: 'var(--ink-muted)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.7px',
+              }}
+            >
+              {column.label}
+            </div>
+          ))}
+
+          {rows.map((row, rowIndex) => (
+            <Fragment key={`${row.label}-${rowIndex}`}>
+              <div
+                style={{
+                  padding: '12px 12px',
+                  border: '1px solid var(--border)',
+                  borderRadius: 12,
+                  background: 'var(--white)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'center',
+                  minHeight: 84,
+                }}
+              >
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>{row.label}</div>
+                {row.note && <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginTop: 4 }}>{row.note}</div>}
+              </div>
+
+              {row.cells.map((cell, cellIndex) => {
+                const tone = cellTone(cell.value);
+                const formatted = valueFormatter ? valueFormatter(cell.value) : compactCurrency(cell.value);
+                const display = cell.value > 0 ? formatted : '--';
+
+                return (
+                  <div
+                    key={`${row.label}-${cell.label}-${cellIndex}`}
+                    title={`${row.label} · ${cell.label}${cell.note ? ` · ${cell.note}` : ''} · ${formatted}`}
+                    style={{
+                      minHeight: 84,
+                      borderRadius: 12,
+                      border: `1px solid ${tone.borderColor}`,
+                      background: tone.background,
+                      padding: '10px 10px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      boxShadow: cell.value > 0 ? '0 10px 24px rgba(37, 99, 235, 0.12)' : 'none',
+                    }}
+                  >
+                    <div style={{ fontSize: 10, fontFamily: 'Geist Mono, monospace', color: cell.value > 0 ? 'rgba(255,255,255,0.76)' : 'var(--ink-muted)' }}>
+                      {cell.label}
+                    </div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: tone.textColor, lineHeight: 1.2 }}>
+                      {display}
+                    </div>
+                    <div style={{ fontSize: 10, color: cell.value > 0 ? 'rgba(255,255,255,0.82)' : 'var(--ink-muted)' }}>
+                      {cell.note || (cell.value > 0 ? 'com vendas' : 'sem vendas')}
+                    </div>
+                  </div>
+                );
+              })}
+            </Fragment>
+          ))}
+        </div>
       </div>
     </div>
   );
