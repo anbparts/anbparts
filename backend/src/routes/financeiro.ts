@@ -188,19 +188,41 @@ async function tickDespesasEmailScheduler() {
   if (despesasSchedulerState.running) return;
 
   const config = await getConfiguracaoGeral();
-  if (!config.despesasEmailAtivo || !config.despesasEmailConfigurado) return;
+  if (!config.despesasEmailAtivo) return;
 
   const now = getTimezoneDateParts(new Date(), FINANCEIRO_TIMEZONE);
   if (!hasReachedScheduleTime(now.timeKey, config.despesasEmailHorario)) return;
-  if (String(config.despesasEmailUltimaExecucaoChave || '').startsWith(now.dateKey)) return;
+  const executionKey = `${now.dateKey} ${config.despesasEmailHorario}`;
+  if (String(config.despesasEmailUltimaExecucaoChave || '') === executionKey) return;
 
   despesasSchedulerState.running = true;
   try {
-    await sendDespesasDoDiaEmailIfNeeded(now.dateKey, FINANCEIRO_TIMEZONE);
-    await saveConfiguracaoGeral({
-      despesasEmailUltimaExecucaoChave: now.runKey,
-      despesasEmailUltimaExecucaoEm: new Date(),
-    });
+    const result = await sendDespesasDoDiaEmailIfNeeded(now.dateKey, FINANCEIRO_TIMEZONE);
+
+    if (result?.sent) {
+      console.log(`[despesas-email] enviado com sucesso (${result.total || 0} despesa(s)) em ${executionKey}`);
+      await saveConfiguracaoGeral({
+        despesasEmailUltimaExecucaoChave: executionKey,
+        despesasEmailUltimaExecucaoEm: new Date(),
+      });
+      return;
+    }
+
+    if (result?.reason === 'sem_despesas_do_dia') {
+      console.log(`[despesas-email] sem despesas do dia em ${executionKey}`);
+      await saveConfiguracaoGeral({
+        despesasEmailUltimaExecucaoChave: executionKey,
+        despesasEmailUltimaExecucaoEm: new Date(),
+      });
+      return;
+    }
+
+    if (result?.reason === 'configuracao_incompleta') {
+      console.log('[despesas-email] configuracao incompleta; rotina nao executada');
+      return;
+    }
+
+    console.log('[despesas-email] rotina concluida sem envio', result);
   } finally {
     despesasSchedulerState.running = false;
   }

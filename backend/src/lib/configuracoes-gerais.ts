@@ -77,6 +77,9 @@ export async function getConfiguracaoGeral() {
 
 export async function saveConfiguracaoGeral(data: Record<string, any>) {
   const current = await getConfiguracaoGeral();
+  const horarioAtual = current.despesasEmailHorario;
+  const proximoHorario = data.despesasEmailHorario !== undefined ? normalizeHorario(data.despesasEmailHorario) : horarioAtual;
+  const resetDespesaExecucao = proximoHorario !== horarioAtual;
   const payload = {
     resendApiKey: data.resendApiKey !== undefined ? normalizeText(data.resendApiKey) : current.resendApiKey,
     emailRemetente: data.emailRemetente !== undefined ? normalizeEmailFrom(data.emailRemetente) : current.emailRemetente,
@@ -85,14 +88,18 @@ export async function saveConfiguracaoGeral(data: Record<string, any>) {
     detranEmailDestinatario: data.detranEmailDestinatario !== undefined ? normalizeText(data.detranEmailDestinatario) : current.detranEmailDestinatario,
     detranEmailTitulo: data.detranEmailTitulo !== undefined ? (normalizeText(data.detranEmailTitulo) || DEFAULT_DETRAN_EMAIL_TITULO) : current.detranEmailTitulo,
     despesasEmailAtivo: data.despesasEmailAtivo !== undefined ? !!data.despesasEmailAtivo : current.despesasEmailAtivo,
-    despesasEmailHorario: data.despesasEmailHorario !== undefined ? normalizeHorario(data.despesasEmailHorario) : current.despesasEmailHorario,
+    despesasEmailHorario: proximoHorario,
     despesasEmailDestinatario: data.despesasEmailDestinatario !== undefined ? normalizeText(data.despesasEmailDestinatario) : current.despesasEmailDestinatario,
     despesasEmailTitulo: data.despesasEmailTitulo !== undefined ? (normalizeText(data.despesasEmailTitulo) || DEFAULT_DESPESAS_EMAIL_TITULO) : current.despesasEmailTitulo,
     despesasEmailUltimaExecucaoChave: data.despesasEmailUltimaExecucaoChave !== undefined
       ? (normalizeText(data.despesasEmailUltimaExecucaoChave) || null)
+      : resetDespesaExecucao
+        ? null
       : current.despesasEmailUltimaExecucaoChave,
     despesasEmailUltimaExecucaoEm: data.despesasEmailUltimaExecucaoEm !== undefined
       ? data.despesasEmailUltimaExecucaoEm
+      : resetDespesaExecucao
+        ? null
       : current.despesasEmailUltimaExecucaoEm,
   };
 
