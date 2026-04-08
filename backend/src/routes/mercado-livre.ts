@@ -397,10 +397,10 @@ function getSaoPauloNowParts(date = new Date()) {
 function getMercadoPagoReportRange(daysBack = 0) {
   const reference = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
   const now = getSaoPauloNowParts(reference);
-  const offset = getSaoPauloOffset();
+  const formatUtc = (dateText: string) => new Date(`${dateText}${getSaoPauloOffset()}`).toISOString().replace('.000Z', 'Z');
   return {
-    beginDate: `${now.year}-${now.month}-${now.day}T00:00:00${offset}`,
-    endDate: `${now.year}-${now.month}-${now.day}T${now.hour}:${now.minute}:${now.second}${offset}`,
+    beginDate: formatUtc(`${now.year}-${now.month}-${now.day}T00:00:00`),
+    endDate: formatUtc(`${now.year}-${now.month}-${now.day}T${now.hour}:${now.minute}:${now.second}`),
   };
 }
 
