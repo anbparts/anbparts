@@ -799,6 +799,7 @@ export default function EstoquePage() {
   const [filters, setFilters] = useState({
     motoId: '',
     disponivel: '',
+    mercadoLivreLink: '',
     precoMlZero: '',
     search: '',
     dataVendaFrom: '',
@@ -819,6 +820,7 @@ export default function EstoquePage() {
     };
     if (filters.motoId) params.motoId = filters.motoId;
     if (filters.disponivel !== '') params.disponivel = filters.disponivel;
+    if (filters.mercadoLivreLink !== '') params.mercadoLivreLink = filters.mercadoLivreLink;
     if (filters.precoMlZero !== '') params.precoMlZero = filters.precoMlZero;
     if (filters.search) params.search = filters.search;
     if (filters.dataVendaFrom) params.dataVendaFrom = filters.dataVendaFrom;
@@ -933,10 +935,10 @@ export default function EstoquePage() {
   }
 
   function clearFilters() {
-    setFilters({ ...filters, motoId: '', disponivel: '', precoMlZero: '', search: '', dataVendaFrom: '', dataVendaTo: '', page: 1 });
+    setFilters({ ...filters, motoId: '', disponivel: '', mercadoLivreLink: '', precoMlZero: '', search: '', dataVendaFrom: '', dataVendaTo: '', page: 1 });
   }
 
-  const hasActiveFilters = Boolean(filters.motoId || filters.disponivel !== '' || filters.precoMlZero !== '' || filters.search || filters.dataVendaFrom || filters.dataVendaTo);
+  const hasActiveFilters = Boolean(filters.motoId || filters.disponivel !== '' || filters.mercadoLivreLink !== '' || filters.precoMlZero !== '' || filters.search || filters.dataVendaFrom || filters.dataVendaTo);
   const totalPages = Math.max(1, Math.ceil((data.total || 0) / filters.perPage));
   const hasPrevPage = filters.page > 1;
   const hasNextPage = filters.page < totalPages;
@@ -977,6 +979,11 @@ export default function EstoquePage() {
                 <option value="">Todos status</option>
                 <option value="true">Em estoque</option>
                 <option value="false">Vendido</option>
+              </select>
+              <select style={cs.sel} value={filters.mercadoLivreLink} onChange={(e) => setFilters({ ...filters, mercadoLivreLink: e.target.value, page: 1 })}>
+                <option value="">Link ML</option>
+                <option value="com">Com Link ML</option>
+                <option value="sem">Sem Link ML</option>
               </select>
               <select style={cs.sel} value={filters.precoMlZero} onChange={(e) => setFilters({ ...filters, precoMlZero: e.target.value, page: 1 })}>
                 <option value="">Preco ML</option>

@@ -226,6 +226,7 @@ pecasRouter.get('/', async (req, res, next) => {
     const {
       motoId,
       disponivel,
+      mercadoLivreLink,
       search,
       dataVendaFrom,
       dataVendaTo,
@@ -238,12 +239,36 @@ pecasRouter.get('/', async (req, res, next) => {
     const where: any = { emPrejuizo: false };
     if (motoId) where.motoId = Number(motoId);
     if (disponivel !== undefined) where.disponivel = disponivel === 'true';
+    if (mercadoLivreLink === 'com') {
+      where.mercadoLivreLink = { not: null };
+      where.NOT = [
+        ...(Array.isArray(where.NOT) ? where.NOT : []),
+        { mercadoLivreLink: '' },
+      ];
+    }
+    if (mercadoLivreLink === 'sem') {
+      where.OR = [
+        ...(Array.isArray(where.OR) ? where.OR : []),
+        { mercadoLivreLink: null },
+        { mercadoLivreLink: '' },
+      ];
+    }
     if (precoMlZero === 'true') where.precoML = 0;
-    if (search) where.OR = [
-      { idPeca: { contains: search, mode: 'insensitive' } },
-      { descricao: { contains: search, mode: 'insensitive' } },
-      { blingPedidoNum: { contains: search, mode: 'insensitive' } },
-    ];
+    if (search) {
+      const searchConditions = [
+        { idPeca: { contains: search, mode: 'insensitive' } },
+        { descricao: { contains: search, mode: 'insensitive' } },
+        { blingPedidoNum: { contains: search, mode: 'insensitive' } },
+      ];
+      if (Array.isArray(where.OR) && where.OR.length) {
+        where.AND = [
+          ...(Array.isArray(where.AND) ? where.AND : []),
+          { OR: searchConditions },
+        ];
+      } else {
+        where.OR = searchConditions;
+      }
+    }
     if (dataVendaFrom || dataVendaTo) {
       where.dataVenda = {};
       if (dataVendaFrom) where.dataVenda.gte = parseDateStart(dataVendaFrom);
