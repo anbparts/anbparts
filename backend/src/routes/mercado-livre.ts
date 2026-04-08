@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma';
@@ -14,6 +15,7 @@ export const mercadoLivreRouter = Router();
 const MERCADO_LIVRE_API = 'https://api.mercadolibre.com';
 const MERCADO_PAGO_API = 'https://api.mercadopago.com';
 const MERCADO_LIVRE_AUTH = 'https://auth.mercadolivre.com.br/authorization';
+const MERCADO_PAGO_AUTH = 'https://auth.mercadopago.com.br/authorization';
 const MERCADO_LIVRE_TOKEN = `${MERCADO_LIVRE_API}/oauth/token`;
 const MERCADO_PAGO_TOKEN = `${MERCADO_PAGO_API}/oauth/token`;
 const MERCADO_LIVRE_SITE_ID = 'MLB';
@@ -34,6 +36,11 @@ const saldoCacheState: {
   expiresAt: 0,
   value: null,
   inFlight: null,
+};
+
+const mercadoPagoOAuthState = {
+  value: '',
+  createdAt: 0,
 };
 
 function clearSaldoCache() {
@@ -73,6 +80,11 @@ function getFrontendBase() {
 function getCallbackUrl(req?: any) {
   if (process.env.MERCADO_LIVRE_REDIRECT_URI) return process.env.MERCADO_LIVRE_REDIRECT_URI;
   return `${getPublicBackendBase(req)}/mercado-livre/callback`;
+}
+
+function getMercadoPagoCallbackUrl(req?: any) {
+  if (process.env.MERCADO_PAGO_REDIRECT_URI) return process.env.MERCADO_PAGO_REDIRECT_URI;
+  return `${getPublicBackendBase(req)}/mercado-livre/mercado-pago/callback`;
 }
 
 async function getMercadoLivreConfig() {
@@ -200,6 +212,33 @@ async function refreshMercadoLivreToken() {
   return normalizeText(payload.access_token);
 }
 
+async function refreshMercadoPagoToken() {
+  const config = await getMercadoLivreConfig();
+  if (!normalizeText(config.mercadoPagoRefreshToken)) {
+    throw new Error('Sem refresh token do Mercado Pago. Reconecte a conta.');
+  }
+  if (!normalizeText(config.mercadoPagoClientId) || !normalizeText(config.mercadoPagoClientSecret)) {
+    throw new Error('Credenciais do Mercado Pago nao configuradas.');
+  }
+
+  const payload = await mercadoPagoTokenRequest({
+    grant_type: 'refresh_token',
+    client_id: config.mercadoPagoClientId,
+    client_secret: config.mercadoPagoClientSecret,
+    refresh_token: config.mercadoPagoRefreshToken,
+  });
+
+  await saveMercadoLivreConfig({
+    mercadoPagoAccessToken: normalizeText(payload.access_token),
+    mercadoPagoRefreshToken: normalizeText(payload.refresh_token) || config.mercadoPagoRefreshToken,
+    mercadoPagoConnectedAt: new Date(),
+    mercadoPagoUserId: normalizeText(payload.user_id) || config.mercadoPagoUserId,
+  });
+  clearSaldoCache();
+
+  return normalizeText(payload.access_token);
+}
+
 async function mercadoLivreReq(path: string, options: RequestInit = {}, allowRefresh = true) {
   const config = await getMercadoLivreConfig();
   const token = normalizeText(config.accessToken);
@@ -258,85 +297,55 @@ async function getMercadoPagoMeWithToken(accessToken: string) {
   return payload;
 }
 
-async function connectMercadoPago() {
-  const config = await getMercadoLivreConfig();
-  if (!normalizeText(config.mercadoPagoClientId) || !normalizeText(config.mercadoPagoClientSecret)) {
-    throw new Error('Configure o Client ID e o Client Secret do Mercado Pago primeiro.');
+async function mercadoPagoReq(path: string, options: RequestInit = {}, allowReconnect = true) {
+  const response = await mercadoPagoFetch(path, options, allowReconnect);
+  const payload: any = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload?.message || payload?.error || `Mercado Pago API ${response.status}`);
   }
-
-  const payload = await mercadoPagoTokenRequest({
-    grant_type: 'client_credentials',
-    client_id: config.mercadoPagoClientId,
-    client_secret: config.mercadoPagoClientSecret,
-  });
-
-  const accessToken = normalizeText(payload.access_token);
-  if (!accessToken) throw new Error('Mercado Pago nao retornou access token.');
-
-  const me = await getMercadoPagoMeWithToken(accessToken).catch(() => null);
-  const userId = normalizeText(payload.user_id) || normalizeText(me?.id);
-
-  await saveMercadoLivreConfig({
-    mercadoPagoAccessToken: accessToken,
-    mercadoPagoRefreshToken: normalizeText(payload.refresh_token),
-    mercadoPagoConnectedAt: new Date(),
-    mercadoPagoUserId: userId,
-  });
-  clearSaldoCache();
-
-  return {
-    accessToken,
-    userId,
-    nickname: normalizeText(me?.nickname),
-  };
+  return payload;
 }
 
-async function mercadoPagoReq(path: string, options: RequestInit = {}, allowReconnect = true) {
+async function mercadoPagoFetch(path: string, options: RequestInit = {}, allowReconnect = true): Promise<Response> {
   const config = await getMercadoLivreConfig();
   let token = normalizeText(config.mercadoPagoAccessToken);
 
   if (!token) {
-    if (!normalizeText(config.mercadoPagoClientId) || !normalizeText(config.mercadoPagoClientSecret)) {
-      throw new Error('Configure e conecte o Mercado Pago em Config. ML.');
+    if (normalizeText(config.mercadoPagoRefreshToken)) {
+      token = await refreshMercadoPagoToken();
+    } else {
+      throw new Error('Conecte o Mercado Pago com a autorizacao da conta em Config. ML.');
     }
-    const connected = await connectMercadoPago();
-    token = connected.accessToken;
   }
 
   const url = /^https?:\/\//i.test(path) ? path : `${MERCADO_PAGO_API}${path}`;
+  const execute = (bearer: string) => fetch(url, {
+    ...options,
+    headers: {
+      accept: options.headers && 'accept' in (options.headers as any) ? (options.headers as any).accept : 'application/json',
+      Authorization: `Bearer ${bearer}`,
+      'Content-Type': options.headers && 'Content-Type' in (options.headers as any)
+        ? (options.headers as any)['Content-Type']
+        : 'application/json',
+      ...(options.headers || {}),
+    },
+  });
 
-  const execute = async (bearer: string) => {
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        accept: 'application/json',
-        Authorization: `Bearer ${bearer}`,
-        'Content-Type': 'application/json',
-        ...(options.headers || {}),
-      },
-    });
+  let response = await execute(token);
+  if (response.status !== 401 || !allowReconnect) return response;
 
-    const payload: any = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      throw new Error(payload?.message || payload?.error || `Mercado Pago API ${response.status}`);
-    }
-    return payload;
-  };
-
-  try {
-    return await execute(token);
-  } catch (error: any) {
-    const shouldReconnect = allowReconnect && /401|unauthorized|invalid_token/i.test(String(error?.message || ''));
-    if (!shouldReconnect) throw error;
-    const connected = await connectMercadoPago();
-    return execute(connected.accessToken);
-  }
+  const refreshedToken = await refreshMercadoPagoToken();
+  response = await execute(refreshedToken);
+  return response;
 }
 
 function normalizeMoney(value: any): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value === 'string') {
-    const normalized = value.replace(',', '.').replace(/[^\d.-]/g, '');
+    const cleaned = value.trim();
+    const normalized = /,\d{1,2}$/.test(cleaned)
+      ? cleaned.replace(/\./g, '').replace(',', '.').replace(/[^\d.-]/g, '')
+      : cleaned.replace(/,/g, '').replace(/[^\d.-]/g, '');
     const parsed = Number(normalized);
     return Number.isFinite(parsed) ? parsed : null;
   }
@@ -353,105 +362,214 @@ function normalizeKey(value: any) {
     .replace(/[^a-z0-9]+/g, '_');
 }
 
-function extractReasonAmounts(container: any) {
-  if (Array.isArray(container)) {
-    return container
-      .map((item) => ({
-        key: normalizeKey(item?.reason || item?.type || item?.id || item?.label),
-        amount: normalizeMoney(item?.amount ?? item?.value),
-      }))
-      .filter((item) => item.key && item.amount !== null) as Array<{ key: string; amount: number }>;
-  }
-
-  if (container && typeof container === 'object') {
-    return Object.entries(container)
-      .map(([key, value]) => ({
-        key: normalizeKey(key),
-        amount: normalizeMoney(value),
-      }))
-      .filter((item) => item.key && item.amount !== null) as Array<{ key: string; amount: number }>;
-  }
-
-  return [] as Array<{ key: string; amount: number }>;
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function pickAmountByKeys(container: any, keys: string[]) {
-  const normalizedKeys = keys.map((key) => normalizeKey(key));
-  const entries = extractReasonAmounts(container);
-
-  for (const key of normalizedKeys) {
-    const exact = entries.find((entry) => entry.key === key);
-    if (exact) return exact.amount;
-  }
-
-  for (const key of normalizedKeys) {
-    const partial = entries.find((entry) => entry.key.includes(key));
-    if (partial) return partial.amount;
-  }
-
-  return null;
+function getSaoPauloOffset() {
+  return '-03:00';
 }
 
-function sumAmountByKeys(container: any, keys: string[]) {
-  const normalizedKeys = keys.map((key) => normalizeKey(key));
-  return extractReasonAmounts(container)
-    .filter((entry) => normalizedKeys.includes(entry.key))
-    .reduce((sum, entry) => sum + entry.amount, 0);
-}
+function getSaoPauloNowParts(date = new Date()) {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
 
-function extractSaldoResumo(payload: any, source: string) {
-  const currencyId = normalizeText(payload?.currency_id || payload?.currencyId || 'BRL') || 'BRL';
-  const saldoDisponivel =
-    normalizeMoney(payload?.available_balance)
-    ?? pickAmountByKeys(payload?.available_balance_by_transaction_type, [
-      'withdrawable',
-      'withdraw',
-      'withdrawal',
-      'transfer',
-      'available',
-      'payment',
-    ])
-    ?? 0;
-
-  const saldoALiberar =
-    normalizeMoney(payload?.unavailable_balance)
-    ?? extractReasonAmounts(payload?.unavailable_balance_by_reason).reduce((sum, entry) => sum + entry.amount, 0);
-
-  const saldoAntecipavelExplicito =
-    normalizeMoney(payload?.advanceable_balance)
-    ?? normalizeMoney(payload?.anticipation_balance)
-    ?? normalizeMoney(payload?.available_for_advance)
-    ?? normalizeMoney(payload?.available_for_anticipation)
-    ?? normalizeMoney(payload?.available_for_release)
-    ?? pickAmountByKeys(payload?.available_balance_by_transaction_type, [
-      'advance',
-      'anticipation',
-      'anticipated',
-    ]);
-
-  const saldoAntecipavelInferido = sumAmountByKeys(payload?.unavailable_balance_by_reason, ['time_period']);
-  const saldoAntecipavel = saldoAntecipavelExplicito ?? saldoAntecipavelInferido;
-
+  const parts = formatter.formatToParts(date);
+  const get = (type: string) => parts.find((part) => part.type === type)?.value || '00';
   return {
-    connected: true,
-    source,
-    currencyId,
-    saldoDisponivel,
-    saldoALiberar,
-    saldoAntecipavel,
-    saldoAntecipavelInferido: saldoAntecipavelExplicito === null,
-    consultadoEm: new Date().toISOString(),
+    year: get('year'),
+    month: get('month'),
+    day: get('day'),
+    hour: get('hour'),
+    minute: get('minute'),
+    second: get('second'),
   };
+}
+
+function getMercadoPagoReportRange(daysBack = 0) {
+  const reference = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
+  const now = getSaoPauloNowParts(reference);
+  const offset = getSaoPauloOffset();
+  return {
+    beginDate: `${now.year}-${now.month}-${now.day}T00:00:00${offset}`,
+    endDate: `${now.year}-${now.month}-${now.day}T${now.hour}:${now.minute}:${now.second}${offset}`,
+  };
+}
+
+function detectCsvDelimiter(headerLine: string) {
+  const semicolons = (headerLine.match(/;/g) || []).length;
+  const commas = (headerLine.match(/,/g) || []).length;
+  return semicolons > commas ? ';' : ',';
+}
+
+function parseCsvLine(line: string, delimiter: string) {
+  const values: string[] = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i += 1) {
+    const char = line[i];
+    const next = line[i + 1];
+
+    if (char === '"') {
+      if (inQuotes && next === '"') {
+        current += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (char === delimiter && !inQuotes) {
+      values.push(current);
+      current = '';
+      continue;
+    }
+
+    current += char;
+  }
+
+  values.push(current);
+  return values.map((value) => value.replace(/^\uFEFF/, '').trim());
+}
+
+function normalizeReportHeader(value: string) {
+  const key = normalizeKey(value).replace(/^_+|_+$/g, '');
+  if (!key) return '';
+  if (key.includes('record_type') || key.includes('tipo_de_registro')) return 'record_type';
+  if (key.includes('balance_amount') || key === 'saldo' || key === 'balance') return 'balance_amount';
+  if (key.includes('settlement_net_amount')) return 'settlement_net_amount';
+  if (key.includes('net_credit_amount')) return 'net_credit_amount';
+  if (key.includes('net_debit_amount')) return 'net_debit_amount';
+  if (key.includes('money_release_date') || key.includes('data_de_liberacao_do_dinheiro')) return 'money_release_date';
+  if (key.includes('settlement_date') || key.includes('data_de_liquidacao')) return 'settlement_date';
+  if (key.includes('transaction_type') || key.includes('tipo_de_transacao')) return 'transaction_type';
+  if (key.includes('description') || key.includes('descricao') || key.includes('descripcion')) return 'description';
+  return key;
+}
+
+function parseCsvReport(text: string) {
+  const lines = String(text || '')
+    .split(/\r?\n/)
+    .map((line) => line.trimEnd())
+    .filter((line) => line.trim());
+
+  if (!lines.length) return [] as Array<Record<string, string>>;
+
+  const delimiter = detectCsvDelimiter(lines[0]);
+  const headers = parseCsvLine(lines[0], delimiter).map(normalizeReportHeader);
+
+  return lines.slice(1).map((line) => {
+    const values = parseCsvLine(line, delimiter);
+    const row: Record<string, string> = {};
+    headers.forEach((header, index) => {
+      if (!header) return;
+      row[header] = values[index] || '';
+    });
+    return row;
+  });
+}
+
+function extractReportEndingBalance(rows: Array<Record<string, string>>) {
+  const totalRows = rows.filter((row) => normalizeKey(row.record_type).includes('total'));
+  const candidates = totalRows.length ? totalRows : rows;
+
+  for (let i = candidates.length - 1; i >= 0; i -= 1) {
+    const row = candidates[i];
+    const direct =
+      normalizeMoney(row.balance_amount)
+      ?? normalizeMoney(row.settlement_net_amount)
+      ?? normalizeMoney(row.net_credit_amount);
+    if (direct !== null) return direct;
+  }
+
+  return 0;
+}
+
+async function mercadoPagoDownloadText(path: string) {
+  const response = await mercadoPagoFetch(path, {
+    headers: {
+      accept: 'text/plain',
+      'Content-Type': 'text/plain',
+    },
+  });
+  const text = await response.text();
+  if (!response.ok) {
+    throw new Error(text || `Mercado Pago API ${response.status}`);
+  }
+  return text;
+}
+
+async function createMercadoPagoReport(reportType: 'release' | 'settlement', beginDate: string, endDate: string) {
+  const reportSlug = reportType === 'release' ? 'release_report' : 'settlement_report';
+  const payload = await mercadoPagoReq(`/v1/account/${reportSlug}`, {
+    method: 'POST',
+    body: JSON.stringify({
+      begin_date: beginDate,
+      end_date: endDate,
+    }),
+  });
+
+  return normalizeText(payload?.task_id || payload?.id || payload?.taskId);
+}
+
+async function waitMercadoPagoReportFileName(reportType: 'release' | 'settlement', taskId: string) {
+  const reportSlug = reportType === 'release' ? 'release_report' : 'settlement_report';
+  if (!taskId) throw new Error(`Nao foi possivel iniciar o relatorio ${reportSlug}`);
+
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const payload = await mercadoPagoReq(`/v1/account/${reportSlug}/task/${encodeURIComponent(taskId)}`);
+    const fileName = normalizeText(payload?.file_name || payload?.fileName);
+    const status = normalizeKey(payload?.status);
+    if (fileName) return fileName;
+    if (status.includes('failed') || status.includes('error')) {
+      throw new Error(`Falha ao gerar relatorio ${reportSlug}`);
+    }
+    await delay(2000);
+  }
+
+  throw new Error(`Tempo excedido ao gerar relatorio ${reportSlug}`);
+}
+
+async function downloadMercadoPagoReportRows(reportType: 'release' | 'settlement', daysBack: number) {
+  const reportSlug = reportType === 'release' ? 'release_report' : 'settlement_report';
+  const { beginDate } = getMercadoPagoReportRange(daysBack);
+  const { endDate } = getMercadoPagoReportRange(0);
+  const taskId = await createMercadoPagoReport(reportType, beginDate, endDate);
+  const fileName = await waitMercadoPagoReportFileName(reportType, taskId);
+
+  if (!fileName) {
+    throw new Error(`Nao foi possivel obter o arquivo do relatorio ${reportSlug}`);
+  }
+
+  const text = await mercadoPagoDownloadText(`/v1/account/${reportSlug}/${encodeURIComponent(fileName)}`);
+  return parseCsvReport(text);
 }
 
 export async function loadMercadoLivreSaldoResumo(forceRefresh = false) {
   const config = await getMercadoLivreConfig();
-  const userId = normalizeText(config.mercadoPagoUserId);
 
   if (!normalizeText(config.mercadoPagoClientId) || !normalizeText(config.mercadoPagoClientSecret)) {
     return {
       connected: false,
       error: 'Mercado Pago nao configurado.',
+      consultadoEm: new Date().toISOString(),
+    };
+  }
+
+  if (!normalizeText(config.mercadoPagoRefreshToken)) {
+    return {
+      connected: false,
+      error: 'Conecte o Mercado Pago com a autorizacao da conta em Config. ML.',
       consultadoEm: new Date().toISOString(),
     };
   }
@@ -464,26 +582,55 @@ export async function loadMercadoLivreSaldoResumo(forceRefresh = false) {
     return saldoCacheState.inFlight;
   }
 
-  const candidates = [
-    { source: 'mercadopago_account_balance', url: `${MERCADO_PAGO_API}/users/${encodeURIComponent(userId || 'me')}/mercadopago_account/balance` },
-    { source: 'mercadopago_account_balance_me', url: `${MERCADO_PAGO_API}/users/me/mercadopago_account/balance` },
-    { source: 'mercadolivre_account_balance', url: `${MERCADO_LIVRE_API}/users/${encodeURIComponent(userId || 'me')}/mercadopago_account/balance` },
-    { source: 'mercadolivre_account_balance_me', url: `${MERCADO_LIVRE_API}/users/me/mercadopago_account/balance` },
-  ];
-
   saldoCacheState.inFlight = (async () => {
     let lastError: any = null;
 
-    for (const candidate of candidates) {
-      try {
-        const payload = await mercadoPagoReq(candidate.url);
-        const resumo = extractSaldoResumo(payload, candidate.source);
-        saldoCacheState.value = resumo;
-        saldoCacheState.expiresAt = Date.now() + MERCADO_LIVRE_SALDO_CACHE_TTL_MS;
-        return resumo;
-      } catch (error: any) {
-        lastError = error;
-      }
+    try {
+      const [releaseRows, settlementRows] = await Promise.all([
+        downloadMercadoPagoReportRows('release', 15),
+        downloadMercadoPagoReportRows('settlement', 60),
+      ]);
+
+      const now = new Date();
+      const saldoDisponivel = extractReportEndingBalance(releaseRows);
+
+      const futureSettlements = settlementRows
+        .map((row) => {
+          const releaseDateText = normalizeText(row.money_release_date || row.settlement_date);
+          const releaseDate = releaseDateText ? new Date(releaseDateText) : null;
+          const amount =
+            normalizeMoney(row.settlement_net_amount)
+            ?? normalizeMoney(row.net_credit_amount)
+            ?? 0;
+          return {
+            releaseDate,
+            amount,
+            transactionType: normalizeKey(row.transaction_type),
+            description: normalizeKey(row.description),
+          };
+        })
+        .filter((row) => row.releaseDate && !Number.isNaN(row.releaseDate.getTime()) && row.releaseDate > now && row.amount > 0);
+
+      const saldoALiberar = futureSettlements.reduce((sum, row) => sum + row.amount, 0);
+      const saldoAntecipavel = futureSettlements
+        .filter((row) => !row.description.includes('chargeback') && !row.description.includes('refund'))
+        .reduce((sum, row) => sum + row.amount, 0);
+
+      const resumo = {
+        connected: true,
+        source: 'mercado_pago_reports',
+        currencyId: 'BRL',
+        saldoDisponivel,
+        saldoALiberar,
+        saldoAntecipavel,
+        saldoAntecipavelInferido: true,
+        consultadoEm: new Date().toISOString(),
+      };
+      saldoCacheState.value = resumo;
+      saldoCacheState.expiresAt = Date.now() + MERCADO_LIVRE_SALDO_CACHE_TTL_MS;
+      return resumo;
+    } catch (error: any) {
+      lastError = error;
     }
 
     const fallback = {
@@ -898,6 +1045,7 @@ mercadoLivreRouter.get('/config', async (_req, res, next) => {
       mercadoPagoClientId: config.mercadoPagoClientId || '',
       mercadoPagoClientSecretConfigured: !!normalizeText(config.mercadoPagoClientSecret),
       mercadoPagoHasTokens: !!normalizeText(config.mercadoPagoAccessToken),
+      mercadoPagoHasRefreshToken: !!normalizeText(config.mercadoPagoRefreshToken),
       mercadoPagoConnectedAt: config.mercadoPagoConnectedAt,
       mercadoPagoUserId: config.mercadoPagoUserId || '',
     });
@@ -1021,14 +1169,74 @@ mercadoLivreRouter.get('/status', async (_req, res) => {
   }
 });
 
-mercadoLivreRouter.post('/mercado-pago/connect', async (_req, res, next) => {
+mercadoLivreRouter.get('/mercado-pago/auth-url', async (req, res, next) => {
   try {
-    const connection = await connectMercadoPago();
-    res.json({
-      ok: true,
-      userId: connection.userId,
-      nickname: connection.nickname,
+    const config = await getMercadoLivreConfig();
+    if (!normalizeText(config.mercadoPagoClientId)) {
+      return res.status(400).json({ error: 'Configure o Client ID do Mercado Pago primeiro.' });
+    }
+
+    const redirectUri = getMercadoPagoCallbackUrl(req);
+    mercadoPagoOAuthState.value = randomUUID();
+    mercadoPagoOAuthState.createdAt = Date.now();
+
+    const url = `${MERCADO_PAGO_AUTH}?response_type=code&client_id=${encodeURIComponent(config.mercadoPagoClientId)}&platform_id=mp&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(mercadoPagoOAuthState.value)}`;
+    res.json({ url });
+  } catch (e) {
+    next(e);
+  }
+});
+
+mercadoLivreRouter.get('/mercado-pago/callback', async (req, res, next) => {
+  try {
+    const error = normalizeText(req.query?.error);
+    if (error) {
+      return res.redirect(`${getFrontendBase()}/config-ml?mercadoPago=error&message=${encodeURIComponent(error)}`);
+    }
+
+    const code = normalizeText(req.query?.code);
+    const state = normalizeText(req.query?.state);
+    if (!code) return res.status(400).send('Code nao recebido do Mercado Pago');
+
+    if (
+      mercadoPagoOAuthState.value
+      && (Date.now() - mercadoPagoOAuthState.createdAt) < 15 * 60 * 1000
+      && state !== mercadoPagoOAuthState.value
+    ) {
+      return res.status(400).send('State invalido do Mercado Pago');
+    }
+
+    const config = await getMercadoLivreConfig();
+    if (!normalizeText(config.mercadoPagoClientId) || !normalizeText(config.mercadoPagoClientSecret)) {
+      return res.status(400).send('Credenciais do Mercado Pago nao configuradas');
+    }
+
+    const redirectUri = getMercadoPagoCallbackUrl(req);
+    const payload = await mercadoPagoTokenRequest({
+      grant_type: 'authorization_code',
+      client_id: config.mercadoPagoClientId,
+      client_secret: config.mercadoPagoClientSecret,
+      code,
+      redirect_uri: redirectUri,
     });
+
+    const accessToken = normalizeText(payload.access_token);
+    if (!accessToken) {
+      return res.status(400).send('Mercado Pago nao retornou access token');
+    }
+
+    const me = await getMercadoPagoMeWithToken(accessToken).catch(() => null);
+    await saveMercadoLivreConfig({
+      mercadoPagoAccessToken: accessToken,
+      mercadoPagoRefreshToken: normalizeText(payload.refresh_token),
+      mercadoPagoConnectedAt: new Date(),
+      mercadoPagoUserId: normalizeText(payload.user_id) || normalizeText(me?.id),
+    });
+    clearSaldoCache();
+    mercadoPagoOAuthState.value = '';
+    mercadoPagoOAuthState.createdAt = 0;
+
+    res.redirect(`${getFrontendBase()}/config-ml?mercadoPago=connected`);
   } catch (e) {
     next(e);
   }

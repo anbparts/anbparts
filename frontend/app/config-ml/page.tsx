@@ -41,8 +41,20 @@ export default function ConfigMlPage() {
       .catch(() => {})
       .finally(() => setLoading(false));
 
-    if (typeof window !== 'undefined' && window.location.search.includes('mercadoLivre=connected')) {
-      window.history.replaceState({}, '', '/config-ml');
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('mercadoLivre') === 'connected') {
+        window.history.replaceState({}, '', '/config-ml');
+      }
+      if (params.get('mercadoPago') === 'connected') {
+        window.history.replaceState({}, '', '/config-ml');
+        setTimeout(() => alert('Mercado Pago conectado com sucesso.'), 50);
+      }
+      if (params.get('mercadoPago') === 'error') {
+        const message = params.get('message') || 'Falha na autorizacao do Mercado Pago';
+        window.history.replaceState({}, '', '/config-ml');
+        setTimeout(() => alert(message), 50);
+      }
     }
   }, []);
 
@@ -117,14 +129,13 @@ export default function ConfigMlPage() {
 
   async function conectarMercadoPago() {
     setConnectingMercadoPago(true);
-    setMercadoPagoStatus({ loading: true });
     try {
-      const result = await api.mercadoLivre.connectMercadoPago();
-      await load();
-      setMercadoPagoStatus(result);
+      const data = await api.mercadoLivre.authUrlMercadoPago();
+      if (data?.url && typeof window !== 'undefined') {
+        window.location.href = data.url;
+      }
     } catch (error: any) {
       setMercadoPagoStatus({ ok: false, error: error.message || 'Sem resposta' });
-    } finally {
       setConnectingMercadoPago(false);
     }
   }
@@ -251,17 +262,17 @@ export default function ConfigMlPage() {
         <div style={s.card}>
           <div style={s.h3}>Conexao Mercado Pago</div>
           <p style={s.p}>
-            Salve aqui o Client ID e o Client Secret da aplicacao do Mercado Pago. Depois clique em conectar para gerar o token com o fluxo client credentials e liberar o card de saldo no dashboard.
+            Salve aqui o Client ID e o Client Secret da aplicacao do Mercado Pago. Depois clique em conectar para autorizar a conta e liberar o card de saldo no dashboard.
           </p>
 
           <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            {mercadoLivreConfig?.mercadoPagoHasTokens ? (
+            {mercadoLivreConfig?.mercadoPagoHasTokens && mercadoLivreConfig?.mercadoPagoHasRefreshToken ? (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, background: 'var(--green-light)', color: 'var(--green)', border: '1px solid #86efac', fontSize: 13, fontWeight: 600 }}>
                 Conectado ao Mercado Pago
               </span>
             ) : mercadoLivreConfig?.mercadoPagoClientId ? (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, background: 'var(--amber-light)', color: 'var(--amber)', border: '1px solid #fcd34d', fontSize: 13, fontWeight: 600 }}>
-                Credenciais salvas, aguardando conexao
+                Credenciais salvas, aguardando autorizacao da conta
               </span>
             ) : (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, background: 'var(--gray-100)', color: 'var(--gray-400)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 600 }}>
@@ -301,13 +312,13 @@ export default function ConfigMlPage() {
             <button style={{ ...s.btn, background: 'var(--blue-500)', color: '#fff' }} onClick={salvarMercadoPago} disabled={savingMercadoPago}>
               {savingMercadoPago ? 'Salvando...' : 'Salvar credenciais Mercado Pago'}
             </button>
-            {!mercadoLivreConfig?.mercadoPagoHasTokens ? (
+            {!(mercadoLivreConfig?.mercadoPagoHasTokens && mercadoLivreConfig?.mercadoPagoHasRefreshToken) ? (
               <button
                 style={{ ...s.btn, background: '#ffe8cc', color: '#9a3412', borderColor: '#fdba74' }}
                 onClick={conectarMercadoPago}
                 disabled={connectingMercadoPago}
               >
-                {connectingMercadoPago ? 'Conectando...' : 'Conectar com Mercado Pago'}
+                {connectingMercadoPago ? 'Abrindo...' : 'Conectar com Mercado Pago'}
               </button>
             ) : (
               <>
@@ -328,6 +339,10 @@ export default function ConfigMlPage() {
                 : `Erro: ${mercadoPagoStatus.error || 'Nao foi possivel validar a conexao'}`}
             </div>
           ) : null}
+
+          <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 12 }}>
+            Callback autorizacao: <code style={{ background: 'var(--gray-100)', padding: '1px 6px', borderRadius: 4, fontFamily: 'JetBrains Mono, monospace' }}>{API}/mercado-livre/mercado-pago/callback</code>
+          </div>
         </div>
       </div>
     </>
