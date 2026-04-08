@@ -400,14 +400,32 @@ function buildMercadoPagoReportConfig(reportType: 'release' | 'settlement') {
     shipping_detail: false,
     refund_detailed: false,
     columns: [
-      { key: 'TRANSACTION_DATE' },
-      { key: 'SOURCE_ID' },
       { key: 'EXTERNAL_REFERENCE' },
+      { key: 'SOURCE_ID' },
+      { key: 'USER_ID' },
+      { key: 'PAYMENT_METHOD_TYPE' },
+      { key: 'PAYMENT_METHOD' },
+      { key: 'SITE' },
       { key: 'TRANSACTION_TYPE' },
-      { key: 'DESCRIPTION' },
+      { key: 'TRANSACTION_AMOUNT' },
+      { key: 'TRANSACTION_CURRENCY' },
+      { key: 'TRANSACTION_DATE' },
+      { key: 'FEE_AMOUNT' },
       { key: 'SETTLEMENT_DATE' },
       { key: 'SETTLEMENT_NET_AMOUNT' },
-      { key: 'BALANCE_AMOUNT' },
+      { key: 'SETTLEMENT_CURRENCY' },
+      { key: 'REAL_AMOUNT' },
+      { key: 'COUPON_AMOUNT' },
+      { key: 'METADATA' },
+      { key: 'MKP_FEE_AMOUNT' },
+      { key: 'FINANCING_FEE_AMOUNT' },
+      { key: 'SHIPPING_FEE_AMOUNT' },
+      { key: 'TAXES_AMOUNT' },
+      { key: 'INSTALLMENTS' },
+      { key: 'ORDER_ID' },
+      { key: 'SHIPPING_ID' },
+      { key: 'SHIPMENT_MODE' },
+      { key: 'PACK_ID' },
     ],
   };
 }
@@ -1065,7 +1083,7 @@ export async function loadMercadoLivreSaldoResumo(forceRefresh = false) {
             releaseDate,
             amount,
             transactionType: normalizeKey(row.transaction_type),
-            description: normalizeKey(row.description),
+            paymentMethodType: normalizeKey(row.payment_method_type),
           };
         })
         .filter((row) => row.releaseDate && !Number.isNaN(row.releaseDate.getTime()) && row.releaseDate > now && row.amount > 0);
@@ -1076,7 +1094,7 @@ export async function loadMercadoLivreSaldoResumo(forceRefresh = false) {
         : null;
       const saldoAntecipavel = hasSettlementData
         ? futureSettlements
-          .filter((row) => !row.description.includes('chargeback') && !row.description.includes('refund'))
+          .filter((row) => !row.transactionType.includes('chargeback') && !row.transactionType.includes('refund'))
           .reduce((sum, row) => sum + row.amount, 0)
         : null;
 
