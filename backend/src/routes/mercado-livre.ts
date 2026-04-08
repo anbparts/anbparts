@@ -634,16 +634,27 @@ function normalizeMercadoPagoReportEntry(entry: any) {
   };
 }
 
+function isMercadoPagoConfigMissingError(error: any) {
+  const message = normalizeText(error?.message || error);
+  return /configuration not found for user/i.test(message);
+}
+
 async function listMercadoPagoReports(reportType: 'release' | 'settlement') {
   const reportSlug = getMercadoPagoReportSlug(reportType);
   try {
     return extractMercadoPagoReportEntries(
       await mercadoPagoReq(`/v1/account/${reportSlug}/list`, { method: 'GET' }),
     );
-  } catch {
-    return extractMercadoPagoReportEntries(
-      await mercadoPagoReq(`/v1/account/${reportSlug}/list`, { method: 'POST' }),
-    );
+  } catch (getError: any) {
+    if (isMercadoPagoConfigMissingError(getError)) return [];
+    try {
+      return extractMercadoPagoReportEntries(
+        await mercadoPagoReq(`/v1/account/${reportSlug}/list`, { method: 'POST' }),
+      );
+    } catch (postError: any) {
+      if (isMercadoPagoConfigMissingError(postError)) return [];
+      throw postError;
+    }
   }
 }
 
@@ -706,7 +717,7 @@ async function downloadMercadoPagoReportRows(reportType: 'release' | 'settlement
   const latestExistingFileName = pickLatestMercadoPagoReportFileName(reportType, existingEntries);
 
   let fileName = latestExistingFileName;
-  if (!fileName || forceGenerate) {
+  if (!fileName && forceGenerate) {
     const knownFileNames = new Set(
       existingEntries
         .map(normalizeMercadoPagoReportEntry)
@@ -721,7 +732,7 @@ async function downloadMercadoPagoReportRows(reportType: 'release' | 'settlement
   }
 
   if (!fileName) {
-    throw new Error(`Nao foi possivel obter o arquivo do relatorio ${reportSlug}`);
+    throw new Error(`Sem relatorio disponivel para ${reportSlug}`);
   }
 
   const text = await mercadoPagoDownloadText(`/v1/account/${reportSlug}/${encodeURIComponent(fileName)}`);
@@ -750,7 +761,11 @@ function extractReportEndingBalance(rows: Array<Record<string, string>>) {
 }
 
 async function downloadMercadoPagoReportRowsWithConfig(reportType: 'release' | 'settlement', daysBack: number, forceGenerate = false) {
-  await ensureMercadoPagoReportConfig(reportType);
+  try {
+    await ensureMercadoPagoReportConfig(reportType);
+  } catch (error: any) {
+    if (!isMercadoPagoConfigMissingError(error)) throw error;
+  }
   return downloadMercadoPagoReportRows(reportType, daysBack, forceGenerate);
 }
 
@@ -785,10 +800,17 @@ export async function loadMercadoLivreSaldoResumo(forceRefresh = false) {
     let lastError: any = null;
 
     try {
-      const [releaseRows, settlementRows] = await Promise.all([
-        downloadMercadoPagoReportRowsWithConfig('release', 30, forceRefresh),
-        downloadMercadoPagoReportRowsWithConfig('settlement', 180, forceRefresh),
+      const [releaseResult, settlementResult] = await Promise.allSettled([
+        downloadMercadoPagoReportRowsWithConfig('release', 30, false),
+        downloadMercadoPagoReportRowsWithConfig('settlement', 180, false),
       ]);
+
+      const releaseRows = releaseResult.status === 'fulfilled' ? releaseResult.value : [];
+      const settlementRows = settlementResult.status === 'fulfilled' ? settlementResult.value : [];
+
+      if (!releaseRows.length && releaseResult.status === 'rejected') {
+        throw releaseResult.reason;
+      }
 
       const now = new Date();
       const saldoDisponivel = extractReportEndingBalance(releaseRows);
@@ -816,10 +838,15 @@ export async function loadMercadoLivreSaldoResumo(forceRefresh = false) {
         })
         .filter((row) => row.releaseDate && !Number.isNaN(row.releaseDate.getTime()) && row.releaseDate > now && row.amount > 0);
 
-      const saldoALiberar = futureSettlements.reduce((sum, row) => sum + row.amount, 0);
-      const saldoAntecipavel = futureSettlements
-        .filter((row) => !row.description.includes('chargeback') && !row.description.includes('refund'))
-        .reduce((sum, row) => sum + row.amount, 0);
+      const hasSettlementData = settlementRows.length > 0;
+      const saldoALiberar = hasSettlementData
+        ? futureSettlements.reduce((sum, row) => sum + row.amount, 0)
+        : null;
+      const saldoAntecipavel = hasSettlementData
+        ? futureSettlements
+          .filter((row) => !row.description.includes('chargeback') && !row.description.includes('refund'))
+          .reduce((sum, row) => sum + row.amount, 0)
+        : null;
 
       const resumo = {
         connected: true,
@@ -828,7 +855,11 @@ export async function loadMercadoLivreSaldoResumo(forceRefresh = false) {
         saldoDisponivel,
         saldoALiberar,
         saldoAntecipavel,
-        saldoAntecipavelInferido: true,
+        saldoAntecipavelInferido: hasSettlementData,
+        saldoParcial: !hasSettlementData,
+        observacao: hasSettlementData
+          ? ''
+          : 'Saldo disponivel carregado. A liberar e antecipavel aguardam relatorio de liquidacao do Mercado Pago.',
         consultadoEm: new Date().toISOString(),
       };
       saldoCacheState.value = resumo;

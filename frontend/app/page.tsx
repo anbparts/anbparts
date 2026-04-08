@@ -49,6 +49,8 @@ function fmt(value: number) {
 }
 
 function renderMercadoLivreSaldoCard(saldo: any) {
+  const fmtMaybe = (value: any) => (typeof value === 'number' && Number.isFinite(value) ? fmt(value) : '-');
+
   if (!saldo?.connected) {
     return (
       <>
@@ -68,9 +70,9 @@ function renderMercadoLivreSaldoCard(saldo: any) {
   }
 
   const rows = [
-    { label: 'Saldo', value: fmt(Number(saldo?.saldoDisponivel || 0)), color: 'var(--sage)' },
-    { label: 'A liberar', value: fmt(Number(saldo?.saldoALiberar || 0)), color: 'var(--amber)' },
-    { label: 'Antecipavel', value: fmt(Number(saldo?.saldoAntecipavel || 0)), color: 'var(--blue-500)' },
+    { label: 'Saldo', value: fmtMaybe(saldo?.saldoDisponivel), color: 'var(--sage)' },
+    { label: 'A liberar', value: fmtMaybe(saldo?.saldoALiberar), color: 'var(--amber)' },
+    { label: 'Antecipavel', value: fmtMaybe(saldo?.saldoAntecipavel), color: 'var(--blue-500)' },
   ];
 
   return (
@@ -84,7 +86,9 @@ function renderMercadoLivreSaldoCard(saldo: any) {
         ))}
       </div>
       <div style={s.sub2}>
-        {saldo?.saldoAntecipavelInferido
+        {saldo?.saldoParcial
+          ? saldo?.observacao || 'Nem todos os relatórios do Mercado Pago estao disponiveis ainda.'
+          : saldo?.saldoAntecipavelInferido
           ? 'Saldo antecipavel estimado a partir do dinheiro ainda no prazo de liberacao.'
           : 'Saldos consultados na conta Mercado Pago conectada.'}
       </div>
