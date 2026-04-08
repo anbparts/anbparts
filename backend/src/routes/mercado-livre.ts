@@ -215,7 +215,7 @@ async function mercadoLivreReq(path: string, options: RequestInit = {}, allowRef
   return payload;
 }
 
-function normalizeMoney(value: any) {
+function normalizeMoney(value: any): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value === 'string') {
     const normalized = value.replace(',', '.').replace(/[^\d.-]/g, '');
@@ -223,7 +223,7 @@ function normalizeMoney(value: any) {
     return Number.isFinite(parsed) ? parsed : null;
   }
   if (value && typeof value === 'object') {
-    const direct = normalizeMoney((value as any).amount ?? (value as any).value ?? (value as any).total);
+    const direct: number | null = normalizeMoney((value as any).amount ?? (value as any).value ?? (value as any).total);
     if (direct !== null) return direct;
   }
   return null;
