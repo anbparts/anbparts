@@ -44,6 +44,21 @@ const s: any = {
   },
 };
 
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`Timeout ao carregar ${label}`)), ms);
+    promise
+      .then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+  });
+}
+
 function fmt(value: number) {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
@@ -71,8 +86,6 @@ function renderMercadoLivreSaldoCard(saldo: any) {
 
   const rows = [
     { label: 'Saldo', value: fmtMaybe(saldo?.saldoDisponivel), color: 'var(--sage)' },
-    { label: 'A liberar', value: fmtMaybe(saldo?.saldoALiberar), color: 'var(--amber)' },
-    { label: 'Antecipavel', value: fmtMaybe(saldo?.saldoAntecipavel), color: 'var(--blue-500)' },
   ];
 
   return (
@@ -86,9 +99,9 @@ function renderMercadoLivreSaldoCard(saldo: any) {
         ))}
       </div>
       <div style={s.sub2}>
-        {saldo?.saldoParcial
+        {false
           ? saldo?.observacao || 'Nem todos os relatórios do Mercado Pago estao disponiveis ainda.'
-          : saldo?.saldoAntecipavelInferido
+          : false
           ? 'Saldo antecipavel estimado a partir do dinheiro ainda no prazo de liberacao.'
           : 'Saldos consultados na conta Mercado Pago conectada.'}
       </div>
@@ -100,18 +113,30 @@ export default function DashboardPage() {
   const [dash, setDash] = useState<any>(null);
   const [motos, setMotos] = useState<any[]>([]);
   const [skuPorMoto, setSkuPorMoto] = useState<Record<number, string[]>>({});
-  const [loading, setLoading] = useState(true);
+  const [loadingDashboard, setLoadingDashboard] = useState(true);
+  const [loadingMotos, setLoadingMotos] = useState(true);
 
   useEffect(() => {
-    Promise.all([
-      api.faturamento.dashboard(),
-      api.motos.list(),
-      fetch(`${API}/bling/config-produtos`)
-        .then((response) => (response.ok ? response.json() : { prefixos: [] }))
-        .catch(() => ({ prefixos: [] })),
-    ])
-      .then(([dashboard, listaMotos, configProdutos]) => {
+    let cancelled = false;
+    const failsafe = setTimeout(() => {
+      if (!cancelled) setLoadingDashboard(false);
+    }, 20000);
+
+    const loadDashboard = async () => {
+      try {
+        const [dashboardResult, configProdutosResult] = await Promise.allSettled([
+          withTimeout(api.faturamento.dashboard(), 10000, 'indicadores'),
+          withTimeout(
+            fetch(`${API}/bling/config-produtos`).then((response) => (response.ok ? response.json() : { prefixos: [] })),
+            10000,
+            'configuracao de produtos',
+          ),
+        ]);
+
+        if (cancelled) return;
+
         const grouped: Record<number, string[]> = {};
+        const configProdutos = configProdutosResult.status === 'fulfilled' ? configProdutosResult.value : { prefixos: [] };
 
         for (const item of configProdutos?.prefixos || []) {
           const motoId = Number(item?.motoId);
@@ -121,14 +146,41 @@ export default function DashboardPage() {
           if (!grouped[motoId].includes(prefixo)) grouped[motoId].push(prefixo);
         }
 
-        setDash(dashboard);
-        setMotos(listaMotos);
+        setDash(dashboardResult.status === 'fulfilled' ? dashboardResult.value : null);
         setSkuPorMoto(grouped);
-      })
-      .finally(() => setLoading(false));
+      } catch {
+        if (cancelled) return;
+        setDash(null);
+        setSkuPorMoto({});
+      } finally {
+        clearTimeout(failsafe);
+        if (!cancelled) setLoadingDashboard(false);
+      }
+    };
+
+    const loadMotos = async () => {
+      try {
+        const listaMotos = await withTimeout(api.motos.list(), 15000, 'motos');
+        if (cancelled) return;
+        setMotos(Array.isArray(listaMotos) ? listaMotos : []);
+      } catch {
+        if (cancelled) return;
+        setMotos([]);
+      } finally {
+        if (!cancelled) setLoadingMotos(false);
+      }
+    };
+
+    loadDashboard();
+    loadMotos();
+
+    return () => {
+      cancelled = true;
+      clearTimeout(failsafe);
+    };
   }, []);
 
-  if (loading) {
+  if (loadingDashboard) {
     return (
       <>
         <div style={s.topbar}>
@@ -230,12 +282,15 @@ export default function DashboardPage() {
               fontWeight: 400,
             }}
           >
-            - {motos.length}
+            - {loadingMotos ? '...' : motos.length}
           </span>
         </div>
 
-        <div style={s.mGrid}>
-          {motos.map((moto) => {
+        {loadingMotos ? (
+          <div style={{ color: 'var(--ink-muted)', fontSize: 13 }}>Carregando motos...</div>
+        ) : (
+          <div style={s.mGrid}>
+            {motos.map((moto) => {
             const totalPecasMoto = (moto.qtdDisp || 0) + (moto.qtdVendidas || 0);
             const pctVendida = totalPecasMoto > 0 ? Math.round(((moto.qtdVendidas || 0) / totalPecasMoto) * 100) : 0;
             const pctRecuperada = moto.pctRecuperada || 0;
@@ -379,7 +434,8 @@ export default function DashboardPage() {
               </div>
             );
           })}
-        </div>
+          </div>
+        )}
       </div>
     </>
   );
