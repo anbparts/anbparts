@@ -800,7 +800,6 @@ function extractReportEndingBalance(rows: Array<Record<string, string>>) {
 }
 
 async function downloadMercadoPagoReportRowsWithConfig(reportType: 'release' | 'settlement', daysBack: number, forceGenerate = false) {
-  await ensureMercadoPagoReportConfig(reportType);
   return downloadMercadoPagoReportRows(reportType, daysBack, forceGenerate);
 }
 
@@ -1585,28 +1584,11 @@ mercadoLivreRouter.get('/mercado-pago/callback', async (req, res, next) => {
 mercadoLivreRouter.get('/mercado-pago/status', async (_req, res) => {
   try {
     const me = await getMercadoPagoMe();
-    const reportSetup = {
-      release: { ok: true, error: '' },
-      settlement: { ok: true, error: '' },
-    };
-
-    try {
-      await ensureMercadoPagoReportConfig('release');
-    } catch (error: any) {
-      reportSetup.release = { ok: false, error: normalizeText(error?.message || error) };
-    }
-
-    try {
-      await ensureMercadoPagoReportConfig('settlement');
-    } catch (error: any) {
-      reportSetup.settlement = { ok: false, error: normalizeText(error?.message || error) };
-    }
 
     res.json({
       ok: true,
       userId: normalizeText(me?.id),
       nickname: normalizeText(me?.nickname),
-      reports: reportSetup,
     });
   } catch (e: any) {
     res.status(400).json({ ok: false, error: e?.message || 'Sem resposta do Mercado Pago' });
