@@ -669,6 +669,8 @@ function normalizeMercadoPagoReportEntry(entry: any) {
         || entry?.name
         || entry?.filename,
   );
+  const reportId = normalizeText(entry?.report_id || entry?.reportId || entry?.id);
+  const taskId = normalizeText(entry?.task_id || entry?.taskId || entry?.id);
   const createdAtMs =
     parseDateMs(entry?.generation_date)
     || parseDateMs(entry?.generated_at)
@@ -685,6 +687,8 @@ function normalizeMercadoPagoReportEntry(entry: any) {
   return {
     raw: entry,
     fileName,
+    reportId,
+    taskId,
     createdAtMs,
     endAtMs,
   };
@@ -709,9 +713,80 @@ async function listMercadoPagoReports(reportType: 'release' | 'settlement') {
       );
     } catch (postError: any) {
       if (isMercadoPagoConfigMissingError(postError)) return [];
-      throw postError;
+      throw new Error(`Falha ao listar ${reportSlug}: ${normalizeText(postError?.message || postError)}`);
     }
   }
+}
+
+async function searchMercadoPagoReport(
+  reportType: 'release' | 'settlement',
+  params: Record<string, string>,
+) {
+  const reportSlug = getMercadoPagoReportSlug(reportType);
+  const qs = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (normalizeText(value)) qs.set(key, value);
+  }
+  try {
+    return await mercadoPagoReq(`/v1/account/${reportSlug}/search?${qs.toString()}`, { method: 'GET' });
+  } catch (error: any) {
+    throw new Error(`Falha ao pesquisar ${reportSlug}: ${normalizeText(error?.message || error)}`);
+  }
+}
+
+async function getMercadoPagoReportTask(
+  reportType: 'release' | 'settlement',
+  taskId: string,
+) {
+  const reportSlug = getMercadoPagoReportSlug(reportType);
+  const token = await getMercadoPagoAccessToken();
+  const qs = new URLSearchParams({ access_token: token });
+  try {
+    return await mercadoPagoReq(`/v1/account/${reportSlug}/task/${encodeURIComponent(taskId)}?${qs.toString()}`, { method: 'GET' }, false);
+  } catch (error: any) {
+    throw new Error(`Falha ao consultar task de ${reportSlug}: ${normalizeText(error?.message || error)}`);
+  }
+}
+
+async function resolveMercadoPagoReportFileName(
+  reportType: 'release' | 'settlement',
+  entry: any,
+) {
+  const normalized = normalizeMercadoPagoReportEntry(entry);
+  if (normalized.fileName) return normalized.fileName;
+
+  if (normalized.reportId) {
+    try {
+      const payload = await searchMercadoPagoReport(reportType, { id: normalized.reportId });
+      const match = extractMercadoPagoReportEntries(payload)
+        .map(normalizeMercadoPagoReportEntry)
+        .find((candidate) => candidate.fileName);
+      if (match?.fileName) return match.fileName;
+    } catch {
+      // fall through
+    }
+  }
+
+  if (normalized.taskId) {
+    try {
+      const payload = await getMercadoPagoReportTask(reportType, normalized.taskId);
+      const taskFileName = normalizeText(payload?.file_name || payload?.fileName);
+      if (taskFileName) return taskFileName;
+
+      const reportId = normalizeText(payload?.report_id || payload?.reportId);
+      if (reportId) {
+        const searched = await searchMercadoPagoReport(reportType, { id: reportId });
+        const match = extractMercadoPagoReportEntries(searched)
+          .map(normalizeMercadoPagoReportEntry)
+          .find((candidate) => candidate.fileName);
+        if (match?.fileName) return match.fileName;
+      }
+    } catch {
+      // fall through
+    }
+  }
+
+  return '';
 }
 
 function pickLatestMercadoPagoReportFileName(reportType: 'release' | 'settlement', entries: any[]) {
@@ -732,13 +807,18 @@ function pickLatestMercadoPagoReportFileName(reportType: 'release' | 'settlement
 
 async function createMercadoPagoReport(reportType: 'release' | 'settlement', beginDate: string, endDate: string) {
   const reportSlug = getMercadoPagoReportSlug(reportType);
-  const payload = await mercadoPagoReq(`/v1/account/${reportSlug}`, {
-    method: 'POST',
-    body: JSON.stringify({
-      begin_date: beginDate,
-      end_date: endDate,
-    }),
-  });
+  let payload: any;
+  try {
+    payload = await mercadoPagoReq(`/v1/account/${reportSlug}`, {
+      method: 'POST',
+      body: JSON.stringify({
+        begin_date: beginDate,
+        end_date: endDate,
+      }),
+    });
+  } catch (error: any) {
+    throw new Error(`Falha ao gerar ${reportSlug}: ${normalizeText(error?.message || error)}`);
+  }
 
   return {
     taskId: normalizeText(payload?.task_id || payload?.id || payload?.taskId),
@@ -746,19 +826,27 @@ async function createMercadoPagoReport(reportType: 'release' | 'settlement', beg
   };
 }
 
-async function waitMercadoPagoReportFileName(reportType: 'release' | 'settlement', knownFileNames: Set<string>) {
+async function waitMercadoPagoReportFileName(
+  reportType: 'release' | 'settlement',
+  knownFileNames: Set<string>,
+  taskId = '',
+) {
   for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (taskId) {
+      const fileNameFromTask = await resolveMercadoPagoReportFileName(reportType, { task_id: taskId });
+      if (fileNameFromTask && !knownFileNames.has(fileNameFromTask)) return fileNameFromTask;
+      if (attempt >= 2 && fileNameFromTask) return fileNameFromTask;
+    }
+
     const entries = await listMercadoPagoReports(reportType);
-    const latest = entries
+    const normalizedEntries = entries
       .map(normalizeMercadoPagoReportEntry)
-      .filter((entry) => entry.fileName)
       .sort((a, b) => (b.createdAtMs || b.endAtMs) - (a.createdAtMs || a.endAtMs));
 
-    const createdNow = latest.find((entry) => !knownFileNames.has(entry.fileName));
-    if (createdNow?.fileName) return createdNow.fileName;
-
-    if (attempt >= 2 && latest[0]?.fileName) {
-      return latest[0].fileName;
+    for (const entry of normalizedEntries) {
+      const fileName = await resolveMercadoPagoReportFileName(reportType, entry.raw);
+      if (fileName && !knownFileNames.has(fileName)) return fileName;
+      if (attempt >= 2 && fileName) return fileName;
     }
 
     await delay(2000);
@@ -770,7 +858,16 @@ async function waitMercadoPagoReportFileName(reportType: 'release' | 'settlement
 async function downloadMercadoPagoReportRows(reportType: 'release' | 'settlement', daysBack: number, forceGenerate = false) {
   const reportSlug = getMercadoPagoReportSlug(reportType);
   const existingEntries = await listMercadoPagoReports(reportType);
-  const latestExistingFileName = pickLatestMercadoPagoReportFileName(reportType, existingEntries);
+  let latestExistingFileName = pickLatestMercadoPagoReportFileName(reportType, existingEntries);
+  if (!latestExistingFileName) {
+    const normalizedEntries = existingEntries
+      .map(normalizeMercadoPagoReportEntry)
+      .sort((a, b) => (b.endAtMs || b.createdAtMs) - (a.endAtMs || a.createdAtMs));
+    for (const entry of normalizedEntries) {
+      latestExistingFileName = await resolveMercadoPagoReportFileName(reportType, entry.raw);
+      if (latestExistingFileName) break;
+    }
+  }
 
   let fileName = latestExistingFileName;
   if (!fileName && forceGenerate) {
@@ -784,14 +881,22 @@ async function downloadMercadoPagoReportRows(reportType: 'release' | 'settlement
     const { beginDate } = getMercadoPagoReportRange(daysBack);
     const { endDate } = getMercadoPagoReportRange(0);
     const created = await createMercadoPagoReport(reportType, beginDate, endDate);
-    fileName = created.fileName || await waitMercadoPagoReportFileName(reportType, knownFileNames);
+    fileName = created.fileName;
+    if (!fileName && created.taskId) {
+      fileName = await waitMercadoPagoReportFileName(reportType, knownFileNames, created.taskId);
+    }
   }
 
   if (!fileName) {
     throw new Error(`Sem relatorio disponivel para ${reportSlug}`);
   }
 
-  const text = await mercadoPagoDownloadText(`/v1/account/${reportSlug}/${encodeURIComponent(fileName)}`);
+  let text = '';
+  try {
+    text = await mercadoPagoDownloadText(`/v1/account/${reportSlug}/${encodeURIComponent(fileName)}`);
+  } catch (error: any) {
+    throw new Error(`Falha ao baixar ${reportSlug}/${fileName}: ${normalizeText(error?.message || error)}`);
+  }
   return parseCsvReport(text);
 }
 
