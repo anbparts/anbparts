@@ -173,7 +173,7 @@ export default function BlingConfigPage() {
           <div style={s.h3}>Como configurar</div>
           <p style={s.p}>A API do Bling usa OAuth 2.0. Crie um aplicativo no painel do Bling:</p>
           {[
-            { n: 1, t: <>No Bling: <strong>Preferencias -> Todas as Configuracoes -> Cadastro de Aplicativos -> CRIAR NOVO</strong></> },
+            { n: 1, t: <>No Bling: <strong>Preferencias / Todas as Configuracoes / Cadastro de Aplicativos / CRIAR NOVO</strong></> },
             { n: 2, t: <>Nome: <strong>ANB Parts</strong> · URL de Redirecionamento: <code style={{ background: 'var(--gray-100)', padding: '1px 6px', borderRadius: 4, fontSize: 12, fontFamily: 'JetBrains Mono, monospace' }}>{API}/bling/callback</code></> },
             { n: 3, t: <>Escopos: marque <strong>Produtos</strong> e <strong>Pedidos de Venda</strong>. Salve.</> },
             { n: 4, t: <>Copie o <strong>Client ID</strong> e <strong>Client Secret</strong> e cole abaixo.</> },
