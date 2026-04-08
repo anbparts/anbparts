@@ -391,6 +391,69 @@ async function loadMercadoPagoDirectBalance() {
   throw lastError || new Error('Nao foi possivel consultar o saldo direto do Mercado Pago.');
 }
 
+async function loadMercadoPagoDirectBalanceTrace() {
+  const candidates = [
+    '/v1/account/balance',
+    '/v1/account/balance?currency_id=BRL',
+  ];
+
+  const traces = [] as any[];
+  for (const path of candidates) {
+    try {
+      const payload = await mercadoPagoReq(path);
+      traces.push({
+        path,
+        ok: true,
+        parsed: {
+          saldoDisponivel: readMercadoPagoBalanceValue(payload, [
+            'available_balance',
+            'available_balance.amount',
+            'available_balance.balance',
+            'balance.available_balance',
+            'balance.available_balance.amount',
+          ]),
+          saldoALiberar: readMercadoPagoBalanceValue(payload, [
+            'total_amount',
+            'total_amount.amount',
+            'unavailable_balance',
+            'unavailable_balance.amount',
+            'pending_release_amount',
+            'pending_release_amount.amount',
+            'balance.total_amount',
+            'balance.total_amount.amount',
+          ]),
+          saldoAntecipavel: readMercadoPagoBalanceValue(payload, [
+            'blocked_amount',
+            'blocked_amount.amount',
+            'blocked_balance',
+            'blocked_balance.amount',
+            'advanceable_amount',
+            'advanceable_amount.amount',
+            'anticipable_amount',
+            'anticipable_amount.amount',
+            'balance.blocked_amount',
+            'balance.blocked_amount.amount',
+          ]),
+          currencyId: normalizeText(payload?.currency_id || payload?.currencyId || payload?.balance?.currency_id || ''),
+        },
+        payload,
+      });
+    } catch (error: any) {
+      traces.push({
+        path,
+        ok: false,
+        error: normalizeText(error?.message || error) || 'Falha sem mensagem',
+      });
+    }
+  }
+
+  return {
+    ok: traces.some((trace) => trace.ok),
+    traces,
+    consultadoEm: new Date().toISOString(),
+  };
+}
+
 async function getMercadoPagoAccessToken() {
   const config = await getMercadoLivreConfig();
   const token = normalizeText(config.mercadoPagoAccessToken);
@@ -1883,6 +1946,15 @@ mercadoLivreRouter.get('/saldo', async (req, res, next) => {
     const forceRefresh = String(req.query?.refresh || '').trim() === '1';
     const saldo = await loadMercadoLivreSaldoResumo(forceRefresh);
     res.json(saldo);
+  } catch (e) {
+    next(e);
+  }
+});
+
+mercadoLivreRouter.get('/mercado-pago/balance-trace', async (_req, res, next) => {
+  try {
+    const trace = await loadMercadoPagoDirectBalanceTrace();
+    res.json(trace);
   } catch (e) {
     next(e);
   }
