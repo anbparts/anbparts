@@ -63,6 +63,7 @@ const configSchema = z.object({
   clientSecret: z.string().trim().optional(),
   mercadoPagoClientId: z.string().trim().optional(),
   mercadoPagoClientSecret: z.string().trim().optional(),
+  mercadoPagoAccessToken: z.string().trim().optional(),
 });
 
 const answerSchema = z.object({
@@ -318,11 +319,14 @@ async function mercadoPagoReq(path: string, options: RequestInit = {}, allowReco
 async function getMercadoPagoAccessToken() {
   const config = await getMercadoLivreConfig();
   const token = normalizeText(config.mercadoPagoAccessToken);
-  if (token) return token;
+  if (/^APP_(USR|TEST)-/i.test(token)) return token;
+  if (token && !normalizeText(config.mercadoPagoRefreshToken)) {
+    throw new Error('Configure o Access Token de producao do Mercado Pago em Config. ML.');
+  }
   if (normalizeText(config.mercadoPagoRefreshToken)) {
     return refreshMercadoPagoToken();
   }
-  throw new Error('Conecte o Mercado Pago com a autorizacao da conta em Config. ML.');
+  throw new Error('Configure o Access Token de producao do Mercado Pago em Config. ML.');
 }
 
 async function mercadoPagoFetch(path: string, options: RequestInit = {}, allowReconnect = true): Promise<Response> {
@@ -995,10 +999,10 @@ export async function loadMercadoLivreSaldoResumo(forceRefresh = false) {
     };
   }
 
-  if (!normalizeText(config.mercadoPagoRefreshToken)) {
+  if (!/^APP_(USR|TEST)-/i.test(normalizeText(config.mercadoPagoAccessToken))) {
     return {
       connected: false,
-      error: 'Conecte o Mercado Pago com a autorizacao da conta em Config. ML.',
+      error: 'Configure o Access Token de producao do Mercado Pago em Config. ML.',
       consultadoEm: new Date().toISOString(),
     };
   }
@@ -1512,7 +1516,8 @@ mercadoLivreRouter.get('/config', async (_req, res, next) => {
       siteId: config.siteId || MERCADO_LIVRE_SITE_ID,
       mercadoPagoClientId: config.mercadoPagoClientId || '',
       mercadoPagoClientSecretConfigured: !!normalizeText(config.mercadoPagoClientSecret),
-      mercadoPagoHasTokens: !!normalizeText(config.mercadoPagoAccessToken),
+      mercadoPagoAccessTokenConfigured: /^APP_(USR|TEST)-/i.test(normalizeText(config.mercadoPagoAccessToken)),
+      mercadoPagoHasTokens: /^APP_(USR|TEST)-/i.test(normalizeText(config.mercadoPagoAccessToken)),
       mercadoPagoHasRefreshToken: !!normalizeText(config.mercadoPagoRefreshToken),
       mercadoPagoConnectedAt: config.mercadoPagoConnectedAt,
       mercadoPagoUserId: config.mercadoPagoUserId || '',
@@ -1542,18 +1547,24 @@ mercadoLivreRouter.post('/config', async (req, res, next) => {
       dataToSave.nickname = '';
     }
 
-    const savingMercadoPago = payload.mercadoPagoClientId !== undefined || payload.mercadoPagoClientSecret !== undefined;
+    const savingMercadoPago =
+      payload.mercadoPagoClientId !== undefined
+      || payload.mercadoPagoClientSecret !== undefined
+      || payload.mercadoPagoAccessToken !== undefined;
     if (savingMercadoPago) {
-      if (!normalizeText(payload.mercadoPagoClientId) || !normalizeText(payload.mercadoPagoClientSecret)) {
-        return res.status(400).json({ error: 'Preencha o Client ID e o Client Secret do Mercado Pago.' });
+      if (
+        !normalizeText(payload.mercadoPagoClientId)
+        || !normalizeText(payload.mercadoPagoClientSecret)
+        || !normalizeText(payload.mercadoPagoAccessToken)
+      ) {
+        return res.status(400).json({ error: 'Preencha o Client ID, o Client Secret e o Access Token do Mercado Pago.' });
       }
 
       dataToSave.mercadoPagoClientId = normalizeText(payload.mercadoPagoClientId);
       dataToSave.mercadoPagoClientSecret = normalizeText(payload.mercadoPagoClientSecret);
-      dataToSave.mercadoPagoAccessToken = '';
+      dataToSave.mercadoPagoAccessToken = normalizeText(payload.mercadoPagoAccessToken);
       dataToSave.mercadoPagoRefreshToken = '';
-      dataToSave.mercadoPagoConnectedAt = null;
-      dataToSave.mercadoPagoUserId = '';
+      dataToSave.mercadoPagoConnectedAt = new Date();
     }
 
     if (!Object.keys(dataToSave).length) {
