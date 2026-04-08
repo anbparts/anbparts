@@ -20,6 +20,38 @@ function fmtDateTime(value?: string | null) {
   return date.toLocaleString('pt-BR');
 }
 
+async function fileToDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function downloadDataUrl(dataUrl: string, fileName: string) {
+  const link = document.createElement('a');
+  link.href = dataUrl;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
+const MOTO_ANEXO_FIELDS = [
+  { key: 'nfeLeilao', label: 'NF-e Leilao' },
+  { key: 'atpve', label: 'ATPV-e' },
+  { key: 'baixaDetran', label: 'Baixa Detran' },
+  { key: 'nfeEntrada', label: 'NF-e Entrada' },
+  { key: 'fotoDianteira', label: 'Foto Dianteira' },
+  { key: 'fotoTraseira', label: 'Foto Traseira' },
+  { key: 'fotoLateralDireita', label: 'Foto Lateral Dir.' },
+  { key: 'fotoLateralEsquerda', label: 'Foto Lateral Esq.' },
+  { key: 'fotoPainel', label: 'Foto Painel' },
+  { key: 'fotoChassi', label: 'Foto Chassi' },
+  { key: 'fotoNumeroMotor', label: 'Num. do Motor' },
+] as const;
+
 const cs: any = {
   topbar: { height: 'var(--topbar-h)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 28px', background: 'var(--white)', borderBottom: '1px solid var(--border)', position: 'sticky' as const, top: 0, zIndex: 50 },
   title: { fontFamily: 'Fraunces, serif', fontSize: 17, fontWeight: 600, letterSpacing: '-0.3px' },
@@ -242,6 +274,120 @@ function DetranModal({ open, moto, loading, data, updatingId, onToggleStatus, on
   );
 }
 
+function AnexosMotoModal({ open, moto, loading, data, saving, onClose, onSave }: any) {
+  const [form, setForm] = useState<Record<string, { name: string; dataUrl: string } | null>>({});
+
+  useEffect(() => {
+    if (!open) return;
+    setForm(data?.anexos || {});
+  }, [open, data]);
+
+  async function handleFileChange(key: string, event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const dataUrl = await fileToDataUrl(file);
+    setForm((current) => ({ ...current, [key]: { name: file.name, dataUrl } }));
+  }
+
+  function clearFile(key: string) {
+    setForm((current) => {
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+  }
+
+  if (!open) return null;
+
+  const total = Object.keys(form || {}).length;
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 230, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }}>
+      <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 16, width: '100%', maxWidth: 980, maxHeight: '92vh', overflow: 'hidden', boxShadow: '0 16px 40px rgba(0,0,0,.12)' }}>
+        <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div style={{ fontFamily: 'Fraunces, serif', fontSize: 20, fontWeight: 600 }}>Anexos da moto</div>
+            <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 4 }}>
+              {moto ? `ID ${moto.id} - ${moto.marca} ${moto.modelo}` : 'Moto selecionada'}
+            </div>
+          </div>
+          <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer' }}>X</button>
+        </div>
+        <div style={{ padding: 24, overflowY: 'auto', maxHeight: 'calc(92vh - 140px)' }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+            <span style={{ background: 'var(--gray-50)', color: 'var(--ink-soft)', border: '1px solid var(--border)', padding: '5px 10px', borderRadius: 999, fontSize: 12, fontWeight: 700 }}>
+              Arquivos anexados: {total}
+            </span>
+          </div>
+          {loading ? (
+            <div style={{ fontSize: 13, color: 'var(--ink-muted)' }}>Carregando anexos...</div>
+          ) : (
+            <div style={{ border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
+                  <tr>
+                    {['Documento', 'Arquivo atual', 'Upload', 'Acoes'].map((head) => (
+                      <th key={head} style={cs.th}>{head}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {MOTO_ANEXO_FIELDS.map((field) => {
+                    const attachment = form?.[field.key] || null;
+                    return (
+                      <tr key={field.key}>
+                        <td style={{ ...cs.td, fontWeight: 600 }}>{field.label}</td>
+                        <td style={cs.td}>
+                          {attachment ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                              <span style={{ fontSize: 12, color: 'var(--ink)' }}>{attachment.name}</span>
+                            </div>
+                          ) : (
+                            <span style={{ color: 'var(--ink-muted)', fontSize: 12 }}>Nenhum arquivo</span>
+                          )}
+                        </td>
+                        <td style={cs.td}>
+                          <input type="file" accept=".pdf,image/*" onChange={(event) => handleFileChange(field.key, event)} />
+                        </td>
+                        <td style={cs.td}>
+                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                            <button
+                              type="button"
+                              onClick={() => attachment && downloadDataUrl(attachment.dataUrl, attachment.name)}
+                              disabled={!attachment}
+                              style={{ ...cs.btn, padding: '6px 10px', fontSize: 11, border: '1px solid var(--border)', background: 'var(--white)', color: attachment ? 'var(--blue-500)' : 'var(--ink-muted)', cursor: attachment ? 'pointer' : 'not-allowed', opacity: attachment ? 1 : 0.7 }}
+                            >
+                              Download
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => clearFile(field.key)}
+                              disabled={!attachment}
+                              style={{ ...cs.btn, padding: '6px 10px', fontSize: 11, border: '1px solid #fecaca', background: '#fef2f2', color: attachment ? 'var(--red)' : 'var(--ink-muted)', cursor: attachment ? 'pointer' : 'not-allowed', opacity: attachment ? 1 : 0.7 }}
+                            >
+                              Remover
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+        <div style={{ padding: '16px 24px 22px', display: 'flex', gap: 8, justifyContent: 'flex-end', borderTop: '1px solid var(--border)' }}>
+          <button onClick={onClose} style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink-soft)', borderColor: 'var(--border-strong)' }}>Fechar</button>
+          <button onClick={() => onSave(form)} disabled={saving || loading} style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)', opacity: saving ? 0.8 : 1 }}>
+            {saving ? 'Salvando...' : 'Salvar anexos'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function MotosPage() {
   const [motos, setMotos] = useState<any[]>([]);
   const [filtered, setFiltered] = useState<any[]>([]);
@@ -254,6 +400,11 @@ export default function MotosPage() {
   const [detranData, setDetranData] = useState<any>(null);
   const [detranLoading, setDetranLoading] = useState(false);
   const [detranUpdatingId, setDetranUpdatingId] = useState<number | null>(null);
+  const [anexosModalOpen, setAnexosModalOpen] = useState(false);
+  const [anexosMoto, setAnexosMoto] = useState<any>(null);
+  const [anexosData, setAnexosData] = useState<any>(null);
+  const [anexosLoading, setAnexosLoading] = useState(false);
+  const [anexosSaving, setAnexosSaving] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -340,6 +491,42 @@ export default function MotosPage() {
     }
   }
 
+  async function openAnexosModal(moto: any) {
+    setAnexosMoto(moto);
+    setAnexosModalOpen(true);
+    setAnexosLoading(true);
+    try {
+      const data = await api.motos.anexos(moto.id);
+      setAnexosData(data);
+    } catch {
+      setAnexosData({ anexos: {}, total: 0 });
+    } finally {
+      setAnexosLoading(false);
+    }
+  }
+
+  function closeAnexosModal() {
+    setAnexosModalOpen(false);
+    setAnexosMoto(null);
+    setAnexosData(null);
+    setAnexosLoading(false);
+    setAnexosSaving(false);
+  }
+
+  async function handleSaveAnexos(anexos: Record<string, { name: string; dataUrl: string } | null>) {
+    if (!anexosMoto) return;
+    setAnexosSaving(true);
+    try {
+      const response = await api.motos.updateAnexos(anexosMoto.id, anexos);
+      setAnexosData(response);
+      await load();
+      closeAnexosModal();
+    } catch (error: any) {
+      alert(error.message || 'Erro ao salvar anexos da moto');
+      setAnexosSaving(false);
+    }
+  }
+
   return (
     <>
       <div style={cs.topbar}>
@@ -363,7 +550,7 @@ export default function MotosPage() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
                 <tr>
-                  {['ID', 'Marca', 'Modelo', 'Ano', 'Placa', 'Chassi', 'Renavam', 'Data compra', 'Itens', 'Detran', ''].map((h) => (
+                  {['ID', 'Marca', 'Modelo', 'Ano', 'Placa', 'Chassi', 'Renavam', 'Data compra', 'Itens', 'Anexos', 'Detran', ''].map((h) => (
                     <th key={h} style={cs.th}>{h}</th>
                   ))}
                 </tr>
@@ -371,11 +558,11 @@ export default function MotosPage() {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={11} style={{ ...cs.td, textAlign: 'center', color: 'var(--ink-muted)', borderBottom: 'none' }}>Carregando...</td>
+                    <td colSpan={12} style={{ ...cs.td, textAlign: 'center', color: 'var(--ink-muted)', borderBottom: 'none' }}>Carregando...</td>
                   </tr>
                 ) : filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={11} style={{ ...cs.td, textAlign: 'center', color: 'var(--ink-muted)', padding: '40px 20px', borderBottom: 'none' }}>Nenhuma moto encontrada</td>
+                    <td colSpan={12} style={{ ...cs.td, textAlign: 'center', color: 'var(--ink-muted)', padding: '40px 20px', borderBottom: 'none' }}>Nenhuma moto encontrada</td>
                   </tr>
                 ) : filtered.map((m) => (
                   <tr key={m.id} style={{ borderBottom: '1px solid var(--border)' }}>
@@ -391,6 +578,34 @@ export default function MotosPage() {
                       <span style={{ background: 'var(--gray-100)', color: 'var(--ink-soft)', border: '1px solid var(--border)', padding: '2px 8px', borderRadius: 99, fontSize: 11, fontFamily: 'Geist Mono, monospace' }}>
                         {m.qtdRelacionadas || 0} itens
                       </span>
+                    </td>
+                    <td style={cs.td}>
+                      <button
+                        onClick={() => openAnexosModal(m)}
+                        style={{
+                          width: 34,
+                          height: 34,
+                          borderRadius: 10,
+                          border: `1px solid ${m.temAnexos ? '#93c5fd' : 'var(--border)'}`,
+                          background: m.temAnexos ? '#eff6ff' : 'var(--white)',
+                          color: m.temAnexos ? '#2563eb' : 'var(--ink-muted)',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          position: 'relative',
+                        }}
+                        title={m.temAnexos ? `Gerenciar anexos (${m.anexosCount || 0})` : 'Anexar documentos da moto'}
+                      >
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                          <path d="M8 7.5V6a4 4 0 1 1 8 0v9a6 6 0 1 1-12 0V7a2 2 0 1 1 4 0v8a2 2 0 1 0 4 0V8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                        {(m.anexosCount || 0) > 0 ? (
+                          <span style={{ position: 'absolute', right: -4, top: -4, minWidth: 16, height: 16, borderRadius: 999, background: '#16a34a', color: '#fff', fontSize: 9, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px' }}>
+                            {m.anexosCount}
+                          </span>
+                        ) : null}
+                      </button>
                     </td>
                     <td style={cs.td}>
                       <button
@@ -435,6 +650,7 @@ export default function MotosPage() {
         </div>
       </div>
       <Modal open={modal} title={editing ? 'Editar moto' : 'Nova moto'} onClose={() => { setModal(false); setEditing(null); }} onSave={handleSave} moto={editing} />
+      <AnexosMotoModal open={anexosModalOpen} moto={anexosMoto} loading={anexosLoading} data={anexosData} saving={anexosSaving} onSave={handleSaveAnexos} onClose={closeAnexosModal} />
       <DetranModal open={detranModalOpen} moto={detranMoto} loading={detranLoading} data={detranData} updatingId={detranUpdatingId} onToggleStatus={handleDetranStatusToggle} onClose={closeDetranModal} />
     </>
   );

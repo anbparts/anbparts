@@ -18,6 +18,11 @@ export const api = {
     list:   ()              => req<any[]>('/motos'),
     get:    (id: number)    => req<any>(`/motos/${id}`),
     detranEtiquetas: (id: number) => req<any>(`/motos/${id}/detran-etiquetas`),
+    anexos: (id: number) => req<any>(`/motos/${id}/anexos`),
+    updateAnexos: (id: number, anexos: any) => req<any>(`/motos/${id}/anexos`, {
+      method: 'PUT',
+      body: JSON.stringify({ anexos }),
+    }),
     setDetranEtiquetaStatus: (pecaId: number, status: 'ativa' | 'baixada') => req<any>(`/motos/pecas/${pecaId}/detran-status`, {
       method: 'PATCH',
       body: JSON.stringify({ status }),

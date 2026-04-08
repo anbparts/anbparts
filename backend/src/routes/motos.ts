@@ -22,6 +22,49 @@ const detranEtiquetaStatusSchema = z.object({
   status: z.enum(['ativa', 'baixada']),
 });
 
+const motoAnexosSchema = z.object({
+  anexos: z.record(z.any()).default({}),
+});
+
+const MOTO_ANEXO_KEYS = [
+  'nfeLeilao',
+  'atpve',
+  'baixaDetran',
+  'nfeEntrada',
+  'fotoDianteira',
+  'fotoTraseira',
+  'fotoLateralDireita',
+  'fotoLateralEsquerda',
+  'fotoPainel',
+  'fotoChassi',
+  'fotoNumeroMotor',
+] as const;
+
+function normalizeAttachment(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const name = String((value as any).name || '').trim();
+  const dataUrl = String((value as any).dataUrl || '').trim();
+  if (!name || !dataUrl.startsWith('data:')) return null;
+  return { name, dataUrl };
+}
+
+function normalizeMotoAnexos(value: unknown) {
+  const source = value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+
+  const anexos: Record<string, { name: string; dataUrl: string }> = {};
+  for (const key of MOTO_ANEXO_KEYS) {
+    const current = normalizeAttachment(source[key]);
+    if (current) anexos[key] = current;
+  }
+  return anexos;
+}
+
+function countMotoAnexos(value: unknown) {
+  return Object.keys(normalizeMotoAnexos(value)).length;
+}
+
 function normalizeDetranEtiqueta(value: unknown) {
   const text = String(value ?? '')
     .replace(/\s+/g, '')
@@ -92,6 +135,8 @@ motosRouter.get('/', async (req, res, next) => {
         detranAtivas,
         detranBaixadas,
         temDetran: detranCount > 0,
+        anexosCount: countMotoAnexos((m as any).anexos),
+        temAnexos: countMotoAnexos((m as any).anexos) > 0,
         pecas: undefined,
       };
     });
@@ -208,6 +253,76 @@ motosRouter.patch('/pecas/:pecaId/detran-status', async (req, res, next) => {
         detranBaixada: !!updated.detranBaixada,
         detranBaixadaAt: updated.detranBaixadaAt,
       },
+    });
+  } catch (e) { next(e); }
+});
+
+// GET /motos/:id/anexos
+motosRouter.get('/:id/anexos', async (req, res, next) => {
+  try {
+    const motoId = Number(req.params.id);
+    if (!Number.isInteger(motoId) || motoId <= 0) {
+      return res.status(400).json({ error: 'Moto invalida' });
+    }
+
+    const moto = await prisma.moto.findUnique({
+      where: { id: motoId },
+      select: {
+        id: true,
+        marca: true,
+        modelo: true,
+        ano: true,
+        anexos: true,
+      },
+    });
+
+    if (!moto) {
+      return res.status(404).json({ error: 'Moto nao encontrada' });
+    }
+
+    const anexos = normalizeMotoAnexos((moto as any).anexos);
+
+    res.json({
+      ok: true,
+      motoId: moto.id,
+      moto: `${moto.marca} ${moto.modelo}`,
+      ano: moto.ano,
+      anexos,
+      total: Object.keys(anexos).length,
+    });
+  } catch (e) { next(e); }
+});
+
+// PUT /motos/:id/anexos
+motosRouter.put('/:id/anexos', async (req, res, next) => {
+  try {
+    const motoId = Number(req.params.id);
+    if (!Number.isInteger(motoId) || motoId <= 0) {
+      return res.status(400).json({ error: 'Moto invalida' });
+    }
+
+    const payload = motoAnexosSchema.parse(req.body || {});
+    const anexos = normalizeMotoAnexos(payload.anexos);
+
+    const moto = await prisma.moto.update({
+      where: { id: motoId },
+      data: { anexos },
+      select: {
+        id: true,
+        marca: true,
+        modelo: true,
+        ano: true,
+        anexos: true,
+      },
+    });
+
+    res.json({
+      ok: true,
+      motoId: moto.id,
+      moto: `${moto.marca} ${moto.modelo}`,
+      ano: moto.ano,
+      anexos: normalizeMotoAnexos((moto as any).anexos),
+      total: countMotoAnexos((moto as any).anexos),
     });
   } catch (e) { next(e); }
 });

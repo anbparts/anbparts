@@ -20,6 +20,7 @@ model Moto {
   precoCompra  Decimal  @default(0) @db.Decimal(12, 2)
   origemCompra String?
   observacoes  String?
+  anexos       Json     @default("{}")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
