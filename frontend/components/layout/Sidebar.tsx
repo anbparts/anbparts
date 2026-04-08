@@ -124,24 +124,19 @@ export function Sidebar({ onLogout, user }: { onLogout?: () => void; user?: stri
           flexShrink: 0,
         }}
       >
-        <div
+        <img
+          src="/logo.jpg"
+          alt="ANB Parts"
           style={{
             width: 46,
             height: 46,
             borderRadius: 10,
-            background: 'linear-gradient(135deg, #1d4ed8 0%, #0f172a 100%)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: '#fff',
-            fontWeight: 800,
-            fontSize: 14,
-            letterSpacing: '-0.4px',
+            objectFit: 'cover',
+            display: 'block',
             flexShrink: 0,
+            background: '#fff',
           }}
-        >
-          ANB
-        </div>
+        />
         <div>
           <div style={{ fontSize: 16, fontWeight: 700, color: '#fff', letterSpacing: '-0.3px', lineHeight: 1.2 }}>
             ANB Parts

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ChartPanel, ColumnChart, DonutChart, HorizontalBarChart, ViewModeSwitch, type ViewMode } from '@/components/finance/Charts';
 import { api } from '@/lib/api';
 
-const CATEGORIAS = ['Insumo', 'Servicos', 'Taxas', 'Aluguel', 'Sistemas', 'Contador', 'Moto', 'Outros'];
+const CATEGORIAS = ['Insumo', 'Servicos', 'Taxas', 'Aluguel', 'Sistemas', 'Imposto', 'Moto', 'Outros'];
 const RECORRENCIAS = [
   { value: 'nenhuma', label: 'Nao repetir' },
   { value: 'semanal', label: 'Semanalmente' },
@@ -20,6 +20,7 @@ const CATEG_COLORS: Record<string, string> = {
   Taxas: '#ef4444',
   Aluguel: '#64748b',
   Sistemas: '#0ea5e9',
+  Imposto: '#7c3aed',
   Contador: '#475569',
   Moto: '#16a34a',
   Outros: '#8b5cf6',
