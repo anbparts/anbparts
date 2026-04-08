@@ -316,6 +316,81 @@ async function mercadoPagoReq(path: string, options: RequestInit = {}, allowReco
   return payload;
 }
 
+function readMercadoPagoBalanceValue(source: any, paths: string[]) {
+  for (const path of paths) {
+    const value = path.split('.').reduce<any>((acc, key) => (acc == null ? undefined : acc[key]), source);
+    const parsed = normalizeMoney(value);
+    if (parsed !== null) return parsed;
+  }
+  return null;
+}
+
+async function loadMercadoPagoDirectBalance() {
+  const candidates = [
+    '/v1/account/balance',
+    '/v1/account/balance?currency_id=BRL',
+  ];
+
+  let lastError: any = null;
+  for (const path of candidates) {
+    try {
+      const payload = await mercadoPagoReq(path);
+      const saldoDisponivel = readMercadoPagoBalanceValue(payload, [
+        'available_balance',
+        'available_balance.amount',
+        'available_balance.balance',
+        'balance.available_balance',
+        'balance.available_balance.amount',
+      ]);
+      const saldoALiberar = readMercadoPagoBalanceValue(payload, [
+        'total_amount',
+        'total_amount.amount',
+        'unavailable_balance',
+        'unavailable_balance.amount',
+        'pending_release_amount',
+        'pending_release_amount.amount',
+        'balance.total_amount',
+        'balance.total_amount.amount',
+      ]);
+      const saldoAntecipavel = readMercadoPagoBalanceValue(payload, [
+        'blocked_amount',
+        'blocked_amount.amount',
+        'blocked_balance',
+        'blocked_balance.amount',
+        'advanceable_amount',
+        'advanceable_amount.amount',
+        'anticipable_amount',
+        'anticipable_amount.amount',
+        'balance.blocked_amount',
+        'balance.blocked_amount.amount',
+      ]);
+
+      if (saldoDisponivel === null && saldoALiberar === null && saldoAntecipavel === null) {
+        throw new Error('Resposta da API de saldo sem campos reconhecidos.');
+      }
+
+      return {
+        connected: true,
+        source: 'mercado_pago_balance_api',
+        currencyId: normalizeText(payload?.currency_id || payload?.currencyId || 'BRL') || 'BRL',
+        saldoDisponivel,
+        saldoALiberar,
+        saldoAntecipavel,
+        saldoAntecipavelInferido: false,
+        saldoParcial: saldoALiberar === null || saldoAntecipavel === null,
+        observacao: saldoALiberar === null || saldoAntecipavel === null
+          ? 'Saldo consultado na API direta do Mercado Pago. Alguns campos nao vieram preenchidos.'
+          : '',
+        consultadoEm: new Date().toISOString(),
+      };
+    } catch (error: any) {
+      lastError = error;
+    }
+  }
+
+  throw lastError || new Error('Nao foi possivel consultar o saldo direto do Mercado Pago.');
+}
+
 async function getMercadoPagoAccessToken() {
   const config = await getMercadoLivreConfig();
   const token = normalizeText(config.mercadoPagoAccessToken);
@@ -433,17 +508,12 @@ function buildMercadoPagoReportConfig(reportType: 'release' | 'settlement') {
 }
 
 async function syncMercadoPagoReportsNow() {
-  const [releaseRows, settlementRows] = await Promise.all([
-    downloadMercadoPagoReportRowsWithConfig('release', 30, true, true),
-    downloadMercadoPagoReportRowsWithConfig('settlement', 180, true, true),
-  ]);
-
   clearSaldoCache();
   const resumo = await loadMercadoLivreSaldoResumo(true);
   return {
     ok: true,
-    releaseRows: releaseRows.length,
-    settlementRows: settlementRows.length,
+    releaseRows: 0,
+    settlementRows: 0,
     saldo: resumo,
   };
 }
@@ -1060,6 +1130,15 @@ export async function loadMercadoLivreSaldoResumo(forceRefresh = false) {
     let lastError: any = null;
 
     try {
+      const directResumo = await loadMercadoPagoDirectBalance();
+      saldoCacheState.value = directResumo;
+      saldoCacheState.expiresAt = Date.now() + MERCADO_LIVRE_SALDO_CACHE_TTL_MS;
+      return directResumo;
+    } catch (error: any) {
+      lastError = error;
+    }
+
+    try {
       const [releaseResult, settlementResult] = await Promise.allSettled([
         loadMercadoPagoReportRowsAuto('release', 30),
         loadMercadoPagoReportRowsAuto('settlement', 180),
@@ -1153,12 +1232,12 @@ export async function loadMercadoLivreSaldoResumo(forceRefresh = false) {
               : 'Saldo disponivel carregado. A liberar e antecipavel ainda aguardam o primeiro relatorio de liquidacao do Mercado Pago.',
         consultadoEm: new Date().toISOString(),
       };
-      saldoCacheState.value = resumo;
-      saldoCacheState.expiresAt = Date.now() + MERCADO_LIVRE_SALDO_CACHE_TTL_MS;
-      return resumo;
-    } catch (error: any) {
-      lastError = error;
-    }
+        saldoCacheState.value = resumo;
+        saldoCacheState.expiresAt = Date.now() + MERCADO_LIVRE_SALDO_CACHE_TTL_MS;
+        return resumo;
+      } catch (error: any) {
+        lastError = error || lastError;
+      }
 
     const fallback = {
       connected: true,

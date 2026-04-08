@@ -154,11 +154,17 @@ export default function ConfigMlPage() {
       setMercadoPagoStatus({
         ok: true,
         nickname: mercadoLivreConfig?.mercadoPagoUserId || '',
-        detail: `Relatorios atualizados. Liberados: ${result?.releaseRows || 0} linha(s). Liquidacao: ${result?.settlementRows || 0} linha(s).`,
+        detail: result?.saldo?.source === 'mercado_pago_balance_api'
+          ? 'Saldo atualizado pela API direta do Mercado Pago.'
+          : 'Saldo atualizado. O sistema usou fallback pelos relatórios do Mercado Pago.',
       });
-      alert('Relatorios do Mercado Pago atualizados. Se o Mercado Pago gerar um arquivo novo, ele pode enviar um email dessa geracao.');
+      alert(
+        result?.saldo?.source === 'mercado_pago_balance_api'
+          ? 'Saldo do Mercado Pago atualizado.'
+          : 'Saldo atualizado com fallback pelos relatorios do Mercado Pago.',
+      );
     } catch (error: any) {
-      setMercadoPagoStatus({ ok: false, error: error.message || 'Falha ao atualizar relatorios do Mercado Pago' });
+      setMercadoPagoStatus({ ok: false, error: error.message || 'Falha ao atualizar saldo do Mercado Pago' });
     } finally {
       setSyncingMercadoPagoReports(false);
     }
