@@ -344,6 +344,7 @@ function buildMercadoPagoReportConfig(reportType: 'release' | 'settlement') {
   const base = {
     file_name_prefix: reportType === 'release' ? 'release-report-anbparts' : 'settlement-report-anbparts',
     display_timezone: 'GMT-03',
+    header_language: 'en',
     frequency: {
       hour: 0,
       type: 'monthly',
@@ -358,30 +359,71 @@ function buildMercadoPagoReportConfig(reportType: 'release' | 'settlement') {
       execute_after_withdrawal: false,
       columns: [
         { key: 'DATE' },
-        { key: 'RECORD_TYPE' },
+        { key: 'SOURCE_ID' },
         { key: 'DESCRIPTION' },
-        { key: 'NET_CREDIT' },
+        { key: 'NET_CREDIT_AMOUNT' },
+        { key: 'NET_DEBIT_AMOUNT' },
+        { key: 'GROSS_AMOUNT' },
+        { key: 'MP_FEE_AMOUNT' },
+        { key: 'TAXES_AMOUNT' },
         { key: 'BALANCE_AMOUNT' },
+        { key: 'PAYMENT_METHOD_TYPE' },
+        { key: 'PURCHASE_ID' },
       ],
     };
   }
 
   return {
     ...base,
+    show_fee_prevision: false,
+    show_chargeback_cancel: true,
+    coupon_detailed: true,
     include_withdraw: true,
+    shipping_detail: true,
+    refund_detailed: true,
     columns: [
-      { key: 'DATE' },
+      { key: 'TRANSACTION_DATE' },
+      { key: 'SOURCE_ID' },
+      { key: 'EXTERNAL_REFERENCE' },
       { key: 'TRANSACTION_TYPE' },
       { key: 'DESCRIPTION' },
-      { key: 'SETTLEMENT_NET_AMOUNT' },
       { key: 'SETTLEMENT_DATE' },
+      { key: 'SETTLEMENT_NET_AMOUNT' },
       { key: 'BALANCE_AMOUNT' },
     ],
   };
 }
 
+async function ensureMercadoPagoReportSchedule(reportType: 'release' | 'settlement') {
+  const reportSlug = getMercadoPagoReportSlug(reportType);
+  await mercadoPagoReq(`/v1/account/${reportSlug}/schedule`, {
+    method: 'POST',
+  });
+}
+
+async function ensureMercadoPagoReportReady(reportType: 'release' | 'settlement') {
+  await ensureMercadoPagoReportConfig(reportType);
+  await ensureMercadoPagoReportSchedule(reportType);
+}
+
+async function syncMercadoPagoReportsNow() {
+  const [releaseRows, settlementRows] = await Promise.all([
+    downloadMercadoPagoReportRowsWithConfig('release', 30, true),
+    downloadMercadoPagoReportRowsWithConfig('settlement', 180, true),
+  ]);
+
+  clearSaldoCache();
+  const resumo = await loadMercadoLivreSaldoResumo(true);
+  return {
+    ok: true,
+    releaseRows: releaseRows.length,
+    settlementRows: settlementRows.length,
+    saldo: resumo,
+  };
+}
+
 async function ensureMercadoPagoReportConfig(reportType: 'release' | 'settlement') {
-  const reportSlug = reportType === 'release' ? 'release_report' : 'settlement_report';
+  const reportSlug = getMercadoPagoReportSlug(reportType);
   try {
     await mercadoPagoReq(`/v1/account/${reportSlug}/config`);
     return;
@@ -762,7 +804,7 @@ function extractReportEndingBalance(rows: Array<Record<string, string>>) {
 
 async function downloadMercadoPagoReportRowsWithConfig(reportType: 'release' | 'settlement', daysBack: number, forceGenerate = false) {
   try {
-    await ensureMercadoPagoReportConfig(reportType);
+    await ensureMercadoPagoReportReady(reportType);
   } catch (error: any) {
     if (!isMercadoPagoConfigMissingError(error)) throw error;
   }
@@ -1481,13 +1523,40 @@ mercadoLivreRouter.get('/mercado-pago/callback', async (req, res, next) => {
 mercadoLivreRouter.get('/mercado-pago/status', async (_req, res) => {
   try {
     const me = await getMercadoPagoMe();
+    const reportSetup = {
+      release: { ok: true, error: '' },
+      settlement: { ok: true, error: '' },
+    };
+
+    try {
+      await ensureMercadoPagoReportReady('release');
+    } catch (error: any) {
+      reportSetup.release = { ok: false, error: normalizeText(error?.message || error) };
+    }
+
+    try {
+      await ensureMercadoPagoReportReady('settlement');
+    } catch (error: any) {
+      reportSetup.settlement = { ok: false, error: normalizeText(error?.message || error) };
+    }
+
     res.json({
       ok: true,
       userId: normalizeText(me?.id),
       nickname: normalizeText(me?.nickname),
+      reports: reportSetup,
     });
   } catch (e: any) {
     res.status(400).json({ ok: false, error: e?.message || 'Sem resposta do Mercado Pago' });
+  }
+});
+
+mercadoLivreRouter.post('/mercado-pago/reports/sync', async (_req, res) => {
+  try {
+    const result = await syncMercadoPagoReportsNow();
+    res.json(result);
+  } catch (e: any) {
+    res.status(400).json({ ok: false, error: e?.message || 'Falha ao atualizar relatorios do Mercado Pago' });
   }
 });
 

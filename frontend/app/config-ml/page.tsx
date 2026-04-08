@@ -24,6 +24,7 @@ export default function ConfigMlPage() {
   const [savingMercadoLivre, setSavingMercadoLivre] = useState(false);
   const [savingMercadoPago, setSavingMercadoPago] = useState(false);
   const [connectingMercadoPago, setConnectingMercadoPago] = useState(false);
+  const [syncingMercadoPagoReports, setSyncingMercadoPagoReports] = useState(false);
   const [mercadoLivreStatus, setMercadoLivreStatus] = useState<any>(null);
   const [mercadoPagoStatus, setMercadoPagoStatus] = useState<any>(null);
 
@@ -154,6 +155,24 @@ export default function ConfigMlPage() {
     await api.mercadoLivre.disconnectMercadoPago();
     setMercadoPagoStatus(null);
     await load();
+  }
+
+  async function atualizarRelatoriosMercadoPago() {
+    setSyncingMercadoPagoReports(true);
+    setMercadoPagoStatus({ loading: true });
+    try {
+      const result = await api.mercadoLivre.syncReportsMercadoPago();
+      setMercadoPagoStatus({
+        ok: true,
+        nickname: mercadoLivreConfig?.mercadoPagoUserId || '',
+        detail: `Relatorios atualizados. Liberados: ${result?.releaseRows || 0} linha(s). Liquidacao: ${result?.settlementRows || 0} linha(s).`,
+      });
+      alert('Relatorios do Mercado Pago atualizados. Se o Mercado Pago gerar um arquivo novo, ele pode enviar um email dessa geracao.');
+    } catch (error: any) {
+      setMercadoPagoStatus({ ok: false, error: error.message || 'Falha ao atualizar relatorios do Mercado Pago' });
+    } finally {
+      setSyncingMercadoPagoReports(false);
+    }
   }
 
   if (loading) {
@@ -322,8 +341,15 @@ export default function ConfigMlPage() {
               </button>
             ) : (
               <>
-                <button style={{ ...s.btn, background: 'var(--green-light)', color: 'var(--green)', borderColor: '#86efac' }} onClick={testarMercadoPago}>
+              <button style={{ ...s.btn, background: 'var(--green-light)', color: 'var(--green)', borderColor: '#86efac' }} onClick={testarMercadoPago}>
                   Testar conexao
+                </button>
+                <button
+                  style={{ ...s.btn, background: '#eff6ff', color: '#1d4ed8', borderColor: '#93c5fd' }}
+                  onClick={atualizarRelatoriosMercadoPago}
+                  disabled={syncingMercadoPagoReports}
+                >
+                  {syncingMercadoPagoReports ? 'Atualizando relatorios...' : 'Atualizar saldos agora'}
                 </button>
                 <button style={{ ...s.btn, background: 'var(--red-light)', color: 'var(--red)', borderColor: '#fca5a5' }} onClick={desconectarMercadoPago}>
                   Desconectar
@@ -335,7 +361,7 @@ export default function ConfigMlPage() {
           {mercadoPagoStatus && !mercadoPagoStatus.loading ? (
             <div style={{ padding: '12px 14px', borderRadius: 8, border: `1px solid ${mercadoPagoStatus.ok ? '#86efac' : '#fca5a5'}`, background: mercadoPagoStatus.ok ? 'var(--green-light)' : 'var(--red-light)', color: mercadoPagoStatus.ok ? 'var(--green)' : 'var(--red)', fontSize: 13 }}>
               {mercadoPagoStatus.ok
-                ? `Conexao OK com a conta ${mercadoPagoStatus.nickname || mercadoPagoStatus.userId || mercadoLivreConfig?.mercadoPagoUserId || ''}`
+                ? (mercadoPagoStatus.detail || `Conexao OK com a conta ${mercadoPagoStatus.nickname || mercadoPagoStatus.userId || mercadoLivreConfig?.mercadoPagoUserId || ''}`)
                 : `Erro: ${mercadoPagoStatus.error || 'Nao foi possivel validar a conexao'}`}
             </div>
           ) : null}

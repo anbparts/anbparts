@@ -114,6 +114,7 @@ export const api = {
     disconnect: () => req<any>('/mercado-livre/disconnect', { method: 'DELETE' }),
     authUrlMercadoPago: () => req<any>('/mercado-livre/mercado-pago/auth-url'),
     statusMercadoPago: () => req<any>('/mercado-livre/mercado-pago/status'),
+    syncReportsMercadoPago: () => req<any>('/mercado-livre/mercado-pago/reports/sync', { method: 'POST' }),
     disconnectMercadoPago: () => req<any>('/mercado-livre/mercado-pago/disconnect', { method: 'DELETE' }),
     perguntas: () => req<any[]>('/mercado-livre/perguntas'),
     syncPerguntas: () => req<any>('/mercado-livre/perguntas/sync', { method: 'POST' }),
