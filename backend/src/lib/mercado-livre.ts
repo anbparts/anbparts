@@ -35,6 +35,15 @@ function normalizeSkuCandidate(value: any) {
   return text || null;
 }
 
+function escapeHtml(value: any) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function normalizeMercadoLivreItemId(value: any) {
   const normalized = normalizeSkuCandidate(value);
   if (!normalized) return null;
@@ -362,7 +371,7 @@ function buildPerguntasEmailHtml(perguntas: any[]) {
           <div><strong>Item ML:</strong> ${item.itemId || '-'}</div>
           <div><strong>Data:</strong> ${item.dataPergunta ? new Date(item.dataPergunta).toLocaleString('pt-BR') : '-'}</div>
           <div style="margin-top:10px;"><strong>Pergunta:</strong></div>
-          <div style="margin-top:6px;padding:12px 14px;border-radius:10px;background:#f8fafc;border:1px solid #e2e8f0;">${String(item.texto || '').replaceAll('<', '&lt;').replaceAll('>', '&gt;')}</div>
+          <div style="margin-top:6px;padding:12px 14px;border-radius:10px;background:#f8fafc;border:1px solid #e2e8f0;">${escapeHtml(item.texto || '')}</div>
         </div>
       </div>
     `)
