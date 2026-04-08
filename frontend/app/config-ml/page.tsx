@@ -22,8 +22,11 @@ export default function ConfigMlPage() {
   const [mercadoPagoClientId, setMercadoPagoClientId] = useState('');
   const [mercadoPagoClientSecret, setMercadoPagoClientSecret] = useState('');
   const [mercadoPagoAccessToken, setMercadoPagoAccessToken] = useState('');
+  const [mercadoPagoRotinaAtiva, setMercadoPagoRotinaAtiva] = useState(false);
+  const [mercadoPagoRotinaHorario, setMercadoPagoRotinaHorario] = useState('06:00');
   const [savingMercadoLivre, setSavingMercadoLivre] = useState(false);
   const [savingMercadoPago, setSavingMercadoPago] = useState(false);
+  const [savingMercadoPagoRotina, setSavingMercadoPagoRotina] = useState(false);
   const [syncingMercadoPagoReports, setSyncingMercadoPagoReports] = useState(false);
   const [mercadoLivreStatus, setMercadoLivreStatus] = useState<any>(null);
   const [mercadoPagoStatus, setMercadoPagoStatus] = useState<any>(null);
@@ -36,6 +39,8 @@ export default function ConfigMlPage() {
     setMercadoPagoClientId('');
     setMercadoPagoClientSecret('');
     setMercadoPagoAccessToken('');
+    setMercadoPagoRotinaAtiva(!!mlConfig?.mercadoPagoSaldoAutoAtivo);
+    setMercadoPagoRotinaHorario(mlConfig?.mercadoPagoSaldoAutoHorario || '06:00');
   }
 
   useEffect(() => {
@@ -103,6 +108,22 @@ export default function ConfigMlPage() {
     }
   }
 
+  async function salvarRotinaMercadoPago() {
+    setSavingMercadoPagoRotina(true);
+    try {
+      await api.mercadoLivre.saveRotinaMercadoPago({
+        ativo: mercadoPagoRotinaAtiva,
+        horario: mercadoPagoRotinaHorario,
+      });
+      await load();
+      alert('Rotina do Mercado Pago salva.');
+    } catch (error: any) {
+      alert(error.message || 'Erro ao salvar rotina do Mercado Pago');
+    } finally {
+      setSavingMercadoPagoRotina(false);
+    }
+  }
+
   async function conectarMercadoLivre() {
     try {
       const data = await api.mercadoLivre.authUrl();
@@ -154,9 +175,15 @@ export default function ConfigMlPage() {
       setMercadoPagoStatus({
         ok: true,
         nickname: mercadoLivreConfig?.mercadoPagoUserId || '',
-        detail: `Solicitacao enviada ao Mercado Pago. Liberados lidos: ${result?.releaseRows || 0} linha(s). Liquidacao lida: ${result?.settlementRows || 0} linha(s).`,
+        detail: result?.waitingForNewRelease
+          ? 'Solicitacao enviada ao Mercado Pago. O arquivo novo pode chegar alguns minutos depois por email.'
+          : `Saldo atualizado com ${result?.releaseRows || 0} linha(s) do relatorio mais recente.`,
       });
-      alert('Solicitacao de relatorios enviada ao Mercado Pago. Se o arquivo novo nao ficar pronto na hora, ele pode chegar por email alguns minutos depois.');
+      alert(
+        result?.waitingForNewRelease
+          ? 'Solicitacao enviada ao Mercado Pago. Se o arquivo novo nao ficar pronto na hora, ele pode chegar por email alguns minutos depois.'
+          : 'Saldo do Mercado Pago atualizado com o relatorio mais recente.',
+      );
     } catch (error: any) {
       setMercadoPagoStatus({ ok: false, error: error.message || 'Falha ao atualizar saldo do Mercado Pago' });
     } finally {
@@ -323,6 +350,47 @@ export default function ConfigMlPage() {
                 onChange={(e) => setMercadoPagoAccessToken(e.target.value)}
                 placeholder={mercadoLivreConfig?.mercadoPagoAccessTokenConfigured ? 'Ja configurado. Preencha so para trocar.' : 'Cole aqui o APP_USR-... do Mercado Pago'}
               />
+            </div>
+          </div>
+
+          <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10, padding: 16, marginBottom: 16 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 6 }}>Rotina automatica do saldo</div>
+            <div style={{ fontSize: 12, color: 'var(--gray-500)', marginBottom: 14 }}>
+              Quando ativa, essa rotina dispara a atualizacao do saldo uma vez por dia no horario configurado. Como o Mercado Pago pode levar alguns minutos para liberar o arquivo novo, o backend agora espera mais tempo antes de encerrar a tentativa.
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 12 }}>
+              <div>
+                <div style={{ fontSize: 11, fontFamily: 'JetBrains Mono, monospace', color: 'var(--gray-400)', letterSpacing: '.8px', textTransform: 'uppercase', marginBottom: 8 }}>Rotina ativa</div>
+                <select
+                  style={{ ...s.input, cursor: 'pointer' }}
+                  value={mercadoPagoRotinaAtiva ? 'ativa' : 'pausada'}
+                  onChange={(e) => setMercadoPagoRotinaAtiva(e.target.value === 'ativa')}
+                >
+                  <option value="pausada">Pausada</option>
+                  <option value="ativa">Ativa</option>
+                </select>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, fontFamily: 'JetBrains Mono, monospace', color: 'var(--gray-400)', letterSpacing: '.8px', textTransform: 'uppercase', marginBottom: 8 }}>Horario da execucao</div>
+                <input
+                  style={s.input}
+                  type="time"
+                  value={mercadoPagoRotinaHorario}
+                  onChange={(e) => setMercadoPagoRotinaHorario(e.target.value)}
+                />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+                <button
+                  style={{ ...s.btn, background: '#1d4ed8', color: '#fff', width: '100%', justifyContent: 'center' }}
+                  onClick={salvarRotinaMercadoPago}
+                  disabled={savingMercadoPagoRotina}
+                >
+                  {savingMercadoPagoRotina ? 'Salvando rotina...' : 'Salvar rotina Mercado Pago'}
+                </button>
+              </div>
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--gray-500)' }}>
+              Ultima execucao automatica: {mercadoLivreConfig?.mercadoPagoSaldoAutoUltimaExecucaoEm ? new Date(mercadoLivreConfig.mercadoPagoSaldoAutoUltimaExecucaoEm).toLocaleString('pt-BR') : 'nenhuma ainda'}
             </div>
           </div>
 

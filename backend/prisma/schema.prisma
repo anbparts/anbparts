@@ -190,6 +190,10 @@ model MercadoLivreConfig {
   mercadoPagoRefreshToken String @default("")
   mercadoPagoConnectedAt DateTime?
   mercadoPagoUserId String @default("")
+  mercadoPagoSaldoAutoAtivo Boolean @default(false)
+  mercadoPagoSaldoAutoHorario String @default("06:00")
+  mercadoPagoSaldoAutoUltimaExecucaoChave String?
+  mercadoPagoSaldoAutoUltimaExecucaoEm DateTime?
   updatedAt    DateTime @updatedAt
 }
 

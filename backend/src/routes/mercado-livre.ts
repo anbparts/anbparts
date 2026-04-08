@@ -23,10 +23,15 @@ const MERCADO_LIVRE_SCHEDULER_INTERVAL_MS = 60 * 1000;
 const MERCADO_LIVRE_QUESTIONS_PAGE_LIMIT = 50;
 const MERCADO_LIVRE_SALDO_CACHE_TTL_MS = 2 * 60 * 1000;
 const MERCADO_PAGO_REPORT_GENERATION_COOLDOWN_MS = 12 * 60 * 60 * 1000;
+const MERCADO_PAGO_SALDO_AUTO_DEFAULT_HORARIO = '06:00';
+const MERCADO_LIVRE_TIMEZONE = 'America/Sao_Paulo';
+const MERCADO_PAGO_REPORT_WAIT_ATTEMPTS = 45;
+const MERCADO_PAGO_REPORT_WAIT_DELAY_MS = 4000;
 
 const schedulerState = {
   started: false,
-  running: false,
+  perguntasRunning: false,
+  mercadoPagoSaldoRunning: false,
 };
 
 const saldoCacheState: {
@@ -66,12 +71,55 @@ const configSchema = z.object({
   mercadoPagoAccessToken: z.string().trim().optional(),
 });
 
+const mercadoPagoRotinaSchema = z.object({
+  ativo: z.boolean().optional(),
+  horario: z.string().trim().optional(),
+});
+
 const answerSchema = z.object({
   text: z.string().trim().min(1).max(2000),
 });
 
 function normalizeText(value: any) {
   return String(value ?? '').trim();
+}
+
+function normalizeHorario(value: any, fallback = MERCADO_PAGO_SALDO_AUTO_DEFAULT_HORARIO) {
+  const text = normalizeText(value);
+  return /^\d{2}:\d{2}$/.test(text) ? text : fallback;
+}
+
+function getTimezoneDateParts(date = new Date(), timeZone = MERCADO_LIVRE_TIMEZONE) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(date);
+
+  const find = (type: string) => parts.find((item) => item.type === type)?.value || '';
+  const year = find('year');
+  const month = find('month');
+  const day = find('day');
+  const hour = find('hour');
+  const minute = find('minute');
+
+  return {
+    dateKey: `${year}-${month}-${day}`,
+    timeKey: `${hour}:${minute}`,
+  };
+}
+
+function isScheduledMinute(currentTime: string, scheduledTime: string) {
+  return currentTime === scheduledTime;
+}
+
+function msUntilNextMinuteTick() {
+  const now = new Date();
+  return ((60 - now.getSeconds()) * 1000) - now.getMilliseconds() + 250;
 }
 
 function getPublicBackendBase(req?: any) {
@@ -570,18 +618,29 @@ function buildMercadoPagoReportConfig(reportType: 'release' | 'settlement') {
   };
 }
 
+function isMercadoPagoFreshReportPendingError(error: any) {
+  const message = normalizeText(error?.message || error).toLowerCase();
+  return message.includes('mercado pago recebeu a solicitacao de') && message.includes('ainda nao ficou disponivel');
+}
+
 async function syncMercadoPagoReportsNow() {
-  const [releaseRows, settlementRows] = await Promise.all([
-    downloadMercadoPagoReportRowsWithConfig('release', 30, true, true),
-    downloadMercadoPagoReportRowsWithConfig('settlement', 180, true, true),
-  ]);
+  let releaseRows: Array<Record<string, string>> = [];
+  let waitingForNewRelease = false;
+
+  try {
+    releaseRows = await downloadMercadoPagoReportRowsWithConfig('release', 30, true, true);
+  } catch (error: any) {
+    if (!isMercadoPagoFreshReportPendingError(error)) throw error;
+    waitingForNewRelease = true;
+  }
 
   clearSaldoCache();
   const resumo = await loadMercadoLivreSaldoResumo(true);
   return {
     ok: true,
     releaseRows: releaseRows.length,
-    settlementRows: settlementRows.length,
+    settlementRows: 0,
+    waitingForNewRelease,
     saldo: resumo,
   };
 }
@@ -1002,7 +1061,7 @@ async function waitMercadoPagoReportFileName(
   taskId = '',
   allowKnownFallback = true,
 ) {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
+  for (let attempt = 0; attempt < MERCADO_PAGO_REPORT_WAIT_ATTEMPTS; attempt += 1) {
     if (taskId) {
       const fileNameFromTask = await resolveMercadoPagoReportFileName(reportType, { task_id: taskId });
       if (fileNameFromTask && !knownFileNames.has(fileNameFromTask)) return fileNameFromTask;
@@ -1020,7 +1079,7 @@ async function waitMercadoPagoReportFileName(
       if (allowKnownFallback && attempt >= 2 && fileName) return fileName;
     }
 
-    await delay(2000);
+    await delay(MERCADO_PAGO_REPORT_WAIT_DELAY_MS);
   }
 
   return '';
@@ -1737,7 +1796,7 @@ async function sendMercadoLivrePerguntasEmail(perguntas: any[]) {
 }
 
 async function tickMercadoLivrePerguntasScheduler() {
-  if (schedulerState.running) return;
+  if (schedulerState.perguntasRunning) return;
 
   const [config, geral] = await Promise.all([getMercadoLivreConfig(), getConfiguracaoGeral()]);
   if (!geral.mercadoLivrePerguntasAtivo) return;
@@ -1747,7 +1806,7 @@ async function tickMercadoLivrePerguntasScheduler() {
   const intervalMs = Math.max(1, Number(geral.mercadoLivrePerguntasIntervaloMin || 5)) * 60 * 1000;
   if (lastReadAt && Date.now() - lastReadAt.getTime() < intervalMs) return;
 
-  schedulerState.running = true;
+  schedulerState.perguntasRunning = true;
   try {
     const result = await syncMercadoLivrePerguntas({ sendEmail: true });
     await saveConfiguracaoGeral({ mercadoLivrePerguntasUltimaLeituraEm: new Date() });
@@ -1759,7 +1818,41 @@ async function tickMercadoLivrePerguntasScheduler() {
 
     console.log('[mercado-livre-perguntas] rotina executada sem novas perguntas');
   } finally {
-    schedulerState.running = false;
+    schedulerState.perguntasRunning = false;
+  }
+}
+
+async function tickMercadoPagoSaldoScheduler() {
+  if (schedulerState.mercadoPagoSaldoRunning) return;
+
+  const config = await getMercadoLivreConfig();
+  if (!config.mercadoPagoSaldoAutoAtivo) return;
+  if (!normalizeText(config.mercadoPagoClientId) || !normalizeText(config.mercadoPagoClientSecret)) return;
+  if (!/^APP_(USR|TEST)-/i.test(normalizeText(config.mercadoPagoAccessToken))) return;
+
+  const horario = normalizeHorario(config.mercadoPagoSaldoAutoHorario);
+  const now = getTimezoneDateParts(new Date(), MERCADO_LIVRE_TIMEZONE);
+  if (!isScheduledMinute(now.timeKey, horario)) return;
+
+  const executionKey = `${now.dateKey} ${horario}`;
+  if (normalizeText(config.mercadoPagoSaldoAutoUltimaExecucaoChave) === executionKey) return;
+
+  schedulerState.mercadoPagoSaldoRunning = true;
+  try {
+    const result = await syncMercadoPagoReportsNow();
+    await saveMercadoLivreConfig({
+      mercadoPagoSaldoAutoUltimaExecucaoChave: executionKey,
+      mercadoPagoSaldoAutoUltimaExecucaoEm: new Date(),
+    });
+
+    if (result.waitingForNewRelease) {
+      console.log(`[mercado-pago-saldo] solicitacao automatica enviada em ${executionKey}; arquivo novo ainda em processamento`);
+      return;
+    }
+
+    console.log(`[mercado-pago-saldo] saldo atualizado automaticamente em ${executionKey} (${result.releaseRows || 0} linha(s))`);
+  } finally {
+    schedulerState.mercadoPagoSaldoRunning = false;
   }
 }
 
@@ -1770,11 +1863,15 @@ export function startMercadoLivreScheduler() {
   const runTick = () => {
     tickMercadoLivrePerguntasScheduler().catch((error) => {
       console.error('Falha na rotina de perguntas do Mercado Livre:', error);
-      schedulerState.running = false;
+      schedulerState.perguntasRunning = false;
+    });
+    tickMercadoPagoSaldoScheduler().catch((error) => {
+      console.error('Falha na rotina automatica de saldo do Mercado Pago:', error);
+      schedulerState.mercadoPagoSaldoRunning = false;
     });
   };
 
-  setTimeout(runTick, 20000);
+  setTimeout(runTick, msUntilNextMinuteTick());
   setInterval(runTick, MERCADO_LIVRE_SCHEDULER_INTERVAL_MS);
 }
 
@@ -1796,6 +1893,9 @@ mercadoLivreRouter.get('/config', async (_req, res, next) => {
       mercadoPagoHasRefreshToken: !!normalizeText(config.mercadoPagoRefreshToken),
       mercadoPagoConnectedAt: config.mercadoPagoConnectedAt,
       mercadoPagoUserId: config.mercadoPagoUserId || '',
+      mercadoPagoSaldoAutoAtivo: !!config.mercadoPagoSaldoAutoAtivo,
+      mercadoPagoSaldoAutoHorario: normalizeHorario(config.mercadoPagoSaldoAutoHorario),
+      mercadoPagoSaldoAutoUltimaExecucaoEm: config.mercadoPagoSaldoAutoUltimaExecucaoEm,
     });
   } catch (e) {
     next(e);
@@ -1848,6 +1948,34 @@ mercadoLivreRouter.post('/config', async (req, res, next) => {
 
     await saveMercadoLivreConfig(dataToSave);
     clearSaldoCache();
+    res.json({ ok: true });
+  } catch (e) {
+    next(e);
+  }
+});
+
+mercadoLivreRouter.post('/mercado-pago/rotina', async (req, res, next) => {
+  try {
+    const payload = mercadoPagoRotinaSchema.parse(req.body || {});
+    const current = await getMercadoLivreConfig();
+    const horarioAtual = normalizeHorario(current.mercadoPagoSaldoAutoHorario);
+    const proximoHorario = payload.horario !== undefined
+      ? normalizeHorario(payload.horario)
+      : horarioAtual;
+    const proximoAtivo = payload.ativo !== undefined
+      ? !!payload.ativo
+      : !!current.mercadoPagoSaldoAutoAtivo;
+    const resetExecucao =
+      proximoHorario !== horarioAtual
+      || proximoAtivo !== !!current.mercadoPagoSaldoAutoAtivo;
+
+    await saveMercadoLivreConfig({
+      mercadoPagoSaldoAutoAtivo: proximoAtivo,
+      mercadoPagoSaldoAutoHorario: proximoHorario,
+      mercadoPagoSaldoAutoUltimaExecucaoChave: resetExecucao ? null : current.mercadoPagoSaldoAutoUltimaExecucaoChave,
+      mercadoPagoSaldoAutoUltimaExecucaoEm: resetExecucao ? null : current.mercadoPagoSaldoAutoUltimaExecucaoEm,
+    });
+
     res.json({ ok: true });
   } catch (e) {
     next(e);
