@@ -306,17 +306,18 @@ async function mercadoPagoReq(path: string, options: RequestInit = {}, allowReco
   return payload;
 }
 
-async function mercadoPagoFetch(path: string, options: RequestInit = {}, allowReconnect = true): Promise<Response> {
+async function getMercadoPagoAccessToken() {
   const config = await getMercadoLivreConfig();
-  let token = normalizeText(config.mercadoPagoAccessToken);
-
-  if (!token) {
-    if (normalizeText(config.mercadoPagoRefreshToken)) {
-      token = await refreshMercadoPagoToken();
-    } else {
-      throw new Error('Conecte o Mercado Pago com a autorizacao da conta em Config. ML.');
-    }
+  const token = normalizeText(config.mercadoPagoAccessToken);
+  if (token) return token;
+  if (normalizeText(config.mercadoPagoRefreshToken)) {
+    return refreshMercadoPagoToken();
   }
+  throw new Error('Conecte o Mercado Pago com a autorizacao da conta em Config. ML.');
+}
+
+async function mercadoPagoFetch(path: string, options: RequestInit = {}, allowReconnect = true): Promise<Response> {
+  let token = await getMercadoPagoAccessToken();
 
   const url = /^https?:\/\//i.test(path) ? path : `${MERCADO_PAGO_API}${path}`;
   const execute = (bearer: string) => fetch(url, {
@@ -337,6 +338,62 @@ async function mercadoPagoFetch(path: string, options: RequestInit = {}, allowRe
   const refreshedToken = await refreshMercadoPagoToken();
   response = await execute(refreshedToken);
   return response;
+}
+
+function buildMercadoPagoReportConfig(reportType: 'release' | 'settlement') {
+  const base = {
+    file_name_prefix: reportType === 'release' ? 'release-report-anbparts' : 'settlement-report-anbparts',
+    display_timezone: 'GMT-03',
+    frequency: {
+      hour: 0,
+      type: 'monthly',
+      value: 1,
+    },
+  };
+
+  if (reportType === 'release') {
+    return {
+      ...base,
+      include_withdrawal_at_end: true,
+      execute_after_withdrawal: false,
+      columns: [
+        { key: 'DATE' },
+        { key: 'RECORD_TYPE' },
+        { key: 'DESCRIPTION' },
+        { key: 'NET_CREDIT' },
+        { key: 'BALANCE_AMOUNT' },
+      ],
+    };
+  }
+
+  return {
+    ...base,
+    include_withdraw: true,
+    columns: [
+      { key: 'DATE' },
+      { key: 'TRANSACTION_TYPE' },
+      { key: 'DESCRIPTION' },
+      { key: 'SETTLEMENT_NET_AMOUNT' },
+      { key: 'SETTLEMENT_DATE' },
+      { key: 'BALANCE_AMOUNT' },
+    ],
+  };
+}
+
+async function ensureMercadoPagoReportConfig(reportType: 'release' | 'settlement') {
+  const reportSlug = reportType === 'release' ? 'release_report' : 'settlement_report';
+  try {
+    await mercadoPagoReq(`/v1/account/${reportSlug}/config`);
+    return;
+  } catch (error: any) {
+    const message = String(error?.message || '');
+    if (!/404|not_found/i.test(message)) throw error;
+  }
+
+  await mercadoPagoReq(`/v1/account/${reportSlug}/config`, {
+    method: 'POST',
+    body: JSON.stringify(buildMercadoPagoReportConfig(reportType)),
+  });
 }
 
 function normalizeMoney(value: any): number | null {
@@ -479,22 +536,6 @@ function parseCsvReport(text: string) {
   });
 }
 
-function extractReportEndingBalance(rows: Array<Record<string, string>>) {
-  const totalRows = rows.filter((row) => normalizeKey(row.record_type).includes('total'));
-  const candidates = totalRows.length ? totalRows : rows;
-
-  for (let i = candidates.length - 1; i >= 0; i -= 1) {
-    const row = candidates[i];
-    const direct =
-      normalizeMoney(row.balance_amount)
-      ?? normalizeMoney(row.settlement_net_amount)
-      ?? normalizeMoney(row.net_credit_amount);
-    if (direct !== null) return direct;
-  }
-
-  return 0;
-}
-
 async function mercadoPagoDownloadText(path: string) {
   const response = await mercadoPagoFetch(path, {
     headers: {
@@ -509,8 +550,121 @@ async function mercadoPagoDownloadText(path: string) {
   return text;
 }
 
+function getMercadoPagoReportSlug(reportType: 'release' | 'settlement') {
+  return reportType === 'release' ? 'release_report' : 'settlement_report';
+}
+
+function parseDateMs(value: any) {
+  const text = normalizeText(value);
+  if (!text) return 0;
+  const parsed = Date.parse(text);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function getMercadoPagoReportFileTimestamp(fileName: string) {
+  const match = normalizeText(fileName).match(/(\d{4})-(\d{2})-(\d{2})-(\d{6})/);
+  if (!match) return 0;
+  const [, year, month, day, time] = match;
+  const hour = Number(time.slice(0, 2));
+  const minute = Number(time.slice(2, 4));
+  const second = Number(time.slice(4, 6));
+  return new Date(
+    Number(year),
+    Number(month) - 1,
+    Number(day),
+    hour,
+    minute,
+    second,
+    0,
+  ).getTime();
+}
+
+function extractMercadoPagoReportEntries(payload: any): any[] {
+  if (Array.isArray(payload)) return payload;
+
+  const directCollections = [
+    payload?.results,
+    payload?.data,
+    payload?.files,
+    payload?.reports,
+    payload?.items,
+    payload?.elements,
+  ];
+
+  for (const collection of directCollections) {
+    if (Array.isArray(collection)) return collection;
+  }
+
+  if (payload && typeof payload === 'object') {
+    for (const value of Object.values(payload)) {
+      if (Array.isArray(value)) return value;
+    }
+  }
+
+  return [];
+}
+
+function normalizeMercadoPagoReportEntry(entry: any) {
+  const fileName = normalizeText(
+    typeof entry === 'string'
+      ? entry
+      : entry?.file_name
+        || entry?.fileName
+        || entry?.name
+        || entry?.filename,
+  );
+  const createdAtMs =
+    parseDateMs(entry?.generation_date)
+    || parseDateMs(entry?.generated_at)
+    || parseDateMs(entry?.created_at)
+    || parseDateMs(entry?.date_created)
+    || parseDateMs(entry?.request_date)
+    || getMercadoPagoReportFileTimestamp(fileName);
+  const endAtMs =
+    parseDateMs(entry?.end_date)
+    || parseDateMs(entry?.date_to)
+    || parseDateMs(entry?.to_date)
+    || createdAtMs;
+
+  return {
+    raw: entry,
+    fileName,
+    createdAtMs,
+    endAtMs,
+  };
+}
+
+async function listMercadoPagoReports(reportType: 'release' | 'settlement') {
+  const reportSlug = getMercadoPagoReportSlug(reportType);
+  try {
+    return extractMercadoPagoReportEntries(
+      await mercadoPagoReq(`/v1/account/${reportSlug}/list`, { method: 'GET' }),
+    );
+  } catch {
+    return extractMercadoPagoReportEntries(
+      await mercadoPagoReq(`/v1/account/${reportSlug}/list`, { method: 'POST' }),
+    );
+  }
+}
+
+function pickLatestMercadoPagoReportFileName(reportType: 'release' | 'settlement', entries: any[]) {
+  const maxAgeMs = reportType === 'release' ? 12 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+  const now = Date.now();
+
+  const latest = entries
+    .map(normalizeMercadoPagoReportEntry)
+    .filter((entry) => entry.fileName)
+    .sort((a, b) => (b.endAtMs || b.createdAtMs) - (a.endAtMs || a.createdAtMs))[0];
+
+  if (!latest?.fileName) return '';
+  if (!latest.endAtMs && !latest.createdAtMs) return latest.fileName;
+
+  const age = now - (latest.endAtMs || latest.createdAtMs);
+  return age <= maxAgeMs ? latest.fileName : '';
+}
+
 async function createMercadoPagoReport(reportType: 'release' | 'settlement', beginDate: string, endDate: string) {
-  const reportSlug = reportType === 'release' ? 'release_report' : 'settlement_report';
+  const reportSlug = getMercadoPagoReportSlug(reportType);
   const payload = await mercadoPagoReq(`/v1/account/${reportSlug}`, {
     method: 'POST',
     body: JSON.stringify({
@@ -519,33 +673,52 @@ async function createMercadoPagoReport(reportType: 'release' | 'settlement', beg
     }),
   });
 
-  return normalizeText(payload?.task_id || payload?.id || payload?.taskId);
+  return {
+    taskId: normalizeText(payload?.task_id || payload?.id || payload?.taskId),
+    fileName: normalizeText(payload?.file_name || payload?.fileName),
+  };
 }
 
-async function waitMercadoPagoReportFileName(reportType: 'release' | 'settlement', taskId: string) {
-  const reportSlug = reportType === 'release' ? 'release_report' : 'settlement_report';
-  if (!taskId) throw new Error(`Nao foi possivel iniciar o relatorio ${reportSlug}`);
-
+async function waitMercadoPagoReportFileName(reportType: 'release' | 'settlement', knownFileNames: Set<string>) {
   for (let attempt = 0; attempt < 20; attempt += 1) {
-    const payload = await mercadoPagoReq(`/v1/account/${reportSlug}/task/${encodeURIComponent(taskId)}`);
-    const fileName = normalizeText(payload?.file_name || payload?.fileName);
-    const status = normalizeKey(payload?.status);
-    if (fileName) return fileName;
-    if (status.includes('failed') || status.includes('error')) {
-      throw new Error(`Falha ao gerar relatorio ${reportSlug}`);
+    const entries = await listMercadoPagoReports(reportType);
+    const latest = entries
+      .map(normalizeMercadoPagoReportEntry)
+      .filter((entry) => entry.fileName)
+      .sort((a, b) => (b.createdAtMs || b.endAtMs) - (a.createdAtMs || a.endAtMs));
+
+    const createdNow = latest.find((entry) => !knownFileNames.has(entry.fileName));
+    if (createdNow?.fileName) return createdNow.fileName;
+
+    if (attempt >= 2 && latest[0]?.fileName) {
+      return latest[0].fileName;
     }
+
     await delay(2000);
   }
 
-  throw new Error(`Tempo excedido ao gerar relatorio ${reportSlug}`);
+  return '';
 }
 
-async function downloadMercadoPagoReportRows(reportType: 'release' | 'settlement', daysBack: number) {
-  const reportSlug = reportType === 'release' ? 'release_report' : 'settlement_report';
-  const { beginDate } = getMercadoPagoReportRange(daysBack);
-  const { endDate } = getMercadoPagoReportRange(0);
-  const taskId = await createMercadoPagoReport(reportType, beginDate, endDate);
-  const fileName = await waitMercadoPagoReportFileName(reportType, taskId);
+async function downloadMercadoPagoReportRows(reportType: 'release' | 'settlement', daysBack: number, forceGenerate = false) {
+  const reportSlug = getMercadoPagoReportSlug(reportType);
+  const existingEntries = await listMercadoPagoReports(reportType);
+  const latestExistingFileName = pickLatestMercadoPagoReportFileName(reportType, existingEntries);
+
+  let fileName = latestExistingFileName;
+  if (!fileName || forceGenerate) {
+    const knownFileNames = new Set(
+      existingEntries
+        .map(normalizeMercadoPagoReportEntry)
+        .map((entry) => entry.fileName)
+        .filter(Boolean),
+    );
+
+    const { beginDate } = getMercadoPagoReportRange(daysBack);
+    const { endDate } = getMercadoPagoReportRange(0);
+    const created = await createMercadoPagoReport(reportType, beginDate, endDate);
+    fileName = created.fileName || await waitMercadoPagoReportFileName(reportType, knownFileNames);
+  }
 
   if (!fileName) {
     throw new Error(`Nao foi possivel obter o arquivo do relatorio ${reportSlug}`);
@@ -553,6 +726,32 @@ async function downloadMercadoPagoReportRows(reportType: 'release' | 'settlement
 
   const text = await mercadoPagoDownloadText(`/v1/account/${reportSlug}/${encodeURIComponent(fileName)}`);
   return parseCsvReport(text);
+}
+
+function isCsvSummaryRow(row: Record<string, string>) {
+  return !normalizeText(row.date) && !normalizeText(row.description) && !normalizeText(row.record_type);
+}
+
+function extractReportEndingBalance(rows: Array<Record<string, string>>) {
+  const candidates = rows.filter((row) => !isCsvSummaryRow(row));
+  const totalRows = candidates.filter((row) => normalizeKey(row.record_type).includes('total'));
+  const orderedRows = totalRows.length ? totalRows : candidates;
+
+  for (let i = orderedRows.length - 1; i >= 0; i -= 1) {
+    const row = orderedRows[i];
+    const direct =
+      normalizeMoney(row.balance_amount)
+      ?? normalizeMoney(row.settlement_net_amount)
+      ?? normalizeMoney(row.net_credit_amount);
+    if (direct !== null) return direct;
+  }
+
+  return 0;
+}
+
+async function downloadMercadoPagoReportRowsWithConfig(reportType: 'release' | 'settlement', daysBack: number, forceGenerate = false) {
+  await ensureMercadoPagoReportConfig(reportType);
+  return downloadMercadoPagoReportRows(reportType, daysBack, forceGenerate);
 }
 
 export async function loadMercadoLivreSaldoResumo(forceRefresh = false) {
@@ -587,8 +786,8 @@ export async function loadMercadoLivreSaldoResumo(forceRefresh = false) {
 
     try {
       const [releaseRows, settlementRows] = await Promise.all([
-        downloadMercadoPagoReportRows('release', 15),
-        downloadMercadoPagoReportRows('settlement', 60),
+        downloadMercadoPagoReportRowsWithConfig('release', 30, forceRefresh),
+        downloadMercadoPagoReportRowsWithConfig('settlement', 180, forceRefresh),
       ]);
 
       const now = new Date();
@@ -596,11 +795,17 @@ export async function loadMercadoLivreSaldoResumo(forceRefresh = false) {
 
       const futureSettlements = settlementRows
         .map((row) => {
-          const releaseDateText = normalizeText(row.money_release_date || row.settlement_date);
+          const releaseDateText = normalizeText(
+            row.money_release_date
+            || row.settlement_date
+            || row.release_date
+            || row.date,
+          );
           const releaseDate = releaseDateText ? new Date(releaseDateText) : null;
           const amount =
             normalizeMoney(row.settlement_net_amount)
             ?? normalizeMoney(row.net_credit_amount)
+            ?? normalizeMoney(row.gross_amount)
             ?? 0;
           return {
             releaseDate,
