@@ -22,6 +22,7 @@ const MERCADO_LIVRE_SITE_ID = 'MLB';
 const MERCADO_LIVRE_SCHEDULER_INTERVAL_MS = 60 * 1000;
 const MERCADO_LIVRE_QUESTIONS_PAGE_LIMIT = 50;
 const MERCADO_LIVRE_SALDO_CACHE_TTL_MS = 2 * 60 * 1000;
+const MERCADO_PAGO_REPORT_GENERATION_COOLDOWN_MS = 12 * 60 * 60 * 1000;
 
 const schedulerState = {
   started: false,
@@ -36,6 +37,14 @@ const saldoCacheState: {
   expiresAt: 0,
   value: null,
   inFlight: null,
+};
+
+const mercadoPagoReportGenerationState: Record<'release' | 'settlement', {
+  lastAttemptAt: number;
+  inFlight: Promise<Array<Record<string, string>>> | null;
+}> = {
+  release: { lastAttemptAt: 0, inFlight: null },
+  settlement: { lastAttemptAt: 0, inFlight: null },
 };
 
 const mercadoPagoOAuthState = {
@@ -394,18 +403,6 @@ function buildMercadoPagoReportConfig(reportType: 'release' | 'settlement') {
   };
 }
 
-async function ensureMercadoPagoReportSchedule(reportType: 'release' | 'settlement') {
-  const reportSlug = getMercadoPagoReportSlug(reportType);
-  await mercadoPagoReq(`/v1/account/${reportSlug}/schedule`, {
-    method: 'POST',
-  });
-}
-
-async function ensureMercadoPagoReportReady(reportType: 'release' | 'settlement') {
-  await ensureMercadoPagoReportConfig(reportType);
-  await ensureMercadoPagoReportSchedule(reportType);
-}
-
 async function syncMercadoPagoReportsNow() {
   const [releaseRows, settlementRows] = await Promise.all([
     downloadMercadoPagoReportRowsWithConfig('release', 30, true),
@@ -429,7 +426,7 @@ async function ensureMercadoPagoReportConfig(reportType: 'release' | 'settlement
     return;
   } catch (error: any) {
     const message = String(error?.message || '');
-    if (!/404|not_found/i.test(message)) throw error;
+    if (!/404|not_found/i.test(message) && !isMercadoPagoConfigMissingError(error)) throw error;
   }
 
   await mercadoPagoReq(`/v1/account/${reportSlug}/config`, {
@@ -803,12 +800,60 @@ function extractReportEndingBalance(rows: Array<Record<string, string>>) {
 }
 
 async function downloadMercadoPagoReportRowsWithConfig(reportType: 'release' | 'settlement', daysBack: number, forceGenerate = false) {
-  try {
-    await ensureMercadoPagoReportReady(reportType);
-  } catch (error: any) {
-    if (!isMercadoPagoConfigMissingError(error)) throw error;
-  }
+  await ensureMercadoPagoReportConfig(reportType);
   return downloadMercadoPagoReportRows(reportType, daysBack, forceGenerate);
+}
+
+function isMercadoPagoReportUnavailableError(error: any) {
+  const message = normalizeText(error?.message || error).toLowerCase();
+  return (
+    message.includes('sem relatorio disponivel')
+    || message.includes('configuration not found for user')
+    || message.includes('report not found')
+    || message.includes('404')
+  );
+}
+
+async function loadMercadoPagoReportRowsAuto(
+  reportType: 'release' | 'settlement',
+  daysBack: number,
+): Promise<{
+  rows: Array<Record<string, string>>;
+  requestedNow: boolean;
+  waitingForReport: boolean;
+}> {
+  try {
+    const rows = await downloadMercadoPagoReportRowsWithConfig(reportType, daysBack, false);
+    return { rows, requestedNow: false, waitingForReport: false };
+  } catch (error: any) {
+    if (!isMercadoPagoReportUnavailableError(error)) throw error;
+  }
+
+  const state = mercadoPagoReportGenerationState[reportType];
+
+  if (state.inFlight) {
+    const rows = await state.inFlight;
+    return { rows, requestedNow: false, waitingForReport: rows.length === 0 };
+  }
+
+  if ((Date.now() - state.lastAttemptAt) < MERCADO_PAGO_REPORT_GENERATION_COOLDOWN_MS) {
+    return { rows: [], requestedNow: false, waitingForReport: true };
+  }
+
+  state.lastAttemptAt = Date.now();
+  state.inFlight = (async () => {
+    try {
+      return await downloadMercadoPagoReportRowsWithConfig(reportType, daysBack, true);
+    } catch (error: any) {
+      if (isMercadoPagoReportUnavailableError(error)) return [];
+      throw error;
+    } finally {
+      state.inFlight = null;
+    }
+  })();
+
+  const rows = await state.inFlight;
+  return { rows, requestedNow: true, waitingForReport: rows.length === 0 };
 }
 
 export async function loadMercadoLivreSaldoResumo(forceRefresh = false) {
@@ -843,15 +888,28 @@ export async function loadMercadoLivreSaldoResumo(forceRefresh = false) {
 
     try {
       const [releaseResult, settlementResult] = await Promise.allSettled([
-        downloadMercadoPagoReportRowsWithConfig('release', 30, false),
-        downloadMercadoPagoReportRowsWithConfig('settlement', 180, false),
+        loadMercadoPagoReportRowsAuto('release', 30),
+        loadMercadoPagoReportRowsAuto('settlement', 180),
       ]);
 
-      const releaseRows = releaseResult.status === 'fulfilled' ? releaseResult.value : [];
-      const settlementRows = settlementResult.status === 'fulfilled' ? settlementResult.value : [];
+      const releaseRows = releaseResult.status === 'fulfilled' ? releaseResult.value.rows : [];
+      const settlementRows = settlementResult.status === 'fulfilled' ? settlementResult.value.rows : [];
+      const settlementRequestedNow = settlementResult.status === 'fulfilled'
+        ? settlementResult.value.requestedNow
+        : false;
+      const settlementWaitingForReport = settlementResult.status === 'fulfilled'
+        ? settlementResult.value.waitingForReport
+        : false;
 
-      if (!releaseRows.length && releaseResult.status === 'rejected') {
-        throw releaseResult.reason;
+      if (!releaseRows.length) {
+        if (releaseResult.status === 'rejected') {
+          throw releaseResult.reason;
+        }
+        throw new Error(
+          releaseResult.value.requestedNow
+            ? 'O relatorio de valores liberados foi solicitado ao Mercado Pago e ainda esta sendo processado.'
+            : 'Ainda nao existe relatorio de valores liberados disponivel no Mercado Pago.',
+        );
       }
 
       const now = new Date();
@@ -901,7 +959,11 @@ export async function loadMercadoLivreSaldoResumo(forceRefresh = false) {
         saldoParcial: !hasSettlementData,
         observacao: hasSettlementData
           ? ''
-          : 'Saldo disponivel carregado. A liberar e antecipavel aguardam relatorio de liquidacao do Mercado Pago.',
+          : settlementRequestedNow
+            ? 'Saldo disponivel carregado. O relatorio de liquidacao foi solicitado ao Mercado Pago e pode levar alguns minutos para aparecer.'
+            : settlementWaitingForReport
+              ? 'Saldo disponivel carregado. A liberar e antecipavel ainda aguardam o relatorio de liquidacao do Mercado Pago.'
+              : 'Saldo disponivel carregado. A liberar e antecipavel ainda aguardam o primeiro relatorio de liquidacao do Mercado Pago.',
         consultadoEm: new Date().toISOString(),
       };
       saldoCacheState.value = resumo;
@@ -1529,13 +1591,13 @@ mercadoLivreRouter.get('/mercado-pago/status', async (_req, res) => {
     };
 
     try {
-      await ensureMercadoPagoReportReady('release');
+      await ensureMercadoPagoReportConfig('release');
     } catch (error: any) {
       reportSetup.release = { ok: false, error: normalizeText(error?.message || error) };
     }
 
     try {
-      await ensureMercadoPagoReportReady('settlement');
+      await ensureMercadoPagoReportConfig('settlement');
     } catch (error: any) {
       reportSetup.settlement = { ok: false, error: normalizeText(error?.message || error) };
     }
