@@ -432,8 +432,8 @@ function buildMercadoPagoReportConfig(reportType: 'release' | 'settlement') {
 
 async function syncMercadoPagoReportsNow() {
   const [releaseRows, settlementRows] = await Promise.all([
-    downloadMercadoPagoReportRowsWithConfig('release', 30, true),
-    downloadMercadoPagoReportRowsWithConfig('settlement', 180, true),
+    downloadMercadoPagoReportRowsWithConfig('release', 30, true, true),
+    downloadMercadoPagoReportRowsWithConfig('settlement', 180, true, true),
   ]);
 
   clearSaldoCache();
@@ -877,22 +877,30 @@ async function waitMercadoPagoReportFileName(
   return '';
 }
 
-async function downloadMercadoPagoReportRows(reportType: 'release' | 'settlement', daysBack: number, forceGenerate = false) {
+async function downloadMercadoPagoReportRows(
+  reportType: 'release' | 'settlement',
+  daysBack: number,
+  forceGenerate = false,
+  forceFreshReport = false,
+) {
   const reportSlug = getMercadoPagoReportSlug(reportType);
   const existingEntries = await listMercadoPagoReports(reportType);
-  let latestExistingFileName = pickLatestMercadoPagoReportFileName(reportType, existingEntries);
-  if (!latestExistingFileName) {
-    const normalizedEntries = existingEntries
-      .map(normalizeMercadoPagoReportEntry)
-      .sort((a, b) => (b.endAtMs || b.createdAtMs) - (a.endAtMs || a.createdAtMs));
-    for (const entry of normalizedEntries) {
-      latestExistingFileName = await resolveMercadoPagoReportFileName(reportType, entry.raw);
-      if (latestExistingFileName) break;
+  let latestExistingFileName = '';
+  if (!forceFreshReport) {
+    latestExistingFileName = pickLatestMercadoPagoReportFileName(reportType, existingEntries);
+    if (!latestExistingFileName) {
+      const normalizedEntries = existingEntries
+        .map(normalizeMercadoPagoReportEntry)
+        .sort((a, b) => (b.endAtMs || b.createdAtMs) - (a.endAtMs || a.createdAtMs));
+      for (const entry of normalizedEntries) {
+        latestExistingFileName = await resolveMercadoPagoReportFileName(reportType, entry.raw);
+        if (latestExistingFileName) break;
+      }
     }
   }
 
   let fileName = latestExistingFileName;
-  if (!fileName && forceGenerate) {
+  if ((forceFreshReport || !fileName) && forceGenerate) {
     const knownFileNames = new Set(
       existingEntries
         .map(normalizeMercadoPagoReportEntry)
@@ -943,13 +951,18 @@ function extractReportEndingBalance(rows: Array<Record<string, string>>) {
   return 0;
 }
 
-async function downloadMercadoPagoReportRowsWithConfig(reportType: 'release' | 'settlement', daysBack: number, forceGenerate = false) {
+async function downloadMercadoPagoReportRowsWithConfig(
+  reportType: 'release' | 'settlement',
+  daysBack: number,
+  forceGenerate = false,
+  forceFreshReport = false,
+) {
   try {
-    return await downloadMercadoPagoReportRows(reportType, daysBack, forceGenerate);
+    return await downloadMercadoPagoReportRows(reportType, daysBack, forceGenerate, forceFreshReport);
   } catch (error: any) {
     if (!forceGenerate || !isMercadoPagoReportUnavailableError(error)) throw error;
     await ensureMercadoPagoReportConfig(reportType);
-    return downloadMercadoPagoReportRows(reportType, daysBack, forceGenerate);
+    return downloadMercadoPagoReportRows(reportType, daysBack, forceGenerate, forceFreshReport);
   }
 }
 
