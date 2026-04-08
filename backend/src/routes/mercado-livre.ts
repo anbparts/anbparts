@@ -351,9 +351,11 @@ async function mercadoPagoFetch(path: string, options: RequestInit = {}, allowRe
 
 function buildMercadoPagoReportConfig(reportType: 'release' | 'settlement') {
   const base = {
-    file_name_prefix: reportType === 'release' ? 'release-report-anbparts' : 'settlement-report-anbparts',
+    file_name_prefix: reportType === 'release' ? 'anbparts-release-report' : 'anbparts-settlement-report',
     display_timezone: 'GMT-03',
-    header_language: 'en',
+    report_translation: 'pt',
+    separator: ';',
+    scheduled: false,
     frequency: {
       hour: 0,
       type: 'monthly',
@@ -364,7 +366,9 @@ function buildMercadoPagoReportConfig(reportType: 'release' | 'settlement') {
   if (reportType === 'release') {
     return {
       ...base,
-      include_withdrawal_at_end: true,
+      include_withdrawal_at_end: false,
+      check_available_balance: false,
+      compensate_detail: false,
       execute_after_withdrawal: false,
       columns: [
         { key: 'DATE' },
@@ -384,12 +388,13 @@ function buildMercadoPagoReportConfig(reportType: 'release' | 'settlement') {
 
   return {
     ...base,
+    header_language: 'pt',
     show_fee_prevision: false,
-    show_chargeback_cancel: true,
-    coupon_detailed: true,
-    include_withdraw: true,
-    shipping_detail: true,
-    refund_detailed: true,
+    show_chargeback_cancel: false,
+    coupon_detailed: false,
+    include_withdraw: false,
+    shipping_detail: false,
+    refund_detailed: false,
     columns: [
       { key: 'TRANSACTION_DATE' },
       { key: 'SOURCE_ID' },
@@ -429,10 +434,22 @@ async function ensureMercadoPagoReportConfig(reportType: 'release' | 'settlement
     if (!/404|not_found/i.test(message) && !isMercadoPagoConfigMissingError(error)) throw error;
   }
 
-  await mercadoPagoReq(`/v1/account/${reportSlug}/config`, {
-    method: 'POST',
-    body: JSON.stringify(buildMercadoPagoReportConfig(reportType)),
-  });
+  const body = JSON.stringify(buildMercadoPagoReportConfig(reportType));
+  let lastError: any = null;
+
+  for (const method of ['POST', 'PUT'] as const) {
+    try {
+      await mercadoPagoReq(`/v1/account/${reportSlug}/config`, {
+        method,
+        body,
+      });
+      return;
+    } catch (error: any) {
+      lastError = error;
+    }
+  }
+
+  throw lastError || new Error(`Nao foi possivel configurar ${reportSlug}`);
 }
 
 function normalizeMoney(value: any): number | null {
@@ -800,7 +817,13 @@ function extractReportEndingBalance(rows: Array<Record<string, string>>) {
 }
 
 async function downloadMercadoPagoReportRowsWithConfig(reportType: 'release' | 'settlement', daysBack: number, forceGenerate = false) {
-  return downloadMercadoPagoReportRows(reportType, daysBack, forceGenerate);
+  try {
+    return await downloadMercadoPagoReportRows(reportType, daysBack, forceGenerate);
+  } catch (error: any) {
+    if (!forceGenerate || !isMercadoPagoReportUnavailableError(error)) throw error;
+    await ensureMercadoPagoReportConfig(reportType);
+    return downloadMercadoPagoReportRows(reportType, daysBack, forceGenerate);
+  }
 }
 
 function isMercadoPagoReportUnavailableError(error: any) {
@@ -809,6 +832,7 @@ function isMercadoPagoReportUnavailableError(error: any) {
     message.includes('sem relatorio disponivel')
     || message.includes('configuration not found for user')
     || message.includes('report not found')
+    || message === 'bad request'
     || message.includes('404')
   );
 }
