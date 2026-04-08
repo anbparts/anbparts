@@ -19,7 +19,10 @@ export default function ConfigMlPage() {
   const [mercadoLivreConfig, setMercadoLivreConfig] = useState<any>(null);
   const [mercadoLivreClientId, setMercadoLivreClientId] = useState('');
   const [mercadoLivreClientSecret, setMercadoLivreClientSecret] = useState('');
+  const [mercadoPagoClientId, setMercadoPagoClientId] = useState('');
+  const [mercadoPagoClientSecret, setMercadoPagoClientSecret] = useState('');
   const [savingMercadoLivre, setSavingMercadoLivre] = useState(false);
+  const [savingMercadoPago, setSavingMercadoPago] = useState(false);
   const [mercadoLivreStatus, setMercadoLivreStatus] = useState<any>(null);
 
   async function load() {
@@ -27,6 +30,8 @@ export default function ConfigMlPage() {
     setMercadoLivreConfig(mlConfig);
     setMercadoLivreClientId('');
     setMercadoLivreClientSecret('');
+    setMercadoPagoClientId('');
+    setMercadoPagoClientSecret('');
   }
 
   useEffect(() => {
@@ -57,6 +62,27 @@ export default function ConfigMlPage() {
       alert(error.message || 'Erro ao salvar configuracao do Mercado Livre');
     } finally {
       setSavingMercadoLivre(false);
+    }
+  }
+
+  async function salvarMercadoPago() {
+    if (!mercadoPagoClientId || !mercadoPagoClientSecret) {
+      alert('Preencha o Client ID e o Client Secret do Mercado Pago');
+      return;
+    }
+
+    setSavingMercadoPago(true);
+    try {
+      await api.mercadoLivre.saveConfig({
+        mercadoPagoClientId,
+        mercadoPagoClientSecret,
+      });
+      await load();
+      alert('Credenciais do Mercado Pago salvas.');
+    } catch (error: any) {
+      alert(error.message || 'Erro ao salvar configuracao do Mercado Pago');
+    } finally {
+      setSavingMercadoPago(false);
     }
   }
 
@@ -103,7 +129,7 @@ export default function ConfigMlPage() {
       <div style={s.topbar}>
         <div>
           <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)', letterSpacing: '-0.3px' }}>Config. ML</div>
-          <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>Conexao OAuth e validacao da conta do Mercado Livre</div>
+          <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>Credenciais e conexoes do Mercado Livre e Mercado Pago</div>
         </div>
       </div>
 
@@ -187,6 +213,62 @@ export default function ConfigMlPage() {
 
           <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 12 }}>
             Callback OAuth: <code style={{ background: 'var(--gray-100)', padding: '1px 6px', borderRadius: 4, fontFamily: 'JetBrains Mono, monospace' }}>{API}/mercado-livre/callback</code>
+          </div>
+        </div>
+
+        <div style={s.card}>
+          <div style={s.h3}>Conexao Mercado Pago</div>
+          <p style={s.p}>
+            Salve aqui o Client ID e o Client Secret da aplicacao do Mercado Pago. Esse bloco prepara a integracao que vamos usar para consultar saldo, saldo a liberar e antecipacao no dashboard.
+          </p>
+
+          <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            {mercadoLivreConfig?.mercadoPagoHasTokens ? (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, background: 'var(--green-light)', color: 'var(--green)', border: '1px solid #86efac', fontSize: 13, fontWeight: 600 }}>
+                Conectado ao Mercado Pago
+              </span>
+            ) : mercadoLivreConfig?.mercadoPagoClientId ? (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, background: 'var(--amber-light)', color: 'var(--amber)', border: '1px solid #fcd34d', fontSize: 13, fontWeight: 600 }}>
+                Credenciais salvas, aguardando OAuth do Mercado Pago
+              </span>
+            ) : (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, background: 'var(--gray-100)', color: 'var(--gray-400)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 600 }}>
+                Nao configurado
+              </span>
+            )}
+            {mercadoLivreConfig?.mercadoPagoUserId ? (
+              <span style={{ fontSize: 13, color: 'var(--gray-500)' }}>
+                Conta Mercado Pago: <strong style={{ color: 'var(--gray-800)' }}>{mercadoLivreConfig.mercadoPagoUserId}</strong>
+              </span>
+            ) : null}
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginBottom: 16 }}>
+            <div>
+              <div style={{ fontSize: 11, fontFamily: 'JetBrains Mono, monospace', color: 'var(--gray-400)', letterSpacing: '.8px', textTransform: 'uppercase', marginBottom: 8 }}>Client ID</div>
+              <input
+                style={s.input}
+                value={mercadoPagoClientId}
+                onChange={(e) => setMercadoPagoClientId(e.target.value)}
+                placeholder={mercadoLivreConfig?.mercadoPagoClientId || 'Cole aqui o Client ID do app Mercado Pago'}
+              />
+            </div>
+            <div>
+              <div style={{ fontSize: 11, fontFamily: 'JetBrains Mono, monospace', color: 'var(--gray-400)', letterSpacing: '.8px', textTransform: 'uppercase', marginBottom: 8 }}>Client Secret</div>
+              <input
+                style={s.input}
+                type="password"
+                value={mercadoPagoClientSecret}
+                onChange={(e) => setMercadoPagoClientSecret(e.target.value)}
+                placeholder={mercadoLivreConfig?.mercadoPagoClientSecretConfigured ? 'Ja configurado. Preencha so para trocar.' : 'Cole aqui o Client Secret do Mercado Pago'}
+              />
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <button style={{ ...s.btn, background: 'var(--blue-500)', color: '#fff' }} onClick={salvarMercadoPago} disabled={savingMercadoPago}>
+              {savingMercadoPago ? 'Salvando...' : 'Salvar credenciais Mercado Pago'}
+            </button>
           </div>
         </div>
       </div>

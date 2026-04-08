@@ -36,8 +36,10 @@ const saldoCacheState: {
 };
 
 const configSchema = z.object({
-  clientId: z.string().trim().min(1),
-  clientSecret: z.string().trim().min(1),
+  clientId: z.string().trim().optional(),
+  clientSecret: z.string().trim().optional(),
+  mercadoPagoClientId: z.string().trim().optional(),
+  mercadoPagoClientSecret: z.string().trim().optional(),
 });
 
 const answerSchema = z.object({
@@ -773,6 +775,11 @@ mercadoLivreRouter.get('/config', async (_req, res, next) => {
       sellerId: config.sellerId || '',
       nickname: config.nickname || '',
       siteId: config.siteId || MERCADO_LIVRE_SITE_ID,
+      mercadoPagoClientId: config.mercadoPagoClientId || '',
+      mercadoPagoClientSecretConfigured: !!normalizeText(config.mercadoPagoClientSecret),
+      mercadoPagoHasTokens: !!normalizeText(config.mercadoPagoAccessToken),
+      mercadoPagoConnectedAt: config.mercadoPagoConnectedAt,
+      mercadoPagoUserId: config.mercadoPagoUserId || '',
     });
   } catch (e) {
     next(e);
@@ -782,15 +789,42 @@ mercadoLivreRouter.get('/config', async (_req, res, next) => {
 mercadoLivreRouter.post('/config', async (req, res, next) => {
   try {
     const payload = configSchema.parse(req.body || {});
-    await saveMercadoLivreConfig({
-      clientId: payload.clientId,
-      clientSecret: payload.clientSecret,
-      accessToken: '',
-      refreshToken: '',
-      connectedAt: null,
-      sellerId: '',
-      nickname: '',
-    });
+    const dataToSave: Record<string, any> = {};
+
+    const savingMercadoLivre = payload.clientId !== undefined || payload.clientSecret !== undefined;
+    if (savingMercadoLivre) {
+      if (!normalizeText(payload.clientId) || !normalizeText(payload.clientSecret)) {
+        return res.status(400).json({ error: 'Preencha o Client ID e o Client Secret do Mercado Livre.' });
+      }
+
+      dataToSave.clientId = normalizeText(payload.clientId);
+      dataToSave.clientSecret = normalizeText(payload.clientSecret);
+      dataToSave.accessToken = '';
+      dataToSave.refreshToken = '';
+      dataToSave.connectedAt = null;
+      dataToSave.sellerId = '';
+      dataToSave.nickname = '';
+    }
+
+    const savingMercadoPago = payload.mercadoPagoClientId !== undefined || payload.mercadoPagoClientSecret !== undefined;
+    if (savingMercadoPago) {
+      if (!normalizeText(payload.mercadoPagoClientId) || !normalizeText(payload.mercadoPagoClientSecret)) {
+        return res.status(400).json({ error: 'Preencha o Client ID e o Client Secret do Mercado Pago.' });
+      }
+
+      dataToSave.mercadoPagoClientId = normalizeText(payload.mercadoPagoClientId);
+      dataToSave.mercadoPagoClientSecret = normalizeText(payload.mercadoPagoClientSecret);
+      dataToSave.mercadoPagoAccessToken = '';
+      dataToSave.mercadoPagoRefreshToken = '';
+      dataToSave.mercadoPagoConnectedAt = null;
+      dataToSave.mercadoPagoUserId = '';
+    }
+
+    if (!Object.keys(dataToSave).length) {
+      return res.status(400).json({ error: 'Nenhuma credencial foi enviada para salvar.' });
+    }
+
+    await saveMercadoLivreConfig(dataToSave);
     res.json({ ok: true });
   } catch (e) {
     next(e);
