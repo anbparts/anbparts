@@ -276,7 +276,7 @@ async function upsertMercadoLivrePergunta(question: any) {
   const context = await resolveQuestionContext(question);
   const answerText = normalizeText(question?.answer?.text || question?.answer?.message);
   const respondidaEm = extractQuestionDate(question?.answer?.date_created || question?.answer?.created_at);
-  const status = normalizeText(question?.status || (answerText ? 'ANSWERED' : 'UNANSWERED')) || 'UNANSWERED';
+  const status = (normalizeText(question?.status || (answerText ? 'ANSWERED' : 'UNANSWERED')) || 'UNANSWERED').toUpperCase();
   const dataPergunta = extractQuestionDate(question?.date_created || question?.created_at);
   const itemId = normalizeText(question?.item_id || question?.itemId);
   const itemTitle = normalizeText(context.item?.title);
@@ -307,18 +307,26 @@ async function upsertMercadoLivrePergunta(question: any) {
 
   const existing = await prisma.mercadoLivrePergunta.findUnique({
     where: { questionId },
-    select: { id: true, notificadaEm: true },
+    select: { id: true, notificadaEm: true, status: true },
   });
+
+  const effectiveStatus = String(existing?.status || '').toUpperCase() === 'DISMISSED'
+    ? 'DISMISSED'
+    : status;
 
   const saved = existing
     ? await prisma.mercadoLivrePergunta.update({
         where: { questionId },
-        data: payload,
+        data: {
+          ...payload,
+          status: effectiveStatus,
+        },
       })
     : await prisma.mercadoLivrePergunta.create({
         data: {
           questionId,
           ...payload,
+          status: effectiveStatus,
         },
       });
 
@@ -579,7 +587,7 @@ mercadoLivreRouter.get('/callback', async (req, res, next) => {
       siteId: normalizeText(me?.site_id) || MERCADO_LIVRE_SITE_ID,
     });
 
-    res.redirect(`${getFrontendBase()}/conf-gerais?mercadoLivre=connected`);
+    res.redirect(`${getFrontendBase()}/config-ml?mercadoLivre=connected`);
   } catch (e) {
     next(e);
   }
@@ -616,11 +624,11 @@ mercadoLivreRouter.delete('/disconnect', async (_req, res, next) => {
 
 mercadoLivreRouter.get('/perguntas', async (_req, res, next) => {
   try {
-    const rows = await prisma.mercadoLivrePergunta.findMany();
+    await syncMercadoLivrePerguntas({ sendEmail: false });
+    const rows = await prisma.mercadoLivrePergunta.findMany({
+      where: { status: 'UNANSWERED' },
+    });
     rows.sort((a, b) => {
-      const aPending = String(a.status || '').toUpperCase() === 'UNANSWERED' ? 0 : 1;
-      const bPending = String(b.status || '').toUpperCase() === 'UNANSWERED' ? 0 : 1;
-      if (aPending !== bPending) return aPending - bPending;
       const aDate = a.dataPergunta ? new Date(a.dataPergunta).getTime() : 0;
       const bDate = b.dataPergunta ? new Date(b.dataPergunta).getTime() : 0;
       if (aDate !== bDate) return bDate - aDate;
@@ -656,12 +664,42 @@ mercadoLivreRouter.post('/perguntas/:questionId/responder', async (req, res, nex
       }),
     });
 
-    const updated = await prisma.mercadoLivrePergunta.update({
+    const updated = await prisma.mercadoLivrePergunta.upsert({
       where: { questionId },
-      data: {
+      update: {
         status: 'ANSWERED',
         respostaTexto: payload.text,
         respondidaEm: new Date(),
+      },
+      create: {
+        questionId,
+        texto: '',
+        status: 'ANSWERED',
+        respostaTexto: payload.text,
+        respondidaEm: new Date(),
+      },
+    });
+
+    res.json({ ok: true, pergunta: updated });
+  } catch (e) {
+    next(e);
+  }
+});
+
+mercadoLivreRouter.delete('/perguntas/:questionId', async (req, res, next) => {
+  try {
+    const questionId = normalizeText(req.params.questionId);
+    if (!questionId) return res.status(400).json({ error: 'Pergunta invalida' });
+
+    const updated = await prisma.mercadoLivrePergunta.upsert({
+      where: { questionId },
+      update: {
+        status: 'DISMISSED',
+      },
+      create: {
+        questionId,
+        texto: '',
+        status: 'DISMISSED',
       },
     });
 

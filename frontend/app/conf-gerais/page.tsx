@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { api } from '../../lib/api';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3333';
 
@@ -19,33 +18,17 @@ export default function ConfGeraisPage() {
   const [saving, setSaving] = useState(false);
   const [fretePadrao, setFretePadrao] = useState('29.90');
   const [taxaPadraoPct, setTaxaPadraoPct] = useState('17');
-  const [mercadoLivreConfig, setMercadoLivreConfig] = useState<any>(null);
-  const [mercadoLivreClientId, setMercadoLivreClientId] = useState('');
-  const [mercadoLivreClientSecret, setMercadoLivreClientSecret] = useState('');
-  const [savingMercadoLivre, setSavingMercadoLivre] = useState(false);
-  const [mercadoLivreStatus, setMercadoLivreStatus] = useState<any>(null);
 
   async function load() {
-    const [produtoConfig, mlConfig] = await Promise.all([
-      fetch(`${API}/bling/config-produtos`).then((r) => r.json()),
-      api.mercadoLivre.getConfig(),
-    ]);
-
+    const produtoConfig = await fetch(`${API}/bling/config-produtos`).then((r) => r.json());
     setFretePadrao(String(produtoConfig.fretePadrao ?? '29.90'));
     setTaxaPadraoPct(String(produtoConfig.taxaPadraoPct ?? '17'));
-    setMercadoLivreConfig(mlConfig);
-    setMercadoLivreClientId('');
-    setMercadoLivreClientSecret('');
   }
 
   useEffect(() => {
     load()
       .catch(() => {})
       .finally(() => setLoading(false));
-
-    if (typeof window !== 'undefined' && window.location.search.includes('mercadoLivre=connected')) {
-      window.history.replaceState({}, '', '/conf-gerais');
-    }
   }, []);
 
   async function salvar() {
@@ -79,54 +62,6 @@ export default function ConfGeraisPage() {
     setSaving(false);
   }
 
-  async function salvarMercadoLivre() {
-    if (!mercadoLivreClientId || !mercadoLivreClientSecret) {
-      alert('Preencha o Client ID e o Client Secret do Mercado Livre');
-      return;
-    }
-
-    setSavingMercadoLivre(true);
-    try {
-      await api.mercadoLivre.saveConfig({
-        clientId: mercadoLivreClientId,
-        clientSecret: mercadoLivreClientSecret,
-      });
-      await load();
-      alert('Credenciais do Mercado Livre salvas.');
-    } catch (error: any) {
-      alert(error.message || 'Erro ao salvar configuracao do Mercado Livre');
-    } finally {
-      setSavingMercadoLivre(false);
-    }
-  }
-
-  async function conectarMercadoLivre() {
-    try {
-      const data = await api.mercadoLivre.authUrl();
-      if (data?.url && typeof window !== 'undefined') {
-        window.location.href = data.url;
-      }
-    } catch (error: any) {
-      alert(error.message || 'Erro ao gerar URL de autorizacao do Mercado Livre');
-    }
-  }
-
-  async function testarMercadoLivre() {
-    setMercadoLivreStatus({ loading: true });
-    try {
-      setMercadoLivreStatus(await api.mercadoLivre.status());
-    } catch (error: any) {
-      setMercadoLivreStatus({ ok: false, error: error.message || 'Sem resposta' });
-    }
-  }
-
-  async function desconectarMercadoLivre() {
-    if (!confirm('Desconectar o Mercado Livre?')) return;
-    await api.mercadoLivre.disconnect();
-    setMercadoLivreStatus(null);
-    await load();
-  }
-
   if (loading) {
     return (
       <>
@@ -143,7 +78,7 @@ export default function ConfGeraisPage() {
       <div style={s.topbar}>
         <div>
           <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)', letterSpacing: '-0.3px' }}>Conf. Gerais</div>
-          <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>Parametros padrao reutilizados no preenchimento dos produtos</div>
+          <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>Parametros reutilizados no preenchimento dos produtos</div>
         </div>
         <button style={{ ...s.btn, background: 'var(--blue-500)', color: '#fff' }} onClick={salvar} disabled={saving}>
           {saving ? 'Salvando...' : 'Salvar configuracoes'}
@@ -181,88 +116,6 @@ export default function ConfGeraisPage() {
                 onChange={(e) => setTaxaPadraoPct(e.target.value)}
               />
             </div>
-          </div>
-        </div>
-
-        <div style={s.card}>
-          <div style={s.h3}>Conexao Mercado Livre</div>
-          <p style={s.p}>
-            Configure o aplicativo OAuth do Mercado Livre para habilitar a leitura automatica das perguntas e o envio das respostas direto pelo ANB.
-          </p>
-
-          <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            {mercadoLivreConfig?.hasTokens ? (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, background: 'var(--green-light)', color: 'var(--green)', border: '1px solid #86efac', fontSize: 13, fontWeight: 600 }}>
-                Conectado ao Mercado Livre
-              </span>
-            ) : mercadoLivreConfig?.clientId ? (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, background: 'var(--amber-light)', color: 'var(--amber)', border: '1px solid #fcd34d', fontSize: 13, fontWeight: 600 }}>
-                Credenciais salvas, aguardando autorizacao
-              </span>
-            ) : (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, background: 'var(--gray-100)', color: 'var(--gray-400)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 600 }}>
-                Nao configurado
-              </span>
-            )}
-            {mercadoLivreConfig?.nickname ? (
-              <span style={{ fontSize: 13, color: 'var(--gray-500)' }}>
-                Conta: <strong style={{ color: 'var(--gray-800)' }}>{mercadoLivreConfig.nickname}</strong> {mercadoLivreConfig?.sellerId ? `· Seller ${mercadoLivreConfig.sellerId}` : ''}
-              </span>
-            ) : null}
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginBottom: 16 }}>
-            <div>
-              <div style={{ fontSize: 11, fontFamily: 'JetBrains Mono, monospace', color: 'var(--gray-400)', letterSpacing: '.8px', textTransform: 'uppercase', marginBottom: 8 }}>Client ID</div>
-              <input
-                style={s.input}
-                value={mercadoLivreClientId}
-                onChange={(e) => setMercadoLivreClientId(e.target.value)}
-                placeholder={mercadoLivreConfig?.clientId || 'Cole aqui o Client ID do app'}
-              />
-            </div>
-            <div>
-              <div style={{ fontSize: 11, fontFamily: 'JetBrains Mono, monospace', color: 'var(--gray-400)', letterSpacing: '.8px', textTransform: 'uppercase', marginBottom: 8 }}>Client Secret</div>
-              <input
-                style={s.input}
-                type="password"
-                value={mercadoLivreClientSecret}
-                onChange={(e) => setMercadoLivreClientSecret(e.target.value)}
-                placeholder={mercadoLivreConfig?.clientSecretConfigured ? 'Ja configurado. Preencha so para trocar.' : 'Cole aqui o Client Secret'}
-              />
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: mercadoLivreStatus ? 14 : 0 }}>
-            <button style={{ ...s.btn, background: 'var(--blue-500)', color: '#fff' }} onClick={salvarMercadoLivre} disabled={savingMercadoLivre}>
-              {savingMercadoLivre ? 'Salvando...' : 'Salvar credenciais'}
-            </button>
-            {!mercadoLivreConfig?.hasTokens ? (
-              <button style={{ ...s.btn, background: '#ffe8cc', color: '#9a3412', borderColor: '#fdba74' }} onClick={conectarMercadoLivre}>
-                Conectar com Mercado Livre
-              </button>
-            ) : (
-              <>
-                <button style={{ ...s.btn, background: 'var(--green-light)', color: 'var(--green)', borderColor: '#86efac' }} onClick={testarMercadoLivre}>
-                  Testar conexao
-                </button>
-                <button style={{ ...s.btn, background: 'var(--red-light)', color: 'var(--red)', borderColor: '#fca5a5' }} onClick={desconectarMercadoLivre}>
-                  Desconectar
-                </button>
-              </>
-            )}
-          </div>
-
-          {mercadoLivreStatus && !mercadoLivreStatus.loading ? (
-            <div style={{ padding: '12px 14px', borderRadius: 8, border: `1px solid ${mercadoLivreStatus.ok ? '#86efac' : '#fca5a5'}`, background: mercadoLivreStatus.ok ? 'var(--green-light)' : 'var(--red-light)', color: mercadoLivreStatus.ok ? 'var(--green)' : 'var(--red)', fontSize: 13 }}>
-              {mercadoLivreStatus.ok
-                ? `Conexao OK com a conta ${mercadoLivreStatus.nickname || mercadoLivreConfig?.nickname || ''}`
-                : `Erro: ${mercadoLivreStatus.error || 'Nao foi possivel validar a conexao'}`}
-            </div>
-          ) : null}
-
-          <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 12 }}>
-            Callback OAuth: <code style={{ background: 'var(--gray-100)', padding: '1px 6px', borderRadius: 4, fontFamily: 'JetBrains Mono, monospace' }}>{API}/mercado-livre/callback</code>
           </div>
         </div>
       </div>

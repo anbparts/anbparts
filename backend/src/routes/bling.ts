@@ -2964,6 +2964,42 @@ blingRouter.post('/debug-status-produto', async (req, res, next) => {
     const anuncioStatuses = anuncioStatusData.statuses;
     const produtoLojaLinks = await blingReq(`/produtos/lojas?pagina=1&limite=100&idProduto=${Number(produto.id)}`) as any;
     const lojaRows = normalizeApiArray(produtoLojaLinks?.data);
+    const mercadoLivreLinkDirectMeta = resolveBlingMercadoLivreLink(produto, detalhe, lojaRows);
+    const mercadoLivreLinkMeta = await resolveBlingMercadoLivreLinkWithFallback(produto, detalhe, lojaRows);
+    const mercadoLivreLinkRowsDebug = await Promise.all(lojaRows.map(async (row: any) => {
+      const anuncioId = Number(
+        row?.idAnuncio
+        || row?.anuncio?.id
+        || row?.item?.id
+        || row?.vinculo?.id
+        || row?.id
+        || 0,
+      );
+      const lojaId = getProdutoLojaId(row);
+      let anuncioDetail: any = null;
+
+      if (anuncioId > 0 && lojaId > 0) {
+        try {
+          anuncioDetail = await getMercadoLivreAnuncioDetail(anuncioId, lojaId);
+        } catch (error: any) {
+          anuncioDetail = { error: error?.message || String(error) };
+        }
+      }
+
+      return {
+        lojaId: lojaId || null,
+        anuncioId: anuncioId || null,
+        codigoLoja: String(row?.codigo || row?.codigoLoja || '').trim() || null,
+        nomeLoja: String(row?.loja?.nome || row?.nomeLoja || '').trim() || null,
+        isMercadoLivre: isLikelyMercadoLivreLink(row),
+        directLinkFromRow: findFirstMercadoLivreLink(row),
+        itemCodeFromRow: findFirstMercadoLivreItemCode(row),
+        detailLinkFromAnuncio: anuncioDetail && !anuncioDetail.error ? findFirstMercadoLivreLink(anuncioDetail) : null,
+        itemCodeFromAnuncio: anuncioDetail && !anuncioDetail.error ? findFirstMercadoLivreItemCode(anuncioDetail) : null,
+        anuncioDetail,
+        raw: row,
+      };
+    }));
     const targetLojaIds = Array.from(new Set(
       lojaRows
         .map((row: any) => Number(row?.loja?.id || row?.idLoja || 0))
@@ -3049,6 +3085,11 @@ blingRouter.post('/debug-status-produto', async (req, res, next) => {
       produtoId: Number(produto.id),
       nome: produto.nome || null,
       estoqueBling: toNumber(produto?.estoque?.saldoVirtualTotal ?? produto?.estoque?.saldo ?? 0),
+      mercadoLivreLink: mercadoLivreLinkMeta.link,
+      mercadoLivreLinkResolved: mercadoLivreLinkMeta.resolved,
+      mercadoLivreLinkDirect: mercadoLivreLinkDirectMeta.link,
+      mercadoLivreLinkDirectResolved: mercadoLivreLinkDirectMeta.resolved,
+      mercadoLivreLinkRowsDebug,
       detranEtiqueta: detranMeta.etiqueta,
       detranResolved: detranMeta.resolved,
       detranFieldIds: detranMeta.fieldIds,

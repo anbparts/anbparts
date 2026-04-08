@@ -118,6 +118,9 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ text }),
     }),
+    excluirPergunta: (questionId: string) => req<any>(`/mercado-livre/perguntas/${questionId}`, {
+      method: 'DELETE',
+    }),
   },
   import: {
     motos: (data: any[]) => req<any>('/import/motos', { method: 'POST', body: JSON.stringify(data) }),

@@ -10,7 +10,6 @@ const NAV = [
       { href: '/', icon: 'dashboard', label: 'Dashboard' },
       { href: '/motos', icon: 'moto', label: 'Motos' },
       { href: '/estoque', icon: 'box', label: 'Estoque' },
-      { href: '/import', icon: 'upload', label: 'Importar Excel' },
       { href: '/inventario', icon: 'inventory', label: 'Inventario' },
     ],
   },
@@ -48,6 +47,8 @@ const NAV = [
       { href: '/configuracoes-gerais', icon: 'mail', label: 'Conf. E-mails' },
       { href: '/bling/config-produtos', icon: 'sliders', label: 'Conf. Produtos Bling' },
       { href: '/conf-gerais', icon: 'settings', label: 'Conf. Gerais' },
+      { href: '/config-ml', icon: 'store', label: 'Config. ML' },
+      { href: '/import', icon: 'upload', label: 'Importar Excel' },
     ],
   },
 ];
@@ -87,6 +88,7 @@ function SidebarIcon({ name, active }: { name: string; active: boolean }) {
     plug: <svg {...common}><path d="M12 22v-5" /><path d="M9 8V2" /><path d="M15 8V2" /><path d="M7 8h10v3a5 5 0 0 1-10 0V8Z" /></svg>,
     mail: <svg {...common}><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" /></svg>,
     sliders: <svg {...common}><path d="M4 21v-7" /><path d="M4 10V3" /><path d="M12 21v-4" /><path d="M12 13V3" /><path d="M20 21v-9" /><path d="M20 8V3" /><path d="M1 14h6" /><path d="M9 13h6" /><path d="M17 8h6" /></svg>,
+    store: <svg {...common}><path d="M4 10h16v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V10Z" /><path d="M3 10 5 4h14l2 6" /><path d="M9 14h6" /></svg>,
     settings: <svg {...common}><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.54V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.54 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.54-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.54-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06A2 2 0 1 1 7.06 3.4l.06.06a1.7 1.7 0 0 0 1.87.34H9a1.7 1.7 0 0 0 1-1.54V2a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.54h.01a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V8c0 .68.4 1.3 1.03 1.58.16.07.33.1.51.1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1.32Z" /></svg>,
   };
 
