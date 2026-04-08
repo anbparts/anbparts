@@ -15,6 +15,7 @@ const MERCADO_LIVRE_API = 'https://api.mercadolibre.com';
 const MERCADO_PAGO_API = 'https://api.mercadopago.com';
 const MERCADO_LIVRE_AUTH = 'https://auth.mercadolivre.com.br/authorization';
 const MERCADO_LIVRE_TOKEN = `${MERCADO_LIVRE_API}/oauth/token`;
+const MERCADO_PAGO_TOKEN = `${MERCADO_PAGO_API}/oauth/token`;
 const MERCADO_LIVRE_SITE_ID = 'MLB';
 const MERCADO_LIVRE_SCHEDULER_INTERVAL_MS = 60 * 1000;
 const MERCADO_LIVRE_QUESTIONS_PAGE_LIMIT = 50;
@@ -34,6 +35,12 @@ const saldoCacheState: {
   value: null,
   inFlight: null,
 };
+
+function clearSaldoCache() {
+  saldoCacheState.expiresAt = 0;
+  saldoCacheState.value = null;
+  saldoCacheState.inFlight = null;
+}
 
 const configSchema = z.object({
   clientId: z.string().trim().optional(),
@@ -154,6 +161,24 @@ async function mercadoLivreTokenRequest(body: Record<string, any>) {
   return payload;
 }
 
+async function mercadoPagoTokenRequest(body: Record<string, any>) {
+  const response = await fetch(MERCADO_PAGO_TOKEN, {
+    method: 'POST',
+    headers: {
+      accept: 'application/json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+
+  const payload: any = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload?.message || payload?.error_description || payload?.error || `Mercado Pago token ${response.status}`);
+  }
+
+  return payload;
+}
+
 async function refreshMercadoLivreToken() {
   const config = await getMercadoLivreConfig();
   if (!config.refreshToken) throw new Error('Sem refresh token do Mercado Livre. Reconecte a conta.');
@@ -215,6 +240,97 @@ async function mercadoLivreReq(path: string, options: RequestInit = {}, allowRef
     throw new Error(payload?.message || payload?.error || `Mercado Livre API ${response.status}`);
   }
   return payload;
+}
+
+async function getMercadoPagoMeWithToken(accessToken: string) {
+  const response = await fetch(`${MERCADO_LIVRE_API}/users/me`, {
+    headers: {
+      accept: 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  const payload: any = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload?.message || payload?.error || `Mercado Pago user ${response.status}`);
+  }
+
+  return payload;
+}
+
+async function connectMercadoPago() {
+  const config = await getMercadoLivreConfig();
+  if (!normalizeText(config.mercadoPagoClientId) || !normalizeText(config.mercadoPagoClientSecret)) {
+    throw new Error('Configure o Client ID e o Client Secret do Mercado Pago primeiro.');
+  }
+
+  const payload = await mercadoPagoTokenRequest({
+    grant_type: 'client_credentials',
+    client_id: config.mercadoPagoClientId,
+    client_secret: config.mercadoPagoClientSecret,
+  });
+
+  const accessToken = normalizeText(payload.access_token);
+  if (!accessToken) throw new Error('Mercado Pago nao retornou access token.');
+
+  const me = await getMercadoPagoMeWithToken(accessToken).catch(() => null);
+  const userId = normalizeText(payload.user_id) || normalizeText(me?.id);
+
+  await saveMercadoLivreConfig({
+    mercadoPagoAccessToken: accessToken,
+    mercadoPagoRefreshToken: normalizeText(payload.refresh_token),
+    mercadoPagoConnectedAt: new Date(),
+    mercadoPagoUserId: userId,
+  });
+  clearSaldoCache();
+
+  return {
+    accessToken,
+    userId,
+    nickname: normalizeText(me?.nickname),
+  };
+}
+
+async function mercadoPagoReq(path: string, options: RequestInit = {}, allowReconnect = true) {
+  const config = await getMercadoLivreConfig();
+  let token = normalizeText(config.mercadoPagoAccessToken);
+
+  if (!token) {
+    if (!normalizeText(config.mercadoPagoClientId) || !normalizeText(config.mercadoPagoClientSecret)) {
+      throw new Error('Configure e conecte o Mercado Pago em Config. ML.');
+    }
+    const connected = await connectMercadoPago();
+    token = connected.accessToken;
+  }
+
+  const url = /^https?:\/\//i.test(path) ? path : `${MERCADO_PAGO_API}${path}`;
+
+  const execute = async (bearer: string) => {
+    const response = await fetch(url, {
+      ...options,
+      headers: {
+        accept: 'application/json',
+        Authorization: `Bearer ${bearer}`,
+        'Content-Type': 'application/json',
+        ...(options.headers || {}),
+      },
+    });
+
+    const payload: any = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload?.message || payload?.error || `Mercado Pago API ${response.status}`);
+    }
+    return payload;
+  };
+
+  try {
+    return await execute(token);
+  } catch (error: any) {
+    const shouldReconnect = allowReconnect && /401|unauthorized|invalid_token/i.test(String(error?.message || ''));
+    if (!shouldReconnect) throw error;
+    const connected = await connectMercadoPago();
+    return execute(connected.accessToken);
+  }
 }
 
 function normalizeMoney(value: any): number | null {
@@ -330,12 +446,12 @@ function extractSaldoResumo(payload: any, source: string) {
 
 export async function loadMercadoLivreSaldoResumo(forceRefresh = false) {
   const config = await getMercadoLivreConfig();
-  const sellerId = normalizeText(config.sellerId);
+  const userId = normalizeText(config.mercadoPagoUserId);
 
-  if (!normalizeText(config.accessToken)) {
+  if (!normalizeText(config.mercadoPagoClientId) || !normalizeText(config.mercadoPagoClientSecret)) {
     return {
       connected: false,
-      error: 'Mercado Livre nao conectado.',
+      error: 'Mercado Pago nao configurado.',
       consultadoEm: new Date().toISOString(),
     };
   }
@@ -349,9 +465,9 @@ export async function loadMercadoLivreSaldoResumo(forceRefresh = false) {
   }
 
   const candidates = [
-    { source: 'mercadopago_account_balance', url: `${MERCADO_PAGO_API}/users/${encodeURIComponent(sellerId || 'me')}/mercadopago_account/balance` },
-    { source: 'mercadolivre_account_balance', url: `${MERCADO_LIVRE_API}/users/${encodeURIComponent(sellerId || 'me')}/mercadopago_account/balance` },
+    { source: 'mercadopago_account_balance', url: `${MERCADO_PAGO_API}/users/${encodeURIComponent(userId || 'me')}/mercadopago_account/balance` },
     { source: 'mercadopago_account_balance_me', url: `${MERCADO_PAGO_API}/users/me/mercadopago_account/balance` },
+    { source: 'mercadolivre_account_balance', url: `${MERCADO_LIVRE_API}/users/${encodeURIComponent(userId || 'me')}/mercadopago_account/balance` },
     { source: 'mercadolivre_account_balance_me', url: `${MERCADO_LIVRE_API}/users/me/mercadopago_account/balance` },
   ];
 
@@ -360,7 +476,7 @@ export async function loadMercadoLivreSaldoResumo(forceRefresh = false) {
 
     for (const candidate of candidates) {
       try {
-        const payload = await mercadoLivreReq(candidate.url);
+        const payload = await mercadoPagoReq(candidate.url);
         const resumo = extractSaldoResumo(payload, candidate.source);
         saldoCacheState.value = resumo;
         saldoCacheState.expiresAt = Date.now() + MERCADO_LIVRE_SALDO_CACHE_TTL_MS;
@@ -372,7 +488,7 @@ export async function loadMercadoLivreSaldoResumo(forceRefresh = false) {
 
     const fallback = {
       connected: true,
-      error: normalizeText(lastError?.message) || 'Nao foi possivel consultar o saldo do Mercado Livre.',
+      error: normalizeText(lastError?.message) || 'Nao foi possivel consultar o saldo do Mercado Pago.',
       consultadoEm: new Date().toISOString(),
     };
     saldoCacheState.value = fallback;
@@ -389,6 +505,10 @@ export async function loadMercadoLivreSaldoResumo(forceRefresh = false) {
 
 async function getMercadoLivreMe() {
   return mercadoLivreReq('/users/me');
+}
+
+async function getMercadoPagoMe() {
+  return mercadoPagoReq(`${MERCADO_LIVRE_API}/users/me`);
 }
 
 async function getMercadoLivreUser(userId: string) {
@@ -825,6 +945,7 @@ mercadoLivreRouter.post('/config', async (req, res, next) => {
     }
 
     await saveMercadoLivreConfig(dataToSave);
+    clearSaldoCache();
     res.json({ ok: true });
   } catch (e) {
     next(e);
@@ -900,6 +1021,32 @@ mercadoLivreRouter.get('/status', async (_req, res) => {
   }
 });
 
+mercadoLivreRouter.post('/mercado-pago/connect', async (_req, res, next) => {
+  try {
+    const connection = await connectMercadoPago();
+    res.json({
+      ok: true,
+      userId: connection.userId,
+      nickname: connection.nickname,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+mercadoLivreRouter.get('/mercado-pago/status', async (_req, res) => {
+  try {
+    const me = await getMercadoPagoMe();
+    res.json({
+      ok: true,
+      userId: normalizeText(me?.id),
+      nickname: normalizeText(me?.nickname),
+    });
+  } catch (e: any) {
+    res.status(400).json({ ok: false, error: e?.message || 'Sem resposta do Mercado Pago' });
+  }
+});
+
 mercadoLivreRouter.get('/saldo', async (req, res, next) => {
   try {
     const forceRefresh = String(req.query?.refresh || '').trim() === '1';
@@ -919,6 +1066,21 @@ mercadoLivreRouter.delete('/disconnect', async (_req, res, next) => {
       sellerId: '',
       nickname: '',
     });
+    res.json({ ok: true });
+  } catch (e) {
+    next(e);
+  }
+});
+
+mercadoLivreRouter.delete('/mercado-pago/disconnect', async (_req, res, next) => {
+  try {
+    await saveMercadoLivreConfig({
+      mercadoPagoAccessToken: '',
+      mercadoPagoRefreshToken: '',
+      mercadoPagoConnectedAt: null,
+      mercadoPagoUserId: '',
+    });
+    clearSaldoCache();
     res.json({ ok: true });
   } catch (e) {
     next(e);

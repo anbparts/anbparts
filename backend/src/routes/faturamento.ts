@@ -78,7 +78,7 @@ faturamentoRouter.get('/dashboard', async (req, res, next) => {
       prisma.despesa.findMany({ select: { valor: true, categoria: true } }),
       loadMercadoLivreSaldoResumo().catch((error: any) => ({
         connected: true,
-        error: String(error?.message || 'Nao foi possivel consultar o saldo do Mercado Livre.'),
+        error: String(error?.message || 'Nao foi possivel consultar o saldo do Mercado Pago.'),
       })),
     ]);
 

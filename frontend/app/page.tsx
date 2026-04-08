@@ -53,7 +53,7 @@ function renderMercadoLivreSaldoCard(saldo: any) {
     return (
       <>
         <div style={{ ...s.val, color: 'var(--ink)' }}>Nao conectado</div>
-        <div style={s.sub2}>Conecte o Mercado Livre em Config. ML para carregar os saldos.</div>
+        <div style={s.sub2}>Conecte o Mercado Pago em Config. ML para carregar os saldos.</div>
       </>
     );
   }
@@ -86,7 +86,7 @@ function renderMercadoLivreSaldoCard(saldo: any) {
       <div style={s.sub2}>
         {saldo?.saldoAntecipavelInferido
           ? 'Saldo antecipavel estimado a partir do dinheiro ainda no prazo de liberacao.'
-          : 'Saldos consultados na conta Mercado Livre conectada.'}
+          : 'Saldos consultados na conta Mercado Pago conectada.'}
       </div>
     </>
   );
