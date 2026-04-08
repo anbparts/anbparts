@@ -571,12 +571,17 @@ function buildMercadoPagoReportConfig(reportType: 'release' | 'settlement') {
 }
 
 async function syncMercadoPagoReportsNow() {
+  const [releaseRows, settlementRows] = await Promise.all([
+    downloadMercadoPagoReportRowsWithConfig('release', 30, true, true),
+    downloadMercadoPagoReportRowsWithConfig('settlement', 180, true, true),
+  ]);
+
   clearSaldoCache();
   const resumo = await loadMercadoLivreSaldoResumo(true);
   return {
     ok: true,
-    releaseRows: 0,
-    settlementRows: 0,
+    releaseRows: releaseRows.length,
+    settlementRows: settlementRows.length,
     saldo: resumo,
   };
 }
@@ -995,12 +1000,13 @@ async function waitMercadoPagoReportFileName(
   reportType: 'release' | 'settlement',
   knownFileNames: Set<string>,
   taskId = '',
+  allowKnownFallback = true,
 ) {
   for (let attempt = 0; attempt < 20; attempt += 1) {
     if (taskId) {
       const fileNameFromTask = await resolveMercadoPagoReportFileName(reportType, { task_id: taskId });
       if (fileNameFromTask && !knownFileNames.has(fileNameFromTask)) return fileNameFromTask;
-      if (attempt >= 2 && fileNameFromTask) return fileNameFromTask;
+      if (allowKnownFallback && attempt >= 2 && fileNameFromTask) return fileNameFromTask;
     }
 
     const entries = await listMercadoPagoReports(reportType);
@@ -1011,7 +1017,7 @@ async function waitMercadoPagoReportFileName(
     for (const entry of normalizedEntries) {
       const fileName = await resolveMercadoPagoReportFileName(reportType, entry.raw);
       if (fileName && !knownFileNames.has(fileName)) return fileName;
-      if (attempt >= 2 && fileName) return fileName;
+      if (allowKnownFallback && attempt >= 2 && fileName) return fileName;
     }
 
     await delay(2000);
@@ -1051,14 +1057,17 @@ async function downloadMercadoPagoReportRows(
         .filter(Boolean),
     );
 
-    const { beginDate } = getMercadoPagoReportRange(daysBack);
-    const { endDate } = getMercadoPagoReportRange(0);
-    const created = await createMercadoPagoReport(reportType, beginDate, endDate);
-    fileName = created.fileName;
-    if (!fileName && created.taskId) {
-      fileName = await waitMercadoPagoReportFileName(reportType, knownFileNames, created.taskId);
+      const { beginDate } = getMercadoPagoReportRange(daysBack);
+      const { endDate } = getMercadoPagoReportRange(0);
+      const created = await createMercadoPagoReport(reportType, beginDate, endDate);
+      fileName = created.fileName;
+      if (!fileName && created.taskId) {
+        fileName = await waitMercadoPagoReportFileName(reportType, knownFileNames, created.taskId, !forceFreshReport);
+      }
+      if (!fileName && forceFreshReport) {
+        throw new Error(`Mercado Pago recebeu a solicitacao de ${reportSlug}, mas o arquivo novo ainda nao ficou disponivel.`);
+      }
     }
-  }
 
   if (!fileName) {
     throw new Error(`Sem relatorio disponivel para ${reportSlug}`);
@@ -1071,6 +1080,75 @@ async function downloadMercadoPagoReportRows(
     throw new Error(`Falha ao baixar ${reportSlug}/${fileName}: ${normalizeText(error?.message || error)}`);
   }
   return parseCsvReport(text);
+}
+
+function summarizeMercadoPagoReportEntries(entries: any[]) {
+  return entries
+    .map(normalizeMercadoPagoReportEntry)
+    .sort((a, b) => (b.endAtMs || b.createdAtMs) - (a.endAtMs || a.createdAtMs))
+    .slice(0, 5)
+    .map((entry) => ({
+      fileName: entry.fileName,
+      reportId: entry.reportId,
+      taskId: entry.taskId,
+      createdAtMs: entry.createdAtMs,
+      endAtMs: entry.endAtMs,
+    }));
+}
+
+async function traceMercadoPagoManualRequest(reportType: 'release' | 'settlement', daysBack: number) {
+  const reportSlug = getMercadoPagoReportSlug(reportType);
+  const existingEntries = await listMercadoPagoReports(reportType);
+  const knownFileNames = new Set(
+    existingEntries
+      .map(normalizeMercadoPagoReportEntry)
+      .map((entry) => entry.fileName)
+      .filter(Boolean),
+  );
+
+  const { beginDate } = getMercadoPagoReportRange(daysBack);
+  const { endDate } = getMercadoPagoReportRange(0);
+
+  const trace: any = {
+    reportType,
+    reportSlug,
+    beginDate,
+    endDate,
+    existingCount: existingEntries.length,
+    latestExistingFileName: pickLatestMercadoPagoReportFileName(reportType, existingEntries),
+    recentEntries: summarizeMercadoPagoReportEntries(existingEntries),
+  };
+
+  try {
+    const created = await createMercadoPagoReport(reportType, beginDate, endDate);
+    trace.create = {
+      ok: true,
+      taskId: created.taskId,
+      fileName: created.fileName,
+    };
+
+    if (created.taskId) {
+      try {
+        trace.task = await getMercadoPagoReportTask(reportType, created.taskId);
+      } catch (taskError: any) {
+        trace.taskError = normalizeText(taskError?.message || taskError);
+      }
+    }
+
+    const waitedNewFileName = created.fileName
+      || await waitMercadoPagoReportFileName(reportType, knownFileNames, created.taskId, false);
+
+    trace.waitedNewFileName = waitedNewFileName;
+    trace.newFileFound = !!waitedNewFileName;
+    trace.reusedKnownFile = !!waitedNewFileName && knownFileNames.has(waitedNewFileName);
+  } catch (error: any) {
+    trace.create = {
+      ok: false,
+      error: normalizeText(error?.message || error),
+    };
+  }
+
+  return trace;
 }
 
 function isCsvSummaryRow(row: Record<string, string>) {
@@ -1938,6 +2016,23 @@ mercadoLivreRouter.post('/mercado-pago/reports/sync', async (_req, res) => {
     res.json(result);
   } catch (e: any) {
     res.status(400).json({ ok: false, error: e?.message || 'Falha ao atualizar relatorios do Mercado Pago' });
+  }
+});
+
+mercadoLivreRouter.post('/mercado-pago/reports/request-trace', async (_req, res) => {
+  try {
+    const [release, settlement] = await Promise.all([
+      traceMercadoPagoManualRequest('release', 30),
+      traceMercadoPagoManualRequest('settlement', 180),
+    ]);
+    res.json({
+      ok: true,
+      release,
+      settlement,
+      consultadoEm: new Date().toISOString(),
+    });
+  } catch (e: any) {
+    res.status(400).json({ ok: false, error: e?.message || 'Falha ao gerar trace da solicitacao manual do Mercado Pago' });
   }
 });
 
