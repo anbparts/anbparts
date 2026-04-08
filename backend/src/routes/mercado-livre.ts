@@ -16,6 +16,7 @@ const MERCADO_LIVRE_AUTH = 'https://auth.mercadolivre.com.br/authorization';
 const MERCADO_LIVRE_TOKEN = `${MERCADO_LIVRE_API}/oauth/token`;
 const MERCADO_LIVRE_SITE_ID = 'MLB';
 const MERCADO_LIVRE_SCHEDULER_INTERVAL_MS = 60 * 1000;
+const MERCADO_LIVRE_QUESTIONS_PAGE_LIMIT = 50;
 
 const schedulerState = {
   started: false,
@@ -82,6 +83,13 @@ function extractQuestionDate(value: any) {
   if (!text) return null;
   const parsed = new Date(text);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function extractQuestionStatus(question: any) {
+  return (
+    normalizeText(question?.status || (question?.answer?.text || question?.answer?.message ? 'ANSWERED' : 'UNANSWERED'))
+      || 'UNANSWERED'
+  ).toUpperCase();
 }
 
 function formatDateTimePtBr(value: Date | string | null | undefined) {
@@ -236,6 +244,17 @@ function getItemSku(item: any) {
   return normalizeText(attributeMatch?.value_name || attributeMatch?.value_struct?.number || attributeMatch?.value_id || '');
 }
 
+async function fetchMercadoLivreQuestionsPage(sellerId: string, offset = 0) {
+  const params = new URLSearchParams({
+    seller_id: sellerId,
+    api_version: '4',
+    limit: String(MERCADO_LIVRE_QUESTIONS_PAGE_LIMIT),
+    offset: String(Math.max(0, offset)),
+  });
+
+  return mercadoLivreReq(`/questions/search?${params.toString()}`);
+}
+
 async function resolveQuestionContext(question: any) {
   const itemId = normalizeText(question?.item_id || question?.itemId);
   const fromId = normalizeText(question?.from?.id);
@@ -276,7 +295,7 @@ async function upsertMercadoLivrePergunta(question: any) {
   const context = await resolveQuestionContext(question);
   const answerText = normalizeText(question?.answer?.text || question?.answer?.message);
   const respondidaEm = extractQuestionDate(question?.answer?.date_created || question?.answer?.created_at);
-  const status = (normalizeText(question?.status || (answerText ? 'ANSWERED' : 'UNANSWERED')) || 'UNANSWERED').toUpperCase();
+  const status = extractQuestionStatus(question);
   const dataPergunta = extractQuestionDate(question?.date_created || question?.created_at);
   const itemId = normalizeText(question?.item_id || question?.itemId);
   const itemTitle = normalizeText(context.item?.title);
@@ -354,21 +373,74 @@ async function syncMercadoLivrePerguntas(options?: { sendEmail?: boolean }) {
     });
   }
 
-  const payload = await mercadoLivreReq(`/questions/search?seller_id=${encodeURIComponent(activeSellerId)}&api_version=4`);
-  const questions = extractArray(payload);
+  const existingRows = await prisma.mercadoLivrePergunta.findMany({
+    select: { id: true, questionId: true, status: true, notificadaEm: true },
+  });
+  const existingMap = new Map(existingRows.map((row) => [row.questionId, row]));
+  const seenQuestionIds = new Set<string>();
   const savedRows: any[] = [];
   const perguntasParaNotificar: any[] = [];
 
-  for (const question of questions) {
-    const result = await upsertMercadoLivrePergunta(question);
-    if (!result?.saved) continue;
-    savedRows.push(result.saved);
-    if (
-      normalizeText(result.saved.status).toUpperCase() === 'UNANSWERED'
-      && !result.saved.notificadaEm
-    ) {
-      perguntasParaNotificar.push(result.saved);
+  let offset = 0;
+  let total = 0;
+
+  while (true) {
+    const payload = await fetchMercadoLivreQuestionsPage(activeSellerId, offset);
+    const questions = extractArray(payload);
+    total = Math.max(Number(payload?.total) || 0, total);
+    if (!questions.length) break;
+
+    for (const question of questions) {
+      const questionId = normalizeText(question?.id);
+      if (!questionId) continue;
+
+      seenQuestionIds.add(questionId);
+
+      const incomingStatus = extractQuestionStatus(question);
+      const existing = existingMap.get(questionId);
+      const existingStatus = normalizeText(existing?.status).toUpperCase();
+      const mustTrackQuestion =
+        incomingStatus === 'UNANSWERED'
+        || incomingStatus === 'DISMISSED'
+        || existingStatus === 'UNANSWERED'
+        || existingStatus === 'DISMISSED';
+
+      if (!mustTrackQuestion) continue;
+
+      const result = await upsertMercadoLivrePergunta(question);
+      if (!result?.saved) continue;
+
+      savedRows.push(result.saved);
+      existingMap.set(questionId, {
+        id: result.saved.id,
+        questionId,
+        status: result.saved.status,
+        notificadaEm: result.saved.notificadaEm,
+      });
+
+      if (
+        normalizeText(result.saved.status).toUpperCase() === 'UNANSWERED'
+        && !result.saved.notificadaEm
+      ) {
+        perguntasParaNotificar.push(result.saved);
+      }
     }
+
+    offset += questions.length;
+    if (offset >= total || questions.length < MERCADO_LIVRE_QUESTIONS_PAGE_LIMIT) {
+      break;
+    }
+  }
+
+  const pendentesNaoEncontradas = existingRows
+    .filter((row) => normalizeText(row.status).toUpperCase() === 'UNANSWERED' && !seenQuestionIds.has(row.questionId))
+    .map((row) => row.questionId);
+
+  if (pendentesNaoEncontradas.length) {
+    await prisma.mercadoLivrePergunta.updateMany({
+      where: { questionId: { in: pendentesNaoEncontradas } },
+      data: { status: 'SYNC_RESOLVED' },
+    });
   }
 
   if (options?.sendEmail && perguntasParaNotificar.length) {
@@ -377,7 +449,7 @@ async function syncMercadoLivrePerguntas(options?: { sendEmail?: boolean }) {
 
   return {
     ok: true,
-    total: savedRows.length,
+    total: seenQuestionIds.size,
     novas: perguntasParaNotificar.length,
     perguntas: savedRows,
   };
