@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 
 const MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 const currentYear = String(new Date().getFullYear());
+const currentMonth = String(new Date().getMonth() + 1);
 
 function fmt(value: number) {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -15,7 +16,7 @@ export default function DespesasReceitaPage() {
   const [loading, setLoading] = useState(true);
   const [modo, setModo] = useState<ViewMode>('grafico');
   const [filtroAno, setFiltroAno] = useState(currentYear);
-  const [filtroMes, setFiltroMes] = useState('');
+  const [filtroMes, setFiltroMes] = useState(currentMonth);
   const [payload, setPayload] = useState<any>(null);
 
   useEffect(() => {

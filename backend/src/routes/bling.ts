@@ -7,6 +7,7 @@ import {
 } from '../lib/configuracoes-gerais';
 import { sendResendEmail } from '../lib/email';
 import { sendDetranBaixaEmailIfNeeded } from '../lib/detran-alert';
+import { getMercadoLivreItemPermalink } from '../lib/mercado-livre';
 
 export const blingRouter = Router();
 
@@ -474,6 +475,12 @@ function buildMercadoLivreItemLink(code: string | null) {
   return code ? `https://produto.mercadolivre.com.br/${code}` : null;
 }
 
+async function resolveMercadoLivrePublicLinkByItemCode(code: string | null) {
+  if (!code) return null;
+  const permalink = await getMercadoLivreItemPermalink(code);
+  return permalink || buildMercadoLivreItemLink(code);
+}
+
 function findFirstMercadoLivreLink(value: any, seen = new WeakSet<object>()): string | null {
   if (value === null || value === undefined) return null;
 
@@ -598,14 +605,25 @@ function resolveBlingMercadoLivreLink(produto: any, detail?: any, lojaRows: any[
 
 async function resolveBlingMercadoLivreLinkWithFallback(produto: any, detail?: any, lojaRows: any[] = []) {
   const direct = resolveBlingMercadoLivreLink(produto, detail, lojaRows);
+  const directCode = findFirstMercadoLivreItemCode(direct.link);
+  if (directCode) {
+    const publicLink = await resolveMercadoLivrePublicLinkByItemCode(directCode);
+    if (publicLink) {
+      return { link: publicLink, resolved: true };
+    }
+  }
+
   if (direct.resolved && direct.link) {
-    return direct;
+    return { link: direct.link, resolved: true };
   }
 
   for (const row of lojaRows) {
     const codeFromRow = findFirstMercadoLivreItemCode(row);
     if (codeFromRow) {
-      return { link: buildMercadoLivreItemLink(codeFromRow), resolved: true };
+      const publicLink = await resolveMercadoLivrePublicLinkByItemCode(codeFromRow);
+      if (publicLink) {
+        return { link: publicLink, resolved: true };
+      }
     }
   }
 
@@ -627,13 +645,17 @@ async function resolveBlingMercadoLivreLinkWithFallback(produto: any, detail?: a
     try {
       const anuncioDetail = await getMercadoLivreAnuncioDetail(anuncioId, lojaId);
       const detailLink = findFirstMercadoLivreLink(anuncioDetail);
-      if (detailLink) {
-        return { link: detailLink, resolved: true };
+      const detailCode = findFirstMercadoLivreItemCode(detailLink) || findFirstMercadoLivreItemCode(anuncioDetail);
+
+      if (detailCode) {
+        const publicLink = await resolveMercadoLivrePublicLinkByItemCode(detailCode);
+        if (publicLink) {
+          return { link: publicLink, resolved: true };
+        }
       }
 
-      const detailCode = findFirstMercadoLivreItemCode(anuncioDetail);
-      if (detailCode) {
-        return { link: buildMercadoLivreItemLink(detailCode), resolved: true };
+      if (detailLink) {
+        return { link: detailLink, resolved: true };
       }
     } catch {
       // segue com os proximos vinculos
@@ -642,7 +664,10 @@ async function resolveBlingMercadoLivreLinkWithFallback(produto: any, detail?: a
 
   const codeFromDetail = findFirstMercadoLivreItemCode(detail) || findFirstMercadoLivreItemCode(produto);
   if (codeFromDetail) {
-    return { link: buildMercadoLivreItemLink(codeFromDetail), resolved: true };
+    const publicLink = await resolveMercadoLivrePublicLinkByItemCode(codeFromDetail);
+    if (publicLink) {
+      return { link: publicLink, resolved: true };
+    }
   }
 
   return direct;
@@ -2966,6 +2991,14 @@ blingRouter.post('/debug-status-produto', async (req, res, next) => {
     const lojaRows = normalizeApiArray(produtoLojaLinks?.data);
     const mercadoLivreLinkDirectMeta = resolveBlingMercadoLivreLink(produto, detalhe, lojaRows);
     const mercadoLivreLinkMeta = await resolveBlingMercadoLivreLinkWithFallback(produto, detalhe, lojaRows);
+    const mercadoLivreItemCode = findFirstMercadoLivreItemCode(mercadoLivreLinkMeta.link)
+      || findFirstMercadoLivreItemCode(mercadoLivreLinkDirectMeta.link)
+      || lojaRows.map((row: any) => findFirstMercadoLivreItemCode(row)).find(Boolean)
+      || findFirstMercadoLivreItemCode(detalhe)
+      || findFirstMercadoLivreItemCode(produto);
+    const mercadoLivrePermalinkFromApi = mercadoLivreItemCode
+      ? await getMercadoLivreItemPermalink(mercadoLivreItemCode)
+      : null;
     const mercadoLivreLinkRowsDebug = await Promise.all(lojaRows.map(async (row: any) => {
       const anuncioId = Number(
         row?.idAnuncio
@@ -2986,6 +3019,12 @@ blingRouter.post('/debug-status-produto', async (req, res, next) => {
         }
       }
 
+      const rowItemCode = findFirstMercadoLivreItemCode(row)
+        || (anuncioDetail && !anuncioDetail.error ? findFirstMercadoLivreItemCode(anuncioDetail) : null);
+      const permalinkFromItemApi = rowItemCode
+        ? await getMercadoLivreItemPermalink(rowItemCode)
+        : null;
+
       return {
         lojaId: lojaId || null,
         anuncioId: anuncioId || null,
@@ -2996,6 +3035,7 @@ blingRouter.post('/debug-status-produto', async (req, res, next) => {
         itemCodeFromRow: findFirstMercadoLivreItemCode(row),
         detailLinkFromAnuncio: anuncioDetail && !anuncioDetail.error ? findFirstMercadoLivreLink(anuncioDetail) : null,
         itemCodeFromAnuncio: anuncioDetail && !anuncioDetail.error ? findFirstMercadoLivreItemCode(anuncioDetail) : null,
+        permalinkFromItemApi,
         anuncioDetail,
         raw: row,
       };
@@ -3089,6 +3129,8 @@ blingRouter.post('/debug-status-produto', async (req, res, next) => {
       mercadoLivreLinkResolved: mercadoLivreLinkMeta.resolved,
       mercadoLivreLinkDirect: mercadoLivreLinkDirectMeta.link,
       mercadoLivreLinkDirectResolved: mercadoLivreLinkDirectMeta.resolved,
+      mercadoLivreItemCode,
+      mercadoLivrePermalinkFromApi,
       mercadoLivreLinkRowsDebug,
       detranEtiqueta: detranMeta.etiqueta,
       detranResolved: detranMeta.resolved,

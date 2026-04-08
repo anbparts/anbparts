@@ -35,6 +35,14 @@ function toneColor(index: number, override?: string) {
   return override || palette[index % palette.length];
 }
 
+function normalizeToneText(value: string) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
 function emptyBlock(message: string) {
   return (
     <div style={{ padding: '34px 18px', textAlign: 'center', color: 'var(--ink-muted)', fontSize: 13 }}>
@@ -378,6 +386,29 @@ export function HeatmapChart({
   );
 
   const cellTone = (value: number, rowLabel: string) => {
+    const normalizedRowLabel = normalizeToneText(rowLabel);
+    const isResultadoBruto = normalizedRowLabel === 'resultado bruto';
+
+    if (isResultadoBruto) {
+      if (value > 0) {
+        return {
+          background: 'rgba(22, 163, 74, 0.10)',
+          accent: 'rgba(22, 163, 74, 0.28)',
+          textColor: 'var(--green)',
+          noteColor: 'var(--green)',
+        };
+      }
+
+      if (value < 0) {
+        return {
+          background: 'rgba(239, 68, 68, 0.10)',
+          accent: 'rgba(239, 68, 68, 0.28)',
+          textColor: 'var(--red)',
+          noteColor: 'var(--red)',
+        };
+      }
+    }
+
     if (value <= 0) {
       return {
         background: 'var(--white)',

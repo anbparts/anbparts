@@ -5,6 +5,11 @@ import { ChartPanel, ColumnChart, DonutChart, HorizontalBarChart, ViewModeSwitch
 import { api } from '@/lib/api';
 
 const CATEGORIAS = ['Insumo', 'Servicos', 'Taxas', 'Aluguel', 'Sistemas', 'Contador', 'Moto', 'Outros'];
+const RECORRENCIAS = [
+  { value: 'nenhuma', label: 'Nao repetir' },
+  { value: 'semanal', label: 'Semanalmente' },
+  { value: 'mensal', label: 'Mensalmente' },
+] as const;
 const STATUS_COLORS: Record<string, string> = {
   pago: 'var(--green)',
   pendente: 'var(--red)',
@@ -26,6 +31,31 @@ function fmt(value: number) {
 
 function today() {
   return new Date().toISOString().split('T')[0];
+}
+
+function parseInputDate(value: string) {
+  return new Date(`${value}T00:00:00`);
+}
+
+function formatInputDate(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function addDaysToInputDate(value: string, days: number) {
+  const date = parseInputDate(value);
+  date.setDate(date.getDate() + days);
+  return formatInputDate(date);
+}
+
+function addMonthsToInputDate(value: string, months: number) {
+  const current = parseInputDate(value);
+  const day = current.getDate();
+  const base = new Date(current.getFullYear(), current.getMonth() + months, 1);
+  const lastDay = new Date(base.getFullYear(), base.getMonth() + 1, 0).getDate();
+  return formatInputDate(new Date(base.getFullYear(), base.getMonth(), Math.min(day, lastDay)));
 }
 
 function currentYear() {
@@ -73,6 +103,12 @@ function downloadDataUrl(dataUrl: string, fileName: string) {
   document.body.appendChild(link);
   link.click();
   link.remove();
+}
+
+function recurrenceLabel(tipo: string) {
+  if (tipo === 'mensal') return 'Mensal';
+  if (tipo === 'semanal') return 'Semanal';
+  return '';
 }
 
 function CategBadge({ categoria }: { categoria: string }) {
@@ -263,6 +299,78 @@ function PaymentModal({
   );
 }
 
+function DeleteRecurringModal({
+  despesa,
+  futureCount,
+  onClose,
+  onDeleteSingle,
+  onDeleteFutureSeries,
+}: {
+  despesa: any;
+  futureCount: number;
+  onClose: () => void;
+  onDeleteSingle: () => Promise<void>;
+  onDeleteFutureSeries: () => Promise<void>;
+}) {
+  const [saving, setSaving] = useState(false);
+
+  async function handleSingle() {
+    setSaving(true);
+    try {
+      await onDeleteSingle();
+      onClose();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleFutureSeries() {
+    setSaving(true);
+    try {
+      await onDeleteFutureSeries();
+      onClose();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, zIndex: 1000 }}>
+      <div style={{ width: 'min(560px, 100%)', background: 'var(--white)', borderRadius: 16, border: '1px solid var(--border)', boxShadow: '0 20px 60px rgba(15,23,42,.18)', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 22px', borderBottom: '1px solid var(--border)' }}>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--ink)' }}>Excluir despesa recorrente</div>
+            <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 4 }}>{despesa.detalhes}</div>
+          </div>
+          <button type="button" onClick={onClose} disabled={saving} style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, width: 34, height: 34, cursor: 'pointer', color: 'var(--gray-700)' }}>X</button>
+        </div>
+
+        <div style={{ padding: 22, display: 'grid', gap: 12 }}>
+          <div style={{ fontSize: 13, color: 'var(--ink-muted)', lineHeight: 1.5 }}>
+            Encontramos <strong>{futureCount}</strong> lancamento(s) futuro(s) da mesma serie a partir desta despesa.
+          </div>
+          <div style={{ background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px' }}>
+            <div style={{ fontSize: 11, color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: '.7px', marginBottom: 6 }}>Serie</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>{recurrenceLabel(despesa.recorrenciaTipo)} ate {formatDateBr(despesa.recorrenciaFim)}</div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '0 22px 22px', flexWrap: 'wrap' }}>
+          <button type="button" onClick={onClose} disabled={saving} style={{ padding: '10px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', color: 'var(--gray-700)', fontWeight: 600, cursor: 'pointer' }}>Cancelar</button>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <button type="button" onClick={handleSingle} disabled={saving} style={{ padding: '10px 14px', borderRadius: 8, border: '1px solid #fecaca', background: '#fff1f2', color: 'var(--red)', fontWeight: 700, cursor: 'pointer' }}>
+              {saving ? 'Excluindo...' : 'Somente este lancamento'}
+            </button>
+            <button type="button" onClick={handleFutureSeries} disabled={saving} style={{ padding: '10px 14px', borderRadius: 8, border: '1px solid transparent', background: 'var(--blue-500)', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
+              {saving ? 'Excluindo...' : 'Este + futuros da serie'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function DespesasPage() {
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -273,11 +381,14 @@ export default function DespesasPage() {
   const [saving, setSaving] = useState(false);
   const [modo, setModo] = useState<ViewMode>('grafico');
   const [pagamentoDespesa, setPagamentoDespesa] = useState<any | null>(null);
+  const [deletePrompt, setDeletePrompt] = useState<{ despesa: any; futureCount: number } | null>(null);
   const [form, setForm] = useState({
     data: today(),
     detalhes: '',
     categoria: 'Insumo',
     valor: '',
+    recorrenciaTipo: 'nenhuma',
+    recorrenciaAte: '',
     chavePix: '',
     codigoBarras: '',
     observacao: '',
@@ -361,17 +472,33 @@ export default function DespesasPage() {
     if (!form.detalhes || !form.valor) return;
     setSaving(true);
     try {
-      await api.financeiro.despesas.create({
+      const response = await api.financeiro.despesas.create({
         data: form.data,
         detalhes: form.detalhes,
         categoria: form.categoria,
         valor: Number(form.valor),
+        recorrenciaTipo: form.recorrenciaTipo,
+        recorrenciaAte: form.recorrenciaTipo !== 'nenhuma' ? form.recorrenciaAte || null : null,
         chavePix: form.chavePix || null,
         codigoBarras: form.codigoBarras || null,
         observacao: form.observacao || null,
         anexo: form.anexo,
       });
-      setForm({ data: today(), detalhes: '', categoria: 'Insumo', valor: '', chavePix: '', codigoBarras: '', observacao: '', anexo: null });
+      if (Number(response?.totalCriadas || 1) > 1) {
+        alert(`Serie criada com ${response.totalCriadas} lancamentos.`);
+      }
+      setForm({
+        data: today(),
+        detalhes: '',
+        categoria: 'Insumo',
+        valor: '',
+        recorrenciaTipo: 'nenhuma',
+        recorrenciaAte: '',
+        chavePix: '',
+        codigoBarras: '',
+        observacao: '',
+        anexo: null,
+      });
       setShowForm(false);
       await load();
     } finally {
@@ -379,10 +506,26 @@ export default function DespesasPage() {
     }
   }
 
-  async function excluir(id: number) {
-    if (!confirm('Excluir despesa?')) return;
-    await api.financeiro.despesas.delete(id);
+  function futureSeriesCount(item: any) {
+    if (!item?.recorrenciaSerieId) return 0;
+    const currentTime = new Date(item.data).getTime();
+    return rows.filter((row) => row.recorrenciaSerieId === item.recorrenciaSerieId && new Date(row.data).getTime() > currentTime).length;
+  }
+
+  async function excluir(id: number, scope: 'single' | 'future_series' = 'single') {
+    await api.financeiro.despesas.delete(id, scope);
     await load();
+  }
+
+  async function solicitarExclusao(item: any) {
+    const futureCount = futureSeriesCount(item);
+    if (futureCount > 0 && item.recorrenciaSerieId) {
+      setDeletePrompt({ despesa: item, futureCount });
+      return;
+    }
+
+    if (!confirm('Excluir despesa?')) return;
+    await excluir(item.id, 'single');
   }
 
   async function atualizarStatus(payload: { statusPagamento: 'pago' | 'pendente'; dataPagamento?: string | null; comprovante?: { name: string; dataUrl: string } | null }) {
@@ -457,6 +600,32 @@ export default function DespesasPage() {
                 <input style={{ ...inputStyle, width: '100%' }} type="number" step="0.01" placeholder="0,00" value={form.valor} onChange={(e) => setForm((value) => ({ ...value, valor: e.target.value }))} />
               </div>
               <div>
+                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Recorrencia</div>
+                <select
+                  style={{ ...inputStyle, width: '100%', cursor: 'pointer' }}
+                  value={form.recorrenciaTipo}
+                  onChange={(e) => setForm((value) => ({
+                    ...value,
+                    recorrenciaTipo: e.target.value,
+                    recorrenciaAte: e.target.value === 'nenhuma'
+                      ? ''
+                      : (value.recorrenciaAte || (e.target.value === 'mensal' ? addMonthsToInputDate(value.data, 11) : addDaysToInputDate(value.data, 77))),
+                  }))}
+                >
+                  {RECORRENCIAS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Repetir ate</div>
+                <input
+                  style={{ ...inputStyle, width: '100%' }}
+                  type="date"
+                  value={form.recorrenciaAte}
+                  disabled={form.recorrenciaTipo === 'nenhuma'}
+                  onChange={(e) => setForm((value) => ({ ...value, recorrenciaAte: e.target.value }))}
+                />
+              </div>
+              <div>
                 <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Chave PIX</div>
                 <input style={{ ...inputStyle, width: '100%' }} placeholder="Opcional" value={form.chavePix} onChange={(e) => setForm((value) => ({ ...value, chavePix: e.target.value }))} />
               </div>
@@ -474,10 +643,15 @@ export default function DespesasPage() {
                 <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 6 }}>{form.anexo?.name || 'Nenhum arquivo selecionado'}</div>
               </div>
             </div>
+            {form.recorrenciaTipo !== 'nenhuma' && (
+              <div style={{ marginTop: 10, fontSize: 12, color: 'var(--ink-muted)' }}>
+                A serie sera criada com o mesmo valor e os mesmos dados ate <strong>{form.recorrenciaAte ? formatDateBr(form.recorrenciaAte) : '-'}</strong>.
+              </div>
+            )}
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
               <button
                 onClick={salvar}
-                disabled={saving || !form.detalhes || !form.valor}
+                disabled={saving || !form.detalhes || !form.valor || (form.recorrenciaTipo !== 'nenhuma' && !form.recorrenciaAte)}
                 style={{ padding: '8px 18px', background: 'var(--blue-500)', color: '#fff', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap' }}
               >
                 {saving ? 'Salvando...' : 'Salvar'}
@@ -555,7 +729,9 @@ export default function DespesasPage() {
                             {item.chavePix ? <InfoPill label="PIX" title={item.chavePix} /> : null}
                             {item.codigoBarras ? <InfoPill label="Barras" title={item.codigoBarras} /> : null}
                             {item.observacao ? <InfoPill label="Obs" title={item.observacao} /> : null}
-                            {!item.chavePix && !item.codigoBarras && !item.observacao ? <span style={{ color: 'var(--gray-300)' }}>-</span> : null}
+                            {item.recorrenciaTipo ? <InfoPill label={recurrenceLabel(item.recorrenciaTipo)} title={`Recorrente ate ${formatDateBr(item.recorrenciaFim)}`} /> : null}
+                            {item.recorrenciaGerada ? <InfoPill label="Planejada" title="Lancamento criado automaticamente pela serie recorrente" /> : null}
+                            {!item.chavePix && !item.codigoBarras && !item.observacao && !item.recorrenciaTipo && !item.recorrenciaGerada ? <span style={{ color: 'var(--gray-300)' }}>-</span> : null}
                           </div>
                         </td>
                         <td style={{ padding: '9px 16px' }}>
@@ -571,7 +747,7 @@ export default function DespesasPage() {
                           {item.dataPagamento ? formatDateBr(item.dataPagamento) : '-'}
                         </td>
                         <td style={{ padding: '9px 10px', width: 40 }}>
-                          <button onClick={() => excluir(item.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-muted)', fontSize: 14, padding: '2px 6px', borderRadius: 4 }} title="Excluir">
+                          <button onClick={() => solicitarExclusao(item)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-muted)', fontSize: 14, padding: '2px 6px', borderRadius: 4 }} title="Excluir">
                             x
                           </button>
                         </td>
@@ -593,6 +769,16 @@ export default function DespesasPage() {
           despesa={pagamentoDespesa}
           onClose={() => setPagamentoDespesa(null)}
           onConfirm={atualizarStatus}
+        />
+      )}
+
+      {deletePrompt && (
+        <DeleteRecurringModal
+          despesa={deletePrompt.despesa}
+          futureCount={deletePrompt.futureCount}
+          onClose={() => setDeletePrompt(null)}
+          onDeleteSingle={() => excluir(deletePrompt.despesa.id, 'single')}
+          onDeleteFutureSeries={() => excluir(deletePrompt.despesa.id, 'future_series')}
         />
       )}
     </>

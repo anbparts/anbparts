@@ -3,6 +3,7 @@ import { prisma } from '../lib/prisma';
 import { getConfiguracaoGeral, saveConfiguracaoGeral } from '../lib/configuracoes-gerais';
 import { sendDespesasDoDiaEmailIfNeeded } from '../lib/despesas-alert';
 import { z } from 'zod';
+import { randomUUID } from 'crypto';
 
 export const financeiroRouter = Router();
 
@@ -12,6 +13,7 @@ const FINANCEIRO_TIMEZONE = 'America/Sao_Paulo';
 const DESPESAS_SCHEDULER_INTERVAL_MS = 60 * 1000;
 const INVESTIMENTO_TIPOS = ['Moto', 'Insumos', 'Infra-Estrutura', 'Obra', 'Operacional'] as const;
 const DESPESA_STATUS = ['pendente', 'pago'] as const;
+const DESPESA_RECORRENCIA = ['nenhuma', 'semanal', 'mensal'] as const;
 const PREJUIZO_MOTIVOS = new Set([
   'Extravio no Envio',
   'Defeito',
@@ -52,6 +54,8 @@ const despesaBaseSchema = z.object({
   detalhes: z.string().trim().min(1),
   categoria: z.string().trim().min(1).default('Outros'),
   valor: z.number().min(0),
+  recorrenciaTipo: z.enum(DESPESA_RECORRENCIA).default('nenhuma'),
+  recorrenciaAte: z.string().optional().nullable(),
   chavePix: z.string().optional().nullable(),
   codigoBarras: z.string().optional().nullable(),
   observacao: z.string().optional().nullable(),
@@ -103,6 +107,46 @@ function parseDateOnlyInput(value: any) {
   const text = String(value || '').trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return new Date(text);
   return new Date(`${text}T00:00:00.000Z`);
+}
+
+function addDaysUtc(date: Date, days: number) {
+  const next = new Date(date);
+  next.setUTCDate(next.getUTCDate() + days);
+  return next;
+}
+
+function addMonthsUtcPreservingDay(date: Date, months: number) {
+  const year = date.getUTCFullYear();
+  const month = date.getUTCMonth();
+  const day = date.getUTCDate();
+  const targetMonthIndex = month + months;
+  const targetYear = year + Math.floor(targetMonthIndex / 12);
+  const normalizedTargetMonth = ((targetMonthIndex % 12) + 12) % 12;
+  const lastDay = new Date(Date.UTC(targetYear, normalizedTargetMonth + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(targetYear, normalizedTargetMonth, Math.min(day, lastDay), 0, 0, 0, 0));
+}
+
+function buildDespesaRecorrenteDatas(
+  startDate: Date,
+  recorrenciaTipo: 'semanal' | 'mensal' | null,
+  recorrenciaAte: Date | null,
+) {
+  const datas = [new Date(startDate)];
+  if (!recorrenciaTipo || !recorrenciaAte || recorrenciaAte.getTime() <= startDate.getTime()) {
+    return datas;
+  }
+
+  let cursor = new Date(startDate);
+  while (true) {
+    cursor = recorrenciaTipo === 'semanal'
+      ? addDaysUtc(cursor, 7)
+      : addMonthsUtcPreservingDay(cursor, 1);
+
+    if (cursor.getTime() > recorrenciaAte.getTime()) break;
+    datas.push(new Date(cursor));
+  }
+
+  return datas;
 }
 
 function mapAttachmentFields(prefix: 'anexo' | 'comprovante', attachment: ReturnType<typeof normalizeAttachment>) {
@@ -286,26 +330,41 @@ financeiroRouter.post('/despesas', async (req, res, next) => {
     const payload = despesaCreateSchema.parse(req.body || {});
     const anexo = normalizeAttachment(payload.anexo);
     const statusPagamento = payload.statusPagamento || 'pendente';
+    const recorrenciaTipo = payload.recorrenciaTipo === 'nenhuma' ? null : payload.recorrenciaTipo;
+    const recorrenciaAte = recorrenciaTipo && payload.recorrenciaAte ? parseDateOnlyInput(payload.recorrenciaAte) : null;
+    const dataBase = parseDateOnlyInput(payload.data);
+    const datasSerie = buildDespesaRecorrenteDatas(dataBase, recorrenciaTipo, recorrenciaAte);
+    const recorrenciaSerieId = recorrenciaTipo && datasSerie.length > 1 ? randomUUID() : null;
     const dataPagamento = statusPagamento === 'pago'
-      ? (payload.dataPagamento ? parseDateOnlyInput(payload.dataPagamento) : parseDateOnlyInput(payload.data))
+      ? (payload.dataPagamento ? parseDateOnlyInput(payload.dataPagamento) : dataBase)
       : null;
 
-    const row = await prisma.despesa.create({
-      data: {
-        data: parseDateOnlyInput(payload.data),
-        detalhes: payload.detalhes,
-        categoria: payload.categoria || 'Outros',
-        valor: payload.valor,
-        statusPagamento,
-        dataPagamento,
-        chavePix: normalizeText(payload.chavePix),
-        codigoBarras: normalizeText(payload.codigoBarras),
-        observacao: normalizeText(payload.observacao),
-        ...mapAttachmentFields('anexo', anexo),
-      },
-    });
+    const rows = await prisma.$transaction(
+      datasSerie.map((dataOcorrencia, index) => prisma.despesa.create({
+        data: {
+          data: dataOcorrencia,
+          detalhes: payload.detalhes,
+          categoria: payload.categoria || 'Outros',
+          valor: payload.valor,
+          recorrenciaSerieId,
+          recorrenciaTipo,
+          recorrenciaFim: recorrenciaSerieId ? recorrenciaAte : null,
+          recorrenciaGerada: recorrenciaSerieId ? index > 0 : false,
+          statusPagamento,
+          dataPagamento: statusPagamento === 'pago' ? dataPagamento : null,
+          chavePix: normalizeText(payload.chavePix),
+          codigoBarras: normalizeText(payload.codigoBarras),
+          observacao: normalizeText(payload.observacao),
+          ...mapAttachmentFields('anexo', anexo),
+        },
+      })),
+    );
 
-    res.json(mapDespesaRow(row));
+    res.json({
+      ok: true,
+      totalCriadas: rows.length,
+      data: rows.map(mapDespesaRow),
+    });
   } catch (e) {
     next(e);
   }
@@ -382,8 +441,23 @@ financeiroRouter.patch('/despesas/:id/status', async (req, res, next) => {
 
 financeiroRouter.delete('/despesas/:id', async (req, res, next) => {
   try {
-    await prisma.despesa.delete({ where: { id: Number(req.params.id) } });
-    res.json({ ok: true });
+    const id = Number(req.params.id);
+    const scope = String(req.query.scope || 'single').trim().toLowerCase();
+    const current = await prisma.despesa.findUnique({ where: { id } });
+    if (!current) return res.status(404).json({ error: 'Despesa nao encontrada' });
+
+    if (scope === 'future_series' && current.recorrenciaSerieId) {
+      const deleted = await prisma.despesa.deleteMany({
+        where: {
+          recorrenciaSerieId: current.recorrenciaSerieId,
+          data: { gte: current.data },
+        },
+      });
+      return res.json({ ok: true, deleted: deleted.count, scope: 'future_series' });
+    }
+
+    await prisma.despesa.delete({ where: { id } });
+    res.json({ ok: true, deleted: 1, scope: 'single' });
   } catch (e) {
     next(e);
   }

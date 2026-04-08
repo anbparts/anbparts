@@ -64,6 +64,10 @@ model Despesa {
   detalhes   String
   categoria  String   @default("Outros")
   valor      Decimal  @default(0) @db.Decimal(12, 2)
+  recorrenciaSerieId String?
+  recorrenciaTipo String?
+  recorrenciaFim DateTime?
+  recorrenciaGerada Boolean @default(false)
   statusPagamento String @default("pendente")
   dataPagamento DateTime?
   chavePix   String?
@@ -75,6 +79,8 @@ model Despesa {
   comprovanteArquivo String? @db.Text
   createdAt  DateTime @default(now())
 
+  @@index([recorrenciaSerieId])
+  @@index([recorrenciaTipo])
   @@index([statusPagamento])
   @@index([data])
   @@index([dataPagamento])

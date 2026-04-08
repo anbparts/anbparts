@@ -88,7 +88,7 @@ export const api = {
       create: (data: any) => req<any>('/financeiro/despesas', { method: 'POST', body: JSON.stringify(data) }),
       update: (id: number, data: any) => req<any>(`/financeiro/despesas/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
       setStatus: (id: number, data: any) => req<any>(`/financeiro/despesas/${id}/status`, { method: 'PATCH', body: JSON.stringify(data) }),
-      delete: (id: number) => req<any>(`/financeiro/despesas/${id}`, { method: 'DELETE' }),
+      delete: (id: number, scope?: 'single' | 'future_series') => req<any>(`/financeiro/despesas/${id}${scope ? `?scope=${scope}` : ''}`, { method: 'DELETE' }),
     },
     investimentos: {
       list: () => req<any[]>('/financeiro/investimentos'),
