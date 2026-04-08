@@ -411,6 +411,8 @@ function buildMercadoPagoReportConfig(reportType: 'release' | 'settlement') {
       { key: 'TRANSACTION_CURRENCY' },
       { key: 'TRANSACTION_DATE' },
       { key: 'FEE_AMOUNT' },
+      { key: 'MONEY_RELEASE_DATE' },
+      { key: 'IS_RELEASED' },
       { key: 'SETTLEMENT_DATE' },
       { key: 'SETTLEMENT_NET_AMOUNT' },
       { key: 'SETTLEMENT_CURRENCY' },
@@ -488,6 +490,14 @@ function normalizeMoney(value: any): number | null {
     const direct: number | null = normalizeMoney((value as any).amount ?? (value as any).value ?? (value as any).total);
     if (direct !== null) return direct;
   }
+  return null;
+}
+
+function normalizeBooleanish(value: any): boolean | null {
+  const text = normalizeKey(value);
+  if (!text) return null;
+  if (['true', '1', 'yes', 'sim'].includes(text)) return true;
+  if (['false', '0', 'no', 'nao'].includes(text)) return false;
   return null;
 }
 
@@ -1078,7 +1088,7 @@ export async function loadMercadoLivreSaldoResumo(forceRefresh = false) {
       const now = new Date();
       const saldoDisponivel = extractReportEndingBalance(releaseRows);
 
-      const futureSettlements = settlementRows
+      const settlementEntries = settlementRows
         .map((row) => {
           const releaseDateText = normalizeText(
             row.money_release_date
@@ -1097,17 +1107,29 @@ export async function loadMercadoLivreSaldoResumo(forceRefresh = false) {
             amount,
             transactionType: normalizeKey(row.transaction_type),
             paymentMethodType: normalizeKey(row.payment_method_type),
+            isReleased: normalizeBooleanish(row.is_released),
           };
         })
-        .filter((row) => row.releaseDate && !Number.isNaN(row.releaseDate.getTime()) && row.releaseDate > now && row.amount > 0);
+        .filter((row) => row.amount > 0);
 
       const hasSettlementData = settlementRows.length > 0;
+      const hasExplicitReleaseStatus = settlementRows.some(
+        (row) => normalizeText(row.is_released) || normalizeText(row.money_release_date),
+      );
+      const pendingSettlements = settlementEntries.filter((row) => {
+        if (row.transactionType.includes('refund') || row.transactionType.includes('chargeback') || row.transactionType.includes('dispute')) {
+          return false;
+        }
+        if (row.isReleased === false) return true;
+        if (row.isReleased === true) return false;
+        return !!(row.releaseDate && !Number.isNaN(row.releaseDate.getTime()) && row.releaseDate > now);
+      });
       const saldoALiberar = hasSettlementData
-        ? futureSettlements.reduce((sum, row) => sum + row.amount, 0)
+        ? pendingSettlements.reduce((sum, row) => sum + row.amount, 0)
         : null;
       const saldoAntecipavel = hasSettlementData
-        ? futureSettlements
-          .filter((row) => !row.transactionType.includes('chargeback') && !row.transactionType.includes('refund'))
+        ? pendingSettlements
+          .filter((row) => ['credit_card', 'debit_card', 'prepaid_card'].includes(row.paymentMethodType))
           .reduce((sum, row) => sum + row.amount, 0)
         : null;
 
@@ -1118,10 +1140,12 @@ export async function loadMercadoLivreSaldoResumo(forceRefresh = false) {
         saldoDisponivel,
         saldoALiberar,
         saldoAntecipavel,
-        saldoAntecipavelInferido: hasSettlementData,
+        saldoAntecipavelInferido: hasSettlementData && !hasExplicitReleaseStatus,
         saldoParcial: !hasSettlementData,
         observacao: hasSettlementData
-          ? ''
+          ? hasExplicitReleaseStatus
+            ? ''
+            : 'Saldo antecipavel estimado a partir do dinheiro ainda no prazo de liberacao.'
           : settlementRequestedNow
             ? 'Saldo disponivel carregado. O relatorio de liquidacao foi solicitado ao Mercado Pago e pode levar alguns minutos para aparecer.'
             : settlementWaitingForReport
