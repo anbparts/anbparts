@@ -7,6 +7,33 @@ type SendResendEmailArgs = {
   text: string;
 };
 
+function normalizeSubject(value: any, fallback: string) {
+  return String(value || '').trim() || fallback;
+}
+
+function formatSubjectDate(date: Date | string = new Date()) {
+  const parsed = new Date(date);
+  if (Number.isNaN(parsed.getTime())) {
+    return new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+  }
+
+  return parsed.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+}
+
+export function buildDatedEmailSubject(title: any, fallback: string, date: Date | string = new Date()) {
+  return `${normalizeSubject(title, fallback)} - ${formatSubjectDate(date)}`;
+}
+
+export function buildQuestionEmailSubject(title: any, fallback: string, questionIds: any[]) {
+  const base = normalizeSubject(title, fallback);
+  const ids = (Array.isArray(questionIds) ? questionIds : [questionIds])
+    .map((item) => String(item || '').trim())
+    .filter(Boolean);
+
+  if (!ids.length) return base;
+  return `${ids.map((id) => `#${id}`).join(', ')} - ${base}`;
+}
+
 export async function sendResendEmail(args: SendResendEmailArgs) {
   const apiKey = String(args.apiKey || '').trim();
   const from = String(args.from || '').trim();

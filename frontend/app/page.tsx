@@ -29,6 +29,10 @@ const s: any = {
   },
   val: { fontFamily: 'Fraunces, serif', fontSize: 26, fontWeight: 500, letterSpacing: '-0.5px' },
   sub2: { fontSize: 12, color: 'var(--ink-muted)', marginTop: 6 },
+  balanceRows: { display: 'grid', gap: 10 },
+  balanceRow: { display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' },
+  balanceName: { fontSize: 11, color: 'var(--ink-muted)', fontFamily: 'Geist Mono, monospace', letterSpacing: '0.5px', textTransform: 'uppercase' as const },
+  balanceValue: { fontFamily: 'Fraunces, serif', fontSize: 20, fontWeight: 500, letterSpacing: '-0.35px' },
   mGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 14 },
   mCard: {
     background: 'var(--white)',
@@ -42,6 +46,50 @@ const s: any = {
 
 function fmt(value: number) {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+function renderMercadoLivreSaldoCard(saldo: any) {
+  if (!saldo?.connected) {
+    return (
+      <>
+        <div style={{ ...s.val, color: 'var(--ink)' }}>Nao conectado</div>
+        <div style={s.sub2}>Conecte o Mercado Livre em Config. ML para carregar os saldos.</div>
+      </>
+    );
+  }
+
+  if (saldo?.error) {
+    return (
+      <>
+        <div style={{ ...s.val, color: 'var(--ink)' }}>Indisponivel</div>
+        <div style={s.sub2}>{saldo.error}</div>
+      </>
+    );
+  }
+
+  const rows = [
+    { label: 'Saldo', value: fmt(Number(saldo?.saldoDisponivel || 0)), color: 'var(--sage)' },
+    { label: 'A liberar', value: fmt(Number(saldo?.saldoALiberar || 0)), color: 'var(--amber)' },
+    { label: 'Antecipavel', value: fmt(Number(saldo?.saldoAntecipavel || 0)), color: 'var(--blue-500)' },
+  ];
+
+  return (
+    <>
+      <div style={s.balanceRows}>
+        {rows.map((row) => (
+          <div key={row.label} style={s.balanceRow}>
+            <span style={s.balanceName}>{row.label}</span>
+            <span style={{ ...s.balanceValue, color: row.color }}>{row.value}</span>
+          </div>
+        ))}
+      </div>
+      <div style={s.sub2}>
+        {saldo?.saldoAntecipavelInferido
+          ? 'Saldo antecipavel estimado a partir do dinheiro ainda no prazo de liberacao.'
+          : 'Saldos consultados na conta Mercado Livre conectada.'}
+      </div>
+    </>
+  );
 }
 
 export default function DashboardPage() {
@@ -90,7 +138,12 @@ export default function DashboardPage() {
     );
   }
 
-  const cards = [
+  const cards: any[] = [
+    {
+      label: 'Mercado Pago',
+      kind: 'mercado-livre-saldo',
+      saldo: dash?.mercadoLivreSaldo || null,
+    },
     {
       label: 'Receita bruta',
       val: fmt(dash?.receitaBruta || 0),
@@ -143,8 +196,14 @@ export default function DashboardPage() {
           {cards.map((card) => (
             <div key={card.label} style={s.card}>
               <div style={s.label}>{card.label}</div>
-              <div style={{ ...s.val, color: card.color }}>{card.val}</div>
-              <div style={s.sub2}>{card.sub}</div>
+              {card.kind === 'mercado-livre-saldo' ? (
+                renderMercadoLivreSaldoCard((card as any).saldo)
+              ) : (
+                <>
+                  <div style={{ ...s.val, color: (card as any).color }}>{(card as any).val}</div>
+                  <div style={s.sub2}>{(card as any).sub}</div>
+                </>
+              )}
             </div>
           ))}
         </div>

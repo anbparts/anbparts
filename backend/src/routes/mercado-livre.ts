@@ -7,20 +7,32 @@ import {
   getConfiguracaoGeral,
   saveConfiguracaoGeral,
 } from '../lib/configuracoes-gerais';
-import { sendResendEmail } from '../lib/email';
+import { buildQuestionEmailSubject, sendResendEmail } from '../lib/email';
 
 export const mercadoLivreRouter = Router();
 
 const MERCADO_LIVRE_API = 'https://api.mercadolibre.com';
+const MERCADO_PAGO_API = 'https://api.mercadopago.com';
 const MERCADO_LIVRE_AUTH = 'https://auth.mercadolivre.com.br/authorization';
 const MERCADO_LIVRE_TOKEN = `${MERCADO_LIVRE_API}/oauth/token`;
 const MERCADO_LIVRE_SITE_ID = 'MLB';
 const MERCADO_LIVRE_SCHEDULER_INTERVAL_MS = 60 * 1000;
 const MERCADO_LIVRE_QUESTIONS_PAGE_LIMIT = 50;
+const MERCADO_LIVRE_SALDO_CACHE_TTL_MS = 2 * 60 * 1000;
 
 const schedulerState = {
   started: false,
   running: false,
+};
+
+const saldoCacheState: {
+  expiresAt: number;
+  value: any | null;
+  inFlight: Promise<any> | null;
+} = {
+  expiresAt: 0,
+  value: null,
+  inFlight: null,
 };
 
 const configSchema = z.object({
@@ -165,8 +177,9 @@ async function mercadoLivreReq(path: string, options: RequestInit = {}, allowRef
   const config = await getMercadoLivreConfig();
   const token = normalizeText(config.accessToken);
   if (!token) throw new Error('Mercado Livre nao conectado.');
+  const url = /^https?:\/\//i.test(path) ? path : `${MERCADO_LIVRE_API}${path}`;
 
-  const response = await fetch(`${MERCADO_LIVRE_API}${path}`, {
+  const response = await fetch(url, {
     ...options,
     headers: {
       accept: 'application/json',
@@ -178,7 +191,7 @@ async function mercadoLivreReq(path: string, options: RequestInit = {}, allowRef
 
   if (response.status === 401 && allowRefresh && config.refreshToken) {
     const refreshedToken = await refreshMercadoLivreToken();
-    return fetch(`${MERCADO_LIVRE_API}${path}`, {
+    return fetch(url, {
       ...options,
       headers: {
         accept: 'application/json',
@@ -200,6 +213,176 @@ async function mercadoLivreReq(path: string, options: RequestInit = {}, allowRef
     throw new Error(payload?.message || payload?.error || `Mercado Livre API ${response.status}`);
   }
   return payload;
+}
+
+function normalizeMoney(value: any) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const normalized = value.replace(',', '.').replace(/[^\d.-]/g, '');
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  if (value && typeof value === 'object') {
+    const direct = normalizeMoney((value as any).amount ?? (value as any).value ?? (value as any).total);
+    if (direct !== null) return direct;
+  }
+  return null;
+}
+
+function normalizeKey(value: any) {
+  return normalizeText(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_');
+}
+
+function extractReasonAmounts(container: any) {
+  if (Array.isArray(container)) {
+    return container
+      .map((item) => ({
+        key: normalizeKey(item?.reason || item?.type || item?.id || item?.label),
+        amount: normalizeMoney(item?.amount ?? item?.value),
+      }))
+      .filter((item) => item.key && item.amount !== null) as Array<{ key: string; amount: number }>;
+  }
+
+  if (container && typeof container === 'object') {
+    return Object.entries(container)
+      .map(([key, value]) => ({
+        key: normalizeKey(key),
+        amount: normalizeMoney(value),
+      }))
+      .filter((item) => item.key && item.amount !== null) as Array<{ key: string; amount: number }>;
+  }
+
+  return [] as Array<{ key: string; amount: number }>;
+}
+
+function pickAmountByKeys(container: any, keys: string[]) {
+  const normalizedKeys = keys.map((key) => normalizeKey(key));
+  const entries = extractReasonAmounts(container);
+
+  for (const key of normalizedKeys) {
+    const exact = entries.find((entry) => entry.key === key);
+    if (exact) return exact.amount;
+  }
+
+  for (const key of normalizedKeys) {
+    const partial = entries.find((entry) => entry.key.includes(key));
+    if (partial) return partial.amount;
+  }
+
+  return null;
+}
+
+function sumAmountByKeys(container: any, keys: string[]) {
+  const normalizedKeys = keys.map((key) => normalizeKey(key));
+  return extractReasonAmounts(container)
+    .filter((entry) => normalizedKeys.includes(entry.key))
+    .reduce((sum, entry) => sum + entry.amount, 0);
+}
+
+function extractSaldoResumo(payload: any, source: string) {
+  const currencyId = normalizeText(payload?.currency_id || payload?.currencyId || 'BRL') || 'BRL';
+  const saldoDisponivel =
+    normalizeMoney(payload?.available_balance)
+    ?? pickAmountByKeys(payload?.available_balance_by_transaction_type, [
+      'withdrawable',
+      'withdraw',
+      'withdrawal',
+      'transfer',
+      'available',
+      'payment',
+    ])
+    ?? 0;
+
+  const saldoALiberar =
+    normalizeMoney(payload?.unavailable_balance)
+    ?? extractReasonAmounts(payload?.unavailable_balance_by_reason).reduce((sum, entry) => sum + entry.amount, 0);
+
+  const saldoAntecipavelExplicito =
+    normalizeMoney(payload?.advanceable_balance)
+    ?? normalizeMoney(payload?.anticipation_balance)
+    ?? normalizeMoney(payload?.available_for_advance)
+    ?? normalizeMoney(payload?.available_for_anticipation)
+    ?? normalizeMoney(payload?.available_for_release)
+    ?? pickAmountByKeys(payload?.available_balance_by_transaction_type, [
+      'advance',
+      'anticipation',
+      'anticipated',
+    ]);
+
+  const saldoAntecipavelInferido = sumAmountByKeys(payload?.unavailable_balance_by_reason, ['time_period']);
+  const saldoAntecipavel = saldoAntecipavelExplicito ?? saldoAntecipavelInferido;
+
+  return {
+    connected: true,
+    source,
+    currencyId,
+    saldoDisponivel,
+    saldoALiberar,
+    saldoAntecipavel,
+    saldoAntecipavelInferido: saldoAntecipavelExplicito === null,
+    consultadoEm: new Date().toISOString(),
+  };
+}
+
+export async function loadMercadoLivreSaldoResumo(forceRefresh = false) {
+  const config = await getMercadoLivreConfig();
+  const sellerId = normalizeText(config.sellerId);
+
+  if (!normalizeText(config.accessToken)) {
+    return {
+      connected: false,
+      error: 'Mercado Livre nao conectado.',
+      consultadoEm: new Date().toISOString(),
+    };
+  }
+
+  if (!forceRefresh && saldoCacheState.value && saldoCacheState.expiresAt > Date.now()) {
+    return saldoCacheState.value;
+  }
+
+  if (!forceRefresh && saldoCacheState.inFlight) {
+    return saldoCacheState.inFlight;
+  }
+
+  const candidates = [
+    { source: 'mercadopago_account_balance', url: `${MERCADO_PAGO_API}/users/${encodeURIComponent(sellerId || 'me')}/mercadopago_account/balance` },
+    { source: 'mercadolivre_account_balance', url: `${MERCADO_LIVRE_API}/users/${encodeURIComponent(sellerId || 'me')}/mercadopago_account/balance` },
+    { source: 'mercadopago_account_balance_me', url: `${MERCADO_PAGO_API}/users/me/mercadopago_account/balance` },
+    { source: 'mercadolivre_account_balance_me', url: `${MERCADO_LIVRE_API}/users/me/mercadopago_account/balance` },
+  ];
+
+  saldoCacheState.inFlight = (async () => {
+    let lastError: any = null;
+
+    for (const candidate of candidates) {
+      try {
+        const payload = await mercadoLivreReq(candidate.url);
+        const resumo = extractSaldoResumo(payload, candidate.source);
+        saldoCacheState.value = resumo;
+        saldoCacheState.expiresAt = Date.now() + MERCADO_LIVRE_SALDO_CACHE_TTL_MS;
+        return resumo;
+      } catch (error: any) {
+        lastError = error;
+      }
+    }
+
+    const fallback = {
+      connected: true,
+      error: normalizeText(lastError?.message) || 'Nao foi possivel consultar o saldo do Mercado Livre.',
+      consultadoEm: new Date().toISOString(),
+    };
+    saldoCacheState.value = fallback;
+    saldoCacheState.expiresAt = Date.now() + 30 * 1000;
+    return fallback;
+  })();
+
+  try {
+    return await saldoCacheState.inFlight;
+  } finally {
+    saldoCacheState.inFlight = null;
+  }
 }
 
 async function getMercadoLivreMe() {
@@ -517,7 +700,11 @@ async function sendMercadoLivrePerguntasEmail(perguntas: any[]) {
     apiKey: config.resendApiKey,
     from: config.emailRemetente || DEFAULT_RESEND_FROM,
     to: config.mercadoLivrePerguntasEmailDestinatario,
-    subject: config.mercadoLivrePerguntasEmailTitulo || DEFAULT_MERCADO_LIVRE_PERGUNTAS_EMAIL_TITULO,
+    subject: buildQuestionEmailSubject(
+      config.mercadoLivrePerguntasEmailTitulo,
+      DEFAULT_MERCADO_LIVRE_PERGUNTAS_EMAIL_TITULO,
+      perguntas.map((item) => item.questionId),
+    ),
     html: buildPerguntasEmailHtml(perguntas),
     text: buildPerguntasEmailText(perguntas),
   });
@@ -679,6 +866,16 @@ mercadoLivreRouter.get('/status', async (_req, res) => {
   }
 });
 
+mercadoLivreRouter.get('/saldo', async (req, res, next) => {
+  try {
+    const forceRefresh = String(req.query?.refresh || '').trim() === '1';
+    const saldo = await loadMercadoLivreSaldoResumo(forceRefresh);
+    res.json(saldo);
+  } catch (e) {
+    next(e);
+  }
+});
+
 mercadoLivreRouter.delete('/disconnect', async (_req, res, next) => {
   try {
     await saveMercadoLivreConfig({
@@ -762,6 +959,13 @@ mercadoLivreRouter.delete('/perguntas/:questionId', async (req, res, next) => {
   try {
     const questionId = normalizeText(req.params.questionId);
     if (!questionId) return res.status(400).json({ error: 'Pergunta invalida' });
+
+    await mercadoLivreReq(`/questions/${encodeURIComponent(questionId)}`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
 
     const updated = await prisma.mercadoLivrePergunta.upsert({
       where: { questionId },

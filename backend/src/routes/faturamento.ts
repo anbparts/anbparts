@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
+import { loadMercadoLivreSaldoResumo } from './mercado-livre';
 
 export const faturamentoRouter = Router();
 
@@ -68,13 +69,17 @@ faturamentoRouter.get('/por-moto', async (req, res, next) => {
 // GET /faturamento/dashboard
 faturamentoRouter.get('/dashboard', async (req, res, next) => {
   try {
-    const [totalMotos, totalPecas, pecasVendidas, pecasDisp, motos, despesas] = await Promise.all([
+    const [totalMotos, totalPecas, pecasVendidas, pecasDisp, motos, despesas, mercadoLivreSaldo] = await Promise.all([
       prisma.moto.count(),
       prisma.peca.count(),
       prisma.peca.findMany({ where: { disponivel: false, emPrejuizo: false, dataVenda: { not: null } }, select: { precoML: true, valorLiq: true, valorTaxas: true, valorFrete: true } }),
       prisma.peca.findMany({ where: { disponivel: true, emPrejuizo: false }, select: { idPeca: true, precoML: true, valorLiq: true } }),
       prisma.moto.findMany({ select: { precoCompra: true } }),
       prisma.despesa.findMany({ select: { valor: true, categoria: true } }),
+      loadMercadoLivreSaldoResumo().catch((error: any) => ({
+        connected: true,
+        error: String(error?.message || 'Nao foi possivel consultar o saldo do Mercado Livre.'),
+      })),
     ]);
 
     const receitaBruta  = pecasVendidas.reduce((s, p) => s + Number(p.precoML), 0);
@@ -113,6 +118,7 @@ faturamentoRouter.get('/dashboard', async (req, res, next) => {
       cmv,
       totalDesp,
       lucroOp: receitaLiq - cmv - totalDesp,
+      mercadoLivreSaldo,
     });
   } catch (e) { next(e); }
 });

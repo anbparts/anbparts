@@ -1,5 +1,5 @@
 import { getConfiguracaoGeral } from './configuracoes-gerais';
-import { sendResendEmail } from './email';
+import { buildDatedEmailSubject, sendResendEmail } from './email';
 
 export type DetranBaixaEmailItem = {
   idPeca: string;
@@ -97,7 +97,7 @@ export async function sendDetranBaixaEmailIfNeeded(items: DetranBaixaEmailItem[]
     apiKey: config.resendApiKey,
     from: config.emailRemetente,
     to: config.detranEmailDestinatario,
-    subject: config.detranEmailTitulo,
+    subject: buildDatedEmailSubject(config.detranEmailTitulo, 'ALERTA ANB Parts - Baixa de Etiqueta DETRAN - Verifique'),
     html: renderDetranEmailHtml(targets),
     text: renderDetranEmailText(targets),
   });

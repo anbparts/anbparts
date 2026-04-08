@@ -1,6 +1,6 @@
 import { prisma } from './prisma';
 import { getConfiguracaoGeral } from './configuracoes-gerais';
-import { sendResendEmail } from './email';
+import { buildDatedEmailSubject, sendResendEmail } from './email';
 
 export type DespesaEmailItem = {
   id: number;
@@ -129,7 +129,7 @@ export async function sendDespesasDoDiaEmailIfNeeded(todayKey: string, timeZone 
     apiKey: config.resendApiKey,
     from: config.emailRemetente,
     to: config.despesasEmailDestinatario,
-    subject: config.despesasEmailTitulo,
+    subject: buildDatedEmailSubject(config.despesasEmailTitulo, 'ALERTA ANB Parts - Despesas do Dia - Verifique'),
     html: renderEmailHtml(items),
     text: renderEmailText(items),
   });

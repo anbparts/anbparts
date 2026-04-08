@@ -5,7 +5,7 @@ import {
   DEFAULT_RESEND_FROM,
   getConfiguracaoGeral,
 } from '../lib/configuracoes-gerais';
-import { sendResendEmail } from '../lib/email';
+import { buildDatedEmailSubject, sendResendEmail } from '../lib/email';
 import { sendDetranBaixaEmailIfNeeded } from '../lib/detran-alert';
 import { getMercadoLivreItemPermalink } from '../lib/mercado-livre';
 
@@ -603,9 +603,43 @@ function resolveBlingMercadoLivreLink(produto: any, detail?: any, lojaRows: any[
   return { link: null, resolved: false };
 }
 
-async function resolveBlingMercadoLivreLinkWithFallback(produto: any, detail?: any, lojaRows: any[] = []) {
+async function resolveBlingMercadoLivreLinkWithFallback(
+  produto: any,
+  detail?: any,
+  lojaRows: any[] = [],
+  options?: {
+    currentLink?: string | null;
+    anuncioStatus?: { found?: boolean; isActive?: boolean | null } | null;
+  },
+) {
   const direct = resolveBlingMercadoLivreLink(produto, detail, lojaRows);
+  const currentLink = normalizeMercadoLivreLink(options?.currentLink) || null;
+  const currentItemCode = currentLink ? findFirstMercadoLivreItemCode(currentLink) : null;
   const directCode = findFirstMercadoLivreItemCode(direct.link);
+  const knownItemCode = directCode
+    || lojaRows.map((row: any) => findFirstMercadoLivreItemCode(row)).find(Boolean)
+    || findFirstMercadoLivreItemCode(detail)
+    || findFirstMercadoLivreItemCode(produto);
+
+  if (currentLink && currentItemCode && knownItemCode && currentItemCode === knownItemCode) {
+    return { link: currentLink, resolved: true };
+  }
+
+  const isKnownInactive = options?.anuncioStatus?.found && options?.anuncioStatus?.isActive === false;
+  if (isKnownInactive) {
+    if (currentLink) {
+      return { link: currentLink, resolved: true };
+    }
+
+    if (direct.resolved && direct.link) {
+      return { link: direct.link, resolved: true };
+    }
+
+    if (directCode) {
+      return { link: buildMercadoLivreItemLink(directCode), resolved: true };
+    }
+  }
+
   if (directCode) {
     const publicLink = await resolveMercadoLivrePublicLinkByItemCode(directCode);
     if (publicLink) {
@@ -1776,9 +1810,29 @@ async function syncPecaMetadataFromBling(
   produtosBling: Map<string, any>,
   detalhesBlingByProductId: Map<number, any>,
   productStoreLinksByProductId: Map<number, any[]>,
-  options?: { syncLocalizacao?: boolean; syncDetran?: boolean; syncMercadoLivreLink?: boolean },
+  options?: {
+    syncLocalizacao?: boolean;
+    syncDetran?: boolean;
+    syncMercadoLivreLink?: boolean;
+    statusMercadoLivreByProductId?: Map<number, {
+      found: boolean;
+      label: string | null;
+      isActive: boolean;
+      code: number | null;
+      anuncioIds: number[];
+      lojaIds: number[];
+    }>;
+  },
 ) {
   if (!localPecas.length) return 0;
+
+  const currentLinkBySku = new Map<string, string>();
+  for (const peca of localPecas) {
+    const skuBase = getBaseSku(peca.idPeca);
+    const currentLink = String(peca.mercadoLivreLink || '').trim();
+    if (!skuBase || !currentLink || currentLinkBySku.has(skuBase)) continue;
+    currentLinkBySku.set(skuBase, currentLink);
+  }
 
   const targetBySku = new Map<string, {
     location: string | null;
@@ -1797,12 +1851,18 @@ async function syncPecaMetadataFromBling(
 
     const detail = produto?.id ? (detalhesBlingByProductId.get(Number(produto.id)) || null) : null;
     const lojaRows = produto?.id ? (productStoreLinksByProductId.get(Number(produto.id)) || []) : [];
+    const anuncioStatus = produto?.id
+      ? (options?.statusMercadoLivreByProductId?.get(Number(produto.id)) || null)
+      : null;
     const locationMeta = resolveBlingLocation(produto, detail);
     const detranMeta = options?.syncDetran
       ? await resolveBlingDetranEtiqueta(produto, detail)
       : { etiqueta: null, resolved: false };
     const mercadoLivreLinkMeta = options?.syncMercadoLivreLink
-      ? await resolveBlingMercadoLivreLinkWithFallback(produto, detail, lojaRows)
+      ? await resolveBlingMercadoLivreLinkWithFallback(produto, detail, lojaRows, {
+          currentLink: currentLinkBySku.get(skuBase) || null,
+          anuncioStatus,
+        })
       : { link: null, resolved: false };
 
     if (!locationMeta.resolved && !detranMeta.resolved && !mercadoLivreLinkMeta.resolved) continue;
@@ -1940,6 +2000,7 @@ async function compareProdutosBlingCodes(
       syncLocalizacao: options?.syncLocalizacao,
       syncDetran: options?.syncDetran,
       syncMercadoLivreLink: options?.syncMercadoLivreLink,
+      statusMercadoLivreByProductId,
     });
   }
 
@@ -2412,6 +2473,7 @@ async function sendAuditoriaEmail(config: any, resultado: any, executedAt: Date 
   const to = String(config?.auditoriaEmailDestinatario || '').trim();
   const from = String(config?.emailRemetente || DEFAULT_RESEND_FROM).trim() || DEFAULT_RESEND_FROM;
   const titulo = String(config?.auditoriaEmailTitulo || DEFAULT_AUDITORIA_EMAIL_TITULO).trim() || DEFAULT_AUDITORIA_EMAIL_TITULO;
+  const subject = buildDatedEmailSubject(titulo, DEFAULT_AUDITORIA_EMAIL_TITULO, executedAt);
 
   if (!apiKey) throw new Error('API Key do Resend nao configurada');
   if (!to) throw new Error('Email destinatario da auditoria nao configurado');
@@ -2420,7 +2482,7 @@ async function sendAuditoriaEmail(config: any, resultado: any, executedAt: Date 
     apiKey,
     from,
     to,
-    subject: titulo,
+    subject,
     html: renderAuditoriaEmailHtmlConfigured(resultado, executedAt, titulo),
     text: renderAuditoriaEmailTextConfigured(resultado, executedAt, titulo),
   });
@@ -2429,7 +2491,12 @@ async function sendAuditoriaEmail(config: any, resultado: any, executedAt: Date 
 async function executeAuditoriaAutomatica(origem: 'manual' | 'auto' = 'manual') {
   const cfg = await getConfig();
   const emailConfig = await getConfiguracaoGeral();
-  const assuntoAuditoria = String(emailConfig?.auditoriaEmailTitulo || DEFAULT_AUDITORIA_EMAIL_TITULO).trim() || DEFAULT_AUDITORIA_EMAIL_TITULO;
+  const executedAt = new Date();
+  const assuntoAuditoria = buildDatedEmailSubject(
+    emailConfig?.auditoriaEmailTitulo,
+    DEFAULT_AUDITORIA_EMAIL_TITULO,
+    executedAt,
+  );
   const local = await loadAllLocalSkuResumo(cfg.auditoriaEscopo);
   const execution = await prisma.auditoriaAutomaticaExecucao.create({
     data: {
@@ -2457,7 +2524,7 @@ async function executeAuditoriaAutomatica(origem: 'manual' | 'auto' = 'manual') 
 
     if (resultado.totalDivergencias > 0 && emailConfig.auditoriaEmailConfigurado) {
       try {
-        await sendAuditoriaEmail(emailConfig, resultado, new Date());
+        await sendAuditoriaEmail(emailConfig, resultado, executedAt);
         emailEnviado = true;
       } catch (error: any) {
         emailErro = error?.message || String(error);

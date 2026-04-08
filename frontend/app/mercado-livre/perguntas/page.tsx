@@ -83,14 +83,14 @@ export default function MercadoLivrePerguntasPage() {
   }
 
   async function excluir(questionId: string) {
-    if (!confirm('Excluir essa pergunta da fila pendente?')) return;
+    if (!confirm('Excluir essa pergunta no Mercado Livre e remover da fila do ANB?')) return;
 
     setDeletingId(questionId);
     try {
       await api.mercadoLivre.excluirPergunta(questionId);
       await load();
     } catch (error: any) {
-      alert(error.message || 'Erro ao excluir a pergunta');
+      alert(error.message || 'Erro ao excluir a pergunta no Mercado Livre');
     } finally {
       setDeletingId(null);
     }
