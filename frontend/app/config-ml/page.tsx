@@ -154,7 +154,7 @@ export default function ConfigMlPage() {
       setMercadoPagoStatus({
         ok: true,
         nickname: mercadoLivreConfig?.mercadoPagoUserId || '',
-        detail: Solicitacao enviada ao Mercado Pago. Liberados lidos:  linha(s). Liquidacao lida:  linha(s).,
+        detail: `Solicitacao enviada ao Mercado Pago. Liberados lidos: ${result?.releaseRows || 0} linha(s). Liquidacao lida: ${result?.settlementRows || 0} linha(s).`,
       });
       alert('Solicitacao de relatorios enviada ao Mercado Pago. Se o arquivo novo nao ficar pronto na hora, ele pode chegar por email alguns minutos depois.');
     } catch (error: any) {
