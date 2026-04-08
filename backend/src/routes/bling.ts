@@ -445,11 +445,33 @@ function normalizeMercadoLivreLink(value: any) {
   const raw = String(value ?? '').trim();
   if (!raw) return null;
 
-  const match = raw.match(/https?:\/\/[^\s"'<>]+/i);
-  if (!match) return null;
+  const directMatch = raw.match(/https?:\/\/[^\s"'<>]+/i);
+  if (directMatch) {
+    const cleaned = directMatch[0].replace(/[)\],.;]+$/g, '');
+    return /mercadolivre|mercadolibre/i.test(cleaned) ? cleaned : null;
+  }
 
-  const cleaned = match[0].replace(/[)\],.;]+$/g, '');
-  return /mercadolivre|mercadolibre/i.test(cleaned) ? cleaned : null;
+  const domainMatch = raw.match(/\b(?:www\.)?(?:produto\.)?mercadolivre\.com\.br\/[^\s"'<>]+/i)
+    || raw.match(/\b(?:www\.)?(?:articulo\.)?mercadolibre\.com(?:\.[a-z]{2})?\/[^\s"'<>]+/i);
+  if (!domainMatch) return null;
+
+  const cleaned = domainMatch[0].replace(/[)\],.;]+$/g, '');
+  return `https://${cleaned.replace(/^https?:\/\//i, '')}`;
+}
+
+function normalizeMercadoLivreItemCode(value: any) {
+  const raw = String(value ?? '').toUpperCase();
+  const direct = raw.match(/\bMLB[-_ ]?\d+\b/);
+  if (direct) {
+    return direct[0].replace(/[-_ ]+/g, '');
+  }
+
+  const permalink = raw.match(/\/(MLB[-_ ]?\d+)(?:[_/?#-]|$)/);
+  return permalink ? permalink[1].replace(/[-_ ]+/g, '') : null;
+}
+
+function buildMercadoLivreItemLink(code: string | null) {
+  return code ? `https://produto.mercadolivre.com.br/${code}` : null;
 }
 
 function findFirstMercadoLivreLink(value: any, seen = new WeakSet<object>()): string | null {
@@ -476,6 +498,36 @@ function findFirstMercadoLivreLink(value: any, seen = new WeakSet<object>()): st
 
   for (const nested of Object.values(value)) {
     const found = findFirstMercadoLivreLink(nested, seen);
+    if (found) return found;
+  }
+
+  return null;
+}
+
+function findFirstMercadoLivreItemCode(value: any, seen = new WeakSet<object>()): string | null {
+  if (value === null || value === undefined) return null;
+
+  if (typeof value === 'string') {
+    return normalizeMercadoLivreItemCode(value);
+  }
+
+  if (typeof value !== 'object') {
+    return null;
+  }
+
+  if (seen.has(value)) return null;
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findFirstMercadoLivreItemCode(item, seen);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  for (const nested of Object.values(value)) {
+    const found = findFirstMercadoLivreItemCode(nested, seen);
     if (found) return found;
   }
 
@@ -542,6 +594,58 @@ function resolveBlingMercadoLivreLink(produto: any, detail?: any, lojaRows: any[
   }
 
   return { link: null, resolved: false };
+}
+
+async function resolveBlingMercadoLivreLinkWithFallback(produto: any, detail?: any, lojaRows: any[] = []) {
+  const direct = resolveBlingMercadoLivreLink(produto, detail, lojaRows);
+  if (direct.resolved && direct.link) {
+    return direct;
+  }
+
+  for (const row of lojaRows) {
+    const codeFromRow = findFirstMercadoLivreItemCode(row);
+    if (codeFromRow) {
+      return { link: buildMercadoLivreItemLink(codeFromRow), resolved: true };
+    }
+  }
+
+  const candidateRows = (lojaRows.filter((row) => isLikelyMercadoLivreLink(row)).length
+    ? lojaRows.filter((row) => isLikelyMercadoLivreLink(row))
+    : lojaRows);
+
+  for (const row of candidateRows) {
+    const anuncioId = Number(
+      row?.idAnuncio
+      || row?.anuncio?.id
+      || row?.item?.id
+      || row?.vinculo?.id
+      || row?.id,
+    );
+    const lojaId = getProdutoLojaId(row);
+    if (!anuncioId || !lojaId) continue;
+
+    try {
+      const anuncioDetail = await getMercadoLivreAnuncioDetail(anuncioId, lojaId);
+      const detailLink = findFirstMercadoLivreLink(anuncioDetail);
+      if (detailLink) {
+        return { link: detailLink, resolved: true };
+      }
+
+      const detailCode = findFirstMercadoLivreItemCode(anuncioDetail);
+      if (detailCode) {
+        return { link: buildMercadoLivreItemLink(detailCode), resolved: true };
+      }
+    } catch {
+      // segue com os proximos vinculos
+    }
+  }
+
+  const codeFromDetail = findFirstMercadoLivreItemCode(detail) || findFirstMercadoLivreItemCode(produto);
+  if (codeFromDetail) {
+    return { link: buildMercadoLivreItemLink(codeFromDetail), resolved: true };
+  }
+
+  return direct;
 }
 
 function collectProdutoCustomFieldRows(...sources: any[]) {
@@ -1673,7 +1777,7 @@ async function syncPecaMetadataFromBling(
       ? await resolveBlingDetranEtiqueta(produto, detail)
       : { etiqueta: null, resolved: false };
     const mercadoLivreLinkMeta = options?.syncMercadoLivreLink
-      ? resolveBlingMercadoLivreLink(produto, detail, lojaRows)
+      ? await resolveBlingMercadoLivreLinkWithFallback(produto, detail, lojaRows)
       : { link: null, resolved: false };
 
     if (!locationMeta.resolved && !detranMeta.resolved && !mercadoLivreLinkMeta.resolved) continue;
@@ -3339,7 +3443,7 @@ blingRouter.post('/importar-produto', async (req, res, next) => {
         detail = await fetchBlingProductDetailById(Number(id));
         detranEtiqueta = (await resolveBlingDetranEtiqueta(null, detail)).etiqueta;
         const lojaRows = await fetchProdutoLojaLinksByProductId(Number(id));
-        mercadoLivreLink = resolveBlingMercadoLivreLink(null, detail, lojaRows).link;
+        mercadoLivreLink = (await resolveBlingMercadoLivreLinkWithFallback(null, detail, lojaRows)).link;
         if (!localizacaoNormalizada) {
           localizacaoNormalizada = resolveBlingLocation(null, detail).location;
         }

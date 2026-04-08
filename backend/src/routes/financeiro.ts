@@ -190,12 +190,17 @@ function matchesYearMonth(date: Date | string | null | undefined, year?: number 
   return true;
 }
 
-function hasReachedScheduleTime(currentTime: string, scheduledTime: string) {
-  return currentTime >= scheduledTime;
+function isScheduledMinute(currentTime: string, scheduledTime: string) {
+  return currentTime === scheduledTime;
 }
 
 function isPastOrToday(date: Date, timeZone = FINANCEIRO_TIMEZONE) {
   return toStoredDateKey(date) <= currentDateKey(timeZone);
+}
+
+function msUntilNextMinuteTick() {
+  const now = new Date();
+  return ((60 - now.getSeconds()) * 1000) - now.getMilliseconds() + 250;
 }
 
 function mapDespesaRow(row: any) {
@@ -212,7 +217,7 @@ async function tickDespesasEmailScheduler() {
   if (!config.despesasEmailAtivo) return;
 
   const now = getTimezoneDateParts(new Date(), FINANCEIRO_TIMEZONE);
-  if (!hasReachedScheduleTime(now.timeKey, config.despesasEmailHorario)) return;
+  if (!isScheduledMinute(now.timeKey, config.despesasEmailHorario)) return;
   const executionKey = `${now.dateKey} ${config.despesasEmailHorario}`;
   if (String(config.despesasEmailUltimaExecucaoChave || '') === executionKey) return;
 
@@ -260,7 +265,7 @@ export function startFinanceiroSchedulers() {
     });
   };
 
-  setTimeout(runTick, 15000);
+  setTimeout(runTick, msUntilNextMinuteTick());
   setInterval(runTick, DESPESAS_SCHEDULER_INTERVAL_MS);
 }
 
