@@ -23,8 +23,6 @@ export default function BlingConfigProdutosPage() {
   const [motos, setMotos] = useState<any[]>([]);
   const [prefixos, setPrefixos] = useState<PrefixoItem[]>([emptyPrefixo()]);
   const [savedPrefs, setSavedPrefs] = useState<any[]>([]);
-  const [fretePadrao, setFretePadrao] = useState('29.90');
-  const [taxaPadraoPct, setTaxaPadraoPct] = useState('17');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -38,8 +36,6 @@ export default function BlingConfigProdutosPage() {
           prefixo: String(item.prefixo || ''),
           motoId: String(item.motoId || ''),
         })) : [emptyPrefixo()]);
-        setFretePadrao(String(data.fretePadrao ?? '29.90'));
-        setTaxaPadraoPct(String(data.taxaPadraoPct ?? '17'));
       })
       .catch(() => {});
   }, []);
@@ -49,27 +45,12 @@ export default function BlingConfigProdutosPage() {
       .filter((item) => item.prefixo.trim() && item.motoId)
       .map((item) => ({ prefixo: item.prefixo.trim().toUpperCase(), motoId: Number(item.motoId) }));
 
-    const frete = Number(fretePadrao);
-    const taxa = Number(taxaPadraoPct);
-    if (!Number.isFinite(frete) || frete < 0) {
-      alert('Informe um frete padrao valido');
-      return;
-    }
-    if (!Number.isFinite(taxa) || taxa < 0) {
-      alert('Informe uma taxa ML valida');
-      return;
-    }
-
     setSaving(true);
     try {
       await fetch(`${API}/bling/config-produtos`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prefixos: validos,
-          fretePadrao: frete,
-          taxaPadraoPct: taxa,
-        }),
+        body: JSON.stringify({ prefixos: validos }),
       });
       setSavedPrefs(validos);
       alert('Configuracoes salvas com sucesso!');
@@ -100,45 +81,12 @@ export default function BlingConfigProdutosPage() {
     <>
       <div style={s.topbar}>
         <div>
-          <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)', letterSpacing: '-0.3px' }}>Config. Produtos</div>
-          <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>Prefixos do Bling e valores padrao usados na importacao</div>
+          <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)', letterSpacing: '-0.3px' }}>Conf. Produtos Bling</div>
+          <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>De/para do prefixo do SKU para vincular as motos na importacao</div>
         </div>
       </div>
 
       <div style={{ padding: 28, maxWidth: 860 }}>
-        <div style={s.card}>
-          <div style={s.h3}>Valores padrao dos produtos</div>
-          <p style={s.p}>
-            Defina o frete padrao e a taxa do Mercado Livre usados para preencher e calcular os itens
-            importados do Bling. Esses mesmos valores tambem serao usados ao aprovar um cancelamento.
-          </p>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 18 }}>
-            <div>
-              <div style={{ fontSize: 11, fontFamily: 'JetBrains Mono, monospace', color: 'var(--gray-400)', letterSpacing: '.8px', textTransform: 'uppercase', marginBottom: 8 }}>Frete padrao (R$)</div>
-              <input
-                style={s.input}
-                type="number"
-                step="0.01"
-                min="0"
-                value={fretePadrao}
-                onChange={(e) => setFretePadrao(e.target.value)}
-              />
-            </div>
-            <div>
-              <div style={{ fontSize: 11, fontFamily: 'JetBrains Mono, monospace', color: 'var(--gray-400)', letterSpacing: '.8px', textTransform: 'uppercase', marginBottom: 8 }}>Taxa ML (%)</div>
-              <input
-                style={s.input}
-                type="number"
-                step="0.01"
-                min="0"
-                value={taxaPadraoPct}
-                onChange={(e) => setTaxaPadraoPct(e.target.value)}
-              />
-            </div>
-          </div>
-        </div>
-
         <div style={s.card}>
           <div style={s.h3}>De/Para - Prefixo do SKU para Moto</div>
           <p style={s.p}>
@@ -220,7 +168,7 @@ export default function BlingConfigProdutosPage() {
         <div style={{ ...s.card, background: 'var(--gray-50)' }}>
           <div style={{ fontSize: 12, color: 'var(--gray-400)', lineHeight: 1.9 }}>
             <strong style={{ color: 'var(--gray-500)' }}>Dicas</strong><br />
-            • Use prefixos curtos e consistentes: <code style={{ fontFamily: 'JetBrains Mono, monospace', background: 'var(--gray-200)', padding: '0 4px', borderRadius: 3 }}>CR-</code> Crosser · <code style={{ fontFamily: 'JetBrains Mono, monospace', background: 'var(--gray-200)', padding: '0 4px', borderRadius: 3 }}>HD-</code> Harley · <code style={{ fontFamily: 'JetBrains Mono, monospace', background: 'var(--gray-200)', padding: '0 4px', borderRadius: 3 }}>BMW-</code> BMWs<br />
+            • Use prefixos curtos e consistentes: <code style={{ fontFamily: 'JetBrains Mono, monospace', background: 'var(--gray-200)', padding: '0 4px', borderRadius: 3 }}>CR-</code> Crosser · <code style={{ fontFamily: 'JetBrains Mono, monospace', background: 'var(--gray-200)', padding: '0 4px', borderRadius: 3 }}>HD-</code> Harley · <code style={{ fontFamily: 'JetBrains Mono, monospace', background: 'var(--gray-200)', padding: '0 4px', borderRadius: 3 }}>BM</code> BMW<br />
             • Prefixos mais longos tem prioridade: <code style={{ fontFamily: 'JetBrains Mono, monospace', background: 'var(--gray-200)', padding: '0 4px', borderRadius: 3 }}>BMW-GS-</code> vence <code style={{ fontFamily: 'JetBrains Mono, monospace', background: 'var(--gray-200)', padding: '0 4px', borderRadius: 3 }}>BMW-</code>
           </div>
         </div>

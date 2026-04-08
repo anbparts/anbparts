@@ -75,6 +75,14 @@ export const api = {
     porMoto:   () => req<any[]>('/faturamento/por-moto'),
   },
   financeiro: {
+    dre: (params?: Record<string, any>) => {
+      const qs = params ? '?' + new URLSearchParams(params).toString() : '';
+      return req<any>(`/financeiro/dre${qs}`);
+    },
+    despesasReceita: (params?: Record<string, any>) => {
+      const qs = params ? '?' + new URLSearchParams(params).toString() : '';
+      return req<any>(`/financeiro/despesas-receita${qs}`);
+    },
     despesas: {
       list: () => req<any[]>('/financeiro/despesas'),
       create: (data: any) => req<any>('/financeiro/despesas', { method: 'POST', body: JSON.stringify(data) }),
@@ -97,6 +105,19 @@ export const api = {
   configuracoesGerais: {
     get: () => req<any>('/configuracoes-gerais'),
     save: (data: any) => req<any>('/configuracoes-gerais', { method: 'POST', body: JSON.stringify(data) }),
+  },
+  mercadoLivre: {
+    getConfig: () => req<any>('/mercado-livre/config'),
+    saveConfig: (data: any) => req<any>('/mercado-livre/config', { method: 'POST', body: JSON.stringify(data) }),
+    authUrl: () => req<any>('/mercado-livre/auth-url'),
+    status: () => req<any>('/mercado-livre/status'),
+    disconnect: () => req<any>('/mercado-livre/disconnect', { method: 'DELETE' }),
+    perguntas: () => req<any[]>('/mercado-livre/perguntas'),
+    syncPerguntas: () => req<any>('/mercado-livre/perguntas/sync', { method: 'POST' }),
+    responderPergunta: (questionId: string, text: string) => req<any>(`/mercado-livre/perguntas/${questionId}/responder`, {
+      method: 'POST',
+      body: JSON.stringify({ text }),
+    }),
   },
   import: {
     motos: (data: any[]) => req<any>('/import/motos', { method: 'POST', body: JSON.stringify(data) }),

@@ -5,6 +5,8 @@ export const DEFAULT_AUDITORIA_EMAIL_TITULO = 'ALERTA ANB Parts - Divergencia de
 export const DEFAULT_DETRAN_EMAIL_TITULO = 'ALERTA ANB Parts - Baixa de Etiqueta DETRAN - Verifique';
 export const DEFAULT_DESPESAS_EMAIL_TITULO = 'ALERTA ANB Parts - Despesas do Dia - Verifique';
 export const DEFAULT_DESPESAS_EMAIL_HORARIO = '07:00';
+export const DEFAULT_MERCADO_LIVRE_PERGUNTAS_EMAIL_TITULO = 'ALERTA ANB Parts - Perguntas Mercado Livre - Verifique';
+export const DEFAULT_MERCADO_LIVRE_PERGUNTAS_INTERVALO_MIN = 5;
 
 function normalizeText(value: any) {
   return String(value || '').trim();
@@ -35,6 +37,11 @@ function buildGeneralConfigSeed(blingConfig: any) {
     despesasEmailTitulo: DEFAULT_DESPESAS_EMAIL_TITULO,
     despesasEmailUltimaExecucaoChave: null,
     despesasEmailUltimaExecucaoEm: null,
+    mercadoLivrePerguntasAtivo: false,
+    mercadoLivrePerguntasIntervaloMin: DEFAULT_MERCADO_LIVRE_PERGUNTAS_INTERVALO_MIN,
+    mercadoLivrePerguntasEmailDestinatario: auditoriaEmailDestinatario,
+    mercadoLivrePerguntasEmailTitulo: DEFAULT_MERCADO_LIVRE_PERGUNTAS_EMAIL_TITULO,
+    mercadoLivrePerguntasUltimaLeituraEm: null,
   };
 }
 
@@ -52,6 +59,11 @@ export function getConfiguracaoGeralDefaults(config: any) {
     despesasEmailTitulo: normalizeText(config?.despesasEmailTitulo) || DEFAULT_DESPESAS_EMAIL_TITULO,
     despesasEmailUltimaExecucaoChave: normalizeText(config?.despesasEmailUltimaExecucaoChave) || null,
     despesasEmailUltimaExecucaoEm: config?.despesasEmailUltimaExecucaoEm || null,
+    mercadoLivrePerguntasAtivo: !!config?.mercadoLivrePerguntasAtivo,
+    mercadoLivrePerguntasIntervaloMin: Math.max(1, Math.min(1440, Number(config?.mercadoLivrePerguntasIntervaloMin) || DEFAULT_MERCADO_LIVRE_PERGUNTAS_INTERVALO_MIN)),
+    mercadoLivrePerguntasEmailDestinatario: normalizeText(config?.mercadoLivrePerguntasEmailDestinatario),
+    mercadoLivrePerguntasEmailTitulo: normalizeText(config?.mercadoLivrePerguntasEmailTitulo) || DEFAULT_MERCADO_LIVRE_PERGUNTAS_EMAIL_TITULO,
+    mercadoLivrePerguntasUltimaLeituraEm: config?.mercadoLivrePerguntasUltimaLeituraEm || null,
   };
 }
 
@@ -72,6 +84,7 @@ export async function getConfiguracaoGeral() {
     auditoriaEmailConfigurado: !!(normalized.resendApiKey && normalized.emailRemetente && normalized.auditoriaEmailDestinatario && normalized.auditoriaEmailTitulo),
     detranEmailConfigurado: !!(normalized.resendApiKey && normalized.emailRemetente && normalized.detranEmailDestinatario && normalized.detranEmailTitulo),
     despesasEmailConfigurado: !!(normalized.resendApiKey && normalized.emailRemetente && normalized.despesasEmailDestinatario && normalized.despesasEmailTitulo),
+    mercadoLivrePerguntasEmailConfigurado: !!(normalized.resendApiKey && normalized.emailRemetente && normalized.mercadoLivrePerguntasEmailDestinatario && normalized.mercadoLivrePerguntasEmailTitulo),
   };
 }
 
@@ -80,6 +93,13 @@ export async function saveConfiguracaoGeral(data: Record<string, any>) {
   const horarioAtual = current.despesasEmailHorario;
   const proximoHorario = data.despesasEmailHorario !== undefined ? normalizeHorario(data.despesasEmailHorario) : horarioAtual;
   const resetDespesaExecucao = proximoHorario !== horarioAtual;
+  const intervaloAtual = current.mercadoLivrePerguntasIntervaloMin;
+  const proximoIntervalo = data.mercadoLivrePerguntasIntervaloMin !== undefined
+    ? Math.max(1, Math.min(1440, Number(data.mercadoLivrePerguntasIntervaloMin) || DEFAULT_MERCADO_LIVRE_PERGUNTAS_INTERVALO_MIN))
+    : intervaloAtual;
+  const resetMercadoLivreUltimaLeitura =
+    proximoIntervalo !== intervaloAtual
+    || (data.mercadoLivrePerguntasAtivo !== undefined && !!data.mercadoLivrePerguntasAtivo !== current.mercadoLivrePerguntasAtivo);
   const payload = {
     resendApiKey: data.resendApiKey !== undefined ? normalizeText(data.resendApiKey) : current.resendApiKey,
     emailRemetente: data.emailRemetente !== undefined ? normalizeEmailFrom(data.emailRemetente) : current.emailRemetente,
@@ -101,6 +121,19 @@ export async function saveConfiguracaoGeral(data: Record<string, any>) {
       : resetDespesaExecucao
         ? null
       : current.despesasEmailUltimaExecucaoEm,
+    mercadoLivrePerguntasAtivo: data.mercadoLivrePerguntasAtivo !== undefined ? !!data.mercadoLivrePerguntasAtivo : current.mercadoLivrePerguntasAtivo,
+    mercadoLivrePerguntasIntervaloMin: proximoIntervalo,
+    mercadoLivrePerguntasEmailDestinatario: data.mercadoLivrePerguntasEmailDestinatario !== undefined
+      ? normalizeText(data.mercadoLivrePerguntasEmailDestinatario)
+      : current.mercadoLivrePerguntasEmailDestinatario,
+    mercadoLivrePerguntasEmailTitulo: data.mercadoLivrePerguntasEmailTitulo !== undefined
+      ? (normalizeText(data.mercadoLivrePerguntasEmailTitulo) || DEFAULT_MERCADO_LIVRE_PERGUNTAS_EMAIL_TITULO)
+      : current.mercadoLivrePerguntasEmailTitulo,
+    mercadoLivrePerguntasUltimaLeituraEm: data.mercadoLivrePerguntasUltimaLeituraEm !== undefined
+      ? data.mercadoLivrePerguntasUltimaLeituraEm
+      : resetMercadoLivreUltimaLeitura
+        ? null
+        : current.mercadoLivrePerguntasUltimaLeituraEm,
   };
 
   return prisma.configuracaoGeral.update({

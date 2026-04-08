@@ -21,10 +21,15 @@ type ConfiguracaoGeral = {
   despesasEmailHorario: string;
   despesasEmailDestinatario: string;
   despesasEmailTitulo: string;
+  mercadoLivrePerguntasAtivo: boolean;
+  mercadoLivrePerguntasIntervaloMin: number;
+  mercadoLivrePerguntasEmailDestinatario: string;
+  mercadoLivrePerguntasEmailTitulo: string;
   resendApiKeyConfigured: boolean;
   auditoriaEmailConfigurado: boolean;
   detranEmailConfigurado: boolean;
   despesasEmailConfigurado: boolean;
+  mercadoLivrePerguntasEmailConfigurado: boolean;
 };
 
 export default function ConfiguracoesGeraisPage() {
@@ -41,6 +46,10 @@ export default function ConfiguracoesGeraisPage() {
   const [despesasEmailHorario, setDespesasEmailHorario] = useState('07:00');
   const [despesasEmailDestinatario, setDespesasEmailDestinatario] = useState('');
   const [despesasEmailTitulo, setDespesasEmailTitulo] = useState('');
+  const [mercadoLivrePerguntasAtivo, setMercadoLivrePerguntasAtivo] = useState(false);
+  const [mercadoLivrePerguntasIntervaloMin, setMercadoLivrePerguntasIntervaloMin] = useState('5');
+  const [mercadoLivrePerguntasEmailDestinatario, setMercadoLivrePerguntasEmailDestinatario] = useState('');
+  const [mercadoLivrePerguntasEmailTitulo, setMercadoLivrePerguntasEmailTitulo] = useState('');
 
   async function loadConfig() {
     const data = await api.configuracoesGerais.get();
@@ -55,6 +64,10 @@ export default function ConfiguracoesGeraisPage() {
     setDespesasEmailHorario(data.despesasEmailHorario || '07:00');
     setDespesasEmailDestinatario(data.despesasEmailDestinatario || '');
     setDespesasEmailTitulo(data.despesasEmailTitulo || '');
+    setMercadoLivrePerguntasAtivo(!!data.mercadoLivrePerguntasAtivo);
+    setMercadoLivrePerguntasIntervaloMin(String(data.mercadoLivrePerguntasIntervaloMin || 5));
+    setMercadoLivrePerguntasEmailDestinatario(data.mercadoLivrePerguntasEmailDestinatario || '');
+    setMercadoLivrePerguntasEmailTitulo(data.mercadoLivrePerguntasEmailTitulo || '');
   }
 
   useEffect(() => {
@@ -77,6 +90,10 @@ export default function ConfiguracoesGeraisPage() {
         despesasEmailHorario,
         despesasEmailDestinatario,
         despesasEmailTitulo,
+        mercadoLivrePerguntasAtivo,
+        mercadoLivrePerguntasIntervaloMin: Number(mercadoLivrePerguntasIntervaloMin) || 5,
+        mercadoLivrePerguntasEmailDestinatario,
+        mercadoLivrePerguntasEmailTitulo,
       });
       await loadConfig();
       alert('Configuracoes gerais salvas.');
@@ -91,7 +108,7 @@ export default function ConfiguracoesGeraisPage() {
     return (
       <>
         <div style={s.topbar}>
-          <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)' }}>Configuracoes Gerais</div>
+          <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)' }}>Conf. E-mails</div>
         </div>
         <div style={{ padding: 28, color: 'var(--gray-400)', fontSize: 13 }}>Carregando...</div>
       </>
@@ -102,7 +119,7 @@ export default function ConfiguracoesGeraisPage() {
     <>
       <div style={s.topbar}>
         <div>
-          <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)', letterSpacing: '-0.3px' }}>Configuracoes Gerais</div>
+          <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)', letterSpacing: '-0.3px' }}>Conf. E-mails</div>
           <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>Centraliza as configuracoes de email reutilizadas pelos processos automaticos do sistema</div>
         </div>
         <button style={{ ...s.btn, background: 'var(--blue-500)', color: '#fff' }} onClick={salvar} disabled={saving}>{saving ? 'Salvando...' : 'Salvar configuracoes'}</button>
@@ -115,6 +132,7 @@ export default function ConfiguracoesGeraisPage() {
             { label: 'Auditoria', value: config?.auditoriaEmailConfigurado ? 'Configurado' : 'Revisar', color: config?.auditoriaEmailConfigurado ? 'var(--green)' : 'var(--amber)' },
             { label: 'Detran', value: config?.detranEmailConfigurado ? 'Configurado' : 'Revisar', color: config?.detranEmailConfigurado ? 'var(--green)' : 'var(--amber)' },
             { label: 'Despesas', value: config?.despesasEmailConfigurado ? 'Configurado' : 'Revisar', color: config?.despesasEmailConfigurado ? 'var(--green)' : 'var(--amber)' },
+            { label: 'Perguntas ML', value: config?.mercadoLivrePerguntasEmailConfigurado ? 'Configurado' : 'Revisar', color: config?.mercadoLivrePerguntasEmailConfigurado ? 'var(--green)' : 'var(--amber)' },
           ].map((item) => (
             <div key={item.label} style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 9, padding: '14px 16px' }}>
               <div style={{ fontSize: 11, fontFamily: 'JetBrains Mono, monospace', color: 'var(--gray-400)', letterSpacing: '.6px', textTransform: 'uppercase', marginBottom: 6 }}>{item.label}</div>
@@ -191,6 +209,34 @@ export default function ConfiguracoesGeraisPage() {
             <div>
               <label style={s.label}>Titulo do email das despesas</label>
               <input style={{ ...s.input, width: '100%' }} value={despesasEmailTitulo} onChange={(e) => setDespesasEmailTitulo(e.target.value)} placeholder="ALERTA ANB Parts - Despesas do Dia - Verifique" />
+            </div>
+          </div>
+        </div>
+
+        <div style={{ ...s.card, background: '#f5f3ff', borderColor: '#ddd6fe' }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 6 }}>Processo: Perguntas Mercado Livre</div>
+          <div style={{ fontSize: 12, color: 'var(--gray-500)', marginBottom: 14 }}>
+            Quando ativo, o sistema passa a ler novas perguntas do Mercado Livre no intervalo configurado abaixo e envia o e-mail com a mensagem completa sempre que houver pergunta nova.
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 12 }}>
+            <div>
+              <label style={s.label}>Leitura e email ativos</label>
+              <select style={{ ...s.input, width: '100%', cursor: 'pointer' }} value={mercadoLivrePerguntasAtivo ? 'ativa' : 'pausada'} onChange={(e) => setMercadoLivrePerguntasAtivo(e.target.value === 'ativa')}>
+                <option value="pausada">Pausada</option>
+                <option value="ativa">Ativa</option>
+              </select>
+            </div>
+            <div>
+              <label style={s.label}>Tempo de processamento (min)</label>
+              <input style={{ ...s.input, width: '100%' }} type="number" min="1" step="1" value={mercadoLivrePerguntasIntervaloMin} onChange={(e) => setMercadoLivrePerguntasIntervaloMin(e.target.value)} />
+            </div>
+            <div>
+              <label style={s.label}>Email destinatario das perguntas</label>
+              <input style={{ ...s.input, width: '100%' }} value={mercadoLivrePerguntasEmailDestinatario} onChange={(e) => setMercadoLivrePerguntasEmailDestinatario(e.target.value)} placeholder="vendas@empresa.com.br" />
+            </div>
+            <div>
+              <label style={s.label}>Titulo do email das perguntas</label>
+              <input style={{ ...s.input, width: '100%' }} value={mercadoLivrePerguntasEmailTitulo} onChange={(e) => setMercadoLivrePerguntasEmailTitulo(e.target.value)} placeholder="ALERTA ANB Parts - Perguntas Mercado Livre - Verifique" />
             </div>
           </div>
         </div>

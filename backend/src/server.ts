@@ -9,6 +9,7 @@ import { blingRouter, startBlingAuditoriaScheduler } from './routes/bling';
 import { financeiroRouter, startFinanceiroSchedulers } from './routes/financeiro';
 import { inventarioRouter } from './routes/inventario';
 import { configuracoesGeraisRouter } from './routes/configuracoes-gerais';
+import { mercadoLivreRouter, startMercadoLivreScheduler } from './routes/mercado-livre';
 import { errorMiddleware } from './middlewares/error';
 
 const app = express();
@@ -27,6 +28,7 @@ app.use('/pecas', pecasRouter);
 app.use('/faturamento', faturamentoRouter);
 app.use('/import', importRouter);
 app.use('/bling', blingRouter);
+app.use('/mercado-livre', mercadoLivreRouter);
 app.use('/financeiro', financeiroRouter);
 app.use('/inventario', inventarioRouter);
 app.use('/configuracoes-gerais', configuracoesGeraisRouter);
@@ -37,5 +39,6 @@ const port = Number(process.env.PORT) || 3333;
 app.listen(port, () => {
   startBlingAuditoriaScheduler();
   startFinanceiroSchedulers();
+  startMercadoLivreScheduler();
   console.log(`ANB Backend rodando na porta ${port}`);
 });

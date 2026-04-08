@@ -1,7 +1,11 @@
 'use client';
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3333';
+
+function today() {
+  return new Date().toISOString().split('T')[0];
+}
 
 const s: any = {
   topbar: {
@@ -116,8 +120,8 @@ function fmtDate(value: string) {
 }
 
 export default function RelatorioVendasPage() {
-  const [dataDe, setDataDe] = useState('');
-  const [dataAte, setDataAte] = useState('');
+  const [dataDe, setDataDe] = useState(today());
+  const [dataAte, setDataAte] = useState(today());
   const [pedido, setPedido] = useState('');
   const [idPeca, setIdPeca] = useState('');
   const [buscando, setBuscando] = useState(false);
@@ -155,13 +159,18 @@ export default function RelatorioVendasPage() {
   }
 
   function limparFiltros() {
-    setDataDe('');
-    setDataAte('');
+    const current = today();
+    setDataDe(current);
+    setDataAte(current);
     setPedido('');
     setIdPeca('');
     setRelatorio(null);
     setBuscou(false);
   }
+
+  useEffect(() => {
+    buscarRelatorio();
+  }, []);
 
   const totais = relatorio?.totaisGerais || {
     totalPedidos: 0,

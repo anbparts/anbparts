@@ -34,6 +34,7 @@ model Peca {
   descricao   String
   localizacao String?
   detranEtiqueta String?
+  mercadoLivreLink String?
   detranBaixada  Boolean  @default(false)
   detranBaixadaAt DateTime?
   cadastro    DateTime @default(now())
@@ -53,6 +54,7 @@ model Peca {
   prejuizo    Prejuizo?
 
   @@index([localizacao])
+  @@index([mercadoLivreLink])
   @@index([motoId, detranEtiqueta])
 }
 
@@ -157,8 +159,55 @@ model ConfiguracaoGeral {
   despesasEmailTitulo       String   @default("ALERTA ANB Parts - Despesas do Dia - Verifique")
   despesasEmailUltimaExecucaoChave String?
   despesasEmailUltimaExecucaoEm DateTime?
+  mercadoLivrePerguntasAtivo Boolean @default(false)
+  mercadoLivrePerguntasIntervaloMin Int @default(5)
+  mercadoLivrePerguntasEmailDestinatario String @default("")
+  mercadoLivrePerguntasEmailTitulo String @default("ALERTA ANB Parts - Perguntas Mercado Livre - Verifique")
+  mercadoLivrePerguntasUltimaLeituraEm DateTime?
   createdAt                 DateTime @default(now())
   updatedAt                 DateTime @updatedAt
+}
+
+model MercadoLivreConfig {
+  id           Int      @id @default(autoincrement())
+  clientId     String   @default("")
+  clientSecret String   @default("")
+  accessToken  String   @default("")
+  refreshToken String   @default("")
+  connectedAt  DateTime?
+  sellerId     String   @default("")
+  nickname     String   @default("")
+  siteId       String   @default("MLB")
+  updatedAt    DateTime @updatedAt
+}
+
+model MercadoLivrePergunta {
+  id               Int      @id @default(autoincrement())
+  questionId       String   @unique
+  itemId           String?
+  status           String   @default("UNANSWERED")
+  texto            String   @db.Text
+  respostaTexto    String?  @db.Text
+  dataPergunta     DateTime?
+  respondidaEm     DateTime?
+  clienteId        String?
+  nomeCliente      String?
+  sku              String?
+  idPeca           String?
+  pecaId           Int?
+  descricao        String?
+  tituloAnuncio    String?
+  linkAnuncio      String?
+  raw              Json     @default("{}")
+  notificadaEm     DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([status])
+  @@index([dataPergunta])
+  @@index([notificadaEm])
+  @@index([sku])
+  @@index([idPeca])
 }
 
 model Inventario {

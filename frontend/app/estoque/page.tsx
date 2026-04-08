@@ -25,6 +25,10 @@ function hasDetranEtiqueta(value: any) {
   return Boolean(String(value || '').trim());
 }
 
+function hasMercadoLivreLink(value: any) {
+  return Boolean(String(value || '').trim());
+}
+
 function calculatePecaPreview(precoML: string, valorFrete: string, valorTaxas: string) {
   const preco = Number(precoML) || 0;
   const frete = Number(valorFrete) || 0;
@@ -76,10 +80,15 @@ const cs: any = {
 
 function PrejuizoReasonModal({ open, peca, saving, onClose, onConfirm }: any) {
   const [motivo, setMotivo] = useState(PREJUIZO_OPTIONS[0]);
+  const [observacao, setObservacao] = useState('');
 
   useEffect(() => {
-    if (open) setMotivo(PREJUIZO_OPTIONS[0]);
-  }, [open]);
+    if (open) {
+      setMotivo(PREJUIZO_OPTIONS[0]);
+      setObservacao('');
+      if (peca) peca.__prejuizoObservacao = '';
+    }
+  }, [open, peca]);
 
   if (!open || !peca) return null;
 
@@ -99,6 +108,16 @@ function PrejuizoReasonModal({ open, peca, saving, onClose, onConfirm }: any) {
           <select style={{ ...cs.fi, cursor: 'pointer' }} value={motivo} onChange={(e) => setMotivo(e.target.value)}>
             {PREJUIZO_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
           </select>
+          <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-soft)', display: 'block', marginTop: 14 }}>Observacao</label>
+          <textarea
+            style={{ ...cs.fi, minHeight: 92, resize: 'vertical' as const }}
+            value={observacao}
+            onChange={(e) => {
+              setObservacao(e.target.value);
+              if (peca) peca.__prejuizoObservacao = e.target.value;
+            }}
+            placeholder="Detalhe o motivo do prejuizo, se necessario"
+          />
         </div>
         <div style={{ padding: '14px 22px 20px', display: 'flex', gap: 8, justifyContent: 'flex-end', borderTop: '1px solid var(--border)' }}>
           <button onClick={onClose} style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink-soft)', borderColor: 'var(--border-strong)' }}>Cancelar</button>
@@ -131,6 +150,45 @@ function ActionIconButton({ onClick }: { onClick: () => void }) {
         <path d="M12 20h9" />
         <path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5Z" />
       </svg>
+    </button>
+  );
+}
+
+function StatusLinkButton({ disponivel, link }: { disponivel: boolean; link: string | null | undefined }) {
+  const enabled = hasMercadoLivreLink(link);
+
+  const sharedStyle: any = {
+    padding: '2px 8px',
+    borderRadius: 99,
+    fontSize: 11,
+    fontFamily: 'Geist Mono, monospace',
+    border: '1px solid',
+    background: disponivel ? 'var(--sage-light)' : 'var(--gray-100)',
+    color: disponivel ? 'var(--sage)' : 'var(--ink-muted)',
+    borderColor: disponivel ? 'var(--sage-mid)' : 'var(--border)',
+  };
+
+  if (!enabled) {
+    return (
+      <span
+        title="Link do anuncio Mercado Livre ainda nao sincronizado"
+        style={sharedStyle}
+      >
+        {disponivel ? 'Estoque' : 'Vendido'}
+      </span>
+    );
+  }
+
+  return (
+    <button
+      onClick={() => window.open(String(link), '_blank', 'noopener,noreferrer')}
+      title="Abrir anuncio no Mercado Livre"
+      style={{
+        ...sharedStyle,
+        cursor: 'pointer',
+      }}
+    >
+      {disponivel ? 'Estoque' : 'Vendido'}
     </button>
   );
 }
@@ -609,6 +667,7 @@ function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, peca, 
             await onMarkPrejuizo({
               id: peca.id,
               motivo,
+              observacao: String(peca.__prejuizoObservacao || '').trim(),
               motoId: Number(form.motoId),
               descricao: form.descricao,
               cadastro: form.cadastro,
@@ -1083,9 +1142,7 @@ export default function EstoquePage() {
                       )}
                     </td>
                     <td style={cs.td}>
-                      {p.disponivel
-                        ? <span style={{ background: 'var(--sage-light)', color: 'var(--sage)', border: '1px solid var(--sage-mid)', padding: '2px 8px', borderRadius: 99, fontSize: 11, fontFamily: 'Geist Mono, monospace' }}>Estoque</span>
-                        : <span style={{ background: 'var(--gray-100)', color: 'var(--ink-muted)', border: '1px solid var(--border)', padding: '2px 8px', borderRadius: 99, fontSize: 11, fontFamily: 'Geist Mono, monospace' }}>Vendido</span>}
+                      <StatusLinkButton disponivel={Boolean(p.disponivel)} link={p.mercadoLivreLink} />
                     </td>
                     <td style={cs.td}>
                       <ActionIconButton onClick={() => setActionPeca(p)} />

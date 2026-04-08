@@ -4,6 +4,8 @@ import {
   DEFAULT_DESPESAS_EMAIL_HORARIO,
   DEFAULT_DESPESAS_EMAIL_TITULO,
   DEFAULT_DETRAN_EMAIL_TITULO,
+  DEFAULT_MERCADO_LIVRE_PERGUNTAS_EMAIL_TITULO,
+  DEFAULT_MERCADO_LIVRE_PERGUNTAS_INTERVALO_MIN,
   DEFAULT_RESEND_FROM,
   getConfiguracaoGeral,
   saveConfiguracaoGeral,
@@ -24,10 +26,15 @@ configuracoesGeraisRouter.get('/', async (_req, res, next) => {
       despesasEmailHorario: config.despesasEmailHorario || DEFAULT_DESPESAS_EMAIL_HORARIO,
       despesasEmailDestinatario: config.despesasEmailDestinatario || '',
       despesasEmailTitulo: config.despesasEmailTitulo || DEFAULT_DESPESAS_EMAIL_TITULO,
+      mercadoLivrePerguntasAtivo: !!config.mercadoLivrePerguntasAtivo,
+      mercadoLivrePerguntasIntervaloMin: Number(config.mercadoLivrePerguntasIntervaloMin || DEFAULT_MERCADO_LIVRE_PERGUNTAS_INTERVALO_MIN),
+      mercadoLivrePerguntasEmailDestinatario: config.mercadoLivrePerguntasEmailDestinatario || '',
+      mercadoLivrePerguntasEmailTitulo: config.mercadoLivrePerguntasEmailTitulo || DEFAULT_MERCADO_LIVRE_PERGUNTAS_EMAIL_TITULO,
       resendApiKeyConfigured: !!config.resendApiKey,
       auditoriaEmailConfigurado: !!config.auditoriaEmailConfigurado,
       detranEmailConfigurado: !!config.detranEmailConfigurado,
       despesasEmailConfigurado: !!config.despesasEmailConfigurado,
+      mercadoLivrePerguntasEmailConfigurado: !!config.mercadoLivrePerguntasEmailConfigurado,
     });
   } catch (e) {
     next(e);
@@ -46,6 +53,10 @@ configuracoesGeraisRouter.post('/', async (req, res, next) => {
       despesasEmailHorario: req.body?.despesasEmailHorario,
       despesasEmailDestinatario: req.body?.despesasEmailDestinatario,
       despesasEmailTitulo: req.body?.despesasEmailTitulo,
+      mercadoLivrePerguntasAtivo: req.body?.mercadoLivrePerguntasAtivo,
+      mercadoLivrePerguntasIntervaloMin: req.body?.mercadoLivrePerguntasIntervaloMin,
+      mercadoLivrePerguntasEmailDestinatario: req.body?.mercadoLivrePerguntasEmailDestinatario,
+      mercadoLivrePerguntasEmailTitulo: req.body?.mercadoLivrePerguntasEmailTitulo,
     };
 
     const resendApiKey = String(req.body?.resendApiKey || '').trim();

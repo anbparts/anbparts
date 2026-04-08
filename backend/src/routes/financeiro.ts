@@ -169,6 +169,27 @@ function toStoredDateKey(date: Date | string | null | undefined) {
   return parsed.toISOString().split('T')[0];
 }
 
+function extractYear(date: Date | string | null | undefined) {
+  const key = toStoredDateKey(date);
+  if (!key) return null;
+  return Number(key.slice(0, 4));
+}
+
+function extractMonth(date: Date | string | null | undefined) {
+  const key = toStoredDateKey(date);
+  if (!key) return null;
+  return Number(key.slice(5, 7));
+}
+
+function matchesYearMonth(date: Date | string | null | undefined, year?: number | null, month?: number | null) {
+  const valueYear = extractYear(date);
+  const valueMonth = extractMonth(date);
+  if (!valueYear || !valueMonth) return false;
+  if (year && valueYear !== year) return false;
+  if (month && valueMonth !== month) return false;
+  return true;
+}
+
 function hasReachedScheduleTime(currentTime: string, scheduledTime: string) {
   return currentTime >= scheduledTime;
 }
@@ -553,29 +574,118 @@ financeiroRouter.delete('/investimentos/:id', async (req, res, next) => {
   }
 });
 
-// DRE
-financeiroRouter.get('/dre', async (_req, res, next) => {
+financeiroRouter.get('/despesas-receita', async (req, res, next) => {
   try {
+    const ano = Number(req.query.ano) || new Date().getFullYear();
+    const mes = Number(req.query.mes) || 0;
+
+    const [pecasVendidas, despesas] = await Promise.all([
+      prisma.peca.findMany({
+        where: { disponivel: false, emPrejuizo: false, dataVenda: { not: null } },
+        select: { precoML: true, valorTaxas: true, valorFrete: true, dataVenda: true },
+      }),
+      prisma.despesa.findMany({
+        select: { data: true, detalhes: true, categoria: true, valor: true, statusPagamento: true },
+      }),
+    ]);
+
+    const monthIndexes = mes ? [mes] : Array.from({ length: 12 }, (_, index) => index + 1);
+    const months = monthIndexes.map((monthIndex) => {
+      const receitaBruta = pecasVendidas
+        .filter((item) => matchesYearMonth(item.dataVenda, ano, monthIndex))
+        .reduce((sum, item) => sum + toNumber(item.precoML), 0);
+
+      const taxasMl = pecasVendidas
+        .filter((item) => matchesYearMonth(item.dataVenda, ano, monthIndex))
+        .reduce((sum, item) => sum + toNumber(item.valorTaxas), 0);
+
+      const fretePago = pecasVendidas
+        .filter((item) => matchesYearMonth(item.dataVenda, ano, monthIndex))
+        .reduce((sum, item) => sum + toNumber(item.valorFrete), 0);
+
+      const despesasMes = despesas
+        .filter((item) => matchesYearMonth(item.data, ano, monthIndex))
+        .reduce((sum, item) => sum + toNumber(item.valor), 0);
+
+      const despesasPendentes = despesas
+        .filter((item) => item.statusPagamento === 'pendente' && matchesYearMonth(item.data, ano, monthIndex))
+        .reduce((sum, item) => sum + toNumber(item.valor), 0);
+
+      const totalSaidas = taxasMl + fretePago + despesasMes;
+      const resultadoBruto = receitaBruta - totalSaidas;
+
+      return {
+        ano,
+        mes: monthIndex,
+        label: `${String(monthIndex).padStart(2, '0')}/${ano}`,
+        receitaBruta,
+        taxasMl,
+        fretePago,
+        despesasGerais: despesasMes,
+        despesasPendentes,
+        totalSaidas,
+        resultadoBruto,
+      };
+    });
+
+    const totalReceitaBruta = months.reduce((sum, item) => sum + item.receitaBruta, 0);
+    const totalTaxasMl = months.reduce((sum, item) => sum + item.taxasMl, 0);
+    const totalFretePago = months.reduce((sum, item) => sum + item.fretePago, 0);
+    const totalDespesasGerais = months.reduce((sum, item) => sum + item.despesasGerais, 0);
+    const totalSaidas = months.reduce((sum, item) => sum + item.totalSaidas, 0);
+    const totalResultadoBruto = months.reduce((sum, item) => sum + item.resultadoBruto, 0);
+
+    res.json({
+      ano,
+      mes: mes || null,
+      months,
+      totals: {
+        receitaBruta: totalReceitaBruta,
+        taxasMl: totalTaxasMl,
+        fretePago: totalFretePago,
+        despesasGerais: totalDespesasGerais,
+        totalSaidas,
+        resultadoBruto: totalResultadoBruto,
+      },
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// DRE
+financeiroRouter.get('/dre', async (req, res, next) => {
+  try {
+    const ano = Number(req.query.ano) || null;
     const [pecasVendidas, despesas, prejuizos, motos] = await Promise.all([
       prisma.peca.findMany({
         where: { disponivel: false, emPrejuizo: false, dataVenda: { not: null } },
-        select: { precoML: true, valorLiq: true, valorFrete: true, valorTaxas: true },
+        select: { precoML: true, valorLiq: true, valorFrete: true, valorTaxas: true, dataVenda: true },
       }),
       prisma.despesa.findMany({
         select: { valor: true, categoria: true, statusPagamento: true, data: true },
       }),
-      prisma.prejuizo.findMany({ select: { valor: true, frete: true } }),
-      prisma.moto.findMany({ select: { precoCompra: true } }),
+      prisma.prejuizo.findMany({ select: { valor: true, frete: true, data: true } }),
+      prisma.moto.findMany({ select: { precoCompra: true, dataCompra: true } }),
     ]);
 
-    const despesasElegiveis = despesas.filter((item) => item.statusPagamento === 'pago' && isPastOrToday(item.data));
+    const pecasVendidasFiltradas = pecasVendidas.filter((item) => matchesYearMonth(item.dataVenda, ano));
+    const despesasElegiveis = despesas.filter((item) => (
+      item.statusPagamento === 'pago' &&
+      isPastOrToday(item.data) &&
+      matchesYearMonth(item.data, ano)
+    ));
+    const prejuizosFiltrados = prejuizos.filter((item) => matchesYearMonth(item.data, ano));
+    const motosFiltradas = ano
+      ? motos.filter((item) => matchesYearMonth(item.dataCompra, ano))
+      : motos;
 
-    const receitaBruta = pecasVendidas.reduce((sum, item) => sum + toNumber(item.precoML), 0);
-    const comissaoML = pecasVendidas.reduce((sum, item) => sum + toNumber(item.valorTaxas), 0);
-    const frete = pecasVendidas.reduce((sum, item) => sum + toNumber(item.valorFrete), 0);
-    const receitaLiq = pecasVendidas.reduce((sum, item) => sum + toNumber(item.valorLiq), 0);
+    const receitaBruta = pecasVendidasFiltradas.reduce((sum, item) => sum + toNumber(item.precoML), 0);
+    const comissaoML = pecasVendidasFiltradas.reduce((sum, item) => sum + toNumber(item.valorTaxas), 0);
+    const frete = pecasVendidasFiltradas.reduce((sum, item) => sum + toNumber(item.valorFrete), 0);
+    const receitaLiq = pecasVendidasFiltradas.reduce((sum, item) => sum + toNumber(item.valorLiq), 0);
 
-    const investido = motos.reduce((sum, item) => sum + toNumber(item.precoCompra), 0);
+    const investido = motosFiltradas.reduce((sum, item) => sum + toNumber(item.precoCompra), 0);
     const comprasMoto = despesasElegiveis
       .filter((item) => String(item.categoria || '').trim() === 'Moto')
       .reduce((sum, item) => sum + toNumber(item.valor), 0);
@@ -584,7 +694,7 @@ financeiroRouter.get('/dre', async (_req, res, next) => {
 
     const despOp = despesasElegiveis.filter((item) => String(item.categoria || '').trim() !== 'Moto');
     const totalDesp = despOp.reduce((sum, item) => sum + toNumber(item.valor), 0);
-    const totalPrej = prejuizos.reduce((sum, item) => sum + toNumber(item.valor) + toNumber(item.frete), 0);
+    const totalPrej = prejuizosFiltrados.reduce((sum, item) => sum + toNumber(item.valor) + toNumber(item.frete), 0);
     const lucroOp = lucroBruto - totalDesp - totalPrej;
 
     const despPorCateg: Record<string, number> = {};
@@ -592,7 +702,16 @@ financeiroRouter.get('/dre', async (_req, res, next) => {
       despPorCateg[item.categoria] = (despPorCateg[item.categoria] || 0) + toNumber(item.valor);
     });
 
+    const anosDisponiveis = Array.from(new Set([
+      ...pecasVendidas.map((item) => extractYear(item.dataVenda)),
+      ...despesas.map((item) => extractYear(item.data)),
+      ...prejuizos.map((item) => extractYear(item.data)),
+      ...motos.map((item) => extractYear(item.dataCompra)),
+    ].filter(Boolean) as number[])).sort((a, b) => b - a);
+
     res.json({
+      ano,
+      anosDisponiveis,
       receitaBruta,
       comissaoML,
       frete,
@@ -605,7 +724,7 @@ financeiroRouter.get('/dre', async (_req, res, next) => {
       totalPrej,
       lucroOp,
       despPorCateg,
-      qtdVendidas: pecasVendidas.length,
+      qtdVendidas: pecasVendidasFiltradas.length,
     });
   } catch (e) {
     next(e);

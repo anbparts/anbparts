@@ -43,6 +43,7 @@ const prejuizoPayloadSchema = z.object({
   precoML: z.number().optional(),
   valorFrete: z.number().optional(),
   valorTaxas: z.number().optional(),
+  observacao: z.string().optional().nullable(),
 });
 
 async function gerarIdPeca(): Promise<string> {
@@ -530,6 +531,7 @@ pecasRouter.patch('/:id/prejuizo', async (req, res, next) => {
           data: new Date(),
           detalhe,
           motivo,
+          observacao: payload.observacao ? String(payload.observacao).trim() : null,
           pecaId: peca.id,
           valor: financials.precoML,
           frete: financials.valorFrete,

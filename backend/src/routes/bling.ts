@@ -441,6 +441,47 @@ function normalizeDetranEtiqueta(value: any) {
   return text || null;
 }
 
+function normalizeMercadoLivreLink(value: any) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return null;
+
+  const match = raw.match(/https?:\/\/[^\s"'<>]+/i);
+  if (!match) return null;
+
+  const cleaned = match[0].replace(/[)\],.;]+$/g, '');
+  return /mercadolivre|mercadolibre/i.test(cleaned) ? cleaned : null;
+}
+
+function findFirstMercadoLivreLink(value: any, seen = new WeakSet<object>()): string | null {
+  if (value === null || value === undefined) return null;
+
+  if (typeof value === 'string') {
+    return normalizeMercadoLivreLink(value);
+  }
+
+  if (typeof value !== 'object') {
+    return null;
+  }
+
+  if (seen.has(value)) return null;
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findFirstMercadoLivreLink(item, seen);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  for (const nested of Object.values(value)) {
+    const found = findFirstMercadoLivreLink(nested, seen);
+    if (found) return found;
+  }
+
+  return null;
+}
+
 function getNestedValue(source: any, path: string[]) {
   return path.reduce((current, key) => (current === null || current === undefined ? undefined : current[key]), source);
 }
@@ -482,6 +523,25 @@ function resolveBlingLocation(produto: any, detail?: any) {
   }
 
   return { location: null, resolved };
+}
+
+function resolveBlingMercadoLivreLink(produto: any, detail?: any, lojaRows: any[] = []) {
+  for (const row of lojaRows) {
+    const found = findFirstMercadoLivreLink(row);
+    if (found) {
+      return { link: found, resolved: true };
+    }
+  }
+
+  for (const source of [detail, produto]) {
+    if (!source) continue;
+    const found = findFirstMercadoLivreLink(source);
+    if (found) {
+      return { link: found, resolved: true };
+    }
+  }
+
+  return { link: null, resolved: false };
 }
 
 function collectProdutoCustomFieldRows(...sources: any[]) {
@@ -1492,6 +1552,7 @@ async function listPecasForComparacaoByCodes(codigos: string[]) {
       descricao: true,
       localizacao: true,
       detranEtiqueta: true,
+      mercadoLivreLink: true,
       disponivel: true,
       emPrejuizo: true,
       dataVenda: true,
@@ -1520,6 +1581,7 @@ async function loadAllLocalSkuResumo(escopo = 'full') {
       descricao: true,
       localizacao: true,
       detranEtiqueta: true,
+      mercadoLivreLink: true,
       disponivel: true,
       emPrejuizo: true,
       dataVenda: true,
@@ -1584,7 +1646,8 @@ async function syncPecaMetadataFromBling(
   localPecas: any[],
   produtosBling: Map<string, any>,
   detalhesBlingByProductId: Map<number, any>,
-  options?: { syncLocalizacao?: boolean; syncDetran?: boolean },
+  productStoreLinksByProductId: Map<number, any[]>,
+  options?: { syncLocalizacao?: boolean; syncDetran?: boolean; syncMercadoLivreLink?: boolean },
 ) {
   if (!localPecas.length) return 0;
 
@@ -1593,6 +1656,8 @@ async function syncPecaMetadataFromBling(
     locationResolved: boolean;
     detranEtiqueta: string | null;
     detranResolved: boolean;
+    mercadoLivreLink: string | null;
+    mercadoLivreLinkResolved: boolean;
   }>();
   for (const peca of localPecas) {
     const skuBase = getBaseSku(peca.idPeca);
@@ -1602,24 +1667,30 @@ async function syncPecaMetadataFromBling(
     if (!produto) continue;
 
     const detail = produto?.id ? (detalhesBlingByProductId.get(Number(produto.id)) || null) : null;
+    const lojaRows = produto?.id ? (productStoreLinksByProductId.get(Number(produto.id)) || []) : [];
     const locationMeta = resolveBlingLocation(produto, detail);
     const detranMeta = options?.syncDetran
       ? await resolveBlingDetranEtiqueta(produto, detail)
       : { etiqueta: null, resolved: false };
+    const mercadoLivreLinkMeta = options?.syncMercadoLivreLink
+      ? resolveBlingMercadoLivreLink(produto, detail, lojaRows)
+      : { link: null, resolved: false };
 
-    if (!locationMeta.resolved && !detranMeta.resolved) continue;
+    if (!locationMeta.resolved && !detranMeta.resolved && !mercadoLivreLinkMeta.resolved) continue;
 
     targetBySku.set(skuBase, {
       location: locationMeta.location,
       locationResolved: locationMeta.resolved,
       detranEtiqueta: detranMeta.etiqueta,
       detranResolved: detranMeta.resolved,
+      mercadoLivreLink: mercadoLivreLinkMeta.link,
+      mercadoLivreLinkResolved: mercadoLivreLinkMeta.resolved,
     });
   }
 
   if (!targetBySku.size) return 0;
 
-  const groupedUpdates = new Map<string, { ids: number[]; data: { localizacao?: string | null; detranEtiqueta?: string | null } }>();
+  const groupedUpdates = new Map<string, { ids: number[]; data: { localizacao?: string | null; detranEtiqueta?: string | null; mercadoLivreLink?: string | null } }>();
 
   for (const peca of localPecas) {
     const skuBase = getBaseSku(peca.idPeca);
@@ -1628,7 +1699,7 @@ async function syncPecaMetadataFromBling(
     const target = targetBySku.get(skuBase);
     if (!target) continue;
 
-    const data: { localizacao?: string | null; detranEtiqueta?: string | null } = {};
+    const data: { localizacao?: string | null; detranEtiqueta?: string | null; mercadoLivreLink?: string | null } = {};
 
     if (options?.syncLocalizacao && target.locationResolved) {
       const currentLocation = normalizeLocation(peca.localizacao);
@@ -1641,6 +1712,13 @@ async function syncPecaMetadataFromBling(
       const currentDetran = normalizeDetranEtiqueta(peca.detranEtiqueta);
       if (currentDetran !== target.detranEtiqueta) {
         data.detranEtiqueta = target.detranEtiqueta;
+      }
+    }
+
+    if (options?.syncMercadoLivreLink && target.mercadoLivreLinkResolved) {
+      const currentLink = String(peca.mercadoLivreLink || '').trim() || null;
+      if (currentLink !== target.mercadoLivreLink) {
+        data.mercadoLivreLink = target.mercadoLivreLink;
       }
     }
 
@@ -1680,7 +1758,7 @@ function getSkusMissingDetran(localPecas: any[]) {
 
 async function compareProdutosBlingCodes(
   codigosInput: string[],
-  options?: { batchSize?: number; pauseMs?: number; localMap?: Map<string, any>; localPecas?: any[]; syncLocalizacao?: boolean; syncDetran?: boolean },
+  options?: { batchSize?: number; pauseMs?: number; localMap?: Map<string, any>; localPecas?: any[]; syncLocalizacao?: boolean; syncDetran?: boolean; syncMercadoLivreLink?: boolean },
 ) {
   const codigos = Array.from(new Set(codigosInput.map((codigo) => getBaseSku(codigo)).filter(Boolean)));
   if (!codigos.length) {
@@ -1720,15 +1798,19 @@ async function compareProdutosBlingCodes(
       .filter((id): id is number => Number.isFinite(id) && id > 0),
   ));
 
-  const [statusMercadoLivreByProductId, detalhesBlingByProductId] = await Promise.all([
+  const [statusMercadoLivreByProductId, detalhesBlingByProductId, productStoreLinksByProductId] = await Promise.all([
     findMercadoLivreStatusByProductIds(produtoIdsParaStatus, options),
     findBlingProductDetailsByIds(produtoIdsParaDetalhe, options),
+    options?.syncMercadoLivreLink && localPecas.length
+      ? findProdutoLojaLinksByProductIds(produtoIdsParaStatus)
+      : Promise.resolve(new Map<number, any[]>()),
   ]);
 
-  if ((options?.syncLocalizacao || options?.syncDetran) && localPecas.length) {
-    await syncPecaMetadataFromBling(localPecas, produtosBling, detalhesBlingByProductId, {
+  if ((options?.syncLocalizacao || options?.syncDetran || options?.syncMercadoLivreLink) && localPecas.length) {
+    await syncPecaMetadataFromBling(localPecas, produtosBling, detalhesBlingByProductId, productStoreLinksByProductId, {
       syncLocalizacao: options?.syncLocalizacao,
       syncDetran: options?.syncDetran,
+      syncMercadoLivreLink: options?.syncMercadoLivreLink,
     });
   }
 
@@ -2236,6 +2318,7 @@ async function executeAuditoriaAutomatica(origem: 'manual' | 'auto' = 'manual') 
       localPecas: local.pecas,
       syncLocalizacao: true,
       syncDetran: true,
+      syncMercadoLivreLink: true,
       batchSize: cfg.auditoriaTamanhoLote,
       pauseMs: cfg.auditoriaPausaMs,
     });
@@ -2376,9 +2459,14 @@ blingRouter.get('/config-produtos', async (_req, res, next) => {
 
 blingRouter.post('/config-produtos', async (req, res, next) => {
   try {
-    const prefixos = Array.isArray(req.body?.prefixos) ? req.body.prefixos : [];
-    const fretePadrao = roundMoney(Math.max(0, toNumber(req.body?.fretePadrao, DEFAULT_FRETE_PADRAO)));
-    const taxaPadraoPct = roundMoney(Math.max(0, toNumber(req.body?.taxaPadraoPct, DEFAULT_TAXA_PADRAO_PCT)));
+    const current = await getConfig();
+    const prefixos = Array.isArray(req.body?.prefixos) ? req.body.prefixos : (current.prefixos || []);
+    const fretePadrao = req.body?.fretePadrao !== undefined
+      ? roundMoney(Math.max(0, toNumber(req.body?.fretePadrao, DEFAULT_FRETE_PADRAO)))
+      : current.fretePadrao;
+    const taxaPadraoPct = req.body?.taxaPadraoPct !== undefined
+      ? roundMoney(Math.max(0, toNumber(req.body?.taxaPadraoPct, DEFAULT_TAXA_PADRAO_PCT)))
+      : current.taxaPadraoPct;
 
     await saveConfig({
       prefixos,
@@ -2743,6 +2831,7 @@ blingRouter.post('/sync/produtos', async (req, res, next) => {
       const resultado = await compareProdutosBlingCodes(codigos, {
         syncLocalizacao: true,
         syncDetran: true,
+        syncMercadoLivreLink: true,
       });
       res.json(resultado);
     } catch (e) {
@@ -3242,12 +3331,15 @@ blingRouter.post('/importar-produto', async (req, res, next) => {
     const quantidade = Math.max(1, Number(qtd) || 1);
     let localizacaoNormalizada = normalizeLocation(localizacao);
     let detranEtiqueta = null;
+    let mercadoLivreLink = null;
     let detail: any = null;
 
     if (Number(id) > 0) {
       try {
         detail = await fetchBlingProductDetailById(Number(id));
         detranEtiqueta = (await resolveBlingDetranEtiqueta(null, detail)).etiqueta;
+        const lojaRows = await fetchProdutoLojaLinksByProductId(Number(id));
+        mercadoLivreLink = resolveBlingMercadoLivreLink(null, detail, lojaRows).link;
         if (!localizacaoNormalizada) {
           localizacaoNormalizada = resolveBlingLocation(null, detail).location;
         }
@@ -3277,6 +3369,7 @@ blingRouter.post('/importar-produto', async (req, res, next) => {
           valorLiq,
           localizacao: localizacaoNormalizada,
           detranEtiqueta,
+          mercadoLivreLink,
           disponivel: true,
           cadastro: new Date(),
         },
