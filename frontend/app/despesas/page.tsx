@@ -88,6 +88,13 @@ function formatDateBr(value: any) {
   return `${day}/${month}/${year}`;
 }
 
+function formatDateTimeBr(value: any) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString('pt-BR');
+}
+
 async function fileToDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -379,10 +386,18 @@ export default function DespesasPage() {
   const [filtroStatus, setFiltroStatus] = useState('');
   const [filtroAno, setFiltroAno] = useState(currentYear());
   const [showForm, setShowForm] = useState(false);
+  const [origemForm, setOrigemForm] = useState<'manual' | 'arquivo'>('manual');
   const [saving, setSaving] = useState(false);
+  const [solicitandoRelatorioMp, setSolicitandoRelatorioMp] = useState(false);
+  const [analisandoCsvMp, setAnalisandoCsvMp] = useState(false);
+  const [importandoCsvMp, setImportandoCsvMp] = useState(false);
   const [modo, setModo] = useState<ViewMode>('grafico');
   const [pagamentoDespesa, setPagamentoDespesa] = useState<any | null>(null);
   const [deletePrompt, setDeletePrompt] = useState<{ despesa: any; futureCount: number } | null>(null);
+  const [mercadoPagoAte, setMercadoPagoAte] = useState(today());
+  const [arquivoMercadoPago, setArquivoMercadoPago] = useState<{ name: string; dataUrl: string } | null>(null);
+  const [previewMercadoPagoInfo, setPreviewMercadoPagoInfo] = useState<any | null>(null);
+  const [previewMercadoPagoRows, setPreviewMercadoPagoRows] = useState<any[]>([]);
   const [form, setForm] = useState({
     data: today(),
     detalhes: '',
@@ -469,6 +484,13 @@ export default function DespesasPage() {
     setForm((current) => ({ ...current, anexo: { name: file.name, dataUrl } }));
   }
 
+  async function handleArquivoMercadoPagoChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const dataUrl = await fileToDataUrl(file);
+    setArquivoMercadoPago({ name: file.name, dataUrl });
+  }
+
   async function salvar() {
     if (!form.detalhes || !form.valor) return;
     setSaving(true);
@@ -507,6 +529,118 @@ export default function DespesasPage() {
     }
   }
 
+  async function solicitarRelatorioMercadoPago() {
+    setSolicitandoRelatorioMp(true);
+    try {
+      const response = await api.financeiro.despesas.solicitarRelatorioMercadoPago({ ate: mercadoPagoAte });
+      alert(response?.detail || 'Solicitacao enviada ao Mercado Pago. O CSV pode chegar por email em alguns minutos.');
+    } finally {
+      setSolicitandoRelatorioMp(false);
+    }
+  }
+
+  async function analisarArquivoMercadoPago() {
+    if (!arquivoMercadoPago) {
+      alert('Selecione o CSV do Mercado Pago antes de analisar.');
+      return;
+    }
+
+    setAnalisandoCsvMp(true);
+    try {
+      const response = await api.financeiro.despesas.previewImportacaoMercadoPago({
+        fileName: arquivoMercadoPago.name,
+        dataUrl: arquivoMercadoPago.dataUrl,
+      });
+
+      setPreviewMercadoPagoInfo(response);
+      setPreviewMercadoPagoRows(
+        (response?.rows || []).map((item: any) => ({
+          ...item,
+          selected: false,
+          categoria: item.importacaoExistente?.categoria || '',
+          detalhes: item.importacaoExistente?.detalhes || item.detalhesSugeridos || item.descriptionOriginal || 'Movimentacao Mercado Pago',
+        })),
+      );
+
+      if (!response?.rows?.length) {
+        alert('O CSV foi lido, mas nao encontramos saídas negativas para revisar.');
+      }
+    } finally {
+      setAnalisandoCsvMp(false);
+    }
+  }
+
+  function atualizarLinhaMercadoPago(importKey: string, patch: Record<string, any>) {
+    setPreviewMercadoPagoRows((current) => current.map((item) => (
+      item.importKey === importKey ? { ...item, ...patch } : item
+    )));
+  }
+
+  function marcarTodasLinhasMercadoPago(selected: boolean) {
+    setPreviewMercadoPagoRows((current) => current.map((item) => (
+      item.jaImportada ? item : { ...item, selected }
+    )));
+  }
+
+  async function importarSelecionadasMercadoPago() {
+    const selecionadas = previewMercadoPagoRows.filter((item) => item.selected && !item.jaImportada);
+    if (!selecionadas.length) {
+      alert('Selecione pelo menos uma linha para importar como despesa.');
+      return;
+    }
+
+    const semCategoria = selecionadas.find((item) => !String(item.categoria || '').trim());
+    if (semCategoria) {
+      alert('Selecione a categoria de todas as linhas marcadas antes de importar.');
+      return;
+    }
+
+    const semDetalhes = selecionadas.find((item) => !String(item.detalhes || '').trim());
+    if (semDetalhes) {
+      alert('Preencha os detalhes de todas as linhas marcadas antes de importar.');
+      return;
+    }
+
+    setImportandoCsvMp(true);
+    try {
+      const response = await api.financeiro.despesas.importarMercadoPagoCsv({
+        itens: selecionadas.map((item) => ({
+          data: item.data,
+          dataHora: item.dataHora,
+          detalhes: item.detalhes,
+          categoria: item.categoria,
+          valor: Number(item.valor || 0),
+          fileName: item.fileName,
+          sourceId: item.sourceId,
+          descriptionOriginal: item.descriptionOriginal,
+          valorAssinado: Number(item.valorAssinado || 0),
+        })),
+      });
+
+      alert(`Importacao concluida. ${response.imported || 0} despesa(s) criada(s) e ${response.skipped || 0} linha(s) ignorada(s).`);
+
+      setPreviewMercadoPagoRows((current) => current.map((item) => (
+        item.selected && !item.jaImportada
+          ? {
+              ...item,
+              selected: false,
+              jaImportada: true,
+              importacaoExistente: {
+                detalhes: item.detalhes,
+                categoria: item.categoria,
+                data: item.data,
+                valor: item.valor,
+              },
+            }
+          : item
+      )));
+
+      await load();
+    } finally {
+      setImportandoCsvMp(false);
+    }
+  }
+
   function futureSeriesCount(item: any) {
     if (!item?.recorrenciaSerieId) return 0;
     const currentTime = new Date(item.data).getTime();
@@ -539,6 +673,16 @@ export default function DespesasPage() {
     const todayKey = today();
     return rows.filter((item) => item.statusPagamento === 'pendente' && dateKey(item.data) === todayKey).length;
   }, [rows]);
+
+  const previewMercadoPagoSelecionadas = useMemo(
+    () => previewMercadoPagoRows.filter((item) => item.selected && !item.jaImportada),
+    [previewMercadoPagoRows],
+  );
+
+  const totalPreviewMercadoPagoSelecionado = useMemo(
+    () => previewMercadoPagoSelecionadas.reduce((sum, item) => sum + Number(item.valor || 0), 0),
+    [previewMercadoPagoSelecionadas],
+  );
 
   return (
     <>
@@ -580,84 +724,320 @@ export default function DespesasPage() {
 
         {showForm && (
           <div style={{ background: 'var(--white)', border: '1px solid var(--blue-200)', borderRadius: 10, padding: 20, marginBottom: 20 }}>
-            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 14, color: 'var(--ink)' }}>Nova despesa</div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
               <div>
-                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Data</div>
-                <input style={{ ...inputStyle, width: '100%' }} type="date" value={form.data} onChange={(e) => setForm((value) => ({ ...value, data: e.target.value }))} />
+                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>Nova despesa</div>
+                <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 4 }}>
+                  Escolha se o lancamento sera feito manualmente ou revisado a partir de um CSV do Mercado Pago.
+                </div>
               </div>
-              <div style={{ gridColumn: 'span 2' }}>
-                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Detalhes *</div>
-                <input style={{ ...inputStyle, width: '100%' }} placeholder="Ex: Boleto fornecedor pneus" value={form.detalhes} onChange={(e) => setForm((value) => ({ ...value, detalhes: e.target.value }))} />
-              </div>
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Categoria</div>
-                <select style={{ ...inputStyle, width: '100%', cursor: 'pointer' }} value={form.categoria} onChange={(e) => setForm((value) => ({ ...value, categoria: e.target.value }))}>
-                  {CATEGORIAS.map((categoria) => <option key={categoria}>{categoria}</option>)}
-                </select>
-              </div>
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Valor (R$) *</div>
-                <input style={{ ...inputStyle, width: '100%' }} type="number" step="0.01" placeholder="0,00" value={form.valor} onChange={(e) => setForm((value) => ({ ...value, valor: e.target.value }))} />
-              </div>
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Recorrencia</div>
-                <select
-                  style={{ ...inputStyle, width: '100%', cursor: 'pointer' }}
-                  value={form.recorrenciaTipo}
-                  onChange={(e) => setForm((value) => ({
-                    ...value,
-                    recorrenciaTipo: e.target.value,
-                    recorrenciaAte: e.target.value === 'nenhuma'
-                      ? ''
-                      : (value.recorrenciaAte || (e.target.value === 'mensal' ? addMonthsToInputDate(value.data, 11) : addDaysToInputDate(value.data, 77))),
-                  }))}
+              <div style={{ display: 'inline-flex', gap: 8, padding: 4, borderRadius: 999, background: 'var(--gray-50)', border: '1px solid var(--border)' }}>
+                <button
+                  type="button"
+                  onClick={() => setOrigemForm('manual')}
+                  style={{
+                    border: 'none',
+                    borderRadius: 999,
+                    padding: '8px 14px',
+                    background: origemForm === 'manual' ? 'var(--blue-500)' : 'transparent',
+                    color: origemForm === 'manual' ? '#fff' : 'var(--ink)',
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
                 >
-                  {RECORRENCIAS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </select>
-              </div>
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Repetir ate</div>
-                <input
-                  style={{ ...inputStyle, width: '100%' }}
-                  type="date"
-                  value={form.recorrenciaAte}
-                  disabled={form.recorrenciaTipo === 'nenhuma'}
-                  onChange={(e) => setForm((value) => ({ ...value, recorrenciaAte: e.target.value }))}
-                />
-              </div>
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Chave PIX</div>
-                <input style={{ ...inputStyle, width: '100%' }} placeholder="Opcional" value={form.chavePix} onChange={(e) => setForm((value) => ({ ...value, chavePix: e.target.value }))} />
-              </div>
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Codigo de barras</div>
-                <input style={{ ...inputStyle, width: '100%' }} placeholder="Opcional" value={form.codigoBarras} onChange={(e) => setForm((value) => ({ ...value, codigoBarras: e.target.value }))} />
-              </div>
-              <div style={{ gridColumn: 'span 2' }}>
-                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Observacao</div>
-                <input style={{ ...inputStyle, width: '100%' }} placeholder="Opcional" value={form.observacao} onChange={(e) => setForm((value) => ({ ...value, observacao: e.target.value }))} />
-              </div>
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>PDF da despesa</div>
-                <input type="file" accept=".pdf" onChange={handleAnexoChange} />
-                <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 6 }}>{form.anexo?.name || 'Nenhum arquivo selecionado'}</div>
+                  Manual
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOrigemForm('arquivo')}
+                  style={{
+                    border: 'none',
+                    borderRadius: 999,
+                    padding: '8px 14px',
+                    background: origemForm === 'arquivo' ? 'var(--blue-500)' : 'transparent',
+                    color: origemForm === 'arquivo' ? '#fff' : 'var(--ink)',
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Via arquivo
+                </button>
               </div>
             </div>
-            {form.recorrenciaTipo !== 'nenhuma' && (
-              <div style={{ marginTop: 10, fontSize: 12, color: 'var(--ink-muted)' }}>
-                A serie sera criada com o mesmo valor e os mesmos dados ate <strong>{form.recorrenciaAte ? formatDateBr(form.recorrenciaAte) : '-'}</strong>.
+
+            {origemForm === 'manual' ? (
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Data</div>
+                    <input style={{ ...inputStyle, width: '100%' }} type="date" value={form.data} onChange={(e) => setForm((value) => ({ ...value, data: e.target.value }))} />
+                  </div>
+                  <div style={{ gridColumn: 'span 2' }}>
+                    <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Detalhes *</div>
+                    <input style={{ ...inputStyle, width: '100%' }} placeholder="Ex: Boleto fornecedor pneus" value={form.detalhes} onChange={(e) => setForm((value) => ({ ...value, detalhes: e.target.value }))} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Categoria</div>
+                    <select style={{ ...inputStyle, width: '100%', cursor: 'pointer' }} value={form.categoria} onChange={(e) => setForm((value) => ({ ...value, categoria: e.target.value }))}>
+                      {CATEGORIAS.map((categoria) => <option key={categoria}>{categoria}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Valor (R$) *</div>
+                    <input style={{ ...inputStyle, width: '100%' }} type="number" step="0.01" placeholder="0,00" value={form.valor} onChange={(e) => setForm((value) => ({ ...value, valor: e.target.value }))} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Recorrencia</div>
+                    <select
+                      style={{ ...inputStyle, width: '100%', cursor: 'pointer' }}
+                      value={form.recorrenciaTipo}
+                      onChange={(e) => setForm((value) => ({
+                        ...value,
+                        recorrenciaTipo: e.target.value,
+                        recorrenciaAte: e.target.value === 'nenhuma'
+                          ? ''
+                          : (value.recorrenciaAte || (e.target.value === 'mensal' ? addMonthsToInputDate(value.data, 11) : addDaysToInputDate(value.data, 77))),
+                      }))}
+                    >
+                      {RECORRENCIAS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Repetir ate</div>
+                    <input
+                      style={{ ...inputStyle, width: '100%' }}
+                      type="date"
+                      value={form.recorrenciaAte}
+                      disabled={form.recorrenciaTipo === 'nenhuma'}
+                      onChange={(e) => setForm((value) => ({ ...value, recorrenciaAte: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Chave PIX</div>
+                    <input style={{ ...inputStyle, width: '100%' }} placeholder="Opcional" value={form.chavePix} onChange={(e) => setForm((value) => ({ ...value, chavePix: e.target.value }))} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Codigo de barras</div>
+                    <input style={{ ...inputStyle, width: '100%' }} placeholder="Opcional" value={form.codigoBarras} onChange={(e) => setForm((value) => ({ ...value, codigoBarras: e.target.value }))} />
+                  </div>
+                  <div style={{ gridColumn: 'span 2' }}>
+                    <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Observacao</div>
+                    <input style={{ ...inputStyle, width: '100%' }} placeholder="Opcional" value={form.observacao} onChange={(e) => setForm((value) => ({ ...value, observacao: e.target.value }))} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>PDF da despesa</div>
+                    <input type="file" accept=".pdf" onChange={handleAnexoChange} />
+                    <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 6 }}>{form.anexo?.name || 'Nenhum arquivo selecionado'}</div>
+                  </div>
+                </div>
+                {form.recorrenciaTipo !== 'nenhuma' && (
+                  <div style={{ marginTop: 10, fontSize: 12, color: 'var(--ink-muted)' }}>
+                    A serie sera criada com o mesmo valor e os mesmos dados ate <strong>{form.recorrenciaAte ? formatDateBr(form.recorrenciaAte) : '-'}</strong>.
+                  </div>
+                )}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
+                  <button
+                    onClick={salvar}
+                    disabled={saving || !form.detalhes || !form.valor || (form.recorrenciaTipo !== 'nenhuma' && !form.recorrenciaAte)}
+                    style={{ padding: '8px 18px', background: 'var(--blue-500)', color: '#fff', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                  >
+                    {saving ? 'Salvando...' : 'Salvar'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div style={{ display: 'grid', gap: 18 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 14 }}>
+                  <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 16, background: '#fafcff' }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }}>1. Solicitar extrato por email</div>
+                    <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginBottom: 12 }}>
+                      O ANB solicita ao Mercado Pago o <strong>release_report</strong> do primeiro dia do mes ate a data escolhida. O CSV chega por email e depois voce importa manualmente aqui.
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(160px, 220px) auto', gap: 10, alignItems: 'end' }}>
+                      <div>
+                        <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Data ate</div>
+                        <input
+                          style={{ ...inputStyle, width: '100%' }}
+                          type="date"
+                          value={mercadoPagoAte}
+                          onChange={(e) => setMercadoPagoAte(e.target.value)}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={solicitarRelatorioMercadoPago}
+                        disabled={solicitandoRelatorioMp}
+                        style={{ padding: '8px 18px', background: 'var(--blue-500)', color: '#fff', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                      >
+                        {solicitandoRelatorioMp ? 'Solicitando...' : 'Solicitar CSV por email'}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 16, background: '#fafcff' }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }}>2. Importar e revisar o CSV</div>
+                    <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginBottom: 12 }}>
+                      O ANB mostra somente as linhas negativas. Voce escolhe o que realmente e despesa, ajusta os detalhes e define a categoria antes de gravar.
+                    </div>
+                    <div style={{ display: 'grid', gap: 10 }}>
+                      <input type="file" accept=".csv,text/csv" onChange={handleArquivoMercadoPagoChange} />
+                      <div style={{ fontSize: 12, color: 'var(--gray-500)' }}>{arquivoMercadoPago?.name || 'Nenhum arquivo CSV selecionado'}</div>
+                      <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+                        <button
+                          type="button"
+                          onClick={analisarArquivoMercadoPago}
+                          disabled={analisandoCsvMp || !arquivoMercadoPago}
+                          style={{ padding: '8px 18px', background: '#0f766e', color: '#fff', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                        >
+                          {analisandoCsvMp ? 'Analisando...' : 'Analisar arquivo'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {previewMercadoPagoInfo && (
+                  <div style={{ border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, padding: 16, background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
+                      <div>
+                        <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 6 }}>Arquivo</div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>{previewMercadoPagoInfo.fileName}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 6 }}>Saidas negativas</div>
+                        <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--red)' }}>{previewMercadoPagoInfo.totalSaidas || 0}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 6 }}>Ja importadas</div>
+                        <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--gray-700)' }}>{previewMercadoPagoInfo.totalJaImportadas || 0}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 6 }}>Selecionadas agora</div>
+                        <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--blue-500)' }}>{previewMercadoPagoSelecionadas.length}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 6 }}>Total selecionado</div>
+                        <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--ink)' }}>{fmt(totalPreviewMercadoPagoSelecionado)}</div>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '12px 16px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
+                      <div style={{ fontSize: 12, color: 'var(--ink-muted)' }}>
+                        Marque apenas o que voce realmente considera despesa. O valor do arquivo entra como despesa paga, com a mesma data de lancamento e pagamento.
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        <button type="button" onClick={() => marcarTodasLinhasMercadoPago(true)} style={{ ...inputStyle, cursor: 'pointer', padding: '7px 12px', background: 'var(--white)' }}>
+                          Marcar todas
+                        </button>
+                        <button type="button" onClick={() => marcarTodasLinhasMercadoPago(false)} style={{ ...inputStyle, cursor: 'pointer', padding: '7px 12px', background: 'var(--white)' }}>
+                          Limpar selecao
+                        </button>
+                        <button
+                          type="button"
+                          onClick={importarSelecionadasMercadoPago}
+                          disabled={importandoCsvMp || !previewMercadoPagoSelecionadas.length}
+                          style={{ padding: '8px 18px', background: 'var(--blue-500)', color: '#fff', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                        >
+                          {importandoCsvMp ? 'Importando...' : 'Criar despesas selecionadas'}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', minWidth: 1180, borderCollapse: 'collapse' }}>
+                        <thead>
+                          <tr style={{ background: 'var(--gray-50)' }}>
+                            <th style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', textAlign: 'left', fontSize: 11, color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: '.6px' }}>Importar</th>
+                            <th style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', textAlign: 'left', fontSize: 11, color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: '.6px' }}>Data</th>
+                            <th style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', textAlign: 'left', fontSize: 11, color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: '.6px' }}>Valor no arquivo</th>
+                            <th style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', textAlign: 'left', fontSize: 11, color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: '.6px' }}>Descricao original</th>
+                            <th style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', textAlign: 'left', fontSize: 11, color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: '.6px' }}>Origem</th>
+                            <th style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', textAlign: 'left', fontSize: 11, color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: '.6px' }}>Saldo apos</th>
+                            <th style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', textAlign: 'left', fontSize: 11, color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: '.6px' }}>Detalhes da despesa</th>
+                            <th style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', textAlign: 'left', fontSize: 11, color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: '.6px' }}>Categoria</th>
+                            <th style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', textAlign: 'left', fontSize: 11, color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: '.6px' }}>Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {previewMercadoPagoRows.map((item) => (
+                            <tr key={item.importKey}>
+                              <td style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={!!item.selected}
+                                  disabled={item.jaImportada}
+                                  onChange={(e) => atualizarLinhaMercadoPago(item.importKey, { selected: e.target.checked })}
+                                />
+                              </td>
+                              <td style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', fontSize: 12, color: 'var(--ink)' }}>
+                                <div>{formatDateBr(item.data)}</div>
+                                <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginTop: 4 }}>{formatDateTimeBr(item.dataHora)}</div>
+                              </td>
+                              <td style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', fontSize: 13, fontWeight: 700, color: 'var(--red)' }}>
+                                -{fmt(Number(item.valor || 0)).replace('R$', 'R$ ')}
+                              </td>
+                              <td style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', fontSize: 12, color: 'var(--ink)' }}>
+                                <div style={{ fontWeight: 600 }}>{item.descriptionOriginal || '-'}</div>
+                                <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginTop: 4 }}>source_id: {item.sourceId || '-'}</div>
+                              </td>
+                              <td style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', fontSize: 12, color: 'var(--ink)' }}>
+                                <div>{[item.businessUnit, item.subUnit].filter(Boolean).join(' / ') || '-'}</div>
+                                <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginTop: 4 }}>{[item.paymentMethod, item.paymentMethodType].filter(Boolean).join(' / ') || '-'}</div>
+                              </td>
+                              <td style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', fontSize: 12, color: 'var(--ink)' }}>
+                                {item.saldoApos === null || item.saldoApos === undefined ? '-' : fmt(Number(item.saldoApos || 0))}
+                              </td>
+                              <td style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)' }}>
+                                <input
+                                  style={{ ...inputStyle, width: '100%', minWidth: 230 }}
+                                  value={item.detalhes}
+                                  disabled={item.jaImportada}
+                                  onChange={(e) => atualizarLinhaMercadoPago(item.importKey, { detalhes: e.target.value })}
+                                />
+                              </td>
+                              <td style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)' }}>
+                                <select
+                                  style={{ ...inputStyle, width: '100%', minWidth: 150, cursor: item.jaImportada ? 'not-allowed' : 'pointer' }}
+                                  value={item.categoria}
+                                  disabled={item.jaImportada}
+                                  onChange={(e) => atualizarLinhaMercadoPago(item.importKey, { categoria: e.target.value })}
+                                >
+                                  <option value="">Selecione</option>
+                                  {CATEGORIAS.map((categoria) => <option key={categoria} value={categoria}>{categoria}</option>)}
+                                </select>
+                              </td>
+                              <td style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', fontSize: 12 }}>
+                                {item.jaImportada ? (
+                                  <div style={{ display: 'grid', gap: 4 }}>
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', padding: '4px 8px', borderRadius: 999, background: '#eff6ff', color: '#1d4ed8', fontWeight: 700, width: 'fit-content' }}>
+                                      Ja importada
+                                    </span>
+                                    <span style={{ color: 'var(--ink-muted)' }}>{item.importacaoExistente?.categoria || '-'}</span>
+                                  </div>
+                                ) : (
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', padding: '4px 8px', borderRadius: 999, background: '#fef2f2', color: 'var(--red)', fontWeight: 700 }}>
+                                    A revisar
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                          {!previewMercadoPagoRows.length && (
+                            <tr>
+                              <td colSpan={9} style={{ padding: '28px 16px', textAlign: 'center', color: 'var(--ink-muted)', fontSize: 13 }}>
+                                Nenhuma saida negativa encontrada neste CSV.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
-              <button
-                onClick={salvar}
-                disabled={saving || !form.detalhes || !form.valor || (form.recorrenciaTipo !== 'nenhuma' && !form.recorrenciaAte)}
-                style={{ padding: '8px 18px', background: 'var(--blue-500)', color: '#fff', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap' }}
-              >
-                {saving ? 'Salvando...' : 'Salvar'}
-              </button>
-            </div>
           </div>
         )}
 

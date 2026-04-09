@@ -64,6 +64,9 @@ model Despesa {
   detalhes   String
   categoria  String   @default("Outros")
   valor      Decimal  @default(0) @db.Decimal(12, 2)
+  importOrigem String?
+  importChave String? @unique
+  importArquivo String?
   recorrenciaSerieId String?
   recorrenciaTipo String?
   recorrenciaFim DateTime?
@@ -82,6 +85,7 @@ model Despesa {
   @@index([recorrenciaSerieId])
   @@index([recorrenciaTipo])
   @@index([statusPagamento])
+  @@index([importOrigem])
   @@index([data])
   @@index([dataPagamento])
 }

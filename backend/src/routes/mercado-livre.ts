@@ -1,4 +1,4 @@
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma';
@@ -74,6 +74,31 @@ const configSchema = z.object({
 const mercadoPagoRotinaSchema = z.object({
   ativo: z.boolean().optional(),
   horario: z.string().trim().optional(),
+});
+
+const mercadoPagoDespesaReportRequestSchema = z.object({
+  ate: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/),
+});
+
+const mercadoPagoDespesaCsvPreviewSchema = z.object({
+  fileName: z.string().trim().optional(),
+  dataUrl: z.string().trim().min(1),
+});
+
+const mercadoPagoDespesaImportItemSchema = z.object({
+  data: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/),
+  dataHora: z.string().trim().min(1),
+  detalhes: z.string().trim().min(1),
+  categoria: z.string().trim().min(1),
+  valor: z.number().positive(),
+  fileName: z.string().trim().optional().nullable(),
+  sourceId: z.string().trim().optional().nullable(),
+  descriptionOriginal: z.string().trim().optional().nullable(),
+  valorAssinado: z.number().negative(),
+});
+
+const mercadoPagoDespesaImportSchema = z.object({
+  itens: z.array(mercadoPagoDespesaImportItemSchema).min(1),
 });
 
 const answerSchema = z.object({
@@ -704,6 +729,143 @@ function normalizeKey(value: any) {
     .replace(/[^a-z0-9]+/g, '_');
 }
 
+function parseDateOnlyInput(value: any) {
+  const text = String(value || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return new Date(text);
+  return new Date(`${text}T00:00:00.000Z`);
+}
+
+function toDateOnlyString(date: Date | null) {
+  if (!date || Number.isNaN(date.getTime())) return '';
+  return date.toISOString().split('T')[0];
+}
+
+function decodeDataUrlText(dataUrl: string) {
+  const match = /^data:.*?;base64,(.+)$/i.exec(String(dataUrl || '').trim());
+  if (!match?.[1]) throw new Error('Arquivo CSV invalido.');
+  return Buffer.from(match[1], 'base64').toString('utf-8');
+}
+
+function buildMercadoPagoManualReportRange(ate: string) {
+  const endDate = normalizeText(ate);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
+    throw new Error('Informe uma data final valida para solicitar o extrato.');
+  }
+
+  const [year, month, day] = endDate.split('-').map((item) => Number(item));
+  const beginLocal = `${year}-${String(month).padStart(2, '0')}-01T00:00:00${getSaoPauloOffset()}`;
+  const endLocal = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T23:59:59${getSaoPauloOffset()}`;
+
+  return {
+    inicio: `${year}-${String(month).padStart(2, '0')}-01`,
+    ate: endDate,
+    beginDate: new Date(beginLocal).toISOString().replace('.000Z', 'Z'),
+    endDate: new Date(endLocal).toISOString().replace('.000Z', 'Z'),
+  };
+}
+
+function extractMercadoPagoNegativeSignedAmount(row: Record<string, string>) {
+  const netDebit = normalizeMoney(row.net_debit_amount);
+  if (netDebit !== null && netDebit > 0) return -netDebit;
+
+  const settlementNet = normalizeMoney(row.settlement_net_amount);
+  if (settlementNet !== null && settlementNet < 0) return settlementNet;
+
+  const netCredit = normalizeMoney(row.net_credit_amount);
+  if (netCredit !== null && netCredit < 0) return netCredit;
+
+  const gross = normalizeMoney(row.gross_amount || row.transaction_amount || row.real_amount);
+  if (gross !== null && gross < 0) return gross;
+
+  return 0;
+}
+
+function buildMercadoPagoDespesaImportKey(input: {
+  dataHora: string;
+  sourceId: string;
+  descriptionOriginal: string;
+  valorAssinado: number;
+}) {
+  const fingerprint = [
+    normalizeText(input.dataHora),
+    normalizeText(input.sourceId),
+    normalizeText(input.descriptionOriginal),
+    Number(input.valorAssinado || 0).toFixed(2),
+  ].join('|');
+
+  return createHash('sha1').update(fingerprint).digest('hex');
+}
+
+function buildMercadoPagoDespesaDetalhesSugeridos(row: Record<string, string>) {
+  const parts = [
+    normalizeText(row.description || row.transaction_type || row.record_type || 'Movimentacao Mercado Pago'),
+    normalizeText(row.business_unit),
+    normalizeText(row.sub_unit),
+  ].filter(Boolean);
+
+  return parts.join(' / ');
+}
+
+function buildMercadoPagoExpensePreviewRows(rows: Array<Record<string, string>>, fileName: string) {
+  const unique = new Map<string, any>();
+
+  for (const row of rows) {
+    if (isCsvSummaryRow(row)) continue;
+
+    const rawDate = normalizeText(
+      row.date
+      || row.transaction_date
+      || row.settlement_date
+      || row.money_release_date,
+    );
+    const parsedDate = rawDate ? new Date(rawDate) : null;
+    if (!parsedDate || Number.isNaN(parsedDate.getTime())) continue;
+
+    const valorAssinado = extractMercadoPagoNegativeSignedAmount(row);
+    if (!(valorAssinado < 0)) continue;
+
+    const sourceId = normalizeText(
+      row.source_id
+      || row.external_reference
+      || row.order_id
+      || row.purchase_id
+      || row.shipping_id,
+    );
+    const descriptionOriginal = normalizeText(
+      row.description
+      || row.transaction_type
+      || row.record_type
+      || 'movimentacao',
+    );
+    const importKey = buildMercadoPagoDespesaImportKey({
+      dataHora: rawDate,
+      sourceId,
+      descriptionOriginal,
+      valorAssinado,
+    });
+    if (unique.has(importKey)) continue;
+
+    unique.set(importKey, {
+      importKey,
+      fileName: normalizeText(fileName) || 'mercado-pago.csv',
+      data: toDateOnlyString(parsedDate),
+      dataHora: rawDate,
+      sourceId,
+      descriptionOriginal,
+      detalhesSugeridos: buildMercadoPagoDespesaDetalhesSugeridos(row),
+      valorAssinado,
+      valor: Math.abs(valorAssinado),
+      saldoApos: normalizeMoney(row.balance_amount),
+      paymentMethod: normalizeText(row.payment_method),
+      paymentMethodType: normalizeText(row.payment_method_type),
+      businessUnit: normalizeText(row.business_unit),
+      subUnit: normalizeText(row.sub_unit),
+    });
+  }
+
+  return Array.from(unique.values()).sort((a, b) => b.dataHora.localeCompare(a.dataHora));
+}
+
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -1328,15 +1490,6 @@ export async function loadMercadoLivreSaldoResumo(forceRefresh = false) {
 
   saldoCacheState.inFlight = (async () => {
     let lastError: any = null;
-
-    try {
-      const directResumo = await loadMercadoPagoDirectBalance();
-      saldoCacheState.value = directResumo;
-      saldoCacheState.expiresAt = Date.now() + MERCADO_LIVRE_SALDO_CACHE_TTL_MS;
-      return directResumo;
-    } catch (error: any) {
-      lastError = error;
-    }
 
     try {
       const [releaseResult, settlementResult] = await Promise.allSettled([
@@ -2161,6 +2314,155 @@ mercadoLivreRouter.post('/mercado-pago/reports/request-trace', async (_req, res)
     });
   } catch (e: any) {
     res.status(400).json({ ok: false, error: e?.message || 'Falha ao gerar trace da solicitacao manual do Mercado Pago' });
+  }
+});
+
+mercadoLivreRouter.post('/mercado-pago/despesas/request-release-report', async (req, res, next) => {
+  try {
+    const payload = mercadoPagoDespesaReportRequestSchema.parse(req.body || {});
+    const periodo = buildMercadoPagoManualReportRange(payload.ate);
+
+    try {
+      await ensureMercadoPagoReportConfig('release');
+    } catch (error: any) {
+      if (!isMercadoPagoReportUnavailableError(error)) throw error;
+    }
+
+    const created = await createMercadoPagoReport('release', periodo.beginDate, periodo.endDate);
+    res.json({
+      ok: true,
+      reportType: 'release',
+      period: {
+        de: periodo.inicio,
+        ate: periodo.ate,
+      },
+      taskId: normalizeText(created.taskId),
+      detail: `Solicitacao enviada ao Mercado Pago para o periodo de ${periodo.inicio} ate ${periodo.ate}. O CSV pode chegar por email em alguns minutos.`,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+mercadoLivreRouter.post('/mercado-pago/despesas/preview-csv', async (req, res, next) => {
+  try {
+    const payload = mercadoPagoDespesaCsvPreviewSchema.parse(req.body || {});
+    const text = decodeDataUrlText(payload.dataUrl);
+    const rows = parseCsvReport(text);
+    const candidatos = buildMercadoPagoExpensePreviewRows(rows, normalizeText(payload.fileName) || 'mercado-pago.csv');
+    const existing = candidatos.length
+      ? await prisma.despesa.findMany({
+          where: { importChave: { in: candidatos.map((item) => item.importKey) } },
+          select: { id: true, importChave: true, detalhes: true, categoria: true, data: true, valor: true },
+        })
+      : [];
+    const existingMap = new Map(existing.map((item) => [String(item.importChave), item]));
+    const preview = candidatos.map((item) => {
+      const imported = existingMap.get(item.importKey);
+      return {
+        ...item,
+        jaImportada: !!imported,
+        importacaoExistente: imported ? {
+          id: imported.id,
+          detalhes: imported.detalhes,
+          categoria: imported.categoria,
+          data: toDateOnlyString(new Date(imported.data)),
+          valor: normalizeMoney(imported.valor) ?? Number(imported.valor || 0),
+        } : null,
+      };
+    });
+
+    res.json({
+      ok: true,
+      fileName: normalizeText(payload.fileName) || 'mercado-pago.csv',
+      totalLinhas: rows.length,
+      totalSaidas: preview.length,
+      totalJaImportadas: preview.filter((item) => item.jaImportada).length,
+      rows: preview,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+mercadoLivreRouter.post('/mercado-pago/despesas/import-csv', async (req, res, next) => {
+  try {
+    const payload = mercadoPagoDespesaImportSchema.parse(req.body || {});
+    const uniqueItemsMap = new Map<string, {
+      importKey: string;
+      data: string;
+      detalhes: string;
+      categoria: string;
+      valor: number;
+      fileName: string;
+      sourceId: string;
+      descriptionOriginal: string;
+    }>();
+
+    for (const item of payload.itens) {
+      const importKey = buildMercadoPagoDespesaImportKey({
+        dataHora: item.dataHora,
+        sourceId: normalizeText(item.sourceId),
+        descriptionOriginal: normalizeText(item.descriptionOriginal),
+        valorAssinado: item.valorAssinado,
+      });
+
+      uniqueItemsMap.set(importKey, {
+        importKey,
+        data: item.data,
+        detalhes: normalizeText(item.detalhes),
+        categoria: normalizeText(item.categoria),
+        valor: Number(item.valor || 0),
+        fileName: normalizeText(item.fileName) || 'mercado-pago.csv',
+        sourceId: normalizeText(item.sourceId),
+        descriptionOriginal: normalizeText(item.descriptionOriginal),
+      });
+    }
+
+    const uniqueItems = Array.from(uniqueItemsMap.values());
+    const existing = uniqueItems.length
+      ? await prisma.despesa.findMany({
+          where: { importChave: { in: uniqueItems.map((item) => item.importKey) } },
+          select: { importChave: true },
+        })
+      : [];
+    const existingKeys = new Set(existing.map((item) => String(item.importChave)));
+
+    const createData = uniqueItems
+      .filter((item) => !existingKeys.has(item.importKey))
+      .map((item) => ({
+        data: parseDateOnlyInput(item.data),
+        detalhes: item.detalhes,
+        categoria: item.categoria,
+        valor: item.valor,
+        statusPagamento: 'pago',
+        dataPagamento: parseDateOnlyInput(item.data),
+        observacao: [
+          `Importado do CSV Mercado Pago (${item.fileName})`,
+          item.sourceId ? `source_id ${item.sourceId}` : '',
+          item.descriptionOriginal ? `descricao original: ${item.descriptionOriginal}` : '',
+        ].filter(Boolean).join(' | '),
+        importOrigem: 'mercado_pago_csv',
+        importChave: item.importKey,
+        importArquivo: item.fileName,
+      }));
+
+    const created = createData.length
+      ? await prisma.despesa.createMany({
+          data: createData,
+          skipDuplicates: true,
+        })
+      : { count: 0 };
+
+    res.json({
+      ok: true,
+      imported: created.count,
+      skipped: uniqueItems.length - created.count,
+      totalRecebidas: payload.itens.length,
+      totalUnicas: uniqueItems.length,
+    });
+  } catch (e) {
+    next(e);
   }
 });
 

@@ -89,6 +89,9 @@ export const api = {
       update: (id: number, data: any) => req<any>(`/financeiro/despesas/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
       setStatus: (id: number, data: any) => req<any>(`/financeiro/despesas/${id}/status`, { method: 'PATCH', body: JSON.stringify(data) }),
       delete: (id: number, scope?: 'single' | 'future_series') => req<any>(`/financeiro/despesas/${id}${scope ? `?scope=${scope}` : ''}`, { method: 'DELETE' }),
+      solicitarRelatorioMercadoPago: (data: any) => req<any>('/mercado-livre/mercado-pago/despesas/request-release-report', { method: 'POST', body: JSON.stringify(data) }),
+      previewImportacaoMercadoPago: (data: any) => req<any>('/mercado-livre/mercado-pago/despesas/preview-csv', { method: 'POST', body: JSON.stringify(data) }),
+      importarMercadoPagoCsv: (data: any) => req<any>('/mercado-livre/mercado-pago/despesas/import-csv', { method: 'POST', body: JSON.stringify(data) }),
     },
     investimentos: {
       list: () => req<any[]>('/financeiro/investimentos'),
