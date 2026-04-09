@@ -2,8 +2,9 @@ const BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3333';
 
 async function req<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
     ...options,
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));

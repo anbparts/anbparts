@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import { authRouter } from './routes/auth';
 import { motosRouter } from './routes/motos';
 import { pecasRouter } from './routes/pecas';
 import { faturamentoRouter } from './routes/faturamento';
@@ -10,18 +11,44 @@ import { financeiroRouter, startFinanceiroSchedulers } from './routes/financeiro
 import { inventarioRouter } from './routes/inventario';
 import { configuracoesGeraisRouter } from './routes/configuracoes-gerais';
 import { mercadoLivreRouter, startMercadoLivreScheduler } from './routes/mercado-livre';
+import { authMiddleware } from './middlewares/auth';
 import { errorMiddleware } from './middlewares/error';
 
 const app = express();
 
+function getAllowedOrigins() {
+  return String(process.env.FRONTEND_URL || 'http://localhost:3000')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || '*',
+  origin: (origin, callback) => {
+    const allowedOrigins = getAllowedOrigins();
+
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    if (!allowedOrigins.length) {
+      return callback(null, origin);
+    }
+
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error('Origem nao permitida pelo CORS'));
+  },
   credentials: true,
 }));
 
 app.use(express.json({ limit: '25mb' }));
 
 app.get('/health', (_, res) => res.json({ ok: true, ts: new Date() }));
+app.use('/auth', authRouter);
+app.use(authMiddleware);
 
 app.use('/motos', motosRouter);
 app.use('/pecas', pecasRouter);
