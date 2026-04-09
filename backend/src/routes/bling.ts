@@ -16,6 +16,8 @@ const BLING_OAUTH = 'https://www.bling.com.br/Api/v3/oauth/token';
 const DEFAULT_FRETE_PADRAO = 29.9;
 const DEFAULT_TAXA_PADRAO_PCT = 17;
 const AUDITORIA_DEFAULT_HORARIO = '03:00';
+const AUDITORIA_LINK_ML_DEFAULT_HORARIO = '05:00';
+const AUDITORIA_LINK_ML_DEFAULT_INTERVALO_DIAS = 1;
 const AUDITORIA_DEFAULT_TAMANHO_LOTE = 100;
 const AUDITORIA_DEFAULT_PAUSA_MS = 400;
 const AUDITORIA_EMAIL_SUBJECT = 'ALERTA ANB Parts - Divergência de Produtos / Anúncios - Verifique';
@@ -65,6 +67,9 @@ const auditoriaSchedulerState = {
     fase: string;
     atualizadoEm: string;
   },
+};
+const auditoriaLinkMlSchedulerState = {
+  running: false,
 };
 
 async function mapWithConcurrency<T, R>(
@@ -334,6 +339,15 @@ function normalizeHorarioAuditoria(value: any) {
   return /^\d{2}:\d{2}$/.test(text) ? text : AUDITORIA_DEFAULT_HORARIO;
 }
 
+function normalizeHorarioAuditoriaLinkMl(value: any) {
+  const text = String(value || '').trim();
+  return /^\d{2}:\d{2}$/.test(text) ? text : AUDITORIA_LINK_ML_DEFAULT_HORARIO;
+}
+
+function normalizeAuditoriaLinkMlIntervaloDias(value: any) {
+  return Math.max(1, Math.min(365, Math.round(toNumber(value, AUDITORIA_LINK_ML_DEFAULT_INTERVALO_DIAS))));
+}
+
 function normalizeAuditoriaEscopo(value: any) {
   const text = String(value || '').trim().toLowerCase();
   return AUDITORIA_ESCOPOS.has(text) ? text : 'full';
@@ -348,6 +362,11 @@ function getAuditoriaDefaults(cfg: any) {
     auditoriaPausaMs: Math.max(0, Math.min(15000, Math.round(toNumber(cfg?.auditoriaPausaMs, AUDITORIA_DEFAULT_PAUSA_MS)))),
     auditoriaUltimaExecucaoChave: cfg?.auditoriaUltimaExecucaoChave || null,
     auditoriaUltimaExecucaoEm: cfg?.auditoriaUltimaExecucaoEm || null,
+    auditoriaLinkMlAtiva: !!cfg?.auditoriaLinkMlAtiva,
+    auditoriaLinkMlHorario: normalizeHorarioAuditoriaLinkMl(cfg?.auditoriaLinkMlHorario),
+    auditoriaLinkMlIntervaloDias: normalizeAuditoriaLinkMlIntervaloDias(cfg?.auditoriaLinkMlIntervaloDias),
+    auditoriaLinkMlUltimaExecucaoChave: cfg?.auditoriaLinkMlUltimaExecucaoChave || null,
+    auditoriaLinkMlUltimaExecucaoEm: cfg?.auditoriaLinkMlUltimaExecucaoEm || null,
   };
 }
 
@@ -497,6 +516,13 @@ function normalizeMercadoLivreItemCode(value: any) {
 
   const permalink = raw.match(/\/(MLB[-_ ]?\d+)(?:[_/?#-]|$)/);
   return permalink ? permalink[1].replace(/[-_ ]+/g, '') : null;
+}
+
+function resolveBlingMercadoLivreItemId(produto: any, detail?: any, lojaRows: any[] = []) {
+  return lojaRows.map((row: any) => findFirstMercadoLivreItemCode(row)).find(Boolean)
+    || findFirstMercadoLivreItemCode(detail)
+    || findFirstMercadoLivreItemCode(produto)
+    || null;
 }
 
 function buildMercadoLivreItemLink(code: string | null) {
@@ -1891,6 +1917,7 @@ async function collectMercadoLivreStatusByProductIds(
     return {
       statuses,
       debugByProductId,
+      productStoreLinks,
     };
   }
 
@@ -1962,6 +1989,7 @@ async function collectMercadoLivreStatusByProductIds(
   return {
     statuses,
     debugByProductId,
+    productStoreLinks,
   };
 }
 
@@ -2115,6 +2143,7 @@ async function listPecasForComparacaoByCodes(codigos: string[]) {
       descricao: true,
       localizacao: true,
       detranEtiqueta: true,
+      mercadoLivreItemId: true,
       mercadoLivreLink: true,
       disponivel: true,
       emPrejuizo: true,
@@ -2144,6 +2173,7 @@ async function loadAllLocalSkuResumo(escopo = 'full') {
       descricao: true,
       localizacao: true,
       detranEtiqueta: true,
+      mercadoLivreItemId: true,
       mercadoLivreLink: true,
       disponivel: true,
       emPrejuizo: true,
@@ -2213,6 +2243,7 @@ async function syncPecaMetadataFromBling(
   options?: {
     syncLocalizacao?: boolean;
     syncDetran?: boolean;
+    syncMercadoLivreItemId?: boolean;
     syncMercadoLivreLink?: boolean;
     statusMercadoLivreByProductId?: Map<number, {
       found: boolean;
@@ -2239,6 +2270,8 @@ async function syncPecaMetadataFromBling(
     locationResolved: boolean;
     detranEtiqueta: string | null;
     detranResolved: boolean;
+    mercadoLivreItemId: string | null;
+    mercadoLivreItemIdResolved: boolean;
     mercadoLivreLink: string | null;
     mercadoLivreLinkResolved: boolean;
   }>();
@@ -2258,6 +2291,10 @@ async function syncPecaMetadataFromBling(
     const detranMeta = options?.syncDetran
       ? await resolveBlingDetranEtiqueta(produto, detail)
       : { etiqueta: null, resolved: false };
+    const mercadoLivreItemId = options?.syncMercadoLivreItemId || options?.syncMercadoLivreLink
+      ? resolveBlingMercadoLivreItemId(produto, detail, lojaRows)
+      : null;
+    const mercadoLivreItemIdResolved = !!mercadoLivreItemId;
     const mercadoLivreLinkMeta = options?.syncMercadoLivreLink
       ? await resolveBlingMercadoLivreLinkWithFallback(produto, detail, lojaRows, {
           currentLink: currentLinkBySku.get(skuBase) || null,
@@ -2265,13 +2302,15 @@ async function syncPecaMetadataFromBling(
         })
       : { link: null, resolved: false };
 
-    if (!locationMeta.resolved && !detranMeta.resolved && !mercadoLivreLinkMeta.resolved) continue;
+    if (!locationMeta.resolved && !detranMeta.resolved && !mercadoLivreItemIdResolved && !mercadoLivreLinkMeta.resolved) continue;
 
     targetBySku.set(skuBase, {
       location: locationMeta.location,
       locationResolved: locationMeta.resolved,
       detranEtiqueta: detranMeta.etiqueta,
       detranResolved: detranMeta.resolved,
+      mercadoLivreItemId,
+      mercadoLivreItemIdResolved,
       mercadoLivreLink: mercadoLivreLinkMeta.link,
       mercadoLivreLinkResolved: mercadoLivreLinkMeta.resolved,
     });
@@ -2279,7 +2318,7 @@ async function syncPecaMetadataFromBling(
 
   if (!targetBySku.size) return 0;
 
-  const groupedUpdates = new Map<string, { ids: number[]; data: { localizacao?: string | null; detranEtiqueta?: string | null; mercadoLivreLink?: string | null } }>();
+  const groupedUpdates = new Map<string, { ids: number[]; data: { localizacao?: string | null; detranEtiqueta?: string | null; mercadoLivreItemId?: string | null; mercadoLivreLink?: string | null } }>();
 
   for (const peca of localPecas) {
     const skuBase = getBaseSku(peca.idPeca);
@@ -2288,7 +2327,7 @@ async function syncPecaMetadataFromBling(
     const target = targetBySku.get(skuBase);
     if (!target) continue;
 
-    const data: { localizacao?: string | null; detranEtiqueta?: string | null; mercadoLivreLink?: string | null } = {};
+    const data: { localizacao?: string | null; detranEtiqueta?: string | null; mercadoLivreItemId?: string | null; mercadoLivreLink?: string | null } = {};
 
     if (options?.syncLocalizacao && target.locationResolved) {
       const currentLocation = normalizeLocation(peca.localizacao);
@@ -2301,6 +2340,13 @@ async function syncPecaMetadataFromBling(
       const currentDetran = normalizeDetranEtiqueta(peca.detranEtiqueta);
       if (currentDetran !== target.detranEtiqueta) {
         data.detranEtiqueta = target.detranEtiqueta;
+      }
+    }
+
+    if (options?.syncMercadoLivreItemId && target.mercadoLivreItemIdResolved) {
+      const currentItemId = String(peca.mercadoLivreItemId || '').trim().toUpperCase() || null;
+      if (currentItemId !== target.mercadoLivreItemId) {
+        data.mercadoLivreItemId = target.mercadoLivreItemId;
       }
     }
 
@@ -2354,6 +2400,7 @@ async function compareProdutosBlingCodes(
     localPecas?: any[];
     syncLocalizacao?: boolean;
     syncDetran?: boolean;
+    syncMercadoLivreItemId?: boolean;
     syncMercadoLivreLink?: boolean;
     traceSkus?: Set<string> | string[];
     onProgress?: (payload: { totalParaProcessar: number; totalProcessados: number; fase: string }) => Promise<void> | void;
@@ -2435,7 +2482,7 @@ async function compareProdutosBlingCodes(
       .filter((id): id is number => Number.isFinite(id) && id > 0),
   ));
 
-  const [statusMercadoLivreByProductId, detalhesBlingByProductId, productStoreLinksByProductId] = await Promise.all([
+  const [mercadoLivreStatusData, detalhesBlingByProductId] = await Promise.all([
     findMercadoLivreStatusByProductIds(produtoIdsParaStatus, {
       batchSize: options?.batchSize,
       pauseMs: options?.pauseMs,
@@ -2458,15 +2505,17 @@ async function compareProdutosBlingCodes(
       },
     }),
     findBlingProductDetailsByIds(produtoIdsParaDetalhe, options),
-    options?.syncMercadoLivreLink && localPecas.length
-      ? findProdutoLojaLinksByProductIds(produtoIdsParaStatus)
-      : Promise.resolve(new Map<number, any[]>()),
   ]);
+  const statusMercadoLivreByProductId = mercadoLivreStatusData.statuses;
+  const productStoreLinksByProductId = (options?.syncMercadoLivreItemId || options?.syncMercadoLivreLink) && localPecas.length
+    ? mercadoLivreStatusData.productStoreLinks
+    : new Map<number, any[]>();
 
-  if ((options?.syncLocalizacao || options?.syncDetran || options?.syncMercadoLivreLink) && localPecas.length) {
+  if ((options?.syncLocalizacao || options?.syncDetran || options?.syncMercadoLivreItemId || options?.syncMercadoLivreLink) && localPecas.length) {
     await syncPecaMetadataFromBling(localPecas, produtosBling, detalhesBlingByProductId, productStoreLinksByProductId, {
       syncLocalizacao: options?.syncLocalizacao,
       syncDetran: options?.syncDetran,
+      syncMercadoLivreItemId: options?.syncMercadoLivreItemId,
       syncMercadoLivreLink: options?.syncMercadoLivreLink,
       statusMercadoLivreByProductId,
       });
@@ -2981,6 +3030,130 @@ function getTimezoneDateParts(date = new Date()) {
   };
 }
 
+function dateKeyToDayNumber(dateKey: string | null | undefined) {
+  if (!dateKey || !/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return null;
+  const value = Date.parse(`${dateKey}T00:00:00Z`);
+  return Number.isFinite(value) ? Math.floor(value / (24 * 60 * 60 * 1000)) : null;
+}
+
+function hasReachedAuditoriaLinkMlInterval(lastExecutionAt: Date | string | null | undefined, nowDateKey: string, intervalDays: number) {
+  if (!lastExecutionAt) return true;
+  const lastDateKey = getTimezoneDateParts(new Date(lastExecutionAt)).dateKey;
+  const currentDay = dateKeyToDayNumber(nowDateKey);
+  const lastDay = dateKeyToDayNumber(lastDateKey);
+  if (currentDay === null || lastDay === null) return true;
+  return currentDay - lastDay >= Math.max(1, intervalDays);
+}
+
+async function executeAuditoriaLinkMl(origem: 'manual' | 'auto' = 'manual') {
+  const mercadoLivreConfig = await prisma.mercadoLivreConfig.findFirst({
+    select: { accessToken: true },
+  });
+  if (!mercadoLivreConfig?.accessToken) {
+    throw new Error('Mercado Livre nao conectado para atualizar links');
+  }
+
+  const pecas = await prisma.peca.findMany({
+    where: {
+      disponivel: true,
+      mercadoLivreItemId: { not: null },
+    },
+    select: {
+      id: true,
+      mercadoLivreItemId: true,
+      mercadoLivreLink: true,
+    },
+    orderBy: { id: 'asc' },
+  });
+
+  const rowsByItemId = new Map<string, Array<{ id: number; mercadoLivreLink: string | null }>>();
+  for (const peca of pecas) {
+    const itemId = normalizeMercadoLivreItemCode(peca.mercadoLivreItemId);
+    if (!itemId) continue;
+    const current = rowsByItemId.get(itemId) || [];
+    current.push({
+      id: Number(peca.id),
+      mercadoLivreLink: String(peca.mercadoLivreLink || '').trim() || null,
+    });
+    rowsByItemId.set(itemId, current);
+  }
+
+  const itemIds = Array.from(rowsByItemId.keys());
+  let totalAtualizadas = 0;
+  let totalResolvidas = 0;
+  let totalSemPermalink = 0;
+
+  await processInBatches(
+    itemIds,
+    20,
+    250,
+    async (batch) => {
+      await mapWithConcurrency(batch, 4, async (itemId) => {
+        const permalink = await getMercadoLivreItemPermalink(itemId);
+        if (!permalink) {
+          totalSemPermalink += 1;
+          return null;
+        }
+
+        totalResolvidas += 1;
+        const targetRows = rowsByItemId.get(itemId) || [];
+        const idsToUpdate = targetRows
+          .filter((row) => (String(row.mercadoLivreLink || '').trim() || null) !== permalink)
+          .map((row) => row.id);
+
+        if (idsToUpdate.length) {
+          await prisma.peca.updateMany({
+            where: { id: { in: idsToUpdate } },
+            data: { mercadoLivreLink: permalink },
+          });
+          totalAtualizadas += idsToUpdate.length;
+        }
+
+        return null;
+      });
+    },
+  );
+
+  const executedAt = new Date();
+  await saveConfig({
+    auditoriaLinkMlUltimaExecucaoEm: executedAt,
+  });
+
+  return {
+    ok: true,
+    origem,
+    totalPecasDisponiveis: pecas.length,
+    totalItensMl: itemIds.length,
+    totalLinksResolvidos: totalResolvidas,
+    totalSemPermalink,
+    totalAtualizadas,
+    executedAt,
+  };
+}
+
+async function tickAuditoriaLinkMl() {
+  if (auditoriaLinkMlSchedulerState.running) return;
+
+  const cfg = await getConfig();
+  if (!cfg.auditoriaLinkMlAtiva) return;
+
+  const now = getTimezoneDateParts(new Date());
+  if (now.timeKey !== cfg.auditoriaLinkMlHorario) return;
+  if (cfg.auditoriaLinkMlUltimaExecucaoChave === now.runKey) return;
+  if (!hasReachedAuditoriaLinkMlInterval(cfg.auditoriaLinkMlUltimaExecucaoEm, now.dateKey, cfg.auditoriaLinkMlIntervaloDias)) return;
+
+  auditoriaLinkMlSchedulerState.running = true;
+  try {
+    await saveConfig({
+      auditoriaLinkMlUltimaExecucaoChave: now.runKey,
+      auditoriaLinkMlUltimaExecucaoEm: new Date(),
+    });
+    await executeAuditoriaLinkMl('auto');
+  } finally {
+    auditoriaLinkMlSchedulerState.running = false;
+  }
+}
+
 function buildAuditoriaResumo(resultado: any) {
   const porTipo = (resultado?.divergencias || []).reduce((acc: Record<string, number>, item: any) => {
     const key = String(item?.tipo || 'outros');
@@ -3270,7 +3443,8 @@ async function executeAuditoriaAutomatica(origem: 'manual' | 'auto' = 'manual') 
       localPecas: local.pecas,
       syncLocalizacao: true,
       syncDetran: true,
-      syncMercadoLivreLink: true,
+      syncMercadoLivreItemId: true,
+      syncMercadoLivreLink: false,
       batchSize: cfg.auditoriaTamanhoLote,
       pauseMs: cfg.auditoriaPausaMs,
       traceSkus: traceSkuSet,
@@ -3368,6 +3542,10 @@ export function startBlingAuditoriaScheduler() {
     tickAuditoriaAutomatica().catch((error) => {
       console.error('Falha na auditoria automatica do Bling:', error);
       auditoriaSchedulerState.running = false;
+    });
+    tickAuditoriaLinkMl().catch((error) => {
+      console.error('Falha na rotina de link ML do Bling:', error);
+      auditoriaLinkMlSchedulerState.running = false;
     });
   };
 
@@ -3478,6 +3656,12 @@ blingRouter.get('/auditoria-automatica/config', async (_req, res, next) => {
       auditoriaEscopo: cfg.auditoriaEscopo,
       auditoriaTamanhoLote: cfg.auditoriaTamanhoLote,
       auditoriaPausaMs: cfg.auditoriaPausaMs,
+      auditoriaLinkMlAtiva: cfg.auditoriaLinkMlAtiva,
+      auditoriaLinkMlHorario: cfg.auditoriaLinkMlHorario,
+      auditoriaLinkMlIntervaloDias: cfg.auditoriaLinkMlIntervaloDias,
+      auditoriaLinkMlUltimaExecucaoChave: cfg.auditoriaLinkMlUltimaExecucaoChave,
+      auditoriaLinkMlUltimaExecucaoEm: cfg.auditoriaLinkMlUltimaExecucaoEm,
+      auditoriaLinkMlExecutandoAgora: auditoriaLinkMlSchedulerState.running,
       resendApiKeyConfigured: !!generalConfig.resendApiKeyConfigured,
       auditoriaEmailConfigurado: !!generalConfig.auditoriaEmailConfigurado,
       detranEmailConfigurado: !!generalConfig.detranEmailConfigurado,
@@ -3501,6 +3685,9 @@ blingRouter.post('/auditoria-automatica/config', async (req, res, next) => {
     const auditoriaEscopo = normalizeAuditoriaEscopo(req.body?.auditoriaEscopo);
     const auditoriaTamanhoLote = Math.max(10, Math.min(500, Math.round(toNumber(req.body?.auditoriaTamanhoLote, AUDITORIA_DEFAULT_TAMANHO_LOTE))));
     const auditoriaPausaMs = Math.max(0, Math.min(15000, Math.round(toNumber(req.body?.auditoriaPausaMs, AUDITORIA_DEFAULT_PAUSA_MS))));
+    const auditoriaLinkMlAtiva = !!req.body?.auditoriaLinkMlAtiva;
+    const auditoriaLinkMlHorario = normalizeHorarioAuditoriaLinkMl(req.body?.auditoriaLinkMlHorario);
+    const auditoriaLinkMlIntervaloDias = normalizeAuditoriaLinkMlIntervaloDias(req.body?.auditoriaLinkMlIntervaloDias);
 
     const data: any = {
       auditoriaAtiva,
@@ -3508,6 +3695,9 @@ blingRouter.post('/auditoria-automatica/config', async (req, res, next) => {
       auditoriaEscopo,
       auditoriaTamanhoLote,
       auditoriaPausaMs,
+      auditoriaLinkMlAtiva,
+      auditoriaLinkMlHorario,
+      auditoriaLinkMlIntervaloDias,
     };
 
     await saveConfig(data);
@@ -3621,6 +3811,24 @@ blingRouter.post('/auditoria-automatica/executar', async (_req, res, next) => {
   }
 });
 
+blingRouter.post('/auditoria-automatica/link-ml/executar', async (_req, res, next) => {
+  try {
+    if (auditoriaLinkMlSchedulerState.running) {
+      return res.status(409).json({ error: 'Ja existe uma rotina de Link ML em andamento' });
+    }
+
+    auditoriaLinkMlSchedulerState.running = true;
+    try {
+      const resultado = await executeAuditoriaLinkMl('manual');
+      res.json(resultado);
+    } finally {
+      auditoriaLinkMlSchedulerState.running = false;
+    }
+  } catch (e) {
+    next(e);
+  }
+});
+
 blingRouter.post('/auditoria-automatica/trace-skus', async (req, res, next) => {
   try {
     const cfg = await getConfig();
@@ -3634,7 +3842,8 @@ blingRouter.post('/auditoria-automatica/trace-skus', async (req, res, next) => {
       localPecas: localPecasTrace,
       syncLocalizacao: true,
       syncDetran: true,
-      syncMercadoLivreLink: true,
+      syncMercadoLivreItemId: true,
+      syncMercadoLivreLink: false,
       batchSize: Math.max(1, Math.min(10, traceCodigos.length || 1)),
       pauseMs: Math.max(300, cfg.auditoriaPausaMs),
       traceSkus: traceSkuSet,
@@ -3862,7 +4071,8 @@ blingRouter.post('/sync/produtos', async (req, res, next) => {
       const resultado = await compareProdutosBlingCodes(codigos, {
         syncLocalizacao: true,
         syncDetran: true,
-        syncMercadoLivreLink: true,
+        syncMercadoLivreItemId: true,
+        syncMercadoLivreLink: false,
       });
       res.json(resultado);
     } catch (e) {
@@ -4420,6 +4630,7 @@ blingRouter.post('/importar-produto', async (req, res, next) => {
     const quantidade = Math.max(1, Number(qtd) || 1);
     let localizacaoNormalizada = normalizeLocation(localizacao);
     let detranEtiqueta = null;
+    let mercadoLivreItemId = null;
     let mercadoLivreLink = null;
     let detail: any = null;
 
@@ -4428,6 +4639,7 @@ blingRouter.post('/importar-produto', async (req, res, next) => {
         detail = await fetchBlingProductDetailById(Number(id));
         detranEtiqueta = (await resolveBlingDetranEtiqueta(null, detail)).etiqueta;
         const lojaRows = await fetchProdutoLojaLinksByProductId(Number(id));
+        mercadoLivreItemId = resolveBlingMercadoLivreItemId(null, detail, lojaRows);
         mercadoLivreLink = (await resolveBlingMercadoLivreLinkWithFallback(null, detail, lojaRows)).link;
         if (!localizacaoNormalizada) {
           localizacaoNormalizada = resolveBlingLocation(null, detail).location;
@@ -4458,6 +4670,7 @@ blingRouter.post('/importar-produto', async (req, res, next) => {
           valorLiq,
           localizacao: localizacaoNormalizada,
           detranEtiqueta,
+          mercadoLivreItemId,
           mercadoLivreLink,
           disponivel: true,
           cadastro: new Date(),
