@@ -24,6 +24,17 @@ const AUDITORIA_SCHEDULER_INTERVAL_MS = 60 * 1000;
 const STATUS_ID_CONCLUIDO = 9;
 const STATUS_IDS_CANCELADO = new Set([12]);
 const AUDITORIA_ESCOPOS = new Set(['full', 'com_estoque', 'com_estoque_mais_vendidos_ano']);
+const AUDITORIA_TRACE_SKUS_DEFAULT = [
+  'BM01_0070',
+  'BM01_0103',
+  'BM02_0119',
+  'HD01_0170',
+  'HD03_0087',
+  'HO01_0053',
+  'HO01_0055',
+  'PN0070',
+  'YM01_0088',
+];
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const PRODUCT_STORE_LINK_CACHE_TTL_MS = 10 * 60 * 1000;
@@ -971,6 +982,11 @@ function parseSkuList(value: any) {
     .filter(Boolean);
 
   return Array.from(new Set(codes));
+}
+
+function buildAuditoriaTraceSkuSet(value?: any) {
+  const source = value === undefined ? AUDITORIA_TRACE_SKUS_DEFAULT : parseSkuList(value);
+  return new Set(source.map((codigo) => getBaseSku(codigo)).filter(Boolean));
 }
 
 function matchesSku(idPeca: string, codigo: string) {
@@ -2068,9 +2084,22 @@ function getSkusMissingDetran(localPecas: any[]) {
 
 async function compareProdutosBlingCodes(
   codigosInput: string[],
-  options?: { batchSize?: number; pauseMs?: number; localMap?: Map<string, any>; localPecas?: any[]; syncLocalizacao?: boolean; syncDetran?: boolean; syncMercadoLivreLink?: boolean },
+  options?: {
+    batchSize?: number;
+    pauseMs?: number;
+    localMap?: Map<string, any>;
+    localPecas?: any[];
+    syncLocalizacao?: boolean;
+    syncDetran?: boolean;
+    syncMercadoLivreLink?: boolean;
+    traceSkus?: Set<string> | string[];
+  },
 ) {
   const codigos = Array.from(new Set(codigosInput.map((codigo) => getBaseSku(codigo)).filter(Boolean)));
+  const traceSkuSet = options?.traceSkus instanceof Set
+    ? options.traceSkus
+    : new Set(Array.isArray(options?.traceSkus) ? options.traceSkus.map((codigo) => getBaseSku(codigo)).filter(Boolean) : []);
+  const traceBySku = new Map<string, any>();
   if (!codigos.length) {
     return {
       ok: true,
@@ -2078,6 +2107,7 @@ async function compareProdutosBlingCodes(
       totalDivergencias: 0,
       totalSemDivergencia: 0,
       divergencias: [],
+      traceSkus: {},
     };
   }
 
@@ -2138,6 +2168,55 @@ async function compareProdutosBlingCodes(
       : null;
     const temEstoqueEmAlgumSistema = local.qtdDisponivelAnb > 0 || qtdBling > 0;
     const divergenciasSku: any[] = [];
+    const traceEntry = traceSkuSet.has(codigo)
+      ? {
+          sku: codigo,
+          local: {
+            qtdTotalAnb: local.qtdTotalAnb,
+            qtdDisponivelAnb: local.qtdDisponivelAnb,
+            qtdVendidasAnb: local.qtdVendidasAnb,
+            qtdVendidasAnoCorrente: local.qtdVendidasAnoCorrente,
+            qtdPrejuizoAnb: local.qtdPrejuizoAnb,
+            idsPecaPrejuizo: Array.from(new Set(local.idsPecaPrejuizo || [])),
+            descricaoAnb: local.descricaoAnb || null,
+            moto: local.moto || null,
+          },
+          bling: {
+            found: !!produtoBling,
+            productId: Number(produtoBling?.id || 0) || null,
+            codigo: produtoBling?.codigo || null,
+            nome: descricaoBling,
+            qtdBling,
+            estoqueMaximoBling,
+            productStoreLinksCount: produtoBling?.id
+              ? (productStoreLinksByProductId.get(Number(produtoBling.id)) || []).length
+              : 0,
+          },
+          mercadoLivre: {
+            found: statusMercadoLivre.found,
+            label: statusMercadoLivre.label,
+            isActive: statusMercadoLivre.isActive,
+            code: statusMercadoLivre.code,
+            anuncioIds: statusMercadoLivre.anuncioIds || [],
+            lojaIds: statusMercadoLivre.lojaIds || [],
+          },
+          flags: {
+            temEstoqueEmAlgumSistema,
+          },
+          final: {
+            divergenciaTipos: [] as string[],
+            divergenciaTitulos: [] as string[],
+          },
+        }
+      : null;
+    const finalizeTrace = () => {
+      if (traceEntry) {
+        traceEntry.final.divergenciaTipos = divergenciasSku.map((item) => item?.tipo || null).filter(Boolean);
+        traceEntry.final.divergenciaTitulos = divergenciasSku.map((item) => item?.titulo || null).filter(Boolean);
+        traceBySku.set(codigo, traceEntry);
+      }
+      return divergenciasSku;
+    };
     const deveAlertarPrejuizo = local.qtdPrejuizoAnb > 0 && (
       qtdBling > 0
       || (statusMercadoLivre.found && statusMercadoLivre.isActive)
@@ -2159,7 +2238,7 @@ async function compareProdutosBlingCodes(
         statusMercadoLivre: null,
         statusMercadoLivreAtivo: null,
       }));
-      return divergenciasSku;
+      return finalizeTrace();
     }
 
     if (temEstoqueEmAlgumSistema && statusMercadoLivre.found && !statusMercadoLivre.isActive) {
@@ -2169,7 +2248,7 @@ async function compareProdutosBlingCodes(
         detalhe: 'Existe estoque no ANB ou no Bling, mas o status do Mercado Livre esta diferente de ativo.',
         statusMercadoLivreAtivo: false,
       }));
-      return divergenciasSku;
+      return finalizeTrace();
     }
 
     if (!temEstoqueEmAlgumSistema && statusMercadoLivre.found && statusMercadoLivre.isActive) {
@@ -2179,7 +2258,7 @@ async function compareProdutosBlingCodes(
         detalhe: 'Nao ha estoque disponivel no ANB nem no Bling, mas o anuncio do Mercado Livre segue publicado.',
         statusMercadoLivreAtivo: true,
       }));
-      return divergenciasSku;
+      return finalizeTrace();
     }
 
     if (!local.qtdTotalAnb) {
@@ -2196,7 +2275,7 @@ async function compareProdutosBlingCodes(
         descricaoAnb: null,
         moto: null,
       }));
-      return divergenciasSku;
+      return finalizeTrace();
     }
 
     if (local.qtdDisponivelAnb > qtdBling) {
@@ -2205,7 +2284,7 @@ async function compareProdutosBlingCodes(
         titulo: 'Estoque ANB maior que Bling',
         detalhe: 'O ANB mostra mais pecas disponiveis que o saldo atual do Bling.',
       }));
-      return divergenciasSku;
+      return finalizeTrace();
     }
 
     if (estoqueMaximoBling !== null && qtdBling > estoqueMaximoBling) {
@@ -2214,7 +2293,7 @@ async function compareProdutosBlingCodes(
         titulo: 'Estoque Bling acima do maximo',
         detalhe: `O Bling esta com saldo ${qtdBling}, mas o estoque maximo configurado para esse produto e ${estoqueMaximoBling}.`,
       }));
-      return divergenciasSku;
+      return finalizeTrace();
     }
 
     if (local.qtdDisponivelAnb < qtdBling) {
@@ -2223,10 +2302,10 @@ async function compareProdutosBlingCodes(
         titulo: 'Estoque Bling maior que o permitido',
         detalhe: 'O Bling mostra mais saldo disponivel que a quantidade permitida pelo estoque atual do ANB.',
       }));
-      return divergenciasSku;
+      return finalizeTrace();
     }
 
-    return divergenciasSku;
+    return finalizeTrace();
   });
 
   return {
@@ -2235,7 +2314,62 @@ async function compareProdutosBlingCodes(
     totalDivergencias: divergencias.length,
     totalSemDivergencia: codigos.length - divergencias.length,
     divergencias,
+    traceSkus: Object.fromEntries(traceBySku.entries()),
   };
+}
+
+function buildAuditoriaTraceResumo(
+  local: { codigos: string[]; todosCodigos?: string[]; localMap: Map<string, any> },
+  resultado: any,
+  traceSkuSet: Set<string>,
+) {
+  const divergenciasPorSku = new Map<string, any[]>();
+  for (const divergencia of Array.isArray(resultado?.divergencias) ? resultado.divergencias : []) {
+    const sku = getBaseSku(divergencia?.sku);
+    if (!sku) continue;
+    const current = divergenciasPorSku.get(sku) || [];
+    current.push(divergencia);
+    divergenciasPorSku.set(sku, current);
+  }
+
+  const traceResultado = resultado?.traceSkus && typeof resultado.traceSkus === 'object'
+    ? resultado.traceSkus
+    : {};
+
+  return Object.fromEntries(
+    Array.from(traceSkuSet).map((sku) => {
+      const localSku = local.localMap.get(sku) || createLocalSkuResumo(sku);
+      const divergenciasSku = divergenciasPorSku.get(sku) || [];
+      const compareTrace = traceResultado[sku] || null;
+
+      return [
+        sku,
+        {
+          sku,
+          presenteEmTodosCodigos: Array.isArray(local.todosCodigos) ? local.todosCodigos.includes(sku) : local.codigos.includes(sku),
+          presenteNoEscopoExecutado: local.codigos.includes(sku),
+          local: {
+            qtdTotalAnb: localSku.qtdTotalAnb,
+            qtdDisponivelAnb: localSku.qtdDisponivelAnb,
+            qtdVendidasAnb: localSku.qtdVendidasAnb,
+            qtdVendidasAnoCorrente: localSku.qtdVendidasAnoCorrente,
+            qtdPrejuizoAnb: localSku.qtdPrejuizoAnb,
+            idsPecaPrejuizo: Array.from(new Set(localSku.idsPecaPrejuizo || [])),
+            descricaoAnb: localSku.descricaoAnb || null,
+            moto: localSku.moto || null,
+          },
+          compareTrace,
+          divergenciaNaExecucao: divergenciasSku.map((item) => ({
+            tipo: item?.tipo || null,
+            titulo: item?.titulo || null,
+            detalhe: item?.detalhe || null,
+            statusMercadoLivre: item?.statusMercadoLivre || null,
+            statusMercadoLivreAtivo: item?.statusMercadoLivreAtivo ?? null,
+          })),
+        },
+      ];
+    }),
+  );
 }
 
 function collectMercadoLivreTexts(value: any, acc: string[] = [], inMlContext = false) {
@@ -2619,6 +2753,7 @@ async function executeAuditoriaAutomatica(origem: 'manual' | 'auto' = 'manual') 
     executedAt,
   );
   const local = await loadAllLocalSkuResumo(cfg.auditoriaEscopo);
+  const traceSkuSet = buildAuditoriaTraceSkuSet();
   const execution = await prisma.auditoriaAutomaticaExecucao.create({
     data: {
       origem,
@@ -2638,8 +2773,12 @@ async function executeAuditoriaAutomatica(origem: 'manual' | 'auto' = 'manual') 
       syncMercadoLivreLink: true,
       batchSize: cfg.auditoriaTamanhoLote,
       pauseMs: cfg.auditoriaPausaMs,
+      traceSkus: traceSkuSet,
     });
-    const resumo = buildAuditoriaResumo(resultado);
+    const resumo = {
+      ...buildAuditoriaResumo(resultado),
+      traceSkusMonitorados: buildAuditoriaTraceResumo(local, resultado, traceSkuSet),
+    };
     let emailEnviado = false;
     let emailErro: string | null = null;
 
@@ -2964,6 +3103,65 @@ blingRouter.post('/auditoria-automatica/executar', async (_req, res, next) => {
     } finally {
       auditoriaSchedulerState.running = false;
     }
+  } catch (e) {
+    next(e);
+  }
+});
+
+blingRouter.post('/auditoria-automatica/trace-skus', async (req, res, next) => {
+  try {
+    const cfg = await getConfig();
+    const traceSkuSet = buildAuditoriaTraceSkuSet(req.body?.skus || req.body?.codigos || req.body?.texto);
+    const local = await loadAllLocalSkuResumo(cfg.auditoriaEscopo);
+    const resultado = await compareProdutosBlingCodes(local.codigos, {
+      localMap: local.localMap,
+      localPecas: local.pecas,
+      syncLocalizacao: true,
+      syncDetran: true,
+      syncMercadoLivreLink: true,
+      batchSize: cfg.auditoriaTamanhoLote,
+      pauseMs: cfg.auditoriaPausaMs,
+      traceSkus: traceSkuSet,
+    });
+
+    res.json({
+      ok: true,
+      auditoriaEscopo: cfg.auditoriaEscopo,
+      traceSkus: buildAuditoriaTraceResumo(local, resultado, traceSkuSet),
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+blingRouter.get('/auditoria-automatica/execucoes/:id/trace-skus', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ error: 'ID invalido' });
+
+    const execucao = await prisma.auditoriaAutomaticaExecucao.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        origem: true,
+        status: true,
+        startedAt: true,
+        resumo: true,
+      },
+    });
+
+    if (!execucao) {
+      return res.status(404).json({ error: 'Execucao nao encontrada' });
+    }
+
+    res.json({
+      ok: true,
+      execucaoId: execucao.id,
+      origem: execucao.origem,
+      status: execucao.status,
+      startedAt: execucao.startedAt,
+      traceSkus: (execucao.resumo as any)?.traceSkusMonitorados || {},
+    });
   } catch (e) {
     next(e);
   }
