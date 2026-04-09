@@ -1274,17 +1274,23 @@ function parseAnuncioStatus(value: any) {
   const normalized = normalizeText(text);
   if (!text) return null;
 
-  if (/(^|[^a-z])(publicado|ativo)([^a-z]|$)/.test(normalized)) {
-    return { code: 1, label: text, isActive: true };
-  }
   if (/(^|[^a-z])(pausado|pausada)([^a-z]|$)/.test(normalized)) {
     return { code: 3, label: text, isActive: false };
   }
   if (/rascunh/.test(normalized)) {
     return { code: 2, label: text, isActive: false };
   }
+  if (/(^|[^a-z])(inativo|inativa|finalizado|finalizada|encerrado|encerrada|cancelado|cancelada|suspenso|suspensa|bloqueado|bloqueada)([^a-z]|$)/.test(normalized)) {
+    return { code: 4, label: text, isActive: false };
+  }
+  if (/revis/.test(normalized)) {
+    return { code: 4, label: text, isActive: false };
+  }
   if (/problema|erro|reprov/.test(normalized)) {
     return { code: 4, label: text, isActive: false };
+  }
+  if (/(^|[^a-z])(publicado|ativo|ativa)([^a-z]|$)/.test(normalized)) {
+    return { code: 1, label: text, isActive: true };
   }
 
   return null;
