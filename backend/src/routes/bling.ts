@@ -27,6 +27,7 @@ const AUDITORIA_ESCOPOS = new Set(['full', 'com_estoque', 'com_estoque_mais_vend
 const AUDITORIA_TRACE_SKUS_DEFAULT = [
   'BM01_0070',
   'BM01_0103',
+  'BM01_0128',
   'BM02_0119',
   'HD01_0170',
   'HD03_0087',
@@ -1654,6 +1655,27 @@ async function collectMercadoLivreStatusByProductIds(
   withDebug = false,
   options?: { batchSize?: number; pauseMs?: number },
 ) {
+  type MercadoLivreRetryHistoryEntry = {
+    attempt: number;
+    source: 'detail_fallback' | 'product_store_query';
+    found: boolean;
+    code: number | null;
+    label: string | null;
+  };
+
+  type MercadoLivreStatusResult = {
+    found: boolean;
+    label: string | null;
+    isActive: boolean;
+    code: number | null;
+    anuncioIds: number[];
+    lojaIds: number[];
+    initialFound: boolean;
+    retryAttempts: number;
+    resolvedByRetry: boolean;
+    retryHistory: MercadoLivreRetryHistoryEntry[];
+  };
+
   const uniqueIds: number[] = Array.from(new Set(
     ids
       .map((id) => Number(id))
@@ -1661,14 +1683,7 @@ async function collectMercadoLivreStatusByProductIds(
   ));
   const runtime = getRuntimeBatchOptions(options);
   const productStoreLinks = await findProdutoLojaLinksByProductIds(uniqueIds);
-  const statuses = new Map<number, {
-    found: boolean;
-    label: string | null;
-    isActive: boolean;
-    code: number | null;
-    anuncioIds: number[];
-    lojaIds: number[];
-  }>();
+  const statuses = new Map<number, MercadoLivreStatusResult>();
   const debugByProductId = new Map<number, {
     lojaIds: number[];
     consultas: Array<{
@@ -1717,6 +1732,10 @@ async function collectMercadoLivreStatusByProductIds(
                 code: prioritized.code,
                 anuncioIds: Array.from(new Set(collected.map((item) => item.anuncioId).filter(Boolean))) as number[],
                 lojaIds: Array.from(new Set(collected.map((item) => item.lojaId))),
+                initialFound: true,
+                retryAttempts: 0,
+                resolvedByRetry: false,
+                retryHistory: [],
               }
             : {
                 found: false,
@@ -1725,6 +1744,10 @@ async function collectMercadoLivreStatusByProductIds(
                 code: null,
                 anuncioIds: [],
                 lojaIds,
+                initialFound: false,
+                retryAttempts: 0,
+                resolvedByRetry: false,
+                retryHistory: [],
               });
 
           return null;
@@ -1747,6 +1770,10 @@ async function collectMercadoLivreStatusByProductIds(
           await mapWithConcurrency(batch, 1, async (productId) => {
             const lojaRows = productStoreLinks.get(productId) || [];
             if (!lojaRows.length) return null;
+            const current = statuses.get(productId);
+            const retryHistory = Array.isArray(current?.retryHistory)
+              ? [...current.retryHistory]
+              : [];
 
             let collected: Array<{
               code: number;
@@ -1759,6 +1786,22 @@ async function collectMercadoLivreStatusByProductIds(
             const detailFallback = await collectMercadoLivreStatusesFromLojaRows(lojaRows, false);
             if (detailFallback.collected.length) {
               collected = detailFallback.collected;
+              const prioritized = collected.find((item) => !item.isActive) || collected.find((item) => item.isActive) || null;
+              retryHistory.push({
+                attempt: attempt + 1,
+                source: 'detail_fallback',
+                found: true,
+                code: prioritized?.code ?? null,
+                label: prioritized?.label ?? null,
+              });
+            } else {
+              retryHistory.push({
+                attempt: attempt + 1,
+                source: 'detail_fallback',
+                found: false,
+                code: null,
+                label: null,
+              });
             }
 
             if (!collected.length) {
@@ -1766,10 +1809,40 @@ async function collectMercadoLivreStatusByProductIds(
               const primary = await collectMercadoLivreStatusesForProduct(productId, lojaIds, false);
               if (primary.collected.length) {
                 collected = primary.collected;
+                const prioritized = collected.find((item) => !item.isActive) || collected.find((item) => item.isActive) || null;
+                retryHistory.push({
+                  attempt: attempt + 1,
+                  source: 'product_store_query',
+                  found: true,
+                  code: prioritized?.code ?? null,
+                  label: prioritized?.label ?? null,
+                });
+              } else {
+                retryHistory.push({
+                  attempt: attempt + 1,
+                  source: 'product_store_query',
+                  found: false,
+                  code: null,
+                  label: null,
+                });
               }
             }
 
-            if (!collected.length) return null;
+            if (!collected.length) {
+              statuses.set(productId, {
+                found: false,
+                label: current?.label ?? null,
+                isActive: current?.isActive ?? false,
+                code: current?.code ?? null,
+                anuncioIds: current?.anuncioIds || [],
+                lojaIds: current?.lojaIds || getProdutoLojaIds(lojaRows),
+                initialFound: current?.initialFound ?? false,
+                retryAttempts: attempt + 1,
+                resolvedByRetry: current?.resolvedByRetry ?? false,
+                retryHistory,
+              });
+              return null;
+            }
 
             const prioritized = collected.find((item) => !item.isActive) || collected.find((item) => item.isActive) || null;
             if (!prioritized) return null;
@@ -1781,6 +1854,10 @@ async function collectMercadoLivreStatusByProductIds(
               code: prioritized.code,
               anuncioIds: Array.from(new Set(collected.map((item) => item.anuncioId).filter(Boolean))) as number[],
               lojaIds: Array.from(new Set(collected.map((item) => item.lojaId))),
+              initialFound: current?.initialFound ?? false,
+              retryAttempts: attempt + 1,
+              resolvedByRetry: !(current?.initialFound ?? false),
+              retryHistory,
             });
 
             return null;
@@ -1843,6 +1920,10 @@ async function collectMercadoLivreStatusByProductIds(
           code: prioritized.code,
           anuncioIds: Array.from(new Set(collected.map((item) => item.anuncioId).filter(Boolean))) as number[],
           lojaIds: Array.from(new Set(collected.map((item) => item.lojaId))),
+          initialFound: true,
+          retryAttempts: 0,
+          resolvedByRetry: false,
+          retryHistory: [],
         }
       : {
           found: false,
@@ -1851,6 +1932,10 @@ async function collectMercadoLivreStatusByProductIds(
           code: null,
           anuncioIds: [],
           lojaIds,
+          initialFound: false,
+          retryAttempts: 0,
+          resolvedByRetry: false,
+          retryHistory: [],
         });
 
     if (withDebug) {
@@ -2321,8 +2406,30 @@ async function compareProdutosBlingCodes(
     const qtdBling = produtoBling ? toNumber(produtoBling?.estoque?.saldoVirtualTotal ?? produtoBling?.estoque?.saldo ?? 0) : 0;
     const descricaoBling = produtoBling?.nome || null;
     const statusMercadoLivre = produtoBling?.id
-      ? (statusMercadoLivreByProductId.get(Number(produtoBling.id)) || { found: false, label: null, isActive: false, code: null, anuncioIds: [], lojaIds: [] })
-      : { found: false, label: null, isActive: false, code: null, anuncioIds: [], lojaIds: [] };
+      ? (statusMercadoLivreByProductId.get(Number(produtoBling.id)) || {
+        found: false,
+        label: null,
+        isActive: false,
+        code: null,
+        anuncioIds: [],
+        lojaIds: [],
+        initialFound: false,
+        retryAttempts: 0,
+        resolvedByRetry: false,
+        retryHistory: [],
+      })
+      : {
+        found: false,
+        label: null,
+        isActive: false,
+        code: null,
+        anuncioIds: [],
+        lojaIds: [],
+        initialFound: false,
+        retryAttempts: 0,
+        resolvedByRetry: false,
+        retryHistory: [],
+      };
     const estoqueMaximoBling = produtoBling?.id
       ? getBlingStockMaximum(detalhesBlingByProductId.get(Number(produtoBling.id)) || null)
       : null;
@@ -2359,6 +2466,10 @@ async function compareProdutosBlingCodes(
             code: statusMercadoLivre.code,
             anuncioIds: statusMercadoLivre.anuncioIds || [],
             lojaIds: statusMercadoLivre.lojaIds || [],
+            initialFound: !!statusMercadoLivre.initialFound,
+            retryAttempts: Number(statusMercadoLivre.retryAttempts || 0),
+            resolvedByRetry: !!statusMercadoLivre.resolvedByRetry,
+            retryHistory: Array.isArray(statusMercadoLivre.retryHistory) ? statusMercadoLivre.retryHistory : [],
           },
           flags: {
             temEstoqueEmAlgumSistema,
