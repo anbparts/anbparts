@@ -10,6 +10,10 @@ const RECORRENCIAS = [
   { value: 'semanal', label: 'Semanalmente' },
   { value: 'mensal', label: 'Mensalmente' },
 ] as const;
+const MESES = Array.from({ length: 12 }, (_, index) => ({
+  value: String(index + 1),
+  label: new Date(Date.UTC(2026, index, 1)).toLocaleDateString('pt-BR', { month: 'long', timeZone: 'UTC' }),
+}));
 const STATUS_COLORS: Record<string, string> = {
   pago: 'var(--green)',
   pendente: 'var(--red)',
@@ -385,6 +389,8 @@ export default function DespesasPage() {
   const [filtroCategoria, setFiltroCategoria] = useState('');
   const [filtroStatus, setFiltroStatus] = useState('');
   const [filtroAno, setFiltroAno] = useState(currentYear());
+  const [filtroMes, setFiltroMes] = useState('');
+  const [selectedRowIds, setSelectedRowIds] = useState<number[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [origemForm, setOrigemForm] = useState<'manual' | 'arquivo'>('manual');
   const [saving, setSaving] = useState(false);
@@ -427,6 +433,7 @@ export default function DespesasPage() {
     try {
       const data = await api.financeiro.despesas.list();
       setRows(data);
+      setSelectedRowIds((current) => current.filter((id) => data.some((item: any) => Number(item.id) === id)));
     } finally {
       setLoading(false);
     }
@@ -440,10 +447,18 @@ export default function DespesasPage() {
 
   const filtradas = rows.filter((item) => {
     const ano = Number(dateKey(item.data).slice(0, 4));
+    const mes = Number(dateKey(item.data).slice(5, 7));
     return (!filtroCategoria || item.categoria === filtroCategoria)
       && (!filtroStatus || item.statusPagamento === filtroStatus)
-      && (!filtroAno || ano === Number(filtroAno));
+      && (!filtroAno || ano === Number(filtroAno))
+      && (!filtroMes || mes === Number(filtroMes));
   });
+
+  const filteredRowIds = filtradas
+    .map((item) => Number(item.id))
+    .filter((id) => Number.isFinite(id) && id > 0);
+  const selectedFilteredIds = filteredRowIds.filter((id) => selectedRowIds.includes(id));
+  const allFilteredSelected = filteredRowIds.length > 0 && selectedFilteredIds.length === filteredRowIds.length;
 
   const total = filtradas.reduce((sum, item) => sum + Number(item.valor || 0), 0);
   const totalPendentes = filtradas.filter((item) => item.statusPagamento === 'pendente').length;
@@ -649,6 +664,38 @@ export default function DespesasPage() {
 
   async function excluir(id: number, scope: 'single' | 'future_series' = 'single') {
     await api.financeiro.despesas.delete(id, scope);
+    setSelectedRowIds((current) => current.filter((itemId) => itemId !== id));
+    await load();
+  }
+
+  function toggleDespesaSelecionada(id: number, checked: boolean) {
+    setSelectedRowIds((current) => (
+      checked
+        ? Array.from(new Set([...current, id]))
+        : current.filter((itemId) => itemId !== id)
+    ));
+  }
+
+  function selecionarTodasFiltradas(checked: boolean) {
+    setSelectedRowIds((current) => {
+      const next = new Set(current);
+      filteredRowIds.forEach((id) => {
+        if (checked) next.add(id);
+        else next.delete(id);
+      });
+      return Array.from(next);
+    });
+  }
+
+  async function excluirSelecionadas() {
+    if (!selectedFilteredIds.length) {
+      alert('Selecione pelo menos uma despesa no filtro atual.');
+      return;
+    }
+
+    if (!confirm(`Excluir ${selectedFilteredIds.length} despesa(s) selecionada(s)?`)) return;
+    await api.financeiro.despesas.bulkDelete(selectedFilteredIds);
+    setSelectedRowIds((current) => current.filter((id) => !selectedFilteredIds.includes(id)));
     await load();
   }
 
@@ -1047,9 +1094,50 @@ export default function DespesasPage() {
               Visualizacao <span style={{ fontSize: 12, color: 'var(--ink-muted)', fontWeight: 400 }}>- {filtradas.length} registros</span>
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {modo === 'relatorio' && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => selecionarTodasFiltradas(true)}
+                    disabled={!filteredRowIds.length}
+                    style={{ ...inputStyle, cursor: filteredRowIds.length ? 'pointer' : 'not-allowed', padding: '8px 12px', background: 'var(--white)' }}
+                  >
+                    Selecionar tudo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => selecionarTodasFiltradas(false)}
+                    disabled={!selectedFilteredIds.length}
+                    style={{ ...inputStyle, cursor: selectedFilteredIds.length ? 'pointer' : 'not-allowed', padding: '8px 12px', background: 'var(--white)' }}
+                  >
+                    Limpar selecao
+                  </button>
+                  <button
+                    type="button"
+                    onClick={excluirSelecionadas}
+                    disabled={!selectedFilteredIds.length}
+                    style={{
+                      padding: '8px 14px',
+                      borderRadius: 7,
+                      border: '1px solid #fecaca',
+                      background: '#fff1f2',
+                      color: 'var(--red)',
+                      fontSize: 13,
+                      fontWeight: 700,
+                      cursor: selectedFilteredIds.length ? 'pointer' : 'not-allowed',
+                    }}
+                  >
+                    Excluir selecionadas{selectedFilteredIds.length ? ` (${selectedFilteredIds.length})` : ''}
+                  </button>
+                </>
+              )}
               <select style={{ ...inputStyle, width: 'auto', cursor: 'pointer' }} value={filtroAno} onChange={(e) => setFiltroAno(e.target.value)}>
                 <option value="">Todos os anos</option>
                 {anos.map((ano) => <option key={ano} value={ano}>{ano}</option>)}
+              </select>
+              <select style={{ ...inputStyle, cursor: 'pointer' }} value={filtroMes} onChange={(e) => setFiltroMes(e.target.value)}>
+                <option value="">Todos os meses</option>
+                {MESES.map((mes) => <option key={mes.value} value={mes.value}>{mes.label}</option>)}
               </select>
               <select style={{ ...inputStyle, cursor: 'pointer' }} value={filtroCategoria} onChange={(e) => setFiltroCategoria(e.target.value)}>
                 <option value="">Todas categorias</option>
@@ -1091,6 +1179,14 @@ export default function DespesasPage() {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
                     <tr>
+                      <th style={{ width: 42, padding: '9px 8px', textAlign: 'center' }}>
+                        <input
+                          type="checkbox"
+                          checked={allFilteredSelected}
+                          disabled={!filteredRowIds.length}
+                          onChange={(e) => selecionarTodasFiltradas(e.target.checked)}
+                        />
+                      </th>
                       {['Data', 'Detalhes', 'Categoria', 'Valor', 'Dados', 'Anexo', 'Comprovante', 'Status', 'Pagamento', ''].map((header) => (
                         <th key={header} style={{ padding: '9px 16px', textAlign: header === 'Valor' ? 'right' : 'left', fontFamily: 'Geist Mono, monospace', fontSize: 10, letterSpacing: '.7px', textTransform: 'uppercase', color: 'var(--ink-muted)', fontWeight: 500 }}>
                           {header}
@@ -1101,6 +1197,13 @@ export default function DespesasPage() {
                   <tbody>
                     {filtradas.map((item) => (
                       <tr key={item.id} style={{ borderBottom: '1px solid var(--gray-100)' }}>
+                        <td style={{ padding: '9px 8px', textAlign: 'center' }}>
+                          <input
+                            type="checkbox"
+                            checked={selectedRowIds.includes(Number(item.id))}
+                            onChange={(e) => toggleDespesaSelecionada(Number(item.id), e.target.checked)}
+                          />
+                        </td>
                         <td style={{ padding: '9px 16px', fontFamily: 'Geist Mono, monospace', fontSize: 12, color: 'var(--ink-muted)' }}>{formatDateBr(item.data)}</td>
                         <td style={{ padding: '9px 16px', color: 'var(--ink)' }}>{item.detalhes}</td>
                         <td style={{ padding: '9px 16px' }}><CategBadge categoria={item.categoria} /></td>
@@ -1135,7 +1238,7 @@ export default function DespesasPage() {
                       </tr>
                     ))}
                     {!filtradas.length && (
-                      <tr><td colSpan={10} style={{ padding: '36px 16px', textAlign: 'center', color: 'var(--ink-muted)', fontSize: 13 }}>Nenhuma despesa encontrada</td></tr>
+                      <tr><td colSpan={11} style={{ padding: '36px 16px', textAlign: 'center', color: 'var(--ink-muted)', fontSize: 13 }}>Nenhuma despesa encontrada</td></tr>
                     )}
                   </tbody>
                 </table>

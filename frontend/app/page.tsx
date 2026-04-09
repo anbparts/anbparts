@@ -63,7 +63,62 @@ function fmt(value: number) {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
-function renderMercadoLivreSaldoCard(saldo: any) {
+function maskStyle(hidden: boolean) {
+  return hidden
+    ? {
+        filter: 'blur(6px)',
+        userSelect: 'none' as const,
+      }
+    : {};
+}
+
+function DashboardVisibilityButton({
+  hidden,
+  onToggle,
+}: {
+  hidden: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 8,
+        padding: '8px 12px',
+        borderRadius: 8,
+        border: '1px solid var(--border)',
+        background: 'var(--white)',
+        color: 'var(--ink)',
+        cursor: 'pointer',
+        fontSize: 12,
+        fontWeight: 600,
+      }}
+      title={hidden ? 'Mostrar valores' : 'Ocultar valores'}
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        {hidden ? (
+          <>
+            <path d="M3 3L21 21" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+            <path d="M10.6 10.7C10.2 11.1 10 11.5 10 12a2 2 0 0 0 2 2c.5 0 .9-.2 1.3-.6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+            <path d="M9.4 5.5A10.9 10.9 0 0 1 12 5.2c5.5 0 9.4 4.8 10 5.6.2.3.2.8 0 1.1-.4.6-2.4 3.1-5.4 4.6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+            <path d="M6.7 6.8C4.2 8.3 2.5 10.5 2 11.2c-.2.3-.2.8 0 1.1.6.8 4.5 5.6 10 5.6 1 0 2-.2 2.8-.4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+          </>
+        ) : (
+          <>
+            <path d="M2 12s3.8-6.8 10-6.8S22 12 22 12s-3.8 6.8-10 6.8S2 12 2 12Z" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+            <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.8" />
+          </>
+        )}
+      </svg>
+      {hidden ? 'Mostrar' : 'Ocultar'}
+    </button>
+  );
+}
+
+function renderMercadoLivreSaldoCard(saldo: any, hidden: boolean) {
   const fmtMaybe = (value: any) => (typeof value === 'number' && Number.isFinite(value) ? fmt(value) : '-');
 
   if (!saldo?.connected) {
@@ -94,7 +149,7 @@ function renderMercadoLivreSaldoCard(saldo: any) {
         {rows.map((row) => (
           <div key={row.label} style={s.balanceRow}>
             <span style={s.balanceName}>{row.label}</span>
-            <span style={{ ...s.balanceValue, color: row.color }}>{row.value}</span>
+            <span style={{ ...s.balanceValue, color: row.color, ...maskStyle(hidden) }}>{row.value}</span>
           </div>
         ))}
       </div>
@@ -114,8 +169,19 @@ export default function DashboardPage() {
   const [motos, setMotos] = useState<any[]>([]);
   const [skuPorMoto, setSkuPorMoto] = useState<Record<number, string[]>>({});
   const [filtroMarcaMoto, setFiltroMarcaMoto] = useState('');
+  const [ocultarValores, setOcultarValores] = useState(false);
   const [loadingDashboard, setLoadingDashboard] = useState(true);
   const [loadingMotos, setLoadingMotos] = useState(true);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    setOcultarValores(window.localStorage.getItem('dashboard-hide-values') === '1');
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem('dashboard-hide-values', ocultarValores ? '1' : '0');
+  }, [ocultarValores]);
 
   useEffect(() => {
     let cancelled = false;
@@ -189,6 +255,7 @@ export default function DashboardPage() {
             <div style={s.title}>Dashboard</div>
             <div style={s.sub}>Visao geral dos indicadores</div>
           </div>
+          <DashboardVisibilityButton hidden={ocultarValores} onToggle={() => setOcultarValores((current) => !current)} />
         </div>
         <div style={{ padding: 28, color: 'var(--ink-muted)', fontSize: 13 }}>Carregando...</div>
       </>
@@ -256,6 +323,7 @@ export default function DashboardPage() {
           <div style={s.title}>Dashboard</div>
           <div style={s.sub}>Visao geral dos indicadores</div>
         </div>
+        <DashboardVisibilityButton hidden={ocultarValores} onToggle={() => setOcultarValores((current) => !current)} />
       </div>
 
       <div style={{ padding: 28 }}>
@@ -264,11 +332,11 @@ export default function DashboardPage() {
             <div key={card.label} style={s.card}>
               <div style={s.label}>{card.label}</div>
               {card.kind === 'mercado-livre-saldo' ? (
-                renderMercadoLivreSaldoCard((card as any).saldo)
+                renderMercadoLivreSaldoCard((card as any).saldo, ocultarValores)
               ) : (
                 <>
-                  <div style={{ ...s.val, color: (card as any).color }}>{(card as any).val}</div>
-                  <div style={s.sub2}>{(card as any).sub}</div>
+                  <div style={{ ...s.val, color: (card as any).color, ...maskStyle(ocultarValores) }}>{(card as any).val}</div>
+                  <div style={{ ...s.sub2, ...(card.label === 'Total de pecas' || card.label === 'Pecas em estoque' ? maskStyle(ocultarValores) : {}) }}>{(card as any).sub}</div>
                 </>
               )}
             </div>
@@ -293,7 +361,9 @@ export default function DashboardPage() {
                 fontWeight: 400,
               }}
             >
-              - {loadingMotos ? '...' : motosFiltradas.length}{!loadingMotos && filtroMarcaMoto ? ` de ${motos.length}` : ''}
+              <span style={maskStyle(ocultarValores)}>
+                - {loadingMotos ? '...' : motosFiltradas.length}{!loadingMotos && filtroMarcaMoto ? ` de ${motos.length}` : ''}
+              </span>
             </span>
           </div>
 
@@ -345,7 +415,7 @@ export default function DashboardPage() {
                         borderRadius: 4,
                       }}
                     >
-                      ID {moto.id} - {moto.ano}
+                      <span style={maskStyle(ocultarValores)}>ID {moto.id} - {moto.ano}</span>
                     </span>
                     {skus.length > 0 && (
                       <span
@@ -358,7 +428,9 @@ export default function DashboardPage() {
                           borderRadius: 4,
                         }}
                       >
-                        {skus.length === 1 ? `SKU ${skus[0]}` : `SKUs ${skus.join(' - ')}`}
+                        <span style={maskStyle(ocultarValores)}>
+                          {skus.length === 1 ? `SKU ${skus[0]}` : `SKUs ${skus.join(' - ')}`}
+                        </span>
                       </span>
                     )}
                   </div>
@@ -376,7 +448,7 @@ export default function DashboardPage() {
                       borderColor: pctVendida >= 80 ? '#f5c6c6' : pctVendida >= 50 ? 'var(--amber-mid)' : 'var(--sage-mid)',
                     }}
                   >
-                    {pctVendida}% vendido
+                    <span style={maskStyle(ocultarValores)}>{pctVendida}% vendido</span>
                   </span>
                 </div>
 
@@ -425,6 +497,7 @@ export default function DashboardPage() {
                           fontSize: stat.sm ? 13 : 16,
                           fontWeight: 500,
                           color: stat.color,
+                          ...maskStyle(ocultarValores),
                         }}
                       >
                         {stat.value}
@@ -444,6 +517,7 @@ export default function DashboardPage() {
                         fontFamily: 'Geist Mono, monospace',
                         color: pctRecuperada >= 100 ? 'var(--sage)' : pctRecuperada >= 50 ? 'var(--amber)' : 'var(--ink-muted)',
                         fontWeight: 600,
+                        ...maskStyle(ocultarValores),
                       }}
                     >
                       {pctRecuperada}%
@@ -463,7 +537,7 @@ export default function DashboardPage() {
                 </div>
 
                 <div style={{ fontSize: 11, color: 'var(--ink-muted)', fontFamily: 'Geist Mono, monospace' }}>
-                  {moto.qtdVendidas} de {totalPecasMoto} pecas vendidas
+                  <span style={maskStyle(ocultarValores)}>{moto.qtdVendidas} de {totalPecasMoto}</span> pecas vendidas
                 </div>
               </div>
             );

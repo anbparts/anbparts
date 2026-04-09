@@ -73,6 +73,10 @@ const despesaStatusSchema = z.object({
   comprovante: attachmentSchema.optional().nullable(),
 });
 
+const despesaBulkDeleteSchema = z.object({
+  ids: z.array(z.number().int().positive()).min(1),
+});
+
 function toNumber(value: any) {
   return Number(value) || 0;
 }
@@ -434,6 +438,26 @@ financeiroRouter.patch('/despesas/:id/status', async (req, res, next) => {
     });
 
     res.json(mapDespesaRow(row));
+  } catch (e) {
+    next(e);
+  }
+});
+
+financeiroRouter.post('/despesas/bulk-delete', async (req, res, next) => {
+  try {
+    const payload = despesaBulkDeleteSchema.parse(req.body || {});
+    const uniqueIds = Array.from(new Set(payload.ids.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)));
+    if (!uniqueIds.length) {
+      return res.status(400).json({ error: 'Nenhuma despesa valida foi informada para exclusao.' });
+    }
+
+    const deleted = await prisma.despesa.deleteMany({
+      where: {
+        id: { in: uniqueIds },
+      },
+    });
+
+    res.json({ ok: true, deleted: deleted.count, ids: uniqueIds });
   } catch (e) {
     next(e);
   }
