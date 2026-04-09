@@ -1659,7 +1659,7 @@ async function collectMercadoLivreStatusesStoreWideForProducts(
 async function collectMercadoLivreStatusByProductIds(
   ids: number[],
   withDebug = false,
-  options?: { batchSize?: number; pauseMs?: number },
+  options?: { batchSize?: number; pauseMs?: number; onProductProcessed?: (productId: number) => Promise<void> | void },
 ) {
   type MercadoLivreRetryHistoryEntry = {
     attempt: number;
@@ -1755,6 +1755,8 @@ async function collectMercadoLivreStatusByProductIds(
                 resolvedByRetry: false,
                 retryHistory: [],
               });
+
+          await options?.onProductProcessed?.(productId);
 
           return null;
         });
@@ -1960,7 +1962,7 @@ async function collectMercadoLivreStatusByProductIds(
 
 async function findMercadoLivreStatusByProductIds(
   ids: number[],
-  options?: { batchSize?: number; pauseMs?: number },
+  options?: { batchSize?: number; pauseMs?: number; onProductProcessed?: (productId: number) => Promise<void> | void },
 ) {
   const { statuses } = await collectMercadoLivreStatusByProductIds(ids, false, options);
   return statuses;
@@ -2344,14 +2346,31 @@ async function compareProdutosBlingCodes(
     syncDetran?: boolean;
     syncMercadoLivreLink?: boolean;
     traceSkus?: Set<string> | string[];
+    onProgress?: (payload: { totalParaProcessar: number; totalProcessados: number; fase: string }) => Promise<void> | void;
   },
 ) {
   const codigos = Array.from(new Set(codigosInput.map((codigo) => getBaseSku(codigo)).filter(Boolean)));
+  const totalParaProcessar = codigos.length;
   const traceSkuSet = options?.traceSkus instanceof Set
     ? options.traceSkus
     : new Set(Array.isArray(options?.traceSkus) ? options.traceSkus.map((codigo) => getBaseSku(codigo)).filter(Boolean) : []);
   const traceBySku = new Map<string, any>();
+  let progressState = {
+    totalParaProcessar,
+    totalProcessados: 0,
+    fase: 'Iniciando',
+  };
+  let lastProgressSignature = '';
+  const emitProgress = async (patch: Partial<typeof progressState>) => {
+    progressState = { ...progressState, ...patch };
+    if (!options?.onProgress) return;
+    const signature = `${progressState.totalParaProcessar}|${progressState.totalProcessados}|${progressState.fase}`;
+    if (signature === lastProgressSignature) return;
+    lastProgressSignature = signature;
+    await options.onProgress(progressState);
+  };
   if (!codigos.length) {
+    await emitProgress({ totalProcessados: 0, fase: 'Concluido' });
     return {
       ok: true,
       totalConsultados: 0,
@@ -2361,6 +2380,8 @@ async function compareProdutosBlingCodes(
       traceSkus: {},
     };
   }
+
+  await emitProgress({ totalProcessados: 0, fase: 'Consultando catalogo do Bling' });
 
   const localLoaded = !options?.localMap || !options?.localPecas
     ? await loadLocalSkuResumoByCodes(codigos)
@@ -2372,8 +2393,23 @@ async function compareProdutosBlingCodes(
   const produtoIdsParaStatus = Array.from(new Set(
     codigos
       .map((codigo) => Number(produtosBling.get(codigo)?.id || 0))
-      .filter((id): id is number => Number.isFinite(id) && id > 0),
+    .filter((id): id is number => Number.isFinite(id) && id > 0),
   ));
+  const productIdToCodeCount = new Map<number, number>();
+  let codigosSemProdutoBling = 0;
+  codigos.forEach((codigo) => {
+    const productId = Number(produtosBling.get(codigo)?.id || 0);
+    if (!productId) {
+      codigosSemProdutoBling += 1;
+      return;
+    }
+    productIdToCodeCount.set(productId, (productIdToCodeCount.get(productId) || 0) + 1);
+  });
+  const processedProductIds = new Set<number>();
+  await emitProgress({
+    totalProcessados: codigosSemProdutoBling,
+    fase: produtoIdsParaStatus.length ? 'Consultando status do Mercado Livre' : 'Consolidando divergencias',
+  });
   const produtoIdsParaDetalhe = Array.from(new Set(
     codigos
       .map((codigo) => {
@@ -2390,7 +2426,21 @@ async function compareProdutosBlingCodes(
   ));
 
   const [statusMercadoLivreByProductId, detalhesBlingByProductId, productStoreLinksByProductId] = await Promise.all([
-    findMercadoLivreStatusByProductIds(produtoIdsParaStatus, options),
+    findMercadoLivreStatusByProductIds(produtoIdsParaStatus, {
+      batchSize: options?.batchSize,
+      pauseMs: options?.pauseMs,
+      onProductProcessed: async (productId) => {
+        if (processedProductIds.has(productId)) return;
+        processedProductIds.add(productId);
+        await emitProgress({
+          totalProcessados: Math.min(
+            totalParaProcessar,
+            codigosSemProdutoBling + Array.from(processedProductIds).reduce((sum, id) => sum + (productIdToCodeCount.get(id) || 0), 0),
+          ),
+          fase: 'Consultando status do Mercado Livre',
+        });
+      },
+    }),
     findBlingProductDetailsByIds(produtoIdsParaDetalhe, options),
     options?.syncMercadoLivreLink && localPecas.length
       ? findProdutoLojaLinksByProductIds(produtoIdsParaStatus)
@@ -2403,15 +2453,22 @@ async function compareProdutosBlingCodes(
       syncDetran: options?.syncDetran,
       syncMercadoLivreLink: options?.syncMercadoLivreLink,
       statusMercadoLivreByProductId,
-    });
-  }
+      });
+    }
 
-  const divergencias = codigos.flatMap((codigo) => {
-    const local = localMap.get(codigo) || createLocalSkuResumo(codigo);
-    const produtoBling = produtosBling.get(codigo);
-    const qtdBling = produtoBling ? toNumber(produtoBling?.estoque?.saldoVirtualTotal ?? produtoBling?.estoque?.saldo ?? 0) : 0;
+    await emitProgress({
+      totalProcessados: Math.min(totalParaProcessar, codigosSemProdutoBling + Array.from(processedProductIds).reduce((sum, id) => sum + (productIdToCodeCount.get(id) || 0), 0)),
+      fase: 'Consolidando divergencias',
+    });
+
+    const divergencias: any[] = [];
+    let processadosNaConsolidacao = 0;
+    for (const codigo of codigos) {
+      const local = localMap.get(codigo) || createLocalSkuResumo(codigo);
+      const produtoBling = produtosBling.get(codigo);
+      const qtdBling = produtoBling ? toNumber(produtoBling?.estoque?.saldoVirtualTotal ?? produtoBling?.estoque?.saldo ?? 0) : 0;
     const descricaoBling = produtoBling?.nome || null;
-    const statusMercadoLivre = produtoBling?.id
+      let statusMercadoLivre = produtoBling?.id
       ? (statusMercadoLivreByProductId.get(Number(produtoBling.id)) || {
         found: false,
         label: null,
@@ -2436,6 +2493,64 @@ async function compareProdutosBlingCodes(
         resolvedByRetry: false,
         retryHistory: [],
       };
+    if (!statusMercadoLivre.found && produtoBling?.id) {
+      let lojaRowsFinal = productStoreLinksByProductId.get(Number(produtoBling.id)) || [];
+
+      if (!lojaRowsFinal.length) {
+        const productLinksFallback = await findProdutoLojaLinksByProductIds([Number(produtoBling.id)]);
+        lojaRowsFinal = productLinksFallback.get(Number(produtoBling.id)) || [];
+      }
+
+      if (lojaRowsFinal.length) {
+        let collectedFinal: Array<{
+          code: number;
+          label: string;
+          isActive: boolean;
+          anuncioId: number | null;
+          lojaId: number;
+        }> = [];
+
+        const detailFallback = await collectMercadoLivreStatusesFromLojaRows(lojaRowsFinal, false);
+        if (detailFallback.collected.length) {
+          collectedFinal = detailFallback.collected;
+        }
+
+        if (!collectedFinal.length) {
+          const lojaIdsFinal = getProdutoLojaIds(lojaRowsFinal);
+          const queryFallback = await collectMercadoLivreStatusesForProduct(Number(produtoBling.id), lojaIdsFinal, false);
+          if (queryFallback.collected.length) {
+            collectedFinal = queryFallback.collected;
+          }
+        }
+
+        if (collectedFinal.length) {
+          const prioritizedFinal = collectedFinal.find((item) => !item.isActive) || collectedFinal.find((item) => item.isActive) || null;
+          if (prioritizedFinal) {
+            statusMercadoLivre = {
+              found: true,
+              label: prioritizedFinal.label,
+              isActive: prioritizedFinal.isActive,
+              code: prioritizedFinal.code,
+              anuncioIds: Array.from(new Set(collectedFinal.map((item) => item.anuncioId).filter(Boolean))) as number[],
+              lojaIds: Array.from(new Set(collectedFinal.map((item) => item.lojaId))),
+              initialFound: statusMercadoLivre.initialFound,
+              retryAttempts: Math.max(1, Number(statusMercadoLivre.retryAttempts || 0)),
+              resolvedByRetry: true,
+              retryHistory: [
+                ...(Array.isArray(statusMercadoLivre.retryHistory) ? statusMercadoLivre.retryHistory : []),
+                {
+                  attempt: Math.max(1, Number(statusMercadoLivre.retryAttempts || 0) + 1),
+                  source: detailFallback.collected.length ? 'detail_fallback' : 'product_store_query',
+                  found: true,
+                  code: prioritizedFinal.code,
+                  label: prioritizedFinal.label,
+                },
+              ],
+            };
+          }
+        }
+      }
+    }
     const estoqueMaximoBling = produtoBling?.id
       ? getBlingStockMaximum(detalhesBlingByProductId.get(Number(produtoBling.id)) || null)
       : null;
@@ -2486,14 +2601,16 @@ async function compareProdutosBlingCodes(
           },
         }
       : null;
-    const finalizeTrace = () => {
-      if (traceEntry) {
-        traceEntry.final.divergenciaTipos = divergenciasSku.map((item) => item?.tipo || null).filter(Boolean);
-        traceEntry.final.divergenciaTitulos = divergenciasSku.map((item) => item?.titulo || null).filter(Boolean);
-        traceBySku.set(codigo, traceEntry);
-      }
-      return divergenciasSku;
-    };
+      const finalizeTrace = () => {
+        if (traceEntry) {
+          traceEntry.final.divergenciaTipos = divergenciasSku.map((item) => item?.tipo || null).filter(Boolean);
+          traceEntry.final.divergenciaTitulos = divergenciasSku.map((item) => item?.titulo || null).filter(Boolean);
+          traceBySku.set(codigo, traceEntry);
+        }
+        if (divergenciasSku.length) divergencias.push(...divergenciasSku);
+        processadosNaConsolidacao += 1;
+        return divergenciasSku;
+      };
     const deveAlertarPrejuizo = local.qtdPrejuizoAnb > 0 && (
       qtdBling > 0
       || (statusMercadoLivre.found && statusMercadoLivre.isActive)
@@ -2515,8 +2632,12 @@ async function compareProdutosBlingCodes(
         statusMercadoLivre: null,
         statusMercadoLivreAtivo: null,
       }));
-      return finalizeTrace();
-    }
+        finalizeTrace();
+        if (processadosNaConsolidacao % 25 === 0 || processadosNaConsolidacao === codigos.length) {
+          await emitProgress({ totalProcessados: Math.max(progressState.totalProcessados, processadosNaConsolidacao), fase: 'Consolidando divergencias' });
+        }
+        continue;
+      }
 
     if (temEstoqueEmAlgumSistema && statusMercadoLivre.found && !statusMercadoLivre.isActive) {
       divergenciasSku.push(buildDivergenciaPayload(codigo, local, qtdBling, descricaoBling, statusMercadoLivre, {
@@ -2525,8 +2646,12 @@ async function compareProdutosBlingCodes(
         detalhe: 'Existe estoque no ANB ou no Bling, mas o status do Mercado Livre esta diferente de ativo.',
         statusMercadoLivreAtivo: false,
       }));
-      return finalizeTrace();
-    }
+        finalizeTrace();
+        if (processadosNaConsolidacao % 25 === 0 || processadosNaConsolidacao === codigos.length) {
+          await emitProgress({ totalProcessados: Math.max(progressState.totalProcessados, processadosNaConsolidacao), fase: 'Consolidando divergencias' });
+        }
+        continue;
+      }
 
     if (!temEstoqueEmAlgumSistema && statusMercadoLivre.found && statusMercadoLivre.isActive) {
       divergenciasSku.push(buildDivergenciaPayload(codigo, local, qtdBling, descricaoBling, statusMercadoLivre, {
@@ -2535,8 +2660,12 @@ async function compareProdutosBlingCodes(
         detalhe: 'Nao ha estoque disponivel no ANB nem no Bling, mas o anuncio do Mercado Livre segue publicado.',
         statusMercadoLivreAtivo: true,
       }));
-      return finalizeTrace();
-    }
+        finalizeTrace();
+        if (processadosNaConsolidacao % 25 === 0 || processadosNaConsolidacao === codigos.length) {
+          await emitProgress({ totalProcessados: Math.max(progressState.totalProcessados, processadosNaConsolidacao), fase: 'Consolidando divergencias' });
+        }
+        continue;
+      }
 
     if (!local.qtdTotalAnb) {
       divergenciasSku.push(buildDivergenciaPayload(codigo, local, qtdBling, descricaoBling, statusMercadoLivre, {
@@ -2552,8 +2681,12 @@ async function compareProdutosBlingCodes(
         descricaoAnb: null,
         moto: null,
       }));
-      return finalizeTrace();
-    }
+        finalizeTrace();
+        if (processadosNaConsolidacao % 25 === 0 || processadosNaConsolidacao === codigos.length) {
+          await emitProgress({ totalProcessados: Math.max(progressState.totalProcessados, processadosNaConsolidacao), fase: 'Consolidando divergencias' });
+        }
+        continue;
+      }
 
     if (local.qtdDisponivelAnb > qtdBling) {
       divergenciasSku.push(buildDivergenciaPayload(codigo, local, qtdBling, descricaoBling, statusMercadoLivre, {
@@ -2561,8 +2694,12 @@ async function compareProdutosBlingCodes(
         titulo: 'Estoque ANB maior que Bling',
         detalhe: 'O ANB mostra mais pecas disponiveis que o saldo atual do Bling.',
       }));
-      return finalizeTrace();
-    }
+        finalizeTrace();
+        if (processadosNaConsolidacao % 25 === 0 || processadosNaConsolidacao === codigos.length) {
+          await emitProgress({ totalProcessados: Math.max(progressState.totalProcessados, processadosNaConsolidacao), fase: 'Consolidando divergencias' });
+        }
+        continue;
+      }
 
     if (estoqueMaximoBling !== null && qtdBling > estoqueMaximoBling) {
       divergenciasSku.push(buildDivergenciaPayload(codigo, local, qtdBling, descricaoBling, statusMercadoLivre, {
@@ -2570,8 +2707,12 @@ async function compareProdutosBlingCodes(
         titulo: 'Estoque Bling acima do maximo',
         detalhe: `O Bling esta com saldo ${qtdBling}, mas o estoque maximo configurado para esse produto e ${estoqueMaximoBling}.`,
       }));
-      return finalizeTrace();
-    }
+        finalizeTrace();
+        if (processadosNaConsolidacao % 25 === 0 || processadosNaConsolidacao === codigos.length) {
+          await emitProgress({ totalProcessados: Math.max(progressState.totalProcessados, processadosNaConsolidacao), fase: 'Consolidando divergencias' });
+        }
+        continue;
+      }
 
     if (local.qtdDisponivelAnb < qtdBling) {
       divergenciasSku.push(buildDivergenciaPayload(codigo, local, qtdBling, descricaoBling, statusMercadoLivre, {
@@ -2579,14 +2720,23 @@ async function compareProdutosBlingCodes(
         titulo: 'Estoque Bling maior que o permitido',
         detalhe: 'O Bling mostra mais saldo disponivel que a quantidade permitida pelo estoque atual do ANB.',
       }));
-      return finalizeTrace();
+        finalizeTrace();
+        if (processadosNaConsolidacao % 25 === 0 || processadosNaConsolidacao === codigos.length) {
+          await emitProgress({ totalProcessados: Math.max(progressState.totalProcessados, processadosNaConsolidacao), fase: 'Consolidando divergencias' });
+        }
+        continue;
+      }
+
+      finalizeTrace();
+      if (processadosNaConsolidacao % 25 === 0 || processadosNaConsolidacao === codigos.length) {
+        await emitProgress({ totalProcessados: Math.max(progressState.totalProcessados, processadosNaConsolidacao), fase: 'Consolidando divergencias' });
+      }
     }
 
-    return finalizeTrace();
-  });
-
-  return {
-    ok: true,
+    await emitProgress({ totalProcessados: totalParaProcessar, fase: 'Concluido' });
+  
+    return {
+      ok: true,
     totalConsultados: codigos.length,
     totalDivergencias: divergencias.length,
     totalSemDivergencia: codigos.length - divergencias.length,
@@ -3031,6 +3181,12 @@ async function executeAuditoriaAutomatica(origem: 'manual' | 'auto' = 'manual') 
   );
   const local = await loadAllLocalSkuResumo(cfg.auditoriaEscopo);
   const traceSkuSet = buildAuditoriaTraceSkuSet();
+  let progressSnapshot = {
+    totalParaProcessar: local.codigos.length,
+    totalProcessados: 0,
+    fase: 'Aguardando inicio',
+    atualizadoEm: new Date().toISOString(),
+  };
   const execution = await prisma.auditoriaAutomaticaExecucao.create({
     data: {
       origem,
@@ -3038,10 +3194,42 @@ async function executeAuditoriaAutomatica(origem: 'manual' | 'auto' = 'manual') 
       emailDestinatario: emailConfig.auditoriaEmailDestinatario || null,
       emailAssunto: assuntoAuditoria,
       totalSkus: local.codigos.length,
+      resumo: JSON.parse(JSON.stringify({
+        progresso: progressSnapshot,
+      })),
     },
   });
 
   try {
+    let lastProgressPersistAt = 0;
+    const persistProgress = async (
+      payload: { totalParaProcessar: number; totalProcessados: number; fase: string },
+      force = false,
+    ) => {
+      progressSnapshot = {
+        totalParaProcessar: Math.max(0, Number(payload?.totalParaProcessar || progressSnapshot.totalParaProcessar || 0)),
+        totalProcessados: Math.max(0, Number(payload?.totalProcessados || 0)),
+        fase: String(payload?.fase || progressSnapshot.fase || 'Em execucao'),
+        atualizadoEm: new Date().toISOString(),
+      };
+
+      const now = Date.now();
+      if (!force && now - lastProgressPersistAt < 1500 && progressSnapshot.totalProcessados < progressSnapshot.totalParaProcessar) {
+        return;
+      }
+
+      lastProgressPersistAt = now;
+      await prisma.auditoriaAutomaticaExecucao.update({
+        where: { id: execution.id },
+        data: {
+          totalSkus: progressSnapshot.totalParaProcessar,
+          resumo: JSON.parse(JSON.stringify({
+            progresso: progressSnapshot,
+          })),
+        },
+      });
+    };
+
     const resultado = await compareProdutosBlingCodes(local.codigos, {
       localMap: local.localMap,
       localPecas: local.pecas,
@@ -3051,9 +3239,16 @@ async function executeAuditoriaAutomatica(origem: 'manual' | 'auto' = 'manual') 
       batchSize: cfg.auditoriaTamanhoLote,
       pauseMs: cfg.auditoriaPausaMs,
       traceSkus: traceSkuSet,
+      onProgress: persistProgress,
     });
+    await persistProgress({
+      totalParaProcessar: resultado.totalConsultados,
+      totalProcessados: resultado.totalConsultados,
+      fase: 'Concluido',
+    }, true);
     const resumo: any = JSON.parse(JSON.stringify({
       ...buildAuditoriaResumo(resultado),
+      progresso: progressSnapshot,
       traceSkusMonitorados: buildAuditoriaTraceResumo(local, resultado, traceSkuSet),
     }));
     let emailEnviado = false;
@@ -3095,6 +3290,9 @@ async function executeAuditoriaAutomatica(origem: 'manual' | 'auto' = 'manual') 
         status: 'erro',
         finishedAt: new Date(),
         erro: error?.message || String(error),
+        resumo: JSON.parse(JSON.stringify({
+          progresso: progressSnapshot,
+        })),
       },
     });
 
