@@ -808,6 +808,7 @@ function buildMercadoPagoDespesaDetalhesSugeridos(row: Record<string, string>) {
 
 const MERCADO_PAGO_DESPESA_PREVIEW_IGNORE_TYPES = new Set([
   'reserve_for_payment',
+  'reserve_for_payout',
   'shipping',
   'reserve_for_dispute',
   'mediation',
