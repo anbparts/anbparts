@@ -2775,10 +2775,10 @@ async function executeAuditoriaAutomatica(origem: 'manual' | 'auto' = 'manual') 
       pauseMs: cfg.auditoriaPausaMs,
       traceSkus: traceSkuSet,
     });
-    const resumo = {
+    const resumo: any = JSON.parse(JSON.stringify({
       ...buildAuditoriaResumo(resultado),
       traceSkusMonitorados: buildAuditoriaTraceResumo(local, resultado, traceSkuSet),
-    };
+    }));
     let emailEnviado = false;
     let emailErro: string | null = null;
 
