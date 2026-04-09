@@ -113,6 +113,7 @@ export default function DashboardPage() {
   const [dash, setDash] = useState<any>(null);
   const [motos, setMotos] = useState<any[]>([]);
   const [skuPorMoto, setSkuPorMoto] = useState<Record<number, string[]>>({});
+  const [filtroMarcaMoto, setFiltroMarcaMoto] = useState('');
   const [loadingDashboard, setLoadingDashboard] = useState(true);
   const [loadingMotos, setLoadingMotos] = useState(true);
 
@@ -238,6 +239,16 @@ export default function DashboardPage() {
     },
   ];
 
+  const marcasMotos = Array.from(new Set(
+    motos
+      .map((moto) => String(moto?.marca || '').trim())
+      .filter(Boolean),
+  )).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+
+  const motosFiltradas = filtroMarcaMoto
+    ? motos.filter((moto) => String(moto?.marca || '').trim() === filtroMarcaMoto)
+    : motos;
+
   return (
     <>
       <div style={s.topbar}>
@@ -264,33 +275,56 @@ export default function DashboardPage() {
           ))}
         </div>
 
-        <div
-          style={{
-            fontFamily: 'Fraunces, serif',
-            fontSize: 16,
-            fontWeight: 600,
-            marginBottom: 16,
-            letterSpacing: '-0.3px',
-          }}
-        >
-          Motos{' '}
-          <span
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
+          <div
             style={{
-              fontSize: 13,
-              color: 'var(--ink-muted)',
-              fontFamily: 'Geist, sans-serif',
-              fontWeight: 400,
+              fontFamily: 'Fraunces, serif',
+              fontSize: 16,
+              fontWeight: 600,
+              letterSpacing: '-0.3px',
             }}
           >
-            - {loadingMotos ? '...' : motos.length}
-          </span>
+            Motos{' '}
+            <span
+              style={{
+                fontSize: 13,
+                color: 'var(--ink-muted)',
+                fontFamily: 'Geist, sans-serif',
+                fontWeight: 400,
+              }}
+            >
+              - {loadingMotos ? '...' : motosFiltradas.length}{!loadingMotos && filtroMarcaMoto ? ` de ${motos.length}` : ''}
+            </span>
+          </div>
+
+          {!loadingMotos && (
+            <select
+              value={filtroMarcaMoto}
+              onChange={(event) => setFiltroMarcaMoto(event.target.value)}
+              style={{
+                background: 'var(--white)',
+                border: '1px solid var(--border)',
+                borderRadius: 8,
+                padding: '8px 12px',
+                fontSize: 13,
+                color: 'var(--ink)',
+                cursor: 'pointer',
+                minWidth: 180,
+              }}
+            >
+              <option value="">Todas as marcas</option>
+              {marcasMotos.map((marca) => (
+                <option key={marca} value={marca}>{marca}</option>
+              ))}
+            </select>
+          )}
         </div>
 
         {loadingMotos ? (
           <div style={{ color: 'var(--ink-muted)', fontSize: 13 }}>Carregando motos...</div>
         ) : (
           <div style={s.mGrid}>
-            {motos.map((moto) => {
+            {motosFiltradas.map((moto) => {
             const totalPecasMoto = (moto.qtdDisp || 0) + (moto.qtdVendidas || 0);
             const pctVendida = totalPecasMoto > 0 ? Math.round(((moto.qtdVendidas || 0) / totalPecasMoto) * 100) : 0;
             const pctRecuperada = moto.pctRecuperada || 0;
@@ -433,7 +467,12 @@ export default function DashboardPage() {
                 </div>
               </div>
             );
-          })}
+            })}
+            {!motosFiltradas.length && (
+              <div style={{ ...s.card, color: 'var(--ink-muted)', fontSize: 13 }}>
+                Nenhuma moto encontrada para a marca selecionada.
+              </div>
+            )}
           </div>
         )}
       </div>
