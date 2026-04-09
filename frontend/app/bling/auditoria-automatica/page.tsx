@@ -15,7 +15,19 @@ const s: any = {
 };
 
 type AuditoriaEscopo = 'full' | 'com_estoque' | 'com_estoque_mais_vendidos_ano';
-type Resumo = { totalConsultados?: number; totalDivergencias?: number; totalSemDivergencia?: number; porTipo?: Record<string, number> };
+type ProgressoExecucao = {
+  totalParaProcessar?: number;
+  totalProcessados?: number;
+  fase?: string;
+  atualizadoEm?: string;
+};
+type Resumo = {
+  totalConsultados?: number;
+  totalDivergencias?: number;
+  totalSemDivergencia?: number;
+  porTipo?: Record<string, number>;
+  progresso?: ProgressoExecucao | null;
+};
 type Divergencia = {
   sku: string; tipo: string; titulo: string; detalhe: string; estoqueAnb: number; estoqueBling: number; qtdTotalAnb: number; qtdVendidasAnb: number;
   qtdPrejuizoAnb?: number; idsPecaPrejuizo?: string[]; motivosPrejuizo?: string[]; descricaoAnb: string | null; descricaoBling: string | null; moto: string | null;
@@ -49,6 +61,7 @@ const borderColor = (tipo: string) => tipo === 'nao_encontrado_bling' ? 'var(--a
 const tipoLabel = (tipo: string) => String(tipo || '').replaceAll('_', ' ').replace(/\bml\b/gi, 'ML');
 const escopoLabel = (value?: AuditoriaEscopo | string | null) => ESCOPOS.find((item) => item.value === value)?.label || 'Full';
 const infoValue = (value?: string | null) => String(value || '').trim() || 'Nao configurado';
+const clampProgress = (value: number, total: number) => Math.max(0, Math.min(total || 0, value || 0));
 
 export default function AuditoriaAutomaticaPage() {
   const [loading, setLoading] = useState(true);
@@ -91,7 +104,8 @@ export default function AuditoriaAutomaticaPage() {
     if (!response.ok) throw new Error(data.error || 'Erro ao carregar execucoes');
     const rows = Array.isArray(data.execucoes) ? data.execucoes : [];
     setExecucoes(rows);
-    const preferredId = selectId || execucaoSelecionada?.id || rows[0]?.id;
+    const runningId = rows.find((item: Execucao) => item.status === 'executando')?.id;
+    const preferredId = selectId || runningId || execucaoSelecionada?.id || rows[0]?.id;
     const targetId = rows.some((item: Execucao) => item.id === preferredId) ? preferredId : rows[0]?.id;
     if (targetId) await loadExecucaoDetalhe(targetId);
     else setExecucaoSelecionada(null);
@@ -108,9 +122,37 @@ export default function AuditoriaAutomaticaPage() {
   }
 
   useEffect(() => { loadAll().catch((error) => { setLoading(false); alert(error.message || 'Erro ao carregar a auditoria automatica'); }); }, []);
+  useEffect(() => {
+    const executandoAgora = !!config?.executandoAgora || execucaoSelecionada?.status === 'executando';
+    if (!executandoAgora) return;
+
+    const intervalId = window.setInterval(() => {
+      Promise.all([
+        loadConfig(),
+        loadExecucoes(config?.executandoAgora ? undefined : execucaoSelecionada?.id),
+      ]).catch(() => {});
+    }, 4000);
+
+    return () => window.clearInterval(intervalId);
+  }, [config?.executandoAgora, execucaoSelecionada?.id, execucaoSelecionada?.status]);
   useEffect(() => { setFiltroTipo(null); }, [execucaoSelecionada?.id]);
 
   const resumoAtual = useMemo(() => execucaoSelecionada?.resumo || config?.ultimaExecucao?.resumo || null, [config, execucaoSelecionada]);
+  const progressoAtual = resumoAtual?.progresso || null;
+  const totalParaProcessarAtual = Math.max(
+    Number(progressoAtual?.totalParaProcessar || 0),
+    Number(execucaoSelecionada?.totalSkus || 0),
+    Number(resumoAtual?.totalConsultados || 0),
+  );
+  const totalProcessadosAtual = clampProgress(
+    Number(
+      progressoAtual?.totalProcessados
+      ?? (execucaoSelecionada?.status === 'executando'
+        ? 0
+        : resumoAtual?.totalConsultados || execucaoSelecionada?.totalSkus || 0),
+    ),
+    totalParaProcessarAtual || Number(execucaoSelecionada?.totalSkus || 0) || Number(resumoAtual?.totalConsultados || 0),
+  );
   const divergenciasAtuais = useMemo(() => Array.isArray(execucaoSelecionada?.divergencias) ? execucaoSelecionada.divergencias : [], [execucaoSelecionada]);
   const divergenciasFiltradas = useMemo(() => filtroTipo ? divergenciasAtuais.filter((item) => item.tipo === filtroTipo) : divergenciasAtuais, [divergenciasAtuais, filtroTipo]);
   const canDeleteLogs = !config?.executandoAgora;
@@ -244,9 +286,20 @@ export default function AuditoriaAutomaticaPage() {
         {resumoAtual && (
           <div style={s.card}>
             <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 12 }}>Resumo da execucao selecionada</div>
+            {progressoAtual && (
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
+                <span style={{ fontSize: 12, color: 'var(--blue-500)', fontWeight: 700 }}>
+                  {progressoAtual.fase || 'Em execucao'}
+                </span>
+                <span style={{ fontSize: 12, color: 'var(--gray-400)' }}>
+                  Atualizado em {fmtDateTime(progressoAtual.atualizadoEm || null)}
+                </span>
+              </div>
+            )}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginBottom: 12 }}>
               {[
-                { label: 'Consultados', value: resumoAtual.totalConsultados ?? 0, color: 'var(--gray-700)' },
+                { label: 'Total p/ Processar', value: totalParaProcessarAtual || Number(resumoAtual.totalConsultados || 0), color: 'var(--gray-700)' },
+                { label: 'Processados', value: totalProcessadosAtual, color: 'var(--blue-500)' },
                 { label: 'Divergencias', value: resumoAtual.totalDivergencias ?? 0, color: 'var(--red)' },
                 { label: 'Sem divergencia', value: resumoAtual.totalSemDivergencia ?? 0, color: 'var(--green)' },
               ].map((item) => (
@@ -351,9 +404,20 @@ export default function AuditoriaAutomaticaPage() {
                       )}
                     </div>
                   </div>
+                  {progressoAtual && (
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
+                      <span style={{ fontSize: 12, color: 'var(--blue-500)', fontWeight: 700 }}>
+                        {progressoAtual.fase || 'Em execucao'}
+                      </span>
+                      <span style={{ fontSize: 12, color: 'var(--gray-400)' }}>
+                        Atualizado em {fmtDateTime(progressoAtual.atualizadoEm || null)}
+                      </span>
+                    </div>
+                  )}
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, marginBottom: 12 }}>
                     {[
-                      { label: 'Consultados', value: execucaoSelecionada.totalSkus, color: 'var(--gray-700)' },
+                      { label: 'Total p/ Processar', value: totalParaProcessarAtual || execucaoSelecionada.totalSkus, color: 'var(--gray-700)' },
+                      { label: 'Processados', value: totalProcessadosAtual, color: 'var(--blue-500)' },
                       { label: 'Divergencias', value: execucaoSelecionada.totalDivergencias, color: 'var(--red)' },
                       { label: 'Sem divergencia', value: execucaoSelecionada.totalSemDivergencia, color: 'var(--green)' },
                       { label: 'Email', value: execucaoSelecionada.emailEnviado ? 'Enviado' : 'Nao enviado', color: execucaoSelecionada.emailEnviado ? 'var(--green)' : 'var(--gray-700)' },

@@ -67,6 +67,10 @@ function currentYear() {
   return String(new Date().getFullYear());
 }
 
+function currentMonth() {
+  return String(new Date().getMonth() + 1);
+}
+
 function monthKey(dateValue: string) {
   const key = dateKey(dateValue);
   return key ? key.slice(0, 7) : '';
@@ -389,10 +393,11 @@ export default function DespesasPage() {
   const [filtroCategoria, setFiltroCategoria] = useState('');
   const [filtroStatus, setFiltroStatus] = useState('');
   const [filtroAno, setFiltroAno] = useState(currentYear());
-  const [filtroMes, setFiltroMes] = useState('');
+  const [filtroMes, setFiltroMes] = useState(currentMonth());
   const [selectedRowIds, setSelectedRowIds] = useState<number[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [origemForm, setOrigemForm] = useState<'manual' | 'arquivo'>('manual');
+  const [editingDespesaId, setEditingDespesaId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [solicitandoRelatorioMp, setSolicitandoRelatorioMp] = useState(false);
   const [analisandoCsvMp, setAnalisandoCsvMp] = useState(false);
@@ -416,6 +421,52 @@ export default function DespesasPage() {
     observacao: '',
     anexo: null as { name: string; dataUrl: string } | null,
   });
+
+  function resetManualForm() {
+    setEditingDespesaId(null);
+    setForm({
+      data: today(),
+      detalhes: '',
+      categoria: 'Insumo',
+      valor: '',
+      recorrenciaTipo: 'nenhuma',
+      recorrenciaAte: '',
+      chavePix: '',
+      codigoBarras: '',
+      observacao: '',
+      anexo: null,
+    });
+  }
+
+  function startEditDespesa(item: any) {
+    setEditingDespesaId(Number(item.id));
+    setOrigemForm('manual');
+    setForm({
+      data: item.data ? dateKey(item.data) : today(),
+      detalhes: item.detalhes || '',
+      categoria: item.categoria || 'Outros',
+      valor: String(Number(item.valor || 0)),
+      recorrenciaTipo: item.recorrenciaTipo || 'nenhuma',
+      recorrenciaAte: item.recorrenciaFim ? dateKey(item.recorrenciaFim) : '',
+      chavePix: item.chavePix || '',
+      codigoBarras: item.codigoBarras || '',
+      observacao: item.observacao || '',
+      anexo: item.anexoArquivo ? { name: item.anexoNome || 'anexo', dataUrl: item.anexoArquivo } : null,
+    });
+    setShowForm(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function toggleFormVisibility() {
+    if (showForm) {
+      setShowForm(false);
+      setEditingDespesaId(null);
+      return;
+    }
+    resetManualForm();
+    setOrigemForm('manual');
+    setShowForm(true);
+  }
 
   const inputStyle: any = {
     background: 'var(--white)',
@@ -510,7 +561,7 @@ export default function DespesasPage() {
     if (!form.detalhes || !form.valor) return;
     setSaving(true);
     try {
-      const response = await api.financeiro.despesas.create({
+      const payload = {
         data: form.data,
         detalhes: form.detalhes,
         categoria: form.categoria,
@@ -521,22 +572,17 @@ export default function DespesasPage() {
         codigoBarras: form.codigoBarras || null,
         observacao: form.observacao || null,
         anexo: form.anexo,
-      });
-      if (Number(response?.totalCriadas || 1) > 1) {
-        alert(`Serie criada com ${response.totalCriadas} lancamentos.`);
+      };
+      if (editingDespesaId) {
+        await api.financeiro.despesas.update(editingDespesaId, payload);
+        alert('Despesa atualizada.');
+      } else {
+        const response = await api.financeiro.despesas.create(payload);
+        if (Number(response?.totalCriadas || 1) > 1) {
+          alert(`Serie criada com ${response.totalCriadas} lancamentos.`);
+        }
       }
-      setForm({
-        data: today(),
-        detalhes: '',
-        categoria: 'Insumo',
-        valor: '',
-        recorrenciaTipo: 'nenhuma',
-        recorrenciaAte: '',
-        chavePix: '',
-        codigoBarras: '',
-        observacao: '',
-        anexo: null,
-      });
+      resetManualForm();
       setShowForm(false);
       await load();
     } finally {
@@ -741,10 +787,10 @@ export default function DespesasPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <ViewModeSwitch value={modo} onChange={setModo} />
           <button
-            onClick={() => setShowForm((value) => !value)}
+            onClick={toggleFormVisibility}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 7, background: 'var(--blue-500)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}
           >
-            {showForm ? 'Fechar' : '+ Nova despesa'}
+            {showForm ? (editingDespesaId ? 'Fechar edicao' : 'Fechar') : '+ Nova despesa'}
           </button>
         </div>
       </div>
@@ -774,6 +820,11 @@ export default function DespesasPage() {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
               <div>
                 <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>Nova despesa</div>
+                {editingDespesaId ? (
+                  <div style={{ fontSize: 12, color: 'var(--blue-500)', marginTop: 4, fontWeight: 700 }}>
+                    Editando despesa #{editingDespesaId}
+                  </div>
+                ) : null}
                 <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 4 }}>
                   Escolha se o lancamento sera feito manualmente ou revisado a partir de um CSV do Mercado Pago.
                 </div>
@@ -782,6 +833,7 @@ export default function DespesasPage() {
                 <button
                   type="button"
                   onClick={() => setOrigemForm('manual')}
+                  disabled={!!editingDespesaId}
                   style={{
                     border: 'none',
                     borderRadius: 999,
@@ -790,7 +842,8 @@ export default function DespesasPage() {
                     color: origemForm === 'manual' ? '#fff' : 'var(--ink)',
                     fontSize: 12,
                     fontWeight: 700,
-                    cursor: 'pointer',
+                    cursor: editingDespesaId ? 'not-allowed' : 'pointer',
+                    opacity: editingDespesaId ? 0.7 : 1,
                   }}
                 >
                   Manual
@@ -798,6 +851,7 @@ export default function DespesasPage() {
                 <button
                   type="button"
                   onClick={() => setOrigemForm('arquivo')}
+                  disabled={!!editingDespesaId}
                   style={{
                     border: 'none',
                     borderRadius: 999,
@@ -806,7 +860,8 @@ export default function DespesasPage() {
                     color: origemForm === 'arquivo' ? '#fff' : 'var(--ink)',
                     fontSize: 12,
                     fontWeight: 700,
-                    cursor: 'pointer',
+                    cursor: editingDespesaId ? 'not-allowed' : 'pointer',
+                    opacity: editingDespesaId ? 0.7 : 1,
                   }}
                 >
                   Via arquivo
@@ -840,6 +895,7 @@ export default function DespesasPage() {
                     <select
                       style={{ ...inputStyle, width: '100%', cursor: 'pointer' }}
                       value={form.recorrenciaTipo}
+                      disabled={!!editingDespesaId}
                       onChange={(e) => setForm((value) => ({
                         ...value,
                         recorrenciaTipo: e.target.value,
@@ -857,7 +913,7 @@ export default function DespesasPage() {
                       style={{ ...inputStyle, width: '100%' }}
                       type="date"
                       value={form.recorrenciaAte}
-                      disabled={form.recorrenciaTipo === 'nenhuma'}
+                      disabled={form.recorrenciaTipo === 'nenhuma' || !!editingDespesaId}
                       onChange={(e) => setForm((value) => ({ ...value, recorrenciaAte: e.target.value }))}
                     />
                   </div>
@@ -890,7 +946,7 @@ export default function DespesasPage() {
                     disabled={saving || !form.detalhes || !form.valor || (form.recorrenciaTipo !== 'nenhuma' && !form.recorrenciaAte)}
                     style={{ padding: '8px 18px', background: 'var(--blue-500)', color: '#fff', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap' }}
                   >
-                    {saving ? 'Salvando...' : 'Salvar'}
+                    {saving ? 'Salvando...' : editingDespesaId ? 'Salvar alteracoes' : 'Salvar'}
                   </button>
                 </div>
               </>
@@ -1230,10 +1286,20 @@ export default function DespesasPage() {
                         <td style={{ padding: '9px 16px', fontFamily: 'Geist Mono, monospace', fontSize: 12, color: 'var(--ink-muted)' }}>
                           {item.dataPagamento ? formatDateBr(item.dataPagamento) : '-'}
                         </td>
-                        <td style={{ padding: '9px 10px', width: 40 }}>
-                          <button onClick={() => solicitarExclusao(item)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-muted)', fontSize: 14, padding: '2px 6px', borderRadius: 4 }} title="Excluir">
-                            x
-                          </button>
+                        <td style={{ padding: '9px 10px', width: 92 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <button
+                              type="button"
+                              onClick={() => startEditDespesa(item)}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--blue-500)', fontSize: 12, padding: '2px 0', borderRadius: 4, fontWeight: 700 }}
+                              title="Editar"
+                            >
+                              Editar
+                            </button>
+                            <button onClick={() => solicitarExclusao(item)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-muted)', fontSize: 14, padding: '2px 6px', borderRadius: 4 }} title="Excluir">
+                              x
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
