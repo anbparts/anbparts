@@ -43,6 +43,8 @@ const BLING_PRODUCT_DETAIL_CACHE_TTL_MS = 2 * 60 * 1000;
 const BLING_CUSTOM_FIELDS_CACHE_TTL_MS = 30 * 60 * 1000;
 const BLING_DETRAN_CUSTOM_FIELD_IDS = new Set([5979929]);
 const MERCADO_LIVRE_STATUS_CONCURRENCY = 4;
+const MERCADO_LIVRE_UNRESOLVED_RETRY_ATTEMPTS = 10;
+const MERCADO_LIVRE_UNRESOLVED_RETRY_PAUSE_MS = 450;
 const produtoLojaLinksCache = new Map<number, { expiresAt: number; rows: any[] }>();
 const blingProductByCodeCache = new Map<string, { expiresAt: number; value: any | null }>();
 const blingProductDetailCache = new Map<number, { expiresAt: number; value: any | null }>();
@@ -1729,6 +1731,72 @@ async function collectMercadoLivreStatusByProductIds(
         });
       },
     );
+
+    let unresolvedIds = uniqueIds.filter((productId) => {
+      const current = statuses.get(productId);
+      const lojaRows = productStoreLinks.get(productId) || [];
+      return lojaRows.length > 0 && !current?.found;
+    });
+
+    for (let attempt = 0; attempt < MERCADO_LIVRE_UNRESOLVED_RETRY_ATTEMPTS && unresolvedIds.length; attempt += 1) {
+      await processInBatches(
+        unresolvedIds,
+        1,
+        Math.max(runtime.pauseMs, MERCADO_LIVRE_UNRESOLVED_RETRY_PAUSE_MS),
+        async (batch) => {
+          await mapWithConcurrency(batch, 1, async (productId) => {
+            const lojaRows = productStoreLinks.get(productId) || [];
+            if (!lojaRows.length) return null;
+
+            let collected: Array<{
+              code: number;
+              label: string;
+              isActive: boolean;
+              anuncioId: number | null;
+              lojaId: number;
+            }> = [];
+
+            const detailFallback = await collectMercadoLivreStatusesFromLojaRows(lojaRows, false);
+            if (detailFallback.collected.length) {
+              collected = detailFallback.collected;
+            }
+
+            if (!collected.length) {
+              const lojaIds = getProdutoLojaIds(lojaRows);
+              const primary = await collectMercadoLivreStatusesForProduct(productId, lojaIds, false);
+              if (primary.collected.length) {
+                collected = primary.collected;
+              }
+            }
+
+            if (!collected.length) return null;
+
+            const prioritized = collected.find((item) => !item.isActive) || collected.find((item) => item.isActive) || null;
+            if (!prioritized) return null;
+
+            statuses.set(productId, {
+              found: true,
+              label: prioritized.label,
+              isActive: prioritized.isActive,
+              code: prioritized.code,
+              anuncioIds: Array.from(new Set(collected.map((item) => item.anuncioId).filter(Boolean))) as number[],
+              lojaIds: Array.from(new Set(collected.map((item) => item.lojaId))),
+            });
+
+            return null;
+          });
+        },
+      );
+
+      unresolvedIds = unresolvedIds.filter((productId) => {
+        const current = statuses.get(productId);
+        return !current?.found;
+      });
+
+      if (unresolvedIds.length) {
+        await sleep(MERCADO_LIVRE_UNRESOLVED_RETRY_PAUSE_MS + (attempt * 100));
+      }
+    }
 
     return {
       statuses,
