@@ -392,9 +392,16 @@ async function blingReq(pathUrl: string, options: any = {}, retries = 3): Promis
     resp = await doReq(token);
   }
 
-  if (resp.status === 429 && retries > 0) {
-    await sleep(2000);
-    return blingReq(pathUrl, options, retries - 1);
+  if (resp.status === 429) {
+    const err = await resp.text();
+    if (/por dia/i.test(err)) {
+      throw new Error(`Bling API 429: ${err.slice(0, 200)}`);
+    }
+    if (retries > 0) {
+      await sleep(2000);
+      return blingReq(pathUrl, options, retries - 1);
+    }
+    throw new Error(`Bling API 429: ${err.slice(0, 200)}`);
   }
 
   if (!resp.ok) {
@@ -1158,32 +1165,10 @@ async function findBlingProductsByCodes(codes: string[]) {
     await sleep(250);
   }
 
-  const unresolvedCodes = Array.from(targetCodes);
-  if (unresolvedCodes.length) {
-    await mapWithConcurrency(unresolvedCodes, 2, async (code) => {
-      let currentPage = 1;
-
-      while (true) {
-        const data = await blingReq(`/produtos?pagina=${currentPage}&limite=100&criterio=2`) as any;
-        const produtos = data?.data || [];
-        if (!produtos.length) break;
-
-        const matched = produtos.find((produto: any) => getBaseSku(produto?.codigo) === code);
-        if (matched) {
-          found.set(code, matched);
-          blingProductByCodeCache.set(code, {
-            expiresAt: Date.now() + BLING_PRODUCT_CACHE_TTL_MS,
-            value: matched,
-          });
-          break;
-        }
-
-        if (produtos.length < 100) break;
-        currentPage += 1;
-        await sleep(200);
-      }
-
-      return null;
+  for (const unresolvedCode of Array.from(targetCodes)) {
+    blingProductByCodeCache.set(unresolvedCode, {
+      expiresAt: Date.now() + BLING_PRODUCT_CACHE_TTL_MS,
+      value: null,
     });
   }
 
