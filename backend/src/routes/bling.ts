@@ -3112,22 +3112,25 @@ blingRouter.post('/auditoria-automatica/trace-skus', async (req, res, next) => {
   try {
     const cfg = await getConfig();
     const traceSkuSet = buildAuditoriaTraceSkuSet(req.body?.skus || req.body?.codigos || req.body?.texto);
-    const local = await loadAllLocalSkuResumo(cfg.auditoriaEscopo);
-    const resultado = await compareProdutosBlingCodes(local.codigos, {
-      localMap: local.localMap,
-      localPecas: local.pecas,
+    const traceCodigos = Array.from(traceSkuSet);
+    const localEscopo = await loadAllLocalSkuResumo(cfg.auditoriaEscopo);
+    const localPecasTrace = localEscopo.pecas.filter((peca) => traceSkuSet.has(getBaseSku(peca.idPeca)));
+
+    const resultado = await compareProdutosBlingCodes(traceCodigos, {
+      localMap: localEscopo.localMap,
+      localPecas: localPecasTrace,
       syncLocalizacao: true,
       syncDetran: true,
       syncMercadoLivreLink: true,
-      batchSize: cfg.auditoriaTamanhoLote,
-      pauseMs: cfg.auditoriaPausaMs,
+      batchSize: Math.max(1, Math.min(10, traceCodigos.length || 1)),
+      pauseMs: Math.max(300, cfg.auditoriaPausaMs),
       traceSkus: traceSkuSet,
     });
 
     res.json({
       ok: true,
       auditoriaEscopo: cfg.auditoriaEscopo,
-      traceSkus: buildAuditoriaTraceResumo(local, resultado, traceSkuSet),
+      traceSkus: buildAuditoriaTraceResumo(localEscopo, resultado, traceSkuSet),
     });
   } catch (e) {
     next(e);
