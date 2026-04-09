@@ -1666,7 +1666,12 @@ async function collectMercadoLivreStatusesStoreWideForProducts(
 async function collectMercadoLivreStatusByProductIds(
   ids: number[],
   withDebug = false,
-  options?: { batchSize?: number; pauseMs?: number; onProductProcessed?: (productId: number) => Promise<void> | void },
+  options?: {
+    batchSize?: number;
+    pauseMs?: number;
+    onProductProcessed?: (productId: number) => Promise<void> | void;
+    onRetryProgress?: (payload: { attempt: number; unresolvedCount: number; totalIds: number }) => Promise<void> | void;
+  },
 ) {
   type MercadoLivreRetryHistoryEntry = {
     attempt: number;
@@ -1776,13 +1781,21 @@ async function collectMercadoLivreStatusByProductIds(
       return lojaRows.length > 0 && !current?.found;
     });
 
+    const retryBatchSize = Math.max(5, Math.min(25, runtime.batchSize || MERCADO_LIVRE_STATUS_CONCURRENCY));
+    const retryPauseMs = Math.max(150, Math.min(Math.max(runtime.pauseMs, MERCADO_LIVRE_UNRESOLVED_RETRY_PAUSE_MS), 1000));
+
     for (let attempt = 0; attempt < MERCADO_LIVRE_UNRESOLVED_RETRY_ATTEMPTS && unresolvedIds.length; attempt += 1) {
+      await options?.onRetryProgress?.({
+        attempt: attempt + 1,
+        unresolvedCount: unresolvedIds.length,
+        totalIds: uniqueIds.length,
+      });
       await processInBatches(
         unresolvedIds,
-        1,
-        Math.max(runtime.pauseMs, MERCADO_LIVRE_UNRESOLVED_RETRY_PAUSE_MS),
+        retryBatchSize,
+        retryPauseMs,
         async (batch) => {
-          await mapWithConcurrency(batch, 1, async (productId) => {
+          await mapWithConcurrency(batch, MERCADO_LIVRE_STATUS_CONCURRENCY, async (productId) => {
             const lojaRows = productStoreLinks.get(productId) || [];
             if (!lojaRows.length) return null;
             const current = statuses.get(productId);
@@ -1886,7 +1899,7 @@ async function collectMercadoLivreStatusByProductIds(
       });
 
       if (unresolvedIds.length) {
-        await sleep(MERCADO_LIVRE_UNRESOLVED_RETRY_PAUSE_MS + (attempt * 100));
+        await sleep(Math.min(1500, retryPauseMs + (attempt * 75)));
       }
     }
 
@@ -1969,7 +1982,12 @@ async function collectMercadoLivreStatusByProductIds(
 
 async function findMercadoLivreStatusByProductIds(
   ids: number[],
-  options?: { batchSize?: number; pauseMs?: number; onProductProcessed?: (productId: number) => Promise<void> | void },
+  options?: {
+    batchSize?: number;
+    pauseMs?: number;
+    onProductProcessed?: (productId: number) => Promise<void> | void;
+    onRetryProgress?: (payload: { attempt: number; unresolvedCount: number; totalIds: number }) => Promise<void> | void;
+  },
 ) {
   const { statuses } = await collectMercadoLivreStatusByProductIds(ids, false, options);
   return statuses;
@@ -2445,6 +2463,12 @@ async function compareProdutosBlingCodes(
             codigosSemProdutoBling + Array.from(processedProductIds).reduce((sum, id) => sum + (productIdToCodeCount.get(id) || 0), 0),
           ),
           fase: 'Consultando status do Mercado Livre',
+        });
+      },
+      onRetryProgress: async ({ attempt, unresolvedCount }) => {
+        await emitProgress({
+          totalProcessados: totalParaProcessar,
+          fase: `Reprocessando ${unresolvedCount} pendente(s) no Mercado Livre (tentativa ${attempt}/${MERCADO_LIVRE_UNRESOLVED_RETRY_ATTEMPTS})`,
         });
       },
     }),
