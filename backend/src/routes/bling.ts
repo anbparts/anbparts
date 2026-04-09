@@ -58,6 +58,13 @@ const blingCustomFieldByIdCache = new Map<number, { expiresAt: number; value: an
 const auditoriaSchedulerState = {
   started: false,
   running: false,
+  currentExecutionId: 0,
+  currentProgress: null as null | {
+    totalParaProcessar: number;
+    totalProcessados: number;
+    fase: string;
+    atualizadoEm: string;
+  },
 };
 
 async function mapWithConcurrency<T, R>(
@@ -2987,6 +2994,22 @@ function buildAuditoriaResumo(resultado: any) {
   };
 }
 
+function applyLiveAuditoriaProgress<T extends { id?: number; status?: string; resumo?: any }>(execucao: T | null | undefined): T | null | undefined {
+  if (!execucao) return execucao;
+  if (execucao.status !== 'executando') return execucao;
+  if (!auditoriaSchedulerState.currentExecutionId || auditoriaSchedulerState.currentExecutionId !== Number(execucao.id || 0)) {
+    return execucao;
+  }
+
+  return {
+    ...execucao,
+    resumo: {
+      ...(execucao.resumo && typeof execucao.resumo === 'object' ? execucao.resumo : {}),
+      progresso: auditoriaSchedulerState.currentProgress,
+    },
+  };
+}
+
 function renderAuditoriaMetricCard(label: string, value: any, color = '#1f2937') {
   return `
     <div style="background:#f8fafc;border:1px solid #dbe3ef;border-radius:10px;padding:12px 14px;min-width:140px;">
@@ -3199,6 +3222,8 @@ async function executeAuditoriaAutomatica(origem: 'manual' | 'auto' = 'manual') 
       })),
     },
   });
+  auditoriaSchedulerState.currentExecutionId = execution.id;
+  auditoriaSchedulerState.currentProgress = progressSnapshot;
 
   try {
     let lastProgressPersistAt = 0;
@@ -3212,6 +3237,7 @@ async function executeAuditoriaAutomatica(origem: 'manual' | 'auto' = 'manual') 
         fase: String(payload?.fase || progressSnapshot.fase || 'Em execucao'),
         atualizadoEm: new Date().toISOString(),
       };
+      auditoriaSchedulerState.currentProgress = progressSnapshot;
 
       const now = Date.now();
       if (!force && now - lastProgressPersistAt < 1500 && progressSnapshot.totalProcessados < progressSnapshot.totalParaProcessar) {
@@ -3297,6 +3323,9 @@ async function executeAuditoriaAutomatica(origem: 'manual' | 'auto' = 'manual') 
     });
 
     return updated;
+  } finally {
+    auditoriaSchedulerState.currentExecutionId = 0;
+    auditoriaSchedulerState.currentProgress = null;
   }
 }
 
@@ -3449,7 +3478,7 @@ blingRouter.get('/auditoria-automatica/config', async (_req, res, next) => {
       auditoriaUltimaExecucaoChave: cfg.auditoriaUltimaExecucaoChave,
       auditoriaUltimaExecucaoEm: cfg.auditoriaUltimaExecucaoEm,
       executandoAgora: auditoriaSchedulerState.running,
-      ultimaExecucao,
+      ultimaExecucao: applyLiveAuditoriaProgress(ultimaExecucao),
     });
   } catch (e) {
     next(e);
@@ -3502,7 +3531,7 @@ blingRouter.get('/auditoria-automatica/execucoes', async (req, res, next) => {
       },
     });
 
-    res.json({ ok: true, execucoes });
+    res.json({ ok: true, execucoes: execucoes.map((item) => applyLiveAuditoriaProgress(item)) });
   } catch (e) {
     next(e);
   }
@@ -3518,7 +3547,7 @@ blingRouter.get('/auditoria-automatica/execucoes/:id', async (req, res, next) =>
     });
 
     if (!execucao) return res.status(404).json({ error: 'Execucao nao encontrada' });
-    res.json({ ok: true, execucao });
+    res.json({ ok: true, execucao: applyLiveAuditoriaProgress(execucao) });
   } catch (e) {
     next(e);
   }

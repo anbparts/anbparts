@@ -473,6 +473,10 @@ export default function AuditoriaAutomaticaPage() {
                     ))}
                     {filtroTipo && divergenciasFiltradas.length === 0 && <div style={{ background: '#eff6ff', border: '1px solid #93c5fd', borderRadius: 10, padding: '18px 20px', color: 'var(--blue-500)', fontSize: 14, fontWeight: 600 }}>Nenhuma divergencia desse tipo foi encontrada nesta execucao.</div>}
                   </div>
+                ) : execucaoSelecionada.status === 'executando' ? (
+                  <div style={{ background: '#eff6ff', border: '1px solid #93c5fd', borderRadius: 10, padding: '18px 20px', color: 'var(--blue-500)', fontSize: 14, fontWeight: 600 }}>
+                    Execucao em andamento. As divergencias vao aparecer aqui assim que forem encontradas.
+                  </div>
                 ) : (
                   <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 10, padding: '18px 20px', color: 'var(--green)', fontSize: 14, fontWeight: 600 }}>Nenhuma divergencia armazenada nesta execucao.</div>
                 )}
