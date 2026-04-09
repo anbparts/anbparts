@@ -72,6 +72,46 @@ const auditoriaLinkMlSchedulerState = {
   running: false,
 };
 
+type MercadoLivreRetryHistoryEntry = {
+  attempt: number;
+  source: 'detail_fallback' | 'product_store_query';
+  found: boolean;
+  code: number | null;
+  label: string | null;
+};
+
+type MercadoLivreStatusResult = {
+  found: boolean;
+  label: string | null;
+  isActive: boolean;
+  code: number | null;
+  anuncioIds: number[];
+  lojaIds: number[];
+  initialFound: boolean;
+  retryAttempts: number;
+  resolvedByRetry: boolean;
+  retryHistory: MercadoLivreRetryHistoryEntry[];
+};
+
+type MercadoLivreStatusDebugInfo = {
+  lojaIds: number[];
+  consultas: Array<{
+    lojaId: number;
+    situacao: number;
+    total: number;
+    anuncioIds: number[];
+    labels: string[];
+    rows: Array<{ id: number | null; situacao: any; status: any }>;
+    error?: string | null;
+  }>;
+};
+
+type MercadoLivreStatusCollectionResult = {
+  statuses: Map<number, MercadoLivreStatusResult>;
+  debugByProductId: Map<number, MercadoLivreStatusDebugInfo>;
+  productStoreLinks: Map<number, any[]>;
+};
+
 async function mapWithConcurrency<T, R>(
   items: T[],
   concurrency: number,
@@ -1683,27 +1723,7 @@ async function collectMercadoLivreStatusByProductIds(
     onProductProcessed?: (productId: number) => Promise<void> | void;
     onRetryProgress?: (payload: { attempt: number; unresolvedCount: number; totalIds: number }) => Promise<void> | void;
   },
-) {
-  type MercadoLivreRetryHistoryEntry = {
-    attempt: number;
-    source: 'detail_fallback' | 'product_store_query';
-    found: boolean;
-    code: number | null;
-    label: string | null;
-  };
-
-  type MercadoLivreStatusResult = {
-    found: boolean;
-    label: string | null;
-    isActive: boolean;
-    code: number | null;
-    anuncioIds: number[];
-    lojaIds: number[];
-    initialFound: boolean;
-    retryAttempts: number;
-    resolvedByRetry: boolean;
-    retryHistory: MercadoLivreRetryHistoryEntry[];
-  };
+) : Promise<MercadoLivreStatusCollectionResult> {
 
   const uniqueIds: number[] = Array.from(new Set(
     ids
@@ -1713,18 +1733,7 @@ async function collectMercadoLivreStatusByProductIds(
   const runtime = getRuntimeBatchOptions(options);
   const productStoreLinks = await findProdutoLojaLinksByProductIds(uniqueIds);
   const statuses = new Map<number, MercadoLivreStatusResult>();
-  const debugByProductId = new Map<number, {
-    lojaIds: number[];
-    consultas: Array<{
-      lojaId: number;
-      situacao: number;
-      total: number;
-      anuncioIds: number[];
-      labels: string[];
-      rows: Array<{ id: number | null; situacao: any; status: any }>;
-      error?: string | null;
-    }>;
-  }>();
+  const debugByProductId = new Map<number, MercadoLivreStatusDebugInfo>();
 
   if (!withDebug) {
     const storeWide = await collectMercadoLivreStatusesStoreWideForProducts(uniqueIds, productStoreLinks);
@@ -2483,7 +2492,7 @@ async function compareProdutosBlingCodes(
   ));
 
   const [mercadoLivreStatusData, detalhesBlingByProductId] = await Promise.all([
-    findMercadoLivreStatusByProductIds(produtoIdsParaStatus, {
+    collectMercadoLivreStatusByProductIds(produtoIdsParaStatus, false, {
       batchSize: options?.batchSize,
       pauseMs: options?.pauseMs,
       onProductProcessed: async (productId) => {
