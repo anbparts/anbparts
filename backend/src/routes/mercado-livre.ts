@@ -806,11 +806,29 @@ function buildMercadoPagoDespesaDetalhesSugeridos(row: Record<string, string>) {
   return parts.join(' / ');
 }
 
+const MERCADO_PAGO_DESPESA_PREVIEW_IGNORE_TYPES = new Set([
+  'reserve_for_payment',
+  'shipping',
+  'reserve_for_dispute',
+  'mediation',
+]);
+
+function shouldIgnoreMercadoPagoExpensePreviewRow(row: Record<string, string>) {
+  const candidateKeys = [
+    normalizeKey(row.description),
+    normalizeKey(row.transaction_type),
+    normalizeKey(row.record_type),
+  ].filter(Boolean);
+
+  return candidateKeys.some((key) => MERCADO_PAGO_DESPESA_PREVIEW_IGNORE_TYPES.has(key));
+}
+
 function buildMercadoPagoExpensePreviewRows(rows: Array<Record<string, string>>, fileName: string) {
   const unique = new Map<string, any>();
 
   for (const row of rows) {
     if (isCsvSummaryRow(row)) continue;
+    if (shouldIgnoreMercadoPagoExpensePreviewRow(row)) continue;
 
     const rawDate = normalizeText(
       row.date
