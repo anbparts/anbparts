@@ -63,6 +63,29 @@ function fmt(value: number) {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+function pad2(value: number) {
+  return String(value).padStart(2, '0');
+}
+
+function formatDateInput(date: Date) {
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+}
+
+function getCurrentMonthSalesRange() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const firstDay = new Date(year, month, 1);
+  const lastDay = new Date(year, month + 1, 0);
+
+  return {
+    key: `${year}-${month + 1}`,
+    dataDe: formatDateInput(firstDay),
+    dataAte: formatDateInput(lastDay),
+    label: now.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }),
+  };
+}
+
 function maskStyle(hidden: boolean) {
   return hidden
     ? {
@@ -169,6 +192,9 @@ export default function DashboardPage() {
   const [motos, setMotos] = useState<any[]>([]);
   const [skuPorMoto, setSkuPorMoto] = useState<Record<number, string[]>>({});
   const [filtroMarcaMoto, setFiltroMarcaMoto] = useState('');
+  const [resumoVendasMes, setResumoVendasMes] = useState<any>(null);
+  const [loadingResumoVendasMes, setLoadingResumoVendasMes] = useState(true);
+  const [periodoResumoVendasMes, setPeriodoResumoVendasMes] = useState(() => getCurrentMonthSalesRange());
   const [ocultarValores, setOcultarValores] = useState(false);
   const [loadingDashboard, setLoadingDashboard] = useState(true);
   const [loadingMotos, setLoadingMotos] = useState(true);
@@ -182,6 +208,17 @@ export default function DashboardPage() {
     if (typeof window === 'undefined') return;
     window.localStorage.setItem('dashboard-hide-values', ocultarValores ? '1' : '0');
   }, [ocultarValores]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setPeriodoResumoVendasMes((current: any) => {
+        const next = getCurrentMonthSalesRange();
+        return current.key === next.key ? current : next;
+      });
+    }, 60000);
+
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -246,6 +283,42 @@ export default function DashboardPage() {
       clearTimeout(failsafe);
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadResumoVendasMes = async () => {
+      setLoadingResumoVendasMes(true);
+      try {
+        const resumo = await withTimeout(
+          api.bling.relatorioVendas({
+            dataDe: periodoResumoVendasMes.dataDe,
+            dataAte: periodoResumoVendasMes.dataAte,
+          }),
+          15000,
+          'resumo de vendas do mes',
+        );
+
+        if (cancelled) return;
+        if (!resumo?.ok) {
+          setResumoVendasMes(null);
+          return;
+        }
+        setResumoVendasMes(resumo);
+      } catch {
+        if (cancelled) return;
+        setResumoVendasMes(null);
+      } finally {
+        if (!cancelled) setLoadingResumoVendasMes(false);
+      }
+    };
+
+    loadResumoVendasMes();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [periodoResumoVendasMes.key]);
 
   if (loadingDashboard) {
     return (
@@ -316,6 +389,24 @@ export default function DashboardPage() {
     ? motos.filter((moto) => String(moto?.marca || '').trim() === filtroMarcaMoto)
     : motos;
 
+  const totaisVendasMes = resumoVendasMes?.totaisGerais || {
+    totalPedidos: 0,
+    totalItens: 0,
+    precoML: 0,
+    valorTaxas: 0,
+    valorFrete: 0,
+    valorLiq: 0,
+  };
+
+  const cardsVendasMes = [
+    { label: 'Pedidos', value: String(totaisVendasMes.totalPedidos), color: 'var(--ink)' },
+    { label: 'Itens', value: String(totaisVendasMes.totalItens), color: 'var(--ink)' },
+    { label: 'Preco ML', value: fmt(totaisVendasMes.precoML), color: 'var(--blue-500)' },
+    { label: 'Taxas', value: fmt(totaisVendasMes.valorTaxas), color: 'var(--amber)' },
+    { label: 'Frete', value: fmt(totaisVendasMes.valorFrete), color: 'var(--ink)' },
+    { label: 'Receita liquida', value: fmt(totaisVendasMes.valorLiq), color: 'var(--sage)' },
+  ];
+
   return (
     <>
       <div style={s.topbar}>
@@ -342,6 +433,53 @@ export default function DashboardPage() {
             </div>
           ))}
         </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
+          <div>
+            <div
+              style={{
+                fontFamily: 'Fraunces, serif',
+                fontSize: 16,
+                fontWeight: 600,
+                letterSpacing: '-0.3px',
+              }}
+            >
+              Vendas do mes
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 3 }}>
+              Resumo automatico de {periodoResumoVendasMes.dataDe.split('-').reverse().join('/')} ate {periodoResumoVendasMes.dataAte.split('-').reverse().join('/')} ({periodoResumoVendasMes.label}).
+            </div>
+          </div>
+        </div>
+
+        {loadingResumoVendasMes ? (
+          <div style={s.grid}>
+            {['Pedidos', 'Itens', 'Preco ML', 'Taxas', 'Frete', 'Receita liquida'].map((label) => (
+              <div key={label} style={s.card}>
+                <div style={s.label}>{label}</div>
+                <div style={{ ...s.val, color: 'var(--ink-muted)' }}>...</div>
+                <div style={s.sub2}>Carregando resumo do mes atual.</div>
+              </div>
+            ))}
+          </div>
+        ) : resumoVendasMes ? (
+          <div style={{ ...s.grid, marginBottom: 24 }}>
+            {cardsVendasMes.map((card) => (
+              <div key={card.label} style={s.card}>
+                <div style={s.label}>{card.label}</div>
+                <div style={{ ...s.val, color: card.color, ...maskStyle(ocultarValores) }}>{card.value}</div>
+                <div style={s.sub2}>Periodo automatico do mes corrente.</div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{ ...s.card, marginBottom: 24 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', marginBottom: 6 }}>Vendas do mes indisponiveis</div>
+            <div style={{ fontSize: 13, color: 'var(--ink-muted)' }}>
+              Nao foi possivel carregar o resumo de vendas do mes corrente agora.
+            </div>
+          </div>
+        )}
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
           <div

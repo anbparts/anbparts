@@ -131,6 +131,12 @@ export const api = {
       method: 'DELETE',
     }),
   },
+  bling: {
+    relatorioVendas: (params?: Record<string, any>) => {
+      const qs = params ? '?' + new URLSearchParams(params).toString() : '';
+      return req<any>(`/bling/relatorio-vendas${qs}`);
+    },
+  },
   import: {
     motos: (data: any[]) => req<any>('/import/motos', { method: 'POST', body: JSON.stringify(data) }),
     pecas: (data: any[]) => req<any>('/import/pecas', { method: 'POST', body: JSON.stringify(data) }),
