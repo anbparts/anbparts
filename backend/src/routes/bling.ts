@@ -1361,6 +1361,81 @@ function isLikelySameAnuncioTitle(produtoNome: string, anuncioTitulo: string) {
   return matched >= minimum && matched >= Math.ceil(tokens.length * 0.6);
 }
 
+async function collectMercadoLivreStatusesForProduct(
+  productId: number,
+  lojaIds: number[],
+  withDebug = false,
+) {
+  const collected: Array<{ code: number; label: string; isActive: boolean; anuncioId: number | null; lojaId: number }> = [];
+  const consultas: Array<{
+    lojaId: number;
+    situacao: number;
+    total: number;
+    anuncioIds: number[];
+    labels: string[];
+    rows: Array<{ id: number | null; situacao: any; status: any }>;
+    error?: string | null;
+  }> = [];
+
+  for (const lojaId of lojaIds) {
+    for (const situacao of MERCADO_LIVRE_SITUACOES) {
+      try {
+        const anuncios = await listMercadoLivreAnunciosByProductStoreSituation(productId, lojaId, situacao);
+
+        if (withDebug) {
+          consultas.push({
+            lojaId,
+            situacao,
+            total: anuncios.length,
+            anuncioIds: anuncios
+              .map((anuncio) => Number(anuncio?.id || 0))
+              .filter((id: number): id is number => Number.isFinite(id) && id > 0),
+            labels: anuncios
+              .map((anuncio) => String(extractSituationText(anuncio?.situacao ?? anuncio?.status ?? situacao) || '').trim())
+              .filter((label: string): label is string => Boolean(label)),
+            rows: anuncios.map((anuncio) => ({
+              id: Number(anuncio?.id) || null,
+              situacao: anuncio?.situacao ?? null,
+              status: anuncio?.status ?? null,
+            })),
+            error: null,
+          });
+        }
+
+        for (const anuncio of anuncios) {
+          const parsed = parseAnuncioStatus(anuncio?.situacao ?? anuncio?.status ?? situacao);
+          if (!parsed) continue;
+
+          collected.push({
+            ...parsed,
+            anuncioId: Number(anuncio?.id) || null,
+            lojaId,
+          });
+        }
+      } catch (e: any) {
+        if (withDebug) {
+          consultas.push({
+            lojaId,
+            situacao,
+            total: -1,
+            anuncioIds: [],
+            labels: ['erro'],
+            rows: [],
+            error: e?.message || String(e),
+          });
+        }
+      }
+
+      await sleep(120);
+    }
+  }
+
+  return {
+    collected,
+    consultas,
+  };
+}
+
 async function collectMercadoLivreStatusByProductIds(
   ids: number[],
   withDebug = false,
@@ -1403,42 +1478,7 @@ async function collectMercadoLivreStatusByProductIds(
         await mapWithConcurrency(batch, MERCADO_LIVRE_STATUS_CONCURRENCY, async (productId) => {
           const lojaRows = productStoreLinks.get(productId) || [];
           const lojaIds = getProdutoLojaIds(lojaRows);
-          const mercadoLivreRows = lojaRows.filter((row) => isLikelyMercadoLivreLink(row));
-          const candidateRows = (mercadoLivreRows.length ? mercadoLivreRows : lojaRows)
-            .filter((row) => {
-              const anuncioId = Number(row?.id || row?.idAnuncio || 0);
-              const lojaId = getProdutoLojaId(row);
-              return Number.isFinite(anuncioId) && anuncioId > 0 && lojaId > 0;
-            });
-          const uniqueLinkRows = Array.from(new Map(
-            candidateRows.map((row) => {
-              const anuncioId = Number(row?.id || row?.idAnuncio || 0);
-              const lojaId = getProdutoLojaId(row);
-              return [`${lojaId}:${anuncioId}`, row];
-            }),
-          ).values());
-          const collected: Array<{ code: number; label: string; isActive: boolean; anuncioId: number | null; lojaId: number }> = [];
-
-          await mapWithConcurrency(uniqueLinkRows, Math.min(3, MERCADO_LIVRE_STATUS_CONCURRENCY), async (row) => {
-            const anuncioId = Number(row?.id || row?.idAnuncio || 0);
-            const lojaId = getProdutoLojaId(row);
-
-            try {
-              const detalhe = await getMercadoLivreAnuncioDetail(anuncioId, lojaId);
-              const parsed = parseAnuncioStatus(detalhe?.status ?? detalhe?.situacao ?? row?.status ?? row?.situacao);
-              if (parsed) {
-                collected.push({
-                  ...parsed,
-                  anuncioId,
-                  lojaId,
-                });
-              }
-            } catch {
-              // Ignora falhas individuais e segue com os demais vinculos.
-            }
-
-            return null;
-          });
+          const { collected } = await collectMercadoLivreStatusesForProduct(productId, lojaIds, false);
 
           const prioritized = collected.find((item) => !item.isActive) || collected.find((item) => item.isActive) || null;
 
@@ -1474,67 +1514,7 @@ async function collectMercadoLivreStatusByProductIds(
   for (const productId of uniqueIds) {
     const lojaRows = productStoreLinks.get(productId) || [];
     const lojaIds = getProdutoLojaIds(lojaRows);
-    const collected: Array<{ code: number; label: string; isActive: boolean; anuncioId: number | null; lojaId: number }> = [];
-    const consultas: Array<{
-      lojaId: number;
-      situacao: number;
-      total: number;
-      anuncioIds: number[];
-      labels: string[];
-      rows: Array<{ id: number | null; situacao: any; status: any }>;
-      error?: string | null;
-    }> = [];
-
-    for (const lojaId of lojaIds) {
-      for (const situacao of MERCADO_LIVRE_SITUACOES) {
-        try {
-          const anuncios = await listMercadoLivreAnunciosByProductStoreSituation(productId, lojaId, situacao);
-
-          consultas.push({
-            lojaId,
-            situacao,
-            total: anuncios.length,
-            anuncioIds: anuncios
-              .map((anuncio) => Number(anuncio?.id || 0))
-              .filter((id: number): id is number => Number.isFinite(id) && id > 0),
-            labels: anuncios
-              .map((anuncio) => String(extractSituationText(anuncio?.situacao ?? anuncio?.status ?? situacao) || '').trim())
-              .filter((label: string): label is string => Boolean(label)),
-            rows: anuncios.map((anuncio) => ({
-              id: Number(anuncio?.id) || null,
-              situacao: anuncio?.situacao ?? null,
-              status: anuncio?.status ?? null,
-            })),
-            error: null,
-          });
-
-          for (const anuncio of anuncios) {
-            const parsed = parseAnuncioStatus(anuncio?.situacao ?? anuncio?.status ?? situacao);
-            if (!parsed) continue;
-
-            collected.push({
-              ...parsed,
-              anuncioId: Number(anuncio?.id) || null,
-              lojaId,
-            });
-          }
-        } catch (e: any) {
-          if (withDebug) {
-            consultas.push({
-              lojaId,
-              situacao,
-              total: -1,
-              anuncioIds: [],
-              labels: ['erro'],
-              rows: [],
-              error: e?.message || String(e),
-            });
-          }
-        }
-
-        await sleep(120);
-      }
-    }
+    const { collected, consultas } = await collectMercadoLivreStatusesForProduct(productId, lojaIds, true);
 
     const prioritized = collected.find((item) => !item.isActive) || collected.find((item) => item.isActive) || null;
 
