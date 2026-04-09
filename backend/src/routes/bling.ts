@@ -1561,6 +1561,92 @@ async function collectMercadoLivreStatusesFromLojaRows(
   };
 }
 
+async function collectMercadoLivreStatusesStoreWideForProducts(
+  productIds: number[],
+  productStoreLinks: Map<number, any[]>,
+) {
+  const targetProductIds = new Set(
+    productIds
+      .map((id) => Number(id))
+      .filter((id): id is number => Number.isFinite(id) && id > 0),
+  );
+  const collectedByProductId = new Map<number, Array<{
+    code: number;
+    label: string;
+    isActive: boolean;
+    anuncioId: number | null;
+    lojaId: number;
+  }>>();
+  const lojaIds = new Set<number>();
+  const anuncioIdToProductId = new Map<number, number>();
+  let hadErrors = false;
+
+  for (const productId of targetProductIds) {
+    const lojaRows = productStoreLinks.get(productId) || [];
+    for (const row of lojaRows) {
+      const lojaId = getProdutoLojaId(row);
+      if (lojaId) lojaIds.add(lojaId);
+
+      const anuncioId = Number(
+        row?.idAnuncio
+        || row?.anuncio?.id
+        || row?.item?.id
+        || row?.vinculo?.id
+        || row?.id
+        || 0,
+      );
+      if (anuncioId > 0 && !anuncioIdToProductId.has(anuncioId)) {
+        anuncioIdToProductId.set(anuncioId, productId);
+      }
+    }
+  }
+
+  for (const lojaId of lojaIds) {
+    for (const situacao of MERCADO_LIVRE_SITUACOES) {
+      try {
+        const anuncios = await listMercadoLivreAnunciosByStoreSituation(lojaId, situacao);
+
+        for (const anuncio of anuncios) {
+          const anuncioId = Number(anuncio?.id || 0) || null;
+          const productIdFromAnuncio = Number(
+            anuncio?.produto?.id
+            || anuncio?.produto?.idProduto
+            || anuncio?.item?.produto?.id
+            || anuncio?.item?.produto?.idProduto
+            || 0,
+          ) || null;
+          const resolvedProductId = (
+            (productIdFromAnuncio && targetProductIds.has(productIdFromAnuncio) ? productIdFromAnuncio : null)
+            || (anuncioId ? anuncioIdToProductId.get(anuncioId) || null : null)
+          );
+
+          if (!resolvedProductId || !targetProductIds.has(resolvedProductId)) continue;
+
+          const parsed = parseAnuncioStatus(anuncio?.situacao ?? anuncio?.status ?? situacao);
+          if (!parsed) continue;
+
+          const current = collectedByProductId.get(resolvedProductId) || [];
+          current.push({
+            ...parsed,
+            anuncioId,
+            lojaId,
+          });
+          collectedByProductId.set(resolvedProductId, current);
+        }
+      } catch {
+        hadErrors = true;
+      }
+
+      await sleep(120);
+    }
+  }
+
+  return {
+    collectedByProductId,
+    hadErrors,
+  };
+}
+
 async function collectMercadoLivreStatusByProductIds(
   ids: number[],
   withDebug = false,
@@ -1595,6 +1681,8 @@ async function collectMercadoLivreStatusByProductIds(
   }>();
 
   if (!withDebug) {
+    const storeWide = await collectMercadoLivreStatusesStoreWideForProducts(uniqueIds, productStoreLinks);
+
     await processInBatches(
       uniqueIds,
       runtime.batchSize || uniqueIds.length || 1,
@@ -1603,13 +1691,17 @@ async function collectMercadoLivreStatusByProductIds(
         await mapWithConcurrency(batch, MERCADO_LIVRE_STATUS_CONCURRENCY, async (productId) => {
           const lojaRows = productStoreLinks.get(productId) || [];
           const lojaIds = getProdutoLojaIds(lojaRows);
-          const primary = await collectMercadoLivreStatusesForProduct(productId, lojaIds, false);
-          let collected = primary.collected;
+          let collected = storeWide.collectedByProductId.get(productId) || [];
 
-          if ((!collected.length || primary.hadErrors) && lojaRows.length) {
-            const fallback = await collectMercadoLivreStatusesFromLojaRows(lojaRows, false);
-            if (fallback.collected.length) {
-              collected = [...collected, ...fallback.collected];
+          if ((!collected.length || storeWide.hadErrors) && lojaRows.length) {
+            const primary = await collectMercadoLivreStatusesForProduct(productId, lojaIds, false);
+            collected = primary.collected;
+
+            if ((!collected.length || primary.hadErrors) && lojaRows.length) {
+              const fallback = await collectMercadoLivreStatusesFromLojaRows(lojaRows, false);
+              if (fallback.collected.length) {
+                collected = [...collected, ...fallback.collected];
+              }
             }
           }
 
