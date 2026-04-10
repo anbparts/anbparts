@@ -84,11 +84,11 @@ export function getNavLabel(path: string) {
   return 'ANB Parts';
 }
 
-function SidebarIcon({ name, active }: { name: string; active: boolean }) {
+function SidebarIcon({ name, active, size = 16 }: { name: string; active: boolean; size?: number }) {
   const color = active ? '#ffffff' : 'rgba(255,255,255,.74)';
   const common = {
-    width: 16,
-    height: 16,
+    width: size,
+    height: size,
     viewBox: '0 0 24 24',
     fill: 'none',
     stroke: color,
@@ -171,10 +171,16 @@ export function Sidebar({
   const path = usePathname();
   const isDrawer = mode === 'phone' || mode === 'tablet-portrait';
   const isTabletLandscape = mode === 'tablet-landscape';
+  const isDesktop = mode === 'desktop';
   const expanded = isDrawer ? open : isTabletLandscape ? open : true;
   const sidebarWidth = isTabletLandscape ? (expanded ? 252 : 88) : 252;
   const showBackdrop = isDrawer && open;
   const initial = (user || 'A')[0]?.toUpperCase() || 'A';
+  const compactDesktop = isDesktop && expanded;
+  const desktopNavFontSize = compactDesktop ? 13 : 13.5;
+  const desktopNavHeight = compactDesktop ? 36 : 42;
+  const desktopIconBox = compactDesktop ? 24 : 26;
+  const desktopIconSize = compactDesktop ? 14 : 16;
 
   const handleNavigate = () => {
     if (isDrawer) {
@@ -227,12 +233,16 @@ export function Sidebar({
       >
         <div
           style={{
-            padding: expanded ? '18px 16px' : '16px 10px',
+            padding: expanded
+              ? compactDesktop
+                ? '14px 14px'
+                : '18px 16px'
+              : '16px 10px',
             borderBottom: '1px solid rgba(255,255,255,.08)',
             display: 'flex',
             flexDirection: expanded ? 'row' : 'column',
             alignItems: 'center',
-            gap: expanded ? 12 : 10,
+            gap: expanded ? (compactDesktop ? 10 : 12) : 10,
             flexShrink: 0,
           }}
         >
@@ -240,9 +250,9 @@ export function Sidebar({
             src="/logo.jpg"
             alt="ANB Parts"
             style={{
-              width: expanded ? 46 : 42,
-              height: expanded ? 46 : 42,
-              borderRadius: 12,
+              width: expanded ? (compactDesktop ? 42 : 46) : 42,
+              height: expanded ? (compactDesktop ? 42 : 46) : 42,
+              borderRadius: compactDesktop ? 10 : 12,
               objectFit: 'cover',
               display: 'block',
               flexShrink: 0,
@@ -252,15 +262,15 @@ export function Sidebar({
 
           {expanded ? (
             <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 16, fontWeight: 700, color: '#fff', letterSpacing: '-0.3px', lineHeight: 1.2 }}>
+              <div style={{ fontSize: compactDesktop ? 15 : 16, fontWeight: 700, color: '#fff', letterSpacing: '-0.3px', lineHeight: 1.2 }}>
                 ANB Parts
               </div>
               <div
                 style={{
-                  fontSize: 11,
+                  fontSize: compactDesktop ? 10 : 11,
                   color: 'rgba(255,255,255,.42)',
                   fontFamily: "'JetBrains Mono', monospace",
-                  marginTop: 2,
+                  marginTop: compactDesktop ? 1 : 2,
                 }}
               >
                 Gestao Interna
@@ -299,9 +309,14 @@ export function Sidebar({
         </div>
 
         <nav
+          className="sidebar-scroll-area"
           style={{
             flex: 1,
-            padding: expanded ? '10px 10px 14px' : '10px 8px 14px',
+            padding: expanded
+              ? compactDesktop
+                ? '8px 10px 10px'
+                : '10px 10px 14px'
+              : '10px 8px 14px',
             overflowY: 'auto',
             display: 'flex',
             flexDirection: 'column',
@@ -312,12 +327,12 @@ export function Sidebar({
               {expanded ? (
                 <div
                   style={{
-                    fontSize: 10,
+                    fontSize: compactDesktop ? 9.5 : 10,
                     fontFamily: "'JetBrains Mono', monospace",
                     color: 'rgba(255,255,255,.3)',
                     letterSpacing: '1.2px',
                     textTransform: 'uppercase',
-                    padding: '10px 8px 4px',
+                    padding: compactDesktop ? '8px 8px 3px' : '10px 8px 4px',
                   }}
                 >
                   {group.section}
@@ -326,7 +341,7 @@ export function Sidebar({
                 <div
                   style={{
                     height: 1,
-                    margin: '10px 12px 8px',
+                    margin: compactDesktop ? '8px 12px 6px' : '10px 12px 8px',
                     background: 'rgba(255,255,255,.08)',
                   }}
                 />
@@ -345,24 +360,28 @@ export function Sidebar({
                       alignItems: 'center',
                       justifyContent: expanded ? 'flex-start' : 'center',
                       gap: expanded ? 10 : 0,
-                      padding: expanded ? '9px 10px' : '10px 0',
-                      borderRadius: 12,
-                      marginBottom: 4,
-                      fontSize: 13.5,
+                      padding: expanded
+                        ? compactDesktop
+                          ? '7px 10px'
+                          : '9px 10px'
+                        : '10px 0',
+                      borderRadius: compactDesktop ? 10 : 12,
+                      marginBottom: compactDesktop ? 1 : 4,
+                      fontSize: expanded ? desktopNavFontSize : 13.5,
                       fontWeight: active ? 600 : 400,
                       color: active ? '#fff' : 'rgba(255,255,255,.66)',
                       background: active ? 'linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%)' : 'transparent',
                       textDecoration: 'none',
                       transition: 'all 150ms ease',
-                      minHeight: 42,
+                      minHeight: expanded ? desktopNavHeight : 42,
                     }}
                   >
                     <span
                       style={{
-                        minWidth: 26,
-                        width: 26,
-                        height: 26,
-                        borderRadius: 8,
+                        minWidth: expanded ? desktopIconBox : 26,
+                        width: expanded ? desktopIconBox : 26,
+                        height: expanded ? desktopIconBox : 26,
+                        borderRadius: compactDesktop ? 7 : 8,
                         background: active ? 'rgba(255,255,255,.18)' : 'rgba(255,255,255,.08)',
                         display: 'inline-flex',
                         alignItems: 'center',
@@ -370,7 +389,7 @@ export function Sidebar({
                         flexShrink: 0,
                       }}
                     >
-                      <SidebarIcon name={item.icon} active={active} />
+                      <SidebarIcon name={item.icon} active={active} size={expanded ? desktopIconSize : 16} />
                     </span>
                     {expanded ? item.label : null}
                   </Link>
@@ -382,7 +401,11 @@ export function Sidebar({
 
         <div
           style={{
-            padding: expanded ? '12px 10px' : '12px 8px',
+            padding: expanded
+              ? compactDesktop
+                ? '10px 10px'
+                : '12px 10px'
+              : '12px 8px',
             borderTop: '1px solid rgba(255,255,255,.08)',
             flexShrink: 0,
           }}
@@ -395,22 +418,22 @@ export function Sidebar({
                   alignItems: 'center',
                   justifyContent: 'space-between',
                   gap: 10,
-                  padding: '10px 12px',
-                  borderRadius: 14,
+                  padding: compactDesktop ? '8px 10px' : '10px 12px',
+                  borderRadius: compactDesktop ? 12 : 14,
                   background: 'rgba(255,255,255,.06)',
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
                   <div
                     style={{
-                      width: 34,
-                      height: 34,
+                      width: compactDesktop ? 30 : 34,
+                      height: compactDesktop ? 30 : 34,
                       borderRadius: '50%',
                       background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      fontSize: 13,
+                      fontSize: compactDesktop ? 12 : 13,
                       fontWeight: 700,
                       color: '#fff',
                       textTransform: 'uppercase',
@@ -420,10 +443,10 @@ export function Sidebar({
                     {initial}
                   </div>
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 12, color: 'rgba(255,255,255,.42)' }}>Usuario</div>
+                    <div style={{ fontSize: compactDesktop ? 11 : 12, color: 'rgba(255,255,255,.42)' }}>Usuario</div>
                     <div
                       style={{
-                        fontSize: 13,
+                        fontSize: compactDesktop ? 12 : 13,
                         fontWeight: 600,
                         color: 'rgba(255,255,255,.84)',
                         whiteSpace: 'nowrap',
@@ -442,11 +465,11 @@ export function Sidebar({
                   style={{
                     background: 'rgba(255,255,255,.08)',
                     border: '1px solid rgba(255,255,255,.1)',
-                    borderRadius: 10,
+                    borderRadius: compactDesktop ? 9 : 10,
                     cursor: 'pointer',
                     color: 'rgba(255,255,255,.72)',
-                    width: 36,
-                    height: 36,
+                    width: compactDesktop ? 32 : 36,
+                    height: compactDesktop ? 32 : 36,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
