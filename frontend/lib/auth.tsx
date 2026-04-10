@@ -117,21 +117,24 @@ export function LoginPage({ onLogin }: { onLogin: (u: string, p: string) => Prom
 
     const phoneMedia = window.matchMedia('(max-width: 599px)');
     const tabletPortraitMedia = window.matchMedia('(min-width: 600px) and (max-width: 860px)');
-    const tabletMedia = window.matchMedia('(min-width: 861px) and (max-width: 1280px)');
+    const tabletMedia = window.matchMedia('(min-width: 861px) and (max-width: 1368px)');
+    const tabletCoarseMedia = window.matchMedia('(pointer: coarse) and (min-width: 861px) and (max-width: 1600px)');
     const sync = () => {
       setIsPhone(phoneMedia.matches);
       setIsTabletPortrait(tabletPortraitMedia.matches);
-      setIsTablet(tabletMedia.matches);
+      setIsTablet(tabletMedia.matches || tabletCoarseMedia.matches);
     };
 
     sync();
     phoneMedia.addEventListener('change', sync);
     tabletPortraitMedia.addEventListener('change', sync);
     tabletMedia.addEventListener('change', sync);
+    tabletCoarseMedia.addEventListener('change', sync);
     return () => {
       phoneMedia.removeEventListener('change', sync);
       tabletPortraitMedia.removeEventListener('change', sync);
       tabletMedia.removeEventListener('change', sync);
+      tabletCoarseMedia.removeEventListener('change', sync);
     };
   }, []);
 
@@ -158,16 +161,16 @@ export function LoginPage({ onLogin }: { onLogin: (u: string, p: string) => Prom
       >
       <div
         style={{
-          maxWidth: isTabletPortrait ? 860 : isTablet ? 1120 : 1160,
+          maxWidth: isTabletPortrait ? 860 : isTablet ? 1180 : 1160,
           margin: '0 auto',
           minHeight: isPhone ? 'calc(100dvh - clamp(32px, 6vw, 56px))' : 'auto',
           display: 'grid',
           gridTemplateColumns: isSingleColumn
             ? '1fr'
             : isTablet
-            ? 'minmax(0, 1fr) minmax(460px, 0.92fr)'
+            ? 'minmax(0, 0.95fr) minmax(460px, 0.88fr)'
             : 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))',
-          gap: isPhone ? 16 : isTabletPortrait ? 20 : isTablet ? 28 : 'clamp(16px, 3vw, 28px)',
+          gap: isPhone ? 16 : isTabletPortrait ? 20 : isTablet ? 24 : 'clamp(16px, 3vw, 28px)',
           alignItems: isSingleColumn ? 'stretch' : 'center',
         }}
       >
@@ -176,7 +179,7 @@ export function LoginPage({ onLogin }: { onLogin: (u: string, p: string) => Prom
             order: 1,
             background: 'linear-gradient(155deg, #091425 0%, #132b4d 55%, #1d467c 100%)',
             borderRadius: 28,
-            padding: isPhone ? '18px 18px 16px' : isTabletPortrait ? '24px 24px 22px' : isTablet ? '28px 28px 26px' : 'clamp(28px, 5vw, 48px)',
+            padding: isPhone ? '18px 18px 16px' : isTabletPortrait ? '24px 24px 22px' : isTablet ? '26px 24px 24px' : 'clamp(28px, 5vw, 48px)',
             color: '#fff',
             position: 'relative',
             overflow: 'hidden',
@@ -185,7 +188,7 @@ export function LoginPage({ onLogin }: { onLogin: (u: string, p: string) => Prom
             display: 'flex',
             flexDirection: 'column',
             justifyContent: isPhone ? 'center' : 'flex-start',
-            gap: isPhone ? 0 : isTabletPortrait ? 16 : isTablet ? 22 : 28,
+            gap: isPhone ? 0 : isTabletPortrait ? 16 : isTablet ? 18 : 28,
           }}
         >
           <div
@@ -274,23 +277,23 @@ export function LoginPage({ onLogin }: { onLogin: (u: string, p: string) => Prom
             <div style={{ maxWidth: 420 }}>
               <div
                 style={{
-                  fontSize: 28,
-                  lineHeight: 1.12,
+                  fontSize: 34,
+                  lineHeight: 1.08,
                   fontWeight: 700,
-                  letterSpacing: '-0.8px',
-                  marginBottom: 10,
+                  letterSpacing: '-1px',
+                  marginBottom: 12,
                 }}
               >
-                Acesso interno ANB Parts
+                Operacao interna com acesso rapido no tablet.
               </div>
               <div
                 style={{
                   fontSize: 15,
-                  lineHeight: 1.75,
+                  lineHeight: 1.7,
                   color: 'rgba(255,255,255,.74)',
                 }}
               >
-                Sistema de gestao para equipe, estoque e vendas com acesso rapido em tablet e notebook.
+                Consulte equipe, estoque e vendas com um layout mais equilibrado para tablet em modo horizontal.
               </div>
             </div>
             ) : !isPhone ? (
@@ -377,7 +380,7 @@ export function LoginPage({ onLogin }: { onLogin: (u: string, p: string) => Prom
               background: 'rgba(255,255,255,.92)',
               border: '1px solid rgba(148,163,184,.20)',
               borderRadius: 28,
-              padding: isTabletPortrait ? '36px 34px 30px' : isTablet ? '30px 30px 28px' : 'clamp(24px, 4vw, 38px)',
+              padding: isTabletPortrait ? '36px 34px 30px' : isTablet ? '34px 34px 30px' : 'clamp(24px, 4vw, 38px)',
               boxShadow: '0 24px 50px rgba(15, 23, 42, 0.10)',
               margin: isTabletPortrait ? '0 auto' : undefined,
             }}
