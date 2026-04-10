@@ -29,13 +29,58 @@ async function fileToDataUrl(file: File) {
   });
 }
 
-function downloadDataUrl(dataUrl: string, fileName: string) {
+function dataUrlToFile(dataUrl: string, fileName: string) {
+  const [meta = '', content = ''] = dataUrl.split(',');
+  const mimeMatch = meta.match(/^data:([^;]+)(;base64)?$/i);
+  const mimeType = mimeMatch?.[1] || 'application/octet-stream';
+
+  if (meta.includes(';base64')) {
+    const binary = atob(content || '');
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    return new File([bytes], fileName, { type: mimeType });
+  }
+
+  return new File([decodeURIComponent(content || '')], fileName, { type: mimeType });
+}
+
+async function downloadDataUrl(dataUrl: string, fileName: string) {
+  const file = dataUrlToFile(dataUrl, fileName);
+  const nav = navigator as Navigator & {
+    canShare?: (data: { files?: File[] }) => boolean;
+    share?: (data: { title?: string; files?: File[] }) => Promise<void>;
+  };
+
+  if (typeof nav.share === 'function' && typeof nav.canShare === 'function') {
+    try {
+      if (nav.canShare({ files: [file] })) {
+        await nav.share({ title: fileName, files: [file] });
+        return;
+      }
+    } catch (error: any) {
+      if (error?.name === 'AbortError') return;
+    }
+  }
+
+  const objectUrl = URL.createObjectURL(file);
+  const isAppleMobile = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+  if (isAppleMobile) {
+    window.open(objectUrl, '_blank', 'noopener,noreferrer');
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+    return;
+  }
+
   const link = document.createElement('a');
-  link.href = dataUrl;
+  link.href = objectUrl;
   link.download = fileName;
+  link.rel = 'noopener noreferrer';
   document.body.appendChild(link);
   link.click();
   link.remove();
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
 }
 
 const MOTO_ANEXO_FIELDS = [
