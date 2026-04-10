@@ -149,7 +149,10 @@ function fmtDate(value: string) {
   return `${day}/${month}/${year}`;
 }
 
+type RelatorioViewportMode = 'phone' | 'tablet-portrait' | 'tablet-landscape' | 'desktop';
+
 export default function RelatorioVendasPage() {
+  const [viewportMode, setViewportMode] = useState<RelatorioViewportMode>('desktop');
   const [dataDe, setDataDe] = useState(today());
   const [dataAte, setDataAte] = useState(today());
   const [anoSelecionado, setAnoSelecionado] = useState('');
@@ -215,6 +218,44 @@ export default function RelatorioVendasPage() {
     buscarRelatorio();
   }, []);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const phoneMedia = window.matchMedia('(max-width: 767px)');
+    const tabletPortraitMedia = window.matchMedia('(pointer: coarse) and (min-width: 768px) and (max-width: 1024px) and (orientation: portrait)');
+    const tabletLandscapeMedia = window.matchMedia('(pointer: coarse) and (min-width: 900px) and (max-width: 1600px) and (orientation: landscape)');
+
+    const syncViewportMode = () => {
+      if (phoneMedia.matches) {
+        setViewportMode('phone');
+        return;
+      }
+
+      if (tabletPortraitMedia.matches) {
+        setViewportMode('tablet-portrait');
+        return;
+      }
+
+      if (tabletLandscapeMedia.matches) {
+        setViewportMode('tablet-landscape');
+        return;
+      }
+
+      setViewportMode('desktop');
+    };
+
+    syncViewportMode();
+    phoneMedia.addEventListener('change', syncViewportMode);
+    tabletPortraitMedia.addEventListener('change', syncViewportMode);
+    tabletLandscapeMedia.addEventListener('change', syncViewportMode);
+
+    return () => {
+      phoneMedia.removeEventListener('change', syncViewportMode);
+      tabletPortraitMedia.removeEventListener('change', syncViewportMode);
+      tabletLandscapeMedia.removeEventListener('change', syncViewportMode);
+    };
+  }, []);
+
   const totais = relatorio?.totaisGerais || {
     totalPedidos: 0,
     totalItens: 0,
@@ -223,6 +264,13 @@ export default function RelatorioVendasPage() {
     valorFrete: 0,
     valorLiq: 0,
   };
+  const isPhone = viewportMode === 'phone';
+  const isTabletPortrait = viewportMode === 'tablet-portrait';
+  const isTabletLandscape = viewportMode === 'tablet-landscape';
+  const useMobileReportLayout = isPhone || isTabletPortrait;
+  const pagePadding = isPhone ? 14 : isTabletPortrait ? 18 : 28;
+  const filterGridColumns = isPhone ? '1fr' : isTabletPortrait ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fit, minmax(180px, 1fr))';
+  const summaryGridColumns = isPhone ? 'repeat(2, minmax(0, 1fr))' : isTabletPortrait ? 'repeat(3, minmax(0, 1fr))' : 'repeat(auto-fit, minmax(170px, 1fr))';
 
   return (
     <>
@@ -232,7 +280,7 @@ export default function RelatorioVendasPage() {
           <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>Consulte as vendas registradas no sistema com subtotais por pedido Bling.</div>
         </div>
         {buscou && relatorio && (
-          <div style={{ display: 'flex', gap: 12, fontSize: 13, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 12, fontSize: 13, flexWrap: 'wrap', justifyContent: isPhone ? 'flex-start' : 'flex-end', maxWidth: isPhone ? 180 : undefined }}>
             <span>{totais.totalPedidos} pedidos</span>
             <span>{totais.totalItens} itens</span>
             <span style={{ color: 'var(--green)' }}>{fmtMoney(totais.valorLiq)} liquido</span>
@@ -240,10 +288,10 @@ export default function RelatorioVendasPage() {
         )}
       </div>
 
-      <div style={{ padding: 28 }}>
+      <div style={{ padding: pagePadding }}>
         <form style={s.card} onSubmit={handleSubmit}>
           <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 14 }}>Filtros do relatorio</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: filterGridColumns, gap: 12, marginBottom: 12 }}>
             <div>
               <label style={s.label}>Ano</label>
               <select style={s.input} value={anoSelecionado} onChange={(e) => handleAnoChange(e.target.value)}>
@@ -270,18 +318,18 @@ export default function RelatorioVendasPage() {
               <input style={s.input} value={idPeca} onChange={(e) => setIdPeca(e.target.value)} placeholder="Ex: BM01_0001" />
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            <button type="submit" style={{ ...s.btn, background: '#FF6900', color: '#fff', opacity: buscando ? 0.7 : 1 }} disabled={buscando}>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', flexDirection: isPhone ? 'column' : 'row' }}>
+            <button type="submit" style={{ ...s.btn, background: '#FF6900', color: '#fff', opacity: buscando ? 0.7 : 1, width: isPhone ? '100%' : undefined, justifyContent: 'center' }} disabled={buscando}>
               {buscando ? 'Buscando...' : 'Buscar relatorio'}
             </button>
-            <button type="button" style={{ ...s.btn, background: 'var(--white)', color: 'var(--gray-700)', borderColor: 'var(--border)' }} onClick={limparFiltros}>
+            <button type="button" style={{ ...s.btn, background: 'var(--white)', color: 'var(--gray-700)', borderColor: 'var(--border)', width: isPhone ? '100%' : undefined, justifyContent: 'center' }} onClick={limparFiltros}>
               Limpar filtros
             </button>
           </div>
         </form>
 
         {relatorio && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12, marginBottom: 14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: summaryGridColumns, gap: 12, marginBottom: 14 }}>
             {([
               { label: 'Pedidos', value: String(totais.totalPedidos), color: 'var(--gray-800)', percentageText: null },
               { label: 'Itens', value: String(totais.totalItens), color: 'var(--gray-800)', percentageText: null },
@@ -305,7 +353,7 @@ export default function RelatorioVendasPage() {
                 percentageText: `% Preco Venda: ${fmtShareOfPriceML(totais.valorLiq, totais.precoML)}`,
               },
             ] as Array<{ label: string; value: string; color: string; percentageText?: string | null }>).map((card) => (
-              <div key={card.label} style={{ ...s.card, padding: 18, marginBottom: 0 }}>
+              <div key={card.label} style={{ ...s.card, padding: isPhone ? 14 : 18, marginBottom: 0 }}>
                 <div style={{ fontSize: 11, color: 'var(--gray-500)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.8px' }}>{card.label}</div>
                 <div style={{ fontSize: 18, fontWeight: 700, color: card.color }}>{card.value}</div>
                 {card.percentageText ? <div style={s.meta}>{card.percentageText}</div> : null}
@@ -336,53 +384,103 @@ export default function RelatorioVendasPage() {
               </div>
             </div>
 
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 920 }}>
-                <thead>
-                  <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--gray-50)' }}>
-                    {['ID Peca', 'Moto', 'Descricao', 'Data venda', 'Preco ML', 'Taxas', 'Frete', 'Valor liq.'].map((head) => (
-                      <th key={head} style={{ textAlign: 'left', padding: '10px 12px', fontSize: 11, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '0.8px', whiteSpace: 'nowrap' }}>{head}</th>
+            {useMobileReportLayout ? (
+              <div style={{ display: 'grid', gap: 12 }}>
+                {pedidoGroup.itens.map((item) => (
+                  <div key={item.id} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: isPhone ? 14 : 16, background: 'var(--white)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 10 }}>
+                      <div>
+                        <div style={{ fontSize: 13, color: 'var(--blue-500)', fontWeight: 700 }}>{item.idPeca}</div>
+                        <div style={{ marginTop: 4, fontSize: 13, color: 'var(--gray-800)', lineHeight: 1.45 }}>{item.descricao}</div>
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--gray-500)', whiteSpace: 'nowrap' }}>{fmtDate(item.dataVenda)}</div>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: isPhone ? 'repeat(2, minmax(0, 1fr))' : 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
+                      {[
+                        { label: 'Moto', value: item.moto || '-' },
+                        { label: 'Preco ML', value: fmtMoney(item.precoML) },
+                        { label: 'Taxas', value: fmtMoney(item.valorTaxas) },
+                        { label: 'Frete', value: fmtMoney(item.valorFrete) },
+                        { label: 'Valor liq.', value: fmtMoney(item.valorLiq) },
+                      ].map((meta) => (
+                        <div key={meta.label}>
+                          <div style={{ fontSize: 10.5, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>{meta.label}</div>
+                          <div style={{ marginTop: 3, fontSize: 12.5, color: meta.label === 'Valor liq.' ? 'var(--green)' : 'var(--gray-800)', fontWeight: meta.label === 'Valor liq.' ? 700 : 500, wordBreak: 'break-word' }}>{meta.value}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+
+                <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: isPhone ? 14 : 16, background: 'var(--gray-50)' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-700)', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: 10 }}>
+                    Subtotal do pedido #{pedidoGroup.pedidoNum}
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: isPhone ? 'repeat(2, minmax(0, 1fr))' : 'repeat(4, minmax(0, 1fr))', gap: 10 }}>
+                    {[
+                      { label: 'Preco ML', value: fmtMoney(pedidoGroup.subtotalPrecoML), color: 'var(--blue-500)' },
+                      { label: 'Taxas', value: fmtMoney(pedidoGroup.subtotalTaxas), color: 'var(--amber)' },
+                      { label: 'Frete', value: fmtMoney(pedidoGroup.subtotalFrete), color: 'var(--gray-700)' },
+                      { label: 'Valor liq.', value: fmtMoney(pedidoGroup.subtotalValorLiq), color: 'var(--green)' },
+                    ].map((meta) => (
+                      <div key={meta.label}>
+                        <div style={{ fontSize: 10.5, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>{meta.label}</div>
+                        <div style={{ marginTop: 3, fontSize: 12.5, color: meta.color, fontWeight: 700 }}>{meta.value}</div>
+                      </div>
                     ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {pedidoGroup.itens.map((item) => (
-                    <tr key={item.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                      <td style={{ padding: '10px 12px', fontSize: 13, color: 'var(--blue-500)', fontWeight: 600, whiteSpace: 'nowrap' }}>{item.idPeca}</td>
-                      <td style={{ padding: '10px 12px', fontSize: 13, color: 'var(--gray-700)', whiteSpace: 'nowrap' }}>{item.moto || '-'}</td>
-                      <td style={{ padding: '10px 12px', fontSize: 13, color: 'var(--gray-800)' }}>{item.descricao}</td>
-                      <td style={{ padding: '10px 12px', fontSize: 13, color: 'var(--gray-700)', whiteSpace: 'nowrap' }}>{fmtDate(item.dataVenda)}</td>
-                      <td style={{ padding: '10px 12px', fontSize: 13, color: 'var(--gray-800)', whiteSpace: 'nowrap' }}>{fmtMoney(item.precoML)}</td>
-                      <td style={{ padding: '10px 12px', fontSize: 13, color: 'var(--amber)', whiteSpace: 'nowrap' }}>{fmtMoney(item.valorTaxas)}</td>
-                      <td style={{ padding: '10px 12px', fontSize: 13, color: 'var(--gray-700)', whiteSpace: 'nowrap' }}>{fmtMoney(item.valorFrete)}</td>
-                      <td style={{ padding: '10px 12px', fontSize: 13, color: 'var(--green)', fontWeight: 600, whiteSpace: 'nowrap' }}>{fmtMoney(item.valorLiq)}</td>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 920 }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--gray-50)' }}>
+                      {['ID Peca', 'Moto', 'Descricao', 'Data venda', 'Preco ML', 'Taxas', 'Frete', 'Valor liq.'].map((head) => (
+                        <th key={head} style={{ textAlign: 'left', padding: '10px 12px', fontSize: 11, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '0.8px', whiteSpace: 'nowrap' }}>{head}</th>
+                      ))}
                     </tr>
-                  ))}
-                  <tr style={{ background: 'var(--gray-50)' }}>
-                    <td colSpan={4} style={{ padding: '11px 12px', fontSize: 12, fontWeight: 700, color: 'var(--gray-700)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>
-                      Subtotal do pedido #{pedidoGroup.pedidoNum}
-                    </td>
-                    <td style={{ padding: '11px 12px', fontSize: 13, fontWeight: 700, color: 'var(--blue-500)', whiteSpace: 'nowrap' }}>{fmtMoney(pedidoGroup.subtotalPrecoML)}</td>
-                    <td style={{ padding: '11px 12px', fontSize: 13, fontWeight: 700, color: 'var(--amber)', whiteSpace: 'nowrap' }}>{fmtMoney(pedidoGroup.subtotalTaxas)}</td>
-                    <td style={{ padding: '11px 12px', fontSize: 13, fontWeight: 700, color: 'var(--gray-700)', whiteSpace: 'nowrap' }}>{fmtMoney(pedidoGroup.subtotalFrete)}</td>
-                    <td style={{ padding: '11px 12px', fontSize: 13, fontWeight: 700, color: 'var(--green)', whiteSpace: 'nowrap' }}>{fmtMoney(pedidoGroup.subtotalValorLiq)}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {pedidoGroup.itens.map((item) => (
+                      <tr key={item.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                        <td style={{ padding: '10px 12px', fontSize: 13, color: 'var(--blue-500)', fontWeight: 600, whiteSpace: 'nowrap' }}>{item.idPeca}</td>
+                        <td style={{ padding: '10px 12px', fontSize: 13, color: 'var(--gray-700)', whiteSpace: 'nowrap' }}>{item.moto || '-'}</td>
+                        <td style={{ padding: '10px 12px', fontSize: 13, color: 'var(--gray-800)' }}>{item.descricao}</td>
+                        <td style={{ padding: '10px 12px', fontSize: 13, color: 'var(--gray-700)', whiteSpace: 'nowrap' }}>{fmtDate(item.dataVenda)}</td>
+                        <td style={{ padding: '10px 12px', fontSize: 13, color: 'var(--gray-800)', whiteSpace: 'nowrap' }}>{fmtMoney(item.precoML)}</td>
+                        <td style={{ padding: '10px 12px', fontSize: 13, color: 'var(--amber)', whiteSpace: 'nowrap' }}>{fmtMoney(item.valorTaxas)}</td>
+                        <td style={{ padding: '10px 12px', fontSize: 13, color: 'var(--gray-700)', whiteSpace: 'nowrap' }}>{fmtMoney(item.valorFrete)}</td>
+                        <td style={{ padding: '10px 12px', fontSize: 13, color: 'var(--green)', fontWeight: 600, whiteSpace: 'nowrap' }}>{fmtMoney(item.valorLiq)}</td>
+                      </tr>
+                    ))}
+                    <tr style={{ background: 'var(--gray-50)' }}>
+                      <td colSpan={4} style={{ padding: '11px 12px', fontSize: 12, fontWeight: 700, color: 'var(--gray-700)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>
+                        Subtotal do pedido #{pedidoGroup.pedidoNum}
+                      </td>
+                      <td style={{ padding: '11px 12px', fontSize: 13, fontWeight: 700, color: 'var(--blue-500)', whiteSpace: 'nowrap' }}>{fmtMoney(pedidoGroup.subtotalPrecoML)}</td>
+                      <td style={{ padding: '11px 12px', fontSize: 13, fontWeight: 700, color: 'var(--amber)', whiteSpace: 'nowrap' }}>{fmtMoney(pedidoGroup.subtotalTaxas)}</td>
+                      <td style={{ padding: '11px 12px', fontSize: 13, fontWeight: 700, color: 'var(--gray-700)', whiteSpace: 'nowrap' }}>{fmtMoney(pedidoGroup.subtotalFrete)}</td>
+                      <td style={{ padding: '11px 12px', fontSize: 13, fontWeight: 700, color: 'var(--green)', whiteSpace: 'nowrap' }}>{fmtMoney(pedidoGroup.subtotalValorLiq)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         ))}
 
         {relatorio && relatorio.pedidos.length > 0 && (
           <div style={{ ...s.card, background: 'linear-gradient(135deg, rgba(25,135,84,.06), rgba(25,135,84,.02))' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', flexDirection: isPhone ? 'column' : 'row' }}>
               <div>
                 <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--gray-800)' }}>Total geral do relatorio</div>
                 <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 4 }}>
                   {totais.totalPedidos} pedido(s) - {totais.totalItens} item(ns) integrados
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center', flexDirection: isPhone ? 'column' : 'row' }}>
                 <div style={{ fontSize: 13, color: 'var(--gray-700)' }}>Preco ML: <strong>{fmtMoney(totais.precoML)}</strong></div>
                 <div style={{ fontSize: 13, color: 'var(--gray-700)' }}>Taxas: <strong>{fmtMoney(totais.valorTaxas)}</strong></div>
                 <div style={{ fontSize: 13, color: 'var(--gray-700)' }}>Frete: <strong>{fmtMoney(totais.valorFrete)}</strong></div>
