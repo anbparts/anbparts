@@ -3,11 +3,35 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../../lib/api';
 
-const s: any = {
-  topbar: { height: 'var(--topbar-h)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 28px', background: 'var(--white)', borderBottom: '1px solid var(--border)', position: 'sticky' as const, top: 0, zIndex: 50 },
-  btn: { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', border: '1px solid transparent', fontFamily: 'Inter, sans-serif' },
-  card: { background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 14, padding: 18 },
-  input: { width: '100%', background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', fontSize: 13, fontFamily: 'Inter, sans-serif', color: 'var(--gray-800)', outline: 'none' },
+type LayoutMode = 'phone' | 'tablet-portrait' | 'tablet-landscape' | 'desktop';
+
+const s = {
+  btnBase: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    padding: '10px 18px',
+    borderRadius: 12,
+    fontSize: 13,
+    fontWeight: 600,
+    cursor: 'pointer',
+    border: '1px solid transparent',
+    fontFamily: 'Inter, sans-serif',
+    transition: 'all 150ms ease',
+  },
+  input: {
+    width: '100%',
+    background: 'var(--white)',
+    border: '1px solid #dbe3ef',
+    borderRadius: 12,
+    padding: '12px 14px',
+    fontSize: 14,
+    fontFamily: 'Inter, sans-serif',
+    color: 'var(--gray-800)',
+    outline: 'none',
+    lineHeight: 1.6,
+  },
 };
 
 function formatDateTime(value: string | null | undefined) {
@@ -24,13 +48,73 @@ function formatDateTime(value: string | null | undefined) {
   });
 }
 
+function useLayoutMode() {
+  const [mode, setMode] = useState<LayoutMode>('desktop');
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const phoneMedia = window.matchMedia('(max-width: 767px)');
+    const tabletPortraitMedia = window.matchMedia('(pointer: coarse) and (min-width: 768px) and (max-width: 1024px) and (orientation: portrait)');
+    const tabletLandscapeMedia = window.matchMedia('(pointer: coarse) and (min-width: 900px) and (max-width: 1600px) and (orientation: landscape)');
+
+    const syncMode = () => {
+      if (phoneMedia.matches) {
+        setMode('phone');
+        return;
+      }
+
+      if (tabletPortraitMedia.matches) {
+        setMode('tablet-portrait');
+        return;
+      }
+
+      if (tabletLandscapeMedia.matches) {
+        setMode('tablet-landscape');
+        return;
+      }
+
+      setMode('desktop');
+    };
+
+    syncMode();
+    phoneMedia.addEventListener('change', syncMode);
+    tabletPortraitMedia.addEventListener('change', syncMode);
+    tabletLandscapeMedia.addEventListener('change', syncMode);
+
+    return () => {
+      phoneMedia.removeEventListener('change', syncMode);
+      tabletPortraitMedia.removeEventListener('change', syncMode);
+      tabletLandscapeMedia.removeEventListener('change', syncMode);
+    };
+  }, []);
+
+  return mode;
+}
+
 export default function MercadoLivrePerguntasPage() {
+  const layoutMode = useLayoutMode();
+  const isPhone = layoutMode === 'phone';
+  const isTabletPortrait = layoutMode === 'tablet-portrait';
+  const isTabletLandscape = layoutMode === 'tablet-landscape';
+  const isDesktop = layoutMode === 'desktop';
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [respondingId, setRespondingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [perguntas, setPerguntas] = useState<any[]>([]);
   const [respostas, setRespostas] = useState<Record<string, string>>({});
+
+  const shellOffset = isDesktop ? 0 : 64;
+  const pagePadding = isPhone ? 14 : isTabletPortrait ? 18 : isTabletLandscape ? 22 : 28;
+  const topbarPadding = isPhone ? '16px 14px 14px' : isTabletPortrait ? '18px 18px 16px' : '18px 24px';
+  const cardPadding = isPhone ? 14 : isTabletPortrait ? 16 : 18;
+  const topbarSticky = isDesktop || isTabletLandscape;
+  const metaColumns = isPhone
+    ? '1fr'
+    : isTabletPortrait
+    ? 'repeat(2, minmax(0, 1fr))'
+    : 'repeat(auto-fit, minmax(160px, 1fr))';
 
   async function load() {
     const rows = await api.mercadoLivre.perguntas();
@@ -99,110 +183,389 @@ export default function MercadoLivrePerguntasPage() {
   if (loading) {
     return (
       <>
-        <div style={s.topbar}>
-          <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)' }}>Perguntas</div>
+        <div
+          style={{
+            position: topbarSticky ? 'sticky' : 'static',
+            top: topbarSticky ? shellOffset : undefined,
+            zIndex: 50,
+            padding: topbarPadding,
+            background: 'rgba(255,255,255,.92)',
+            borderBottom: '1px solid var(--border)',
+            backdropFilter: topbarSticky ? 'blur(12px)' : undefined,
+          }}
+        >
+          <div style={{ fontSize: isPhone ? 19 : 20, fontWeight: 700, color: 'var(--gray-800)', letterSpacing: '-0.5px' }}>
+            Perguntas
+          </div>
         </div>
-        <div style={{ padding: 28, color: 'var(--gray-400)', fontSize: 13 }}>Carregando...</div>
+        <div style={{ padding: pagePadding, color: 'var(--gray-400)', fontSize: 13 }}>Carregando...</div>
       </>
     );
   }
 
   return (
     <>
-      <div style={s.topbar}>
-        <div>
-          <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)', letterSpacing: '-0.3px' }}>Perguntas</div>
-          <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>Somente perguntas pendentes de resposta do Mercado Livre</div>
+      <div
+        style={{
+          position: topbarSticky ? 'sticky' : 'static',
+          top: topbarSticky ? shellOffset : undefined,
+          zIndex: 50,
+          padding: topbarPadding,
+          background: 'rgba(255,255,255,.92)',
+          borderBottom: '1px solid var(--border)',
+          backdropFilter: topbarSticky ? 'blur(12px)' : undefined,
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: isPhone ? 'column' : 'row',
+            alignItems: isPhone ? 'stretch' : 'center',
+            justifyContent: 'space-between',
+            gap: isPhone ? 14 : 16,
+          }}
+        >
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: isPhone ? 24 : 26, fontWeight: 700, color: 'var(--gray-800)', letterSpacing: '-0.8px', lineHeight: 1.05 }}>
+              Perguntas do Mercado Livre
+            </div>
+            <div style={{ fontSize: isPhone ? 13 : 13.5, color: 'var(--gray-500)', marginTop: 6, lineHeight: 1.6, maxWidth: isDesktop ? 560 : '100%' }}>
+              Somente perguntas pendentes de resposta, com visual adaptado para celular, tablet e desktop.
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: isPhone ? 'column' : 'row',
+              alignItems: isPhone ? 'stretch' : 'center',
+              gap: 10,
+              flexShrink: 0,
+            }}
+          >
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: isPhone ? '10px 12px' : '9px 12px',
+                borderRadius: 999,
+                background: 'var(--gray-50)',
+                border: '1px solid var(--border)',
+                fontSize: 12.5,
+                fontWeight: 600,
+                color: 'var(--gray-700)',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {perguntas.length} {perguntas.length === 1 ? 'pergunta pendente' : 'perguntas pendentes'}
+            </div>
+
+            <button
+              style={{
+                ...s.btnBase,
+                width: isPhone ? '100%' : 'auto',
+                background: 'var(--blue-500)',
+                color: '#fff',
+                minHeight: 42,
+              }}
+              onClick={syncPerguntas}
+              disabled={syncing}
+            >
+              {syncing ? 'Atualizando...' : 'Atualizar agora'}
+            </button>
+          </div>
         </div>
-        <button style={{ ...s.btn, background: 'var(--blue-500)', color: '#fff' }} onClick={syncPerguntas} disabled={syncing}>
-          {syncing ? 'Atualizando...' : 'Atualizar agora'}
-        </button>
       </div>
 
-      <div style={{ padding: 28 }}>
+      <div style={{ padding: pagePadding }}>
         {!perguntas.length ? (
-          <div style={{ ...s.card, color: 'var(--gray-500)', fontSize: 13 }}>Nenhuma pergunta pendente encontrada.</div>
+          <div
+            style={{
+              background: 'var(--white)',
+              border: '1px solid var(--border)',
+              borderRadius: 18,
+              padding: isPhone ? 18 : 22,
+              color: 'var(--gray-500)',
+              fontSize: 14,
+              lineHeight: 1.7,
+            }}
+          >
+            Nenhuma pergunta pendente encontrada.
+          </div>
         ) : (
-          <div style={{ display: 'grid', gap: 12 }}>
-            {perguntas.map((pergunta) => (
-              <div key={pergunta.questionId} style={{ ...s.card, borderColor: '#fcd34d' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
-                  <div>
-                    <div style={{ fontSize: 11, fontFamily: 'JetBrains Mono, monospace', color: 'var(--gray-400)', letterSpacing: '.8px', textTransform: 'uppercase', marginBottom: 6 }}>
-                      Pergunta #{pergunta.questionId}
-                    </div>
-                    <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 4 }}>
-                      {pergunta.idPeca || pergunta.sku || pergunta.tituloAnuncio || 'Sem identificacao'}
-                    </div>
-                    <div style={{ fontSize: 13, color: 'var(--gray-500)' }}>
-                      {pergunta.descricao || pergunta.tituloAnuncio || 'Sem descricao'}
-                    </div>
-                  </div>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 999, fontSize: 12, fontWeight: 600, border: '1px solid #fcd34d', background: 'var(--amber-light)', color: 'var(--amber)' }}>
-                    Aguardando resposta
-                  </span>
-                </div>
+          <div style={{ display: 'grid', gap: isPhone ? 14 : 16 }}>
+            {perguntas.map((pergunta) => {
+              const questionId = String(pergunta.questionId);
+              const busy = deletingId === questionId || respondingId === questionId;
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginBottom: 12 }}>
-                  <div>
-                    <div style={{ fontSize: 11, color: 'var(--gray-400)', textTransform: 'uppercase', letterSpacing: '.7px', marginBottom: 4 }}>Cliente</div>
-                    <div style={{ fontSize: 13, color: 'var(--gray-800)' }}>{pergunta.nomeCliente || '-'}</div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 11, color: 'var(--gray-400)', textTransform: 'uppercase', letterSpacing: '.7px', marginBottom: 4 }}>Item ML</div>
-                    <div style={{ fontSize: 13, color: 'var(--gray-800)' }}>{pergunta.itemId || '-'}</div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 11, color: 'var(--gray-400)', textTransform: 'uppercase', letterSpacing: '.7px', marginBottom: 4 }}>SKU / ID peca</div>
-                    <div style={{ fontSize: 13, color: 'var(--gray-800)' }}>{pergunta.idPeca || pergunta.sku || '-'}</div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 11, color: 'var(--gray-400)', textTransform: 'uppercase', letterSpacing: '.7px', marginBottom: 4 }}>Recebida em</div>
-                    <div style={{ fontSize: 13, color: 'var(--gray-800)' }}>{formatDateTime(pergunta.dataPergunta)}</div>
-                  </div>
-                </div>
-
-                <div style={{ background: '#f8fafc', border: '1px solid #dbe3ef', borderRadius: 12, padding: 14, marginBottom: 12 }}>
-                  <div style={{ fontSize: 11, color: 'var(--gray-400)', textTransform: 'uppercase', letterSpacing: '.7px', marginBottom: 6 }}>Pergunta recebida</div>
-                  <div style={{ fontSize: 14, color: 'var(--gray-800)', lineHeight: 1.7 }}>{pergunta.texto || '-'}</div>
-                </div>
-
-                <div>
-                  <div style={{ fontSize: 11, color: 'var(--gray-400)', textTransform: 'uppercase', letterSpacing: '.7px', marginBottom: 6 }}>Resposta para o cliente</div>
-                  <textarea
-                    style={{ ...s.input, minHeight: 110, resize: 'vertical' as const }}
-                    value={respostas[pergunta.questionId] || ''}
-                    onChange={(e) => setRespostas((current) => ({ ...current, [pergunta.questionId]: e.target.value }))}
-                    placeholder="Digite aqui a resposta que sera enviada para o cliente"
-                  />
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginTop: 10, flexWrap: 'wrap' }}>
-                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                      {pergunta.linkAnuncio ? (
-                        <a href={pergunta.linkAnuncio} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: 'var(--blue-500)', textDecoration: 'none' }}>
-                          Abrir anuncio no Mercado Livre
-                        </a>
-                      ) : null}
-                    </div>
-                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                      <button
-                        style={{ ...s.btn, background: 'var(--red-light)', color: 'var(--red)', borderColor: '#fca5a5' }}
-                        onClick={() => excluir(String(pergunta.questionId))}
-                        disabled={deletingId === String(pergunta.questionId) || respondingId === String(pergunta.questionId)}
+              return (
+                <div
+                  key={questionId}
+                  style={{
+                    background: 'var(--white)',
+                    border: '1px solid #fcd34d',
+                    borderRadius: isPhone ? 18 : 20,
+                    padding: cardPadding,
+                    boxShadow: '0 12px 30px rgba(15, 23, 42, 0.04)',
+                  }}
+                >
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexDirection: isPhone ? 'column' : 'row',
+                      alignItems: isPhone ? 'stretch' : 'flex-start',
+                      justifyContent: 'space-between',
+                      gap: 12,
+                      marginBottom: 14,
+                    }}
+                  >
+                    <div style={{ minWidth: 0 }}>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          fontFamily: 'JetBrains Mono, monospace',
+                          color: 'var(--gray-400)',
+                          letterSpacing: '.08em',
+                          textTransform: 'uppercase',
+                          marginBottom: 8,
+                        }}
                       >
-                        {deletingId === String(pergunta.questionId) ? 'Excluindo...' : 'Excluir'}
-                      </button>
-                      <button
-                        style={{ ...s.btn, background: 'var(--blue-500)', color: '#fff' }}
-                        onClick={() => responder(String(pergunta.questionId))}
-                        disabled={respondingId === String(pergunta.questionId) || deletingId === String(pergunta.questionId)}
+                        Pergunta #{questionId}
+                      </div>
+
+                      <div
+                        style={{
+                          fontSize: isPhone ? 18 : 20,
+                          fontWeight: 700,
+                          color: 'var(--gray-800)',
+                          marginBottom: 6,
+                          lineHeight: 1.15,
+                          letterSpacing: '-0.5px',
+                          overflowWrap: 'anywhere',
+                        }}
                       >
-                        {respondingId === String(pergunta.questionId) ? 'Respondendo...' : 'Responder'}
-                      </button>
+                        {pergunta.idPeca || pergunta.sku || pergunta.tituloAnuncio || 'Sem identificacao'}
+                      </div>
+
+                      <div
+                        style={{
+                          fontSize: 13.5,
+                          color: 'var(--gray-500)',
+                          lineHeight: 1.7,
+                          overflowWrap: 'anywhere',
+                        }}
+                      >
+                        {pergunta.descricao || pergunta.tituloAnuncio || 'Sem descricao'}
+                      </div>
+                    </div>
+
+                    <span
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 6,
+                        padding: '7px 12px',
+                        borderRadius: 999,
+                        fontSize: 12,
+                        fontWeight: 700,
+                        border: '1px solid #fcd34d',
+                        background: 'var(--amber-light)',
+                        color: 'var(--amber)',
+                        alignSelf: isPhone ? 'flex-start' : 'center',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      Aguardando resposta
+                    </span>
+                  </div>
+
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: metaColumns,
+                      gap: 10,
+                      marginBottom: 14,
+                    }}
+                  >
+                    {[
+                      { label: 'Cliente', value: pergunta.nomeCliente || '-' },
+                      { label: 'Item ML', value: pergunta.itemId || '-' },
+                      { label: 'SKU / ID peca', value: pergunta.idPeca || pergunta.sku || '-' },
+                      { label: 'Recebida em', value: formatDateTime(pergunta.dataPergunta) },
+                    ].map((item) => (
+                      <div
+                        key={`${questionId}-${item.label}`}
+                        style={{
+                          background: '#f8fafc',
+                          border: '1px solid #e2e8f0',
+                          borderRadius: 14,
+                          padding: isPhone ? '12px 12px 11px' : '12px 13px',
+                          minWidth: 0,
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: 'var(--gray-400)',
+                            textTransform: 'uppercase',
+                            letterSpacing: '.07em',
+                            marginBottom: 5,
+                          }}
+                        >
+                          {item.label}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 13.5,
+                            color: 'var(--gray-800)',
+                            lineHeight: 1.6,
+                            overflowWrap: 'anywhere',
+                          }}
+                        >
+                          {item.value}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div
+                    style={{
+                      background: '#f8fafc',
+                      border: '1px solid #dbe3ef',
+                      borderRadius: 16,
+                      padding: isPhone ? 14 : 16,
+                      marginBottom: 14,
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: 'var(--gray-400)',
+                        textTransform: 'uppercase',
+                        letterSpacing: '.07em',
+                        marginBottom: 8,
+                      }}
+                    >
+                      Pergunta recebida
+                    </div>
+                    <div
+                      style={{
+                        fontSize: isPhone ? 14 : 14.5,
+                        color: 'var(--gray-800)',
+                        lineHeight: 1.75,
+                        overflowWrap: 'anywhere',
+                      }}
+                    >
+                      {pergunta.texto || '-'}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: 'var(--gray-400)',
+                        textTransform: 'uppercase',
+                        letterSpacing: '.07em',
+                        marginBottom: 8,
+                      }}
+                    >
+                      Resposta para o cliente
+                    </div>
+
+                    <textarea
+                      style={{
+                        ...s.input,
+                        minHeight: isPhone ? 132 : isTabletPortrait ? 124 : 116,
+                        resize: 'vertical',
+                      }}
+                      value={respostas[questionId] || ''}
+                      onChange={(e) => setRespostas((current) => ({ ...current, [questionId]: e.target.value }))}
+                      placeholder="Digite aqui a resposta que sera enviada para o cliente"
+                    />
+
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexDirection: isPhone ? 'column' : 'row',
+                        alignItems: isPhone ? 'stretch' : 'center',
+                        justifyContent: 'space-between',
+                        gap: 12,
+                        marginTop: 12,
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: 'flex',
+                          flexWrap: 'wrap',
+                          gap: 10,
+                          minWidth: 0,
+                        }}
+                      >
+                        {pergunta.linkAnuncio ? (
+                          <a
+                            href={pergunta.linkAnuncio}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 6,
+                              fontSize: 13,
+                              color: 'var(--blue-500)',
+                              textDecoration: 'none',
+                              overflowWrap: 'anywhere',
+                            }}
+                          >
+                            Abrir anuncio no Mercado Livre
+                          </a>
+                        ) : null}
+                      </div>
+
+                      <div
+                        style={{
+                          display: 'flex',
+                          flexDirection: isPhone ? 'column' : 'row',
+                          gap: 10,
+                          width: isPhone ? '100%' : 'auto',
+                        }}
+                      >
+                        <button
+                          style={{
+                            ...s.btnBase,
+                            width: isPhone ? '100%' : 'auto',
+                            background: 'var(--red-light)',
+                            color: 'var(--red)',
+                            borderColor: '#fca5a5',
+                            minHeight: 42,
+                          }}
+                          onClick={() => excluir(questionId)}
+                          disabled={busy}
+                        >
+                          {deletingId === questionId ? 'Excluindo...' : 'Excluir'}
+                        </button>
+
+                        <button
+                          style={{
+                            ...s.btnBase,
+                            width: isPhone ? '100%' : 'auto',
+                            background: 'var(--blue-500)',
+                            color: '#fff',
+                            minHeight: 42,
+                          }}
+                          onClick={() => responder(questionId)}
+                          disabled={busy}
+                        >
+                          {respondingId === questionId ? 'Respondendo...' : 'Responder'}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
