@@ -11,6 +11,7 @@ const NAV = [
       { href: '/motos', icon: 'moto', label: 'Motos' },
       { href: '/estoque', icon: 'box', label: 'Estoque' },
       { href: '/inventario', icon: 'inventory', label: 'Inventario' },
+      { href: '/empresa', icon: 'building', label: 'Empresa' },
     ],
   },
   {
@@ -73,6 +74,7 @@ function SidebarIcon({ name, active }: { name: string; active: boolean }) {
     box: <svg {...common}><path d="M3 7 12 3l9 4-9 4-9-4Z" /><path d="M3 7v10l9 4 9-4V7" /><path d="M12 11v10" /></svg>,
     upload: <svg {...common}><path d="M12 16V5" /><path d="m7 10 5-5 5 5" /><path d="M4 19h16" /></svg>,
     inventory: <svg {...common}><path d="M20 7 12 3 4 7" /><path d="M4 7v10l8 4 8-4V7" /><path d="M9 11h6" /></svg>,
+    building: <svg {...common}><path d="M4 21V7a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v14" /><path d="M16 11h4a1 1 0 0 1 1 1v9" /><path d="M8 9h2" /><path d="M8 13h2" /><path d="M8 17h2" /><path d="M12 9h2" /><path d="M12 13h2" /><path d="M12 17h2" /><path d="M9 21v-3h2v3" /></svg>,
     'chart-bars': <svg {...common}><path d="M5 20V10" /><path d="M12 20V4" /><path d="M19 20v-7" /></svg>,
     'chart-line': <svg {...common}><path d="M3 17 9 11l4 4 8-8" /><path d="M21 7v6h-6" /></svg>,
     compare: <svg {...common}><path d="M9 3H5a2 2 0 0 0-2 2v4" /><path d="M15 21h4a2 2 0 0 0 2-2v-4" /><path d="m3 9 3-3 3 3" /><path d="m21 15-3 3-3-3" /></svg>,

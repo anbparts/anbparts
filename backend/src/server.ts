@@ -10,6 +10,7 @@ import { blingRouter, startBlingAuditoriaScheduler } from './routes/bling';
 import { financeiroRouter, startFinanceiroSchedulers } from './routes/financeiro';
 import { inventarioRouter } from './routes/inventario';
 import { configuracoesGeraisRouter } from './routes/configuracoes-gerais';
+import { empresaRouter } from './routes/empresa';
 import { mercadoLivreRouter, startMercadoLivreScheduler } from './routes/mercado-livre';
 import { authMiddleware } from './middlewares/auth';
 import { errorMiddleware } from './middlewares/error';
@@ -59,6 +60,7 @@ app.use('/mercado-livre', mercadoLivreRouter);
 app.use('/financeiro', financeiroRouter);
 app.use('/inventario', inventarioRouter);
 app.use('/configuracoes-gerais', configuracoesGeraisRouter);
+app.use('/empresa', empresaRouter);
 
 app.use(errorMiddleware);
 

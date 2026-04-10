@@ -111,6 +111,10 @@ export const api = {
     get: () => req<any>('/configuracoes-gerais'),
     save: (data: any) => req<any>('/configuracoes-gerais', { method: 'POST', body: JSON.stringify(data) }),
   },
+  empresa: {
+    get: () => req<any>('/empresa'),
+    save: (data: any) => req<any>('/empresa', { method: 'POST', body: JSON.stringify(data) }),
+  },
   mercadoLivre: {
     getConfig: () => req<any>('/mercado-livre/config'),
     saveConfig: (data: any) => req<any>('/mercado-livre/config', { method: 'POST', body: JSON.stringify(data) }),
