@@ -7,6 +7,17 @@ function today() {
   return new Date().toISOString().split('T')[0];
 }
 
+function currentYear() {
+  return new Date().getFullYear();
+}
+
+function getYearRange(year: string) {
+  return {
+    dataDe: `${year}-01-01`,
+    dataAte: `${year}-12-31`,
+  };
+}
+
 const s: any = {
   topbar: {
     height: 'var(--topbar-h)',
@@ -140,11 +151,14 @@ function fmtDate(value: string) {
 export default function RelatorioVendasPage() {
   const [dataDe, setDataDe] = useState(today());
   const [dataAte, setDataAte] = useState(today());
+  const [anoSelecionado, setAnoSelecionado] = useState('');
   const [pedido, setPedido] = useState('');
   const [idPeca, setIdPeca] = useState('');
   const [buscando, setBuscando] = useState(false);
   const [buscou, setBuscou] = useState(false);
   const [relatorio, setRelatorio] = useState<RelatorioResponse | null>(null);
+
+  const anosDisponiveis = Array.from({ length: 11 }, (_, index) => String(currentYear() - index));
 
   async function buscarRelatorio() {
     setBuscando(true);
@@ -180,10 +194,20 @@ export default function RelatorioVendasPage() {
     const current = today();
     setDataDe(current);
     setDataAte(current);
+    setAnoSelecionado('');
     setPedido('');
     setIdPeca('');
     setRelatorio(null);
     setBuscou(false);
+  }
+
+  function handleAnoChange(value: string) {
+    setAnoSelecionado(value);
+    if (!value) return;
+
+    const range = getYearRange(value);
+    setDataDe(range.dataDe);
+    setDataAte(range.dataAte);
   }
 
   useEffect(() => {
@@ -220,12 +244,21 @@ export default function RelatorioVendasPage() {
           <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 14 }}>Filtros do relatorio</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 12 }}>
             <div>
+              <label style={s.label}>Ano</label>
+              <select style={s.input} value={anoSelecionado} onChange={(e) => handleAnoChange(e.target.value)}>
+                <option value="">Selecionar ano</option>
+                {anosDisponiveis.map((ano) => (
+                  <option key={ano} value={ano}>{ano}</option>
+                ))}
+              </select>
+            </div>
+            <div>
               <label style={s.label}>Data da venda - de</label>
-              <input style={s.input} type="date" value={dataDe} onChange={(e) => setDataDe(e.target.value)} />
+              <input style={s.input} type="date" value={dataDe} onChange={(e) => { setDataDe(e.target.value); setAnoSelecionado(''); }} />
             </div>
             <div>
               <label style={s.label}>Data da venda - ate</label>
-              <input style={s.input} type="date" value={dataAte} onChange={(e) => setDataAte(e.target.value)} />
+              <input style={s.input} type="date" value={dataAte} onChange={(e) => { setDataAte(e.target.value); setAnoSelecionado(''); }} />
             </div>
             <div>
               <label style={s.label}>Pedido Bling</label>
