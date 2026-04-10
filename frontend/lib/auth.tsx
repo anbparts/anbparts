@@ -152,10 +152,10 @@ export function LoginPage({ onLogin }: { onLogin: (u: string, p: string) => Prom
       >
         <section
           style={{
-            order: isCompact ? 2 : 1,
+            order: 1,
             background: 'linear-gradient(155deg, #091425 0%, #132b4d 55%, #1d467c 100%)',
             borderRadius: 28,
-            padding: 'clamp(28px, 5vw, 48px)',
+            padding: isCompact ? '18px 18px 16px' : 'clamp(28px, 5vw, 48px)',
             color: '#fff',
             position: 'relative',
             overflow: 'hidden',
@@ -163,8 +163,8 @@ export function LoginPage({ onLogin }: { onLogin: (u: string, p: string) => Prom
             minHeight: isCompact ? 'auto' : 'min(720px, 100%)',
             display: 'flex',
             flexDirection: 'column',
-            justifyContent: 'space-between',
-            gap: 28,
+            justifyContent: isCompact ? 'center' : 'space-between',
+            gap: isCompact ? 0 : 28,
           }}
         >
           <div
@@ -200,8 +200,10 @@ export function LoginPage({ onLogin }: { onLogin: (u: string, p: string) => Prom
                 border: '1px solid rgba(255,255,255,.10)',
                 borderRadius: 18,
                 padding: '12px 14px',
-                marginBottom: 28,
+                marginBottom: isCompact ? 0 : 28,
                 backdropFilter: 'blur(8px)',
+                width: isCompact ? '100%' : 'auto',
+                justifyContent: isCompact ? 'center' : 'flex-start',
               }}
             >
               <img
@@ -234,6 +236,7 @@ export function LoginPage({ onLogin }: { onLogin: (u: string, p: string) => Prom
               </div>
             </div>
 
+            {!isCompact ? (
             <div style={{ maxWidth: 520 }}>
               <div
                 style={{
@@ -256,8 +259,10 @@ export function LoginPage({ onLogin }: { onLogin: (u: string, p: string) => Prom
                 Acesse o ambiente interno da ANB Parts em qualquer dispositivo para acompanhar as rotinas do dia, filtrar operacoes e manter o fluxo comercial organizado.
               </div>
             </div>
+            ) : null}
           </div>
 
+          {!isCompact ? (
           <div
             style={{
               position: 'relative',
@@ -296,11 +301,12 @@ export function LoginPage({ onLogin }: { onLogin: (u: string, p: string) => Prom
               </div>
             ))}
           </div>
+          ) : null}
         </section>
 
         <section
           style={{
-            order: isCompact ? 1 : 2,
+            order: 2,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
