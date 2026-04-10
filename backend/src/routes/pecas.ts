@@ -227,6 +227,7 @@ pecasRouter.get('/', async (req, res, next) => {
       motoId,
       disponivel,
       mercadoLivreLink,
+      localizacao,
       search,
       dataVendaFrom,
       dataVendaTo,
@@ -237,37 +238,45 @@ pecasRouter.get('/', async (req, res, next) => {
       orderDir = 'desc',
     } = req.query as any;
     const where: any = { emPrejuizo: false };
+    const andConditions: any[] = [];
     if (motoId) where.motoId = Number(motoId);
     if (disponivel !== undefined) where.disponivel = disponivel === 'true';
     if (mercadoLivreLink === 'com') {
-      where.mercadoLivreLink = { not: null };
-      where.NOT = [
-        ...(Array.isArray(where.NOT) ? where.NOT : []),
-        { mercadoLivreLink: '' },
-      ];
+      andConditions.push({ mercadoLivreLink: { not: null } });
+      andConditions.push({ NOT: { mercadoLivreLink: '' } });
     }
     if (mercadoLivreLink === 'sem') {
-      where.OR = [
-        ...(Array.isArray(where.OR) ? where.OR : []),
-        { mercadoLivreLink: null },
-        { mercadoLivreLink: '' },
-      ];
+      andConditions.push({
+        OR: [
+          { mercadoLivreLink: null },
+          { mercadoLivreLink: '' },
+        ],
+      });
+    }
+    if (localizacao === 'com') {
+      andConditions.push({ localizacao: { not: null } });
+      andConditions.push({ NOT: { localizacao: '' } });
+    }
+    if (localizacao === 'sem') {
+      andConditions.push({
+        OR: [
+          { localizacao: null },
+          { localizacao: '' },
+        ],
+      });
     }
     if (precoMlZero === 'true') where.precoML = 0;
     if (search) {
-      const searchConditions = [
-        { idPeca: { contains: search, mode: 'insensitive' } },
-        { descricao: { contains: search, mode: 'insensitive' } },
-        { blingPedidoNum: { contains: search, mode: 'insensitive' } },
-      ];
-      if (Array.isArray(where.OR) && where.OR.length) {
-        where.AND = [
-          ...(Array.isArray(where.AND) ? where.AND : []),
-          { OR: searchConditions },
-        ];
-      } else {
-        where.OR = searchConditions;
-      }
+      andConditions.push({
+        OR: [
+          { idPeca: { contains: search, mode: 'insensitive' } },
+          { descricao: { contains: search, mode: 'insensitive' } },
+          { blingPedidoNum: { contains: search, mode: 'insensitive' } },
+        ],
+      });
+    }
+    if (andConditions.length) {
+      where.AND = andConditions;
     }
     if (dataVendaFrom || dataVendaTo) {
       where.dataVenda = {};

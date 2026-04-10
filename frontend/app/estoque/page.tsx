@@ -824,6 +824,7 @@ export default function EstoquePage() {
     motoId: '',
     disponivel: '',
     mercadoLivreLink: '',
+    localizacao: '',
     precoMlZero: '',
     search: '',
     dataVendaFrom: '',
@@ -845,6 +846,7 @@ export default function EstoquePage() {
     if (filters.motoId) params.motoId = filters.motoId;
     if (filters.disponivel !== '') params.disponivel = filters.disponivel;
     if (filters.mercadoLivreLink !== '') params.mercadoLivreLink = filters.mercadoLivreLink;
+    if (filters.localizacao !== '') params.localizacao = filters.localizacao;
     if (filters.precoMlZero !== '') params.precoMlZero = filters.precoMlZero;
     if (filters.search) params.search = filters.search;
     if (filters.dataVendaFrom) params.dataVendaFrom = filters.dataVendaFrom;
@@ -997,10 +999,10 @@ export default function EstoquePage() {
   }
 
   function clearFilters() {
-    setFilters({ ...filters, motoId: '', disponivel: '', mercadoLivreLink: '', precoMlZero: '', search: '', dataVendaFrom: '', dataVendaTo: '', page: 1 });
+    setFilters({ ...filters, motoId: '', disponivel: '', mercadoLivreLink: '', localizacao: '', precoMlZero: '', search: '', dataVendaFrom: '', dataVendaTo: '', page: 1 });
   }
 
-  const hasActiveFilters = Boolean(filters.motoId || filters.disponivel !== '' || filters.mercadoLivreLink !== '' || filters.precoMlZero !== '' || filters.search || filters.dataVendaFrom || filters.dataVendaTo);
+  const hasActiveFilters = Boolean(filters.motoId || filters.disponivel !== '' || filters.mercadoLivreLink !== '' || filters.localizacao !== '' || filters.precoMlZero !== '' || filters.search || filters.dataVendaFrom || filters.dataVendaTo);
   const totalPages = Math.max(1, Math.ceil((data.total || 0) / filters.perPage));
   const hasPrevPage = filters.page > 1;
   const hasNextPage = filters.page < totalPages;
@@ -1080,6 +1082,11 @@ export default function EstoquePage() {
                 <option value="">Link ML</option>
                 <option value="com">Com Link ML</option>
                 <option value="sem">Sem Link ML</option>
+              </select>
+              <select style={{ ...cs.sel, width: '100%' }} value={filters.localizacao} onChange={(e) => setFilters({ ...filters, localizacao: e.target.value, page: 1 })}>
+                <option value="">Localizacao</option>
+                <option value="com">Com preenchimento</option>
+                <option value="sem">Sem preenchimento</option>
               </select>
               <select style={{ ...cs.sel, width: '100%' }} value={filters.precoMlZero} onChange={(e) => setFilters({ ...filters, precoMlZero: e.target.value, page: 1 })}>
                 <option value="">Preco ML</option>
@@ -1207,6 +1214,7 @@ export default function EstoquePage() {
                         { label: 'Cadastro', value: formatCompactDate(p.cadastro) },
                         { label: 'Venda', value: formatCompactDate(p.dataVenda) },
                         { label: 'Pedido', value: p.blingPedidoNum || '-' },
+                        { label: 'Localizacao', value: p.localizacao || '-' },
                         { label: 'Preco ML', value: fmt(Number(p.precoML)) },
                         { label: 'Vl. Liq.', value: fmt(Number(p.valorLiq)) },
                         { label: 'Frete', value: fmt(Number(p.valorFrete)) },
