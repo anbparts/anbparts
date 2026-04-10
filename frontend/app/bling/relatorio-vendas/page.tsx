@@ -27,6 +27,13 @@ const s: any = {
     padding: 20,
     marginBottom: 14,
   },
+  meta: {
+    fontSize: 11,
+    color: 'var(--gray-500)',
+    marginTop: 6,
+    fontFamily: 'JetBrains Mono, monospace',
+    letterSpacing: '0.3px',
+  },
   label: {
     fontSize: 11,
     fontWeight: 500,
@@ -109,6 +116,17 @@ type RelatorioResponse = {
 
 function fmtMoney(value: number) {
   return Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+function fmtShareOfPriceML(value: number, totalPriceML: number) {
+  if (!Number.isFinite(value) || !Number.isFinite(totalPriceML) || totalPriceML <= 0) {
+    return '0,00%';
+  }
+
+  return `${((value / totalPriceML) * 100).toLocaleString('pt-BR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}%`;
 }
 
 function fmtDate(value: string) {
@@ -230,17 +248,33 @@ export default function RelatorioVendasPage() {
 
         {relatorio && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12, marginBottom: 14 }}>
-            {[
-              { label: 'Pedidos', value: String(totais.totalPedidos), color: 'var(--gray-800)' },
-              { label: 'Itens', value: String(totais.totalItens), color: 'var(--gray-800)' },
-              { label: 'Preco ML', value: fmtMoney(totais.precoML), color: 'var(--blue-500)' },
-              { label: 'Taxas', value: fmtMoney(totais.valorTaxas), color: 'var(--amber)' },
-              { label: 'Frete', value: fmtMoney(totais.valorFrete), color: 'var(--gray-700)' },
-              { label: 'Receita liquida', value: fmtMoney(totais.valorLiq), color: 'var(--green)' },
-            ].map((card) => (
+            {([
+              { label: 'Pedidos', value: String(totais.totalPedidos), color: 'var(--gray-800)', percentageText: null },
+              { label: 'Itens', value: String(totais.totalItens), color: 'var(--gray-800)', percentageText: null },
+              { label: 'Preco ML', value: fmtMoney(totais.precoML), color: 'var(--blue-500)', percentageText: null },
+              {
+                label: 'Taxas',
+                value: fmtMoney(totais.valorTaxas),
+                color: 'var(--amber)',
+                percentageText: `% Preco Venda: ${fmtShareOfPriceML(totais.valorTaxas, totais.precoML)}`,
+              },
+              {
+                label: 'Frete',
+                value: fmtMoney(totais.valorFrete),
+                color: 'var(--gray-700)',
+                percentageText: `% Preco Venda: ${fmtShareOfPriceML(totais.valorFrete, totais.precoML)}`,
+              },
+              {
+                label: 'Receita liquida',
+                value: fmtMoney(totais.valorLiq),
+                color: 'var(--green)',
+                percentageText: `% Preco Venda: ${fmtShareOfPriceML(totais.valorLiq, totais.precoML)}`,
+              },
+            ] as Array<{ label: string; value: string; color: string; percentageText?: string | null }>).map((card) => (
               <div key={card.label} style={{ ...s.card, padding: 18, marginBottom: 0 }}>
                 <div style={{ fontSize: 11, color: 'var(--gray-500)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.8px' }}>{card.label}</div>
                 <div style={{ fontSize: 18, fontWeight: 700, color: card.color }}>{card.value}</div>
+                {card.percentageText ? <div style={s.meta}>{card.percentageText}</div> : null}
               </div>
             ))}
           </div>
