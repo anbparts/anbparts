@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { API_BASE } from './api-base';
 
 type LoggedUser = {
@@ -11,52 +11,65 @@ type LoggedUser = {
 export function useAuth() {
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [user, setUser] = useState<LoggedUser | null>(null);
+  const requestVersionRef = useRef(0);
 
-  useEffect(() => {
-    let active = true;
+  const loadSession = useCallback(async (requestVersion = ++requestVersionRef.current) => {
+    try {
+      const response = await fetch(`${API_BASE}/auth/me`, {
+        credentials: 'include',
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-store',
+          Pragma: 'no-cache',
+        },
+      });
 
-    async function loadSession() {
-      try {
-        const response = await fetch(`${API_BASE}/auth/me`, {
-          credentials: 'include',
-        });
-
-        if (!response.ok) {
-          if (active) {
-            setUser(null);
-            setAuthed(false);
-          }
-          return;
-        }
-
-        const payload = await response.json();
-        if (active) {
-          setUser(payload.user || null);
-          setAuthed(true);
-        }
-      } catch {
-        if (active) {
-          setUser(null);
-          setAuthed(false);
-        }
+      if (requestVersion !== requestVersionRef.current) {
+        return null;
       }
+
+      if (!response.ok) {
+        setUser(null);
+        setAuthed(false);
+        return null;
+      }
+
+      const payload = await response.json();
+      if (requestVersion !== requestVersionRef.current) {
+        return null;
+      }
+
+      setUser(payload.user || null);
+      setAuthed(true);
+      return payload.user || null;
+    } catch {
+      if (requestVersion === requestVersionRef.current) {
+        setUser(null);
+        setAuthed(false);
+      }
+      return null;
     }
-
-    void loadSession();
-
-    return () => {
-      active = false;
-    };
   }, []);
 
+  useEffect(() => {
+    void loadSession();
+  }, [loadSession]);
+
   async function login(userName: string, pass: string): Promise<boolean> {
+    const requestVersion = ++requestVersionRef.current;
+
     try {
       const response = await fetch(`${API_BASE}/auth/login`, {
         method: 'POST',
         credentials: 'include',
+        cache: 'no-store',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user: userName, pass }),
       });
+
+      if (requestVersion !== requestVersionRef.current) {
+        return false;
+      }
 
       if (!response.ok) {
         setUser(null);
@@ -64,29 +77,42 @@ export function useAuth() {
         return false;
       }
 
-      const payload = await response.json();
-      setUser(payload.user || null);
-      setAuthed(true);
-      return true;
+      const sessionUser = await loadSession(requestVersion);
+      if (sessionUser) {
+        return true;
+      }
+
+      if (requestVersion === requestVersionRef.current) {
+        setUser(null);
+        setAuthed(false);
+      }
+      return false;
     } catch {
-      setUser(null);
-      setAuthed(false);
+      if (requestVersion === requestVersionRef.current) {
+        setUser(null);
+        setAuthed(false);
+      }
       return false;
     }
   }
 
   async function logout() {
+    const requestVersion = ++requestVersionRef.current;
+
     try {
       await fetch(`${API_BASE}/auth/logout`, {
         method: 'POST',
         credentials: 'include',
+        cache: 'no-store',
       });
     } catch {
       // noop
     }
 
-    setUser(null);
-    setAuthed(false);
+    if (requestVersion === requestVersionRef.current) {
+      setUser(null);
+      setAuthed(false);
+    }
   }
 
   function getUser() {
@@ -145,7 +171,7 @@ export function LoginPage({ onLogin }: { onLogin: (u: string, p: string) => Prom
     setLoading(true);
     setError('');
     const ok = await onLogin(user, pass);
-    if (!ok) setError('Usuario ou senha incorretos');
+    if (!ok) setError('Nao foi possivel validar seu acesso. Confira usuario e senha e tente novamente.');
     setLoading(false);
   }
 

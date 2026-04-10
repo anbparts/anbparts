@@ -43,6 +43,7 @@ authRouter.post('/login', async (req, res) => {
 
   const token = createSessionToken(user);
   res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Vary', 'Cookie');
   res.setHeader('Set-Cookie', serializeSessionCookie(token, isSecureRequest(req)));
   return res.json({
     ok: true,
@@ -54,6 +55,9 @@ authRouter.post('/login', async (req, res) => {
 });
 
 authRouter.get('/me', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Vary', 'Cookie');
+
   const session = readSessionFromRequest(req);
   if (!session) {
     return res.status(401).json({ error: 'Sessao invalida ou expirada' });
@@ -70,6 +74,7 @@ authRouter.get('/me', async (req, res) => {
 
 authRouter.post('/logout', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Vary', 'Cookie');
   res.setHeader('Set-Cookie', serializeClearedSessionCookie(isSecureRequest(req)));
   return res.json({ ok: true });
 });
