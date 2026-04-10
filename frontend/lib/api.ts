@@ -22,9 +22,9 @@ export const api = {
     get:    (id: number)    => req<any>(`/motos/${id}`),
     detranEtiquetas: (id: number) => req<any>(`/motos/${id}/detran-etiquetas`),
     anexos: (id: number) => req<any>(`/motos/${id}/anexos`),
-    updateAnexos: (id: number, anexos: any) => req<any>(`/motos/${id}/anexos`, {
+    updateAnexos: (id: number, anexos: any, removidos?: string[]) => req<any>(`/motos/${id}/anexos`, {
       method: 'PUT',
-      body: JSON.stringify({ anexos }),
+      body: JSON.stringify({ anexos, removidos }),
     }),
     setDetranEtiquetaStatus: (pecaId: number, status: 'ativa' | 'baixada') => req<any>(`/motos/pecas/${pecaId}/detran-status`, {
       method: 'PATCH',

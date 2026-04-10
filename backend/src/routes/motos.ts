@@ -24,6 +24,7 @@ const detranEtiquetaStatusSchema = z.object({
 
 const motoAnexosSchema = z.object({
   anexos: z.record(z.any()).default({}),
+  removidos: z.array(z.string()).default([]),
 });
 
 const MOTO_ANEXO_KEYS = [
@@ -302,7 +303,35 @@ motosRouter.put('/:id/anexos', async (req, res, next) => {
     }
 
     const payload = motoAnexosSchema.parse(req.body || {});
-    const anexos = normalizeMotoAnexos(payload.anexos);
+    const motoAtual = await prisma.moto.findUnique({
+      where: { id: motoId },
+      select: {
+        id: true,
+        marca: true,
+        modelo: true,
+        ano: true,
+        anexos: true,
+      },
+    });
+
+    if (!motoAtual) {
+      return res.status(404).json({ error: 'Moto nao encontrada' });
+    }
+
+    const anexosAtuais = normalizeMotoAnexos((motoAtual as any).anexos);
+    const anexosAtualizados = normalizeMotoAnexos(payload.anexos);
+    const removidos = Array.isArray(payload.removidos)
+      ? payload.removidos.filter((key) => MOTO_ANEXO_KEYS.includes(key as typeof MOTO_ANEXO_KEYS[number]))
+      : [];
+
+    const anexos = {
+      ...anexosAtuais,
+      ...anexosAtualizados,
+    } as Record<string, { name: string; dataUrl: string }>;
+
+    for (const key of removidos) {
+      delete anexos[key];
+    }
 
     const moto = await prisma.moto.update({
       where: { id: motoId },

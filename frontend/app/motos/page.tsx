@@ -52,6 +52,8 @@ const MOTO_ANEXO_FIELDS = [
   { key: 'fotoNumeroMotor', label: 'Num. do Motor' },
 ] as const;
 
+const MAX_MOTO_ANEXO_FILE_SIZE_BYTES = 18 * 1024 * 1024;
+
 const cs: any = {
   topbar: { height: 'var(--topbar-h)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 28px', background: 'var(--white)', borderBottom: '1px solid var(--border)', position: 'sticky' as const, top: 0, zIndex: 50 },
   title: { fontFamily: 'Fraunces, serif', fontSize: 17, fontWeight: 600, letterSpacing: '-0.3px' },
@@ -344,25 +346,51 @@ function DetranModal({ open, moto, loading, data, updatingId, onToggleStatus, on
 
 function AnexosMotoModal({ open, moto, loading, data, saving, onClose, onSave, viewportMode = 'desktop' }: any) {
   const [form, setForm] = useState<Record<string, { name: string; dataUrl: string } | null>>({});
+  const [changedKeys, setChangedKeys] = useState<string[]>([]);
+  const [removedKeys, setRemovedKeys] = useState<string[]>([]);
+  const [localError, setLocalError] = useState('');
 
   useEffect(() => {
     if (!open) return;
+    setChangedKeys([]);
+    setRemovedKeys([]);
+    setLocalError('');
     setForm(data?.anexos || {});
-  }, [open, data]);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (changedKeys.length || removedKeys.length) return;
+    setForm(data?.anexos || {});
+  }, [open, data, changedKeys.length, removedKeys.length]);
 
   async function handleFileChange(key: string, event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
+    if (file.size > MAX_MOTO_ANEXO_FILE_SIZE_BYTES) {
+      setLocalError('Arquivo muito grande para envio pelo navegador. Use um arquivo de ate 18 MB.');
+      event.target.value = '';
+      return;
+    }
     const dataUrl = await fileToDataUrl(file);
+    setLocalError('');
     setForm((current) => ({ ...current, [key]: { name: file.name, dataUrl } }));
+    setChangedKeys((current) => Array.from(new Set([...current, key])));
+    setRemovedKeys((current) => current.filter((item) => item !== key));
+    event.target.value = '';
   }
 
   function clearFile(key: string) {
+    const hadExistingFile = Boolean(form?.[key]);
     setForm((current) => {
       const next = { ...current };
       delete next[key];
       return next;
     });
+    setChangedKeys((current) => current.filter((item) => item !== key));
+    if (hadExistingFile) {
+      setRemovedKeys((current) => Array.from(new Set([...current, key])));
+    }
   }
 
   if (!open) return null;
@@ -403,7 +431,7 @@ function AnexosMotoModal({ open, moto, loading, data, saving, onClose, onSave, v
                     <div style={{ fontSize: 12, color: attachment ? 'var(--ink)' : 'var(--ink-muted)', marginBottom: 10 }}>
                       {attachment ? attachment.name : 'Nenhum arquivo'}
                     </div>
-                    <input type="file" accept=".pdf,image/*" onChange={(event) => handleFileChange(field.key, event)} style={{ width: '100%', marginBottom: 10 }} />
+                    <input type="file" accept=".pdf,application/pdf,image/*,.heic,.heif" onChange={(event) => handleFileChange(field.key, event)} style={{ width: '100%', marginBottom: 10 }} />
                     <div style={{ display: 'grid', gridTemplateColumns: modalIsPhone ? '1fr' : '1fr 1fr', gap: 8 }}>
                       <button
                         type="button"
@@ -452,7 +480,7 @@ function AnexosMotoModal({ open, moto, loading, data, saving, onClose, onSave, v
                           )}
                         </td>
                         <td style={cs.td}>
-                          <input type="file" accept=".pdf,image/*" onChange={(event) => handleFileChange(field.key, event)} />
+                          <input type="file" accept=".pdf,application/pdf,image/*,.heic,.heif" onChange={(event) => handleFileChange(field.key, event)} />
                         </td>
                         <td style={cs.td}>
                           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -482,9 +510,14 @@ function AnexosMotoModal({ open, moto, loading, data, saving, onClose, onSave, v
             </div>
           )}
         </div>
+        {localError ? (
+          <div style={{ padding: modalIsPhone ? '0 14px 14px' : '0 24px 14px', fontSize: 12, color: 'var(--red)' }}>
+            ! {localError}
+          </div>
+        ) : null}
         <div style={{ padding: modalIsPhone ? '14px' : '16px 24px 22px', display: 'flex', gap: 8, justifyContent: 'flex-end', borderTop: '1px solid var(--border)', flexDirection: modalIsPhone ? 'column-reverse' : 'row' }}>
           <button onClick={onClose} style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink-soft)', borderColor: 'var(--border-strong)', width: modalIsPhone ? '100%' : undefined, justifyContent: 'center' }}>Fechar</button>
-          <button onClick={() => onSave(form)} disabled={saving || loading} style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)', opacity: saving ? 0.8 : 1, width: modalIsPhone ? '100%' : undefined, justifyContent: 'center' }}>
+          <button onClick={() => onSave(form, changedKeys, removedKeys)} disabled={saving || loading || Boolean(localError)} style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)', opacity: saving ? 0.8 : 1, width: modalIsPhone ? '100%' : undefined, justifyContent: 'center' }}>
             {saving ? 'Salvando...' : 'Salvar anexos'}
           </button>
         </div>
@@ -660,11 +693,16 @@ export default function MotosPage() {
     setAnexosSaving(false);
   }
 
-  async function handleSaveAnexos(anexos: Record<string, { name: string; dataUrl: string } | null>) {
+  async function handleSaveAnexos(anexos: Record<string, { name: string; dataUrl: string } | null>, changed: string[] = [], removed: string[] = []) {
     if (!anexosMoto) return;
     setAnexosSaving(true);
     try {
-      const response = await api.motos.updateAnexos(anexosMoto.id, anexos);
+      const anexosAlterados = Object.fromEntries(
+        changed
+          .filter((key) => anexos[key])
+          .map((key) => [key, anexos[key]])
+      );
+      const response = await api.motos.updateAnexos(anexosMoto.id, anexosAlterados, removed);
       setAnexosData(response);
       await load();
       closeAnexosModal();
