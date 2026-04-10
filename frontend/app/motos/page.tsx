@@ -65,7 +65,9 @@ const cs: any = {
   fl: { fontSize: 12, fontWeight: 500, color: 'var(--ink-soft)' },
 };
 
-function Modal({ open, title, onClose, onSave, moto }: any) {
+type MotosViewportMode = 'phone' | 'tablet-portrait' | 'tablet-landscape' | 'desktop';
+
+function Modal({ open, title, onClose, onSave, moto, viewportMode = 'desktop' }: any) {
   const empty = { marca: '', modelo: '', ano: '', cor: '', placa: '', chassi: '', renavam: '', dataCompra: '', precoCompra: '', origemCompra: '', observacoes: '' };
   const [form, setForm] = useState(empty);
   const [saving, setSaving] = useState(false);
@@ -93,6 +95,14 @@ function Modal({ open, title, onClose, onSave, moto }: any) {
   }, [moto, open]);
 
   if (!open) return null;
+
+  const modalIsPhone = viewportMode === 'phone';
+  const modalIsTabletLandscape = viewportMode === 'tablet-landscape';
+  const modalColumns = modalIsPhone ? '1fr' : '1fr 1fr';
+  const modalShellPadding = modalIsPhone ? 0 : modalIsTabletLandscape ? 16 : 24;
+  const modalHeaderPadding = modalIsPhone ? '16px 14px 14px' : '22px 24px 16px';
+  const modalBodyPadding = modalIsPhone ? '16px 14px 18px' : modalIsTabletLandscape ? '20px 22px' : '22px 24px';
+  const modalFooterPadding = modalIsPhone ? '14px' : '16px 24px 22px';
 
   async function save() {
     if (!form.marca || !form.modelo) {
@@ -127,28 +137,28 @@ function Modal({ open, title, onClose, onSave, moto }: any) {
   );
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }}>
-      <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 16, width: '100%', maxWidth: 540, maxHeight: '92vh', overflowY: 'auto', boxShadow: 'var(--shadow-lg)' }}>
-        <div style={{ padding: '22px 24px 16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ fontFamily: 'Fraunces, serif', fontSize: 18, fontWeight: 600 }}>{title}</div>
-          <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', fontSize: 16 }}>X</button>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 200, display: 'flex', alignItems: modalIsPhone ? 'stretch' : 'center', justifyContent: 'center', padding: modalShellPadding, backdropFilter: 'blur(2px)' }}>
+      <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: modalIsPhone ? 0 : 16, width: '100%', maxWidth: modalIsTabletLandscape ? 900 : 540, maxHeight: modalIsPhone ? '100dvh' : modalIsTabletLandscape ? 'calc(100dvh - 32px)' : '92vh', minHeight: modalIsPhone ? '100dvh' : undefined, overflowY: 'auto', boxShadow: 'var(--shadow-lg)' }}>
+        <div style={{ padding: modalHeaderPadding, borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+          <div style={{ fontFamily: 'Fraunces, serif', fontSize: modalIsPhone ? 17 : 18, fontWeight: 600 }}>{title}</div>
+          <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', fontSize: 16, flexShrink: 0 }}>X</button>
         </div>
-        <div style={{ padding: '22px 24px' }}>
+        <div style={{ padding: modalBodyPadding }}>
           <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '0.8px', textTransform: 'uppercase', marginBottom: 12, paddingBottom: 8, borderBottom: '1px solid var(--border)' }}>Identificacao</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: modalColumns, gap: 12 }}>
             {row('Marca *', 'marca', 'text', 'Ex: YAMAHA')}
             {row('Modelo *', 'modelo', 'text', 'Ex: CROSSER')}
             {row('Ano', 'ano', 'number', '2024')}
             {row('Cor', 'cor', 'text', 'Ex: Preto')}
           </div>
           <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '0.8px', textTransform: 'uppercase', margin: '16px 0 12px', paddingBottom: 8, borderBottom: '1px solid var(--border)' }}>Documentacao</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: modalColumns, gap: 12 }}>
             {row('Placa', 'placa', 'text', 'ABC-1234')}
             {row('Chassi', 'chassi', 'text')}
           </div>
           {row('Renavam', 'renavam', 'text')}
           <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '0.8px', textTransform: 'uppercase', margin: '16px 0 12px', paddingBottom: 8, borderBottom: '1px solid var(--border)' }}>Compra</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: modalColumns, gap: 12 }}>
             {row('Data de compra', 'dataCompra', 'date')}
             {row('Preco de compra (R$) *', 'precoCompra', 'number', '0,00')}
           </div>
@@ -163,35 +173,39 @@ function Modal({ open, title, onClose, onSave, moto }: any) {
           </div>
           {err && <div style={{ fontSize: 12, color: 'var(--red)', marginTop: 4 }}>! {err}</div>}
         </div>
-        <div style={{ padding: '16px 24px 22px', display: 'flex', gap: 8, justifyContent: 'flex-end', borderTop: '1px solid var(--border)' }}>
-          <button onClick={onClose} style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink-soft)', borderColor: 'var(--border-strong)' }}>Cancelar</button>
-          <button onClick={save} disabled={saving} style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)' }}>{saving ? 'Salvando...' : 'Salvar moto'}</button>
+        <div style={{ padding: modalFooterPadding, display: 'flex', gap: 8, justifyContent: 'flex-end', borderTop: '1px solid var(--border)', flexDirection: modalIsPhone ? 'column-reverse' : 'row' }}>
+          <button onClick={onClose} style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink-soft)', borderColor: 'var(--border-strong)', width: modalIsPhone ? '100%' : undefined, justifyContent: 'center' }}>Cancelar</button>
+          <button onClick={save} disabled={saving} style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)', width: modalIsPhone ? '100%' : undefined, justifyContent: 'center' }}>{saving ? 'Salvando...' : 'Salvar moto'}</button>
         </div>
       </div>
     </div>
   );
 }
 
-function DetranModal({ open, moto, loading, data, updatingId, onToggleStatus, onClose }: any) {
+function DetranModal({ open, moto, loading, data, updatingId, onToggleStatus, onClose, viewportMode = 'desktop' }: any) {
   if (!open) return null;
 
   const total = Array.isArray(data?.itens) ? data.itens.length : 0;
   const ativas = Array.isArray(data?.itens) ? data.itens.filter((item: any) => item.detranStatus !== 'baixada').length : 0;
   const baixadas = total - ativas;
+  const modalIsPhone = viewportMode === 'phone';
+  const modalIsTabletPortrait = viewportMode === 'tablet-portrait';
+  const modalIsTabletLandscape = viewportMode === 'tablet-landscape';
+  const useCardList = modalIsPhone || modalIsTabletPortrait;
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 220, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }}>
-      <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 16, width: '100%', maxWidth: 820, maxHeight: '90vh', overflow: 'hidden', boxShadow: '0 16px 40px rgba(0,0,0,.12)' }}>
-        <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 220, display: 'flex', alignItems: modalIsPhone ? 'stretch' : 'center', justifyContent: 'center', padding: modalIsPhone ? 0 : modalIsTabletLandscape ? 16 : 24, backdropFilter: 'blur(2px)' }}>
+      <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: modalIsPhone ? 0 : 16, width: '100%', maxWidth: modalIsTabletLandscape ? 980 : 820, maxHeight: modalIsPhone ? '100dvh' : '90vh', minHeight: modalIsPhone ? '100dvh' : undefined, overflow: 'hidden', boxShadow: '0 16px 40px rgba(0,0,0,.12)' }}>
+        <div style={{ padding: modalIsPhone ? '16px 14px 14px' : '20px 24px 16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
           <div>
-            <div style={{ fontFamily: 'Fraunces, serif', fontSize: 20, fontWeight: 600 }}>Etiquetas DETRAN</div>
+            <div style={{ fontFamily: 'Fraunces, serif', fontSize: modalIsPhone ? 18 : 20, fontWeight: 600 }}>Etiquetas DETRAN</div>
             <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 4 }}>
               {moto ? `ID ${moto.id} - ${moto.marca} ${moto.modelo}` : 'Moto selecionada'}
             </div>
           </div>
-          <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer' }}>X</button>
+          <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', flexShrink: 0 }}>X</button>
         </div>
-        <div style={{ padding: 24, overflowY: 'auto', maxHeight: 'calc(90vh - 78px)' }}>
+        <div style={{ padding: modalIsPhone ? 14 : 24, overflowY: 'auto', maxHeight: modalIsPhone ? 'calc(100dvh - 76px)' : 'calc(90vh - 78px)' }}>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
             <span style={{ background: '#ecfdf3', color: 'var(--green)', border: '1px solid #86efac', padding: '5px 10px', borderRadius: 999, fontSize: 12, fontWeight: 700 }}>
               Ativas: {ativas}
@@ -207,6 +221,60 @@ function DetranModal({ open, moto, loading, data, updatingId, onToggleStatus, on
             <div style={{ fontSize: 13, color: 'var(--ink-muted)' }}>Carregando etiquetas...</div>
           ) : !data?.itens?.length ? (
             <div style={{ fontSize: 13, color: 'var(--ink-muted)' }}>Nenhuma etiqueta DETRAN encontrada para essa moto.</div>
+          ) : useCardList ? (
+            <div style={{ display: 'grid', gap: 12 }}>
+              {data.itens.map((item: any) => (
+                <div key={item.id} style={{ border: '1px solid var(--border)', borderRadius: 14, padding: modalIsPhone ? 14 : 16, background: 'var(--white)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 10 }}>
+                    <div>
+                      <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 12.5, color: 'var(--blue-600)' }}>{item.idPeca}</div>
+                      <div style={{ marginTop: 4, fontSize: 13, color: 'var(--ink)', lineHeight: 1.45 }}>{item.descricao}</div>
+                    </div>
+                    <span style={{
+                      display: 'inline-flex',
+                      alignSelf: 'flex-start',
+                      padding: '4px 10px',
+                      borderRadius: 999,
+                      fontSize: 11,
+                      fontWeight: 700,
+                      border: `1px solid ${item.detranBaixada ? '#fca5a5' : '#86efac'}`,
+                      background: item.detranBaixada ? '#fef2f2' : '#ecfdf3',
+                      color: item.detranBaixada ? 'var(--red)' : 'var(--green)',
+                    }}>
+                      {item.detranStatusLabel}
+                    </span>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: modalIsPhone ? '1fr' : '1fr 1fr', gap: 10 }}>
+                    <div>
+                      <div style={{ fontSize: 10.5, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', textTransform: 'uppercase' }}>Etiqueta</div>
+                      <div style={{ marginTop: 3, fontFamily: 'Geist Mono, monospace', fontSize: 12.5, color: 'var(--ink)' }}>{item.detranEtiqueta}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 10.5, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', textTransform: 'uppercase' }}>Baixa</div>
+                      <div style={{ marginTop: 3, fontSize: 12.5, color: 'var(--ink)' }}>{item.detranBaixadaAt ? fmtDateTime(item.detranBaixadaAt) : '--'}</div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => onToggleStatus(item, item.detranBaixada ? 'ativa' : 'baixada')}
+                    disabled={updatingId === item.id}
+                    style={{
+                      ...cs.btn,
+                      width: '100%',
+                      justifyContent: 'center',
+                      marginTop: 12,
+                      padding: '8px 12px',
+                      fontSize: 12,
+                      border: `1px solid ${item.detranBaixada ? '#86efac' : '#fca5a5'}`,
+                      background: item.detranBaixada ? '#ecfdf3' : '#fef2f2',
+                      color: item.detranBaixada ? 'var(--green)' : 'var(--red)',
+                      opacity: updatingId === item.id ? 0.7 : 1,
+                    }}
+                  >
+                    {updatingId === item.id ? 'Salvando...' : item.detranBaixada ? 'Reativar' : 'Confirmar baixa'}
+                  </button>
+                </div>
+              ))}
+            </div>
           ) : (
             <div style={{ border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
@@ -274,7 +342,7 @@ function DetranModal({ open, moto, loading, data, updatingId, onToggleStatus, on
   );
 }
 
-function AnexosMotoModal({ open, moto, loading, data, saving, onClose, onSave }: any) {
+function AnexosMotoModal({ open, moto, loading, data, saving, onClose, onSave, viewportMode = 'desktop' }: any) {
   const [form, setForm] = useState<Record<string, { name: string; dataUrl: string } | null>>({});
 
   useEffect(() => {
@@ -300,20 +368,24 @@ function AnexosMotoModal({ open, moto, loading, data, saving, onClose, onSave }:
   if (!open) return null;
 
   const total = Object.keys(form || {}).length;
+  const modalIsPhone = viewportMode === 'phone';
+  const modalIsTabletPortrait = viewportMode === 'tablet-portrait';
+  const modalIsTabletLandscape = viewportMode === 'tablet-landscape';
+  const useCardList = modalIsPhone || modalIsTabletPortrait;
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 230, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }}>
-      <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 16, width: '100%', maxWidth: 980, maxHeight: '92vh', overflow: 'hidden', boxShadow: '0 16px 40px rgba(0,0,0,.12)' }}>
-        <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 230, display: 'flex', alignItems: modalIsPhone ? 'stretch' : 'center', justifyContent: 'center', padding: modalIsPhone ? 0 : modalIsTabletLandscape ? 16 : 24, backdropFilter: 'blur(2px)' }}>
+      <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: modalIsPhone ? 0 : 16, width: '100%', maxWidth: modalIsTabletLandscape ? 1100 : 980, maxHeight: modalIsPhone ? '100dvh' : '92vh', minHeight: modalIsPhone ? '100dvh' : undefined, overflow: 'hidden', boxShadow: '0 16px 40px rgba(0,0,0,.12)' }}>
+        <div style={{ padding: modalIsPhone ? '16px 14px 14px' : '20px 24px 16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
           <div>
-            <div style={{ fontFamily: 'Fraunces, serif', fontSize: 20, fontWeight: 600 }}>Anexos da moto</div>
+            <div style={{ fontFamily: 'Fraunces, serif', fontSize: modalIsPhone ? 18 : 20, fontWeight: 600 }}>Anexos da moto</div>
             <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 4 }}>
               {moto ? `ID ${moto.id} - ${moto.marca} ${moto.modelo}` : 'Moto selecionada'}
             </div>
           </div>
-          <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer' }}>X</button>
+          <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', flexShrink: 0 }}>X</button>
         </div>
-        <div style={{ padding: 24, overflowY: 'auto', maxHeight: 'calc(92vh - 140px)' }}>
+        <div style={{ padding: modalIsPhone ? 14 : 24, overflowY: 'auto', maxHeight: modalIsPhone ? 'calc(100dvh - 140px)' : 'calc(92vh - 140px)' }}>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
             <span style={{ background: 'var(--gray-50)', color: 'var(--ink-soft)', border: '1px solid var(--border)', padding: '5px 10px', borderRadius: 999, fontSize: 12, fontWeight: 700 }}>
               Arquivos anexados: {total}
@@ -321,6 +393,39 @@ function AnexosMotoModal({ open, moto, loading, data, saving, onClose, onSave }:
           </div>
           {loading ? (
             <div style={{ fontSize: 13, color: 'var(--ink-muted)' }}>Carregando anexos...</div>
+          ) : useCardList ? (
+            <div style={{ display: 'grid', gap: 12 }}>
+              {MOTO_ANEXO_FIELDS.map((field) => {
+                const attachment = form?.[field.key] || null;
+                return (
+                  <div key={field.key} style={{ border: '1px solid var(--border)', borderRadius: 14, padding: modalIsPhone ? 14 : 16, background: 'var(--white)' }}>
+                    <div style={{ fontWeight: 600, color: 'var(--ink)', marginBottom: 10 }}>{field.label}</div>
+                    <div style={{ fontSize: 12, color: attachment ? 'var(--ink)' : 'var(--ink-muted)', marginBottom: 10 }}>
+                      {attachment ? attachment.name : 'Nenhum arquivo'}
+                    </div>
+                    <input type="file" accept=".pdf,image/*" onChange={(event) => handleFileChange(field.key, event)} style={{ width: '100%', marginBottom: 10 }} />
+                    <div style={{ display: 'grid', gridTemplateColumns: modalIsPhone ? '1fr' : '1fr 1fr', gap: 8 }}>
+                      <button
+                        type="button"
+                        onClick={() => attachment && downloadDataUrl(attachment.dataUrl, attachment.name)}
+                        disabled={!attachment}
+                        style={{ ...cs.btn, width: '100%', justifyContent: 'center', padding: '8px 10px', fontSize: 12, border: '1px solid var(--border)', background: 'var(--white)', color: attachment ? 'var(--blue-500)' : 'var(--ink-muted)', cursor: attachment ? 'pointer' : 'not-allowed', opacity: attachment ? 1 : 0.7 }}
+                      >
+                        Download
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => clearFile(field.key)}
+                        disabled={!attachment}
+                        style={{ ...cs.btn, width: '100%', justifyContent: 'center', padding: '8px 10px', fontSize: 12, border: '1px solid #fecaca', background: '#fef2f2', color: attachment ? 'var(--red)' : 'var(--ink-muted)', cursor: attachment ? 'pointer' : 'not-allowed', opacity: attachment ? 1 : 0.7 }}
+                      >
+                        Remover
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           ) : (
             <div style={{ border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
@@ -377,9 +482,9 @@ function AnexosMotoModal({ open, moto, loading, data, saving, onClose, onSave }:
             </div>
           )}
         </div>
-        <div style={{ padding: '16px 24px 22px', display: 'flex', gap: 8, justifyContent: 'flex-end', borderTop: '1px solid var(--border)' }}>
-          <button onClick={onClose} style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink-soft)', borderColor: 'var(--border-strong)' }}>Fechar</button>
-          <button onClick={() => onSave(form)} disabled={saving || loading} style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)', opacity: saving ? 0.8 : 1 }}>
+        <div style={{ padding: modalIsPhone ? '14px' : '16px 24px 22px', display: 'flex', gap: 8, justifyContent: 'flex-end', borderTop: '1px solid var(--border)', flexDirection: modalIsPhone ? 'column-reverse' : 'row' }}>
+          <button onClick={onClose} style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink-soft)', borderColor: 'var(--border-strong)', width: modalIsPhone ? '100%' : undefined, justifyContent: 'center' }}>Fechar</button>
+          <button onClick={() => onSave(form)} disabled={saving || loading} style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)', opacity: saving ? 0.8 : 1, width: modalIsPhone ? '100%' : undefined, justifyContent: 'center' }}>
             {saving ? 'Salvando...' : 'Salvar anexos'}
           </button>
         </div>
@@ -392,6 +497,7 @@ export default function MotosPage() {
   const [motos, setMotos] = useState<any[]>([]);
   const [filtered, setFiltered] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [viewportMode, setViewportMode] = useState<MotosViewportMode>('desktop');
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState<any>(null);
   const [search, setSearch] = useState('');
@@ -419,6 +525,41 @@ export default function MotosPage() {
   }, [load]);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const phoneMedia = window.matchMedia('(max-width: 767px)');
+    const tabletPortraitMedia = window.matchMedia('(pointer: coarse) and (min-width: 768px) and (max-width: 1024px) and (orientation: portrait)');
+    const tabletLandscapeMedia = window.matchMedia('(pointer: coarse) and (min-width: 900px) and (max-width: 1600px) and (orientation: landscape)');
+
+    const syncViewportMode = () => {
+      if (phoneMedia.matches) {
+        setViewportMode('phone');
+        return;
+      }
+      if (tabletPortraitMedia.matches) {
+        setViewportMode('tablet-portrait');
+        return;
+      }
+      if (tabletLandscapeMedia.matches) {
+        setViewportMode('tablet-landscape');
+        return;
+      }
+      setViewportMode('desktop');
+    };
+
+    syncViewportMode();
+    phoneMedia.addEventListener('change', syncViewportMode);
+    tabletPortraitMedia.addEventListener('change', syncViewportMode);
+    tabletLandscapeMedia.addEventListener('change', syncViewportMode);
+
+    return () => {
+      phoneMedia.removeEventListener('change', syncViewportMode);
+      tabletPortraitMedia.removeEventListener('change', syncViewportMode);
+      tabletLandscapeMedia.removeEventListener('change', syncViewportMode);
+    };
+  }, []);
+
+  useEffect(() => {
     const q = search.toLowerCase().trim();
     setFiltered(
       q
@@ -442,6 +583,12 @@ export default function MotosPage() {
     else await api.motos.create(data);
     setModal(false);
     setEditing(null);
+    load();
+  }
+
+  async function handleDeleteMoto(moto: any) {
+    if (!confirm(`Excluir ${moto.marca} ${moto.modelo}?`)) return;
+    await api.motos.delete(moto.id);
     load();
   }
 
@@ -527,6 +674,96 @@ export default function MotosPage() {
     }
   }
 
+  const isPhone = viewportMode === 'phone';
+  const isTabletPortrait = viewportMode === 'tablet-portrait';
+  const isTabletLandscape = viewportMode === 'tablet-landscape';
+  const useCardList = isPhone || isTabletPortrait;
+  const pagePadding = isPhone ? 14 : isTabletPortrait || isTabletLandscape ? 18 : 28;
+  const compactTable = isTabletLandscape;
+  const controlStack = isPhone || isTabletPortrait;
+  const tablePadding = compactTable ? '9px 8px' : '11px 14px';
+  const tableHeaderPadding = compactTable ? '9px 8px' : '10px 14px';
+  const desktopHeaders = ['ID', 'Marca', 'Modelo', 'Ano', 'Placa', 'Chassi', 'Renavam', 'Data compra', 'Itens', 'Anexos', 'Detran', ''];
+  const tabletHeaders = ['ID', 'Marca', 'Modelo', 'Ano', 'Placa', 'Compra', 'Itens', 'Anexos', 'Detran', ''];
+  const activeHeaders = compactTable ? tabletHeaders : desktopHeaders;
+
+  function renderAnexosButton(m: any) {
+    return (
+      <button
+        onClick={() => openAnexosModal(m)}
+        style={{
+          width: 34,
+          height: 34,
+          borderRadius: 10,
+          border: `1px solid ${m.temAnexos ? '#93c5fd' : 'var(--border)'}`,
+          background: m.temAnexos ? '#eff6ff' : 'var(--white)',
+          color: m.temAnexos ? '#2563eb' : 'var(--ink-muted)',
+          cursor: 'pointer',
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          position: 'relative',
+          flexShrink: 0,
+        }}
+        title={m.temAnexos ? `Gerenciar anexos (${m.anexosCount || 0})` : 'Anexar documentos da moto'}
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M8 7.5V6a4 4 0 1 1 8 0v9a6 6 0 1 1-12 0V7a2 2 0 1 1 4 0v8a2 2 0 1 0 4 0V8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+        {(m.anexosCount || 0) > 0 ? (
+          <span style={{ position: 'absolute', right: -4, top: -4, minWidth: 16, height: 16, borderRadius: 999, background: '#16a34a', color: '#fff', fontSize: 9, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px' }}>
+            {m.anexosCount}
+          </span>
+        ) : null}
+      </button>
+    );
+  }
+
+  function renderDetranButton(m: any, fullWidth = false) {
+    return (
+      <button
+        onClick={() => openDetranModal(m)}
+        disabled={!m.temDetran}
+        style={{
+          ...cs.btn,
+          padding: fullWidth ? '8px 12px' : '5px 10px',
+          fontSize: fullWidth ? 12 : 11,
+          width: fullWidth ? '100%' : undefined,
+          justifyContent: 'center',
+          borderColor: !m.temDetran ? 'var(--border)' : (m.detranAtivas || 0) > 0 ? '#86efac' : '#fca5a5',
+          background: !m.temDetran ? 'var(--gray-50)' : (m.detranAtivas || 0) > 0 ? '#ecfdf3' : '#fef2f2',
+          color: !m.temDetran ? 'var(--ink-muted)' : (m.detranAtivas || 0) > 0 ? 'var(--green)' : 'var(--red)',
+          cursor: m.temDetran ? 'pointer' : 'not-allowed',
+          opacity: m.temDetran ? 1 : 0.7,
+        }}
+        title={m.temDetran ? 'Ver etiquetas DETRAN' : 'Nenhuma etiqueta DETRAN'}
+      >
+        DT {m.detranAtivas || 0}/{m.detranCount || 0}
+      </button>
+    );
+  }
+
+  function renderActionButtons(m: any, stacked = false) {
+    return (
+      <div style={{ display: 'flex', gap: 8, flexDirection: stacked ? 'column' : 'row', width: stacked ? '100%' : undefined }}>
+        <button
+          onClick={() => { setEditing(m); setModal(true); }}
+          style={{ ...cs.btn, padding: stacked ? '8px 12px' : '5px 10px', fontSize: stacked ? 12 : 12, background: 'var(--white)', color: 'var(--ink-soft)', borderColor: 'var(--border)', width: stacked ? '100%' : undefined, justifyContent: 'center' }}
+          title="Editar"
+        >
+          Editar
+        </button>
+        <button
+          onClick={() => handleDeleteMoto(m)}
+          style={{ ...cs.btn, padding: stacked ? '8px 12px' : '5px 10px', fontSize: 12, background: '#fff1f2', color: 'var(--red-light)', borderColor: '#fecdd3', width: stacked ? '100%' : undefined, justifyContent: 'center' }}
+          title="Excluir"
+        >
+          Excluir
+        </button>
+      </div>
+    );
+  }
+
   return (
     <>
       <div style={cs.topbar}>
@@ -535,123 +772,125 @@ export default function MotosPage() {
           <div style={cs.sub}>Cadastro e gestao de motos</div>
         </div>
       </div>
-      <div style={{ padding: 28 }}>
+      <div style={{ padding: pagePadding }}>
         <div style={cs.card}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: controlStack ? 'stretch' : 'center', flexDirection: controlStack ? 'column' : 'row', justifyContent: 'space-between', padding: isPhone ? '14px' : '14px 18px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', gap: 12 }}>
             <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>
               Motos cadastradas <span style={{ fontSize: 12, color: 'var(--ink-muted)', fontFamily: 'Geist, sans-serif', fontWeight: 400 }}>- {filtered.length}</span>
             </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input style={cs.input} placeholder="Buscar por ID, marca, modelo, placa, chassi ou renavam..." value={search} onChange={(e) => setSearch(e.target.value)} />
-              <button style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)' }} onClick={() => { setEditing(null); setModal(true); }}>+ Nova moto</button>
+            <div style={{ display: 'flex', gap: 8, width: controlStack ? '100%' : undefined, flexDirection: controlStack ? 'column' : 'row' }}>
+              <input style={{ ...cs.input, width: controlStack ? '100%' : compactTable ? 320 : 420 }} placeholder="Buscar por ID, marca, modelo, placa, chassi ou renavam..." value={search} onChange={(e) => setSearch(e.target.value)} />
+              <button style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)', width: controlStack ? '100%' : undefined, justifyContent: 'center' }} onClick={() => { setEditing(null); setModal(true); }}>+ Nova moto</button>
             </div>
           </div>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-              <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
-                <tr>
-                  {['ID', 'Marca', 'Modelo', 'Ano', 'Placa', 'Chassi', 'Renavam', 'Data compra', 'Itens', 'Anexos', 'Detran', ''].map((h) => (
-                    <th key={h} style={cs.th}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr>
-                    <td colSpan={12} style={{ ...cs.td, textAlign: 'center', color: 'var(--ink-muted)', borderBottom: 'none' }}>Carregando...</td>
-                  </tr>
-                ) : filtered.length === 0 ? (
-                  <tr>
-                    <td colSpan={12} style={{ ...cs.td, textAlign: 'center', color: 'var(--ink-muted)', padding: '40px 20px', borderBottom: 'none' }}>Nenhuma moto encontrada</td>
-                  </tr>
-                ) : filtered.map((m) => (
-                  <tr key={m.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                    <td style={cs.td}><span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 12, color: 'var(--ink-muted)' }}>#{m.id}</span></td>
-                    <td style={{ ...cs.td, color: 'var(--ink-muted)', fontSize: 12 }}>{m.marca}</td>
-                    <td style={cs.td}><strong>{m.modelo}</strong></td>
-                    <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12 }}>{m.ano || '--'}</td>
-                    <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12.5 }}>{m.placa || '--'}</td>
-                    <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12.5 }}>{m.chassi || '--'}</td>
-                    <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12.5 }}>{m.renavam || '--'}</td>
-                    <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12.5 }}>{fmtDate(m.dataCompra)}</td>
-                    <td style={cs.td}>
-                      <span style={{ background: 'var(--gray-100)', color: 'var(--ink-soft)', border: '1px solid var(--border)', padding: '2px 8px', borderRadius: 99, fontSize: 11, fontFamily: 'Geist Mono, monospace' }}>
-                        {m.qtdRelacionadas || 0} itens
-                      </span>
-                    </td>
-                    <td style={cs.td}>
-                      <button
-                        onClick={() => openAnexosModal(m)}
-                        style={{
-                          width: 34,
-                          height: 34,
-                          borderRadius: 10,
-                          border: `1px solid ${m.temAnexos ? '#93c5fd' : 'var(--border)'}`,
-                          background: m.temAnexos ? '#eff6ff' : 'var(--white)',
-                          color: m.temAnexos ? '#2563eb' : 'var(--ink-muted)',
-                          cursor: 'pointer',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          position: 'relative',
-                        }}
-                        title={m.temAnexos ? `Gerenciar anexos (${m.anexosCount || 0})` : 'Anexar documentos da moto'}
-                      >
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                          <path d="M8 7.5V6a4 4 0 1 1 8 0v9a6 6 0 1 1-12 0V7a2 2 0 1 1 4 0v8a2 2 0 1 0 4 0V8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-                        </svg>
-                        {(m.anexosCount || 0) > 0 ? (
-                          <span style={{ position: 'absolute', right: -4, top: -4, minWidth: 16, height: 16, borderRadius: 999, background: '#16a34a', color: '#fff', fontSize: 9, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px' }}>
-                            {m.anexosCount}
-                          </span>
-                        ) : null}
-                      </button>
-                    </td>
-                    <td style={cs.td}>
-                      <button
-                        onClick={() => openDetranModal(m)}
-                        disabled={!m.temDetran}
-                        style={{
-                          ...cs.btn,
-                          padding: '5px 10px',
-                          fontSize: 11,
-                          borderColor: !m.temDetran ? 'var(--border)' : (m.detranAtivas || 0) > 0 ? '#86efac' : '#fca5a5',
-                          background: !m.temDetran ? 'var(--gray-50)' : (m.detranAtivas || 0) > 0 ? '#ecfdf3' : '#fef2f2',
-                          color: !m.temDetran ? 'var(--ink-muted)' : (m.detranAtivas || 0) > 0 ? 'var(--green)' : 'var(--red)',
-                          cursor: m.temDetran ? 'pointer' : 'not-allowed',
-                          opacity: m.temDetran ? 1 : 0.7,
-                        }}
-                        title={m.temDetran ? 'Ver etiquetas DETRAN' : 'Nenhuma etiqueta DETRAN'}
-                      >
-                        DT {m.detranAtivas || 0}/{m.detranCount || 0}
-                      </button>
-                    </td>
-                    <td style={cs.td}>
-                      <div style={{ display: 'flex', gap: 4 }}>
-                        <button onClick={() => { setEditing(m); setModal(true); }} style={{ ...cs.btn, padding: '5px 10px', fontSize: 12, background: 'transparent', color: 'var(--ink-muted)', borderColor: 'transparent' }} title="Editar">EDIT</button>
-                        <button
-                          onClick={async () => {
-                            if (!confirm(`Excluir ${m.marca} ${m.modelo}?`)) return;
-                            await api.motos.delete(m.id);
-                            load();
-                          }}
-                          style={{ ...cs.btn, padding: '5px 10px', fontSize: 12, background: 'transparent', color: 'var(--red-light)', borderColor: 'transparent' }}
-                          title="Excluir"
-                        >
-                          DEL
-                        </button>
+          {useCardList ? (
+            <div style={{ padding: isPhone ? 12 : 14, display: 'grid', gap: 12 }}>
+              {loading ? (
+                <div style={{ ...cs.card, padding: 18, textAlign: 'center', color: 'var(--ink-muted)' }}>Carregando...</div>
+              ) : filtered.length === 0 ? (
+                <div style={{ ...cs.card, padding: 18, textAlign: 'center', color: 'var(--ink-muted)' }}>Nenhuma moto encontrada</div>
+              ) : filtered.map((m) => (
+                <div key={m.id} style={{ border: '1px solid var(--border)', borderRadius: 14, padding: isPhone ? 14 : 16, background: 'var(--white)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 12 }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                        <span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 12.5, color: 'var(--ink-muted)' }}>#{m.id}</span>
+                        <span style={{ background: 'var(--gray-100)', color: 'var(--ink-soft)', border: '1px solid var(--border)', padding: '2px 8px', borderRadius: 99, fontSize: 11, fontFamily: 'Geist Mono, monospace' }}>
+                          {m.qtdRelacionadas || 0} itens
+                        </span>
                       </div>
-                    </td>
+                      <div style={{ fontFamily: 'Fraunces, serif', fontSize: isPhone ? 18 : 19, fontWeight: 600, marginTop: 6 }}>{m.marca} {m.modelo}</div>
+                      <div style={{ marginTop: 4, fontSize: 12.5, color: 'var(--ink-muted)' }}>
+                        {m.placa || 'Sem placa'} {m.ano ? `· ${m.ano}` : ''}
+                      </div>
+                    </div>
+                    {renderAnexosButton(m)}
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: isPhone ? 'repeat(2, minmax(0, 1fr))' : 'repeat(3, minmax(0, 1fr))', gap: 10, marginBottom: 12 }}>
+                    {[
+                      { label: 'Placa', value: m.placa || '--' },
+                      { label: 'Chassi', value: m.chassi || '--' },
+                      { label: 'Renavam', value: m.renavam || '--' },
+                      { label: 'Compra', value: fmtDate(m.dataCompra) },
+                      { label: 'Anexos', value: `${m.anexosCount || 0} arquivo(s)` },
+                      { label: 'Ano', value: m.ano || '--' },
+                    ].map((item) => (
+                      <div key={item.label}>
+                        <div style={{ fontSize: 10.5, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', textTransform: 'uppercase' }}>{item.label}</div>
+                        <div style={{ marginTop: 3, fontSize: 12.5, color: 'var(--ink)', wordBreak: 'break-word' }}>{item.value}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '1fr 1fr', gap: 8 }}>
+                    {renderDetranButton(m, true)}
+                    {renderActionButtons(m, true)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: compactTable ? 12 : 13 }}>
+                <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
+                  <tr>
+                    {activeHeaders.map((h) => (
+                      <th key={h} style={{ ...cs.th, padding: tableHeaderPadding, cursor: 'default' }}>{h}</th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {loading ? (
+                    <tr>
+                      <td colSpan={activeHeaders.length} style={{ ...cs.td, textAlign: 'center', color: 'var(--ink-muted)', borderBottom: 'none' }}>Carregando...</td>
+                    </tr>
+                  ) : filtered.length === 0 ? (
+                    <tr>
+                      <td colSpan={activeHeaders.length} style={{ ...cs.td, textAlign: 'center', color: 'var(--ink-muted)', padding: '40px 20px', borderBottom: 'none' }}>Nenhuma moto encontrada</td>
+                    </tr>
+                  ) : filtered.map((m) => (
+                    <tr key={m.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                      <td style={{ ...cs.td, padding: tablePadding }}><span style={{ fontFamily: 'Geist Mono, monospace', fontSize: compactTable ? 11.5 : 12, color: 'var(--ink-muted)' }}>#{m.id}</span></td>
+                      <td style={{ ...cs.td, padding: tablePadding, color: 'var(--ink-muted)', fontSize: compactTable ? 11.5 : 12 }}>{m.marca}</td>
+                      <td style={{ ...cs.td, padding: tablePadding }}><strong>{m.modelo}</strong></td>
+                      <td style={{ ...cs.td, padding: tablePadding, fontFamily: 'Geist Mono, monospace', fontSize: compactTable ? 11.5 : 12 }}>{m.ano || '--'}</td>
+                      <td style={{ ...cs.td, padding: tablePadding, fontFamily: 'Geist Mono, monospace', fontSize: compactTable ? 11.5 : 12.5 }}>{m.placa || '--'}</td>
+                      {compactTable ? (
+                        <>
+                          <td style={{ ...cs.td, padding: tablePadding, fontFamily: 'Geist Mono, monospace', fontSize: compactTable ? 11.5 : 12.5 }}>{fmtDate(m.dataCompra)}</td>
+                          <td style={{ ...cs.td, padding: tablePadding }}>
+                            <span style={{ background: 'var(--gray-100)', color: 'var(--ink-soft)', border: '1px solid var(--border)', padding: '2px 8px', borderRadius: 99, fontSize: 11, fontFamily: 'Geist Mono, monospace' }}>
+                              {m.qtdRelacionadas || 0}
+                            </span>
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td style={{ ...cs.td, padding: tablePadding, fontFamily: 'Geist Mono, monospace', fontSize: compactTable ? 11.5 : 12.5 }}>{m.chassi || '--'}</td>
+                          <td style={{ ...cs.td, padding: tablePadding, fontFamily: 'Geist Mono, monospace', fontSize: compactTable ? 11.5 : 12.5 }}>{m.renavam || '--'}</td>
+                          <td style={{ ...cs.td, padding: tablePadding, fontFamily: 'Geist Mono, monospace', fontSize: compactTable ? 11.5 : 12.5 }}>{fmtDate(m.dataCompra)}</td>
+                          <td style={{ ...cs.td, padding: tablePadding }}>
+                            <span style={{ background: 'var(--gray-100)', color: 'var(--ink-soft)', border: '1px solid var(--border)', padding: '2px 8px', borderRadius: 99, fontSize: 11, fontFamily: 'Geist Mono, monospace' }}>
+                              {m.qtdRelacionadas || 0} itens
+                            </span>
+                          </td>
+                        </>
+                      )}
+                      <td style={{ ...cs.td, padding: tablePadding }}>{renderAnexosButton(m)}</td>
+                      <td style={{ ...cs.td, padding: tablePadding }}>{renderDetranButton(m)}</td>
+                      <td style={{ ...cs.td, padding: tablePadding }}>{renderActionButtons(m)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
-      <Modal open={modal} title={editing ? 'Editar moto' : 'Nova moto'} onClose={() => { setModal(false); setEditing(null); }} onSave={handleSave} moto={editing} />
-      <AnexosMotoModal open={anexosModalOpen} moto={anexosMoto} loading={anexosLoading} data={anexosData} saving={anexosSaving} onSave={handleSaveAnexos} onClose={closeAnexosModal} />
-      <DetranModal open={detranModalOpen} moto={detranMoto} loading={detranLoading} data={detranData} updatingId={detranUpdatingId} onToggleStatus={handleDetranStatusToggle} onClose={closeDetranModal} />
+      <Modal open={modal} title={editing ? 'Editar moto' : 'Nova moto'} onClose={() => { setModal(false); setEditing(null); }} onSave={handleSave} moto={editing} viewportMode={viewportMode} />
+      <AnexosMotoModal open={anexosModalOpen} moto={anexosMoto} loading={anexosLoading} data={anexosData} saving={anexosSaving} onSave={handleSaveAnexos} onClose={closeAnexosModal} viewportMode={viewportMode} />
+      <DetranModal open={detranModalOpen} moto={detranMoto} loading={detranLoading} data={detranData} updatingId={detranUpdatingId} onToggleStatus={handleDetranStatusToggle} onClose={closeDetranModal} viewportMode={viewportMode} />
     </>
   );
 }
