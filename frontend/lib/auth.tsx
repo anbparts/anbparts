@@ -102,7 +102,9 @@ export function LoginPage({ onLogin }: { onLogin: (u: string, p: string) => Prom
   const [pass, setPass] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [isCompact, setIsCompact] = useState(false);
+  const [isPhone, setIsPhone] = useState(false);
+  const [isTabletPortrait, setIsTabletPortrait] = useState(false);
+  const [isTablet, setIsTablet] = useState(false);
   const highlights = [
     { label: 'Motos', text: 'Cadastro, desmontagem e acompanhamento visual do patio' },
     { label: 'Estoque', text: 'Controle de pecas, localizacao, DETRAN e inventario' },
@@ -113,13 +115,28 @@ export function LoginPage({ onLogin }: { onLogin: (u: string, p: string) => Prom
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
 
-    const media = window.matchMedia('(max-width: 860px)');
-    const sync = () => setIsCompact(media.matches);
+    const phoneMedia = window.matchMedia('(max-width: 599px)');
+    const tabletPortraitMedia = window.matchMedia('(min-width: 600px) and (max-width: 860px)');
+    const tabletMedia = window.matchMedia('(min-width: 861px) and (max-width: 1280px)');
+    const sync = () => {
+      setIsPhone(phoneMedia.matches);
+      setIsTabletPortrait(tabletPortraitMedia.matches);
+      setIsTablet(tabletMedia.matches);
+    };
 
     sync();
-    media.addEventListener('change', sync);
-    return () => media.removeEventListener('change', sync);
+    phoneMedia.addEventListener('change', sync);
+    tabletPortraitMedia.addEventListener('change', sync);
+    tabletMedia.addEventListener('change', sync);
+    return () => {
+      phoneMedia.removeEventListener('change', sync);
+      tabletPortraitMedia.removeEventListener('change', sync);
+      tabletMedia.removeEventListener('change', sync);
+    };
   }, []);
+
+  const isCompact = isPhone;
+  const isSingleColumn = isPhone || isTabletPortrait;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -132,22 +149,26 @@ export function LoginPage({ onLogin }: { onLogin: (u: string, p: string) => Prom
 
   return (
     <div
-      style={{
-        minHeight: '100dvh',
-        background: 'linear-gradient(180deg, #eef4fb 0%, #f8fafc 100%)',
-        fontFamily: "'Inter', system-ui, sans-serif",
-        padding: 'clamp(16px, 3vw, 28px)',
-      }}
-    >
+        style={{
+          minHeight: '100dvh',
+          background: 'linear-gradient(180deg, #eef4fb 0%, #f8fafc 100%)',
+          fontFamily: "'Inter', system-ui, sans-serif",
+          padding: isPhone ? '16px' : isTabletPortrait ? '22px' : 'clamp(16px, 3vw, 28px)',
+        }}
+      >
       <div
         style={{
-          maxWidth: 1160,
+          maxWidth: isTabletPortrait ? 860 : isTablet ? 1120 : 1160,
           margin: '0 auto',
-          minHeight: 'calc(100dvh - clamp(32px, 6vw, 56px))',
+          minHeight: isPhone ? 'calc(100dvh - clamp(32px, 6vw, 56px))' : 'auto',
           display: 'grid',
-          gridTemplateColumns: isCompact ? '1fr' : 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))',
-          gap: 'clamp(16px, 3vw, 28px)',
-          alignItems: 'stretch',
+          gridTemplateColumns: isSingleColumn
+            ? '1fr'
+            : isTablet
+            ? 'minmax(0, 1fr) minmax(460px, 0.92fr)'
+            : 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))',
+          gap: isPhone ? 16 : isTabletPortrait ? 20 : isTablet ? 28 : 'clamp(16px, 3vw, 28px)',
+          alignItems: isSingleColumn ? 'stretch' : 'center',
         }}
       >
         <section
@@ -155,16 +176,16 @@ export function LoginPage({ onLogin }: { onLogin: (u: string, p: string) => Prom
             order: 1,
             background: 'linear-gradient(155deg, #091425 0%, #132b4d 55%, #1d467c 100%)',
             borderRadius: 28,
-            padding: isCompact ? '18px 18px 16px' : 'clamp(28px, 5vw, 48px)',
+            padding: isPhone ? '18px 18px 16px' : isTabletPortrait ? '24px 24px 22px' : isTablet ? '28px 28px 26px' : 'clamp(28px, 5vw, 48px)',
             color: '#fff',
             position: 'relative',
             overflow: 'hidden',
             boxShadow: '0 28px 60px rgba(15, 23, 42, 0.16)',
-            minHeight: isCompact ? 'auto' : 'min(720px, 100%)',
+            minHeight: isPhone || isTabletPortrait || isTablet ? 'auto' : 'min(720px, 100%)',
             display: 'flex',
             flexDirection: 'column',
-            justifyContent: isCompact ? 'center' : 'space-between',
-            gap: isCompact ? 0 : 28,
+            justifyContent: isPhone ? 'center' : 'flex-start',
+            gap: isPhone ? 0 : isTabletPortrait ? 16 : isTablet ? 22 : 28,
           }}
         >
           <div
@@ -200,10 +221,11 @@ export function LoginPage({ onLogin }: { onLogin: (u: string, p: string) => Prom
                 border: '1px solid rgba(255,255,255,.10)',
                 borderRadius: 18,
                 padding: '12px 14px',
-                marginBottom: isCompact ? 0 : 28,
+                marginBottom: isPhone ? 0 : isTabletPortrait ? 4 : 28,
                 backdropFilter: 'blur(8px)',
-                width: isCompact ? '100%' : 'auto',
-                justifyContent: isCompact ? 'center' : 'flex-start',
+                width: isSingleColumn ? '100%' : 'auto',
+                maxWidth: isTabletPortrait ? 460 : undefined,
+                justifyContent: isSingleColumn ? 'center' : 'flex-start',
               }}
             >
               <img
@@ -236,7 +258,42 @@ export function LoginPage({ onLogin }: { onLogin: (u: string, p: string) => Prom
               </div>
             </div>
 
-            {!isCompact ? (
+            {isTabletPortrait ? (
+            <div style={{ maxWidth: 520 }}>
+              <div
+                style={{
+                  fontSize: 15,
+                  lineHeight: 1.75,
+                  color: 'rgba(255,255,255,.76)',
+                }}
+              >
+                Acesso interno para acompanhar equipe, estoque e vendas no tablet com a mesma agilidade do escritorio.
+              </div>
+            </div>
+            ) : isTablet ? (
+            <div style={{ maxWidth: 420 }}>
+              <div
+                style={{
+                  fontSize: 28,
+                  lineHeight: 1.12,
+                  fontWeight: 700,
+                  letterSpacing: '-0.8px',
+                  marginBottom: 10,
+                }}
+              >
+                Acesso interno ANB Parts
+              </div>
+              <div
+                style={{
+                  fontSize: 15,
+                  lineHeight: 1.75,
+                  color: 'rgba(255,255,255,.74)',
+                }}
+              >
+                Sistema de gestao para equipe, estoque e vendas com acesso rapido em tablet e notebook.
+              </div>
+            </div>
+            ) : !isPhone ? (
             <div style={{ maxWidth: 520 }}>
               <div
                 style={{
@@ -262,14 +319,14 @@ export function LoginPage({ onLogin }: { onLogin: (u: string, p: string) => Prom
             ) : null}
           </div>
 
-          {!isCompact ? (
+          {!isPhone && !isTabletPortrait && !isTablet ? (
           <div
             style={{
               position: 'relative',
               zIndex: 1,
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-              gap: 14,
+              gridTemplateColumns: isTablet ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fit, minmax(180px, 1fr))',
+              gap: isTablet ? 12 : 14,
             }}
           >
             {highlights.map((item) => (
@@ -308,20 +365,21 @@ export function LoginPage({ onLogin }: { onLogin: (u: string, p: string) => Prom
           style={{
             order: 2,
             display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
+            alignItems: isSingleColumn ? 'stretch' : 'center',
+            justifyContent: isSingleColumn ? 'flex-start' : 'center',
             minWidth: 0,
           }}
         >
           <div
             style={{
               width: '100%',
-              maxWidth: 460,
+              maxWidth: isPhone ? 460 : isTabletPortrait ? 720 : isTablet ? 520 : 460,
               background: 'rgba(255,255,255,.92)',
               border: '1px solid rgba(148,163,184,.20)',
               borderRadius: 28,
-              padding: 'clamp(24px, 4vw, 38px)',
+              padding: isTabletPortrait ? '36px 34px 30px' : isTablet ? '30px 30px 28px' : 'clamp(24px, 4vw, 38px)',
               boxShadow: '0 24px 50px rgba(15, 23, 42, 0.10)',
+              margin: isTabletPortrait ? '0 auto' : undefined,
             }}
           >
             <div style={{ marginBottom: 30 }}>
