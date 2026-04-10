@@ -28,6 +28,13 @@ const s: any = {
     marginBottom: 10,
   },
   val: { fontFamily: 'Fraunces, serif', fontSize: 26, fontWeight: 500, letterSpacing: '-0.5px' },
+  meta: {
+    fontSize: 11,
+    color: 'var(--ink-soft)',
+    marginTop: 6,
+    fontFamily: 'Geist Mono, monospace',
+    letterSpacing: '0.3px',
+  },
   sub2: { fontSize: 12, color: 'var(--ink-muted)', marginTop: 6 },
   balanceRows: { display: 'grid', gap: 10 },
   balanceRow: { display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' },
@@ -61,6 +68,17 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 
 function fmt(value: number) {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+function fmtShareOfPriceML(value: number, totalPriceML: number) {
+  if (!Number.isFinite(value) || !Number.isFinite(totalPriceML) || totalPriceML <= 0) {
+    return '0,00%';
+  }
+
+  return `${((value / totalPriceML) * 100).toLocaleString('pt-BR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}%`;
 }
 
 function pad2(value: number) {
@@ -398,13 +416,28 @@ export default function DashboardPage() {
     valorLiq: 0,
   };
 
-  const cardsVendasMes = [
-    { label: 'Pedidos', value: String(totaisVendasMes.totalPedidos), color: 'var(--ink)' },
-    { label: 'Itens', value: String(totaisVendasMes.totalItens), color: 'var(--ink)' },
-    { label: 'Preco ML', value: fmt(totaisVendasMes.precoML), color: 'var(--blue-500)' },
-    { label: 'Taxas', value: fmt(totaisVendasMes.valorTaxas), color: 'var(--amber)' },
-    { label: 'Frete', value: fmt(totaisVendasMes.valorFrete), color: 'var(--ink)' },
-    { label: 'Receita liquida', value: fmt(totaisVendasMes.valorLiq), color: 'var(--sage)' },
+  const cardsVendasMes: Array<{ label: string; value: string; color: string; percentageText?: string | null }> = [
+    { label: 'Pedidos', value: String(totaisVendasMes.totalPedidos), color: 'var(--ink)', percentageText: null },
+    { label: 'Itens', value: String(totaisVendasMes.totalItens), color: 'var(--ink)', percentageText: null },
+    { label: 'Preco ML', value: fmt(totaisVendasMes.precoML), color: 'var(--blue-500)', percentageText: null },
+    {
+      label: 'Taxas',
+      value: fmt(totaisVendasMes.valorTaxas),
+      color: 'var(--amber)',
+      percentageText: `% Preco Venda: ${fmtShareOfPriceML(totaisVendasMes.valorTaxas, totaisVendasMes.precoML)}`,
+    },
+    {
+      label: 'Frete',
+      value: fmt(totaisVendasMes.valorFrete),
+      color: 'var(--ink)',
+      percentageText: `% Preco Venda: ${fmtShareOfPriceML(totaisVendasMes.valorFrete, totaisVendasMes.precoML)}`,
+    },
+    {
+      label: 'Receita liquida',
+      value: fmt(totaisVendasMes.valorLiq),
+      color: 'var(--sage)',
+      percentageText: `% Preco Venda: ${fmtShareOfPriceML(totaisVendasMes.valorLiq, totaisVendasMes.precoML)}`,
+    },
   ];
 
   return (
@@ -468,6 +501,9 @@ export default function DashboardPage() {
               <div key={card.label} style={s.card}>
                 <div style={s.label}>{card.label}</div>
                 <div style={{ ...s.val, color: card.color, ...maskStyle(ocultarValores) }}>{card.value}</div>
+                {card.percentageText ? (
+                  <div style={{ ...s.meta, ...maskStyle(ocultarValores) }}>{card.percentageText}</div>
+                ) : null}
                 <div style={s.sub2}>Periodo automatico do mes corrente.</div>
               </div>
             ))}
