@@ -189,10 +189,11 @@ export function AuthWrapper({ children }: { children: React.ReactNode }) {
       <div
         style={{
           marginLeft: sidebarOffset,
-          width: `calc(100vw - ${sidebarOffset}px)`,
           minWidth: 0,
+          maxWidth: '100%',
           minHeight: '100vh',
-          transition: 'margin-left 220ms ease, width 220ms ease',
+          overflowX: 'clip',
+          transition: 'margin-left 220ms ease',
           display: 'flex',
           flexDirection: 'column',
         }}
