@@ -221,6 +221,8 @@ function renderMercadoLivreSaldoCard(saldo: any, hidden: boolean) {
   );
 }
 
+type DashboardViewportMode = 'default' | 'phone' | 'tablet-landscape';
+
 export default function DashboardPage() {
   const [dash, setDash] = useState<any>(null);
   const [motos, setMotos] = useState<any[]>([]);
@@ -232,6 +234,7 @@ export default function DashboardPage() {
   const [ocultarValores, setOcultarValores] = useState(false);
   const [loadingDashboard, setLoadingDashboard] = useState(true);
   const [loadingMotos, setLoadingMotos] = useState(true);
+  const [viewportMode, setViewportMode] = useState<DashboardViewportMode>('default');
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -242,6 +245,36 @@ export default function DashboardPage() {
     if (typeof window === 'undefined') return;
     window.localStorage.setItem('dashboard-hide-values', ocultarValores ? '1' : '0');
   }, [ocultarValores]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const phoneMedia = window.matchMedia('(max-width: 767px)');
+    const tabletLandscapeMedia = window.matchMedia('(pointer: coarse) and (min-width: 900px) and (max-width: 1600px) and (orientation: landscape)');
+
+    const syncViewportMode = () => {
+      if (phoneMedia.matches) {
+        setViewportMode('phone');
+        return;
+      }
+
+      if (tabletLandscapeMedia.matches) {
+        setViewportMode('tablet-landscape');
+        return;
+      }
+
+      setViewportMode('default');
+    };
+
+    syncViewportMode();
+    phoneMedia.addEventListener('change', syncViewportMode);
+    tabletLandscapeMedia.addEventListener('change', syncViewportMode);
+
+    return () => {
+      phoneMedia.removeEventListener('change', syncViewportMode);
+      tabletLandscapeMedia.removeEventListener('change', syncViewportMode);
+    };
+  }, []);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -454,6 +487,58 @@ export default function DashboardPage() {
     },
   ];
 
+  const isPhone = viewportMode === 'phone';
+  const isTabletLandscape = viewportMode === 'tablet-landscape';
+  const sectionPadding = isPhone ? 14 : isTabletLandscape ? 18 : 28;
+  const summaryGridStyle = isPhone
+    ? { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12, marginBottom: 24 }
+    : isTabletLandscape
+    ? { display: 'grid', gridTemplateColumns: `repeat(${cards.length}, minmax(0, 1fr))`, gap: 10, marginBottom: 24 }
+    : s.grid;
+  const salesGridStyle = isPhone
+    ? { ...s.grid, gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12, marginBottom: 24 }
+    : isTabletLandscape
+    ? { ...s.grid, gridTemplateColumns: `repeat(${cardsVendasMes.length}, minmax(0, 1fr))`, gap: 10, marginBottom: 24 }
+    : { ...s.grid, marginBottom: 24 };
+
+  const getCardStyle = (card: any) => ({
+    ...s.card,
+    minWidth: 0,
+    padding: isPhone ? '14px 14px' : isTabletLandscape ? '14px 12px' : s.card.padding,
+    gridColumn: isPhone && (card.kind === 'mercado-livre-saldo' || card.label === 'Pecas em estoque') ? 'span 2' : undefined,
+  });
+
+  const getLabelStyle = () => ({
+    ...s.label,
+    fontSize: isTabletLandscape ? 9.5 : s.label.fontSize,
+    marginBottom: isPhone ? 8 : isTabletLandscape ? 8 : s.label.marginBottom,
+  });
+
+  const getValueStyle = (color: string) => ({
+    ...s.val,
+    color,
+    fontSize: isPhone ? 17 : isTabletLandscape ? 16 : s.val.fontSize,
+    lineHeight: isPhone || isTabletLandscape ? 1.1 : 1.15,
+    letterSpacing: isTabletLandscape ? '-0.35px' : s.val.letterSpacing,
+  });
+
+  const getSubStyle = () => ({
+    ...s.sub2,
+    fontSize: isPhone ? 11 : isTabletLandscape ? 10.5 : s.sub2.fontSize,
+    marginTop: isPhone ? 5 : isTabletLandscape ? 4 : s.sub2.marginTop,
+    lineHeight: isTabletLandscape ? 1.35 : 1.45,
+  });
+
+  const statLabelStyle = {
+    ...s.statLabel,
+    fontSize: isTabletLandscape ? 10 : s.statLabel.fontSize,
+  };
+
+  const statValueStyle = {
+    ...s.statValue,
+    fontSize: isPhone ? 11.5 : isTabletLandscape ? 11 : s.statValue.fontSize,
+  };
+
   return (
     <>
       <div style={s.topbar}>
@@ -464,23 +549,23 @@ export default function DashboardPage() {
         <DashboardVisibilityButton hidden={ocultarValores} onToggle={() => setOcultarValores((current) => !current)} />
       </div>
 
-      <div style={{ padding: 28 }}>
-        <div style={s.grid}>
+      <div style={{ padding: sectionPadding }}>
+        <div style={summaryGridStyle}>
           {cards.map((card) => (
-            <div key={card.label} style={s.card}>
-              <div style={s.label}>{card.label}</div>
+            <div key={card.label} style={getCardStyle(card)}>
+              <div style={getLabelStyle()}>{card.label}</div>
               {card.kind === 'mercado-livre-saldo' ? (
                 renderMercadoLivreSaldoCard((card as any).saldo, ocultarValores)
               ) : (
                 <>
-                  <div style={{ ...s.val, color: (card as any).color, ...maskStyle(ocultarValores) }}>{(card as any).val}</div>
-                  <div style={{ ...s.sub2, ...(card.label === 'Pecas em estoque' ? maskStyle(ocultarValores) : {}) }}>{(card as any).sub}</div>
+                  <div style={{ ...getValueStyle((card as any).color), ...maskStyle(ocultarValores) }}>{(card as any).val}</div>
+                  <div style={{ ...getSubStyle(), ...(card.label === 'Pecas em estoque' ? maskStyle(ocultarValores) : {}) }}>{(card as any).sub}</div>
                   {(card as any).details?.length ? (
                     <div style={{ ...s.statList, ...maskStyle(ocultarValores) }}>
                       {(card as any).details.map((detail: any) => (
                         <div key={detail.label} style={s.statRow}>
-                          <span style={s.statLabel}>{detail.label}</span>
-                          <span style={s.statValue}>{detail.value}</span>
+                          <span style={statLabelStyle}>{detail.label}</span>
+                          <span style={statValueStyle}>{detail.value}</span>
                         </div>
                       ))}
                     </div>
@@ -510,25 +595,25 @@ export default function DashboardPage() {
         </div>
 
         {loadingResumoVendasMes ? (
-          <div style={s.grid}>
+          <div style={salesGridStyle}>
             {['Pedidos', 'Itens', 'Preco ML', 'Taxas', 'Frete', 'Receita liquida'].map((label) => (
-              <div key={label} style={s.card}>
-                <div style={s.label}>{label}</div>
-                <div style={{ ...s.val, color: 'var(--ink-muted)' }}>...</div>
-                <div style={s.sub2}>Carregando resumo do mes atual.</div>
+              <div key={label} style={{ ...s.card, minWidth: 0, padding: isPhone ? '14px 14px' : isTabletLandscape ? '14px 12px' : s.card.padding }}>
+                <div style={getLabelStyle()}>{label}</div>
+                <div style={{ ...getValueStyle('var(--ink-muted)') }}>...</div>
+                <div style={getSubStyle()}>Carregando resumo do mes atual.</div>
               </div>
             ))}
           </div>
         ) : resumoVendasMes ? (
-          <div style={{ ...s.grid, marginBottom: 24 }}>
+          <div style={salesGridStyle}>
             {cardsVendasMes.map((card) => (
-              <div key={card.label} style={s.card}>
-                <div style={s.label}>{card.label}</div>
-                <div style={{ ...s.val, color: card.color, ...maskStyle(ocultarValores) }}>{card.value}</div>
+              <div key={card.label} style={{ ...s.card, minWidth: 0, padding: isPhone ? '14px 14px' : isTabletLandscape ? '14px 12px' : s.card.padding }}>
+                <div style={getLabelStyle()}>{card.label}</div>
+                <div style={{ ...getValueStyle(card.color), ...maskStyle(ocultarValores) }}>{card.value}</div>
                 {card.percentageText ? (
-                  <div style={{ ...s.meta, ...maskStyle(ocultarValores) }}>{card.percentageText}</div>
+                  <div style={{ ...s.meta, fontSize: isTabletLandscape ? 9.5 : s.meta.fontSize, marginTop: isTabletLandscape ? 4 : s.meta.marginTop, ...maskStyle(ocultarValores) }}>{card.percentageText}</div>
                 ) : null}
-                <div style={s.sub2}>Periodo automatico do mes corrente.</div>
+                <div style={getSubStyle()}>Periodo automatico do mes corrente.</div>
               </div>
             ))}
           </div>
