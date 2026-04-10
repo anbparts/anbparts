@@ -324,7 +324,7 @@ function PecaActionsModal({ open, peca, onClose, onEdit, onSell, onDelete }: any
   );
 }
 
-function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, peca, motos }: any) {
+function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, peca, motos, viewportMode = 'desktop' }: any) {
   const empty = {
     idPeca: '',
     motoId: '',
@@ -509,17 +509,24 @@ function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, peca, 
     setForm({ ...form, valorTaxas: value });
   }
 
+  const modalIsPhone = viewportMode === 'phone';
+  const modalIsTabletLandscape = viewportMode === 'tablet-landscape';
+  const dualFieldColumns = modalIsPhone ? '1fr' : '1fr 1fr';
+  const modalContentPadding = modalIsPhone ? '16px 14px 18px' : '22px 24px';
+  const modalHeaderPadding = modalIsPhone ? '16px 14px 14px' : '22px 24px 16px';
+  const modalFooterPadding = modalIsPhone ? '14px' : '16px 24px 22px';
+
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }}>
-      <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 16, width: '100%', maxWidth: 540, maxHeight: '92vh', overflowY: 'auto', boxShadow: '0 12px 32px rgba(0,0,0,.10)' }}>
-        <div style={{ padding: '22px 24px 16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 200, display: 'flex', alignItems: modalIsPhone ? 'stretch' : 'center', justifyContent: 'center', padding: modalIsPhone ? 0 : 24, backdropFilter: 'blur(2px)' }}>
+      <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: modalIsPhone ? 0 : 16, width: '100%', maxWidth: modalIsTabletLandscape ? 920 : 540, maxHeight: modalIsPhone ? '100dvh' : '92vh', minHeight: modalIsPhone ? '100dvh' : undefined, overflowY: 'auto', boxShadow: '0 12px 32px rgba(0,0,0,.10)' }}>
+        <div style={{ padding: modalHeaderPadding, borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
           <div>
-            <div style={{ fontFamily: 'Fraunces, serif', fontSize: 18, fontWeight: 600 }}>{peca ? 'Editar peca' : 'Nova peca'}</div>
+            <div style={{ fontFamily: 'Fraunces, serif', fontSize: modalIsPhone ? 17 : 18, fontWeight: 600 }}>{peca ? 'Editar peca' : 'Nova peca'}</div>
             {peca?.idPeca && <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 4 }}>ID da peca: {peca.idPeca}</div>}
           </div>
-          <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer' }}>X</button>
+          <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', flexShrink: 0 }}>X</button>
         </div>
-        <div style={{ padding: '22px 24px' }}>
+        <div style={{ padding: modalContentPadding }}>
           <div style={{ marginBottom: 14 }}>
             <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-soft)' }}>Moto *</label>
             <select style={{ ...cs.fi, cursor: 'pointer' }} value={form.motoId} onChange={(e) => handleMotoChange(e.target.value)}>
@@ -548,7 +555,7 @@ function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, peca, 
           )}
           {renderField('Data de cadastro', 'cadastro', 'date')}
           {peca && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: dualFieldColumns, gap: 12 }}>
               <div style={{ marginBottom: 14 }}>
                 <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-soft)' }}>Localizacao no Bling</label>
                 <input
@@ -573,7 +580,7 @@ function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, peca, 
           )}
           {renderField('Descricao da peca *', 'descricao', 'text', 'Ex: Tampa lateral direita')}
           {renderField('Pedido Bling', 'blingPedidoNum', 'text', 'Ex: 449')}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: dualFieldColumns, gap: 12 }}>
             <div style={{ marginBottom: 14 }}>
               <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-soft)' }}>Preco ML (R$)</label>
               <input
@@ -624,7 +631,7 @@ function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, peca, 
               />
             </div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: dualFieldColumns, gap: 12 }}>
             <div style={{ marginBottom: 14 }}>
               <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-soft)' }}>Status</label>
               <select style={{ ...cs.fi, cursor: 'pointer' }} value={form.disponivel} onChange={(e) => setForm({ ...form, disponivel: e.target.value })}>
@@ -636,8 +643,8 @@ function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, peca, 
           </div>
           {err && <div style={{ fontSize: 12, color: 'var(--red)' }}>! {err}</div>}
         </div>
-        <div style={{ padding: '16px 24px 22px', display: 'flex', gap: 8, justifyContent: 'space-between', borderTop: '1px solid var(--border)', flexWrap: 'wrap' }}>
-          <div>
+        <div style={{ padding: modalFooterPadding, display: 'flex', gap: 8, justifyContent: 'space-between', borderTop: '1px solid var(--border)', flexWrap: 'wrap', flexDirection: modalIsPhone ? 'column' : 'row' }}>
+          <div style={{ width: modalIsPhone ? '100%' : undefined }}>
             {peca && !peca.disponivel && (
               <button
                 onClick={async () => {
@@ -651,7 +658,7 @@ function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, peca, 
                   setSaving(false);
                 }}
                 disabled={saving}
-                style={{ ...cs.btn, background: '#fff1f2', color: 'var(--red)', borderColor: '#fecdd3' }}
+                style={{ ...cs.btn, background: '#fff1f2', color: 'var(--red)', borderColor: '#fecdd3', width: modalIsPhone ? '100%' : undefined, justifyContent: 'center' }}
               >
                 Cancelar venda
               </button>
@@ -660,15 +667,15 @@ function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, peca, 
               <button
                 onClick={() => setShowPrejuizoModal(true)}
                 disabled={saving}
-                style={{ ...cs.btn, background: '#fff7ed', color: '#c2410c', borderColor: '#fed7aa' }}
+                style={{ ...cs.btn, background: '#fff7ed', color: '#c2410c', borderColor: '#fed7aa', width: modalIsPhone ? '100%' : undefined, justifyContent: 'center' }}
               >
                 Prejuízo
               </button>
             )}
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={onClose} style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink-soft)', borderColor: 'var(--border-strong)' }}>Cancelar</button>
-          <button onClick={save} disabled={saving} style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)' }}>{saving ? 'Salvando...' : 'Salvar peca'}</button>
+          <div style={{ display: 'flex', gap: 8, width: modalIsPhone ? '100%' : undefined, flexDirection: modalIsPhone ? 'column-reverse' : 'row' }}>
+          <button onClick={onClose} style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink-soft)', borderColor: 'var(--border-strong)', width: modalIsPhone ? '100%' : undefined, justifyContent: 'center' }}>Cancelar</button>
+          <button onClick={save} disabled={saving} style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)', width: modalIsPhone ? '100%' : undefined, justifyContent: 'center' }}>{saving ? 'Salvando...' : 'Salvar peca'}</button>
           </div>
         </div>
       </div>
@@ -1333,7 +1340,7 @@ export default function EstoquePage() {
         </div>
       </div>
 
-      <PecaModal open={modal} onClose={() => { setModal(false); setEditPeca(null); }} onSave={handleSavePeca} onCancelSale={handleCancelSale} onMarkPrejuizo={handleMarkPrejuizo} peca={editPeca} motos={motos} />
+      <PecaModal open={modal} onClose={() => { setModal(false); setEditPeca(null); }} onSave={handleSavePeca} onCancelSale={handleCancelSale} onMarkPrejuizo={handleMarkPrejuizo} peca={editPeca} motos={motos} viewportMode={viewportMode} />
       <VendaModal open={vendaModal} peca={vendaPeca} onClose={() => setVendaModal(false)} onConfirm={handleVenda} />
       <DetranEtiquetaModal open={Boolean(detranPeca)} peca={detranPeca} onClose={() => setDetranPeca(null)} />
       <PecaActionsModal
