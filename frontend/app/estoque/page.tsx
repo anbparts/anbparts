@@ -74,6 +74,12 @@ const PREJUIZO_OPTIONS = [
 ];
 
 type EstoqueViewportMode = 'phone' | 'tablet-portrait' | 'tablet-landscape' | 'desktop';
+type EstoqueTableHeader = {
+  label: string;
+  sort: string | null;
+  width: number | string;
+  kind?: 'select';
+};
 
 const cs: any = {
   topbar: { height: 'var(--topbar-h)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 28px', background: 'var(--white)', borderBottom: '1px solid var(--border)', position: 'sticky' as const, top: 0, zIndex: 50 },
@@ -1013,7 +1019,7 @@ export default function EstoquePage() {
     { l: 'Em estoque', v: data.totalDisp, c: 'var(--sage)' },
     { l: 'Vendidas', v: data.totalVend, c: 'var(--amber)' },
   ];
-  const tableHeaders = [
+  const tableHeaders: EstoqueTableHeader[] = [
     { label: '', sort: null, kind: 'select', width: 38 },
     { label: 'ID', sort: 'motoId', width: 52 },
     { label: 'ID Peca', sort: 'idPeca', width: 88 },
@@ -1029,7 +1035,7 @@ export default function EstoquePage() {
     { label: 'Detran', sort: null, width: 58 },
     { label: 'Status', sort: 'disponivel', width: 94 },
     { label: '', sort: null, width: 42 },
-  ] as const;
+  ];
 
   return (
     <>
