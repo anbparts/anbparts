@@ -3,7 +3,20 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
-const NAV = [
+type NavItem = {
+  href: string;
+  icon: string;
+  label: string;
+};
+
+type NavGroup = {
+  section: string;
+  items: NavItem[];
+};
+
+export type SidebarMode = 'phone' | 'tablet-portrait' | 'tablet-landscape' | 'desktop';
+
+export const NAV: NavGroup[] = [
   {
     section: 'Principal',
     items: [
@@ -54,8 +67,25 @@ const NAV = [
   },
 ];
 
+function isNavActive(path: string, href: string) {
+  if (href === '/') return path === '/';
+  return path === href || path.startsWith(`${href}/`);
+}
+
+export function getNavLabel(path: string) {
+  for (const group of NAV) {
+    for (const item of group.items) {
+      if (isNavActive(path, item.href)) {
+        return item.label;
+      }
+    }
+  }
+
+  return 'ANB Parts';
+}
+
 function SidebarIcon({ name, active }: { name: string; active: boolean }) {
-  const color = active ? '#ffffff' : 'rgba(255,255,255,.72)';
+  const color = active ? '#ffffff' : 'rgba(255,255,255,.74)';
   const common = {
     width: 16,
     height: 16,
@@ -97,185 +127,385 @@ function SidebarIcon({ name, active }: { name: string; active: boolean }) {
   return icons[name] || <span style={{ width: 16, height: 16 }} />;
 }
 
-export function Sidebar({ onLogout, user }: { onLogout?: () => void; user?: string }) {
+function ControlIcon({ name }: { name: 'menu' | 'close' | 'collapse' | 'expand' | 'logout' }) {
+  const common = {
+    width: 16,
+    height: 16,
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 1.9,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const,
+    'aria-hidden': true,
+  };
+
+  const icons: Record<string, JSX.Element> = {
+    menu: <svg {...common}><path d="M4 7h16" /><path d="M4 12h16" /><path d="M4 17h16" /></svg>,
+    close: <svg {...common}><path d="M6 6 18 18" /><path d="m18 6-12 12" /></svg>,
+    collapse: <svg {...common}><path d="M15 18 9 12l6-6" /><path d="M19 5v14" /></svg>,
+    expand: <svg {...common}><path d="m9 18 6-6-6-6" /><path d="M5 5v14" /></svg>,
+    logout: <svg {...common}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="M16 17l5-5-5-5" /><path d="M21 12H9" /></svg>,
+  };
+
+  return icons[name];
+}
+
+type SidebarProps = {
+  onLogout?: () => void;
+  user?: string;
+  mode?: SidebarMode;
+  open?: boolean;
+  onClose?: () => void;
+  onToggle?: () => void;
+};
+
+export function Sidebar({
+  onLogout,
+  user,
+  mode = 'desktop',
+  open = true,
+  onClose,
+  onToggle,
+}: SidebarProps) {
   const path = usePathname();
+  const isDrawer = mode === 'phone' || mode === 'tablet-portrait';
+  const isTabletLandscape = mode === 'tablet-landscape';
+  const expanded = isDrawer ? open : isTabletLandscape ? open : true;
+  const sidebarWidth = isTabletLandscape ? (expanded ? 252 : 88) : 252;
+  const showBackdrop = isDrawer && open;
+  const initial = (user || 'A')[0]?.toUpperCase() || 'A';
+
+  const handleNavigate = () => {
+    if (isDrawer) {
+      onClose?.();
+      return;
+    }
+
+    if (isTabletLandscape && expanded) {
+      onClose?.();
+    }
+  };
 
   return (
-    <aside
-      style={{
-        width: 'var(--sidebar-w)',
-        minHeight: '100vh',
-        background: 'var(--blue-900)',
-        display: 'flex',
-        flexDirection: 'column',
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        bottom: 0,
-        zIndex: 100,
-        fontFamily: "'Inter', system-ui, sans-serif",
-      }}
-    >
-      <div
-        style={{
-          padding: '18px 16px',
-          borderBottom: '1px solid rgba(255,255,255,.08)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-          flexShrink: 0,
-        }}
-      >
-        <img
-          src="/logo.jpg"
-          alt="ANB Parts"
+    <>
+      {showBackdrop ? (
+        <button
+          aria-label="Fechar menu"
+          onClick={onClose}
           style={{
-            width: 46,
-            height: 46,
-            borderRadius: 10,
-            objectFit: 'cover',
-            display: 'block',
-            flexShrink: 0,
-            background: '#fff',
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.45)',
+            border: 'none',
+            padding: 0,
+            zIndex: 109,
+            cursor: 'pointer',
           }}
         />
-        <div>
-          <div style={{ fontSize: 16, fontWeight: 700, color: '#fff', letterSpacing: '-0.3px', lineHeight: 1.2 }}>
-            ANB Parts
-          </div>
-          <div
-            style={{
-              fontSize: 11,
-              color: 'rgba(255,255,255,.4)',
-              fontFamily: "'JetBrains Mono', monospace",
-              marginTop: 2,
-            }}
-          >
-            Gestao Interna
-          </div>
-        </div>
-      </div>
+      ) : null}
 
-      <nav
+      <aside
         style={{
-          flex: 1,
-          padding: '10px 10px',
-          overflowY: 'auto',
+          width: sidebarWidth,
+          minHeight: '100vh',
+          background: 'linear-gradient(180deg, #08111f 0%, #0a1628 100%)',
           display: 'flex',
           flexDirection: 'column',
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          bottom: 0,
+          zIndex: 110,
+          transform: isDrawer ? (open ? 'translateX(0)' : 'translateX(calc(-100% - 20px))') : 'translateX(0)',
+          transition: 'transform 220ms ease, width 220ms ease',
+          boxShadow: isDrawer && open ? '0 18px 50px rgba(2, 6, 23, 0.28)' : '0 12px 30px rgba(2, 6, 23, 0.12)',
+          fontFamily: "'Inter', system-ui, sans-serif",
+          borderRight: '1px solid rgba(255,255,255,.06)',
+          pointerEvents: isDrawer && !open ? 'none' : 'auto',
         }}
       >
-        {NAV.map((group) => (
-          <div key={group.section}>
-            <div
+        <div
+          style={{
+            padding: expanded ? '18px 16px' : '16px 10px',
+            borderBottom: '1px solid rgba(255,255,255,.08)',
+            display: 'flex',
+            flexDirection: expanded ? 'row' : 'column',
+            alignItems: 'center',
+            gap: expanded ? 12 : 10,
+            flexShrink: 0,
+          }}
+        >
+          <img
+            src="/logo.jpg"
+            alt="ANB Parts"
+            style={{
+              width: expanded ? 46 : 42,
+              height: expanded ? 46 : 42,
+              borderRadius: 12,
+              objectFit: 'cover',
+              display: 'block',
+              flexShrink: 0,
+              background: '#fff',
+            }}
+          />
+
+          {expanded ? (
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#fff', letterSpacing: '-0.3px', lineHeight: 1.2 }}>
+                ANB Parts
+              </div>
+              <div
+                style={{
+                  fontSize: 11,
+                  color: 'rgba(255,255,255,.42)',
+                  fontFamily: "'JetBrains Mono', monospace",
+                  marginTop: 2,
+                }}
+              >
+                Gestao Interna
+              </div>
+            </div>
+          ) : null}
+
+          {mode !== 'desktop' ? (
+            <button
+              onClick={isDrawer ? onClose : onToggle}
+              title={
+                isDrawer
+                  ? 'Fechar menu'
+                  : expanded
+                  ? 'Minimizar menu'
+                  : 'Expandir menu'
+              }
               style={{
-                fontSize: 10,
-                fontFamily: "'JetBrains Mono', monospace",
-                color: 'rgba(255,255,255,.3)',
-                letterSpacing: '1.2px',
-                textTransform: 'uppercase',
-                padding: '10px 8px 4px',
+                marginLeft: expanded ? 'auto' : 0,
+                width: 34,
+                height: 34,
+                borderRadius: 10,
+                border: '1px solid rgba(255,255,255,.1)',
+                background: 'rgba(255,255,255,.08)',
+                color: 'rgba(255,255,255,.86)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                flexShrink: 0,
               }}
             >
-              {group.section}
-            </div>
-            {group.items.map((item) => {
-              const active = path === item.href;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
+              <ControlIcon name={isDrawer ? 'close' : expanded ? 'collapse' : 'expand'} />
+            </button>
+          ) : null}
+        </div>
+
+        <nav
+          style={{
+            flex: 1,
+            padding: expanded ? '10px 10px 14px' : '10px 8px 14px',
+            overflowY: 'auto',
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
+          {NAV.map((group, groupIndex) => (
+            <div key={group.section}>
+              {expanded ? (
+                <div
                   style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 10,
-                    padding: '8px 10px',
-                    borderRadius: 8,
-                    marginBottom: 1,
-                    fontSize: 13.5,
-                    fontWeight: active ? 500 : 400,
-                    color: active ? '#fff' : 'rgba(255,255,255,.6)',
-                    background: active ? 'var(--blue-500)' : 'transparent',
-                    textDecoration: 'none',
-                    transition: 'all 150ms',
+                    fontSize: 10,
+                    fontFamily: "'JetBrains Mono', monospace",
+                    color: 'rgba(255,255,255,.3)',
+                    letterSpacing: '1.2px',
+                    textTransform: 'uppercase',
+                    padding: '10px 8px 4px',
                   }}
                 >
-                  <span
+                  {group.section}
+                </div>
+              ) : groupIndex > 0 ? (
+                <div
+                  style={{
+                    height: 1,
+                    margin: '10px 12px 8px',
+                    background: 'rgba(255,255,255,.08)',
+                  }}
+                />
+              ) : null}
+
+              {group.items.map((item) => {
+                const active = isNavActive(path, item.href);
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    title={item.label}
+                    onClick={handleNavigate}
                     style={{
-                      minWidth: 26,
-                      height: 20,
-                      borderRadius: 6,
-                      background: active ? 'rgba(255,255,255,.18)' : 'rgba(255,255,255,.08)',
-                      display: 'inline-flex',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: expanded ? 'flex-start' : 'center',
+                      gap: expanded ? 10 : 0,
+                      padding: expanded ? '9px 10px' : '10px 0',
+                      borderRadius: 12,
+                      marginBottom: 4,
+                      fontSize: 13.5,
+                      fontWeight: active ? 600 : 400,
+                      color: active ? '#fff' : 'rgba(255,255,255,.66)',
+                      background: active ? 'linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%)' : 'transparent',
+                      textDecoration: 'none',
+                      transition: 'all 150ms ease',
+                      minHeight: 42,
+                    }}
+                  >
+                    <span
+                      style={{
+                        minWidth: 26,
+                        width: 26,
+                        height: 26,
+                        borderRadius: 8,
+                        background: active ? 'rgba(255,255,255,.18)' : 'rgba(255,255,255,.08)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <SidebarIcon name={item.icon} active={active} />
+                    </span>
+                    {expanded ? item.label : null}
+                  </Link>
+                );
+              })}
+            </div>
+          ))}
+        </nav>
+
+        <div
+          style={{
+            padding: expanded ? '12px 10px' : '12px 8px',
+            borderTop: '1px solid rgba(255,255,255,.08)',
+            flexShrink: 0,
+          }}
+        >
+          {user ? (
+            expanded ? (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 10,
+                  padding: '10px 12px',
+                  borderRadius: 14,
+                  background: 'rgba(255,255,255,.06)',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                  <div
+                    style={{
+                      width: 34,
+                      height: 34,
+                      borderRadius: '50%',
+                      background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+                      display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
+                      fontSize: 13,
+                      fontWeight: 700,
+                      color: '#fff',
+                      textTransform: 'uppercase',
                       flexShrink: 0,
                     }}
                   >
-                    <SidebarIcon name={item.icon} active={active} />
-                  </span>
-                  {item.label}
-                </Link>
-              );
-            })}
-          </div>
-        ))}
-      </nav>
-
-      <div style={{ padding: '12px 10px', borderTop: '1px solid rgba(255,255,255,.08)', flexShrink: 0 }}>
-        {user && (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '8px 10px',
-              borderRadius: 8,
-              background: 'rgba(255,255,255,.06)',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                    {initial}
+                  </div>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 12, color: 'rgba(255,255,255,.42)' }}>Usuario</div>
+                    <div
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 600,
+                        color: 'rgba(255,255,255,.84)',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        textTransform: 'capitalize',
+                      }}
+                    >
+                      {user}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={onLogout}
+                  title="Sair"
+                  style={{
+                    background: 'rgba(255,255,255,.08)',
+                    border: '1px solid rgba(255,255,255,.1)',
+                    borderRadius: 10,
+                    cursor: 'pointer',
+                    color: 'rgba(255,255,255,.72)',
+                    width: 36,
+                    height: 36,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  <ControlIcon name="logout" />
+                </button>
+              </div>
+            ) : (
               <div
                 style={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: '50%',
-                  background: 'var(--blue-500)',
                   display: 'flex',
+                  flexDirection: 'column',
                   alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: 12,
-                  fontWeight: 700,
-                  color: '#fff',
-                  textTransform: 'uppercase',
+                  gap: 8,
                 }}
               >
-                {user[0]}
+                <div
+                  title={user}
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: '50%',
+                    background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 14,
+                    fontWeight: 700,
+                    color: '#fff',
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  {initial}
+                </div>
+                <button
+                  onClick={onLogout}
+                  title="Sair"
+                  style={{
+                    background: 'rgba(255,255,255,.08)',
+                    border: '1px solid rgba(255,255,255,.1)',
+                    borderRadius: 12,
+                    cursor: 'pointer',
+                    color: 'rgba(255,255,255,.72)',
+                    width: 40,
+                    height: 40,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <ControlIcon name="logout" />
+                </button>
               </div>
-              <span style={{ fontSize: 13, color: 'rgba(255,255,255,.7)', textTransform: 'capitalize' }}>{user}</span>
-            </div>
-            <button
-              onClick={onLogout}
-              title="Sair"
-              style={{
-                background: 'rgba(255,255,255,.08)',
-                border: '1px solid rgba(255,255,255,.1)',
-                borderRadius: 6,
-                cursor: 'pointer',
-                color: 'rgba(255,255,255,.5)',
-                fontSize: 14,
-                width: 28,
-                height: 28,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              S
-            </button>
-          </div>
-        )}
-      </div>
-    </aside>
+            )
+          ) : null}
+        </div>
+      </aside>
+    </>
   );
 }
