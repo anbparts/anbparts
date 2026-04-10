@@ -17,6 +17,14 @@ function today() {
   return dateInputValue(new Date());
 }
 
+function formatCompactDate(value: string | null | undefined) {
+  if (!value) return '-';
+  const [datePart] = String(value).split('T');
+  const [year, month, day] = datePart.split('-');
+  if (!year || !month || !day) return datePart || '-';
+  return `${day}/${month}/${year.slice(-2)}`;
+}
+
 function roundMoney(value: number) {
   return Math.round(value * 100) / 100;
 }
@@ -64,6 +72,8 @@ const PREJUIZO_OPTIONS = [
   'Peça Restrita - Sem Revenda',
   'Extravio no Estoque',
 ];
+
+type EstoqueViewportMode = 'phone' | 'tablet-portrait' | 'tablet-landscape' | 'desktop';
 
 const cs: any = {
   topbar: { height: 'var(--topbar-h)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 28px', background: 'var(--white)', borderBottom: '1px solid var(--border)', position: 'sticky' as const, top: 0, zIndex: 50 },
@@ -789,6 +799,7 @@ export default function EstoquePage() {
   const [data, setData] = useState<any>({ total: 0, totalDisp: 0, totalVend: 0, data: [] });
   const [motos, setMotos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [viewportMode, setViewportMode] = useState<EstoqueViewportMode>('desktop');
   const [modal, setModal] = useState(false);
   const [editPeca, setEditPeca] = useState<any>(null);
   const [vendaModal, setVendaModal] = useState(false);
@@ -835,6 +846,44 @@ export default function EstoquePage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const phoneMedia = window.matchMedia('(max-width: 767px)');
+    const tabletPortraitMedia = window.matchMedia('(pointer: coarse) and (min-width: 768px) and (max-width: 1024px) and (orientation: portrait)');
+    const tabletLandscapeMedia = window.matchMedia('(pointer: coarse) and (min-width: 900px) and (max-width: 1600px) and (orientation: landscape)');
+
+    const syncViewportMode = () => {
+      if (phoneMedia.matches) {
+        setViewportMode('phone');
+        return;
+      }
+
+      if (tabletPortraitMedia.matches) {
+        setViewportMode('tablet-portrait');
+        return;
+      }
+
+      if (tabletLandscapeMedia.matches) {
+        setViewportMode('tablet-landscape');
+        return;
+      }
+
+      setViewportMode('desktop');
+    };
+
+    syncViewportMode();
+    phoneMedia.addEventListener('change', syncViewportMode);
+    tabletPortraitMedia.addEventListener('change', syncViewportMode);
+    tabletLandscapeMedia.addEventListener('change', syncViewportMode);
+
+    return () => {
+      phoneMedia.removeEventListener('change', syncViewportMode);
+      tabletPortraitMedia.removeEventListener('change', syncViewportMode);
+      tabletLandscapeMedia.removeEventListener('change', syncViewportMode);
+    };
+  }, []);
 
   useEffect(() => {
     const visibleIds = new Set((data.data || []).map((p: any) => p.id));
@@ -944,6 +993,43 @@ export default function EstoquePage() {
   const hasNextPage = filters.page < totalPages;
   const visiblePecaIds = (data.data || []).map((p: any) => p.id);
   const allVisibleSelected = visiblePecaIds.length > 0 && visiblePecaIds.every((id: number) => selectedPecaIds.includes(id));
+  const isPhone = viewportMode === 'phone';
+  const isTabletPortrait = viewportMode === 'tablet-portrait';
+  const isTabletLandscape = viewportMode === 'tablet-landscape';
+  const useCardList = isPhone || isTabletPortrait;
+  const pagePadding = isPhone ? 14 : isTabletPortrait || isTabletLandscape ? 18 : 28;
+  const filterGridColumns = isPhone
+    ? '1fr'
+    : isTabletPortrait
+    ? 'repeat(2, minmax(0, 1fr))'
+    : isTabletLandscape
+    ? 'repeat(4, minmax(0, 1fr))'
+    : 'repeat(6, minmax(0, 1fr))';
+  const summaryGridColumns = isPhone ? 'repeat(2, minmax(0, 1fr))' : 'repeat(3, minmax(0, 1fr))';
+  const denseTablePadding = isTabletLandscape ? '9px 8px' : '10px 10px';
+  const denseTableHeaderPadding = isTabletLandscape ? '9px 8px' : '10px 10px';
+  const summaryCards = [
+    { l: 'Total', v: data.total, c: 'var(--ink)' },
+    { l: 'Em estoque', v: data.totalDisp, c: 'var(--sage)' },
+    { l: 'Vendidas', v: data.totalVend, c: 'var(--amber)' },
+  ];
+  const tableHeaders = [
+    { label: '', sort: null, kind: 'select', width: 38 },
+    { label: 'ID', sort: 'motoId', width: 52 },
+    { label: 'ID Peca', sort: 'idPeca', width: 88 },
+    { label: 'Moto', sort: 'moto', width: isTabletLandscape ? 124 : 138 },
+    { label: 'Descricao', sort: 'descricao', width: isTabletLandscape ? '18%' : '21%' },
+    { label: 'Cadastro', sort: 'cadastro', width: 72 },
+    { label: 'Preco ML', sort: 'precoML', width: 90 },
+    { label: 'Vl. Liq.', sort: 'valorLiq', width: 86 },
+    { label: 'Frete', sort: 'valorFrete', width: 78 },
+    { label: 'Taxas', sort: 'valorTaxas', width: 78 },
+    { label: 'Venda', sort: 'dataVenda', width: 70 },
+    { label: 'Pedido', sort: 'blingPedidoNum', width: 72 },
+    { label: 'Detran', sort: null, width: 58 },
+    { label: 'Status', sort: 'disponivel', width: 94 },
+    { label: '', sort: null, width: 42 },
+  ] as const;
 
   return (
     <>
@@ -953,43 +1039,45 @@ export default function EstoquePage() {
           <div style={cs.sub}>Controle de pecas e disponibilidade</div>
         </div>
       </div>
-      <div style={{ padding: 28 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 14, marginBottom: 20 }}>
-          {[
-            { l: 'Total', v: data.total, c: 'var(--ink)' },
-            { l: 'Em estoque', v: data.totalDisp, c: 'var(--sage)' },
-            { l: 'Vendidas', v: data.totalVend, c: 'var(--amber)' },
-          ].map((card) => (
-            <div key={card.l} style={cs.sCard}>
-              <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '0.6px', textTransform: 'uppercase', marginBottom: 10 }}>{card.l}</div>
-              <div style={{ fontFamily: 'Fraunces, serif', fontSize: 26, fontWeight: 500, color: card.c }}>{card.v}</div>
+      <div style={{ padding: pagePadding }}>
+        <div style={{ display: 'grid', gridTemplateColumns: summaryGridColumns, gap: isPhone ? 12 : 14, marginBottom: 20 }}>
+          {summaryCards.map((card) => (
+            <div key={card.l} style={{ ...cs.sCard, padding: isPhone ? '14px 14px' : '18px 20px' }}>
+              <div style={{ fontSize: isPhone ? 10.5 : 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '0.6px', textTransform: 'uppercase', marginBottom: 10 }}>{card.l}</div>
+              <div style={{ fontFamily: 'Fraunces, serif', fontSize: isPhone ? 22 : 26, fontWeight: 500, color: card.c }}>{card.v}</div>
             </div>
           ))}
         </div>
 
         <div style={cs.card}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', gap: 10 }}>
-            <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>Pecas</div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <select style={cs.sel} value={filters.motoId} onChange={(e) => setFilters({ ...filters, motoId: e.target.value, page: 1 })}>
+          <div style={{ padding: isPhone ? '14px' : '14px 18px', borderBottom: '1px solid var(--border)', display: 'grid', gap: 12 }}>
+            <div style={{ fontFamily: 'Fraunces, serif', fontSize: isPhone ? 14 : 15, fontWeight: 600 }}>Pecas</div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: filterGridColumns, gap: 8 }}>
+              <select style={{ ...cs.sel, width: '100%' }} value={filters.motoId} onChange={(e) => setFilters({ ...filters, motoId: e.target.value, page: 1 })}>
                 <option value="">Todas motos</option>
                 {motos.map((m: any) => <option key={m.id} value={m.id}>ID {m.id} - {m.marca} {m.modelo}</option>)}
               </select>
-              <select style={cs.sel} value={filters.disponivel} onChange={(e) => setFilters({ ...filters, disponivel: e.target.value, page: 1 })}>
+              <select style={{ ...cs.sel, width: '100%' }} value={filters.disponivel} onChange={(e) => setFilters({ ...filters, disponivel: e.target.value, page: 1 })}>
                 <option value="">Todos status</option>
                 <option value="true">Em estoque</option>
                 <option value="false">Vendido</option>
               </select>
-              <select style={cs.sel} value={filters.mercadoLivreLink} onChange={(e) => setFilters({ ...filters, mercadoLivreLink: e.target.value, page: 1 })}>
+              <select style={{ ...cs.sel, width: '100%' }} value={filters.mercadoLivreLink} onChange={(e) => setFilters({ ...filters, mercadoLivreLink: e.target.value, page: 1 })}>
                 <option value="">Link ML</option>
                 <option value="com">Com Link ML</option>
                 <option value="sem">Sem Link ML</option>
               </select>
-              <select style={cs.sel} value={filters.precoMlZero} onChange={(e) => setFilters({ ...filters, precoMlZero: e.target.value, page: 1 })}>
+              <select style={{ ...cs.sel, width: '100%' }} value={filters.precoMlZero} onChange={(e) => setFilters({ ...filters, precoMlZero: e.target.value, page: 1 })}>
                 <option value="">Preco ML</option>
                 <option value="true">Preco ML zero</option>
               </select>
-              <input style={{ ...cs.sel, paddingLeft: 11 }} placeholder="ID, descricao ou pedido..." value={filters.search} onChange={(e) => setFilters({ ...filters, search: e.target.value, page: 1 })} />
+              <input
+                style={{ ...cs.sel, width: '100%', paddingLeft: 11, gridColumn: isPhone ? 'span 1' : 'span 2' }}
+                placeholder="ID, descricao ou pedido..."
+                value={filters.search}
+                onChange={(e) => setFilters({ ...filters, search: e.target.value, page: 1 })}
+              />
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 10px', background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 6, minHeight: 32 }}>
                 <span style={{ fontSize: 12, color: 'var(--ink-muted)', whiteSpace: 'nowrap' }}>Venda de</span>
                 <input
@@ -997,7 +1085,7 @@ export default function EstoquePage() {
                   value={filters.dataVendaFrom}
                   max={filters.dataVendaTo || undefined}
                   onChange={(e) => setFilters({ ...filters, dataVendaFrom: e.target.value, page: 1 })}
-                  style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: 13, fontFamily: 'Geist, sans-serif', color: 'var(--ink)', minWidth: 128 }}
+                  style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: 13, fontFamily: 'Geist, sans-serif', color: 'var(--ink)', minWidth: 0, width: '100%' }}
                 />
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 10px', background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 6, minHeight: 32 }}>
@@ -1007,10 +1095,13 @@ export default function EstoquePage() {
                   value={filters.dataVendaTo}
                   min={filters.dataVendaFrom || undefined}
                   onChange={(e) => setFilters({ ...filters, dataVendaTo: e.target.value, page: 1 })}
-                  style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: 13, fontFamily: 'Geist, sans-serif', color: 'var(--ink)', minWidth: 128 }}
+                  style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: 13, fontFamily: 'Geist, sans-serif', color: 'var(--ink)', minWidth: 0, width: '100%' }}
                 />
               </div>
-              <select style={cs.sel} value={String(filters.perPage)} onChange={(e) => setFilters({ ...filters, perPage: Number(e.target.value), page: 1 })}>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <select style={{ ...cs.sel, width: isPhone ? '100%' : undefined }} value={String(filters.perPage)} onChange={(e) => setFilters({ ...filters, perPage: Number(e.target.value), page: 1 })}>
                 {pageSizeOptions.map((size) => <option key={size} value={size}>{size} por pagina</option>)}
               </select>
               <button
@@ -1024,15 +1115,16 @@ export default function EstoquePage() {
                   padding: '6px 14px',
                   fontSize: 13,
                   opacity: selectedPecaIds.length ? 1 : 0.7,
+                  width: isPhone ? '100%' : undefined,
                 }}
               >
                 Deletar em massa{selectedPecaIds.length ? ` (${selectedPecaIds.length})` : ''}
               </button>
-              <button style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)', padding: '6px 14px', fontSize: 13 }} onClick={() => { setEditPeca(null); setModal(true); }}>+ Nova peca</button>
+              <button style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)', padding: '6px 14px', fontSize: 13, width: isPhone ? '100%' : undefined }} onClick={() => { setEditPeca(null); setModal(true); }}>+ Nova peca</button>
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 18px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', gap: 10, background: '#fcfcfd' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: isPhone ? '10px 14px' : '10px 18px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', gap: 10, background: '#fcfcfd' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '0.5px', textTransform: 'uppercase' }}>Periodo rapido</span>
               <button onClick={() => applyDatePreset('today')} style={{ ...cs.btn, padding: '4px 10px', fontSize: 12, background: 'var(--white)', borderColor: 'var(--border)', color: 'var(--ink-soft)' }}>Hoje</button>
@@ -1043,99 +1135,47 @@ export default function EstoquePage() {
             <button
               onClick={clearFilters}
               disabled={!hasActiveFilters}
-              style={{ ...cs.btn, padding: '4px 10px', fontSize: 12, background: 'var(--white)', borderColor: 'var(--border)', color: hasActiveFilters ? 'var(--ink-soft)' : 'var(--ink-muted)', opacity: hasActiveFilters ? 1 : 0.6 }}
+              style={{ ...cs.btn, padding: '4px 10px', fontSize: 12, background: 'var(--white)', borderColor: 'var(--border)', color: hasActiveFilters ? 'var(--ink-soft)' : 'var(--ink-muted)', opacity: hasActiveFilters ? 1 : 0.6, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}
             >
               Limpar filtros
             </button>
           </div>
 
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-              <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
-                <tr>
-                  {[
-                    { label: '', sort: null, kind: 'select' },
-                    { label: 'ID Moto', sort: 'motoId' },
-                    { label: 'ID Peca', sort: 'idPeca' },
-                    { label: 'Moto', sort: 'moto' },
-                    { label: 'Descricao', sort: 'descricao' },
-                    { label: 'Cadastro', sort: 'cadastro' },
-                    { label: 'Preco ML', sort: 'precoML' },
-                    { label: 'Vl. Liq.', sort: 'valorLiq' },
-                    { label: 'Frete', sort: 'valorFrete' },
-                    { label: 'Taxas', sort: 'valorTaxas' },
-                    { label: 'Data Venda', sort: 'dataVenda' },
-                    { label: 'Pedido Bling', sort: 'blingPedidoNum' },
-                    { label: 'Detran', sort: null },
-                    { label: 'Status', sort: 'disponivel' },
-                    { label: '', sort: null },
-                  ].map((header, index) => (
-                    <th key={`${header.label || 'actions'}-${index}`} style={cs.th}>
-                      {header.kind === 'select' ? (
+          {useCardList ? (
+            <div style={{ padding: isPhone ? 12 : 14, display: 'grid', gap: 12 }}>
+              {loading ? (
+                <div style={{ ...cs.sCard, textAlign: 'center', color: 'var(--ink-muted)' }}>Carregando...</div>
+              ) : data.data.length === 0 ? (
+                <div style={{ ...cs.sCard, textAlign: 'center', color: 'var(--ink-muted)' }}>Nenhuma peca encontrada</div>
+              ) : data.data.map((p: any) => {
+                const motoLabel = [p.moto?.marca, p.moto?.modelo].filter(Boolean).join(' ');
+
+                return (
+                  <div key={p.id} style={{ border: '1px solid var(--border)', borderRadius: 14, padding: isPhone ? 14 : 16, background: 'var(--white)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', marginBottom: 12 }}>
+                      <div style={{ display: 'flex', gap: 10, minWidth: 0 }}>
                         <input
                           type="checkbox"
-                          checked={allVisibleSelected}
-                          onChange={toggleSelectAllVisible}
-                          aria-label="Selecionar todas as pecas visiveis"
-                          style={{ width: 14, height: 14, cursor: 'pointer' }}
+                          checked={selectedPecaIds.includes(p.id)}
+                          onChange={() => toggleSelectedPeca(p.id)}
+                          aria-label={`Selecionar peca ${p.idPeca}`}
+                          style={{ width: 14, height: 14, cursor: 'pointer', marginTop: 4 }}
                         />
-                      ) : header.sort ? (
-                        <button
-                          type="button"
-                          onClick={() => toggleSort(header.sort!)}
-                          style={{
-                            border: 'none',
-                            background: 'transparent',
-                            padding: 0,
-                            cursor: 'pointer',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 5,
-                            font: 'inherit',
-                            color: filters.orderBy === header.sort ? 'var(--ink)' : 'var(--ink-muted)',
-                            textTransform: 'inherit',
-                            letterSpacing: 'inherit',
-                          }}
-                          title={`Ordenar por ${header.label}`}
-                        >
-                          <span>{header.label}</span>
-                          <span style={{ fontSize: 11, minWidth: 10 }}>{sortIndicator(header.sort)}</span>
-                        </button>
-                      ) : (
-                        header.label
-                      )}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr><td colSpan={15} style={{ ...cs.td, textAlign: 'center', color: 'var(--ink-muted)', borderBottom: 'none' }}>Carregando...</td></tr>
-                ) : data.data.length === 0 ? (
-                  <tr><td colSpan={15} style={{ ...cs.td, textAlign: 'center', color: 'var(--ink-muted)', padding: '40px 20px', borderBottom: 'none' }}>Nenhuma peca encontrada</td></tr>
-                ) : data.data.map((p: any) => (
-                  <tr key={p.id}>
-                    <td style={{ ...cs.td, width: 36 }}>
-                      <input
-                        type="checkbox"
-                        checked={selectedPecaIds.includes(p.id)}
-                        onChange={() => toggleSelectedPeca(p.id)}
-                        aria-label={`Selecionar peca ${p.idPeca}`}
-                        style={{ width: 14, height: 14, cursor: 'pointer' }}
-                      />
-                    </td>
-                    <td style={cs.td}><span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 12, color: 'var(--ink-muted)' }}>#{p.motoId}</span></td>
-                    <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, color: 'var(--blue)' }}>{p.idPeca}</td>
-                    <td style={{ ...cs.td, color: 'var(--ink-muted)', fontSize: 12 }}>{p.moto?.marca} {p.moto?.modelo}</td>
-                    <td style={{ ...cs.td, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={p.descricao}>{p.descricao}</td>
-                    <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 11, color: 'var(--ink-muted)' }}>{p.cadastro?.split('T')[0] || '-'}</td>
-                    <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12.5 }}>{fmt(Number(p.precoML))}</td>
-                    <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, color: 'var(--ink-muted)' }}>{fmt(Number(p.valorLiq))}</td>
-                    <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, color: 'var(--ink-muted)' }}>{fmt(Number(p.valorFrete))}</td>
-                    <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, color: 'var(--ink-muted)' }}>{fmt(Number(p.valorTaxas))}</td>
-                    <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 11, color: 'var(--ink-muted)' }}>{p.dataVenda?.split('T')[0] || '-'}</td>
-                    <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 11, color: p.blingPedidoNum ? 'var(--blue)' : 'var(--ink-muted)' }}>{p.blingPedidoNum || '-'}</td>
-                    <td style={cs.td}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                            <span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 12.5, color: 'var(--blue-500)' }}>{p.idPeca}</span>
+                            <span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11, color: 'var(--ink-muted)' }}>ID #{p.motoId}</span>
+                          </div>
+                          <div style={{ fontSize: 12, color: 'var(--ink-muted)', lineHeight: 1.35, marginTop: 4 }}>{motoLabel || '-'}</div>
+                        </div>
+                      </div>
+                      <ActionIconButton onClick={() => setActionPeca(p)} />
+                    </div>
+
+                    <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.45, marginBottom: 12 }}>{p.descricao}</div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+                      <StatusLinkButton disponivel={Boolean(p.disponivel)} link={p.mercadoLivreLink} />
                       {hasDetranEtiqueta(p.detranEtiqueta) ? (
                         <button
                           onClick={() => setDetranPeca(p)}
@@ -1147,24 +1187,141 @@ export default function EstoquePage() {
                       ) : (
                         <DetranBadge ativo={false} />
                       )}
-                    </td>
-                    <td style={cs.td}>
-                      <StatusLinkButton disponivel={Boolean(p.disponivel)} link={p.mercadoLivreLink} />
-                    </td>
-                    <td style={cs.td}>
-                      <ActionIconButton onClick={() => setActionPeca(p)} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                    </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 18px', borderTop: '1px solid var(--border)', fontSize: 12, color: 'var(--ink-muted)', fontFamily: 'Geist Mono, monospace' }}>
-            <span>Pagina {filters.page} de {totalPages} · {data.total} total · {filters.perPage} por pagina · Ordenado por {filters.orderBy} ({filters.orderDir})</span>
-            <div style={{ display: 'flex', gap: 6 }}>
-              <button disabled={!hasPrevPage} onClick={() => setFilters({ ...filters, page: filters.page - 1 })} style={{ ...cs.btn, padding: '5px 10px', fontSize: 12, background: 'var(--white)', borderColor: 'var(--border)', color: 'var(--ink-soft)' }}>Anterior</button>
-              <button disabled={!hasNextPage} onClick={() => setFilters({ ...filters, page: filters.page + 1 })} style={{ ...cs.btn, padding: '5px 10px', fontSize: 12, background: 'var(--white)', borderColor: 'var(--border)', color: 'var(--ink-soft)' }}>Proxima</button>
+                    <div style={{ display: 'grid', gridTemplateColumns: isPhone ? 'repeat(2, minmax(0, 1fr))' : 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
+                      {[
+                        { label: 'Cadastro', value: formatCompactDate(p.cadastro) },
+                        { label: 'Venda', value: formatCompactDate(p.dataVenda) },
+                        { label: 'Pedido', value: p.blingPedidoNum || '-' },
+                        { label: 'Preco ML', value: fmt(Number(p.precoML)) },
+                        { label: 'Vl. Liq.', value: fmt(Number(p.valorLiq)) },
+                        { label: 'Frete', value: fmt(Number(p.valorFrete)) },
+                        { label: 'Taxas', value: fmt(Number(p.valorTaxas)) },
+                      ].map((item) => (
+                        <div key={item.label}>
+                          <div style={{ fontSize: 10.5, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '0.4px', textTransform: 'uppercase' }}>{item.label}</div>
+                          <div style={{ marginTop: 3, fontSize: 12.5, fontFamily: 'Geist Mono, monospace', color: 'var(--ink)' }}>{item.value}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: isTabletLandscape ? 12 : 13, tableLayout: 'fixed' as const }}>
+                <colgroup>
+                  {tableHeaders.map((header, index) => (
+                    <col key={`${header.label || 'actions'}-${index}`} style={{ width: typeof header.width === 'number' ? `${header.width}px` : header.width }} />
+                  ))}
+                </colgroup>
+                <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
+                  <tr>
+                    {tableHeaders.map((header, index) => (
+                      <th key={`${header.label || 'actions'}-${index}`} style={{ ...cs.th, padding: denseTableHeaderPadding }}>
+                        {header.kind === 'select' ? (
+                          <input
+                            type="checkbox"
+                            checked={allVisibleSelected}
+                            onChange={toggleSelectAllVisible}
+                            aria-label="Selecionar todas as pecas visiveis"
+                            style={{ width: 14, height: 14, cursor: 'pointer' }}
+                          />
+                        ) : header.sort ? (
+                          <button
+                            type="button"
+                            onClick={() => toggleSort(header.sort)}
+                            style={{
+                              border: 'none',
+                              background: 'transparent',
+                              padding: 0,
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 5,
+                              font: 'inherit',
+                              color: filters.orderBy === header.sort ? 'var(--ink)' : 'var(--ink-muted)',
+                              textTransform: 'inherit',
+                              letterSpacing: 'inherit',
+                            }}
+                            title={`Ordenar por ${header.label}`}
+                          >
+                            <span>{header.label}</span>
+                            <span style={{ fontSize: 11, minWidth: 10 }}>{sortIndicator(header.sort)}</span>
+                          </button>
+                        ) : (
+                          header.label
+                        )}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {loading ? (
+                    <tr><td colSpan={15} style={{ ...cs.td, textAlign: 'center', color: 'var(--ink-muted)', borderBottom: 'none' }}>Carregando...</td></tr>
+                  ) : data.data.length === 0 ? (
+                    <tr><td colSpan={15} style={{ ...cs.td, textAlign: 'center', color: 'var(--ink-muted)', padding: '40px 20px', borderBottom: 'none' }}>Nenhuma peca encontrada</td></tr>
+                  ) : data.data.map((p: any) => (
+                    <tr key={p.id}>
+                      <td style={{ ...cs.td, padding: denseTablePadding }}>
+                        <input
+                          type="checkbox"
+                          checked={selectedPecaIds.includes(p.id)}
+                          onChange={() => toggleSelectedPeca(p.id)}
+                          aria-label={`Selecionar peca ${p.idPeca}`}
+                          style={{ width: 14, height: 14, cursor: 'pointer' }}
+                        />
+                      </td>
+                      <td style={{ ...cs.td, padding: denseTablePadding }}><span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11.5, color: 'var(--ink-muted)' }}>#{p.motoId}</span></td>
+                      <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11.5, color: 'var(--blue-500)', whiteSpace: 'nowrap' }}>{p.idPeca}</td>
+                      <td style={{ ...cs.td, padding: denseTablePadding, color: 'var(--ink-muted)', fontSize: 11.5, lineHeight: 1.35 }}>
+                        <div style={{ display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden' }}>
+                          {[p.moto?.marca, p.moto?.modelo].filter(Boolean).join(' ')}
+                        </div>
+                      </td>
+                      <td style={{ ...cs.td, padding: denseTablePadding, fontSize: 12 }}>
+                        <div title={p.descricao} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.descricao}</div>
+                      </td>
+                      <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11, color: 'var(--ink-muted)', whiteSpace: 'nowrap' }}>{formatCompactDate(p.cadastro)}</td>
+                      <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11.5, whiteSpace: 'nowrap' }}>{fmt(Number(p.precoML))}</td>
+                      <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11.5, color: 'var(--ink-muted)', whiteSpace: 'nowrap' }}>{fmt(Number(p.valorLiq))}</td>
+                      <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11.5, color: 'var(--ink-muted)', whiteSpace: 'nowrap' }}>{fmt(Number(p.valorFrete))}</td>
+                      <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11.5, color: 'var(--ink-muted)', whiteSpace: 'nowrap' }}>{fmt(Number(p.valorTaxas))}</td>
+                      <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11, color: 'var(--ink-muted)', whiteSpace: 'nowrap' }}>{formatCompactDate(p.dataVenda)}</td>
+                      <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11, color: p.blingPedidoNum ? 'var(--blue-500)' : 'var(--ink-muted)', whiteSpace: 'nowrap' }}>{p.blingPedidoNum || '-'}</td>
+                      <td style={{ ...cs.td, padding: denseTablePadding, textAlign: 'center' }}>
+                        {hasDetranEtiqueta(p.detranEtiqueta) ? (
+                          <button
+                            onClick={() => setDetranPeca(p)}
+                            title="Ver etiqueta DETRAN"
+                            style={{ border: 'none', background: 'transparent', padding: 0, cursor: 'pointer' }}
+                          >
+                            <DetranBadge ativo />
+                          </button>
+                        ) : (
+                          <DetranBadge ativo={false} />
+                        )}
+                      </td>
+                      <td style={{ ...cs.td, padding: denseTablePadding, textAlign: 'center' }}>
+                        <StatusLinkButton disponivel={Boolean(p.disponivel)} link={p.mercadoLivreLink} />
+                      </td>
+                      <td style={{ ...cs.td, padding: denseTablePadding, textAlign: 'center' }}>
+                        <ActionIconButton onClick={() => setActionPeca(p)} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <div style={{ display: 'flex', alignItems: isPhone ? 'stretch' : 'center', flexDirection: isPhone ? 'column' : 'row', justifyContent: 'space-between', padding: isPhone ? '12px 14px' : '12px 18px', borderTop: '1px solid var(--border)', fontSize: 12, color: 'var(--ink-muted)', fontFamily: 'Geist Mono, monospace', gap: 10 }}>
+            <span style={{ lineHeight: 1.45 }}>Pagina {filters.page} de {totalPages} · {data.total} total · {filters.perPage} por pagina · Ordenado por {filters.orderBy} ({filters.orderDir})</span>
+            <div style={{ display: 'flex', gap: 6, width: isPhone ? '100%' : undefined }}>
+              <button disabled={!hasPrevPage} onClick={() => setFilters({ ...filters, page: filters.page - 1 })} style={{ ...cs.btn, padding: '5px 10px', fontSize: 12, background: 'var(--white)', borderColor: 'var(--border)', color: 'var(--ink-soft)', flex: isPhone ? 1 : undefined, justifyContent: 'center' }}>Anterior</button>
+              <button disabled={!hasNextPage} onClick={() => setFilters({ ...filters, page: filters.page + 1 })} style={{ ...cs.btn, padding: '5px 10px', fontSize: 12, background: 'var(--white)', borderColor: 'var(--border)', color: 'var(--ink-soft)', flex: isPhone ? 1 : undefined, justifyContent: 'center' }}>Proxima</button>
             </div>
           </div>
         </div>
