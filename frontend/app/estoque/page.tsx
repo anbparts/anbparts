@@ -515,10 +515,15 @@ function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, peca, 
   const modalContentPadding = modalIsPhone ? '16px 14px 18px' : '22px 24px';
   const modalHeaderPadding = modalIsPhone ? '16px 14px 14px' : '22px 24px 16px';
   const modalFooterPadding = modalIsPhone ? '14px' : '16px 24px 22px';
+  const modalShellPadding = modalIsPhone ? 0 : modalIsTabletLandscape ? 16 : 24;
+  const modalTopColumns = modalIsPhone ? '1fr' : modalIsTabletLandscape ? 'minmax(0, 1.6fr) minmax(220px, 0.8fr)' : '1fr';
+  const modalMainColumns = modalIsTabletLandscape ? 'minmax(0, 1.2fr) minmax(0, 0.95fr)' : '1fr';
+  const modalActionColumns = modalIsPhone ? '1fr' : modalIsTabletLandscape ? 'minmax(0, 1fr) 170px 170px' : dualFieldColumns;
+  const modalFinancialColumns = modalIsPhone ? '1fr' : '1fr 1fr';
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 200, display: 'flex', alignItems: modalIsPhone ? 'stretch' : 'center', justifyContent: 'center', padding: modalIsPhone ? 0 : 24, backdropFilter: 'blur(2px)' }}>
-      <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: modalIsPhone ? 0 : 16, width: '100%', maxWidth: modalIsTabletLandscape ? 920 : 540, maxHeight: modalIsPhone ? '100dvh' : '92vh', minHeight: modalIsPhone ? '100dvh' : undefined, overflowY: 'auto', boxShadow: '0 12px 32px rgba(0,0,0,.10)' }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 200, display: 'flex', alignItems: modalIsPhone ? 'stretch' : 'center', justifyContent: 'center', padding: modalShellPadding, backdropFilter: 'blur(2px)' }}>
+      <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: modalIsPhone ? 0 : 16, width: '100%', maxWidth: modalIsTabletLandscape ? 1040 : 540, maxHeight: modalIsPhone ? '100dvh' : modalIsTabletLandscape ? 'calc(100dvh - 32px)' : '92vh', minHeight: modalIsPhone ? '100dvh' : undefined, overflowY: 'auto', boxShadow: '0 12px 32px rgba(0,0,0,.10)' }}>
         <div style={{ padding: modalHeaderPadding, borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
           <div>
             <div style={{ fontFamily: 'Fraunces, serif', fontSize: modalIsPhone ? 17 : 18, fontWeight: 600 }}>{peca ? 'Editar peca' : 'Nova peca'}</div>
@@ -527,12 +532,15 @@ function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, peca, 
           <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', flexShrink: 0 }}>X</button>
         </div>
         <div style={{ padding: modalContentPadding }}>
-          <div style={{ marginBottom: 14 }}>
-            <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-soft)' }}>Moto *</label>
-            <select style={{ ...cs.fi, cursor: 'pointer' }} value={form.motoId} onChange={(e) => handleMotoChange(e.target.value)}>
-              <option value="">Selecione...</option>
-              {motos.map((m: any) => <option key={m.id} value={m.id}>ID {m.id} - {m.marca} {m.modelo}</option>)}
-            </select>
+          <div style={{ display: 'grid', gridTemplateColumns: modalTopColumns, gap: 12, alignItems: 'start' }}>
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-soft)' }}>Moto *</label>
+              <select style={{ ...cs.fi, cursor: 'pointer' }} value={form.motoId} onChange={(e) => handleMotoChange(e.target.value)}>
+                <option value="">Selecione...</option>
+                {motos.map((m: any) => <option key={m.id} value={m.id}>ID {m.id} - {m.marca} {m.modelo}</option>)}
+              </select>
+            </div>
+            {renderField('Data de cadastro', 'cadastro', 'date')}
           </div>
           {!peca && (
             <div style={{ marginBottom: 14 }}>
@@ -549,11 +557,10 @@ function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, peca, 
                   ? 'Buscando sugestao automatica...'
                   : suggestion?.sugestao
                     ? `Sugestao automatica: ${suggestion.sugestao}${suggestion?.prefixo ? ` - Prefixo ${suggestion.prefixo}` : ''}`
-                    : 'Voce pode informar qualquer ID de peca manualmente.'}
+                  : 'Voce pode informar qualquer ID de peca manualmente.'}
               </div>
             </div>
           )}
-          {renderField('Data de cadastro', 'cadastro', 'date')}
           {peca && (
             <div style={{ display: 'grid', gridTemplateColumns: dualFieldColumns, gap: 12 }}>
               <div style={{ marginBottom: 14 }}>
@@ -578,69 +585,144 @@ function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, peca, 
               </div>
             </div>
           )}
-          {renderField('Descricao da peca *', 'descricao', 'text', 'Ex: Tampa lateral direita')}
-          {renderField('Pedido Bling', 'blingPedidoNum', 'text', 'Ex: 449')}
-          <div style={{ display: 'grid', gridTemplateColumns: dualFieldColumns, gap: 12 }}>
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-soft)' }}>Preco ML (R$)</label>
-              <input
-                style={cs.fi}
-                type="number"
-                placeholder="0,00"
-                value={form.precoML}
-                onChange={(e) => handlePrecoMlChange(e.target.value)}
-              />
-            </div>
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-soft)' }}>Frete (R$)</label>
-              <input
-                style={cs.fi}
-                type="number"
-                placeholder="0,00"
-                value={form.valorFrete}
-                onChange={(e) => handleFreteChange(e.target.value)}
-              />
-              {!peca && suggestion?.fretePadrao !== undefined && (
-                <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginTop: 4 }}>
-                  Frete padrao atual: {fmt(Number(suggestion.fretePadrao || 0))}
+          {modalIsTabletLandscape ? (
+            <div style={{ display: 'grid', gridTemplateColumns: modalMainColumns, gap: 16, alignItems: 'start' }}>
+              <div>
+                {renderField('Descricao da peca *', 'descricao', 'text', 'Ex: Tampa lateral direita')}
+                <div style={{ display: 'grid', gridTemplateColumns: modalActionColumns, gap: 12, alignItems: 'start' }}>
+                  {renderField('Pedido Bling', 'blingPedidoNum', 'text', 'Ex: 449')}
+                  <div style={{ marginBottom: 14 }}>
+                    <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-soft)' }}>Status</label>
+                    <select style={{ ...cs.fi, cursor: 'pointer' }} value={form.disponivel} onChange={(e) => setForm({ ...form, disponivel: e.target.value })}>
+                      <option value="true">Em estoque</option>
+                      <option value="false">Vendido</option>
+                    </select>
+                  </div>
+                  {renderField('Data de venda', 'dataVenda', 'date')}
                 </div>
-              )}
-            </div>
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-soft)' }}>Taxas (R$)</label>
-              <input
-                style={cs.fi}
-                type="number"
-                placeholder="0,00"
-                value={form.valorTaxas}
-                onChange={(e) => handleTaxasChange(e.target.value)}
-              />
-              {!peca && suggestion?.taxaPadraoPct !== undefined && (
-                <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginTop: 4 }}>
-                  Taxa padrao atual: {Number(suggestion.taxaPadraoPct || 0)}%
+              </div>
+              <div style={{ border: '1px solid var(--border)', borderRadius: 14, padding: '14px 14px 2px', background: '#fcfcfd' }}>
+                <div style={{ fontSize: 10.5, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: 10 }}>Financeiro</div>
+                <div style={{ display: 'grid', gridTemplateColumns: modalFinancialColumns, gap: 12 }}>
+                  <div style={{ marginBottom: 14 }}>
+                    <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-soft)' }}>Preco ML (R$)</label>
+                    <input
+                      style={cs.fi}
+                      type="number"
+                      placeholder="0,00"
+                      value={form.precoML}
+                      onChange={(e) => handlePrecoMlChange(e.target.value)}
+                    />
+                  </div>
+                  <div style={{ marginBottom: 14 }}>
+                    <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-soft)' }}>Frete (R$)</label>
+                    <input
+                      style={cs.fi}
+                      type="number"
+                      placeholder="0,00"
+                      value={form.valorFrete}
+                      onChange={(e) => handleFreteChange(e.target.value)}
+                    />
+                    {!peca && suggestion?.fretePadrao !== undefined && (
+                      <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginTop: 4 }}>
+                        Frete padrao atual: {fmt(Number(suggestion.fretePadrao || 0))}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ marginBottom: 14 }}>
+                    <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-soft)' }}>Taxas (R$)</label>
+                    <input
+                      style={cs.fi}
+                      type="number"
+                      placeholder="0,00"
+                      value={form.valorTaxas}
+                      onChange={(e) => handleTaxasChange(e.target.value)}
+                    />
+                    {!peca && suggestion?.taxaPadraoPct !== undefined && (
+                      <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginTop: 4 }}>
+                        Taxa padrao atual: {Number(suggestion.taxaPadraoPct || 0)}%
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ marginBottom: 14 }}>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--sage)' }}>Valor liquido (R$)</label>
+                    <input
+                      style={{ ...cs.fi, background: '#f0fdf4', borderColor: '#86efac', color: 'var(--sage)', fontWeight: 600 }}
+                      type="text"
+                      readOnly
+                      value={fmt(preview.valorLiq)}
+                    />
+                  </div>
                 </div>
-              )}
+              </div>
             </div>
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--sage)' }}>Valor liquido (R$)</label>
-              <input
-                style={{ ...cs.fi, background: '#f0fdf4', borderColor: '#86efac', color: 'var(--sage)', fontWeight: 600 }}
-                type="text"
-                readOnly
-                value={fmt(preview.valorLiq)}
-              />
-            </div>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: dualFieldColumns, gap: 12 }}>
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-soft)' }}>Status</label>
-              <select style={{ ...cs.fi, cursor: 'pointer' }} value={form.disponivel} onChange={(e) => setForm({ ...form, disponivel: e.target.value })}>
-                <option value="true">Em estoque</option>
-                <option value="false">Vendido</option>
-              </select>
-            </div>
-            {renderField('Data de venda', 'dataVenda', 'date')}
-          </div>
+          ) : (
+            <>
+              {renderField('Descricao da peca *', 'descricao', 'text', 'Ex: Tampa lateral direita')}
+              {renderField('Pedido Bling', 'blingPedidoNum', 'text', 'Ex: 449')}
+              <div style={{ display: 'grid', gridTemplateColumns: dualFieldColumns, gap: 12 }}>
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-soft)' }}>Preco ML (R$)</label>
+                  <input
+                    style={cs.fi}
+                    type="number"
+                    placeholder="0,00"
+                    value={form.precoML}
+                    onChange={(e) => handlePrecoMlChange(e.target.value)}
+                  />
+                </div>
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-soft)' }}>Frete (R$)</label>
+                  <input
+                    style={cs.fi}
+                    type="number"
+                    placeholder="0,00"
+                    value={form.valorFrete}
+                    onChange={(e) => handleFreteChange(e.target.value)}
+                  />
+                  {!peca && suggestion?.fretePadrao !== undefined && (
+                    <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginTop: 4 }}>
+                      Frete padrao atual: {fmt(Number(suggestion.fretePadrao || 0))}
+                    </div>
+                  )}
+                </div>
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-soft)' }}>Taxas (R$)</label>
+                  <input
+                    style={cs.fi}
+                    type="number"
+                    placeholder="0,00"
+                    value={form.valorTaxas}
+                    onChange={(e) => handleTaxasChange(e.target.value)}
+                  />
+                  {!peca && suggestion?.taxaPadraoPct !== undefined && (
+                    <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginTop: 4 }}>
+                      Taxa padrao atual: {Number(suggestion.taxaPadraoPct || 0)}%
+                    </div>
+                  )}
+                </div>
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--sage)' }}>Valor liquido (R$)</label>
+                  <input
+                    style={{ ...cs.fi, background: '#f0fdf4', borderColor: '#86efac', color: 'var(--sage)', fontWeight: 600 }}
+                    type="text"
+                    readOnly
+                    value={fmt(preview.valorLiq)}
+                  />
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: dualFieldColumns, gap: 12 }}>
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-soft)' }}>Status</label>
+                  <select style={{ ...cs.fi, cursor: 'pointer' }} value={form.disponivel} onChange={(e) => setForm({ ...form, disponivel: e.target.value })}>
+                    <option value="true">Em estoque</option>
+                    <option value="false">Vendido</option>
+                  </select>
+                </div>
+                {renderField('Data de venda', 'dataVenda', 'date')}
+              </div>
+            </>
+          )}
           {err && <div style={{ fontSize: 12, color: 'var(--red)' }}>! {err}</div>}
         </div>
         <div style={{ padding: modalFooterPadding, display: 'flex', gap: 8, justifyContent: 'space-between', borderTop: '1px solid var(--border)', flexWrap: 'wrap', flexDirection: modalIsPhone ? 'column' : 'row' }}>
