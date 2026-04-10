@@ -37,6 +37,21 @@ const s: any = {
     letterSpacing: '0.3px',
   },
   sub2: { fontSize: 12, color: 'var(--ink-muted)', marginTop: 6 },
+  statList: { display: 'grid', gap: 6, marginTop: 10 },
+  statRow: { display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' },
+  statLabel: {
+    fontSize: 11,
+    color: 'var(--ink-muted)',
+    fontFamily: 'Geist Mono, monospace',
+    letterSpacing: '0.3px',
+  },
+  statValue: {
+    fontSize: 12,
+    color: 'var(--ink)',
+    fontFamily: 'Geist Mono, monospace',
+    fontWeight: 600,
+    letterSpacing: '0.2px',
+  },
   balanceRows: { display: 'grid', gap: 10 },
   balanceRow: { display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' },
   balanceName: { fontSize: 11, color: 'var(--ink-muted)', fontFamily: 'Geist Mono, monospace', letterSpacing: '0.5px', textTransform: 'uppercase' as const },
@@ -385,16 +400,14 @@ export default function DashboardPage() {
       sub: 'soma do valor liquido das pecas em estoque',
     },
     {
-      label: 'Total de pecas',
-      val: (dash?.totalPecas || 0).toLocaleString('pt-BR'),
-      color: 'var(--ink)',
-      sub: `${dash?.totalVendidas || 0} vendidas no sistema`,
-    },
-    {
       label: 'Pecas em estoque',
       val: (dash?.totalDisponivel || 0).toLocaleString('pt-BR'),
       color: 'var(--blue-500)',
       sub: `${dash?.totalIdsDisponiveis || 0} IDs/SKUs-base unicos`,
+      details: [
+        { label: 'Total de Pecas:', value: (dash?.totalPecas || 0).toLocaleString('pt-BR') },
+        { label: 'Vendidas no sistema:', value: (dash?.totalVendidas || 0).toLocaleString('pt-BR') },
+      ],
     },
   ];
 
@@ -461,7 +474,17 @@ export default function DashboardPage() {
               ) : (
                 <>
                   <div style={{ ...s.val, color: (card as any).color, ...maskStyle(ocultarValores) }}>{(card as any).val}</div>
-                  <div style={{ ...s.sub2, ...(card.label === 'Total de pecas' || card.label === 'Pecas em estoque' ? maskStyle(ocultarValores) : {}) }}>{(card as any).sub}</div>
+                  <div style={{ ...s.sub2, ...(card.label === 'Pecas em estoque' ? maskStyle(ocultarValores) : {}) }}>{(card as any).sub}</div>
+                  {(card as any).details?.length ? (
+                    <div style={{ ...s.statList, ...maskStyle(ocultarValores) }}>
+                      {(card as any).details.map((detail: any) => (
+                        <div key={detail.label} style={s.statRow}>
+                          <span style={s.statLabel}>{detail.label}</span>
+                          <span style={s.statValue}>{detail.value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                 </>
               )}
             </div>
