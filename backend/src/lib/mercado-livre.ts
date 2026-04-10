@@ -1,6 +1,12 @@
 import { prisma } from './prisma';
 import { getConfiguracaoGeral, saveConfiguracaoGeral } from './configuracoes-gerais';
-import { sendResendEmail } from './email';
+import {
+  renderAlertEmailLayout,
+  renderEmailBadge,
+  renderEmailMetricCard,
+  renderEmailPanel,
+  sendResendEmail,
+} from './email';
 
 const MELI_API = 'https://api.mercadolibre.com';
 const MELI_OAUTH = `${MELI_API}/oauth/token`;
@@ -360,35 +366,39 @@ export async function answerMercadoLivreQuestion(questionId: string, text: strin
 }
 
 function buildPerguntasEmailHtml(perguntas: any[]) {
+  const detailRow = (label: string, value: string, options?: { mono?: boolean }) => `
+    <tr>
+      <td valign="top" style="width:132px;padding:0 12px 8px 0;font-size:11px;line-height:1.4;letter-spacing:.08em;text-transform:uppercase;color:#64748b;">${label}</td>
+      <td valign="top" style="padding:0 0 8px 0;font-size:13px;line-height:1.65;color:#0f172a;${options?.mono ? `font-family:'JetBrains Mono',Consolas,monospace;` : ''}">${value}</td>
+    </tr>
+  `;
+
   const cards = perguntas
-    .map((item) => `
-      <div style="border:1px solid #dbe5f0;border-radius:14px;padding:18px 20px;margin:0 0 14px;background:#ffffff;">
-        <div style="font-size:11px;letter-spacing:.8px;text-transform:uppercase;color:#8da2c0;margin-bottom:10px;">Pergunta #${item.questionId}</div>
-        <div style="font-size:16px;font-weight:700;color:#0f172a;margin-bottom:8px;">${item.descricao || item.tituloAnuncio || 'Pergunta Mercado Livre'}</div>
-        <div style="font-size:13px;color:#475569;line-height:1.7;">
-          <div><strong>Cliente:</strong> ${item.nomeCliente || '-'}</div>
-          <div><strong>SKU / ID Peca:</strong> ${item.idPeca || item.sku || '-'}</div>
-          <div><strong>Item ML:</strong> ${item.itemId || '-'}</div>
-          <div><strong>Data:</strong> ${item.dataPergunta ? new Date(item.dataPergunta).toLocaleString('pt-BR') : '-'}</div>
-          <div style="margin-top:10px;"><strong>Pergunta:</strong></div>
-          <div style="margin-top:6px;padding:12px 14px;border-radius:10px;background:#f8fafc;border:1px solid #e2e8f0;">${escapeHtml(item.texto || '')}</div>
-        </div>
+    .map((item) => renderEmailPanel(`
+      <div style="margin-bottom:10px;">
+        ${renderEmailBadge(`Pergunta #${escapeHtml(item.questionId)}`, { tone: 'warning', mono: true })}
+        ${renderEmailBadge(escapeHtml(item.dataPergunta ? new Date(item.dataPergunta).toLocaleString('pt-BR') : '-'), { tone: 'neutral' })}
       </div>
-    `)
+      <div style="font-size:18px;line-height:1.4;font-weight:700;color:#0f172a;margin-bottom:12px;">${escapeHtml(item.descricao || item.tituloAnuncio || 'Pergunta Mercado Livre')}</div>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:14px;">
+        ${detailRow('Cliente', escapeHtml(item.nomeCliente || '-'))}
+        ${detailRow('SKU / ID Peca', escapeHtml(item.idPeca || item.sku || '-'), { mono: true })}
+        ${detailRow('Item ML', escapeHtml(item.itemId || '-'), { mono: true })}
+      </table>
+      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:14px 16px;">
+        <div style="font-size:11px;line-height:1.4;letter-spacing:.08em;text-transform:uppercase;color:#64748b;margin-bottom:8px;">Pergunta</div>
+        <div style="font-size:14px;line-height:1.75;color:#0f172a;">${escapeHtml(item.texto || '')}</div>
+      </div>
+    `, { marginBottom: 14 }))
     .join('');
 
-  return `
-    <div style="background:#f4f7fb;padding:24px;font-family:Inter,Arial,sans-serif;">
-      <div style="max-width:1040px;margin:0 auto;">
-        <div style="background:#ffffff;border:1px solid #dbe5f0;border-radius:18px;padding:26px 28px;margin-bottom:18px;">
-          <div style="font-size:28px;font-weight:900;color:#dc2626;margin-bottom:10px;">ALERTA ANB Parts</div>
-          <div style="font-size:16px;color:#0f172a;font-weight:600;">Perguntas recebidas no Mercado Livre aguardando resposta</div>
-          <div style="font-size:13px;color:#64748b;margin-top:8px;">Revise as perguntas abaixo e responda pela tela Mercado Livre &gt; Perguntas.</div>
-        </div>
-        ${cards}
-      </div>
-    </div>
-  `;
+  return renderAlertEmailLayout({
+    title: 'Perguntas recebidas no Mercado Livre aguardando resposta',
+    subtitle: 'Revise as perguntas abaixo e responda pela tela Mercado Livre > Perguntas.',
+    summaryHtml: renderEmailMetricCard('Novas perguntas', perguntas.length, { tone: 'warning' }),
+    contentHtml: cards,
+    maxWidth: 980,
+  });
 }
 
 function buildPerguntasEmailText(perguntas: any[]) {

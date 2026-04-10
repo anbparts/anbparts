@@ -5,7 +5,15 @@ import {
   DEFAULT_RESEND_FROM,
   getConfiguracaoGeral,
 } from '../lib/configuracoes-gerais';
-import { buildDatedEmailSubject, sendResendEmail } from '../lib/email';
+import {
+  buildDatedEmailSubject,
+  renderAlertEmailLayout,
+  renderEmailBadge,
+  renderEmailEmptyState,
+  renderEmailMetricCard,
+  renderEmailPanel,
+  sendResendEmail,
+} from '../lib/email';
 import { sendDetranBaixaEmailIfNeeded } from '../lib/detran-alert';
 import { getMercadoLivreItemPermalink } from '../lib/mercado-livre';
 
@@ -3201,13 +3209,36 @@ function applyLiveAuditoriaProgress<T extends { id?: number; status?: string; re
   };
 }
 
+function resolveAuditoriaTone(color: string) {
+  switch (String(color || '').toLowerCase()) {
+    case '#b91c1c':
+    case '#dc2626':
+      return 'danger' as const;
+    case '#16a34a':
+      return 'success' as const;
+    case '#d97706':
+      return 'warning' as const;
+    case '#2563eb':
+      return 'info' as const;
+    default:
+      return 'neutral' as const;
+  }
+}
+
+function getAuditoriaCardAccent(item: any) {
+  if (item?.tipo === 'peca_em_prejuizo') return '#b91c1c';
+  if (item?.tipo === 'nao_encontrado_anb') return '#2563eb';
+  if (item?.tipo === 'nao_encontrado_bling') return '#d97706';
+  return '#dc2626';
+}
+
+function getAuditoriaHtmlTitle(titulo: string) {
+  const normalized = String(titulo || '').trim();
+  return normalized.replace(/^ALERTA\s+ANB\s+Parts\s*-\s*/i, '').trim() || normalized;
+}
+
 function renderAuditoriaMetricCard(label: string, value: any, color = '#1f2937') {
-  return `
-    <div style="background:#f8fafc;border:1px solid #dbe3ef;border-radius:10px;padding:12px 14px;min-width:140px;">
-      <div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#64748b;margin-bottom:6px;">${escapeHtml(label)}</div>
-      <div style="font-size:24px;font-weight:700;color:${escapeHtml(color)};">${escapeHtml(value)}</div>
-    </div>
-  `;
+  return renderEmailMetricCard(escapeHtml(label), escapeHtml(value), { tone: resolveAuditoriaTone(color) });
 }
 
 function renderAuditoriaEmailHtml(resultado: any, executedAt: Date | string, titulo: string) {
@@ -3364,6 +3395,45 @@ function renderAuditoriaEmailTextConfigured(resultado: any, executedAt: Date | s
   return [...header, body || 'Nenhuma divergencia encontrada.'].join('\n');
 }
 
+function renderAuditoriaEmailHtmlClean(resultado: any, executedAt: Date | string, titulo: string) {
+  const divergencias = Array.isArray(resultado?.divergencias) ? resultado.divergencias : [];
+  const cards = divergencias.map((item: any) => {
+    const statusColor = item?.statusMercadoLivreAtivo === false ? '#dc2626' : '#16a34a';
+    const borderColor = getAuditoriaCardAccent(item);
+
+    return renderEmailPanel(`
+      <div style="margin-bottom:10px;">
+        ${renderEmailBadge(escapeHtml(item?.sku || 'SEM-SKU'), { tone: 'neutral', mono: true })}
+        ${renderEmailBadge(escapeHtml(item?.titulo || 'Divergencia'), { tone: resolveAuditoriaTone(borderColor) })}
+        ${item?.statusMercadoLivre ? renderEmailBadge(`ML: ${escapeHtml(item.statusMercadoLivre)}`, { tone: resolveAuditoriaTone(statusColor) }) : ''}
+        ${item?.moto ? renderEmailBadge(escapeHtml(item.moto), { tone: 'neutral' }) : ''}
+      </div>
+      <div style="font-size:18px;line-height:1.4;font-weight:700;color:#0f172a;margin-bottom:6px;">${escapeHtml(item?.descricaoAnb || item?.descricaoBling || 'Sem descricao')}</div>
+      <div style="font-size:13px;line-height:1.7;color:#475569;margin-bottom:14px;">${escapeHtml(item?.detalhe || '')}</div>
+      <div style="padding-top:14px;border-top:1px solid #e2e8f0;">
+        ${renderAuditoriaMetricCard('Estoque ANB', item?.estoqueAnb ?? 0)}
+        ${renderAuditoriaMetricCard('Estoque Bling', item?.estoqueBling ?? 0)}
+        ${renderAuditoriaMetricCard('Total no ANB', item?.qtdTotalAnb ?? 0)}
+        ${renderAuditoriaMetricCard('Vendidas no ANB', item?.qtdVendidasAnb ?? 0)}
+        ${renderAuditoriaMetricCard('Em prejuizo', item?.qtdPrejuizoAnb ?? 0, item?.qtdPrejuizoAnb ? '#b91c1c' : '#1f2937')}
+        ${renderAuditoriaMetricCard('Status ML', item?.statusMercadoLivre || 'Nao identificado', statusColor)}
+      </div>
+    `, { accentColor: borderColor, marginBottom: 18 });
+  }).join('');
+
+  return renderAlertEmailLayout({
+    title: escapeHtml(getAuditoriaHtmlTitle(titulo)),
+    subtitle: `Execucao: ${escapeHtml(formatDateTimePtBr(executedAt))}`,
+    summaryHtml: [
+      renderAuditoriaMetricCard('Consultados', resultado?.totalConsultados || 0),
+      renderAuditoriaMetricCard('Divergentes', resultado?.totalDivergencias || 0, '#dc2626'),
+      renderAuditoriaMetricCard('Sem divergencia', resultado?.totalSemDivergencia || 0, '#16a34a'),
+    ].join(''),
+    contentHtml: cards || renderEmailEmptyState('Nenhuma divergencia encontrada nesta execucao.', 'success'),
+    maxWidth: 1040,
+  });
+}
+
 async function sendAuditoriaEmail(config: any, resultado: any, executedAt: Date | string) {
   const apiKey = String(config?.resendApiKey || '').trim();
   const to = String(config?.auditoriaEmailDestinatario || '').trim();
@@ -3379,7 +3449,7 @@ async function sendAuditoriaEmail(config: any, resultado: any, executedAt: Date 
     from,
     to,
     subject,
-    html: renderAuditoriaEmailHtmlConfigured(resultado, executedAt, titulo),
+    html: renderAuditoriaEmailHtmlClean(resultado, executedAt, titulo),
     text: renderAuditoriaEmailTextConfigured(resultado, executedAt, titulo),
   });
 }

@@ -1,6 +1,13 @@
 import { prisma } from './prisma';
 import { getConfiguracaoGeral } from './configuracoes-gerais';
-import { buildDatedEmailSubject, sendResendEmail } from './email';
+import {
+  buildDatedEmailSubject,
+  renderAlertEmailLayout,
+  renderEmailBadge,
+  renderEmailMetricCard,
+  renderEmailPanel,
+  sendResendEmail,
+} from './email';
 
 export type DespesaEmailItem = {
   id: number;
@@ -36,44 +43,87 @@ function formatDateKey(date: Date) {
   return new Date(date).toISOString().split('T')[0];
 }
 
-function renderItemHtml(item: DespesaEmailItem) {
+function renderMetaCell(label: string, value: string, options?: { mono?: boolean }) {
+  const mono = !!options?.mono;
   return `
-    <div style="background:#ffffff;border:1px solid #dbe3ef;border-radius:18px;padding:18px 20px;margin-bottom:14px;">
-      <div style="display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:10px;">
-        <div>
-          <div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#64748b;">Despesa #${escapeHtml(item.id)}</div>
-          <div style="font-size:18px;font-weight:700;color:#0f172a;margin-top:4px;">${escapeHtml(item.detalhes)}</div>
-        </div>
-        <div style="text-align:right;">
-          <div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#64748b;">Valor</div>
-          <div style="font-size:20px;font-weight:800;color:#dc2626;margin-top:4px;">${escapeHtml(formatCurrency(item.valor))}</div>
-        </div>
-      </div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;">
-        <div><div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.08em;">Vencimento</div><div style="font-size:13px;color:#0f172a;margin-top:4px;">${escapeHtml(formatDate(item.data))}</div></div>
-        <div><div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.08em;">Categoria</div><div style="font-size:13px;color:#0f172a;margin-top:4px;">${escapeHtml(item.categoria)}</div></div>
-        ${item.chavePix ? `<div><div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.08em;">Chave PIX</div><div style="font-size:13px;color:#0f172a;margin-top:4px;">${escapeHtml(item.chavePix)}</div></div>` : ''}
-        ${item.codigoBarras ? `<div><div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.08em;">Codigo de barras</div><div style="font-size:13px;color:#0f172a;margin-top:4px;">${escapeHtml(item.codigoBarras)}</div></div>` : ''}
-      </div>
-      ${item.observacao ? `<div style="margin-top:12px;padding-top:12px;border-top:1px solid #e2e8f0;"><div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.08em;">Observacao</div><div style="font-size:13px;color:#475569;margin-top:4px;">${escapeHtml(item.observacao)}</div></div>` : ''}
-    </div>
+    <td valign="top" style="padding:0 16px 12px 0;">
+      <div style="font-size:11px;line-height:1.4;letter-spacing:.08em;text-transform:uppercase;color:#64748b;margin-bottom:4px;">${label}</div>
+      <div style="font-size:13px;line-height:1.65;color:#0f172a;${mono ? `font-family:'JetBrains Mono',Consolas,monospace;` : ''}">${value}</div>
+    </td>
   `;
+}
+
+function renderMetaTable(cells: string[]) {
+  const rows: string[] = [];
+  for (let i = 0; i < cells.length; i += 2) {
+    const current = cells.slice(i, i + 2);
+    while (current.length < 2) {
+      current.push('<td valign="top" style="padding:0 16px 12px 0;"></td>');
+    }
+    rows.push(`<tr>${current.join('')}</tr>`);
+  }
+
+  return `
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+      ${rows.join('')}
+    </table>
+  `;
+}
+
+function renderItemHtml(item: DespesaEmailItem) {
+  const metaCells = [
+    renderMetaCell('Vencimento', escapeHtml(formatDate(item.data)), { mono: true }),
+    renderMetaCell('Categoria', escapeHtml(item.categoria)),
+  ];
+
+  if (item.chavePix) {
+    metaCells.push(renderMetaCell('Chave PIX', escapeHtml(item.chavePix), { mono: true }));
+  }
+  if (item.codigoBarras) {
+    metaCells.push(renderMetaCell('Codigo de barras', escapeHtml(item.codigoBarras), { mono: true }));
+  }
+
+  return renderEmailPanel(`
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+      <tr>
+        <td valign="top" style="padding:0 18px 14px 0;">
+          ${renderEmailBadge(`Despesa #${escapeHtml(item.id)}`, { tone: 'neutral', mono: true })}
+          <div style="font-size:19px;line-height:1.4;font-weight:700;color:#0f172a;margin:4px 0 0 0;">${escapeHtml(item.detalhes)}</div>
+        </td>
+        <td valign="top" width="210" style="padding:0;">
+          <div style="background:#fff7ed;border:1px solid #fdba74;border-radius:14px;padding:14px 16px;text-align:right;">
+            <div style="font-size:11px;line-height:1.4;letter-spacing:.08em;text-transform:uppercase;color:#9a3412;margin-bottom:6px;">Valor</div>
+            <div style="font-size:24px;line-height:1.2;font-weight:700;color:#b91c1c;">${escapeHtml(formatCurrency(item.valor))}</div>
+          </div>
+        </td>
+      </tr>
+    </table>
+    <div style="padding-top:14px;margin-top:2px;border-top:1px solid #e2e8f0;">
+      ${renderMetaTable(metaCells)}
+    </div>
+    ${item.observacao ? `
+      <div style="margin-top:4px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:14px 16px;">
+        <div style="font-size:11px;line-height:1.4;letter-spacing:.08em;text-transform:uppercase;color:#64748b;margin-bottom:6px;">Observacao</div>
+        <div style="font-size:13px;line-height:1.7;color:#475569;">${escapeHtml(item.observacao)}</div>
+      </div>
+    ` : ''}
+  `, { marginBottom: 14 });
 }
 
 function renderEmailHtml(items: DespesaEmailItem[]) {
   const blocks = items.map(renderItemHtml).join('');
-  return `
-    <div style="background:#f8fafc;padding:24px;font-family:Inter,Arial,sans-serif;color:#0f172a;">
-      <div style="max-width:1080px;margin:0 auto;">
-        <div style="background:#ffffff;border:1px solid #dbe3ef;border-radius:18px;padding:24px;margin-bottom:18px;">
-          <div style="font-size:28px;font-weight:800;color:#dc2626;margin-bottom:8px;">ALERTA ANB Parts</div>
-          <div style="font-size:16px;color:#334155;margin-bottom:8px;">Despesas com vencimento no dia aguardando pagamento</div>
-          <div style="font-size:13px;color:#64748b;">Revise os lancamentos abaixo e realize os pagamentos pendentes de hoje.</div>
-        </div>
-        ${blocks}
-      </div>
-    </div>
-  `;
+  const total = items.reduce((sum, item) => sum + (Number(item.valor) || 0), 0);
+
+  return renderAlertEmailLayout({
+    title: 'Despesas com vencimento no dia aguardando pagamento',
+    subtitle: 'Revise os lancamentos abaixo e realize os pagamentos pendentes de hoje.',
+    summaryHtml: [
+      renderEmailMetricCard('Despesas pendentes', items.length, { tone: 'warning' }),
+      renderEmailMetricCard('Total a pagar', escapeHtml(formatCurrency(total)), { tone: 'danger', align: 'right', minWidth: 180 }),
+    ].join(''),
+    contentHtml: blocks,
+    maxWidth: 980,
+  });
 }
 
 function renderEmailText(items: DespesaEmailItem[]) {

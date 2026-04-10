@@ -8,7 +8,14 @@ import {
   getConfiguracaoGeral,
   saveConfiguracaoGeral,
 } from '../lib/configuracoes-gerais';
-import { buildQuestionEmailSubject, sendResendEmail } from '../lib/email';
+import {
+  buildQuestionEmailSubject,
+  renderAlertEmailLayout,
+  renderEmailBadge,
+  renderEmailMetricCard,
+  renderEmailPanel,
+  sendResendEmail,
+} from '../lib/email';
 
 export const mercadoLivreRouter = Router();
 
@@ -1886,36 +1893,38 @@ async function syncMercadoLivrePerguntas(options?: { sendEmail?: boolean }) {
 }
 
 function buildPerguntasEmailHtml(perguntas: any[]) {
-  const cards = perguntas.map((pergunta) => `
-    <div style="background:#ffffff;border:1px solid #dbe3ef;border-radius:16px;padding:18px;margin-bottom:14px;">
-      <div style="font-size:11px;color:#64748b;font-family:monospace;letter-spacing:.8px;text-transform:uppercase;margin-bottom:8px;">Pergunta #${escapeHtml(pergunta.questionId)}</div>
-      <div style="font-size:18px;font-weight:700;color:#0f172a;margin-bottom:8px;">${escapeHtml(pergunta.idPeca || pergunta.sku || pergunta.tituloAnuncio || 'Sem identificacao')}</div>
-      <div style="font-size:13px;color:#475569;line-height:1.65;margin-bottom:14px;">
-        <strong>Cliente:</strong> ${escapeHtml(pergunta.nomeCliente || 'Nao identificado')}<br/>
-        <strong>Produto:</strong> ${escapeHtml(pergunta.descricao || pergunta.tituloAnuncio || 'Sem descricao')}<br/>
-        <strong>SKU / ID Peca:</strong> ${escapeHtml(pergunta.idPeca || pergunta.sku || '-')}<br/>
-        <strong>Item ML:</strong> ${escapeHtml(pergunta.itemId || '-')}<br/>
-        <strong>Recebida em:</strong> ${escapeHtml(formatDateTimePtBr(pergunta.dataPergunta))}
-      </div>
-      <div style="background:#f8fafc;border:1px solid #dbe3ef;border-radius:12px;padding:14px;">
-        <div style="font-size:11px;color:#64748b;font-family:monospace;letter-spacing:.8px;text-transform:uppercase;margin-bottom:8px;">Mensagem completa</div>
-        <div style="font-size:14px;color:#0f172a;line-height:1.7;">${escapeHtml(pergunta.texto || '')}</div>
-      </div>
-    </div>
-  `).join('');
-
-  return `
-    <div style="background:#f8fafc;padding:24px;font-family:Inter,Arial,sans-serif;color:#0f172a;">
-      <div style="max-width:980px;margin:0 auto;">
-        <div style="background:#ffffff;border:1px solid #dbe3ef;border-radius:18px;padding:24px;margin-bottom:18px;">
-          <div style="font-size:28px;font-weight:800;color:#dc2626;margin-bottom:8px;">ALERTA ANB Parts</div>
-          <div style="font-size:16px;color:#334155;margin-bottom:8px;">Perguntas recebidas no Mercado Livre aguardando resposta</div>
-          <div style="font-size:13px;color:#64748b;">Total de novas perguntas: ${perguntas.length}</div>
-        </div>
-        ${cards}
-      </div>
-    </div>
+  const detailRow = (label: string, value: string, mono = false) => `
+    <tr>
+      <td valign="top" style="width:130px;padding:0 12px 8px 0;font-size:11px;line-height:1.4;letter-spacing:.08em;text-transform:uppercase;color:#64748b;">${label}</td>
+      <td valign="top" style="padding:0 0 8px 0;font-size:13px;line-height:1.65;color:#0f172a;${mono ? `font-family:'JetBrains Mono',Consolas,monospace;` : ''}">${value}</td>
+    </tr>
   `;
+
+  const cards = perguntas.map((pergunta) => renderEmailPanel(`
+    <div style="margin-bottom:10px;">
+      ${renderEmailBadge(`Pergunta #${escapeHtml(pergunta.questionId)}`, { tone: 'warning', mono: true })}
+      ${renderEmailBadge(escapeHtml(formatDateTimePtBr(pergunta.dataPergunta)), { tone: 'neutral' })}
+    </div>
+    <div style="font-size:18px;line-height:1.4;font-weight:700;color:#0f172a;margin-bottom:12px;">${escapeHtml(pergunta.idPeca || pergunta.sku || pergunta.tituloAnuncio || 'Sem identificacao')}</div>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:14px;">
+      ${detailRow('Cliente', escapeHtml(pergunta.nomeCliente || 'Nao identificado'))}
+      ${detailRow('Produto', escapeHtml(pergunta.descricao || pergunta.tituloAnuncio || 'Sem descricao'))}
+      ${detailRow('SKU / ID Peca', escapeHtml(pergunta.idPeca || pergunta.sku || '-'), true)}
+      ${detailRow('Item ML', escapeHtml(pergunta.itemId || '-'), true)}
+    </table>
+    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:14px 16px;">
+      <div style="font-size:11px;line-height:1.4;letter-spacing:.08em;text-transform:uppercase;color:#64748b;margin-bottom:8px;">Mensagem completa</div>
+      <div style="font-size:14px;line-height:1.75;color:#0f172a;">${escapeHtml(pergunta.texto || '')}</div>
+    </div>
+  `, { marginBottom: 14 })).join('');
+
+  return renderAlertEmailLayout({
+    title: 'Perguntas recebidas no Mercado Livre aguardando resposta',
+    subtitle: 'Revise as mensagens abaixo e responda o quanto antes para manter a conversao e o tempo de resposta sob controle.',
+    summaryHtml: renderEmailMetricCard('Novas perguntas', perguntas.length, { tone: 'warning' }),
+    contentHtml: cards,
+    maxWidth: 980,
+  });
 }
 
 function buildPerguntasEmailText(perguntas: any[]) {
