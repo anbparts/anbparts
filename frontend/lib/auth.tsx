@@ -102,12 +102,24 @@ export function LoginPage({ onLogin }: { onLogin: (u: string, p: string) => Prom
   const [pass, setPass] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [isCompact, setIsCompact] = useState(false);
   const highlights = [
     { label: 'Motos', text: 'Cadastro, desmontagem e acompanhamento visual do patio' },
     { label: 'Estoque', text: 'Controle de pecas, localizacao, DETRAN e inventario' },
     { label: 'Bling', text: 'Importacao, auditoria e operacao integrada com ERP' },
     { label: 'Financeiro', text: 'Vendas, DRE, despesas e visao diaria do caixa' },
   ];
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const media = window.matchMedia('(max-width: 860px)');
+    const sync = () => setIsCompact(media.matches);
+
+    sync();
+    media.addEventListener('change', sync);
+    return () => media.removeEventListener('change', sync);
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -133,13 +145,14 @@ export function LoginPage({ onLogin }: { onLogin: (u: string, p: string) => Prom
           margin: '0 auto',
           minHeight: 'calc(100dvh - clamp(32px, 6vw, 56px))',
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+          gridTemplateColumns: isCompact ? '1fr' : 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))',
           gap: 'clamp(16px, 3vw, 28px)',
           alignItems: 'stretch',
         }}
       >
         <section
           style={{
+            order: isCompact ? 2 : 1,
             background: 'linear-gradient(155deg, #091425 0%, #132b4d 55%, #1d467c 100%)',
             borderRadius: 28,
             padding: 'clamp(28px, 5vw, 48px)',
@@ -147,7 +160,7 @@ export function LoginPage({ onLogin }: { onLogin: (u: string, p: string) => Prom
             position: 'relative',
             overflow: 'hidden',
             boxShadow: '0 28px 60px rgba(15, 23, 42, 0.16)',
-            minHeight: 'min(720px, 100%)',
+            minHeight: isCompact ? 'auto' : 'min(720px, 100%)',
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'space-between',
@@ -287,6 +300,7 @@ export function LoginPage({ onLogin }: { onLogin: (u: string, p: string) => Prom
 
         <section
           style={{
+            order: isCompact ? 1 : 2,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -420,6 +434,7 @@ export function LoginPage({ onLogin }: { onLogin: (u: string, p: string) => Prom
                   cursor: 'pointer',
                   opacity: loading || !user || !pass ? 0.65 : 1,
                   boxShadow: '0 14px 28px rgba(29,78,216,.18)',
+                  WebkitAppearance: 'none',
                 }}
               >
                 {loading ? 'Entrando...' : 'Entrar'}
