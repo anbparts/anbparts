@@ -11,6 +11,7 @@ const empresaPayloadSchema = z.object({
   enderecoCompleto: z.string().optional().nullable(),
   telefoneWhats: z.string().optional().nullable(),
   anexos: z.record(z.any()).optional().default({}),
+  removidos: z.array(z.string()).optional().default([]),
 });
 
 const EMPRESA_ANEXO_KEYS = [
@@ -77,6 +78,20 @@ empresaRouter.post('/', async (req, res, next) => {
   try {
     const current = await getConfiguracaoGeral();
     const payload = empresaPayloadSchema.parse(req.body || {});
+    const anexosAtuais = normalizeEmpresaAnexos(current?.empresaAnexos);
+    const anexosAtualizados = normalizeEmpresaAnexos(payload.anexos);
+    const removidos = Array.isArray(payload.removidos)
+      ? payload.removidos.filter((key) => EMPRESA_ANEXO_KEYS.includes(key as typeof EMPRESA_ANEXO_KEYS[number]))
+      : [];
+    const anexos = {
+      ...anexosAtuais,
+      ...anexosAtualizados,
+    } as Record<string, { name: string; dataUrl: string }>;
+
+    for (const key of removidos) {
+      delete anexos[key];
+    }
+
     const updated = await prisma.configuracaoGeral.update({
       where: { id: current.id },
       data: {
@@ -84,7 +99,7 @@ empresaRouter.post('/', async (req, res, next) => {
         empresaCnpj: normalizeText(payload.cnpj),
         empresaEnderecoCompleto: normalizeText(payload.enderecoCompleto),
         empresaTelefoneWhats: normalizeText(payload.telefoneWhats),
-        empresaAnexos: normalizeEmpresaAnexos(payload.anexos),
+        empresaAnexos: anexos,
       },
     });
 
