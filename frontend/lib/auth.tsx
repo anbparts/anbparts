@@ -102,6 +102,12 @@ export function LoginPage({ onLogin }: { onLogin: (u: string, p: string) => Prom
   const [pass, setPass] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const highlights = [
+    { label: 'Motos', text: 'Cadastro, desmontagem e acompanhamento visual do patio' },
+    { label: 'Estoque', text: 'Controle de pecas, localizacao, DETRAN e inventario' },
+    { label: 'Bling', text: 'Importacao, auditoria e operacao integrada com ERP' },
+    { label: 'Financeiro', text: 'Vendas, DRE, despesas e visao diaria do caixa' },
+  ];
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -115,196 +121,328 @@ export function LoginPage({ onLogin }: { onLogin: (u: string, p: string) => Prom
   return (
     <div
       style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'stretch',
+        minHeight: '100dvh',
+        background: 'linear-gradient(180deg, #eef4fb 0%, #f8fafc 100%)',
         fontFamily: "'Inter', system-ui, sans-serif",
+        padding: 'clamp(16px, 3vw, 28px)',
       }}
     >
       <div
         style={{
-          width: 420,
-          background: '#0a1628',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '48px 40px',
-          flexShrink: 0,
+          maxWidth: 1160,
+          margin: '0 auto',
+          minHeight: 'calc(100dvh - clamp(32px, 6vw, 56px))',
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+          gap: 'clamp(16px, 3vw, 28px)',
+          alignItems: 'stretch',
         }}
       >
-        <img
-          src="/logo.jpg"
-          alt="ANB Parts"
-          style={{ width: 110, height: 110, borderRadius: 20, objectFit: 'cover', marginBottom: 28, background: '#fff' }}
-        />
-        <div style={{ fontSize: 26, fontWeight: 700, color: '#fff', letterSpacing: '-0.5px', marginBottom: 6 }}>
-          ANB Parts
-        </div>
-        <div
+        <section
           style={{
-            fontSize: 13,
-            color: 'rgba(255,255,255,.4)',
-            fontFamily: "'JetBrains Mono', monospace",
-            marginBottom: 48,
+            background: 'linear-gradient(155deg, #091425 0%, #132b4d 55%, #1d467c 100%)',
+            borderRadius: 28,
+            padding: 'clamp(28px, 5vw, 48px)',
+            color: '#fff',
+            position: 'relative',
+            overflow: 'hidden',
+            boxShadow: '0 28px 60px rgba(15, 23, 42, 0.16)',
+            minHeight: 'min(720px, 100%)',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'space-between',
+            gap: 28,
           }}
         >
-          Sistema de Gestao Interna
-        </div>
+          <div
+            style={{
+              position: 'absolute',
+              inset: 'auto -70px -90px auto',
+              width: 260,
+              height: 260,
+              borderRadius: '50%',
+              background: 'radial-gradient(circle, rgba(255,255,255,.14) 0%, rgba(255,255,255,0) 70%)',
+              pointerEvents: 'none',
+            }}
+          />
+          <div
+            style={{
+              position: 'absolute',
+              inset: '-80px auto auto -60px',
+              width: 220,
+              height: 220,
+              borderRadius: '50%',
+              background: 'radial-gradient(circle, rgba(96,165,250,.18) 0%, rgba(96,165,250,0) 72%)',
+              pointerEvents: 'none',
+            }}
+          />
 
-        <div style={{ width: '100%' }}>
-          {[
-            { label: 'Motos', text: 'Gestao de motos e pecas' },
-            { label: 'Estoque', text: 'Controle de estoque e inventario' },
-            { label: 'Bling', text: 'Integracao com Bling ERP' },
-            { label: 'Financeiro', text: 'Faturamento, DRE e despesas' },
-          ].map((item) => (
+          <div style={{ position: 'relative', zIndex: 1 }}>
             <div
-              key={item.label}
               style={{
-                display: 'flex',
+                display: 'inline-flex',
                 alignItems: 'center',
                 gap: 12,
-                padding: '10px 0',
-                borderBottom: '1px solid rgba(255,255,255,.06)',
-                fontSize: 13,
-                color: 'rgba(255,255,255,.55)',
+                background: 'rgba(255,255,255,.08)',
+                border: '1px solid rgba(255,255,255,.10)',
+                borderRadius: 18,
+                padding: '12px 14px',
+                marginBottom: 28,
+                backdropFilter: 'blur(8px)',
               }}
             >
-              <span
+              <img
+                src="/logo.jpg"
+                alt="ANB Parts"
                 style={{
-                  minWidth: 58,
-                  fontSize: 11,
-                  textTransform: 'uppercase',
-                  fontFamily: "'JetBrains Mono', monospace",
-                  color: 'rgba(255,255,255,.38)',
-                }}
-              >
-                {item.label}
-              </span>
-              {item.text}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div
-        style={{
-          flex: 1,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          background: '#f8fafc',
-          padding: 40,
-        }}
-      >
-        <div style={{ width: '100%', maxWidth: 360 }}>
-          <div style={{ marginBottom: 32 }}>
-            <div style={{ fontSize: 24, fontWeight: 700, color: '#1e293b', letterSpacing: '-0.4px', marginBottom: 6 }}>
-              Bem-vindo de volta
-            </div>
-            <div style={{ fontSize: 13.5, color: '#94a3b8' }}>
-              Entre com suas credenciais para acessar o sistema.
-            </div>
-          </div>
-
-          <form onSubmit={handleSubmit}>
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ fontSize: 12, fontWeight: 500, color: '#475569', display: 'block', marginBottom: 6 }}>
-                Usuario
-              </label>
-              <input
-                value={user}
-                onChange={(e) => setUser(e.target.value)}
-                placeholder="Digite seu usuario"
-                autoFocus
-                autoComplete="off"
-                autoCapitalize="none"
-                autoCorrect="off"
-                spellCheck={false}
-                style={{
-                  width: '100%',
+                  width: 56,
+                  height: 56,
+                  borderRadius: 14,
+                  objectFit: 'cover',
                   background: '#fff',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: 8,
-                  padding: '10px 14px',
-                  fontSize: 14,
-                  outline: 'none',
-                  color: '#1e293b',
+                  flexShrink: 0,
                 }}
               />
+              <div>
+                <div
+                  style={{
+                    fontSize: 12,
+                    letterSpacing: '.12em',
+                    textTransform: 'uppercase',
+                    color: 'rgba(255,255,255,.62)',
+                    fontFamily: "'JetBrains Mono', monospace",
+                  }}
+                >
+                  ANB Parts
+                </div>
+                <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.3px', marginTop: 2 }}>
+                  Sistema de gestao interna
+                </div>
+              </div>
             </div>
 
-            <div style={{ marginBottom: 24 }}>
-              <label style={{ fontSize: 12, fontWeight: 500, color: '#475569', display: 'block', marginBottom: 6 }}>
-                Senha
-              </label>
-              <input
-                type="password"
-                value={pass}
-                onChange={(e) => setPass(e.target.value)}
-                placeholder="Digite sua senha"
-                style={{
-                  width: '100%',
-                  background: '#fff',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: 8,
-                  padding: '10px 14px',
-                  fontSize: 14,
-                  outline: 'none',
-                  color: '#1e293b',
-                }}
-              />
-            </div>
-
-            {error && (
+            <div style={{ maxWidth: 520 }}>
               <div
                 style={{
-                  background: '#fee2e2',
-                  border: '1px solid #fca5a5',
-                  borderRadius: 8,
-                  padding: '10px 14px',
-                  fontSize: 13,
-                  color: '#dc2626',
-                  marginBottom: 18,
+                  fontSize: 'clamp(31px, 4vw, 46px)',
+                  lineHeight: 1.04,
+                  fontWeight: 700,
+                  letterSpacing: '-1.2px',
+                  marginBottom: 16,
                 }}
               >
-                {error}
+                Operacao centralizada para equipe, estoque e vendas.
               </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={loading || !user || !pass}
-              style={{
-                width: '100%',
-                background: '#1e56a0',
-                color: '#fff',
-                border: 'none',
-                borderRadius: 8,
-                padding: '11px 20px',
-                fontSize: 14,
-                fontWeight: 600,
-                cursor: 'pointer',
-                opacity: loading || !user || !pass ? 0.6 : 1,
-              }}
-            >
-              {loading ? 'Entrando...' : 'Entrar'}
-            </button>
-          </form>
+              <div
+                style={{
+                  fontSize: 'clamp(14px, 1.7vw, 16px)',
+                  lineHeight: 1.8,
+                  color: 'rgba(255,255,255,.74)',
+                }}
+              >
+                Acesse o ambiente interno da ANB Parts em qualquer dispositivo para acompanhar as rotinas do dia, filtrar operacoes e manter o fluxo comercial organizado.
+              </div>
+            </div>
+          </div>
 
           <div
             style={{
-              marginTop: 32,
-              fontSize: 11,
-              color: '#94a3b8',
-              textAlign: 'center',
-              fontFamily: "'JetBrains Mono', monospace",
+              position: 'relative',
+              zIndex: 1,
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+              gap: 14,
             }}
           >
-            ANB Parts © {new Date().getFullYear()}
+            {highlights.map((item) => (
+              <div
+                key={item.label}
+                style={{
+                  background: 'rgba(255,255,255,.07)',
+                  border: '1px solid rgba(255,255,255,.10)',
+                  borderRadius: 18,
+                  padding: '16px 16px 15px',
+                  backdropFilter: 'blur(10px)',
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 11,
+                    textTransform: 'uppercase',
+                    letterSpacing: '.12em',
+                    color: 'rgba(255,255,255,.56)',
+                    fontFamily: "'JetBrains Mono', monospace",
+                    marginBottom: 8,
+                  }}
+                >
+                  {item.label}
+                </div>
+                <div style={{ fontSize: 14, lineHeight: 1.6, color: 'rgba(255,255,255,.88)' }}>
+                  {item.text}
+                </div>
+              </div>
+            ))}
           </div>
-        </div>
+        </section>
+
+        <section
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            minWidth: 0,
+          }}
+        >
+          <div
+            style={{
+              width: '100%',
+              maxWidth: 460,
+              background: 'rgba(255,255,255,.92)',
+              border: '1px solid rgba(148,163,184,.20)',
+              borderRadius: 28,
+              padding: 'clamp(24px, 4vw, 38px)',
+              boxShadow: '0 24px 50px rgba(15, 23, 42, 0.10)',
+            }}
+          >
+            <div style={{ marginBottom: 30 }}>
+              <div
+                style={{
+                  fontSize: 12,
+                  letterSpacing: '.12em',
+                  textTransform: 'uppercase',
+                  color: '#94a3b8',
+                  fontFamily: "'JetBrains Mono', monospace",
+                  marginBottom: 10,
+                }}
+              >
+                Login seguro
+              </div>
+              <div
+                style={{
+                  fontSize: 'clamp(28px, 4vw, 34px)',
+                  lineHeight: 1.08,
+                  fontWeight: 700,
+                  color: '#0f172a',
+                  letterSpacing: '-0.9px',
+                  marginBottom: 10,
+                }}
+              >
+                Bem-vindo de volta
+              </div>
+              <div style={{ fontSize: 14.5, lineHeight: 1.75, color: '#64748b' }}>
+                Entre com suas credenciais para acessar o sistema da ANB Parts no celular, tablet ou notebook.
+              </div>
+            </div>
+
+            <form onSubmit={handleSubmit}>
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ fontSize: 12, fontWeight: 600, color: '#334155', display: 'block', marginBottom: 8 }}>
+                  Usuario
+                </label>
+                <input
+                  value={user}
+                  onChange={(e) => setUser(e.target.value)}
+                  placeholder="Digite seu usuario"
+                  autoFocus
+                  autoComplete="username"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  style={{
+                    width: '100%',
+                    background: '#fff',
+                    border: '1px solid #dbe3ef',
+                    borderRadius: 14,
+                    padding: '14px 16px',
+                    fontSize: 16,
+                    lineHeight: 1.4,
+                    outline: 'none',
+                    color: '#0f172a',
+                    boxShadow: 'inset 0 1px 2px rgba(15,23,42,.03)',
+                  }}
+                />
+              </div>
+
+              <div style={{ marginBottom: 22 }}>
+                <label style={{ fontSize: 12, fontWeight: 600, color: '#334155', display: 'block', marginBottom: 8 }}>
+                  Senha
+                </label>
+                <input
+                  type="password"
+                  value={pass}
+                  onChange={(e) => setPass(e.target.value)}
+                  placeholder="Digite sua senha"
+                  autoComplete="current-password"
+                  style={{
+                    width: '100%',
+                    background: '#fff',
+                    border: '1px solid #dbe3ef',
+                    borderRadius: 14,
+                    padding: '14px 16px',
+                    fontSize: 16,
+                    lineHeight: 1.4,
+                    outline: 'none',
+                    color: '#0f172a',
+                    boxShadow: 'inset 0 1px 2px rgba(15,23,42,.03)',
+                  }}
+                />
+              </div>
+
+              {error && (
+                <div
+                  style={{
+                    background: '#fef2f2',
+                    border: '1px solid #fecaca',
+                    borderRadius: 14,
+                    padding: '12px 14px',
+                    fontSize: 13,
+                    lineHeight: 1.6,
+                    color: '#b91c1c',
+                    marginBottom: 18,
+                  }}
+                >
+                  {error}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={loading || !user || !pass}
+                style={{
+                  width: '100%',
+                  background: '#1d4ed8',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 14,
+                  padding: '15px 20px',
+                  fontSize: 15,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  opacity: loading || !user || !pass ? 0.65 : 1,
+                  boxShadow: '0 14px 28px rgba(29,78,216,.18)',
+                }}
+              >
+                {loading ? 'Entrando...' : 'Entrar'}
+              </button>
+
+              <div
+                style={{
+                  marginTop: 18,
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  justifyContent: 'space-between',
+                  gap: 10,
+                  fontSize: 12,
+                  lineHeight: 1.6,
+                  color: '#94a3b8',
+                }}
+              >
+                <span>Acesso interno protegido</span>
+                <span>ANB Parts {new Date().getFullYear()}</span>
+              </div>
+            </form>
+          </div>
+        </section>
       </div>
     </div>
   );
