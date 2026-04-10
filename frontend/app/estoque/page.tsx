@@ -1238,7 +1238,7 @@ export default function EstoquePage() {
                         ) : header.sort ? (
                           <button
                             type="button"
-                            onClick={() => toggleSort(header.sort)}
+                            onClick={() => toggleSort(header.sort!)}
                             style={{
                               border: 'none',
                               background: 'transparent',
