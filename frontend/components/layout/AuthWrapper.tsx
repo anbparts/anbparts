@@ -3,9 +3,9 @@
 import { useEffect, useLayoutEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { LoginPage, useAuth } from '@/lib/auth';
+import { API_BASE } from '@/lib/api-base';
 import { getNavLabel, Sidebar, type SidebarMode } from './Sidebar';
 
-const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3333').replace(/\/$/, '');
 const DESKTOP_SIDEBAR_WIDTH = 252;
 const TABLET_RAIL_WIDTH = 88;
 
@@ -43,7 +43,10 @@ export function AuthWrapper({ children }: { children: React.ReactNode }) {
 
     window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = resolveRequestUrl(input);
-      const isBackendRequest = url.startsWith(API_BASE);
+      const isBackendRequest = API_BASE.startsWith('/')
+        ? url.startsWith(API_BASE)
+          || (typeof window !== 'undefined' && url.startsWith(`${window.location.origin}${API_BASE}`))
+        : url.startsWith(API_BASE);
 
       const response = await originalFetch(input as any, isBackendRequest
         ? { ...init, credentials: 'include' }

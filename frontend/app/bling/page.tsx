@@ -1,7 +1,8 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { API_BASE } from '@/lib/api-base';
 
-const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3333';
+const API = API_BASE;
 const s: any = {
   topbar: {
     height: 'var(--topbar-h)',

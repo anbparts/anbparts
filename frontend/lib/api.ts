@@ -1,4 +1,6 @@
-const BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3333';
+import { API_BASE } from './api-base';
+
+const BASE = API_BASE;
 
 async function req<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {

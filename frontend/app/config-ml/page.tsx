@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { API_BASE } from '@/lib/api-base';
 import { api } from '../../lib/api';
 
-const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3333';
+const API = API_BASE;
 
 const s: any = {
   topbar: { height: 'var(--topbar-h)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 28px', background: 'var(--white)', borderBottom: '1px solid var(--border)', position: 'sticky' as const, top: 0, zIndex: 50 },

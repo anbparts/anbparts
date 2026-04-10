@@ -1,7 +1,8 @@
 'use client';
 import { useEffect, useState, type FormEvent } from 'react';
+import { API_BASE } from '@/lib/api-base';
 
-const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3333';
+const API = API_BASE;
 
 function today() {
   return new Date().toISOString().split('T')[0];
