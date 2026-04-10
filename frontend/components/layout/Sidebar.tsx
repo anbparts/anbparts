@@ -72,10 +72,27 @@ function isNavActive(path: string, href: string) {
   return path === href || path.startsWith(`${href}/`);
 }
 
-export function getNavLabel(path: string) {
+function getActiveHref(path: string) {
+  let bestMatch = '/';
+
   for (const group of NAV) {
     for (const item of group.items) {
-      if (isNavActive(path, item.href)) {
+      if (!isNavActive(path, item.href)) continue;
+      if (item.href.length > bestMatch.length) {
+        bestMatch = item.href;
+      }
+    }
+  }
+
+  return bestMatch;
+}
+
+export function getNavLabel(path: string) {
+  const activeHref = getActiveHref(path);
+
+  for (const group of NAV) {
+    for (const item of group.items) {
+      if (item.href === activeHref) {
         return item.label;
       }
     }
@@ -169,6 +186,7 @@ export function Sidebar({
   onToggle,
 }: SidebarProps) {
   const path = usePathname();
+  const activeHref = getActiveHref(path);
   const isDrawer = mode === 'phone' || mode === 'tablet-portrait';
   const isTabletLandscape = mode === 'tablet-landscape';
   const isDesktop = mode === 'desktop';
@@ -348,7 +366,7 @@ export function Sidebar({
               ) : null}
 
               {group.items.map((item) => {
-                const active = isNavActive(path, item.href);
+                const active = item.href === activeHref;
                 return (
                   <Link
                     key={item.href}
