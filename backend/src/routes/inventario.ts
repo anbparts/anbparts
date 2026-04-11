@@ -62,6 +62,26 @@ function formatDiferencaTipo(tipo: string | null | undefined) {
   return tipo || 'Nao informado';
 }
 
+function serializeInventarioItem(item: {
+  id: number;
+  caixa: string;
+  skuBase: string;
+  motoId: number | null;
+  idPecaReferencia: string;
+  descricao: string;
+  quantidadeEstoque: number;
+  status: string;
+  tipoDiferenca?: string | null;
+  decidedAt?: Date | string | null;
+}) {
+  return {
+    ...item,
+    tipoDiferencaLabel: item.status === ITEM_STATUS_DIFERENCA
+      ? formatDiferencaTipo(item.tipoDiferenca)
+      : null,
+  };
+}
+
 function buildInventarioSnapshot(pecas: Array<{
   idPeca: string;
   motoId: number;
@@ -264,12 +284,12 @@ async function loadCaixaState(inventarioId: number, caixa: string) {
   if (!caixaRow) return null;
 
   const pendentes = itens.filter((item) => item.status === ITEM_STATUS_PENDENTE);
+  const confirmados = itens
+    .filter((item) => item.status === ITEM_STATUS_CONFIRMADO)
+    .map(serializeInventarioItem);
   const diferencas = itens
     .filter((item) => item.status === ITEM_STATUS_DIFERENCA)
-    .map((item) => ({
-      ...item,
-      tipoDiferencaLabel: formatDiferencaTipo(item.tipoDiferenca),
-    }));
+    .map(serializeInventarioItem);
 
   return {
     caixa: {
@@ -281,6 +301,7 @@ async function loadCaixaState(inventarioId: number, caixa: string) {
       confirmados: itens.filter((item) => item.status === ITEM_STATUS_CONFIRMADO).length,
     },
     itensPendentes: pendentes,
+    itensConfirmados: confirmados,
     diferencasRegistradas: diferencas,
   };
 }

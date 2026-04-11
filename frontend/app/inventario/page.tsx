@@ -106,6 +106,7 @@ type CaixaDetalhe = {
     confirmados: number;
   };
   itensPendentes: ItemInventario[];
+  itensConfirmados: ItemInventario[];
   diferencasRegistradas: ItemInventario[];
 };
 
@@ -119,6 +120,13 @@ type InventarioLog = {
   caixasFinalizadas: number;
   totalDiferencas: number;
   diferencas: ItemInventario[];
+};
+
+type CaixaLogFilter = 'todos' | 'sucesso' | 'diferenca';
+
+type CaixaHistoricoItem = {
+  tipo: 'sucesso' | 'diferenca';
+  item: ItemInventario;
 };
 
 function inputDateString(date: Date) {
@@ -142,6 +150,40 @@ function fmtDateTime(value?: string | null) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '-';
   return date.toLocaleString('pt-BR');
+}
+
+function normalizeSearchText(value: unknown) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+function matchesCaixaItemSearch(item: ItemInventario, query: string) {
+  if (!query) return true;
+
+  const haystack = normalizeSearchText([
+    item.skuBase,
+    item.idPecaReferencia,
+    item.descricao,
+  ].join(' '));
+
+  return haystack.includes(query);
+}
+
+function compareItemDecisionDesc(a: ItemInventario, b: ItemInventario) {
+  const aTime = a.decidedAt ? new Date(a.decidedAt).getTime() : 0;
+  const bTime = b.decidedAt ? new Date(b.decidedAt).getTime() : 0;
+
+  if (aTime !== bTime) {
+    return bTime - aTime;
+  }
+
+  return String(a.skuBase || '').localeCompare(String(b.skuBase || ''), 'pt-BR', {
+    numeric: true,
+    sensitivity: 'base',
+  });
 }
 
 function pickPreferredCaixa(caixas: CaixaResumo[], preferredCaixa?: string | null) {
@@ -216,6 +258,9 @@ export default function InventarioPage() {
   const [caixas, setCaixas] = useState<CaixaResumo[]>([]);
   const [selectedCaixa, setSelectedCaixa] = useState('');
   const [caixaDetalhe, setCaixaDetalhe] = useState<CaixaDetalhe | null>(null);
+  const [buscaCaixa, setBuscaCaixa] = useState('');
+  const [buscaItemCaixa, setBuscaItemCaixa] = useState('');
+  const [filtroLogCaixa, setFiltroLogCaixa] = useState<CaixaLogFilter>('todos');
   const [logs, setLogs] = useState<InventarioLog[]>([]);
   const [logSelecionado, setLogSelecionado] = useState<InventarioLog | null>(null);
   const [filtroDataInicio, setFiltroDataInicio] = useState(() => defaultDateRange().dataInicio);
@@ -246,6 +291,7 @@ export default function InventarioPage() {
     setCaixaDetalhe({
       caixa: data.caixa,
       itensPendentes: Array.isArray(data.itensPendentes) ? data.itensPendentes : [],
+      itensConfirmados: Array.isArray(data.itensConfirmados) ? data.itensConfirmados : [],
       diferencasRegistradas: Array.isArray(data.diferencasRegistradas) ? data.diferencasRegistradas : [],
     });
   }
@@ -415,6 +461,36 @@ export default function InventarioPage() {
     setExcluindoLogId(null);
   }
 
+  const buscaCaixaNormalizada = normalizeSearchText(buscaCaixa);
+  const buscaItemCaixaNormalizada = normalizeSearchText(buscaItemCaixa);
+
+  const caixasFiltradas = caixas.filter((caixa) => {
+    if (!buscaCaixaNormalizada) return true;
+    return normalizeSearchText(caixa.caixa).includes(buscaCaixaNormalizada);
+  });
+
+  const itensPendentesFiltrados = (caixaDetalhe?.itensPendentes || []).filter((item) =>
+    matchesCaixaItemSearch(item, buscaItemCaixaNormalizada),
+  );
+
+  const itensConfirmadosFiltrados = [...(caixaDetalhe?.itensConfirmados || [])]
+    .sort(compareItemDecisionDesc)
+    .filter((item) => matchesCaixaItemSearch(item, buscaItemCaixaNormalizada));
+
+  const itensDiferencaFiltrados = [...(caixaDetalhe?.diferencasRegistradas || [])]
+    .sort(compareItemDecisionDesc)
+    .filter((item) => matchesCaixaItemSearch(item, buscaItemCaixaNormalizada));
+
+  const historicoCaixaFiltrado: CaixaHistoricoItem[] = [
+    ...itensConfirmadosFiltrados.map((item) => ({ tipo: 'sucesso' as const, item })),
+    ...itensDiferencaFiltrados.map((item) => ({ tipo: 'diferenca' as const, item })),
+  ]
+    .filter((entry) => {
+      if (filtroLogCaixa === 'todos') return true;
+      return entry.tipo === filtroLogCaixa;
+    })
+    .sort((a, b) => compareItemDecisionDesc(a.item, b.item));
+
   if (loading) {
     return (
       <div style={{ padding: 28 }}>
@@ -525,8 +601,21 @@ export default function InventarioPage() {
             <div style={{ display: 'grid', gridTemplateColumns: '320px minmax(0, 1fr)', gap: 12 }}>
               <div style={s.card}>
                 <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 12 }}>Caixas para conferencia</div>
+                <div style={{ marginBottom: 12 }}>
+                  <label style={s.label}>Buscar caixa</label>
+                  <input
+                    style={{ ...s.input, width: '100%' }}
+                    value={buscaCaixa}
+                    onChange={(e) => setBuscaCaixa(e.target.value)}
+                    placeholder="Digite o nome da caixa"
+                  />
+                </div>
                 <div style={{ display: 'grid', gap: 10 }}>
-                  {caixas.map((caixa) => {
+                  {caixasFiltradas.length === 0 ? (
+                    <div style={{ padding: 14, borderRadius: 10, background: '#f8fafc', border: '1px solid var(--border)', color: 'var(--gray-500)', fontSize: 13 }}>
+                      Nenhuma caixa encontrada com esse filtro.
+                    </div>
+                  ) : caixasFiltradas.map((caixa) => {
                     const active = caixa.caixa === selectedCaixa;
                     return (
                       <button
@@ -548,6 +637,7 @@ export default function InventarioPage() {
                         <div style={{ fontSize: 12, color: 'var(--gray-500)', display: 'grid', gap: 4 }}>
                           <div>Total de SKUs: {caixa.totalItens}</div>
                           <div>Pendentes: {caixa.pendentes}</div>
+                          <div>Confirmados: {caixa.confirmados}</div>
                           <div>Diferencas: {caixa.diferencas}</div>
                         </div>
                       </button>
@@ -583,13 +673,39 @@ export default function InventarioPage() {
                       </button>
                     </div>
 
+                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 220px', gap: 12, marginBottom: 14 }}>
+                      <div>
+                        <label style={s.label}>Buscar por descricao, SKU ou ID da peca</label>
+                        <input
+                          style={{ ...s.input, width: '100%' }}
+                          value={buscaItemCaixa}
+                          onChange={(e) => setBuscaItemCaixa(e.target.value)}
+                          placeholder="Ex: HD01_0121 ou Mangueira"
+                        />
+                      </div>
+                      <div>
+                        <label style={s.label}>Filtro do log</label>
+                        <select
+                          style={{ ...s.input, width: '100%', cursor: 'pointer' }}
+                          value={filtroLogCaixa}
+                          onChange={(e) => setFiltroLogCaixa(e.target.value as CaixaLogFilter)}
+                        >
+                          <option value="todos">Sucesso + divergencia</option>
+                          <option value="sucesso">So sucesso</option>
+                          <option value="diferenca">So divergencia</option>
+                        </select>
+                      </div>
+                    </div>
+
                     <div style={{ display: 'grid', gap: 10 }}>
-                      {caixaDetalhe.itensPendentes.length === 0 ? (
+                      {itensPendentesFiltrados.length === 0 ? (
                         <div style={{ padding: 16, borderRadius: 10, background: '#f8fafc', border: '1px solid var(--border)', color: 'var(--gray-500)', fontSize: 13 }}>
-                          Todos os SKUs dessa caixa ja foram tratados. Se estiver tudo conferido, finalize a caixa.
+                          {caixaDetalhe.itensPendentes.length === 0
+                            ? 'Todos os SKUs dessa caixa ja foram tratados. Se estiver tudo conferido, finalize a caixa.'
+                            : 'Nenhum SKU pendente encontrado com esse filtro.'}
                         </div>
                       ) : (
-                        caixaDetalhe.itensPendentes.map((item) => {
+                        itensPendentesFiltrados.map((item) => {
                           const busy = busyItemId === item.id;
                           return (
                             <div key={item.id} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 16 }}>
@@ -634,20 +750,48 @@ export default function InventarioPage() {
                       )}
                     </div>
 
-                    {caixaDetalhe.diferencasRegistradas.length > 0 && (
+                    {(caixaDetalhe.itensConfirmados.length > 0 || caixaDetalhe.diferencasRegistradas.length > 0) && (
                       <div style={{ marginTop: 20 }}>
-                        <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 10 }}>Diferencas registradas nesta caixa</div>
-                        <div style={{ display: 'grid', gap: 10 }}>
-                          {caixaDetalhe.diferencasRegistradas.map((item) => (
-                            <div key={item.id} style={{ border: '1px solid #fecaca', background: '#fef2f2', borderRadius: 10, padding: 14 }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 6 }}>
-                                <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-800)' }}>{item.skuBase} - {item.idPecaReferencia}</div>
-                                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--red)' }}>{item.tipoDiferencaLabel || item.tipoDiferenca}</div>
-                              </div>
-                              <div style={{ fontSize: 13, color: 'var(--gray-700)' }}>{item.descricao}</div>
-                            </div>
-                          ))}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
+                          <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)' }}>Log desta caixa</div>
+                          <div style={{ fontSize: 12, color: 'var(--gray-500)' }}>
+                            Sucessos: <strong>{itensConfirmadosFiltrados.length}</strong> · Divergencias: <strong>{itensDiferencaFiltrados.length}</strong>
+                          </div>
                         </div>
+                        {historicoCaixaFiltrado.length === 0 ? (
+                          <div style={{ padding: 16, borderRadius: 10, background: '#f8fafc', border: '1px solid var(--border)', color: 'var(--gray-500)', fontSize: 13 }}>
+                            Nenhum item tratado encontrado com o filtro atual.
+                          </div>
+                        ) : (
+                          <div style={{ display: 'grid', gap: 10 }}>
+                            {historicoCaixaFiltrado.map((entry) => {
+                              const item = entry.item;
+                              const isSuccess = entry.tipo === 'sucesso';
+                              return (
+                                <div
+                                  key={`${entry.tipo}-${item.id}`}
+                                  style={{
+                                    border: isSuccess ? '1px solid #86efac' : '1px solid #fecaca',
+                                    background: isSuccess ? '#dcfce7' : '#fef2f2',
+                                    borderRadius: 10,
+                                    padding: 14,
+                                  }}
+                                >
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 6 }}>
+                                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-800)' }}>{item.skuBase} - {item.idPecaReferencia}</div>
+                                    <div style={{ fontSize: 12, fontWeight: 700, color: isSuccess ? 'var(--green)' : 'var(--red)' }}>
+                                      {isSuccess ? 'Confirmado' : item.tipoDiferencaLabel || item.tipoDiferenca}
+                                    </div>
+                                  </div>
+                                  <div style={{ fontSize: 13, color: 'var(--gray-700)', marginBottom: 4 }}>{item.descricao}</div>
+                                  <div style={{ fontSize: 12, color: 'var(--gray-500)' }}>
+                                    ID Moto: {item.motoId ?? '-'} · Estoque registrado: {item.quantidadeEstoque} · Tratado em {fmtDateTime(item.decidedAt)}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
                     )}
                   </>
