@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 
 type NavItem = {
   href: string;
@@ -186,6 +186,7 @@ export function Sidebar({
   onToggle,
 }: SidebarProps) {
   const path = usePathname();
+  const router = useRouter();
   const activeHref = getActiveHref(path);
   const isDrawer = mode === 'phone' || mode === 'tablet-portrait';
   const isTabletLandscape = mode === 'tablet-landscape';
@@ -200,13 +201,15 @@ export function Sidebar({
   const desktopIconBox = compactDesktop ? 24 : 26;
   const desktopIconSize = compactDesktop ? 14 : 16;
 
-  const handleNavigate = () => {
-    if (isDrawer) {
+  const handleNavigate = (href: string) => {
+    const isCurrentRoute = href === activeHref;
+
+    if (isDrawer && isCurrentRoute) {
       onClose?.();
       return;
     }
 
-    if (isTabletLandscape && expanded) {
+    if (isTabletLandscape && expanded && isCurrentRoute) {
       onClose?.();
     }
   };
@@ -372,7 +375,17 @@ export function Sidebar({
                     key={item.href}
                     href={item.href}
                     title={item.label}
-                    onClick={handleNavigate}
+                    onClick={(event) => {
+                      if (item.href !== activeHref) {
+                        if (isDrawer || isTabletLandscape) {
+                          event.preventDefault();
+                          router.push(item.href);
+                        }
+                        return;
+                      }
+
+                      handleNavigate(item.href);
+                    }}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -392,6 +405,9 @@ export function Sidebar({
                       textDecoration: 'none',
                       transition: 'all 150ms ease',
                       minHeight: expanded ? desktopNavHeight : 42,
+                      cursor: 'pointer',
+                      touchAction: 'manipulation',
+                      WebkitTapHighlightColor: 'transparent',
                     }}
                   >
                     <span
