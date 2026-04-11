@@ -67,7 +67,7 @@ function serializeInventarioItem(item: {
   caixa: string;
   skuBase: string;
   motoId: number | null;
-  idPecaReferencia: string;
+  idPecaReferencia: string | null;
   descricao: string;
   quantidadeEstoque: number;
   status: string;
@@ -76,6 +76,7 @@ function serializeInventarioItem(item: {
 }) {
   return {
     ...item,
+    idPecaReferencia: item.idPecaReferencia || item.skuBase,
     tipoDiferencaLabel: item.status === ITEM_STATUS_DIFERENCA
       ? formatDiferencaTipo(item.tipoDiferenca)
       : null,
