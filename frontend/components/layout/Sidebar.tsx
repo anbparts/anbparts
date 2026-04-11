@@ -191,6 +191,7 @@ export function Sidebar({
   const isDrawer = mode === 'phone' || mode === 'tablet-portrait';
   const isTabletLandscape = mode === 'tablet-landscape';
   const isDesktop = mode === 'desktop';
+  const isPhone = mode === 'phone';
   const expanded = isDrawer ? open : isTabletLandscape ? open : true;
   const sidebarWidth = isTabletLandscape ? (expanded ? 252 : 88) : 252;
   const showBackdrop = isDrawer && open;
@@ -200,6 +201,15 @@ export function Sidebar({
   const desktopNavHeight = compactDesktop ? 36 : 42;
   const desktopIconBox = compactDesktop ? 24 : 26;
   const desktopIconSize = compactDesktop ? 14 : 16;
+  const drawerViewportHeight = isPhone ? '100svh' : isDrawer ? '100dvh' : '100vh';
+  const drawerSafeTop = 'env(safe-area-inset-top, 0px)';
+  const drawerSafeBottom = 'env(safe-area-inset-bottom, 0px)';
+  const drawerNavBottomPadding = isPhone
+    ? `calc(${drawerSafeBottom} + 34px)`
+    : `calc(${drawerSafeBottom} + 20px)`;
+  const drawerFooterBottomPadding = isPhone
+    ? `calc(${drawerSafeBottom} + 16px)`
+    : `calc(${drawerSafeBottom} + 10px)`;
 
   const handleNavigate = (href: string) => {
     const isCurrentRoute = href === activeHref;
@@ -235,14 +245,16 @@ export function Sidebar({
       <aside
         style={{
           width: sidebarWidth,
-          minHeight: '100vh',
+          minHeight: drawerViewportHeight,
+          height: drawerViewportHeight,
+          maxHeight: drawerViewportHeight,
           background: 'linear-gradient(180deg, #08111f 0%, #0a1628 100%)',
           display: 'flex',
           flexDirection: 'column',
           position: 'fixed',
           top: 0,
           left: 0,
-          bottom: 0,
+          bottom: isDrawer ? 'auto' : 0,
           zIndex: 110,
           transform: isDrawer ? (open ? 'translateX(0)' : 'translateX(calc(-100% - 20px))') : 'translateX(0)',
           transition: 'transform 220ms ease, width 220ms ease',
@@ -250,6 +262,9 @@ export function Sidebar({
           fontFamily: "'Inter', system-ui, sans-serif",
           borderRight: '1px solid rgba(255,255,255,.06)',
           pointerEvents: isDrawer && !open ? 'none' : 'auto',
+          overflow: 'hidden',
+          paddingTop: isDrawer ? drawerSafeTop : 0,
+          paddingBottom: isDrawer ? drawerSafeBottom : 0,
         }}
       >
         <div
@@ -338,9 +353,12 @@ export function Sidebar({
                 ? '8px 10px 10px'
                 : '10px 10px 14px'
               : '10px 8px 14px',
+            paddingBottom: isDrawer ? drawerNavBottomPadding : undefined,
             overflowY: 'auto',
             display: 'flex',
             flexDirection: 'column',
+            WebkitOverflowScrolling: 'touch',
+            overscrollBehavior: 'contain',
           }}
         >
           {NAV.map((group, groupIndex) => (
@@ -440,6 +458,7 @@ export function Sidebar({
                 ? '10px 10px'
                 : '12px 10px'
               : '12px 8px',
+            paddingBottom: isDrawer ? drawerFooterBottomPadding : undefined,
             borderTop: '1px solid rgba(255,255,255,.08)',
             flexShrink: 0,
           }}
