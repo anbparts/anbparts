@@ -129,6 +129,12 @@ type CaixaHistoricoItem = {
   item: ItemInventario;
 };
 
+type InventarioCaixaOpcao = {
+  caixa: string;
+  totalSkus: number;
+  totalPecas: number;
+};
+
 function inputDateString(date: Date) {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
   return local.toISOString().split('T')[0];
@@ -245,9 +251,190 @@ function DiferencaModal({
   );
 }
 
+function NovoInventarioModal({
+  open,
+  loading,
+  creating,
+  modo,
+  caixas,
+  caixasSelecionadas,
+  onClose,
+  onModoChange,
+  onToggleCaixa,
+  onSelectAll,
+  onClearSelection,
+  onConfirm,
+}: {
+  open: boolean;
+  loading: boolean;
+  creating: boolean;
+  modo: 'completo' | 'parcial';
+  caixas: InventarioCaixaOpcao[];
+  caixasSelecionadas: string[];
+  onClose: () => void;
+  onModoChange: (modo: 'completo' | 'parcial') => void;
+  onToggleCaixa: (caixa: string) => void;
+  onSelectAll: () => void;
+  onClearSelection: () => void;
+  onConfirm: () => void;
+}) {
+  if (!open) return null;
+
+  const totalPecas = caixas.reduce((sum, caixa) => sum + Number(caixa.totalPecas || 0), 0);
+  const canConfirm = !creating && modo === 'completo'
+    ? true
+    : caixasSelecionadas.length > 0;
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 250, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }}>
+      <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 16, width: '100%', maxWidth: 720, boxShadow: '0 12px 32px rgba(0,0,0,.10)', maxHeight: 'min(88vh, 880px)', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ padding: '20px 22px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+          <div>
+            <div style={{ fontFamily: 'Fraunces, serif', fontSize: 20, fontWeight: 600 }}>Novo inventario</div>
+            <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 4 }}>
+              Escolha se vamos contar o estoque completo ou somente localizacoes especificas.
+            </div>
+          </div>
+          <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer' }}>X</button>
+        </div>
+
+        <div style={{ padding: '18px 22px', overflow: 'auto', display: 'grid', gap: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+            <button
+              onClick={() => onModoChange('completo')}
+              style={{
+                border: modo === 'completo' ? '1px solid var(--blue-500)' : '1px solid var(--border)',
+                background: modo === 'completo' ? '#eff6ff' : 'var(--white)',
+                borderRadius: 12,
+                padding: 16,
+                textAlign: 'left',
+                cursor: 'pointer',
+              }}
+            >
+              <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 6 }}>Inventario Completo</div>
+              <div style={{ fontSize: 12, color: 'var(--gray-500)', lineHeight: 1.55 }}>
+                Segue o fluxo atual e monta a contagem com todas as localizacoes disponiveis em estoque.
+              </div>
+            </button>
+
+            <button
+              onClick={() => onModoChange('parcial')}
+              style={{
+                border: modo === 'parcial' ? '1px solid var(--blue-500)' : '1px solid var(--border)',
+                background: modo === 'parcial' ? '#eff6ff' : 'var(--white)',
+                borderRadius: 12,
+                padding: 16,
+                textAlign: 'left',
+                cursor: 'pointer',
+              }}
+            >
+              <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 6 }}>Inventario Parcial</div>
+              <div style={{ fontSize: 12, color: 'var(--gray-500)', lineHeight: 1.55 }}>
+                Permite selecionar uma ou varias localizacoes para contar somente as caixas escolhidas.
+              </div>
+            </button>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
+            <div style={{ padding: 14, borderRadius: 12, background: '#f8fafc', border: '1px solid var(--border)' }}>
+              <div style={{ fontSize: 11, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '.08em' }}>Localizacoes</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--gray-800)', marginTop: 6 }}>{caixas.length}</div>
+            </div>
+            <div style={{ padding: 14, borderRadius: 12, background: '#f8fafc', border: '1px solid var(--border)' }}>
+              <div style={{ fontSize: 11, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '.08em' }}>SKUs</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--gray-800)', marginTop: 6 }}>{caixas.reduce((sum, caixa) => sum + Number(caixa.totalSkus || 0), 0)}</div>
+            </div>
+            <div style={{ padding: 14, borderRadius: 12, background: '#f8fafc', border: '1px solid var(--border)' }}>
+              <div style={{ fontSize: 11, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '.08em' }}>Pecas</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--gray-800)', marginTop: 6 }}>{totalPecas}</div>
+            </div>
+          </div>
+
+          {modo === 'parcial' && (
+            <div style={{ border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
+              <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-800)' }}>Selecionar localizacoes</div>
+                  <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 4 }}>
+                    A localizacao <strong>Sem Localizacao</strong> entra como uma caixa propria quando houver pecas disponiveis sem preenchimento.
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button onClick={onSelectAll} type="button" style={{ ...s.btn, background: 'var(--white)', color: 'var(--gray-700)', borderColor: 'var(--border)' }}>
+                    Selecionar todas
+                  </button>
+                  <button onClick={onClearSelection} type="button" style={{ ...s.btn, background: 'var(--white)', color: 'var(--gray-700)', borderColor: 'var(--border)' }}>
+                    Limpar
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ maxHeight: 360, overflow: 'auto', padding: 12, display: 'grid', gap: 10 }}>
+                {loading ? (
+                  <div style={{ padding: 16, color: 'var(--gray-500)', fontSize: 13 }}>Carregando localizacoes...</div>
+                ) : caixas.length === 0 ? (
+                  <div style={{ padding: 16, color: 'var(--gray-500)', fontSize: 13 }}>Nenhuma localizacao disponivel encontrada.</div>
+                ) : (
+                  caixas.map((caixa) => {
+                    const checked = caixasSelecionadas.includes(caixa.caixa);
+                    return (
+                      <label
+                        key={caixa.caixa}
+                        style={{
+                          display: 'flex',
+                          gap: 12,
+                          alignItems: 'flex-start',
+                          border: checked ? '1px solid var(--blue-500)' : '1px solid var(--border)',
+                          background: checked ? '#eff6ff' : 'var(--white)',
+                          borderRadius: 10,
+                          padding: 14,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => onToggleCaixa(caixa.caixa)}
+                          style={{ width: 16, height: 16, marginTop: 2, cursor: 'pointer' }}
+                        />
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-800)', overflowWrap: 'anywhere' }}>{caixa.caixa}</div>
+                          <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 4 }}>
+                            {caixa.totalSkus} SKU(s) · {caixa.totalPecas} peca(s)
+                          </div>
+                        </div>
+                      </label>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div style={{ padding: '14px 22px 20px', display: 'flex', gap: 8, justifyContent: 'flex-end', borderTop: '1px solid var(--border)' }}>
+          <button onClick={onClose} style={{ ...s.btn, background: 'var(--white)', color: 'var(--gray-700)', borderColor: 'var(--border)' }}>Cancelar</button>
+          <button
+            onClick={onConfirm}
+            disabled={!canConfirm}
+            style={{ ...s.btn, background: 'var(--blue-500)', color: '#fff', opacity: canConfirm ? 1 : 0.65 }}
+          >
+            {creating ? 'Criando...' : modo === 'completo' ? 'Iniciar inventario completo' : 'Iniciar inventario parcial'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function InventarioPage() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
+  const [novoInventarioOpen, setNovoInventarioOpen] = useState(false);
+  const [novoInventarioModo, setNovoInventarioModo] = useState<'completo' | 'parcial'>('completo');
+  const [caixasDisponiveis, setCaixasDisponiveis] = useState<InventarioCaixaOpcao[]>([]);
+  const [carregandoOpcoesInventario, setCarregandoOpcoesInventario] = useState(false);
+  const [caixasSelecionadasInventario, setCaixasSelecionadasInventario] = useState<string[]>([]);
   const [reloading, setReloading] = useState(false);
   const [cancelandoInventario, setCancelandoInventario] = useState(false);
   const [excluindoLogId, setExcluindoLogId] = useState<number | null>(null);
@@ -346,14 +533,43 @@ export default function InventarioPage() {
   }, [inventario?.id, selectedCaixa]);
 
   async function handleNovoInventario() {
+    setCarregandoOpcoesInventario(true);
+    setNovoInventarioModo('completo');
+    setCaixasSelecionadasInventario([]);
+    setNovoInventarioOpen(true);
+    try {
+      const data = await api.inventario.opcoes();
+      setCaixasDisponiveis(Array.isArray(data.caixas) ? data.caixas : []);
+    } catch (e: any) {
+      setNovoInventarioOpen(false);
+      alert(e.message || 'Erro ao carregar opcoes do inventario');
+    }
+    setCarregandoOpcoesInventario(false);
+  }
+
+  async function handleCriarInventario() {
     setCreating(true);
     try {
-      const data = await api.inventario.novo();
+      const data = await api.inventario.novo({
+        modo: novoInventarioModo,
+        caixasSelecionadas: novoInventarioModo === 'parcial' ? caixasSelecionadasInventario : [],
+      });
       applyInventarioState(data);
+      setNovoInventarioOpen(false);
+      setCaixasSelecionadasInventario([]);
+      setCaixasDisponiveis([]);
     } catch (e: any) {
       alert(e.message || 'Erro ao iniciar inventario');
     }
     setCreating(false);
+  }
+
+  function handleToggleCaixaInventario(caixa: string) {
+    setCaixasSelecionadasInventario((current) => (
+      current.includes(caixa)
+        ? current.filter((item) => item !== caixa)
+        : [...current, caixa]
+    ));
   }
 
   async function handleConfirmarItem(itemId: number) {
@@ -536,7 +752,7 @@ export default function InventarioPage() {
             <div>
               <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 6 }}>Conferencia de estoque por caixa</div>
               <div style={{ fontSize: 12, color: 'var(--gray-500)' }}>
-                O inventario usa a localizacao sincronizada do Bling para separar as pecas por caixa e registrar somente as divergencias.
+                O inventario usa a localizacao sincronizada do Bling para separar as pecas por caixa, incluindo <strong>Sem Localizacao</strong> quando houver pecas disponiveis sem preenchimento.
               </div>
             </div>
             {!inventario && (
@@ -803,7 +1019,7 @@ export default function InventarioPage() {
           <div style={s.card}>
             <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 8 }}>Nenhum inventario em andamento</div>
             <div style={{ fontSize: 12, color: 'var(--gray-500)' }}>
-              Clique em <strong>Novo Inventario</strong> para gerar a fila de caixas com base nas pecas disponiveis e localizadas no sistema.
+              Clique em <strong>Novo Inventario</strong> para gerar a fila de caixas com base nas pecas disponiveis do sistema, incluindo a caixa <strong>Sem Localizacao</strong> quando necessario.
             </div>
           </div>
         )}
@@ -962,6 +1178,28 @@ export default function InventarioPage() {
         loading={busyItemId === diferencaItem?.id}
         onClose={() => setDiferencaItem(null)}
         onSelect={handleRegistrarDiferenca}
+      />
+      <NovoInventarioModal
+        open={novoInventarioOpen}
+        loading={carregandoOpcoesInventario}
+        creating={creating}
+        modo={novoInventarioModo}
+        caixas={caixasDisponiveis}
+        caixasSelecionadas={caixasSelecionadasInventario}
+        onClose={() => {
+          if (creating) return;
+          setNovoInventarioOpen(false);
+        }}
+        onModoChange={(modo) => {
+          setNovoInventarioModo(modo);
+          if (modo === 'completo') {
+            setCaixasSelecionadasInventario([]);
+          }
+        }}
+        onToggleCaixa={handleToggleCaixaInventario}
+        onSelectAll={() => setCaixasSelecionadasInventario(caixasDisponiveis.map((caixa) => caixa.caixa))}
+        onClearSelection={() => setCaixasSelecionadasInventario([])}
+        onConfirm={handleCriarInventario}
       />
     </>
   );

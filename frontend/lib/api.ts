@@ -49,7 +49,11 @@ export const api = {
   },
   inventario: {
     atual: () => req<any>('/inventario/atual'),
-    novo: () => req<any>('/inventario/novo', { method: 'POST' }),
+    opcoes: () => req<any>('/inventario/opcoes'),
+    novo: (data?: { modo?: 'completo' | 'parcial'; caixasSelecionadas?: string[] }) => req<any>('/inventario/novo', {
+      method: 'POST',
+      body: JSON.stringify(data || {}),
+    }),
     cancelarAtual: () => req<any>('/inventario/atual', { method: 'DELETE' }),
     caixa: (caixa: string, inventarioId?: number) => {
       const qs = inventarioId ? `?inventarioId=${inventarioId}` : '';

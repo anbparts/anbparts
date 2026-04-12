@@ -11,16 +11,26 @@ const CAIXA_STATUS_FINALIZADA = 'finalizada';
 const ITEM_STATUS_PENDENTE = 'pendente';
 const ITEM_STATUS_CONFIRMADO = 'confirmado';
 const ITEM_STATUS_DIFERENCA = 'diferenca';
+const CAIXA_SEM_LOCALIZACAO = 'Sem Localização';
 
 const diferencaSchema = z.object({
   tipo: z.enum(['nao_localizado', 'diferenca_estoque']),
 });
 
-function normalizeCaixa(value: unknown) {
+const novoInventarioSchema = z.object({
+  modo: z.enum(['completo', 'parcial']).optional().default('completo'),
+  caixasSelecionadas: z.array(z.string().trim().min(1)).optional().default([]),
+});
+
+function normalizeCaixaInput(value: unknown) {
   const text = String(value ?? '')
     .replace(/\s+/g, ' ')
     .trim();
   return text || null;
+}
+
+function resolveCaixaInventario(value: unknown) {
+  return normalizeCaixaInput(value) || CAIXA_SEM_LOCALIZACAO;
 }
 
 function getBaseSku(value: unknown) {
@@ -85,15 +95,15 @@ function serializeInventarioItem(item: {
 
 function buildInventarioSnapshot(pecas: Array<{
   idPeca: string;
-  motoId: number;
+  motoId: number | null;
   descricao: string;
   localizacao: string | null;
-}>) {
+}>, caixasSelecionadas?: Set<string>) {
   const caixasMap = new Map<string, Map<string, any>>();
 
   for (const peca of pecas) {
-    const caixa = normalizeCaixa(peca.localizacao);
-    if (!caixa) continue;
+    const caixa = resolveCaixaInventario(peca.localizacao);
+    if (caixasSelecionadas && !caixasSelecionadas.has(caixa)) continue;
 
     const skuBase = getBaseSku(peca.idPeca);
     if (!skuBase) continue;
@@ -128,8 +138,16 @@ function buildInventarioSnapshot(pecas: Array<{
     Array.from(caixasMap.get(caixa)?.values() || [])
       .sort((a, b) => sortText(a.skuBase, b.skuBase)),
   );
+  const caixasResumo = caixas.map((caixa) => {
+    const itensCaixa = Array.from(caixasMap.get(caixa)?.values() || []);
+    return {
+      caixa,
+      totalSkus: itensCaixa.length,
+      totalPecas: itensCaixa.reduce((sum, item) => sum + Number(item.quantidadeEstoque || 0), 0),
+    };
+  });
 
-  return { caixas, itens };
+  return { caixas, itens, caixasResumo };
 }
 
 async function findInventarioAberto() {
@@ -243,7 +261,7 @@ async function loadInventarioState(inventarioId: number) {
 }
 
 async function loadCaixaState(inventarioId: number, caixa: string) {
-  const caixaNormalizada = normalizeCaixa(caixa);
+  const caixaNormalizada = normalizeCaixaInput(caixa);
   if (!caixaNormalizada) return null;
 
   const [caixaRow, itens] = await Promise.all([
@@ -354,19 +372,17 @@ inventarioRouter.get('/atual', async (_req, res, next) => {
   }
 });
 
-inventarioRouter.post('/novo', async (_req, res, next) => {
+inventarioRouter.get('/opcoes', async (_req, res, next) => {
   try {
     const inventarioAberto = await findInventarioAberto();
     if (inventarioAberto) {
-      const state = await loadInventarioState(inventarioAberto.id);
-      return res.json({ ok: true, jaExistia: true, ...(state || { inventario: null, caixas: [] }) });
+      return res.status(409).json({ error: 'Ja existe inventario em andamento' });
     }
 
     const pecas = await prisma.peca.findMany({
       where: {
         disponivel: true,
         emPrejuizo: false,
-        localizacao: { not: null },
       },
       select: {
         idPeca: true,
@@ -382,7 +398,72 @@ inventarioRouter.post('/novo', async (_req, res, next) => {
 
     const snapshot = buildInventarioSnapshot(pecas);
     if (!snapshot.caixas.length || !snapshot.itens.length) {
-      return res.status(400).json({ error: 'Nenhuma caixa com estoque e localizacao foi encontrada para iniciar o inventario' });
+      return res.status(400).json({ error: 'Nenhuma caixa com estoque foi encontrada para iniciar o inventario' });
+    }
+
+    res.json({
+      ok: true,
+      totalCaixas: snapshot.caixas.length,
+      totalSkus: snapshot.itens.length,
+      totalPecas: snapshot.itens.reduce((sum, item) => sum + Number(item.quantidadeEstoque || 0), 0),
+      caixas: snapshot.caixasResumo,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+inventarioRouter.post('/novo', async (req, res, next) => {
+  try {
+    const inventarioAberto = await findInventarioAberto();
+    if (inventarioAberto) {
+      const state = await loadInventarioState(inventarioAberto.id);
+      return res.json({ ok: true, jaExistia: true, ...(state || { inventario: null, caixas: [] }) });
+    }
+
+    const payload = novoInventarioSchema.parse(req.body || {});
+
+    const pecas = await prisma.peca.findMany({
+      where: {
+        disponivel: true,
+        emPrejuizo: false,
+      },
+      select: {
+        idPeca: true,
+        motoId: true,
+        descricao: true,
+        localizacao: true,
+      },
+      orderBy: [
+        { localizacao: 'asc' },
+        { idPeca: 'asc' },
+      ],
+    });
+
+    const snapshotCompleto = buildInventarioSnapshot(pecas);
+    if (!snapshotCompleto.caixas.length || !snapshotCompleto.itens.length) {
+      return res.status(400).json({ error: 'Nenhuma caixa com estoque foi encontrada para iniciar o inventario' });
+    }
+
+    let caixasSelecionadasSet: Set<string> | undefined;
+    if (payload.modo === 'parcial') {
+      const caixasDisponiveis = new Set(snapshotCompleto.caixas);
+      const caixasSelecionadas = payload.caixasSelecionadas
+        .map((value) => normalizeCaixaInput(value))
+        .filter((value): value is string => Boolean(value))
+        .map((value) => (value === CAIXA_SEM_LOCALIZACAO ? CAIXA_SEM_LOCALIZACAO : value))
+        .filter((value) => caixasDisponiveis.has(value));
+
+      if (!caixasSelecionadas.length) {
+        return res.status(400).json({ error: 'Selecione pelo menos uma localizacao para iniciar o inventario parcial' });
+      }
+
+      caixasSelecionadasSet = new Set(caixasSelecionadas);
+    }
+
+    const snapshot = buildInventarioSnapshot(pecas, caixasSelecionadasSet);
+    if (!snapshot.caixas.length || !snapshot.itens.length) {
+      return res.status(400).json({ error: 'Nenhuma caixa selecionada possui pecas em estoque para iniciar o inventario' });
     }
 
     const created = await prisma.$transaction(async (tx) => {
@@ -546,7 +627,7 @@ inventarioRouter.post('/caixas/:caixa/finalizar', async (req, res, next) => {
     const inventarioId = Number(req.body?.inventarioId || req.query?.inventarioId);
     if (!inventarioId) return res.status(400).json({ error: 'inventarioId obrigatorio' });
 
-    const caixa = normalizeCaixa(req.params.caixa);
+    const caixa = normalizeCaixaInput(req.params.caixa);
     if (!caixa) return res.status(400).json({ error: 'Caixa invalida' });
 
     const caixaRow = await prisma.inventarioCaixa.findUnique({

@@ -329,45 +329,77 @@ async function refreshMercadoPagoToken() {
   return normalizeText(payload.access_token);
 }
 
+async function parseApiResponsePayload(response: Response) {
+  const raw = await response.text().catch(() => '');
+  if (!raw) return {};
+
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return { message: raw };
+  }
+}
+
+function extractMercadoLivreApiErrorMessage(payload: any, status: number) {
+  return normalizeText(
+    payload?.message
+    || payload?.error_description
+    || payload?.error
+    || payload?.cause?.[0]?.message
+    || payload?.cause?.[0]?.code
+    || `Mercado Livre API ${status}`,
+  ) || `Mercado Livre API ${status}`;
+}
+
+function isMercadoLivreTokenError(status: number, payload: any) {
+  const message = extractMercadoLivreApiErrorMessage(payload, status).toLowerCase();
+  if (status === 401) return true;
+
+  if (![400, 401, 403].includes(status)) return false;
+
+  return [
+    'invalid token',
+    'invalid_token',
+    'expired_token',
+    'expired token',
+    'token inválido',
+    'token invalido',
+    'token expired',
+    'access token is not valid',
+    'access token expired',
+    'invalid access token',
+  ].some((term) => message.includes(term));
+}
+
 async function mercadoLivreReq(path: string, options: RequestInit = {}, allowRefresh = true) {
   const config = await getMercadoLivreConfig();
   const token = normalizeText(config.accessToken);
   if (!token) throw new Error('Mercado Livre nao conectado.');
   const url = /^https?:\/\//i.test(path) ? path : `${MERCADO_LIVRE_API}${path}`;
 
-  const response = await fetch(url, {
+  const execute = (bearer: string) => fetch(url, {
     ...options,
     headers: {
       accept: 'application/json',
-      Authorization: `Bearer ${token}`,
+      Authorization: `Bearer ${bearer}`,
       'Content-Type': 'application/json',
       ...(options.headers || {}),
     },
   });
 
-  if (response.status === 401 && allowRefresh && config.refreshToken) {
+  let response = await execute(token);
+  let payload: any = await parseApiResponsePayload(response);
+
+  if (isMercadoLivreTokenError(response.status, payload) && allowRefresh && config.refreshToken) {
     const refreshedToken = await refreshMercadoLivreToken();
-    return fetch(url, {
-      ...options,
-      headers: {
-        accept: 'application/json',
-        Authorization: `Bearer ${refreshedToken}`,
-        'Content-Type': 'application/json',
-        ...(options.headers || {}),
-      },
-    }).then(async (retryResponse) => {
-      const retryPayload: any = await retryResponse.json().catch(() => ({}));
-      if (!retryResponse.ok) {
-        throw new Error(retryPayload?.message || retryPayload?.error || `Mercado Livre API ${retryResponse.status}`);
-      }
-      return retryPayload;
-    });
+    response = await execute(refreshedToken);
+    payload = await parseApiResponsePayload(response);
   }
 
-  const payload: any = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(payload?.message || payload?.error || `Mercado Livre API ${response.status}`);
+    throw new Error(extractMercadoLivreApiErrorMessage(payload, response.status));
   }
+
   return payload;
 }
 

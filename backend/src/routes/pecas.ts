@@ -225,6 +225,7 @@ pecasRouter.get('/', async (req, res, next) => {
   try {
     const {
       motoId,
+      marca,
       disponivel,
       mercadoLivreLink,
       localizacao,
@@ -237,9 +238,19 @@ pecasRouter.get('/', async (req, res, next) => {
       orderBy = 'cadastro',
       orderDir = 'desc',
     } = req.query as any;
-    const where: any = { emPrejuizo: false };
+    const searchText = String(search || '').trim();
+    const where: any = searchText ? {} : { emPrejuizo: false };
     const andConditions: any[] = [];
     if (motoId) where.motoId = Number(motoId);
+    if (marca) {
+      andConditions.push({
+        moto: {
+          is: {
+            marca: { contains: String(marca).trim(), mode: 'insensitive' },
+          },
+        },
+      });
+    }
     if (disponivel !== undefined) where.disponivel = disponivel === 'true';
     if (mercadoLivreLink === 'com') {
       andConditions.push({ mercadoLivreLink: { not: null } });
@@ -266,12 +277,12 @@ pecasRouter.get('/', async (req, res, next) => {
       });
     }
     if (precoMlZero === 'true') where.precoML = 0;
-    if (search) {
+    if (searchText) {
       andConditions.push({
         OR: [
-          { idPeca: { contains: search, mode: 'insensitive' } },
-          { descricao: { contains: search, mode: 'insensitive' } },
-          { blingPedidoNum: { contains: search, mode: 'insensitive' } },
+          { idPeca: { contains: searchText, mode: 'insensitive' } },
+          { descricao: { contains: searchText, mode: 'insensitive' } },
+          { blingPedidoNum: { contains: searchText, mode: 'insensitive' } },
         ],
       });
     }
@@ -379,9 +390,12 @@ pecasRouter.put('/:id', async (req, res, next) => {
     const data = updatePecaSchema.parse(req.body);
     const current = await prisma.peca.findUnique({
       where: { id: Number(req.params.id) },
-      select: { id: true, precoML: true, valorFrete: true, valorTaxas: true },
+      select: { id: true, precoML: true, valorFrete: true, valorTaxas: true, emPrejuizo: true },
     });
     if (!current) return res.status(404).json({ error: 'Peca nao encontrada' });
+    if (current.emPrejuizo) {
+      return res.status(400).json({ error: 'Peca em prejuizo nao pode ser editada pela tela de estoque' });
+    }
 
     const financials = calculatePecaFinancialValues(
       current,
@@ -455,6 +469,8 @@ pecasRouter.patch('/:id/vender', async (req, res, next) => {
         descricao: true,
         detranEtiqueta: true,
         motoId: true,
+        disponivel: true,
+        emPrejuizo: true,
         precoML: true,
         valorFrete: true,
         valorTaxas: true,
@@ -462,6 +478,13 @@ pecasRouter.patch('/:id/vender', async (req, res, next) => {
       }
     });
     if (!current) return res.status(404).json({ error: 'Peça não encontrada' });
+
+    if (current.emPrejuizo) {
+      return res.status(400).json({ error: 'Peca em prejuizo nao pode ser vendida pela tela de estoque' });
+    }
+    if (!current.disponivel) {
+      return res.status(400).json({ error: 'Peca nao esta disponivel para venda' });
+    }
 
     const financials = calculateManualSaleValues(
       current,

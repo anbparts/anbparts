@@ -37,6 +37,10 @@ function hasMercadoLivreLink(value: any) {
   return Boolean(String(value || '').trim());
 }
 
+function isPrejuizoPeca(peca: any) {
+  return Boolean(peca?.emPrejuizo);
+}
+
 function calculatePecaPreview(precoML: string, valorFrete: string, valorTaxas: string) {
   const preco = Number(precoML) || 0;
   const frete = Number(valorFrete) || 0;
@@ -144,11 +148,12 @@ function PrejuizoReasonModal({ open, peca, saving, onClose, onConfirm }: any) {
   );
 }
 
-function ActionIconButton({ onClick }: { onClick: () => void }) {
+function ActionIconButton({ onClick, disabled = false, title = 'Acoes da peca' }: { onClick: () => void; disabled?: boolean; title?: string }) {
   return (
     <button
       onClick={onClick}
-      title="Acoes da peca"
+      title={title}
+      disabled={disabled}
       style={{
         width: 30,
         height: 30,
@@ -158,8 +163,9 @@ function ActionIconButton({ onClick }: { onClick: () => void }) {
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
-        cursor: 'pointer',
-        color: 'var(--ink-soft)',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        color: disabled ? 'var(--ink-muted)' : 'var(--ink-soft)',
+        opacity: disabled ? 0.55 : 1,
       }}
     >
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -206,6 +212,28 @@ function StatusLinkButton({ disponivel, link }: { disponivel: boolean; link: str
     >
       {disponivel ? 'Estoque' : 'Vendido'}
     </button>
+  );
+}
+
+function PrejuizoBadge() {
+  return (
+    <span
+      title="Peca em prejuizo"
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '2px 8px',
+        borderRadius: 99,
+        fontSize: 11,
+        fontFamily: 'Geist Mono, monospace',
+        border: '1px solid #fca5a5',
+        background: '#fef2f2',
+        color: '#b91c1c',
+      }}
+    >
+      Prejuizo
+    </span>
   );
 }
 
@@ -288,6 +316,7 @@ function DetranEtiquetaModal({ open, peca, onClose }: any) {
 
 function PecaActionsModal({ open, peca, onClose, onEdit, onSell, onDelete }: any) {
   if (!open || !peca) return null;
+  const bloqueadaPrejuizo = isPrejuizoPeca(peca);
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 230, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }}>
@@ -300,21 +329,29 @@ function PecaActionsModal({ open, peca, onClose, onEdit, onSell, onDelete }: any
           <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer' }}>X</button>
         </div>
         <div style={{ padding: '20px 22px', display: 'grid', gap: 10 }}>
-          <button onClick={onEdit} style={{ ...cs.btn, width: '100%', justifyContent: 'center', background: 'var(--white)', color: 'var(--ink)', borderColor: 'var(--border-strong)' }}>
-            Editar
-          </button>
-          {peca.disponivel ? (
-            <button onClick={onSell} style={{ ...cs.btn, width: '100%', justifyContent: 'center', background: 'var(--amber-light)', color: 'var(--amber)', borderColor: 'var(--amber-mid)' }}>
-              Vender
-            </button>
-          ) : (
-            <div style={{ fontSize: 12, color: 'var(--ink-muted)', textAlign: 'center' }}>
-              Esta peca ja esta vendida.
+          {bloqueadaPrejuizo ? (
+            <div style={{ padding: 14, borderRadius: 12, background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', fontSize: 12.5, lineHeight: 1.6 }}>
+              Essa peca esta marcada como <strong>Prejuizo</strong> e fica bloqueada para edicao e venda pela tela de estoque.
             </div>
+          ) : (
+            <>
+              <button onClick={onEdit} style={{ ...cs.btn, width: '100%', justifyContent: 'center', background: 'var(--white)', color: 'var(--ink)', borderColor: 'var(--border-strong)' }}>
+                Editar
+              </button>
+              {peca.disponivel ? (
+                <button onClick={onSell} style={{ ...cs.btn, width: '100%', justifyContent: 'center', background: 'var(--amber-light)', color: 'var(--amber)', borderColor: 'var(--amber-mid)' }}>
+                  Vender
+                </button>
+              ) : (
+                <div style={{ fontSize: 12, color: 'var(--ink-muted)', textAlign: 'center' }}>
+                  Esta peca ja esta vendida.
+                </div>
+              )}
+              <button onClick={onDelete} style={{ ...cs.btn, width: '100%', justifyContent: 'center', background: '#fff1f2', color: 'var(--red)', borderColor: '#fecdd3' }}>
+                Deletar
+              </button>
+            </>
           )}
-          <button onClick={onDelete} style={{ ...cs.btn, width: '100%', justifyContent: 'center', background: '#fff1f2', color: 'var(--red)', borderColor: '#fecdd3' }}>
-            Deletar
-          </button>
         </div>
         <div style={{ padding: '0 22px 20px', display: 'flex', justifyContent: 'flex-end' }}>
           <button onClick={onClose} style={{ ...cs.btn, background: 'transparent', color: 'var(--ink-soft)', borderColor: 'transparent' }}>Fechar</button>
@@ -904,6 +941,7 @@ export default function EstoquePage() {
   const [selectedPecaIds, setSelectedPecaIds] = useState<number[]>([]);
   const [filters, setFilters] = useState({
     motoId: '',
+    marca: '',
     disponivel: '',
     mercadoLivreLink: '',
     localizacao: '',
@@ -926,6 +964,7 @@ export default function EstoquePage() {
       orderDir: filters.orderDir,
     };
     if (filters.motoId) params.motoId = filters.motoId;
+    if (filters.marca) params.marca = filters.marca;
     if (filters.disponivel !== '') params.disponivel = filters.disponivel;
     if (filters.mercadoLivreLink !== '') params.mercadoLivreLink = filters.mercadoLivreLink;
     if (filters.localizacao !== '') params.localizacao = filters.localizacao;
@@ -983,11 +1022,15 @@ export default function EstoquePage() {
   }, []);
 
   useEffect(() => {
-    const visibleIds = new Set((data.data || []).map((p: any) => p.id));
+    const visibleIds = new Set((data.data || []).filter((p: any) => !isPrejuizoPeca(p)).map((p: any) => p.id));
     setSelectedPecaIds((current) => current.filter((id) => visibleIds.has(id)));
   }, [data.data]);
 
   async function handleSavePeca(formData: any) {
+    if (editPeca && isPrejuizoPeca(editPeca)) {
+      alert('Essa peca esta em prejuizo e nao pode ser editada pela tela de estoque.');
+      return;
+    }
     if (editPeca) await api.pecas.update(editPeca.id, formData);
     else await api.pecas.create(formData);
     setModal(false);
@@ -996,6 +1039,10 @@ export default function EstoquePage() {
   }
 
   async function handleVenda(formData: any) {
+    if (vendaPeca && isPrejuizoPeca(vendaPeca)) {
+      alert('Essa peca esta em prejuizo e nao pode ser vendida pela tela de estoque.');
+      return;
+    }
     await api.pecas.vender(vendaPeca.id, formData);
     setVendaModal(false);
     setVendaPeca(null);
@@ -1017,6 +1064,10 @@ export default function EstoquePage() {
   }
 
   async function handleDeletePeca(peca: any) {
+    if (isPrejuizoPeca(peca)) {
+      alert('Pecas em prejuizo ficam bloqueadas para acoes na tela de estoque.');
+      return;
+    }
     if (!confirm(`Excluir peca ${peca.idPeca}?`)) return;
     await api.pecas.delete(peca.id);
     setActionPeca(null);
@@ -1081,14 +1132,14 @@ export default function EstoquePage() {
   }
 
   function clearFilters() {
-    setFilters({ ...filters, motoId: '', disponivel: '', mercadoLivreLink: '', localizacao: '', precoMlZero: '', search: '', dataVendaFrom: '', dataVendaTo: '', page: 1 });
+    setFilters({ ...filters, motoId: '', marca: '', disponivel: '', mercadoLivreLink: '', localizacao: '', precoMlZero: '', search: '', dataVendaFrom: '', dataVendaTo: '', page: 1 });
   }
 
-  const hasActiveFilters = Boolean(filters.motoId || filters.disponivel !== '' || filters.mercadoLivreLink !== '' || filters.localizacao !== '' || filters.precoMlZero !== '' || filters.search || filters.dataVendaFrom || filters.dataVendaTo);
+  const hasActiveFilters = Boolean(filters.motoId || filters.marca || filters.disponivel !== '' || filters.mercadoLivreLink !== '' || filters.localizacao !== '' || filters.precoMlZero !== '' || filters.search || filters.dataVendaFrom || filters.dataVendaTo);
   const totalPages = Math.max(1, Math.ceil((data.total || 0) / filters.perPage));
   const hasPrevPage = filters.page > 1;
   const hasNextPage = filters.page < totalPages;
-  const visiblePecaIds = (data.data || []).map((p: any) => p.id);
+  const visiblePecaIds = (data.data || []).filter((p: any) => !isPrejuizoPeca(p)).map((p: any) => p.id);
   const allVisibleSelected = visiblePecaIds.length > 0 && visiblePecaIds.every((id: number) => selectedPecaIds.includes(id));
   const isPhone = viewportMode === 'phone';
   const isTabletPortrait = viewportMode === 'tablet-portrait';
@@ -1110,6 +1161,11 @@ export default function EstoquePage() {
     { l: 'Em estoque', v: data.totalDisp, c: 'var(--sage)' },
     { l: 'Vendidas', v: data.totalVend, c: 'var(--amber)' },
   ];
+  const marcaOptions = Array.from(new Set(
+    motos
+      .map((m: any) => String(m?.marca || '').trim())
+      .filter(Boolean),
+  )).sort((a, b) => a.localeCompare(b, 'pt-BR', { sensitivity: 'base' }));
   const tableHeaders: EstoqueTableHeader[] = [
     { label: '', sort: null, kind: 'select', width: 38 },
     { label: 'ID', sort: 'motoId', width: 52 },
@@ -1154,6 +1210,10 @@ export default function EstoquePage() {
               <select style={{ ...cs.sel, width: '100%' }} value={filters.motoId} onChange={(e) => setFilters({ ...filters, motoId: e.target.value, page: 1 })}>
                 <option value="">Todas motos</option>
                 {motos.map((m: any) => <option key={m.id} value={m.id}>ID {m.id} - {m.marca} {m.modelo}</option>)}
+              </select>
+              <select style={{ ...cs.sel, width: '100%' }} value={filters.marca} onChange={(e) => setFilters({ ...filters, marca: e.target.value, page: 1 })}>
+                <option value="">Marca da moto</option>
+                {marcaOptions.map((marca) => <option key={marca} value={marca}>{marca}</option>)}
               </select>
               <select style={{ ...cs.sel, width: '100%' }} value={filters.disponivel} onChange={(e) => setFilters({ ...filters, disponivel: e.target.value, page: 1 })}>
                 <option value="">Todos status</option>
@@ -1251,33 +1311,60 @@ export default function EstoquePage() {
                 <div style={{ ...cs.sCard, textAlign: 'center', color: 'var(--ink-muted)' }}>Nenhuma peca encontrada</div>
               ) : data.data.map((p: any) => {
                 const motoLabel = [p.moto?.marca, p.moto?.modelo].filter(Boolean).join(' ');
+                const bloqueadaPrejuizo = isPrejuizoPeca(p);
 
                 return (
-                  <div key={p.id} style={{ border: '1px solid var(--border)', borderRadius: 14, padding: isPhone ? 14 : 16, background: 'var(--white)' }}>
+                  <div
+                    key={p.id}
+                    style={{
+                      border: bloqueadaPrejuizo ? '1px solid #fecaca' : '1px solid var(--border)',
+                      borderRadius: 14,
+                      padding: isPhone ? 14 : 16,
+                      background: bloqueadaPrejuizo ? '#fff7f7' : 'var(--white)',
+                    }}
+                  >
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', marginBottom: 12 }}>
                       <div style={{ display: 'flex', gap: 10, minWidth: 0 }}>
                         <input
                           type="checkbox"
+                          disabled={bloqueadaPrejuizo}
                           checked={selectedPecaIds.includes(p.id)}
                           onChange={() => toggleSelectedPeca(p.id)}
                           aria-label={`Selecionar peca ${p.idPeca}`}
-                          style={{ width: 14, height: 14, cursor: 'pointer', marginTop: 4 }}
+                          style={{ width: 14, height: 14, cursor: bloqueadaPrejuizo ? 'not-allowed' : 'pointer', marginTop: 4 }}
                         />
                         <div style={{ minWidth: 0 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                             <span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 12.5, color: 'var(--blue-500)' }}>{p.idPeca}</span>
                             <span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11, color: 'var(--ink-muted)' }}>ID #{p.motoId}</span>
+                            {bloqueadaPrejuizo ? <PrejuizoBadge /> : null}
                           </div>
                           <div style={{ fontSize: 12, color: 'var(--ink-muted)', lineHeight: 1.35, marginTop: 4 }}>{motoLabel || '-'}</div>
                         </div>
                       </div>
-                      <ActionIconButton onClick={() => setActionPeca(p)} />
+                      <ActionIconButton
+                        onClick={() => {
+                          if (bloqueadaPrejuizo) return;
+                          setActionPeca(p);
+                        }}
+                        disabled={bloqueadaPrejuizo}
+                        title={bloqueadaPrejuizo ? 'Peca em prejuizo bloqueada para acoes' : 'Acoes da peca'}
+                      />
                     </div>
 
                     <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.45, marginBottom: 12 }}>{p.descricao}</div>
+                    {bloqueadaPrejuizo ? (
+                      <div style={{ marginBottom: 12, fontSize: 12.5, color: '#b91c1c', lineHeight: 1.55 }}>
+                        Peca marcada como <strong>Prejuizo</strong>. Ela fica bloqueada para edicao e venda na tela de estoque.
+                      </div>
+                    ) : null}
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
-                      <StatusLinkButton disponivel={Boolean(p.disponivel)} link={p.mercadoLivreLink} />
+                      {bloqueadaPrejuizo ? (
+                        <PrejuizoBadge />
+                      ) : (
+                        <StatusLinkButton disponivel={Boolean(p.disponivel)} link={p.mercadoLivreLink} />
+                      )}
                       {hasDetranEtiqueta(p.detranEtiqueta) ? (
                         <button
                           onClick={() => setDetranPeca(p)}
@@ -1367,18 +1454,19 @@ export default function EstoquePage() {
                   ) : data.data.length === 0 ? (
                     <tr><td colSpan={15} style={{ ...cs.td, textAlign: 'center', color: 'var(--ink-muted)', padding: '40px 20px', borderBottom: 'none' }}>Nenhuma peca encontrada</td></tr>
                   ) : data.data.map((p: any) => (
-                    <tr key={p.id}>
+                    <tr key={p.id} style={{ background: isPrejuizoPeca(p) ? '#fff7f7' : 'transparent' }}>
                       <td style={{ ...cs.td, padding: denseTablePadding }}>
                         <input
                           type="checkbox"
+                          disabled={isPrejuizoPeca(p)}
                           checked={selectedPecaIds.includes(p.id)}
                           onChange={() => toggleSelectedPeca(p.id)}
                           aria-label={`Selecionar peca ${p.idPeca}`}
-                          style={{ width: 14, height: 14, cursor: 'pointer' }}
+                          style={{ width: 14, height: 14, cursor: isPrejuizoPeca(p) ? 'not-allowed' : 'pointer' }}
                         />
                       </td>
                       <td style={{ ...cs.td, padding: denseTablePadding }}><span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11.5, color: 'var(--ink-muted)' }}>#{p.motoId}</span></td>
-                      <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11.5, color: 'var(--blue-500)', whiteSpace: 'nowrap' }}>{p.idPeca}</td>
+                      <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11.5, color: isPrejuizoPeca(p) ? '#b91c1c' : 'var(--blue-500)', whiteSpace: 'nowrap' }}>{p.idPeca}</td>
                       <td style={{ ...cs.td, padding: denseTablePadding, color: 'var(--ink-muted)', fontSize: 11.5, lineHeight: 1.35 }}>
                         <div style={{ display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden' }}>
                           {[p.moto?.marca, p.moto?.modelo].filter(Boolean).join(' ')}
@@ -1386,6 +1474,11 @@ export default function EstoquePage() {
                       </td>
                       <td style={{ ...cs.td, padding: denseTablePadding, fontSize: 12 }}>
                         <div title={p.descricao} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.descricao}</div>
+                        {isPrejuizoPeca(p) ? (
+                          <div style={{ marginTop: 4 }}>
+                            <PrejuizoBadge />
+                          </div>
+                        ) : null}
                       </td>
                       <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11, color: 'var(--ink-muted)', whiteSpace: 'nowrap' }}>{formatCompactDate(p.cadastro)}</td>
                       <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11.5, whiteSpace: 'nowrap' }}>{fmt(Number(p.precoML))}</td>
@@ -1408,10 +1501,21 @@ export default function EstoquePage() {
                         )}
                       </td>
                       <td style={{ ...cs.td, padding: denseTablePadding, textAlign: 'center' }}>
-                        <StatusLinkButton disponivel={Boolean(p.disponivel)} link={p.mercadoLivreLink} />
+                        {isPrejuizoPeca(p) ? (
+                          <PrejuizoBadge />
+                        ) : (
+                          <StatusLinkButton disponivel={Boolean(p.disponivel)} link={p.mercadoLivreLink} />
+                        )}
                       </td>
                       <td style={{ ...cs.td, padding: denseTablePadding, textAlign: 'center' }}>
-                        <ActionIconButton onClick={() => setActionPeca(p)} />
+                        <ActionIconButton
+                          onClick={() => {
+                            if (isPrejuizoPeca(p)) return;
+                            setActionPeca(p);
+                          }}
+                          disabled={isPrejuizoPeca(p)}
+                          title={isPrejuizoPeca(p) ? 'Peca em prejuizo bloqueada para acoes' : 'Acoes da peca'}
+                        />
                       </td>
                     </tr>
                   ))}
@@ -1438,12 +1542,13 @@ export default function EstoquePage() {
         peca={actionPeca}
         onClose={() => setActionPeca(null)}
         onEdit={() => {
+          if (isPrejuizoPeca(actionPeca)) return;
           setEditPeca(actionPeca);
           setActionPeca(null);
           setModal(true);
         }}
         onSell={() => {
-          if (!actionPeca?.disponivel) return;
+          if (!actionPeca?.disponivel || isPrejuizoPeca(actionPeca)) return;
           setVendaPeca(actionPeca);
           setActionPeca(null);
           setVendaModal(true);
