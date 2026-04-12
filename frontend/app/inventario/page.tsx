@@ -308,8 +308,9 @@ function NovoInventarioModal({
     ? 'repeat(2, minmax(0, 1fr))'
     : 'repeat(4, minmax(0, 1fr))';
   const compactPartialLayout = modo === 'parcial' && (isPhone || isTabletLandscape);
-  const listMaxHeight = isPhone ? 'calc(100svh - 380px)' : isTabletPortrait ? 360 : 420;
-  const listMinHeight = isPhone ? 240 : isTabletPortrait ? 280 : 320;
+  const useInnerScrollableList = !isPhone;
+  const listMaxHeight = isTabletPortrait ? 360 : 420;
+  const listMinHeight = isPhone ? 0 : isTabletPortrait ? 280 : 320;
   const canConfirm = !creating && modo === 'completo'
     ? true
     : caixasSelecionadas.length > 0;
@@ -327,7 +328,7 @@ function NovoInventarioModal({
           <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer' }}>X</button>
         </div>
 
-        <div style={{ padding: isPhone ? '12px 12px 14px' : isTabletPortrait ? '14px 16px' : compactPartialLayout ? '14px 18px' : '18px 22px', overflow: 'auto', WebkitOverflowScrolling: 'touch', display: 'grid', gap: compactPartialLayout ? 12 : 16 }}>
+        <div style={{ flex: 1, minHeight: 0, padding: isPhone ? '12px 12px 14px' : isTabletPortrait ? '14px 16px' : compactPartialLayout ? '14px 18px' : '18px 22px', overflow: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', display: 'grid', gap: compactPartialLayout ? 12 : 16 }}>
           <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
             <button
               onClick={() => onModoChange('completo')}
@@ -385,12 +386,14 @@ function NovoInventarioModal({
 
           {modo === 'parcial' && (
             <div style={{ border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
-              <div style={{ padding: isPhone ? '14px' : '14px 16px', borderBottom: '1px solid var(--border)', display: 'grid', gap: 12 }}>
+              <div style={{ padding: isPhone ? '12px' : '14px 16px', borderBottom: '1px solid var(--border)', display: 'grid', gap: compactPartialLayout ? 10 : 12 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start' }}>
                   <div>
                     <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-800)' }}>Selecionar localizacoes</div>
-                    <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 4, lineHeight: 1.5 }}>
-                      A localizacao <strong>Sem Localizacao</strong> entra como uma caixa propria quando houver pecas disponiveis sem preenchimento.
+                    <div style={{ fontSize: compactPartialLayout ? 11.5 : 12, color: 'var(--gray-500)', marginTop: 4, lineHeight: 1.45 }}>
+                      {compactPartialLayout
+                        ? <>A caixa <strong>Sem Localizacao</strong> entra automaticamente quando houver pecas sem preenchimento.</>
+                        : <>A localizacao <strong>Sem Localizacao</strong> entra como uma caixa propria quando houver pecas disponiveis sem preenchimento.</>}
                     </div>
                   </div>
                   <div style={{ padding: '8px 12px', borderRadius: 999, background: '#eff6ff', border: '1px solid #bfdbfe', fontSize: 12, fontWeight: 700, color: 'var(--blue-500)' }}>
@@ -417,7 +420,7 @@ function NovoInventarioModal({
                 </div>
               </div>
 
-              <div style={{ minHeight: listMinHeight, maxHeight: listMaxHeight, overflow: 'auto', WebkitOverflowScrolling: 'touch', padding: 12, display: 'grid', gridTemplateColumns: selectionGridColumns, gap: 10 }}>
+              <div style={{ minHeight: listMinHeight, maxHeight: useInnerScrollableList ? listMaxHeight : undefined, overflow: useInnerScrollableList ? 'auto' : 'visible', WebkitOverflowScrolling: 'touch', padding: 12, display: 'grid', gridTemplateColumns: selectionGridColumns, gap: 10 }}>
                 {loading ? (
                   <div style={{ padding: 16, color: 'var(--gray-500)', fontSize: 13 }}>Carregando localizacoes...</div>
                 ) : caixas.length === 0 ? (
