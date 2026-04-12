@@ -345,8 +345,8 @@ function NovoInventarioModal({
                 <button
                   onClick={() => onModoChange('completo')}
                   style={{
-                    border: modo === 'completo' ? '1px solid var(--blue-500)' : '1px solid var(--border)',
-                    background: modo === 'completo' ? '#eff6ff' : 'var(--white)',
+                    border: '1px solid var(--border)',
+                    background: 'var(--white)',
                     borderRadius: 12,
                     padding: isPhone ? '10px 12px' : '12px 14px',
                     textAlign: 'center',
