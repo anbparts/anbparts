@@ -307,14 +307,16 @@ function NovoInventarioModal({
     : isTabletPortrait
     ? 'repeat(2, minmax(0, 1fr))'
     : 'repeat(4, minmax(0, 1fr))';
-  const listMaxHeight = isPhone ? 'calc(100dvh - 500px)' : isTabletPortrait ? 320 : 380;
+  const compactPartialLayout = modo === 'parcial' && (isPhone || isTabletLandscape);
+  const listMaxHeight = isPhone ? 'calc(100svh - 380px)' : isTabletPortrait ? 360 : 420;
+  const listMinHeight = isPhone ? 240 : isTabletPortrait ? 280 : 320;
   const canConfirm = !creating && modo === 'completo'
     ? true
     : caixasSelecionadas.length > 0;
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 250, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: isPhone ? 0 : isTabletLandscape ? 16 : 24, backdropFilter: 'blur(2px)' }}>
-      <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: isPhone ? 0 : 16, width: '100%', maxWidth: isTabletLandscape ? 920 : isTabletPortrait ? 780 : 720, boxShadow: '0 12px 32px rgba(0,0,0,.10)', maxHeight: isPhone ? '100dvh' : 'min(88vh, 880px)', minHeight: isPhone ? '100dvh' : undefined, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: isPhone ? 0 : 16, width: '100%', maxWidth: isTabletLandscape ? 920 : isTabletPortrait ? 780 : 720, boxShadow: '0 12px 32px rgba(0,0,0,.10)', maxHeight: isPhone ? '100svh' : 'min(88vh, 880px)', minHeight: isPhone ? '100svh' : undefined, display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: isPhone ? '16px 14px 12px' : '20px 22px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
           <div>
             <div style={{ fontFamily: 'Fraunces, serif', fontSize: 20, fontWeight: 600 }}>Novo inventario</div>
@@ -325,7 +327,7 @@ function NovoInventarioModal({
           <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer' }}>X</button>
         </div>
 
-        <div style={{ padding: isPhone ? '14px 14px 16px' : isTabletPortrait ? '16px 18px' : '18px 22px', overflow: 'auto', display: 'grid', gap: 16 }}>
+        <div style={{ padding: isPhone ? '12px 12px 14px' : isTabletPortrait ? '14px 16px' : compactPartialLayout ? '14px 18px' : '18px 22px', overflow: 'auto', WebkitOverflowScrolling: 'touch', display: 'grid', gap: compactPartialLayout ? 12 : 16 }}>
           <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
             <button
               onClick={() => onModoChange('completo')}
@@ -333,13 +335,13 @@ function NovoInventarioModal({
                 border: modo === 'completo' ? '1px solid var(--blue-500)' : '1px solid var(--border)',
                 background: modo === 'completo' ? '#eff6ff' : 'var(--white)',
                 borderRadius: 12,
-                padding: 16,
+                padding: compactPartialLayout ? 12 : 16,
                 textAlign: 'left',
                 cursor: 'pointer',
               }}
             >
               <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 6 }}>Inventario Completo</div>
-              <div style={{ fontSize: 12, color: 'var(--gray-500)', lineHeight: 1.55 }}>
+              <div style={{ fontSize: compactPartialLayout ? 11.5 : 12, color: 'var(--gray-500)', lineHeight: 1.45 }}>
                 Segue o fluxo atual e monta a contagem com todas as localizacoes disponiveis em estoque.
               </div>
             </button>
@@ -350,34 +352,34 @@ function NovoInventarioModal({
                 border: modo === 'parcial' ? '1px solid var(--blue-500)' : '1px solid var(--border)',
                 background: modo === 'parcial' ? '#eff6ff' : 'var(--white)',
                 borderRadius: 12,
-                padding: 16,
+                padding: compactPartialLayout ? 12 : 16,
                 textAlign: 'left',
                 cursor: 'pointer',
               }}
             >
               <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 6 }}>Inventario Parcial</div>
-              <div style={{ fontSize: 12, color: 'var(--gray-500)', lineHeight: 1.55 }}>
+              <div style={{ fontSize: compactPartialLayout ? 11.5 : 12, color: 'var(--gray-500)', lineHeight: 1.45 }}>
                 Permite selecionar uma ou varias localizacoes para contar somente as caixas escolhidas.
               </div>
             </button>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: statsGridColumns, gap: 10 }}>
-            <div style={{ padding: 14, borderRadius: 12, background: '#f8fafc', border: '1px solid var(--border)' }}>
+            <div style={{ padding: compactPartialLayout ? 10 : 14, borderRadius: 12, background: '#f8fafc', border: '1px solid var(--border)' }}>
               <div style={{ fontSize: 11, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '.08em' }}>Localizacoes</div>
-              <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--gray-800)', marginTop: 6 }}>{caixas.length}</div>
+              <div style={{ fontSize: compactPartialLayout ? 16 : 18, fontWeight: 700, color: 'var(--gray-800)', marginTop: 6 }}>{caixas.length}</div>
             </div>
-            <div style={{ padding: 14, borderRadius: 12, background: '#f8fafc', border: '1px solid var(--border)' }}>
+            <div style={{ padding: compactPartialLayout ? 10 : 14, borderRadius: 12, background: '#f8fafc', border: '1px solid var(--border)' }}>
               <div style={{ fontSize: 11, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '.08em' }}>SKUs</div>
-              <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--gray-800)', marginTop: 6 }}>{caixas.reduce((sum, caixa) => sum + Number(caixa.totalSkus || 0), 0)}</div>
+              <div style={{ fontSize: compactPartialLayout ? 16 : 18, fontWeight: 700, color: 'var(--gray-800)', marginTop: 6 }}>{caixas.reduce((sum, caixa) => sum + Number(caixa.totalSkus || 0), 0)}</div>
             </div>
-            <div style={{ padding: 14, borderRadius: 12, background: '#f8fafc', border: '1px solid var(--border)' }}>
+            <div style={{ padding: compactPartialLayout ? 10 : 14, borderRadius: 12, background: '#f8fafc', border: '1px solid var(--border)' }}>
               <div style={{ fontSize: 11, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '.08em' }}>Pecas</div>
-              <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--gray-800)', marginTop: 6 }}>{totalPecas}</div>
+              <div style={{ fontSize: compactPartialLayout ? 16 : 18, fontWeight: 700, color: 'var(--gray-800)', marginTop: 6 }}>{totalPecas}</div>
             </div>
-            <div style={{ padding: 14, borderRadius: 12, background: '#eff6ff', border: '1px solid #bfdbfe' }}>
+            <div style={{ padding: compactPartialLayout ? 10 : 14, borderRadius: 12, background: '#eff6ff', border: '1px solid #bfdbfe' }}>
               <div style={{ fontSize: 11, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '.08em' }}>Selecionadas</div>
-              <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--blue-500)', marginTop: 6 }}>{totalSelecionadas}</div>
+              <div style={{ fontSize: compactPartialLayout ? 16 : 18, fontWeight: 700, color: 'var(--blue-500)', marginTop: 6 }}>{totalSelecionadas}</div>
             </div>
           </div>
 
@@ -415,7 +417,7 @@ function NovoInventarioModal({
                 </div>
               </div>
 
-              <div style={{ maxHeight: listMaxHeight, overflow: 'auto', padding: 12, display: 'grid', gridTemplateColumns: selectionGridColumns, gap: 10 }}>
+              <div style={{ minHeight: listMinHeight, maxHeight: listMaxHeight, overflow: 'auto', WebkitOverflowScrolling: 'touch', padding: 12, display: 'grid', gridTemplateColumns: selectionGridColumns, gap: 10 }}>
                 {loading ? (
                   <div style={{ padding: 16, color: 'var(--gray-500)', fontSize: 13 }}>Carregando localizacoes...</div>
                 ) : caixas.length === 0 ? (

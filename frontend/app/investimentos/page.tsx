@@ -73,6 +73,79 @@ function periodLabelFromKey(key: string, includeYear = false) {
   return includeYear ? `${month}/${String(ano).slice(-2)}` : month;
 }
 
+function MonthlyAportesCards({
+  rows,
+  viewportMode,
+}: {
+  rows: Array<{
+    label: string;
+    note?: string;
+    cells: Array<{
+      label: string;
+      value: number;
+      note?: string;
+      displayValue?: string;
+    }>;
+  }>;
+  viewportMode: InvestimentosViewportMode;
+}) {
+  if (!rows.length) {
+    return <div style={{ padding: '24px 8px', color: 'var(--ink-muted)', textAlign: 'center', fontSize: 13 }}>Sem periodos para exibir.</div>;
+  }
+
+  const isPhone = viewportMode === 'phone';
+  const isTabletPortrait = viewportMode === 'tablet-portrait';
+  const tileColumns = isPhone ? 'repeat(2, minmax(0, 1fr))' : isTabletPortrait ? 'repeat(3, minmax(0, 1fr))' : 'repeat(4, minmax(0, 1fr))';
+
+  return (
+    <div style={{ display: 'grid', gap: 14 }}>
+      {rows.map((row) => (
+        <div key={row.label} style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--white)', overflow: 'hidden' }}>
+          <div style={{ padding: isPhone ? '14px 14px 12px' : '16px 18px 14px', borderBottom: '1px solid var(--border)', background: 'linear-gradient(135deg, rgba(245,158,11,.08), transparent 70%)' }}>
+            <div style={{ fontSize: isPhone ? 14 : 15, fontWeight: 700, color: 'var(--ink)' }}>{row.label}</div>
+            {row.note ? <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 5 }}>{row.note}</div> : null}
+          </div>
+          <div style={{ padding: isPhone ? 12 : 14, display: 'grid', gridTemplateColumns: tileColumns, gap: 10 }}>
+            {row.cells.map((cell) => {
+              const hasValue = Number(cell.value || 0) > 0;
+              return (
+                <div
+                  key={`${row.label}-${cell.label}`}
+                  style={{
+                    borderRadius: 12,
+                    border: `1px solid ${hasValue ? 'rgba(245,158,11,.24)' : 'var(--border)'}`,
+                    background: hasValue ? 'rgba(245,158,11,.08)' : '#fafafa',
+                    padding: isPhone ? '10px 10px 9px' : '12px 12px 10px',
+                    minHeight: 78,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    gap: 8,
+                  }}
+                >
+                  <div style={{ fontSize: 10.5, fontFamily: 'Geist Mono, monospace', letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--ink-muted)' }}>
+                    {cell.label}
+                  </div>
+                  <div>
+                    <div style={{ fontSize: isPhone ? 12 : 12.5, fontWeight: 700, color: hasValue ? 'var(--ink)' : 'var(--ink-muted)', lineHeight: 1.2 }}>
+                      {cell.displayValue || '--'}
+                    </div>
+                    {cell.note ? (
+                      <div style={{ fontSize: 10.5, color: 'var(--ink-muted)', marginTop: 4, fontFamily: 'Geist Mono, monospace' }}>
+                        {cell.note}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function InvestimentosPage() {
   const [viewportMode, setViewportMode] = useState<InvestimentosViewportMode>('desktop');
   const [rows, setRows] = useState<any[]>([]);
@@ -263,6 +336,7 @@ export default function InvestimentosPage() {
   const formGridColumns = isPhone ? '1fr' : isTabletPortrait ? 'repeat(2, minmax(0, 1fr))' : isTabletLandscape ? 'repeat(3, minmax(0, 1fr))' : 'repeat(5, minmax(140px, 1fr))';
   const chartColumns = isPhone || isTabletPortrait ? '1fr' : 'minmax(0, 1fr) minmax(0, 1.1fr)';
   const filterControlsColumns = isPhone ? '1fr' : isTabletPortrait ? 'repeat(2, minmax(0, 1fr))' : 'auto auto';
+  const useMonthlyCards = isPhone || isTabletPortrait || isTabletLandscape;
 
   function resetFormState() {
     setForm({ data: today(), socio: 'Bruno', tipo: 'Moto', moto: '', valor: '' });
@@ -464,8 +538,12 @@ export default function InvestimentosPage() {
                   <HorizontalBarChart items={rankingTipos} valueFormatter={fmt} emptyText="Sem aportes para comparar." />
                 </ChartPanel>
               </div>
-              <ChartPanel title="Painel mensal dos aportes" subtitle="Matriz compacta com os valores por periodo, agrupada por socio dentro do filtro atual." accent="#f59e0b">
-                <HeatmapChart rows={painelMensalTipos} rowHeaderLabel="Socio" valueFormatter={fmt} emptyText="Sem periodos para exibir." />
+              <ChartPanel title="Painel mensal dos aportes" subtitle={useMonthlyCards ? 'Resumo por socio e periodo em cards compactos para telas menores.' : 'Matriz compacta com os valores por periodo, agrupada por socio dentro do filtro atual.'} accent="#f59e0b">
+                {useMonthlyCards ? (
+                  <MonthlyAportesCards rows={painelMensalTipos} viewportMode={viewportMode} />
+                ) : (
+                  <HeatmapChart rows={painelMensalTipos} rowHeaderLabel="Socio" valueFormatter={fmt} emptyText="Sem periodos para exibir." />
+                )}
               </ChartPanel>
             </div>
           )

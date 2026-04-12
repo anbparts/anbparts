@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 
 function fmt(v: number) {
@@ -31,6 +31,11 @@ function normalizeFilterText(value: unknown) {
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .trim();
+}
+
+function displayCaixaLabel(value: unknown) {
+  const text = String(value ?? '').replace(/\s+/g, ' ').trim();
+  return text || 'Sem Localizacao';
 }
 
 function roundMoney(value: number) {
@@ -311,6 +316,7 @@ function CaixaMultiSelectFilter({
   onToggleCaixa,
   onClear,
   onSelectVisible,
+  onClose,
 }: {
   open: boolean;
   loading: boolean;
@@ -325,6 +331,7 @@ function CaixaMultiSelectFilter({
   onToggleCaixa: (caixa: string) => void;
   onClear: () => void;
   onSelectVisible: (caixas: string[]) => void;
+  onClose: () => void;
 }) {
   const searchNormalized = normalizeFilterText(search);
   const visibleOptions = options.filter((option) => (
@@ -403,6 +410,22 @@ function CaixaMultiSelectFilter({
                 }}
               >
                 Limpar
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                style={{
+                  ...cs.btn,
+                  padding: '6px 12px',
+                  fontSize: 12,
+                  background: 'var(--blue-500)',
+                  color: '#fff',
+                  borderColor: 'var(--blue-500)',
+                  justifyContent: 'center',
+                  width: isPhone ? '100%' : undefined,
+                }}
+              >
+                OK
               </button>
             </div>
           </div>
@@ -1349,6 +1372,7 @@ export default function EstoquePage() {
   const summaryGridColumns = isPhone ? 'repeat(2, minmax(0, 1fr))' : 'repeat(3, minmax(0, 1fr))';
   const denseTablePadding = isTabletLandscape ? '9px 8px' : '10px 10px';
   const denseTableHeaderPadding = isTabletLandscape ? '9px 8px' : '10px 10px';
+  const tableMinWidth = isTabletLandscape ? 1240 : undefined;
   const summaryCards = [
     { l: 'Total', v: data.total, c: 'var(--ink)' },
     { l: 'Em estoque', v: data.totalDisp, c: 'var(--sage)' },
@@ -1359,6 +1383,18 @@ export default function EstoquePage() {
       .map((m: any) => String(m?.marca || '').trim())
       .filter(Boolean),
   )).sort((a, b) => a.localeCompare(b, 'pt-BR', { sensitivity: 'base' }));
+  const displayedPecas = filters.caixas.length
+    ? (data.data || [])
+        .map((peca: any, index: number) => ({ peca, index }))
+        .sort((a: any, b: any) => {
+          const caixaA = displayCaixaLabel(a.peca?.localizacao);
+          const caixaB = displayCaixaLabel(b.peca?.localizacao);
+          const compareCaixa = caixaA.localeCompare(caixaB, 'pt-BR', { numeric: true, sensitivity: 'base' });
+          if (compareCaixa !== 0) return compareCaixa;
+          return a.index - b.index;
+        })
+        .map((entry: any) => entry.peca)
+    : (data.data || []);
 
   function toggleCaixaFilter(caixa: string) {
     setFilters((current) => ({
@@ -1384,7 +1420,7 @@ export default function EstoquePage() {
     { label: 'ID Peca', sort: 'idPeca', width: 88 },
     { label: 'Moto', sort: 'moto', width: isTabletLandscape ? 124 : 138 },
     { label: 'Descricao', sort: 'descricao', width: isTabletLandscape ? '18%' : '21%' },
-    { label: 'Cadastro', sort: 'cadastro', width: 72 },
+    { label: isTabletLandscape ? 'Cad.' : 'Cadastro', sort: 'cadastro', width: isTabletLandscape ? 68 : 72 },
     { label: 'Preco ML', sort: 'precoML', width: 90 },
     { label: 'Vl. Liq.', sort: 'valorLiq', width: 86 },
     { label: 'Frete', sort: 'valorFrete', width: 78 },
@@ -1457,6 +1493,7 @@ export default function EstoquePage() {
                   onToggleCaixa={toggleCaixaFilter}
                   onClear={() => setFilters((current) => ({ ...current, page: 1, caixas: [] }))}
                   onSelectVisible={selectVisibleCaixas}
+                  onClose={() => setCaixaFilterOpen(false)}
                 />
               </div>
               <select style={{ ...cs.sel, width: '100%' }} value={filters.precoMlZero} onChange={(e) => setFilters({ ...filters, precoMlZero: e.target.value, page: 1 })}>
@@ -1536,101 +1573,112 @@ export default function EstoquePage() {
             <div style={{ padding: isPhone ? 12 : 14, display: 'grid', gap: 12 }}>
               {loading ? (
                 <div style={{ ...cs.sCard, textAlign: 'center', color: 'var(--ink-muted)' }}>Carregando...</div>
-              ) : data.data.length === 0 ? (
+              ) : displayedPecas.length === 0 ? (
                 <div style={{ ...cs.sCard, textAlign: 'center', color: 'var(--ink-muted)' }}>Nenhuma peca encontrada</div>
-              ) : data.data.map((p: any) => {
+              ) : displayedPecas.map((p: any, index: number) => {
                 const motoLabel = [p.moto?.marca, p.moto?.modelo].filter(Boolean).join(' ');
                 const bloqueadaPrejuizo = isPrejuizoPeca(p);
+                const caixaAtual = displayCaixaLabel(p.localizacao);
+                const caixaAnterior = index > 0 ? displayCaixaLabel(displayedPecas[index - 1]?.localizacao) : null;
+                const showCaixaSeparator = filters.caixas.length > 0 && caixaAtual !== caixaAnterior;
 
                 return (
-                  <div
-                    key={p.id}
-                    style={{
-                      border: bloqueadaPrejuizo ? '1px solid #fecaca' : '1px solid var(--border)',
-                      borderRadius: 14,
-                      padding: isPhone ? 14 : 16,
-                      background: bloqueadaPrejuizo ? '#fff7f7' : 'var(--white)',
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', marginBottom: 12 }}>
-                      <div style={{ display: 'flex', gap: 10, minWidth: 0 }}>
-                        <input
-                          type="checkbox"
-                          disabled={bloqueadaPrejuizo}
-                          checked={selectedPecaIds.includes(p.id)}
-                          onChange={() => toggleSelectedPeca(p.id)}
-                          aria-label={`Selecionar peca ${p.idPeca}`}
-                          style={{ width: 14, height: 14, cursor: bloqueadaPrejuizo ? 'not-allowed' : 'pointer', marginTop: 4 }}
-                        />
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                            <span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 12.5, color: 'var(--blue-500)' }}>{p.idPeca}</span>
-                            <span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11, color: 'var(--ink-muted)' }}>ID #{p.motoId}</span>
-                            {bloqueadaPrejuizo ? <PrejuizoBadge /> : null}
-                          </div>
-                          <div style={{ fontSize: 12, color: 'var(--ink-muted)', lineHeight: 1.35, marginTop: 4 }}>{motoLabel || '-'}</div>
+                  <Fragment key={p.id}>
+                    {showCaixaSeparator ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 2px 0' }}>
+                        <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--blue-500)', whiteSpace: 'nowrap' }}>
+                          Caixa {caixaAtual}
                         </div>
-                      </div>
-                      <ActionIconButton
-                        onClick={() => {
-                          if (bloqueadaPrejuizo) return;
-                          setActionPeca(p);
-                        }}
-                        disabled={bloqueadaPrejuizo}
-                        title={bloqueadaPrejuizo ? 'Peca em prejuizo bloqueada para acoes' : 'Acoes da peca'}
-                      />
-                    </div>
-
-                    <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.45, marginBottom: 12 }}>{p.descricao}</div>
-                    {bloqueadaPrejuizo ? (
-                      <div style={{ marginBottom: 12, fontSize: 12.5, color: '#b91c1c', lineHeight: 1.55 }}>
-                        Peca marcada como <strong>Prejuizo</strong>. Ela fica bloqueada para edicao e venda na tela de estoque.
+                        <div style={{ height: 1, background: 'rgba(37,99,235,.24)', flex: 1 }} />
                       </div>
                     ) : null}
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
-                      {bloqueadaPrejuizo ? (
-                        <PrejuizoBadge />
-                      ) : (
-                        <StatusLinkButton disponivel={Boolean(p.disponivel)} link={p.mercadoLivreLink} />
-                      )}
-                      {hasDetranEtiqueta(p.detranEtiqueta) ? (
-                        <button
-                          onClick={() => setDetranPeca(p)}
-                          title="Ver etiqueta DETRAN"
-                          style={{ border: 'none', background: 'transparent', padding: 0, cursor: 'pointer' }}
-                        >
-                          <DetranBadge ativo />
-                        </button>
-                      ) : (
-                        <DetranBadge ativo={false} />
-                      )}
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: isPhone ? 'repeat(2, minmax(0, 1fr))' : 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
-                      {[
-                        { label: 'Cadastro', value: formatCompactDate(p.cadastro) },
-                        { label: 'Venda', value: formatCompactDate(p.dataVenda) },
-                        { label: 'Pedido', value: p.blingPedidoNum || '-' },
-                        { label: 'Localizacao', value: p.localizacao || '-' },
-                        { label: 'Preco ML', value: fmt(Number(p.precoML)) },
-                        { label: 'Vl. Liq.', value: fmt(Number(p.valorLiq)) },
-                        { label: 'Frete', value: fmt(Number(p.valorFrete)) },
-                        { label: 'Taxas', value: fmt(Number(p.valorTaxas)) },
-                      ].map((item) => (
-                        <div key={item.label}>
-                          <div style={{ fontSize: 10.5, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '0.4px', textTransform: 'uppercase' }}>{item.label}</div>
-                          <div style={{ marginTop: 3, fontSize: 12.5, fontFamily: 'Geist Mono, monospace', color: 'var(--ink)' }}>{item.value}</div>
+                    <div
+                      style={{
+                        border: bloqueadaPrejuizo ? '1px solid #fecaca' : '1px solid var(--border)',
+                        borderRadius: 14,
+                        padding: isPhone ? 14 : 16,
+                        background: bloqueadaPrejuizo ? '#fff7f7' : 'var(--white)',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', marginBottom: 12 }}>
+                        <div style={{ display: 'flex', gap: 10, minWidth: 0 }}>
+                          <input
+                            type="checkbox"
+                            disabled={bloqueadaPrejuizo}
+                            checked={selectedPecaIds.includes(p.id)}
+                            onChange={() => toggleSelectedPeca(p.id)}
+                            aria-label={`Selecionar peca ${p.idPeca}`}
+                            style={{ width: 14, height: 14, cursor: bloqueadaPrejuizo ? 'not-allowed' : 'pointer', marginTop: 4 }}
+                          />
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                              <span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 12.5, color: 'var(--blue-500)' }}>{p.idPeca}</span>
+                              <span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11, color: 'var(--ink-muted)' }}>ID #{p.motoId}</span>
+                              {bloqueadaPrejuizo ? <PrejuizoBadge /> : null}
+                            </div>
+                            <div style={{ fontSize: 12, color: 'var(--ink-muted)', lineHeight: 1.35, marginTop: 4 }}>{motoLabel || '-'}</div>
+                          </div>
                         </div>
-                      ))}
+                        <ActionIconButton
+                          onClick={() => {
+                            if (bloqueadaPrejuizo) return;
+                            setActionPeca(p);
+                          }}
+                          disabled={bloqueadaPrejuizo}
+                          title={bloqueadaPrejuizo ? 'Peca em prejuizo bloqueada para acoes' : 'Acoes da peca'}
+                        />
+                      </div>
+                      <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.45, marginBottom: 12 }}>{p.descricao}</div>
+                      {bloqueadaPrejuizo ? (
+                        <div style={{ marginBottom: 12, fontSize: 12.5, color: '#b91c1c', lineHeight: 1.55 }}>
+                          Peca marcada como <strong>Prejuizo</strong>. Ela fica bloqueada para edicao e venda na tela de estoque.
+                        </div>
+                      ) : null}
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+                        {bloqueadaPrejuizo ? (
+                          <PrejuizoBadge />
+                        ) : (
+                          <StatusLinkButton disponivel={Boolean(p.disponivel)} link={p.mercadoLivreLink} />
+                        )}
+                        {hasDetranEtiqueta(p.detranEtiqueta) ? (
+                          <button
+                            onClick={() => setDetranPeca(p)}
+                            title="Ver etiqueta DETRAN"
+                            style={{ border: 'none', background: 'transparent', padding: 0, cursor: 'pointer' }}
+                          >
+                            <DetranBadge ativo />
+                          </button>
+                        ) : (
+                          <DetranBadge ativo={false} />
+                        )}
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: isPhone ? 'repeat(2, minmax(0, 1fr))' : 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
+                        {[
+                          { label: 'Cadastro', value: formatCompactDate(p.cadastro) },
+                          { label: 'Venda', value: formatCompactDate(p.dataVenda) },
+                          { label: 'Pedido', value: p.blingPedidoNum || '-' },
+                          { label: 'Localizacao', value: p.localizacao || '-' },
+                          { label: 'Preco ML', value: fmt(Number(p.precoML)) },
+                          { label: 'Vl. Liq.', value: fmt(Number(p.valorLiq)) },
+                          { label: 'Frete', value: fmt(Number(p.valorFrete)) },
+                          { label: 'Taxas', value: fmt(Number(p.valorTaxas)) },
+                        ].map((item) => (
+                          <div key={item.label}>
+                            <div style={{ fontSize: 10.5, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '0.4px', textTransform: 'uppercase' }}>{item.label}</div>
+                            <div style={{ marginTop: 3, fontSize: 12.5, fontFamily: 'Geist Mono, monospace', color: 'var(--ink)' }}>{item.value}</div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  </div>
+                  </Fragment>
                 );
               })}
             </div>
           ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: isTabletLandscape ? 12 : 13, tableLayout: 'fixed' as const }}>
+            <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+              <table style={{ width: '100%', minWidth: tableMinWidth, borderCollapse: 'collapse', fontSize: isTabletLandscape ? 12 : 13, tableLayout: 'fixed' as const }}>
                 <colgroup>
                   {tableHeaders.map((header, index) => (
                     <col key={`${header.label || 'actions'}-${index}`} style={{ width: typeof header.width === 'number' ? `${header.width}px` : header.width }} />
@@ -1680,74 +1728,94 @@ export default function EstoquePage() {
                 <tbody>
                   {loading ? (
                     <tr><td colSpan={15} style={{ ...cs.td, textAlign: 'center', color: 'var(--ink-muted)', borderBottom: 'none' }}>Carregando...</td></tr>
-                  ) : data.data.length === 0 ? (
+                  ) : displayedPecas.length === 0 ? (
                     <tr><td colSpan={15} style={{ ...cs.td, textAlign: 'center', color: 'var(--ink-muted)', padding: '40px 20px', borderBottom: 'none' }}>Nenhuma peca encontrada</td></tr>
-                  ) : data.data.map((p: any) => (
-                    <tr key={p.id} style={{ background: isPrejuizoPeca(p) ? '#fff7f7' : 'transparent' }}>
-                      <td style={{ ...cs.td, padding: denseTablePadding }}>
-                        <input
-                          type="checkbox"
-                          disabled={isPrejuizoPeca(p)}
-                          checked={selectedPecaIds.includes(p.id)}
-                          onChange={() => toggleSelectedPeca(p.id)}
-                          aria-label={`Selecionar peca ${p.idPeca}`}
-                          style={{ width: 14, height: 14, cursor: isPrejuizoPeca(p) ? 'not-allowed' : 'pointer' }}
-                        />
-                      </td>
-                      <td style={{ ...cs.td, padding: denseTablePadding }}><span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11.5, color: 'var(--ink-muted)' }}>#{p.motoId}</span></td>
-                      <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11.5, color: isPrejuizoPeca(p) ? '#b91c1c' : 'var(--blue-500)', whiteSpace: 'nowrap' }}>{p.idPeca}</td>
-                      <td style={{ ...cs.td, padding: denseTablePadding, color: 'var(--ink-muted)', fontSize: 11.5, lineHeight: 1.35 }}>
-                        <div style={{ display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden' }}>
-                          {[p.moto?.marca, p.moto?.modelo].filter(Boolean).join(' ')}
-                        </div>
-                      </td>
-                      <td style={{ ...cs.td, padding: denseTablePadding, fontSize: 12 }}>
-                        <div title={p.descricao} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.descricao}</div>
-                        {isPrejuizoPeca(p) ? (
-                          <div style={{ marginTop: 4 }}>
-                            <PrejuizoBadge />
-                          </div>
+                  ) : displayedPecas.map((p: any, index: number) => {
+                    const caixaAtual = displayCaixaLabel(p.localizacao);
+                    const caixaAnterior = index > 0 ? displayCaixaLabel(displayedPecas[index - 1]?.localizacao) : null;
+                    const showCaixaSeparator = filters.caixas.length > 0 && caixaAtual !== caixaAnterior;
+
+                    return (
+                      <Fragment key={p.id}>
+                        {showCaixaSeparator ? (
+                          <tr>
+                            <td colSpan={15} style={{ padding: '10px 12px', borderBottom: '1px solid rgba(37,99,235,.16)', background: '#f8fbff' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <span style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--blue-500)' }}>
+                                  Caixa {caixaAtual}
+                                </span>
+                                <div style={{ height: 1, background: 'rgba(37,99,235,.24)', flex: 1 }} />
+                              </div>
+                            </td>
+                          </tr>
                         ) : null}
-                      </td>
-                      <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11, color: 'var(--ink-muted)', whiteSpace: 'nowrap' }}>{formatCompactDate(p.cadastro)}</td>
-                      <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11.5, whiteSpace: 'nowrap' }}>{fmt(Number(p.precoML))}</td>
-                      <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11.5, color: 'var(--ink-muted)', whiteSpace: 'nowrap' }}>{fmt(Number(p.valorLiq))}</td>
-                      <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11.5, color: 'var(--ink-muted)', whiteSpace: 'nowrap' }}>{fmt(Number(p.valorFrete))}</td>
-                      <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11.5, color: 'var(--ink-muted)', whiteSpace: 'nowrap' }}>{fmt(Number(p.valorTaxas))}</td>
-                      <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11, color: 'var(--ink-muted)', whiteSpace: 'nowrap' }}>{formatCompactDate(p.dataVenda)}</td>
-                      <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11, color: p.blingPedidoNum ? 'var(--blue-500)' : 'var(--ink-muted)', whiteSpace: 'nowrap' }}>{p.blingPedidoNum || '-'}</td>
-                      <td style={{ ...cs.td, padding: denseTablePadding, textAlign: 'center' }}>
-                        {hasDetranEtiqueta(p.detranEtiqueta) ? (
-                          <button
-                            onClick={() => setDetranPeca(p)}
-                            title="Ver etiqueta DETRAN"
-                            style={{ border: 'none', background: 'transparent', padding: 0, cursor: 'pointer' }}
-                          >
-                            <DetranBadge ativo />
-                          </button>
-                        ) : (
-                          <DetranBadge ativo={false} />
-                        )}
-                      </td>
-                      <td style={{ ...cs.td, padding: denseTablePadding, textAlign: 'center' }}>
-                        {isPrejuizoPeca(p) ? (
-                          <PrejuizoBadge />
-                        ) : (
-                          <StatusLinkButton disponivel={Boolean(p.disponivel)} link={p.mercadoLivreLink} />
-                        )}
-                      </td>
-                      <td style={{ ...cs.td, padding: denseTablePadding, textAlign: 'center' }}>
-                        <ActionIconButton
-                          onClick={() => {
-                            if (isPrejuizoPeca(p)) return;
-                            setActionPeca(p);
-                          }}
-                          disabled={isPrejuizoPeca(p)}
-                          title={isPrejuizoPeca(p) ? 'Peca em prejuizo bloqueada para acoes' : 'Acoes da peca'}
-                        />
-                      </td>
-                    </tr>
-                  ))}
+                        <tr style={{ background: isPrejuizoPeca(p) ? '#fff7f7' : 'transparent' }}>
+                          <td style={{ ...cs.td, padding: denseTablePadding }}>
+                            <input
+                              type="checkbox"
+                              disabled={isPrejuizoPeca(p)}
+                              checked={selectedPecaIds.includes(p.id)}
+                              onChange={() => toggleSelectedPeca(p.id)}
+                              aria-label={`Selecionar peca ${p.idPeca}`}
+                              style={{ width: 14, height: 14, cursor: isPrejuizoPeca(p) ? 'not-allowed' : 'pointer' }}
+                            />
+                          </td>
+                          <td style={{ ...cs.td, padding: denseTablePadding }}><span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11.5, color: 'var(--ink-muted)' }}>#{p.motoId}</span></td>
+                          <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11.5, color: isPrejuizoPeca(p) ? '#b91c1c' : 'var(--blue-500)', whiteSpace: 'nowrap' }}>{p.idPeca}</td>
+                          <td style={{ ...cs.td, padding: denseTablePadding, color: 'var(--ink-muted)', fontSize: 11.5, lineHeight: 1.35 }}>
+                            <div style={{ display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden' }}>
+                              {[p.moto?.marca, p.moto?.modelo].filter(Boolean).join(' ')}
+                            </div>
+                          </td>
+                          <td style={{ ...cs.td, padding: denseTablePadding, fontSize: 12 }}>
+                            <div title={p.descricao} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.descricao}</div>
+                            {isPrejuizoPeca(p) ? (
+                              <div style={{ marginTop: 4 }}>
+                                <PrejuizoBadge />
+                              </div>
+                            ) : null}
+                          </td>
+                          <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11, color: 'var(--ink-muted)', whiteSpace: 'nowrap' }}>{formatCompactDate(p.cadastro)}</td>
+                          <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11.5, whiteSpace: 'nowrap' }}>{fmt(Number(p.precoML))}</td>
+                          <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11.5, color: 'var(--ink-muted)', whiteSpace: 'nowrap' }}>{fmt(Number(p.valorLiq))}</td>
+                          <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11.5, color: 'var(--ink-muted)', whiteSpace: 'nowrap' }}>{fmt(Number(p.valorFrete))}</td>
+                          <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11.5, color: 'var(--ink-muted)', whiteSpace: 'nowrap' }}>{fmt(Number(p.valorTaxas))}</td>
+                          <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11, color: 'var(--ink-muted)', whiteSpace: 'nowrap' }}>{formatCompactDate(p.dataVenda)}</td>
+                          <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11, color: p.blingPedidoNum ? 'var(--blue-500)' : 'var(--ink-muted)', whiteSpace: 'nowrap' }}>{p.blingPedidoNum || '-'}</td>
+                          <td style={{ ...cs.td, padding: denseTablePadding, textAlign: 'center' }}>
+                            {hasDetranEtiqueta(p.detranEtiqueta) ? (
+                              <button
+                                onClick={() => setDetranPeca(p)}
+                                title="Ver etiqueta DETRAN"
+                                style={{ border: 'none', background: 'transparent', padding: 0, cursor: 'pointer' }}
+                              >
+                                <DetranBadge ativo />
+                              </button>
+                            ) : (
+                              <DetranBadge ativo={false} />
+                            )}
+                          </td>
+                          <td style={{ ...cs.td, padding: denseTablePadding, textAlign: 'center' }}>
+                            {isPrejuizoPeca(p) ? (
+                              <PrejuizoBadge />
+                            ) : (
+                              <StatusLinkButton disponivel={Boolean(p.disponivel)} link={p.mercadoLivreLink} />
+                            )}
+                          </td>
+                          <td style={{ ...cs.td, padding: denseTablePadding, textAlign: 'center' }}>
+                            <ActionIconButton
+                              onClick={() => {
+                                if (isPrejuizoPeca(p)) return;
+                                setActionPeca(p);
+                              }}
+                              disabled={isPrejuizoPeca(p)}
+                              title={isPrejuizoPeca(p) ? 'Peca em prejuizo bloqueada para acoes' : 'Acoes da peca'}
+                            />
+                          </td>
+                        </tr>
+                      </Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
