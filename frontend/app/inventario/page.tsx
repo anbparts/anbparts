@@ -257,6 +257,135 @@ function DiferencaModal({
   );
 }
 
+function InventarioCaixasSelector({
+  caixas,
+  caixasSelecionadas,
+  loading,
+  buscaCaixa,
+  viewportMode,
+  onBuscaCaixaChange,
+  onToggleCaixa,
+  onSelectAll,
+  onClearSelection,
+}: {
+  caixas: InventarioCaixaOpcao[];
+  caixasSelecionadas: string[];
+  loading: boolean;
+  buscaCaixa: string;
+  viewportMode: InventarioViewportMode;
+  onBuscaCaixaChange: (value: string) => void;
+  onToggleCaixa: (caixa: string) => void;
+  onSelectAll: (caixas: string[]) => void;
+  onClearSelection: () => void;
+}) {
+  const isPhone = viewportMode === 'phone';
+  const isTabletPortrait = viewportMode === 'tablet-portrait';
+  const isTabletLandscape = viewportMode === 'tablet-landscape';
+  const buscaNormalizada = normalizeSearchText(buscaCaixa);
+  const caixasFiltradas = caixas.filter((caixa) => (
+    !buscaNormalizada || normalizeSearchText(caixa.caixa).includes(buscaNormalizada)
+  ));
+  const listColumns = isTabletLandscape ? 'repeat(2, minmax(0, 1fr))' : '1fr';
+  const listMaxHeight = isPhone ? 'min(38svh, 320px)' : isTabletPortrait ? 320 : 380;
+
+  return (
+    <div style={{ border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden', background: 'var(--white)' }}>
+      <div style={{ padding: isPhone ? '12px' : '14px 16px', borderBottom: '1px solid var(--border)', display: 'grid', gap: 10 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-800)' }}>Selecionar localizacoes</div>
+            <div style={{ fontSize: isPhone ? 11.5 : 12, color: 'var(--gray-500)', marginTop: 4, lineHeight: 1.45 }}>
+              A caixa <strong>Sem Localizacao</strong> entra automaticamente quando houver pecas sem preenchimento.
+            </div>
+          </div>
+          <div style={{ padding: '8px 12px', borderRadius: 999, background: '#eff6ff', border: '1px solid #bfdbfe', fontSize: 12, fontWeight: 700, color: 'var(--blue-500)' }}>
+            {caixasSelecionadas.length} caixa(s) selecionada(s)
+          </div>
+        </div>
+
+        <input
+          style={{ ...s.input, width: '100%' }}
+          value={buscaCaixa}
+          onChange={(e) => onBuscaCaixaChange(e.target.value)}
+          placeholder="Buscar caixa pelo nome"
+        />
+
+        <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(2, max-content)', gap: 8 }}>
+          <button
+            onClick={() => onSelectAll(caixasFiltradas.map((caixa) => caixa.caixa))}
+            type="button"
+            style={{ ...s.btn, background: 'var(--white)', color: 'var(--gray-700)', borderColor: 'var(--border)', justifyContent: 'center', width: isPhone ? '100%' : undefined }}
+          >
+            Selecionar visiveis
+          </button>
+          <button
+            onClick={onClearSelection}
+            type="button"
+            style={{ ...s.btn, background: 'var(--white)', color: 'var(--gray-700)', borderColor: 'var(--border)', justifyContent: 'center', width: isPhone ? '100%' : undefined }}
+          >
+            Limpar
+          </button>
+        </div>
+      </div>
+
+      <div
+        style={{
+          minHeight: isPhone ? 220 : 260,
+          maxHeight: listMaxHeight,
+          overflowY: 'auto',
+          WebkitOverflowScrolling: 'touch',
+          overscrollBehavior: 'contain',
+          padding: 12,
+          display: 'grid',
+          gridTemplateColumns: listColumns,
+          gap: 10,
+          alignContent: 'start',
+        }}
+      >
+        {loading ? (
+          <div style={{ padding: 16, color: 'var(--gray-500)', fontSize: 13 }}>Carregando localizacoes...</div>
+        ) : caixas.length === 0 ? (
+          <div style={{ padding: 16, color: 'var(--gray-500)', fontSize: 13 }}>Nenhuma localizacao disponivel encontrada.</div>
+        ) : caixasFiltradas.length === 0 ? (
+          <div style={{ padding: 16, color: 'var(--gray-500)', fontSize: 13 }}>Nenhuma caixa encontrada com esse filtro.</div>
+        ) : (
+          caixasFiltradas.map((caixa) => {
+            const checked = caixasSelecionadas.includes(caixa.caixa);
+            return (
+              <label
+                key={caixa.caixa}
+                style={{
+                  display: 'flex',
+                  gap: 12,
+                  alignItems: 'flex-start',
+                  border: checked ? '1px solid var(--blue-500)' : '1px solid var(--border)',
+                  background: checked ? '#eff6ff' : 'var(--white)',
+                  borderRadius: 10,
+                  padding: 14,
+                  cursor: 'pointer',
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => onToggleCaixa(caixa.caixa)}
+                  style={{ width: 16, height: 16, marginTop: 2, cursor: 'pointer' }}
+                />
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-800)', overflowWrap: 'anywhere' }}>{caixa.caixa}</div>
+                  <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 4 }}>
+                    {caixa.totalSkus} SKU(s) · {caixa.totalPecas} peca(s)
+                  </div>
+                </div>
+              </label>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
 function NovoInventarioModal({
   open,
   loading,
@@ -455,8 +584,19 @@ function NovoInventarioModal({
           )}
 
           {modo === 'parcial' && (
-            <div ref={partialSectionRef} style={{ border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
-              <div style={{ padding: isPhone ? '12px' : '14px 16px', borderBottom: '1px solid var(--border)', display: 'grid', gap: compactPartialLayout ? 10 : 12 }}>
+            <div ref={partialSectionRef}>
+              <InventarioCaixasSelector
+                caixas={caixas}
+                caixasSelecionadas={caixasSelecionadas}
+                loading={loading}
+                buscaCaixa={buscaCaixa}
+                viewportMode={viewportMode}
+                onBuscaCaixaChange={onBuscaCaixaChange}
+                onToggleCaixa={onToggleCaixa}
+                onSelectAll={onSelectAll}
+                onClearSelection={onClearSelection}
+              />
+              <div style={{ display: 'none', padding: isPhone ? '12px' : '14px 16px', borderBottom: '1px solid var(--border)', gap: compactPartialLayout ? 10 : 12 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start' }}>
                   <div>
                     <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-800)' }}>Selecionar localizacoes</div>
@@ -490,7 +630,7 @@ function NovoInventarioModal({
                 </div>
               </div>
 
-              <div style={{ minHeight: listMinHeight, maxHeight: useInnerScrollableList ? listMaxHeight : undefined, overflow: useInnerScrollableList ? 'auto' : 'visible', WebkitOverflowScrolling: 'touch', padding: 12, display: 'grid', gridTemplateColumns: selectionGridColumns, gap: 10 }}>
+              <div style={{ display: 'none', minHeight: 0, maxHeight: undefined, overflow: 'visible', WebkitOverflowScrolling: 'touch', padding: 12, gridTemplateColumns: '1fr', gap: 10 }}>
                 {loading ? (
                   <div style={{ padding: 16, color: 'var(--gray-500)', fontSize: 13 }}>Carregando localizacoes...</div>
                 ) : caixas.length === 0 ? (
