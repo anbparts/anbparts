@@ -21,6 +21,13 @@ function today() {
   return new Date().toISOString().split('T')[0];
 }
 
+function toInputDate(value: any) {
+  if (!value) return today();
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return today();
+  return date.toISOString().split('T')[0];
+}
+
 function normalizeTipo(value: any) {
   const normalized = String(value || '').trim();
   return normalized || TIPO_PADRAO;
@@ -74,6 +81,7 @@ export default function InvestimentosPage() {
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [modo, setModo] = useState<ViewMode>('grafico');
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState({ data: today(), socio: 'Bruno', tipo: 'Moto', moto: '', valor: '' });
 
   const inputStyle: any = {
@@ -205,20 +213,37 @@ export default function InvestimentosPage() {
       }),
     }));
 
+  function resetFormState() {
+    setForm({ data: today(), socio: 'Bruno', tipo: 'Moto', moto: '', valor: '' });
+    setEditingId(null);
+    setShowForm(false);
+  }
+
   async function salvar() {
     if (!form.valor) return;
     setSaving(true);
-    await api.financeiro.investimentos.create({
-      data: form.data,
-      socio: form.socio,
-      tipo: form.tipo,
-      moto: form.moto || null,
-      valor: Number(form.valor),
-    });
-    setForm({ data: today(), socio: 'Bruno', tipo: 'Moto', moto: '', valor: '' });
-    setShowForm(false);
-    setSaving(false);
-    load();
+    try {
+      const payload = {
+        data: form.data,
+        socio: form.socio,
+        tipo: form.tipo,
+        moto: form.moto || null,
+        valor: Number(form.valor),
+      };
+
+      if (editingId) {
+        await api.financeiro.investimentos.update(editingId, payload);
+      } else {
+        await api.financeiro.investimentos.create(payload);
+      }
+
+      resetFormState();
+      load();
+    } catch (error: any) {
+      alert(error.message || 'Erro ao salvar investimento');
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function limparBase() {
@@ -237,8 +262,26 @@ export default function InvestimentosPage() {
 
   async function excluir(id: number) {
     if (!confirm('Excluir investimento?')) return;
-    await api.financeiro.investimentos.delete(id);
-    load();
+    try {
+      await api.financeiro.investimentos.delete(id);
+      load();
+    } catch (error: any) {
+      alert(error.message || 'Erro ao excluir investimento');
+    }
+  }
+
+  function editar(item: any) {
+    const tipoAtual = TIPOS_APORTE.includes(item.tipo) ? item.tipo : 'Operacional';
+    setEditingId(Number(item.id));
+    setForm({
+      data: toInputDate(item.data),
+      socio: item.socio || 'Bruno',
+      tipo: tipoAtual,
+      moto: String(item.moto || ''),
+      valor: String(Number(item.valor || 0)),
+    });
+    setShowForm(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   return (
@@ -258,10 +301,16 @@ export default function InvestimentosPage() {
             Limpar base
           </button>
           <button
-            onClick={() => setShowForm((value) => !value)}
+            onClick={() => {
+              if (showForm) {
+                resetFormState();
+                return;
+              }
+              setShowForm(true);
+            }}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 7, background: 'var(--blue-500)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}
           >
-            {showForm ? 'Fechar' : '+ Novo investimento'}
+            {showForm ? (editingId ? 'Cancelar edicao' : 'Fechar') : '+ Novo investimento'}
           </button>
         </div>
       </div>
@@ -285,7 +334,7 @@ export default function InvestimentosPage() {
 
         {showForm && (
           <div style={{ background: 'var(--white)', border: '1px solid var(--blue-200)', borderRadius: 10, padding: 20, marginBottom: 20 }}>
-            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 14 }}>Novo investimento</div>
+            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 14 }}>{editingId ? 'Editar lancamento' : 'Novo investimento'}</div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(140px, 1fr)) auto', gap: 10, alignItems: 'end' }}>
               <div>
                 <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Data</div>
@@ -316,8 +365,17 @@ export default function InvestimentosPage() {
                 disabled={saving || !form.valor}
                 style={{ padding: '8px 18px', background: 'var(--blue-500)', color: '#fff', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap' }}
               >
-                {saving ? 'Salvando...' : 'Salvar'}
+                {saving ? 'Salvando...' : editingId ? 'Salvar edicao' : 'Salvar'}
               </button>
+              {editingId && (
+                <button
+                  onClick={resetFormState}
+                  type="button"
+                  style={{ padding: '8px 18px', background: 'var(--white)', color: 'var(--ink-muted)', border: '1px solid var(--border)', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                >
+                  Cancelar
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -367,7 +425,7 @@ export default function InvestimentosPage() {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
                     <tr>
-                      {['Data', 'Socio', 'Tipo', 'Moto / Item', 'Valor', ''].map((header) => (
+                      {['Data', 'Socio', 'Tipo', 'Moto / Item', 'Valor', 'Acoes'].map((header) => (
                         <th key={header} style={{ padding: '9px 16px', textAlign: header === 'Valor' ? 'right' : 'left', fontFamily: 'Geist Mono, monospace', fontSize: 10, letterSpacing: '.7px', textTransform: 'uppercase', color: 'var(--ink-muted)', fontWeight: 500 }}>
                           {header}
                         </th>
@@ -384,10 +442,15 @@ export default function InvestimentosPage() {
                         <td style={{ padding: '9px 16px', color: 'var(--ink)', fontWeight: 600 }}>{normalizeTipo(item.tipo)}</td>
                         <td style={{ padding: '9px 16px', color: 'var(--ink-muted)', fontFamily: 'Geist Mono, monospace', fontSize: 12 }}>{resolveAporteLabel(item.moto, item.tipo, motosMap)}</td>
                         <td style={{ padding: '9px 16px', textAlign: 'right', fontFamily: 'Geist Mono, monospace', fontSize: 13, color: 'var(--blue-500)', fontWeight: 600 }}>{fmt(Number(item.valor || 0))}</td>
-                        <td style={{ padding: '9px 10px', width: 40 }}>
-                          <button onClick={() => excluir(item.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-muted)', fontSize: 14, padding: '2px 6px', borderRadius: 4 }} title="Excluir">
-                            x
-                          </button>
+                        <td style={{ padding: '9px 10px', width: 124 }}>
+                          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
+                            <button onClick={() => editar(item)} style={{ background: 'var(--white)', border: '1px solid var(--border)', cursor: 'pointer', color: 'var(--ink)', fontSize: 12, padding: '6px 10px', borderRadius: 7, fontWeight: 600 }} title="Editar">
+                              Editar
+                            </button>
+                            <button onClick={() => excluir(item.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-muted)', fontSize: 14, padding: '2px 6px', borderRadius: 4 }} title="Excluir">
+                              x
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}

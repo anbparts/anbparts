@@ -16,6 +16,7 @@ const s: any = {
 };
 
 type AuditoriaEscopo = 'full' | 'com_estoque' | 'com_estoque_mais_vendidos_ano';
+type AuditoriaViewportMode = 'phone' | 'tablet-portrait' | 'tablet-landscape' | 'desktop';
 type ProgressoExecucao = {
   totalParaProcessar?: number;
   totalProcessados?: number;
@@ -66,6 +67,7 @@ const infoValue = (value?: string | null) => String(value || '').trim() || 'Nao 
 const clampProgress = (value: number, total: number) => Math.max(0, Math.min(total || 0, value || 0));
 
 export default function AuditoriaAutomaticaPage() {
+  const [viewportMode, setViewportMode] = useState<AuditoriaViewportMode>('desktop');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [executando, setExecutando] = useState(false);
@@ -132,6 +134,43 @@ export default function AuditoriaAutomaticaPage() {
 
   useEffect(() => { loadAll().catch((error) => { setLoading(false); alert(error.message || 'Erro ao carregar a auditoria automatica'); }); }, []);
   useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const phoneMedia = window.matchMedia('(max-width: 767px)');
+    const tabletPortraitMedia = window.matchMedia('(pointer: coarse) and (min-width: 768px) and (max-width: 1024px) and (orientation: portrait)');
+    const tabletLandscapeMedia = window.matchMedia('(pointer: coarse) and (min-width: 900px) and (max-width: 1600px) and (orientation: landscape)');
+
+    const syncViewportMode = () => {
+      if (phoneMedia.matches) {
+        setViewportMode('phone');
+        return;
+      }
+
+      if (tabletPortraitMedia.matches) {
+        setViewportMode('tablet-portrait');
+        return;
+      }
+
+      if (tabletLandscapeMedia.matches) {
+        setViewportMode('tablet-landscape');
+        return;
+      }
+
+      setViewportMode('desktop');
+    };
+
+    syncViewportMode();
+    phoneMedia.addEventListener('change', syncViewportMode);
+    tabletPortraitMedia.addEventListener('change', syncViewportMode);
+    tabletLandscapeMedia.addEventListener('change', syncViewportMode);
+
+    return () => {
+      phoneMedia.removeEventListener('change', syncViewportMode);
+      tabletPortraitMedia.removeEventListener('change', syncViewportMode);
+      tabletLandscapeMedia.removeEventListener('change', syncViewportMode);
+    };
+  }, []);
+  useEffect(() => {
     const executandoAgora = !!config?.executandoAgora || !!config?.auditoriaLinkMlExecutandoAgora || execucaoSelecionada?.status === 'executando';
     if (!executandoAgora) return;
 
@@ -165,6 +204,15 @@ export default function AuditoriaAutomaticaPage() {
   const divergenciasAtuais = useMemo(() => Array.isArray(execucaoSelecionada?.divergencias) ? execucaoSelecionada.divergencias : [], [execucaoSelecionada]);
   const divergenciasFiltradas = useMemo(() => filtroTipo ? divergenciasAtuais.filter((item) => item.tipo === filtroTipo) : divergenciasAtuais, [divergenciasAtuais, filtroTipo]);
   const canDeleteLogs = !config?.executandoAgora;
+  const isPhone = viewportMode === 'phone';
+  const isTabletPortrait = viewportMode === 'tablet-portrait';
+  const isTabletLandscape = viewportMode === 'tablet-landscape';
+  const pagePadding = isPhone ? 14 : isTabletPortrait || isTabletLandscape ? 18 : 28;
+  const topbarPadding = isPhone ? '12px 14px' : isTabletPortrait || isTabletLandscape ? '14px 18px' : '0 28px';
+  const configGridColumns = isPhone ? '1fr' : isTabletPortrait ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fit, minmax(180px, 1fr))';
+  const statusGridColumns = isPhone ? 'repeat(2, minmax(0, 1fr))' : isTabletPortrait ? 'repeat(3, minmax(0, 1fr))' : 'repeat(auto-fit, minmax(160px, 1fr))';
+  const executionColumns = isPhone || isTabletPortrait ? '1fr' : isTabletLandscape ? '320px minmax(0, 1fr)' : 'minmax(280px, 360px) minmax(0, 1fr)';
+  const emailGridColumns = isPhone ? '1fr' : 'repeat(auto-fit, minmax(220px, 1fr))';
 
   async function salvarConfiguracao() {
     setSaving(true);
@@ -263,26 +311,26 @@ export default function AuditoriaAutomaticaPage() {
     }
   }
 
-  if (loading) return <><div style={s.topbar}><div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)' }}>Auditoria Automatica</div></div><div style={{ padding: 28, color: 'var(--gray-400)', fontSize: 13 }}>Carregando...</div></>;
+  if (loading) return <><div style={{ ...s.topbar, padding: topbarPadding, height: 'auto', minHeight: 64, flexWrap: 'wrap' }}><div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)' }}>Auditoria Automatica</div></div><div style={{ padding: pagePadding, color: 'var(--gray-400)', fontSize: 13 }}>Carregando...</div></>;
 
   return (
     <>
-      <div style={s.topbar}>
+      <div style={{ ...s.topbar, padding: topbarPadding, height: 'auto', minHeight: 64, flexWrap: 'wrap', gap: 10 }}>
         <div>
           <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)', letterSpacing: '-0.3px' }}>Auditoria Automatica</div>
           <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>Valida divergencias de estoque, mantem DETRAN/localizacao na full e roda o Link ML em rotina separada</div>
         </div>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', width: isPhone ? '100%' : undefined }}>
           <button style={{ ...s.btn, background: 'var(--gray-100)', color: 'var(--gray-700)', border: '1px solid var(--border)' }} onClick={salvarConfiguracao} disabled={saving}>{saving ? 'Salvando...' : 'Salvar configuracoes'}</button>
           <button style={{ ...s.btn, background: 'var(--blue-500)', color: '#fff', opacity: executando ? 0.6 : 1 }} onClick={executarAgora} disabled={executando || !!config?.executandoAgora}>{executando || config?.executandoAgora ? 'Executando...' : 'Executar agora'}</button>
         </div>
       </div>
 
-      <div style={{ padding: 28 }}>
+      <div style={{ padding: pagePadding }}>
         <div style={s.card}>
           <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 8 }}>Configuracao da Rotina de Validacao / Detran / Localizacao</div>
           <div style={{ fontSize: 12, color: 'var(--gray-400)', marginBottom: 16 }}>Defina quando a rotina principal vai rodar, como a base sera filtrada e com qual cadencia os lotes serao enviados para o Bling. O link do ML nao e mais atualizado aqui.</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: configGridColumns, gap: 12, marginBottom: 16 }}>
             <div><label style={s.label}>Rotina ativa</label><select style={{ ...s.input, width: '100%', cursor: 'pointer' }} value={auditoriaAtiva ? '1' : '0'} onChange={(e) => setAuditoriaAtiva(e.target.value === '1')}><option value="1">Ativa</option><option value="0">Pausada</option></select></div>
             <div><label style={s.label}>Horario da execucao</label><input style={{ ...s.input, width: '100%' }} type="time" value={auditoriaHorario} onChange={(e) => setAuditoriaHorario(e.target.value)} /></div>
             <div><label style={s.label}>Escopo da auditoria</label><select style={{ ...s.input, width: '100%', cursor: 'pointer' }} value={auditoriaEscopo} onChange={(e) => setAuditoriaEscopo(e.target.value as AuditoriaEscopo)}>{ESCOPOS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></div>
@@ -294,7 +342,7 @@ export default function AuditoriaAutomaticaPage() {
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 6 }}>Configuracoes de email da auditoria</div>
                 <div style={{ fontSize: 12, color: 'var(--gray-500)', marginBottom: 10 }}>API Key do Resend, remetente, destinatario e titulo agora ficam centralizados em Config. Gerais para reaproveitar o envio de email em outros fluxos do sistema.</div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 8 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: emailGridColumns, gap: 8 }}>
                   <div style={{ fontSize: 12, color: 'var(--gray-700)' }}><strong>Remetente:</strong> {infoValue(config?.configuracoesGeraisRemetente)}</div>
                   <div style={{ fontSize: 12, color: 'var(--gray-700)' }}><strong>Destinatario:</strong> {infoValue(config?.configuracoesGeraisAuditoriaDestinatario)}</div>
                   <div style={{ fontSize: 12, color: 'var(--gray-700)' }}><strong>Titulo:</strong> {infoValue(config?.configuracoesGeraisAuditoriaTitulo)}</div>
@@ -321,7 +369,7 @@ export default function AuditoriaAutomaticaPage() {
               {executandoLinkMl || config?.auditoriaLinkMlExecutandoAgora ? 'Atualizando links...' : 'Atualizar links ML agora'}
             </button>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: configGridColumns, gap: 12, marginBottom: 16 }}>
             <div><label style={s.label}>Rotina ativa</label><select style={{ ...s.input, width: '100%', cursor: 'pointer' }} value={auditoriaLinkMlAtiva ? '1' : '0'} onChange={(e) => setAuditoriaLinkMlAtiva(e.target.value === '1')}><option value="1">Ativa</option><option value="0">Pausada</option></select></div>
             <div><label style={s.label}>Intervalo (dias)</label><input style={{ ...s.input, width: '100%' }} type="number" min="1" max="365" value={auditoriaLinkMlIntervaloDias} onChange={(e) => setAuditoriaLinkMlIntervaloDias(e.target.value)} /></div>
             <div><label style={s.label}>Horario da execucao</label><input style={{ ...s.input, width: '100%' }} type="time" value={auditoriaLinkMlHorario} onChange={(e) => setAuditoriaLinkMlHorario(e.target.value)} /></div>
@@ -333,7 +381,7 @@ export default function AuditoriaAutomaticaPage() {
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: statusGridColumns, gap: 12, marginBottom: 12 }}>
           {[
             { label: 'Status', value: auditoriaAtiva ? 'Ativa' : 'Pausada', color: auditoriaAtiva ? 'var(--green)' : 'var(--amber)' },
             { label: 'Horario', value: auditoriaHorario || '-', color: 'var(--gray-700)' },
@@ -403,7 +451,7 @@ export default function AuditoriaAutomaticaPage() {
           </div>
         )}
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 360px) minmax(0, 1fr)', gap: 12, alignItems: 'start' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: executionColumns, gap: 12, alignItems: 'start' }}>
           <div style={s.card}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
               <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)' }}>Historico de execucoes</div>

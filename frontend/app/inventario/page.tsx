@@ -84,7 +84,7 @@ type ItemInventario = {
   caixa: string;
   skuBase: string;
   motoId: number | null;
-  idPecaReferencia: string;
+  idPecaReferencia: string | null;
   descricao: string;
   quantidadeEstoque: number;
   status: string;
@@ -134,6 +134,8 @@ type InventarioCaixaOpcao = {
   totalSkus: number;
   totalPecas: number;
 };
+
+type InventarioViewportMode = 'phone' | 'tablet-portrait' | 'tablet-landscape' | 'desktop';
 
 function inputDateString(date: Date) {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
@@ -204,28 +206,32 @@ function DiferencaModal({
   open,
   item,
   loading,
+  viewportMode,
   onClose,
   onSelect,
 }: {
   open: boolean;
   item: ItemInventario | null;
   loading: boolean;
+  viewportMode: InventarioViewportMode;
   onClose: () => void;
   onSelect: (tipo: 'nao_localizado' | 'diferenca_estoque') => void;
 }) {
   if (!open || !item) return null;
 
+  const isPhone = viewportMode === 'phone';
+
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 240, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }}>
-      <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 16, width: '100%', maxWidth: 420, boxShadow: '0 12px 32px rgba(0,0,0,.10)' }}>
-        <div style={{ padding: '20px 22px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 240, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: isPhone ? 0 : 24, backdropFilter: 'blur(2px)' }}>
+      <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: isPhone ? 0 : 16, width: '100%', maxWidth: 420, minHeight: isPhone ? '100dvh' : undefined, boxShadow: '0 12px 32px rgba(0,0,0,.10)' }}>
+        <div style={{ padding: isPhone ? '16px 14px 12px' : '20px 22px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <div style={{ fontFamily: 'Fraunces, serif', fontSize: 18, fontWeight: 600 }}>Registrar diferenca</div>
             <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 4 }}>{item.skuBase} - {item.descricao}</div>
           </div>
           <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer' }}>X</button>
         </div>
-        <div style={{ padding: '20px 22px' }}>
+        <div style={{ padding: isPhone ? '18px 14px calc(18px + env(safe-area-inset-bottom))' : '20px 22px' }}>
           <div style={{ fontSize: 12, color: 'var(--gray-500)', marginBottom: 14 }}>
             Escolha o tipo da divergencia encontrada para esse SKU durante a conferencia da caixa.
           </div>
@@ -258,8 +264,11 @@ function NovoInventarioModal({
   modo,
   caixas,
   caixasSelecionadas,
+  viewportMode,
+  buscaCaixa,
   onClose,
   onModoChange,
+  onBuscaCaixaChange,
   onToggleCaixa,
   onSelectAll,
   onClearSelection,
@@ -271,24 +280,35 @@ function NovoInventarioModal({
   modo: 'completo' | 'parcial';
   caixas: InventarioCaixaOpcao[];
   caixasSelecionadas: string[];
+  viewportMode: InventarioViewportMode;
+  buscaCaixa: string;
   onClose: () => void;
   onModoChange: (modo: 'completo' | 'parcial') => void;
+  onBuscaCaixaChange: (value: string) => void;
   onToggleCaixa: (caixa: string) => void;
-  onSelectAll: () => void;
+  onSelectAll: (caixas: string[]) => void;
   onClearSelection: () => void;
   onConfirm: () => void;
 }) {
   if (!open) return null;
 
   const totalPecas = caixas.reduce((sum, caixa) => sum + Number(caixa.totalPecas || 0), 0);
+  const caixasFiltradas = caixas.filter((caixa) => (
+    !normalizeSearchText(buscaCaixa)
+      || normalizeSearchText(caixa.caixa).includes(normalizeSearchText(buscaCaixa))
+  ));
+  const totalSelecionadas = caixasSelecionadas.length;
+  const isPhone = viewportMode === 'phone';
+  const isTabletPortrait = viewportMode === 'tablet-portrait';
+  const isTabletLandscape = viewportMode === 'tablet-landscape';
   const canConfirm = !creating && modo === 'completo'
     ? true
     : caixasSelecionadas.length > 0;
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 250, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }}>
-      <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 16, width: '100%', maxWidth: 720, boxShadow: '0 12px 32px rgba(0,0,0,.10)', maxHeight: 'min(88vh, 880px)', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ padding: '20px 22px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 250, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: isPhone ? 0 : isTabletLandscape ? 16 : 24, backdropFilter: 'blur(2px)' }}>
+      <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: isPhone ? 0 : 16, width: '100%', maxWidth: isTabletLandscape ? 860 : 720, boxShadow: '0 12px 32px rgba(0,0,0,.10)', maxHeight: isPhone ? '100dvh' : 'min(88vh, 880px)', minHeight: isPhone ? '100dvh' : undefined, display: 'flex', flexDirection: 'column' }}>
+        <div style={{ padding: isPhone ? '16px 14px 12px' : '20px 22px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
           <div>
             <div style={{ fontFamily: 'Fraunces, serif', fontSize: 20, fontWeight: 600 }}>Novo inventario</div>
             <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 4 }}>
@@ -298,8 +318,8 @@ function NovoInventarioModal({
           <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer' }}>X</button>
         </div>
 
-        <div style={{ padding: '18px 22px', overflow: 'auto', display: 'grid', gap: 16 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+        <div style={{ padding: isPhone ? '14px 14px 16px' : '18px 22px', overflow: 'auto', display: 'grid', gap: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
             <button
               onClick={() => onModoChange('completo')}
               style={{
@@ -335,7 +355,7 @@ function NovoInventarioModal({
             </button>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isPhone ? 'repeat(2, minmax(0, 1fr))' : isTabletPortrait ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
             <div style={{ padding: 14, borderRadius: 12, background: '#f8fafc', border: '1px solid var(--border)' }}>
               <div style={{ fontSize: 11, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '.08em' }}>Localizacoes</div>
               <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--gray-800)', marginTop: 6 }}>{caixas.length}</div>
@@ -348,6 +368,10 @@ function NovoInventarioModal({
               <div style={{ fontSize: 11, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '.08em' }}>Pecas</div>
               <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--gray-800)', marginTop: 6 }}>{totalPecas}</div>
             </div>
+            <div style={{ padding: 14, borderRadius: 12, background: '#eff6ff', border: '1px solid #bfdbfe' }}>
+              <div style={{ fontSize: 11, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '.08em' }}>Selecionadas</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--blue-500)', marginTop: 6 }}>{totalSelecionadas}</div>
+            </div>
           </div>
 
           {modo === 'parcial' && (
@@ -358,9 +382,12 @@ function NovoInventarioModal({
                   <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 4 }}>
                     A localizacao <strong>Sem Localizacao</strong> entra como uma caixa propria quando houver pecas disponiveis sem preenchimento.
                   </div>
+                  <div style={{ fontSize: 12, color: 'var(--blue-500)', marginTop: 8, fontWeight: 600 }}>
+                    {totalSelecionadas} caixa(s) selecionada(s)
+                  </div>
                 </div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <button onClick={onSelectAll} type="button" style={{ ...s.btn, background: 'var(--white)', color: 'var(--gray-700)', borderColor: 'var(--border)' }}>
+                  <button onClick={() => onSelectAll(caixasFiltradas.map((caixa) => caixa.caixa))} type="button" style={{ ...s.btn, background: 'var(--white)', color: 'var(--gray-700)', borderColor: 'var(--border)' }}>
                     Selecionar todas
                   </button>
                   <button onClick={onClearSelection} type="button" style={{ ...s.btn, background: 'var(--white)', color: 'var(--gray-700)', borderColor: 'var(--border)' }}>
@@ -369,13 +396,25 @@ function NovoInventarioModal({
                 </div>
               </div>
 
-              <div style={{ maxHeight: 360, overflow: 'auto', padding: 12, display: 'grid', gap: 10 }}>
+              <div style={{ padding: '12px 12px 0' }}>
+                <label style={s.label}>Buscar caixa</label>
+                <input
+                  style={{ ...s.input, width: '100%' }}
+                  value={buscaCaixa}
+                  onChange={(e) => onBuscaCaixaChange(e.target.value)}
+                  placeholder="Digite o nome da caixa"
+                />
+              </div>
+
+              <div style={{ maxHeight: isPhone ? 'calc(100dvh - 420px)' : 360, overflow: 'auto', padding: 12, display: 'grid', gap: 10 }}>
                 {loading ? (
                   <div style={{ padding: 16, color: 'var(--gray-500)', fontSize: 13 }}>Carregando localizacoes...</div>
                 ) : caixas.length === 0 ? (
                   <div style={{ padding: 16, color: 'var(--gray-500)', fontSize: 13 }}>Nenhuma localizacao disponivel encontrada.</div>
+                ) : caixasFiltradas.length === 0 ? (
+                  <div style={{ padding: 16, color: 'var(--gray-500)', fontSize: 13 }}>Nenhuma caixa encontrada com esse filtro.</div>
                 ) : (
-                  caixas.map((caixa) => {
+                  caixasFiltradas.map((caixa) => {
                     const checked = caixasSelecionadas.includes(caixa.caixa);
                     return (
                       <label
@@ -412,7 +451,7 @@ function NovoInventarioModal({
           )}
         </div>
 
-        <div style={{ padding: '14px 22px 20px', display: 'flex', gap: 8, justifyContent: 'flex-end', borderTop: '1px solid var(--border)' }}>
+        <div style={{ padding: isPhone ? '14px 14px calc(14px + env(safe-area-inset-bottom))' : '14px 22px 20px', display: 'flex', flexDirection: isPhone ? 'column-reverse' : 'row', gap: 8, justifyContent: 'flex-end', borderTop: '1px solid var(--border)' }}>
           <button onClick={onClose} style={{ ...s.btn, background: 'var(--white)', color: 'var(--gray-700)', borderColor: 'var(--border)' }}>Cancelar</button>
           <button
             onClick={onConfirm}
@@ -428,6 +467,7 @@ function NovoInventarioModal({
 }
 
 export default function InventarioPage() {
+  const [viewportMode, setViewportMode] = useState<InventarioViewportMode>('desktop');
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [novoInventarioOpen, setNovoInventarioOpen] = useState(false);
@@ -435,6 +475,7 @@ export default function InventarioPage() {
   const [caixasDisponiveis, setCaixasDisponiveis] = useState<InventarioCaixaOpcao[]>([]);
   const [carregandoOpcoesInventario, setCarregandoOpcoesInventario] = useState(false);
   const [caixasSelecionadasInventario, setCaixasSelecionadasInventario] = useState<string[]>([]);
+  const [buscaCaixaInventario, setBuscaCaixaInventario] = useState('');
   const [reloading, setReloading] = useState(false);
   const [cancelandoInventario, setCancelandoInventario] = useState(false);
   const [excluindoLogId, setExcluindoLogId] = useState<number | null>(null);
@@ -532,10 +573,49 @@ export default function InventarioPage() {
     });
   }, [inventario?.id, selectedCaixa]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const phoneMedia = window.matchMedia('(max-width: 767px)');
+    const tabletPortraitMedia = window.matchMedia('(pointer: coarse) and (min-width: 768px) and (max-width: 1024px) and (orientation: portrait)');
+    const tabletLandscapeMedia = window.matchMedia('(pointer: coarse) and (min-width: 900px) and (max-width: 1600px) and (orientation: landscape)');
+
+    const syncViewportMode = () => {
+      if (phoneMedia.matches) {
+        setViewportMode('phone');
+        return;
+      }
+
+      if (tabletPortraitMedia.matches) {
+        setViewportMode('tablet-portrait');
+        return;
+      }
+
+      if (tabletLandscapeMedia.matches) {
+        setViewportMode('tablet-landscape');
+        return;
+      }
+
+      setViewportMode('desktop');
+    };
+
+    syncViewportMode();
+    phoneMedia.addEventListener('change', syncViewportMode);
+    tabletPortraitMedia.addEventListener('change', syncViewportMode);
+    tabletLandscapeMedia.addEventListener('change', syncViewportMode);
+
+    return () => {
+      phoneMedia.removeEventListener('change', syncViewportMode);
+      tabletPortraitMedia.removeEventListener('change', syncViewportMode);
+      tabletLandscapeMedia.removeEventListener('change', syncViewportMode);
+    };
+  }, []);
+
   async function handleNovoInventario() {
     setCarregandoOpcoesInventario(true);
     setNovoInventarioModo('completo');
     setCaixasSelecionadasInventario([]);
+    setBuscaCaixaInventario('');
     setNovoInventarioOpen(true);
     try {
       const data = await api.inventario.opcoes();
@@ -707,9 +787,22 @@ export default function InventarioPage() {
     })
     .sort((a, b) => compareItemDecisionDesc(a.item, b.item));
 
+  const isPhone = viewportMode === 'phone';
+  const isTabletPortrait = viewportMode === 'tablet-portrait';
+  const isTabletLandscape = viewportMode === 'tablet-landscape';
+  const useStackedSections = isPhone || isTabletPortrait;
+  const pagePadding = isPhone ? 14 : isTabletPortrait || isTabletLandscape ? 18 : 28;
+  const topbarPadding = isPhone ? '0 14px' : isTabletPortrait || isTabletLandscape ? '0 18px' : '0 28px';
+  const summaryColumns = isPhone ? 'repeat(2, minmax(0, 1fr))' : isTabletPortrait ? 'repeat(3, minmax(0, 1fr))' : 'repeat(auto-fit, minmax(180px, 1fr))';
+  const mainColumns = useStackedSections ? '1fr' : isTabletLandscape ? '280px minmax(0, 1fr)' : '320px minmax(0, 1fr)';
+  const detailFilterColumns = isPhone ? '1fr' : isTabletPortrait ? '1fr' : isTabletLandscape ? 'minmax(0, 1.3fr) 220px' : 'minmax(0, 1fr) 220px';
+  const logsColumns = useStackedSections ? '1fr' : isTabletLandscape ? '300px minmax(0, 1fr)' : '320px minmax(0, 1fr)';
+  const itemMetricColumns = isPhone ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fit, minmax(150px, 1fr))';
+  const actionLayout = isPhone ? { display: 'grid', gridTemplateColumns: '1fr', gap: 8 } : { display: 'flex', gap: 8, flexWrap: 'wrap' as const };
+
   if (loading) {
     return (
-      <div style={{ padding: 28 }}>
+      <div style={{ padding: pagePadding }}>
         <div style={s.card}>Carregando inventario...</div>
       </div>
     );
@@ -717,7 +810,7 @@ export default function InventarioPage() {
 
   return (
     <>
-        <div style={s.topbar}>
+        <div style={{ ...s.topbar, padding: topbarPadding, minHeight: isPhone ? 72 : s.topbar.height, height: 'auto', flexWrap: 'wrap', gap: 10 }}>
           <div>
             <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)', letterSpacing: '-0.3px' }}>Inventario</div>
             <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>
@@ -746,7 +839,7 @@ export default function InventarioPage() {
         </div>
       </div>
 
-      <div style={{ padding: 28 }}>
+      <div style={{ padding: pagePadding }}>
         <div style={s.card}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', alignItems: 'center' }}>
             <div>
@@ -787,7 +880,7 @@ export default function InventarioPage() {
 
         {inventario ? (
           <>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: summaryColumns, gap: 12, marginBottom: 12 }}>
               <div style={s.card}>
                 <div style={{ fontSize: 11, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '0.8px' }}>Status</div>
                 <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--green)', marginTop: 6 }}>{inventario.statusLabel}</div>
@@ -814,7 +907,7 @@ export default function InventarioPage() {
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '320px minmax(0, 1fr)', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: mainColumns, gap: 12 }}>
               <div style={s.card}>
                 <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 12 }}>Caixas para conferencia</div>
                 <div style={{ marginBottom: 12 }}>
@@ -889,7 +982,7 @@ export default function InventarioPage() {
                       </button>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 220px', gap: 12, marginBottom: 14 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: detailFilterColumns, gap: 12, marginBottom: 14 }}>
                       <div>
                         <label style={s.label}>Buscar por descricao, SKU ou ID da peca</label>
                         <input
@@ -925,7 +1018,7 @@ export default function InventarioPage() {
                           const busy = busyItemId === item.id;
                           return (
                             <div key={item.id} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 16 }}>
-                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 14 }}>
+                              <div style={{ display: 'grid', gridTemplateColumns: itemMetricColumns, gap: 12, marginBottom: 14 }}>
                                 <div>
                                   <div style={{ fontSize: 11, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '0.7px' }}>ID Moto</div>
                                   <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--gray-800)', marginTop: 6 }}>{item.motoId ?? '-'}</div>
@@ -936,7 +1029,7 @@ export default function InventarioPage() {
                                 </div>
                                 <div>
                                   <div style={{ fontSize: 11, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '0.7px' }}>ID da Peca</div>
-                                  <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--gray-800)', marginTop: 6 }}>{item.idPecaReferencia}</div>
+                                  <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--gray-800)', marginTop: 6 }}>{item.idPecaReferencia || '-'}</div>
                                 </div>
                                 <div>
                                   <div style={{ fontSize: 11, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '0.7px' }}>Quantidade</div>
@@ -944,7 +1037,7 @@ export default function InventarioPage() {
                                 </div>
                               </div>
                               <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 12 }}>{item.descricao}</div>
-                              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                              <div style={actionLayout}>
                                 <button
                                   onClick={() => handleConfirmarItem(item.id)}
                                   disabled={busy}
@@ -994,7 +1087,7 @@ export default function InventarioPage() {
                                   }}
                                 >
                                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 6 }}>
-                                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-800)' }}>{item.skuBase} - {item.idPecaReferencia}</div>
+                                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-800)' }}>{item.skuBase} - {item.idPecaReferencia || '-'}</div>
                                     <div style={{ fontSize: 12, fontWeight: 700, color: isSuccess ? 'var(--green)' : 'var(--red)' }}>
                                       {isSuccess ? 'Confirmado' : item.tipoDiferencaLabel || item.tipoDiferenca}
                                     </div>
@@ -1051,7 +1144,7 @@ export default function InventarioPage() {
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '320px minmax(0, 1fr)', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: logsColumns, gap: 12 }}>
             <div style={{ display: 'grid', gap: 10 }}>
               {logs.length === 0 ? (
                 <div style={{ padding: 16, borderRadius: 10, background: '#f8fafc', border: '1px solid var(--border)', color: 'var(--gray-500)', fontSize: 13 }}>
@@ -1156,7 +1249,7 @@ export default function InventarioPage() {
                             </div>
                           </div>
                           <div style={{ fontSize: 13, color: 'var(--gray-700)', marginBottom: 4 }}>
-                            {item.idPecaReferencia} - {item.descricao}
+                            {item.idPecaReferencia || '-'} - {item.descricao}
                           </div>
                           <div style={{ fontSize: 12, color: 'var(--gray-500)' }}>
                             ID Moto: {item.motoId ?? '-'} · Estoque registrado: {item.quantidadeEstoque} · Marcado em {fmtDateTime(item.decidedAt)}
@@ -1176,6 +1269,7 @@ export default function InventarioPage() {
         open={!!diferencaItem}
         item={diferencaItem}
         loading={busyItemId === diferencaItem?.id}
+        viewportMode={viewportMode}
         onClose={() => setDiferencaItem(null)}
         onSelect={handleRegistrarDiferenca}
       />
@@ -1186,18 +1280,23 @@ export default function InventarioPage() {
         modo={novoInventarioModo}
         caixas={caixasDisponiveis}
         caixasSelecionadas={caixasSelecionadasInventario}
+        viewportMode={viewportMode}
+        buscaCaixa={buscaCaixaInventario}
         onClose={() => {
           if (creating) return;
           setNovoInventarioOpen(false);
+          setBuscaCaixaInventario('');
         }}
         onModoChange={(modo) => {
           setNovoInventarioModo(modo);
           if (modo === 'completo') {
             setCaixasSelecionadasInventario([]);
+            setBuscaCaixaInventario('');
           }
         }}
+        onBuscaCaixaChange={setBuscaCaixaInventario}
         onToggleCaixa={handleToggleCaixaInventario}
-        onSelectAll={() => setCaixasSelecionadasInventario(caixasDisponiveis.map((caixa) => caixa.caixa))}
+        onSelectAll={(caixas) => setCaixasSelecionadasInventario((current) => Array.from(new Set([...current, ...caixas])))}
         onClearSelection={() => setCaixasSelecionadasInventario([])}
         onConfirm={handleCriarInventario}
       />

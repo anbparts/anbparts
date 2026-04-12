@@ -104,6 +104,7 @@ export const api = {
     investimentos: {
       list: () => req<any[]>('/financeiro/investimentos'),
       create: (data: any) => req<any>('/financeiro/investimentos', { method: 'POST', body: JSON.stringify(data) }),
+      update: (id: number, data: any) => req<any>(`/financeiro/investimentos/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
       clear: () => req<any>('/financeiro/investimentos', { method: 'DELETE' }),
       delete: (id: number) => req<any>(`/financeiro/investimentos/${id}`, { method: 'DELETE' }),
     },

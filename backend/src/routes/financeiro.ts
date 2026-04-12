@@ -659,6 +659,29 @@ financeiroRouter.post('/investimentos', async (req, res, next) => {
   }
 });
 
+financeiroRouter.put('/investimentos/:id', async (req, res, next) => {
+  try {
+    const parsed = investimentoSchema.parse({
+      ...req.body,
+      tipo: normalizeInvestimentoTipo(req.body?.tipo),
+    });
+
+    const row = await prisma.investimento.update({
+      where: { id: Number(req.params.id) },
+      data: {
+        data: new Date(parsed.data),
+        socio: parsed.socio,
+        tipo: parsed.tipo,
+        moto: normalizeText(parsed.moto),
+        valor: parsed.valor,
+      },
+    });
+    res.json({ ...row, tipo: normalizeInvestimentoTipo(row.tipo), valor: toNumber(row.valor) });
+  } catch (e) {
+    next(e);
+  }
+});
+
 financeiroRouter.delete('/investimentos', async (_req, res, next) => {
   try {
     const deleted = await prisma.investimento.deleteMany({});
