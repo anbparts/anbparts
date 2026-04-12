@@ -7,6 +7,7 @@ export const pecasRouter = Router();
 
 const DEFAULT_SELL_FRETE = 29.9;
 const DEFAULT_TAXA_PCT = 17;
+const CAIXA_SEM_LOCALIZACAO = 'Sem Localizacao';
 const PREJUIZO_MOTIVOS = new Set([
   'Extravio no Envio',
   'Defeito',
@@ -175,6 +176,26 @@ function normalizePecaLocalizacao(value: unknown) {
   return text || null;
 }
 
+function normalizeQueryList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => normalizeQueryList(item));
+  }
+
+  return String(value ?? '')
+    .split(',')
+    .map((item) => item.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+}
+
+function normalizeAsciiText(value: unknown) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
 function calculatePecaFinancialValues(
   current: { precoML: any; valorFrete: any; valorTaxas: any },
   nextPrecoML?: number,
@@ -229,6 +250,7 @@ pecasRouter.get('/', async (req, res, next) => {
       disponivel,
       mercadoLivreLink,
       localizacao,
+      caixas,
       search,
       dataVendaFrom,
       dataVendaTo,
@@ -275,6 +297,28 @@ pecasRouter.get('/', async (req, res, next) => {
           { localizacao: '' },
         ],
       });
+    }
+    const caixasSelecionadas = normalizeQueryList(caixas);
+    if (caixasSelecionadas.length) {
+      const incluiSemLocalizacao = caixasSelecionadas.some((item) => normalizeAsciiText(item) === normalizeAsciiText(CAIXA_SEM_LOCALIZACAO));
+      const caixasPreenchidas = caixasSelecionadas
+        .map((item) => normalizePecaLocalizacao(item))
+        .filter((item): item is string => Boolean(item) && normalizeAsciiText(item) !== normalizeAsciiText(CAIXA_SEM_LOCALIZACAO));
+
+      const caixasConditions: any[] = [];
+
+      if (caixasPreenchidas.length) {
+        caixasConditions.push({ localizacao: { in: caixasPreenchidas } });
+      }
+
+      if (incluiSemLocalizacao) {
+        caixasConditions.push({ localizacao: null });
+        caixasConditions.push({ localizacao: '' });
+      }
+
+      if (caixasConditions.length) {
+        andConditions.push({ OR: caixasConditions });
+      }
     }
     if (precoMlZero === 'true') where.precoML = 0;
     if (searchText) {
@@ -331,6 +375,54 @@ pecasRouter.get('/', async (req, res, next) => {
 
     res.json({ total, totalDisp, totalVend, page: Number(page), per: Number(per), data: pecas });
   } catch (e) { next(e); }
+});
+
+pecasRouter.get('/caixas', async (_req, res, next) => {
+  try {
+    const pecas = await prisma.peca.findMany({
+      where: {
+        disponivel: true,
+        emPrejuizo: false,
+      },
+      select: {
+        localizacao: true,
+      },
+      orderBy: {
+        localizacao: 'asc',
+      },
+    });
+
+    const counters = new Map<string, number>();
+    let semLocalizacaoCount = 0;
+
+    for (const peca of pecas) {
+      const caixa = normalizePecaLocalizacao(peca.localizacao);
+      if (!caixa) {
+        semLocalizacaoCount += 1;
+        continue;
+      }
+
+      counters.set(caixa, (counters.get(caixa) || 0) + 1);
+    }
+
+    const data = Array.from(counters.entries())
+      .map(([caixa, totalPecas]) => ({ caixa, totalPecas }))
+      .sort((a, b) => a.caixa.localeCompare(b.caixa, 'pt-BR', { numeric: true, sensitivity: 'base' }));
+
+    if (semLocalizacaoCount > 0) {
+      data.unshift({
+        caixa: CAIXA_SEM_LOCALIZACAO,
+        totalPecas: semLocalizacaoCount,
+      });
+    }
+
+    res.json({
+      total: data.length,
+      data,
+    });
+  } catch (e) {
+    next(e);
+  }
 });
 
 // GET /pecas/sugestao-id

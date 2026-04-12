@@ -25,6 +25,14 @@ function formatCompactDate(value: string | null | undefined) {
   return `${day}/${month}/${year.slice(-2)}`;
 }
 
+function normalizeFilterText(value: unknown) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
 function roundMoney(value: number) {
   return Math.round(value * 100) / 100;
 }
@@ -83,6 +91,10 @@ type EstoqueTableHeader = {
   sort: string | null;
   width: number | string;
   kind?: 'select';
+};
+type CaixaFilterOption = {
+  caixa: string;
+  totalPecas: number;
 };
 
 const cs: any = {
@@ -282,6 +294,169 @@ function DetranBadge({ ativo }: { ativo: boolean }) {
     >
       X
     </span>
+  );
+}
+
+function CaixaMultiSelectFilter({
+  open,
+  loading,
+  options,
+  selected,
+  search,
+  isPhone,
+  isTabletPortrait,
+  isTabletLandscape,
+  onToggleOpen,
+  onSearchChange,
+  onToggleCaixa,
+  onClear,
+  onSelectVisible,
+}: {
+  open: boolean;
+  loading: boolean;
+  options: CaixaFilterOption[];
+  selected: string[];
+  search: string;
+  isPhone: boolean;
+  isTabletPortrait: boolean;
+  isTabletLandscape: boolean;
+  onToggleOpen: () => void;
+  onSearchChange: (value: string) => void;
+  onToggleCaixa: (caixa: string) => void;
+  onClear: () => void;
+  onSelectVisible: (caixas: string[]) => void;
+}) {
+  const searchNormalized = normalizeFilterText(search);
+  const visibleOptions = options.filter((option) => (
+    !searchNormalized || normalizeFilterText(option.caixa).includes(searchNormalized)
+  ));
+  const buttonLabel = selected.length === 0
+    ? 'Todas caixas'
+    : selected.length === 1
+      ? selected[0]
+      : `${selected.length} caixas`;
+  const optionColumns = isPhone ? '1fr' : isTabletLandscape ? 'repeat(2, minmax(0, 1fr))' : '1fr';
+
+  return (
+    <div style={{ display: 'grid', gap: 8 }}>
+      <button
+        type="button"
+        onClick={onToggleOpen}
+        style={{
+          ...cs.sel,
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+          padding: '0 11px',
+          background: open ? '#f8fafc' : 'var(--gray-50)',
+        }}
+      >
+        <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'left' }}>{buttonLabel}</span>
+        <span style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: selected.length ? 'var(--blue-500)' : 'var(--ink-muted)', flexShrink: 0 }}>
+          {selected.length ? `${selected.length} sel.` : 'Caixa'}
+        </span>
+      </button>
+
+      {open ? (
+        <div style={{ border: '1px solid var(--border)', borderRadius: 12, background: 'var(--white)', padding: isPhone ? 12 : 14, display: 'grid', gap: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div>
+              <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--ink)' }}>Filtrar por caixa</div>
+              <div style={{ fontSize: 11.5, color: 'var(--ink-muted)', marginTop: 4 }}>
+                {selected.length ? `${selected.length} caixa(s) selecionada(s)` : 'Selecione uma ou varias caixas'}
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', width: isPhone || isTabletPortrait ? '100%' : undefined }}>
+              <button
+                type="button"
+                onClick={() => onSelectVisible(visibleOptions.map((option) => option.caixa))}
+                disabled={loading || visibleOptions.length === 0}
+                style={{
+                  ...cs.btn,
+                  padding: '6px 12px',
+                  fontSize: 12,
+                  background: 'var(--white)',
+                  color: 'var(--ink-soft)',
+                  borderColor: 'var(--border)',
+                  justifyContent: 'center',
+                  width: isPhone ? '100%' : undefined,
+                }}
+              >
+                Selecionar visiveis
+              </button>
+              <button
+                type="button"
+                onClick={onClear}
+                disabled={!selected.length}
+                style={{
+                  ...cs.btn,
+                  padding: '6px 12px',
+                  fontSize: 12,
+                  background: 'var(--white)',
+                  color: selected.length ? 'var(--ink-soft)' : 'var(--ink-muted)',
+                  borderColor: 'var(--border)',
+                  justifyContent: 'center',
+                  width: isPhone ? '100%' : undefined,
+                  opacity: selected.length ? 1 : 0.65,
+                }}
+              >
+                Limpar
+              </button>
+            </div>
+          </div>
+
+          <input
+            style={{ ...cs.fi, marginTop: 0 }}
+            placeholder="Buscar caixa..."
+            value={search}
+            onChange={(e) => onSearchChange(e.target.value)}
+          />
+
+          <div style={{ maxHeight: isPhone ? 220 : isTabletPortrait ? 260 : 280, overflow: 'auto', display: 'grid', gridTemplateColumns: optionColumns, gap: 8 }}>
+            {loading ? (
+              <div style={{ padding: 14, color: 'var(--ink-muted)', fontSize: 12.5 }}>Carregando caixas...</div>
+            ) : visibleOptions.length === 0 ? (
+              <div style={{ padding: 14, color: 'var(--ink-muted)', fontSize: 12.5 }}>Nenhuma caixa encontrada.</div>
+            ) : (
+              visibleOptions.map((option) => {
+                const checked = selected.includes(option.caixa);
+
+                return (
+                  <label
+                    key={option.caixa}
+                    style={{
+                      display: 'flex',
+                      gap: 10,
+                      alignItems: 'flex-start',
+                      padding: 12,
+                      borderRadius: 10,
+                      border: checked ? '1px solid var(--blue-500)' : '1px solid var(--border)',
+                      background: checked ? '#eff6ff' : 'var(--white)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => onToggleCaixa(option.caixa)}
+                      style={{ width: 14, height: 14, marginTop: 2, cursor: 'pointer' }}
+                    />
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', overflowWrap: 'anywhere' }}>{option.caixa}</div>
+                      <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginTop: 4 }}>
+                        {option.totalPecas} peca(s) em estoque
+                      </div>
+                    </div>
+                  </label>
+                );
+              })
+            )}
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -930,6 +1105,7 @@ function VendaModal({ open, peca, onClose, onConfirm }: any) {
 export default function EstoquePage() {
   const [data, setData] = useState<any>({ total: 0, totalDisp: 0, totalVend: 0, data: [] });
   const [motos, setMotos] = useState<any[]>([]);
+  const [caixaOptions, setCaixaOptions] = useState<CaixaFilterOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [viewportMode, setViewportMode] = useState<EstoqueViewportMode>('desktop');
   const [modal, setModal] = useState(false);
@@ -939,12 +1115,15 @@ export default function EstoquePage() {
   const [actionPeca, setActionPeca] = useState<any>(null);
   const [detranPeca, setDetranPeca] = useState<any>(null);
   const [selectedPecaIds, setSelectedPecaIds] = useState<number[]>([]);
+  const [caixaFilterOpen, setCaixaFilterOpen] = useState(false);
+  const [caixaFilterSearch, setCaixaFilterSearch] = useState('');
   const [filters, setFilters] = useState({
     motoId: '',
     marca: '',
     disponivel: '',
     mercadoLivreLink: '',
     localizacao: '',
+    caixas: [] as string[],
     precoMlZero: '',
     search: '',
     dataVendaFrom: '',
@@ -968,14 +1147,16 @@ export default function EstoquePage() {
     if (filters.disponivel !== '') params.disponivel = filters.disponivel;
     if (filters.mercadoLivreLink !== '') params.mercadoLivreLink = filters.mercadoLivreLink;
     if (filters.localizacao !== '') params.localizacao = filters.localizacao;
+    if (filters.caixas.length) params.caixas = filters.caixas;
     if (filters.precoMlZero !== '') params.precoMlZero = filters.precoMlZero;
     if (filters.search) params.search = filters.search;
     if (filters.dataVendaFrom) params.dataVendaFrom = filters.dataVendaFrom;
     if (filters.dataVendaTo) params.dataVendaTo = filters.dataVendaTo;
 
-    const [d, m] = await Promise.all([api.pecas.list(params), api.motos.list()]);
+    const [d, m, caixasData] = await Promise.all([api.pecas.list(params), api.motos.list(), api.pecas.caixas()]);
     setData(d);
     setMotos(m);
+    setCaixaOptions(Array.isArray(caixasData?.data) ? caixasData.data : []);
     setLoading(false);
   }, [filters]);
 
@@ -1025,6 +1206,15 @@ export default function EstoquePage() {
     const visibleIds = new Set((data.data || []).filter((p: any) => !isPrejuizoPeca(p)).map((p: any) => p.id));
     setSelectedPecaIds((current) => current.filter((id) => visibleIds.has(id)));
   }, [data.data]);
+
+  useEffect(() => {
+    const available = new Set(caixaOptions.map((option) => option.caixa));
+    setFilters((current) => {
+      const nextCaixas = current.caixas.filter((caixa) => available.has(caixa));
+      if (nextCaixas.length === current.caixas.length) return current;
+      return { ...current, caixas: nextCaixas, page: 1 };
+    });
+  }, [caixaOptions]);
 
   async function handleSavePeca(formData: any) {
     if (editPeca && isPrejuizoPeca(editPeca)) {
@@ -1132,10 +1322,12 @@ export default function EstoquePage() {
   }
 
   function clearFilters() {
-    setFilters({ ...filters, motoId: '', marca: '', disponivel: '', mercadoLivreLink: '', localizacao: '', precoMlZero: '', search: '', dataVendaFrom: '', dataVendaTo: '', page: 1 });
+    setCaixaFilterSearch('');
+    setCaixaFilterOpen(false);
+    setFilters({ ...filters, motoId: '', marca: '', disponivel: '', mercadoLivreLink: '', localizacao: '', caixas: [], precoMlZero: '', search: '', dataVendaFrom: '', dataVendaTo: '', page: 1 });
   }
 
-  const hasActiveFilters = Boolean(filters.motoId || filters.marca || filters.disponivel !== '' || filters.mercadoLivreLink !== '' || filters.localizacao !== '' || filters.precoMlZero !== '' || filters.search || filters.dataVendaFrom || filters.dataVendaTo);
+  const hasActiveFilters = Boolean(filters.motoId || filters.marca || filters.disponivel !== '' || filters.mercadoLivreLink !== '' || filters.localizacao !== '' || filters.caixas.length || filters.precoMlZero !== '' || filters.search || filters.dataVendaFrom || filters.dataVendaTo);
   const totalPages = Math.max(1, Math.ceil((data.total || 0) / filters.perPage));
   const hasPrevPage = filters.page > 1;
   const hasNextPage = filters.page < totalPages;
@@ -1153,6 +1345,7 @@ export default function EstoquePage() {
     : isTabletLandscape
     ? 'repeat(4, minmax(0, 1fr))'
     : 'repeat(6, minmax(0, 1fr))';
+  const caixaFilterGridColumn = isPhone ? 'span 1' : 'span 2';
   const summaryGridColumns = isPhone ? 'repeat(2, minmax(0, 1fr))' : 'repeat(3, minmax(0, 1fr))';
   const denseTablePadding = isTabletLandscape ? '9px 8px' : '10px 10px';
   const denseTableHeaderPadding = isTabletLandscape ? '9px 8px' : '10px 10px';
@@ -1166,6 +1359,25 @@ export default function EstoquePage() {
       .map((m: any) => String(m?.marca || '').trim())
       .filter(Boolean),
   )).sort((a, b) => a.localeCompare(b, 'pt-BR', { sensitivity: 'base' }));
+
+  function toggleCaixaFilter(caixa: string) {
+    setFilters((current) => ({
+      ...current,
+      page: 1,
+      caixas: current.caixas.includes(caixa)
+        ? current.caixas.filter((item) => item !== caixa)
+        : [...current.caixas, caixa],
+    }));
+  }
+
+  function selectVisibleCaixas(caixas: string[]) {
+    if (!caixas.length) return;
+    setFilters((current) => ({
+      ...current,
+      page: 1,
+      caixas: Array.from(new Set([...current.caixas, ...caixas])),
+    }));
+  }
   const tableHeaders: EstoqueTableHeader[] = [
     { label: '', sort: null, kind: 'select', width: 38 },
     { label: 'ID', sort: 'motoId', width: 52 },
@@ -1230,6 +1442,23 @@ export default function EstoquePage() {
                 <option value="com">Com preenchimento</option>
                 <option value="sem">Sem preenchimento</option>
               </select>
+              <div style={{ gridColumn: caixaFilterGridColumn }}>
+                <CaixaMultiSelectFilter
+                  open={caixaFilterOpen}
+                  loading={loading && caixaOptions.length === 0}
+                  options={caixaOptions}
+                  selected={filters.caixas}
+                  search={caixaFilterSearch}
+                  isPhone={isPhone}
+                  isTabletPortrait={isTabletPortrait}
+                  isTabletLandscape={isTabletLandscape}
+                  onToggleOpen={() => setCaixaFilterOpen((current) => !current)}
+                  onSearchChange={setCaixaFilterSearch}
+                  onToggleCaixa={toggleCaixaFilter}
+                  onClear={() => setFilters((current) => ({ ...current, page: 1, caixas: [] }))}
+                  onSelectVisible={selectVisibleCaixas}
+                />
+              </div>
               <select style={{ ...cs.sel, width: '100%' }} value={filters.precoMlZero} onChange={(e) => setFilters({ ...filters, precoMlZero: e.target.value, page: 1 })}>
                 <option value="">Preco ML</option>
                 <option value="true">Preco ML zero</option>

@@ -301,13 +301,20 @@ function NovoInventarioModal({
   const isPhone = viewportMode === 'phone';
   const isTabletPortrait = viewportMode === 'tablet-portrait';
   const isTabletLandscape = viewportMode === 'tablet-landscape';
+  const selectionGridColumns = isTabletLandscape ? 'repeat(2, minmax(0, 1fr))' : '1fr';
+  const statsGridColumns = isPhone
+    ? 'repeat(2, minmax(0, 1fr))'
+    : isTabletPortrait
+    ? 'repeat(2, minmax(0, 1fr))'
+    : 'repeat(4, minmax(0, 1fr))';
+  const listMaxHeight = isPhone ? 'calc(100dvh - 500px)' : isTabletPortrait ? 320 : 380;
   const canConfirm = !creating && modo === 'completo'
     ? true
     : caixasSelecionadas.length > 0;
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 250, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: isPhone ? 0 : isTabletLandscape ? 16 : 24, backdropFilter: 'blur(2px)' }}>
-      <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: isPhone ? 0 : 16, width: '100%', maxWidth: isTabletLandscape ? 860 : 720, boxShadow: '0 12px 32px rgba(0,0,0,.10)', maxHeight: isPhone ? '100dvh' : 'min(88vh, 880px)', minHeight: isPhone ? '100dvh' : undefined, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: isPhone ? 0 : 16, width: '100%', maxWidth: isTabletLandscape ? 920 : isTabletPortrait ? 780 : 720, boxShadow: '0 12px 32px rgba(0,0,0,.10)', maxHeight: isPhone ? '100dvh' : 'min(88vh, 880px)', minHeight: isPhone ? '100dvh' : undefined, display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: isPhone ? '16px 14px 12px' : '20px 22px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
           <div>
             <div style={{ fontFamily: 'Fraunces, serif', fontSize: 20, fontWeight: 600 }}>Novo inventario</div>
@@ -318,7 +325,7 @@ function NovoInventarioModal({
           <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer' }}>X</button>
         </div>
 
-        <div style={{ padding: isPhone ? '14px 14px 16px' : '18px 22px', overflow: 'auto', display: 'grid', gap: 16 }}>
+        <div style={{ padding: isPhone ? '14px 14px 16px' : isTabletPortrait ? '16px 18px' : '18px 22px', overflow: 'auto', display: 'grid', gap: 16 }}>
           <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
             <button
               onClick={() => onModoChange('completo')}
@@ -355,7 +362,7 @@ function NovoInventarioModal({
             </button>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: isPhone ? 'repeat(2, minmax(0, 1fr))' : isTabletPortrait ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: statsGridColumns, gap: 10 }}>
             <div style={{ padding: 14, borderRadius: 12, background: '#f8fafc', border: '1px solid var(--border)' }}>
               <div style={{ fontSize: 11, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '.08em' }}>Localizacoes</div>
               <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--gray-800)', marginTop: 6 }}>{caixas.length}</div>
@@ -376,37 +383,39 @@ function NovoInventarioModal({
 
           {modo === 'parcial' && (
             <div style={{ border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
-              <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-                <div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-800)' }}>Selecionar localizacoes</div>
-                  <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 4 }}>
-                    A localizacao <strong>Sem Localizacao</strong> entra como uma caixa propria quando houver pecas disponiveis sem preenchimento.
+              <div style={{ padding: isPhone ? '14px' : '14px 16px', borderBottom: '1px solid var(--border)', display: 'grid', gap: 12 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-800)' }}>Selecionar localizacoes</div>
+                    <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 4, lineHeight: 1.5 }}>
+                      A localizacao <strong>Sem Localizacao</strong> entra como uma caixa propria quando houver pecas disponiveis sem preenchimento.
+                    </div>
                   </div>
-                  <div style={{ fontSize: 12, color: 'var(--blue-500)', marginTop: 8, fontWeight: 600 }}>
+                  <div style={{ padding: '8px 12px', borderRadius: 999, background: '#eff6ff', border: '1px solid #bfdbfe', fontSize: 12, fontWeight: 700, color: 'var(--blue-500)' }}>
                     {totalSelecionadas} caixa(s) selecionada(s)
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <button onClick={() => onSelectAll(caixasFiltradas.map((caixa) => caixa.caixa))} type="button" style={{ ...s.btn, background: 'var(--white)', color: 'var(--gray-700)', borderColor: 'var(--border)' }}>
-                    Selecionar todas
+
+                <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : isTabletLandscape ? 'minmax(0, 1fr) auto auto' : 'minmax(0, 1fr) auto auto', gap: 8, alignItems: 'end' }}>
+                  <div>
+                    <label style={s.label}>Buscar caixa</label>
+                    <input
+                      style={{ ...s.input, width: '100%' }}
+                      value={buscaCaixa}
+                      onChange={(e) => onBuscaCaixaChange(e.target.value)}
+                      placeholder="Digite o nome da caixa"
+                    />
+                  </div>
+                  <button onClick={() => onSelectAll(caixasFiltradas.map((caixa) => caixa.caixa))} type="button" style={{ ...s.btn, background: 'var(--white)', color: 'var(--gray-700)', borderColor: 'var(--border)', justifyContent: 'center', width: isPhone ? '100%' : undefined }}>
+                    Selecionar visiveis
                   </button>
-                  <button onClick={onClearSelection} type="button" style={{ ...s.btn, background: 'var(--white)', color: 'var(--gray-700)', borderColor: 'var(--border)' }}>
+                  <button onClick={onClearSelection} type="button" style={{ ...s.btn, background: 'var(--white)', color: 'var(--gray-700)', borderColor: 'var(--border)', justifyContent: 'center', width: isPhone ? '100%' : undefined }}>
                     Limpar
                   </button>
                 </div>
               </div>
 
-              <div style={{ padding: '12px 12px 0' }}>
-                <label style={s.label}>Buscar caixa</label>
-                <input
-                  style={{ ...s.input, width: '100%' }}
-                  value={buscaCaixa}
-                  onChange={(e) => onBuscaCaixaChange(e.target.value)}
-                  placeholder="Digite o nome da caixa"
-                />
-              </div>
-
-              <div style={{ maxHeight: isPhone ? 'calc(100dvh - 420px)' : 360, overflow: 'auto', padding: 12, display: 'grid', gap: 10 }}>
+              <div style={{ maxHeight: listMaxHeight, overflow: 'auto', padding: 12, display: 'grid', gridTemplateColumns: selectionGridColumns, gap: 10 }}>
                 {loading ? (
                   <div style={{ padding: 16, color: 'var(--gray-500)', fontSize: 13 }}>Carregando localizacoes...</div>
                 ) : caixas.length === 0 ? (

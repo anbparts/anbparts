@@ -15,6 +15,28 @@ async function req<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json();
 }
 
+function buildQueryString(params?: Record<string, any>) {
+  if (!params) return '';
+
+  const searchParams = new URLSearchParams();
+
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === '') return;
+
+    if (Array.isArray(value)) {
+      value
+        .filter((item) => item !== undefined && item !== null && item !== '')
+        .forEach((item) => searchParams.append(key, String(item)));
+      return;
+    }
+
+    searchParams.set(key, String(value));
+  });
+
+  const query = searchParams.toString();
+  return query ? `?${query}` : '';
+}
+
 // MOTOS
 export const api = {
   motos: {
@@ -35,10 +57,8 @@ export const api = {
     delete: (id: number)    => req<any>(`/motos/${id}`, { method: 'DELETE' }),
   },
   pecas: {
-    list:   (params?: Record<string, any>) => {
-      const qs = params ? '?' + new URLSearchParams(params).toString() : '';
-      return req<any>(`/pecas${qs}`);
-    },
+    list:   (params?: Record<string, any>) => req<any>(`/pecas${buildQueryString(params)}`),
+    caixas: () => req<any>('/pecas/caixas'),
     sugerirId: (motoId: number) => req<any>(`/pecas/sugestao-id?motoId=${motoId}`),
     create: (data: any)     => req<any>('/pecas', { method: 'POST', body: JSON.stringify(data) }),
     update: (id: number, data: any) => req<any>(`/pecas/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
