@@ -62,6 +62,7 @@ export function ViewModeSwitch({
     display: 'inline-flex',
     alignItems: 'center',
     gap: 4,
+    flexWrap: 'wrap',
     padding: 4,
     borderRadius: 999,
     background: 'var(--gray-50)',
@@ -270,7 +271,7 @@ export function DonutChart({
   let offset = 0;
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '220px minmax(0, 1fr)', gap: 22, alignItems: 'center' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 22, alignItems: 'center' }}>
       <div style={{ position: 'relative', width: 170, height: 170, margin: '0 auto' }}>
         <svg width="170" height="170" viewBox="0 0 170 170">
           <circle cx="85" cy="85" r={radius} stroke="var(--gray-100)" strokeWidth="18" fill="none" />

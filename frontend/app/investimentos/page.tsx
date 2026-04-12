@@ -12,6 +12,7 @@ const SOCIO_COLORS: Record<string, string> = {
 const TIPOS_APORTE = ['Moto', 'Insumos', 'Infra-Estrutura', 'Obra', 'Operacional'] as const;
 const TIPO_PADRAO = 'Aporte geral';
 const MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+type InvestimentosViewportMode = 'phone' | 'tablet-portrait' | 'tablet-landscape' | 'desktop';
 
 function fmt(value: number) {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -73,6 +74,7 @@ function periodLabelFromKey(key: string, includeYear = false) {
 }
 
 export default function InvestimentosPage() {
+  const [viewportMode, setViewportMode] = useState<InvestimentosViewportMode>('desktop');
   const [rows, setRows] = useState<any[]>([]);
   const [motos, setMotos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -110,6 +112,43 @@ export default function InvestimentosPage() {
   }
 
   useEffect(load, []);
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const phoneMedia = window.matchMedia('(max-width: 767px)');
+    const tabletPortraitMedia = window.matchMedia('(pointer: coarse) and (min-width: 768px) and (max-width: 1024px) and (orientation: portrait)');
+    const tabletLandscapeMedia = window.matchMedia('(pointer: coarse) and (min-width: 900px) and (max-width: 1600px) and (orientation: landscape)');
+
+    const syncViewportMode = () => {
+      if (phoneMedia.matches) {
+        setViewportMode('phone');
+        return;
+      }
+
+      if (tabletPortraitMedia.matches) {
+        setViewportMode('tablet-portrait');
+        return;
+      }
+
+      if (tabletLandscapeMedia.matches) {
+        setViewportMode('tablet-landscape');
+        return;
+      }
+
+      setViewportMode('desktop');
+    };
+
+    syncViewportMode();
+    phoneMedia.addEventListener('change', syncViewportMode);
+    tabletPortraitMedia.addEventListener('change', syncViewportMode);
+    tabletLandscapeMedia.addEventListener('change', syncViewportMode);
+
+    return () => {
+      phoneMedia.removeEventListener('change', syncViewportMode);
+      tabletPortraitMedia.removeEventListener('change', syncViewportMode);
+      tabletLandscapeMedia.removeEventListener('change', syncViewportMode);
+    };
+  }, []);
   const motosMap = new Map<number, string>(
     motos.map((moto) => [Number(moto.id), `ID ${moto.id} - ${moto.marca} ${moto.modelo}`]),
   );
@@ -213,6 +252,18 @@ export default function InvestimentosPage() {
       }),
     }));
 
+  const isPhone = viewportMode === 'phone';
+  const isTabletPortrait = viewportMode === 'tablet-portrait';
+  const isTabletLandscape = viewportMode === 'tablet-landscape';
+  const useCardReportLayout = isPhone || isTabletPortrait;
+  const pagePadding = isPhone ? 14 : isTabletPortrait || isTabletLandscape ? 18 : 28;
+  const topbarPadding = isPhone ? '12px 14px' : isTabletPortrait || isTabletLandscape ? '14px 18px' : '0 28px';
+  const topbarActionsWidth = isPhone ? '100%' : undefined;
+  const summaryColumns = isPhone ? '1fr' : isTabletPortrait ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fit, minmax(170px, 1fr))';
+  const formGridColumns = isPhone ? '1fr' : isTabletPortrait ? 'repeat(2, minmax(0, 1fr))' : isTabletLandscape ? 'repeat(3, minmax(0, 1fr))' : 'repeat(5, minmax(140px, 1fr))';
+  const chartColumns = isPhone || isTabletPortrait ? '1fr' : 'minmax(0, 1fr) minmax(0, 1.1fr)';
+  const filterControlsColumns = isPhone ? '1fr' : isTabletPortrait ? 'repeat(2, minmax(0, 1fr))' : 'auto auto';
+
   function resetFormState() {
     setForm({ data: today(), socio: 'Bruno', tipo: 'Moto', moto: '', valor: '' });
     setEditingId(null);
@@ -286,16 +337,16 @@ export default function InvestimentosPage() {
 
   return (
     <>
-      <div style={{ height: 'var(--topbar-h)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 28px', background: 'var(--white)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, zIndex: 50 }}>
+      <div style={{ minHeight: 64, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: topbarPadding, background: 'var(--white)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, zIndex: 50, gap: 12, flexWrap: 'wrap' }}>
         <div>
           <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)', letterSpacing: '-0.3px' }}>Investimentos</div>
           <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>Aportes por socio</div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', width: topbarActionsWidth }}>
           <ViewModeSwitch value={modo} onChange={setModo} />
           <button
             onClick={limparBase}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 7, background: '#fff7ed', color: 'var(--amber)', border: '1px solid #fdba74', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px 18px', borderRadius: 7, background: '#fff7ed', color: 'var(--amber)', border: '1px solid #fdba74', fontSize: 13, fontWeight: 600, cursor: 'pointer', flex: isPhone ? '1 1 150px' : undefined }}
             disabled={saving}
           >
             Limpar base
@@ -308,15 +359,15 @@ export default function InvestimentosPage() {
               }
               setShowForm(true);
             }}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 7, background: 'var(--blue-500)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}
+            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px 18px', borderRadius: 7, background: 'var(--blue-500)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 500, cursor: 'pointer', flex: isPhone ? '1 1 170px' : undefined }}
           >
             {showForm ? (editingId ? 'Cancelar edicao' : 'Fechar') : '+ Novo investimento'}
           </button>
         </div>
       </div>
 
-      <div style={{ padding: 28 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 14, marginBottom: 20 }}>
+      <div style={{ padding: pagePadding }}>
+        <div style={{ display: 'grid', gridTemplateColumns: summaryColumns, gap: 14, marginBottom: 20 }}>
           <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, padding: '16px 18px' }}>
             <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '.6px', textTransform: 'uppercase', marginBottom: 8 }}>Total geral</div>
             <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--blue-500)', letterSpacing: '-0.4px' }}>{fmt(totalGeral)}</div>
@@ -335,7 +386,7 @@ export default function InvestimentosPage() {
         {showForm && (
           <div style={{ background: 'var(--white)', border: '1px solid var(--blue-200)', borderRadius: 10, padding: 20, marginBottom: 20 }}>
             <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 14 }}>{editingId ? 'Editar lancamento' : 'Novo investimento'}</div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(140px, 1fr)) auto', gap: 10, alignItems: 'end' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: formGridColumns, gap: 10, alignItems: 'end' }}>
               <div>
                 <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Data</div>
                 <input style={inputStyle} type="date" value={form.data} onChange={(e) => setForm((value) => ({ ...value, data: e.target.value }))} />
@@ -360,10 +411,12 @@ export default function InvestimentosPage() {
                 <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Valor (R$) *</div>
                 <input style={inputStyle} type="number" step="0.01" placeholder="0,00" value={form.valor} onChange={(e) => setForm((value) => ({ ...value, valor: e.target.value }))} />
               </div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: isPhone ? 'column' : 'row', justifyContent: 'flex-end', gap: 10, marginTop: 14 }}>
               <button
                 onClick={salvar}
                 disabled={saving || !form.valor}
-                style={{ padding: '8px 18px', background: 'var(--blue-500)', color: '#fff', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                style={{ padding: '8px 18px', background: 'var(--blue-500)', color: '#fff', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap', width: isPhone ? '100%' : undefined }}
               >
                 {saving ? 'Salvando...' : editingId ? 'Salvar edicao' : 'Salvar'}
               </button>
@@ -371,7 +424,7 @@ export default function InvestimentosPage() {
                 <button
                   onClick={resetFormState}
                   type="button"
-                  style={{ padding: '8px 18px', background: 'var(--white)', color: 'var(--ink-muted)', border: '1px solid var(--border)', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                  style={{ padding: '8px 18px', background: 'var(--white)', color: 'var(--ink-muted)', border: '1px solid var(--border)', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap', width: isPhone ? '100%' : undefined }}
                 >
                   Cancelar
                 </button>
@@ -385,12 +438,12 @@ export default function InvestimentosPage() {
             <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>
               Visualizacao <span style={{ fontSize: 12, color: 'var(--ink-muted)', fontWeight: 400 }}>- {filtradas.length} registros</span>
             </div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <select style={{ ...inputStyle, width: 'auto', cursor: 'pointer' }} value={filtroAno} onChange={(e) => setFiltroAno(e.target.value)}>
+            <div style={{ display: 'grid', gridTemplateColumns: filterControlsColumns, gap: 8, width: isPhone ? '100%' : undefined }}>
+              <select style={{ ...inputStyle, width: isPhone ? '100%' : 'auto', cursor: 'pointer' }} value={filtroAno} onChange={(e) => setFiltroAno(e.target.value)}>
                 <option value="">Todos os anos</option>
                 {anos.map((ano) => <option key={ano} value={ano}>{ano}</option>)}
               </select>
-              <select style={{ ...inputStyle, width: 'auto', cursor: 'pointer' }} value={filtroSocio} onChange={(e) => setFiltroSocio(e.target.value)}>
+              <select style={{ ...inputStyle, width: isPhone ? '100%' : 'auto', cursor: 'pointer' }} value={filtroSocio} onChange={(e) => setFiltroSocio(e.target.value)}>
                 <option value="">Todos os socios</option>
                 {SOCIOS.map((socio) => <option key={socio}>{socio}</option>)}
               </select>
@@ -403,7 +456,7 @@ export default function InvestimentosPage() {
             <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, padding: 28, color: 'var(--ink-muted)' }}>Carregando visualizacao...</div>
           ) : (
             <div style={{ display: 'grid', gap: 18 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1.1fr)', gap: 18 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: chartColumns, gap: 18 }}>
                 <ChartPanel title="Participacao dos socios" subtitle="Quanto cada socio representa no capital investido." accent="#2563eb">
                   <DonutChart items={sociosChart} totalLabel="Investido" totalDisplay={fmt(totalGeral)} valueFormatter={fmt} emptyText="Sem investimentos para distribuir." />
                 </ChartPanel>
@@ -420,9 +473,50 @@ export default function InvestimentosPage() {
           <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
             {loading ? (
               <div style={{ padding: 28, color: 'var(--ink-muted)', fontSize: 13 }}>Carregando...</div>
+            ) : useCardReportLayout ? (
+              <div style={{ display: 'grid', gap: 12, padding: isPhone ? 14 : 16 }}>
+                {filtradas.length ? (
+                  filtradas.map((item) => (
+                    <div key={item.id} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: isPhone ? 14 : 16, background: 'var(--white)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
+                        <div style={{ fontSize: 12, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)' }}>
+                          {new Date(item.data).toLocaleDateString('pt-BR')}
+                        </div>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--blue-500)' }}>
+                          {fmt(Number(item.valor || 0))}
+                        </div>
+                      </div>
+                      <div style={{ display: 'grid', gap: 8 }}>
+                        <div>
+                          <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: '.08em' }}>Socio</div>
+                          <div style={{ fontSize: 15, fontWeight: 700, color: SOCIO_COLORS[item.socio] || 'var(--ink)', marginTop: 4 }}>{item.socio}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: '.08em' }}>Tipo</div>
+                          <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', marginTop: 4 }}>{normalizeTipo(item.tipo)}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: '.08em' }}>Moto / Item</div>
+                          <div style={{ fontSize: 13, color: 'var(--ink-muted)', marginTop: 4, lineHeight: 1.45 }}>{resolveAporteLabel(item.moto, item.tipo, motosMap)}</div>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: isPhone ? 'column' : 'row', gap: 8, marginTop: 14 }}>
+                        <button onClick={() => editar(item)} style={{ background: 'var(--white)', border: '1px solid var(--border)', cursor: 'pointer', color: 'var(--ink)', fontSize: 13, padding: '10px 12px', borderRadius: 8, fontWeight: 600, width: isPhone ? '100%' : undefined }}>
+                          Editar
+                        </button>
+                        <button onClick={() => excluir(item.id)} style={{ background: '#fef2f2', border: '1px solid #fecaca', cursor: 'pointer', color: '#b91c1c', fontSize: 13, padding: '10px 12px', borderRadius: 8, fontWeight: 600, width: isPhone ? '100%' : undefined }}>
+                          Excluir
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div style={{ padding: '28px 14px', textAlign: 'center', color: 'var(--ink-muted)', fontSize: 13 }}>Nenhum investimento registrado</div>
+                )}
+              </div>
             ) : (
               <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: isTabletLandscape ? 12 : 13 }}>
                   <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
                     <tr>
                       {['Data', 'Socio', 'Tipo', 'Moto / Item', 'Valor', 'Acoes'].map((header) => (
