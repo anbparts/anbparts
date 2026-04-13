@@ -2939,27 +2939,68 @@ async function runTraceSkuComparison(rawSkus: any, rawMotoId: any) {
   }
 
   const localEscopo = await loadAllLocalSkuResumo(cfg.auditoriaEscopo);
-  const localPecasTrace = localEscopo.pecas.filter((peca) => traceSkuSet.has(getBaseSku(peca.idPeca)));
+  const chunkSize = Math.max(1, Math.min(5, traceCodigos.length || 1));
+  const resultadoAgregado = {
+    ok: true,
+    totalConsultados: 0,
+    totalDivergencias: 0,
+    totalSemDivergencia: 0,
+    divergencias: [] as any[],
+    traceSkus: {} as Record<string, any>,
+    warnings: [] as string[],
+  };
+  const chunkErrors: string[] = [];
+  let chunksProcessadosComSucesso = 0;
 
-  const resultado = await compareProdutosBlingCodes(traceCodigos, {
-    localMap: localEscopo.localMap,
-    localPecas: localPecasTrace,
-    syncLocalizacao: true,
-    syncDetran: true,
-    syncMercadoLivreItemId: true,
-    syncMercadoLivreLink: false,
-    suppressMarketplaceErrors: true,
-    batchSize: Math.max(1, Math.min(10, traceCodigos.length || 1)),
-    pauseMs: Math.max(300, cfg.auditoriaPausaMs),
-    traceSkus: traceSkuSet,
-  });
+  for (let index = 0; index < traceCodigos.length; index += chunkSize) {
+    const codigosChunk = traceCodigos.slice(index, index + chunkSize);
+    const chunkSet = new Set(codigosChunk);
+    const localPecasTrace = localEscopo.pecas.filter((peca) => chunkSet.has(getBaseSku(peca.idPeca)));
+
+    try {
+      const parcial = await compareProdutosBlingCodes(codigosChunk, {
+        localMap: localEscopo.localMap,
+        localPecas: localPecasTrace,
+        syncLocalizacao: true,
+        syncDetran: true,
+        syncMercadoLivreItemId: true,
+        syncMercadoLivreLink: false,
+        suppressMarketplaceErrors: true,
+        batchSize: Math.max(1, Math.min(5, codigosChunk.length || 1)),
+        pauseMs: Math.max(300, cfg.auditoriaPausaMs),
+        traceSkus: chunkSet,
+      });
+
+      chunksProcessadosComSucesso += 1;
+      resultadoAgregado.totalConsultados += Number(parcial?.totalConsultados || 0);
+      resultadoAgregado.totalDivergencias += Number(parcial?.totalDivergencias || 0);
+      resultadoAgregado.totalSemDivergencia += Number(parcial?.totalSemDivergencia || 0);
+      resultadoAgregado.divergencias.push(...(Array.isArray(parcial?.divergencias) ? parcial.divergencias : []));
+      Object.assign(resultadoAgregado.traceSkus, parcial?.traceSkus && typeof parcial.traceSkus === 'object' ? parcial.traceSkus : {});
+      if (Array.isArray(parcial?.warnings) && parcial.warnings.length) {
+        resultadoAgregado.warnings.push(...parcial.warnings);
+      }
+    } catch (error: any) {
+      chunkErrors.push(`${codigosChunk.join(', ')}: ${error?.message || 'erro desconhecido'}`);
+    }
+  }
+
+  if (!chunksProcessadosComSucesso && chunkErrors.length) {
+    throw new Error(chunkErrors[0]);
+  }
+
+  if (chunkErrors.length) {
+    resultadoAgregado.warnings.push(
+      ...chunkErrors.map((message) => `Falha ao comparar lote manual: ${message}`),
+    );
+  }
 
   return {
     cfg,
     traceSkuSet,
     traceCodigos,
     localEscopo,
-    resultado,
+    resultado: resultadoAgregado,
   };
 }
 
