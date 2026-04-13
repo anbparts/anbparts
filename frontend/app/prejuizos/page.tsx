@@ -38,6 +38,15 @@ const PREJUIZO_MOTIVOS = [
 ] as const;
 
 const PREJUIZO_OPTIONS = PREJUIZO_MOTIVOS.map((item) => item.label);
+type PrejuizoOptionLabel = (typeof PREJUIZO_MOTIVOS)[number]['label'];
+
+type EditPrejuizoFormState = {
+  data: string;
+  motivo: PrejuizoOptionLabel;
+  valor: string;
+  frete: string;
+  observacao: string;
+};
 
 function fmt(value: number) {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -81,6 +90,11 @@ function getMotivoLabel(value: string | null | undefined) {
   return meta?.label || String(value || '-');
 }
 
+function getMotivoOption(value: string | null | undefined): PrejuizoOptionLabel {
+  const meta = resolveMotivoMeta(value);
+  return meta?.label || PREJUIZO_OPTIONS[0];
+}
+
 function getMotivoKey(value: string | null | undefined) {
   const meta = resolveMotivoMeta(value);
   return meta?.key || normalizeMotivoValue(value);
@@ -100,7 +114,7 @@ function EditPrejuizoModal({ row, saving, onClose, onSave }: any) {
   const viewportMode = useFinancialViewportMode();
   const isPhone = viewportMode === 'phone';
   const isCompact = isPhone || viewportMode === 'tablet-portrait';
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<EditPrejuizoFormState>({
     data: '',
     motivo: PREJUIZO_OPTIONS[0],
     valor: '',
@@ -112,7 +126,7 @@ function EditPrejuizoModal({ row, saving, onClose, onSave }: any) {
     if (!row) return;
     setForm({
       data: toInputDate(row.data),
-      motivo: getMotivoLabel(row.motivo) || PREJUIZO_OPTIONS[0],
+      motivo: getMotivoOption(row.motivo),
       valor: String(Number(row.valor || 0)),
       frete: String(Number(row.frete || 0)),
       observacao: String(row.observacao || ''),
