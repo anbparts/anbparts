@@ -2963,6 +2963,37 @@ async function runTraceSkuComparison(rawSkus: any, rawMotoId: any) {
   };
 }
 
+function buildManualComparisonResponse(resultado: any) {
+  const safeResultado = resultado || {
+    totalConsultados: 0,
+    totalDivergencias: 0,
+    totalSemDivergencia: 0,
+    divergencias: [],
+    warnings: [],
+  };
+
+  return {
+    ok: true,
+    ...safeResultado,
+    comparacao: safeResultado,
+    warnings: Array.isArray(safeResultado?.warnings) ? safeResultado.warnings : [],
+  };
+}
+
+function buildManualComparisonError(route: string, error: any) {
+  return {
+    ok: false,
+    route,
+    error: `[${route}] ${error?.message || 'Erro ao comparar produtos manualmente no Bling'}`,
+    totalConsultados: 0,
+    totalDivergencias: 0,
+    totalSemDivergencia: 0,
+    divergencias: [],
+    comparacao: null,
+    warnings: [],
+  };
+}
+
 function collectMercadoLivreTexts(value: any, acc: string[] = [], inMlContext = false) {
   if (value === null || value === undefined) return acc;
   if (Array.isArray(value)) {
@@ -4002,14 +4033,12 @@ blingRouter.post('/auditoria-automatica/trace-skus', async (req, res, next) => {
     }
 
     res.json({
-      ok: true,
       auditoriaEscopo: cfg.auditoriaEscopo,
-      comparacao: resultado,
       traceSkus: buildAuditoriaTraceResumo(localEscopo, resultado, traceSkuSet),
-      warnings: Array.isArray(resultado?.warnings) ? resultado.warnings : [],
+      ...buildManualComparisonResponse(resultado),
     });
-  } catch (e) {
-    next(e);
+  } catch (e: any) {
+    res.json(buildManualComparisonError('trace-skus', e));
   }
 });
 
@@ -4215,9 +4244,9 @@ blingRouter.post('/sync/produtos', async (req, res, next) => {
       if (!traceCodigos.length || !resultado) {
         return res.status(400).json({ error: 'Informe pelo menos um ID de peca / SKU ou selecione uma moto para comparar' });
       }
-      res.json(resultado);
+      res.json(buildManualComparisonResponse(resultado));
     } catch (e: any) {
-      res.status(500).json({ ok: false, error: e?.message || 'Erro ao comparar produtos manualmente no Bling' });
+      res.json(buildManualComparisonError('comparar-produtos', e));
     }
   });
 
