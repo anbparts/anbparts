@@ -80,7 +80,9 @@ export default function FaturamentoGeralPage() {
   const viewportMode = useFinancialViewportMode();
   const isPhone = viewportMode === 'phone';
   const isTabletPortrait = viewportMode === 'tablet-portrait';
+  const isTabletLandscape = viewportMode === 'tablet-landscape';
   const isCompact = isPhone || isTabletPortrait;
+  const shouldUseCompactMonthlyPanel = viewportMode !== 'desktop';
 
   useEffect(() => {
     api.faturamento.geral().then((response) => {
@@ -194,6 +196,19 @@ export default function FaturamentoGeralPage() {
     .sort((a, b) => b.value - a.value)
     .slice(0, 8);
 
+  const monthlySummaryCards = periodItems.map((period) => {
+    const current = monthlyMap.get(period.key) || { receita: 0, qtd: 0 };
+    const ticket = current.qtd > 0 ? current.receita / current.qtd : 0;
+
+    return {
+      label: period.label,
+      receita: current.receita,
+      qtd: current.qtd,
+      ticket,
+      active: current.receita > 0 || current.qtd > 0,
+    };
+  });
+
   return (
     <>
       <div style={{ ...cs.topbar, alignItems: isCompact ? 'flex-start' : 'center', flexDirection: isCompact ? 'column' : 'row', gap: 10, padding: isCompact ? '14px 16px' : cs.topbar.padding }}>
@@ -246,10 +261,66 @@ export default function FaturamentoGeralPage() {
                 subtitle="Matriz compacta com receita, volume e ticket medio ao longo do periodo."
                 accent="#16a34a"
               >
-                <HeatmapChart rows={painelMensalRows} rowHeaderLabel="Indicador" normalizeByRow emptyText="Sem periodos para exibir." />
+                {shouldUseCompactMonthlyPanel ? (
+                  monthlySummaryCards.length ? (
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: isPhone
+                          ? '1fr'
+                          : isTabletPortrait
+                          ? 'repeat(2, minmax(0, 1fr))'
+                          : 'repeat(3, minmax(0, 1fr))',
+                        gap: 12,
+                      }}
+                    >
+                      {monthlySummaryCards.map((item) => (
+                        <div
+                          key={item.label}
+                          style={{
+                            border: `1px solid ${item.active ? 'var(--sage-mid)' : 'var(--border)'}`,
+                            background: item.active ? 'var(--sage-light)' : 'var(--white)',
+                            borderRadius: 12,
+                            padding: isPhone ? 12 : 14,
+                          }}
+                        >
+                          <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '0.6px', textTransform: 'uppercase' }}>
+                            {item.label}
+                          </div>
+                          <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
+                            <div>
+                              <div style={{ fontSize: 10.5, color: 'var(--ink-muted)', fontFamily: 'Geist Mono, monospace' }}>Receita liquida</div>
+                              <div style={{ fontSize: 14, fontWeight: 700, color: item.active ? 'var(--sage)' : 'var(--gray-400)', ...sensitiveMaskStyle(hidden) }}>
+                                {item.active ? sensitiveText(fmt(item.receita), hidden) : '--'}
+                              </div>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                              <div>
+                                <div style={{ fontSize: 10.5, color: 'var(--ink-muted)', fontFamily: 'Geist Mono, monospace' }}>Pecas</div>
+                                <div style={{ fontSize: 12, color: 'var(--ink)', ...sensitiveMaskStyle(hidden) }}>
+                                  {item.active ? sensitiveText(item.qtd.toLocaleString('pt-BR'), hidden) : '--'}
+                                </div>
+                              </div>
+                              <div>
+                                <div style={{ fontSize: 10.5, color: 'var(--ink-muted)', fontFamily: 'Geist Mono, monospace' }}>Ticket medio</div>
+                                <div style={{ fontSize: 12, color: 'var(--ink)', ...sensitiveMaskStyle(hidden) }}>
+                                  {item.qtd > 0 ? sensitiveText(fmt(item.ticket), hidden) : '--'}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ color: 'var(--ink-muted)', fontSize: 13 }}>Sem periodos para exibir.</div>
+                  )
+                ) : (
+                  <HeatmapChart rows={painelMensalRows} rowHeaderLabel="Indicador" normalizeByRow emptyText="Sem periodos para exibir." />
+                )}
               </ChartPanel>
 
-              <div style={{ display: 'grid', gridTemplateColumns: isCompact ? '1fr' : 'minmax(0, 1fr) minmax(0, 1.2fr)', gap: 18 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isCompact ? '1fr' : isTabletLandscape ? '1fr' : 'minmax(0, 1fr) minmax(0, 1.2fr)', gap: 18 }}>
                 <ChartPanel
                   title="Distribuicao por trimestre"
                   subtitle={filtAno ? 'Resumo trimestral do ano selecionado.' : 'Resumo trimestral considerando o filtro atual.'}

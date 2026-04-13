@@ -76,6 +76,7 @@ export default function FaturamentoMotoPage() {
   const isTabletPortrait = viewportMode === 'tablet-portrait';
   const isTabletLandscape = viewportMode === 'tablet-landscape';
   const isCompact = isPhone || isTabletPortrait;
+  const shouldUseCompactMonthlyPanel = viewportMode !== 'desktop';
 
   useEffect(() => {
     Promise.all([
@@ -217,6 +218,35 @@ export default function FaturamentoMotoPage() {
     }),
   };
 
+  const monthlySummaryCards = heatmapPeriods.map((period) => {
+    const current = porPeriodoMap.get(period.key) || { receita: 0, qtd: 0, label: period.label, mes: 0, ano: 0 };
+    return {
+      label: period.label,
+      receita: current.receita,
+      qtd: current.qtd,
+      active: current.receita > 0 || current.qtd > 0,
+    };
+  });
+
+  const motoMonthlyCards = Array.from(heatmapMotoMap.values())
+    .sort((a, b) => b.totalReceita - a.totalReceita)
+    .slice(0, isPhone ? 4 : isTabletPortrait ? 6 : 8)
+    .map((moto) => ({
+      label: moto.label,
+      totalReceita: moto.totalReceita,
+      totalQtd: moto.totalQtd,
+      activeMonths: heatmapPeriods
+        .map((period) => {
+          const current = moto.cells.get(period.key) || { receita: 0, qtd: 0 };
+          return {
+            label: period.label,
+            receita: current.receita,
+            qtd: current.qtd,
+          };
+        })
+        .filter((item) => item.receita > 0 || item.qtd > 0),
+    }));
+
   return (
     <>
       <div style={{ ...cs.topbar, alignItems: isCompact ? 'flex-start' : 'center', flexDirection: isCompact ? 'column' : 'row', gap: 10, padding: isCompact ? '14px 16px' : cs.topbar.padding }}>
@@ -275,7 +305,97 @@ export default function FaturamentoMotoPage() {
                 subtitle="Matriz compacta com todos os meses para comparar a receita liquida entre as motos."
                 accent="#f59e0b"
               >
-                <HeatmapChart rows={[totalMensalRow, ...heatmapRows]} rowHeaderLabel="Moto" valueFormatter={fmt} emptyText="Sem periodos para exibir." />
+                {shouldUseCompactMonthlyPanel ? (
+                  <div style={{ display: 'grid', gap: 14 }}>
+                    {monthlySummaryCards.length ? (
+                      <div
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: isPhone
+                            ? '1fr'
+                            : isTabletPortrait
+                            ? 'repeat(2, minmax(0, 1fr))'
+                            : 'repeat(3, minmax(0, 1fr))',
+                          gap: 12,
+                        }}
+                      >
+                        {monthlySummaryCards.map((item) => (
+                          <div
+                            key={item.label}
+                            style={{
+                              border: `1px solid ${item.active ? 'var(--sage-mid)' : 'var(--border)'}`,
+                              background: item.active ? 'var(--sage-light)' : 'var(--white)',
+                              borderRadius: 12,
+                              padding: isPhone ? 12 : 14,
+                            }}
+                          >
+                            <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '0.6px', textTransform: 'uppercase' }}>
+                              {item.label}
+                            </div>
+                            <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
+                              <div>
+                                <div style={{ fontSize: 10.5, color: 'var(--ink-muted)', fontFamily: 'Geist Mono, monospace' }}>Receita do mes</div>
+                                <div style={{ fontSize: 14, fontWeight: 700, color: item.active ? 'var(--sage)' : 'var(--gray-400)', ...sensitiveMaskStyle(hidden) }}>
+                                  {item.active ? sensitiveText(fmt(item.receita), hidden) : '--'}
+                                </div>
+                              </div>
+                              <div>
+                                <div style={{ fontSize: 10.5, color: 'var(--ink-muted)', fontFamily: 'Geist Mono, monospace' }}>Pecas vendidas</div>
+                                <div style={{ fontSize: 12, color: 'var(--ink)', ...sensitiveMaskStyle(hidden) }}>
+                                  {item.active ? sensitiveText(item.qtd.toLocaleString('pt-BR'), hidden) : '--'}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={{ color: 'var(--ink-muted)', fontSize: 13 }}>Sem periodos para exibir.</div>
+                    )}
+
+                    {motoMonthlyCards.length ? (
+                      <div style={{ display: 'grid', gap: 12 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink)' }}>Motos com resultado no periodo</div>
+                        {motoMonthlyCards.map((moto) => (
+                          <div key={moto.label} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: isPhone ? 12 : 14 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                              <div style={{ minWidth: 0 }}>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>{moto.label}</div>
+                                <div style={{ marginTop: 4, fontSize: 11, color: 'var(--ink-muted)', fontFamily: 'Geist Mono, monospace', ...sensitiveMaskStyle(hidden) }}>
+                                  {sensitiveText(`${moto.totalQtd} pecas • ${fmt(moto.totalReceita)}`, hidden)}
+                                </div>
+                              </div>
+                            </div>
+                            <div
+                              style={{
+                                display: 'grid',
+                                gridTemplateColumns: isPhone ? '1fr' : 'repeat(2, minmax(0, 1fr))',
+                                gap: 8,
+                                marginTop: 12,
+                              }}
+                            >
+                              {moto.activeMonths.length ? moto.activeMonths.map((month) => (
+                                <div key={`${moto.label}-${month.label}`} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', background: 'var(--gray-50)' }}>
+                                  <div style={{ fontSize: 10.5, color: 'var(--ink-muted)', fontFamily: 'Geist Mono, monospace', textTransform: 'uppercase' }}>{month.label}</div>
+                                  <div style={{ marginTop: 6, fontSize: 12, color: 'var(--sage)', fontWeight: 700, ...sensitiveMaskStyle(hidden) }}>
+                                    {sensitiveText(fmt(month.receita), hidden)}
+                                  </div>
+                                  <div style={{ marginTop: 3, fontSize: 11, color: 'var(--ink-muted)', ...sensitiveMaskStyle(hidden) }}>
+                                    {sensitiveText(`${month.qtd} pecas`, hidden)}
+                                  </div>
+                                </div>
+                              )) : (
+                                <div style={{ color: 'var(--ink-muted)', fontSize: 12 }}>Sem meses ativos para esta moto.</div>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : (
+                  <HeatmapChart rows={[totalMensalRow, ...heatmapRows]} rowHeaderLabel="Moto" valueFormatter={fmt} emptyText="Sem periodos para exibir." />
+                )}
               </ChartPanel>
 
               <ChartPanel
