@@ -421,7 +421,7 @@ export default function BlingProdutosPage() {
     setComparando(true);
     setComparacao(null);
     try {
-      const response = await fetch(`${API}/bling/comparar-produtos`, {
+      const response = await fetch('/api-proxy/comparar-produtos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

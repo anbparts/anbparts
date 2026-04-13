@@ -1,19 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+// Sem limite de tempo para essa rota — consultas com muitos SKUs podem demorar minutos
+export const maxDuration = 300;
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: NextRequest) {
   try {
     const payload = await request.text();
     const backendUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3333').replace(/\/$/, '');
 
-    const response = await fetch(`${backendUrl}/bling/comparar-produtos`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        cookie: request.headers.get('cookie') || '',
-      },
-      body: payload,
-      cache: 'no-store',
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 280_000); // 280s
+
+    let response: Response;
+    try {
+      response = await fetch(`${backendUrl}/bling/comparar-produtos`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          cookie: request.headers.get('cookie') || '',
+        },
+        body: payload,
+        cache: 'no-store',
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
 
     const text = await response.text();
     const contentType = response.headers.get('content-type') || 'application/json; charset=utf-8';
@@ -29,7 +42,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         ok: false,
-        error: `[api-proxy/comparar-produtos] ${error?.message || 'Erro ao encaminhar requisicao'}`,
+        error: `[api-proxy/comparar-produtos] ${error?.message || 'Erro ao encaminhar comparacao manual'}`,
       },
       {
         status: 500,
