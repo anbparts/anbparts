@@ -231,6 +231,7 @@ export default function BlingProdutosPage() {
   const [motoComparacaoId, setMotoComparacaoId] = useState('');
   const [comparando, setComparando] = useState(false);
   const [comparacao, setComparacao] = useState<Comparacao | null>(null);
+  const [comparacaoProgresso, setComparacaoProgresso] = useState<{ loteAtual: number; totalLotes: number; skusProcessados: number; totalSkus: number } | null>(null);
   const [consultaManualTamanhoLote, setConsultaManualTamanhoLote] = useState('100');
   const [consultaManualPausaMs, setConsultaManualPausaMs] = useState('400');
   const [salvandoConsultaManual, setSalvandoConsultaManual] = useState(false);
@@ -420,31 +421,74 @@ export default function BlingProdutosPage() {
 
     setComparando(true);
     setComparacao(null);
+    setComparacaoProgresso(null);
+
     try {
-      const response = await fetch('/api-proxy/comparar-produtos', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          texto: listaComparacao,
-          motoId: motoComparacaoId ? Number(motoComparacaoId) : null,
-        }),
-      });
-      const data = await ensureApiJson<Comparacao>(response, 'Erro ao comparar produtos no Bling');
-      if (!data.ok) {
-        alert(data.error || 'Erro ao comparar produtos');
+      // 1. Resolve a lista de SKUs — se for por moto, busca do backend
+      let skus: string[] = [];
+      if (motoComparacaoId) {
+        const moto = await api.motos.get(Number(motoComparacaoId));
+        const pecas: any[] = moto?.pecas || [];
+        const vistos = new Set<string>();
+        for (const p of pecas) {
+          const base = (p.idPeca || '').replace(/-\d+$/, '').trim().toUpperCase();
+          if (base && !vistos.has(base)) { vistos.add(base); skus.push(base); }
+        }
+      } else {
+        const vistos = new Set<string>();
+        for (const linha of listaComparacao.split('\n')) {
+          const base = linha.replace(/-\d+$/, '').trim().toUpperCase();
+          if (base && !vistos.has(base)) { vistos.add(base); skus.push(base); }
+        }
+      }
+
+      if (!skus.length) {
+        alert('Nenhum SKU encontrado para comparar');
+        setComparando(false);
         return;
       }
 
-      setComparacao(data);
-      const warnings = Array.isArray(data.warnings) && data.warnings.length ? data.warnings : [];
-      if (warnings.length) {
-        alert(warnings.join('\n'));
+      // 2. Divide em lotes de 20 SKUs e processa um por vez
+      const LOTE = 20;
+      const lotes: string[][] = [];
+      for (let i = 0; i < skus.length; i += LOTE) lotes.push(skus.slice(i, i + LOTE));
+
+      let acumulado: Comparacao = { ok: true, totalConsultados: 0, totalDivergencias: 0, totalSemDivergencia: 0, divergencias: [], warnings: [] };
+      const warningsVistos = new Set<string>();
+
+      for (let i = 0; i < lotes.length; i++) {
+        setComparacaoProgresso({ loteAtual: i + 1, totalLotes: lotes.length, skusProcessados: i * LOTE, totalSkus: skus.length });
+
+        const response = await fetch('/api-proxy/comparar-produtos', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ texto: lotes[i].join('\n') }),
+        });
+        const data = await ensureApiJson<Comparacao>(response, `Erro no lote ${i + 1}`);
+        if (!data.ok) {
+          alert(data.error || `Erro no lote ${i + 1}`);
+          break;
+        }
+
+        // Acumula resultados
+        acumulado.totalConsultados += data.totalConsultados || 0;
+        acumulado.totalDivergencias += data.totalDivergencias || 0;
+        acumulado.totalSemDivergencia += data.totalSemDivergencia || 0;
+        for (const div of (data.divergencias || [])) acumulado.divergencias.push(div);
+        for (const w of (data.warnings || [])) { if (!warningsVistos.has(w)) { warningsVistos.add(w); acumulado.warnings!.push(w); } }
+
+        // Atualiza tela a cada lote
+        setComparacao({ ...acumulado });
       }
+
+      setComparacaoProgresso(null);
+      if (warningsVistos.size) alert(Array.from(warningsVistos).join('\n'));
     } catch (e: any) {
       alert(`Erro: ${e.message}`);
     }
     setComparando(false);
+    setComparacaoProgresso(null);
   }
 
   async function compararCsv() {
@@ -648,6 +692,21 @@ export default function BlingProdutosPage() {
               Use essa revisao para encontrar divergencias de estoque entre a base do ANB e o saldo atual do Bling, incluindo alertas de anuncio do Mercado Livre fora do status ativo.
             </span>
           </div>
+          {comparacaoProgresso && (
+            <div style={{ marginTop: 12, background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-700)' }}>
+                  Lote {comparacaoProgresso.loteAtual} de {comparacaoProgresso.totalLotes} — {Math.min(comparacaoProgresso.skusProcessados + 20, comparacaoProgresso.totalSkus)} de {comparacaoProgresso.totalSkus} SKUs
+                </span>
+                <span style={{ fontSize: 11, color: 'var(--gray-400)' }}>
+                  {Math.round((comparacaoProgresso.loteAtual / comparacaoProgresso.totalLotes) * 100)}%
+                </span>
+              </div>
+              <div style={{ height: 6, background: 'var(--border)', borderRadius: 4, overflow: 'hidden' }}>
+                <div style={{ height: '100%', background: 'var(--blue-500)', borderRadius: 4, width: `${Math.round((comparacaoProgresso.loteAtual / comparacaoProgresso.totalLotes) * 100)}%`, transition: 'width 0.3s ease' }} />
+              </div>
+            </div>
+          )}
         </div>
 
         <div style={s.card}>
