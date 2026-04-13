@@ -1,4 +1,7 @@
+'use client';
+
 import { type CSSProperties, type ReactNode } from 'react';
+import { sensitiveMaskStyle, sensitiveText, useCompanyValueVisibility } from '@/lib/company-values';
 
 export type ViewMode = 'grafico' | 'relatorio';
 
@@ -139,6 +142,7 @@ export function HorizontalBarChart({
   emptyText?: string;
   valueFormatter?: (value: number) => string;
 }) {
+  const { hidden } = useCompanyValueVisibility();
   if (!items.length) return emptyBlock(emptyText || 'Sem dados para exibir.');
 
   const max = Math.max(...items.map((item) => item.value), 1);
@@ -165,11 +169,11 @@ export function HorizontalBarChart({
                 >
                   {item.label}
                 </div>
-                {item.note && <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginTop: 2 }}>{item.note}</div>}
+                {item.note && <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginTop: 2, ...sensitiveMaskStyle(hidden) }}>{sensitiveText(item.note, hidden)}</div>}
               </div>
-              <div style={{ fontSize: 12, color: color, fontFamily: 'Geist Mono, monospace', whiteSpace: 'nowrap' }}>
-                {valueFormatter ? valueFormatter(item.value) : compactCurrency(item.value)}
-                {item.share ? <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginTop: 2, textAlign: 'right' }}>{item.share}</div> : null}
+              <div style={{ fontSize: 12, color: color, fontFamily: 'Geist Mono, monospace', whiteSpace: 'nowrap', ...sensitiveMaskStyle(hidden) }}>
+                {sensitiveText(valueFormatter ? valueFormatter(item.value) : compactCurrency(item.value), hidden)}
+                {item.share ? <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginTop: 2, textAlign: 'right' }}>{sensitiveText(item.share, hidden)}</div> : null}
               </div>
             </div>
             <div
@@ -207,6 +211,7 @@ export function ColumnChart({
   emptyText?: string;
   valueFormatter?: (value: number) => string;
 }) {
+  const { hidden } = useCompanyValueVisibility();
   if (!items.length) return emptyBlock(emptyText || 'Sem dados para exibir.');
 
   const max = Math.max(...items.map((item) => item.value), 1);
@@ -227,8 +232,8 @@ export function ColumnChart({
 
         return (
           <div key={`${item.label}-${index}`} style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', gap: 10, minWidth: 0 }}>
-            <div style={{ fontSize: 10, color: 'var(--ink-muted)', fontFamily: 'Geist Mono, monospace', textAlign: 'center' }}>
-              {valueFormatter ? valueFormatter(item.value) : compactCurrency(item.value)}
+            <div style={{ fontSize: 10, color: 'var(--ink-muted)', fontFamily: 'Geist Mono, monospace', textAlign: 'center', ...sensitiveMaskStyle(hidden) }}>
+              {sensitiveText(valueFormatter ? valueFormatter(item.value) : compactCurrency(item.value), hidden)}
             </div>
             <div
               style={{
@@ -241,7 +246,7 @@ export function ColumnChart({
             />
             <div style={{ textAlign: 'center', minHeight: 34 }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink)' }}>{item.label}</div>
-              {item.note && <div style={{ fontSize: 10, color: 'var(--ink-muted)', marginTop: 2 }}>{item.note}</div>}
+              {item.note && <div style={{ fontSize: 10, color: 'var(--ink-muted)', marginTop: 2, ...sensitiveMaskStyle(hidden) }}>{sensitiveText(item.note, hidden)}</div>}
             </div>
           </div>
         );
@@ -263,6 +268,7 @@ export function DonutChart({
   emptyText?: string;
   valueFormatter?: (value: number) => string;
 }) {
+  const { hidden } = useCompanyValueVisibility();
   if (!items.length) return emptyBlock(emptyText || 'Sem dados para exibir.');
 
   const total = items.reduce((sum, item) => sum + item.value, 0);
@@ -321,8 +327,8 @@ export function DonutChart({
           >
             {totalLabel}
           </div>
-          <div style={{ fontSize: 20, lineHeight: 1.15, fontWeight: 700, color: 'var(--ink)', marginTop: 6 }}>
-            {totalDisplay || (valueFormatter ? valueFormatter(total) : compactCurrency(total))}
+          <div style={{ fontSize: 20, lineHeight: 1.15, fontWeight: 700, color: 'var(--ink)', marginTop: 6, ...sensitiveMaskStyle(hidden) }}>
+            {sensitiveText(totalDisplay || (valueFormatter ? valueFormatter(total) : compactCurrency(total)), hidden)}
           </div>
         </div>
       </div>
@@ -347,13 +353,13 @@ export function DonutChart({
                 >
                   {item.label}
                 </div>
-                {item.note && <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginTop: 2 }}>{item.note}</div>}
+                {item.note && <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginTop: 2, ...sensitiveMaskStyle(hidden) }}>{sensitiveText(item.note, hidden)}</div>}
               </div>
               <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 12, color: 'var(--ink)', fontFamily: 'Geist Mono, monospace' }}>
-                  {valueFormatter ? valueFormatter(item.value) : compactCurrency(item.value)}
+                <div style={{ fontSize: 12, color: 'var(--ink)', fontFamily: 'Geist Mono, monospace', ...sensitiveMaskStyle(hidden) }}>
+                  {sensitiveText(valueFormatter ? valueFormatter(item.value) : compactCurrency(item.value), hidden)}
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--ink-muted)' }}>{share.toFixed(1).replace('.', ',')}%</div>
+                <div style={{ fontSize: 11, color: 'var(--ink-muted)', ...sensitiveMaskStyle(hidden) }}>{sensitiveText(`${share.toFixed(1).replace('.', ',')}%`, hidden)}</div>
               </div>
             </div>
           );
@@ -376,6 +382,7 @@ export function HeatmapChart({
   normalizeByRow?: boolean;
   rowHeaderLabel?: string;
 }) {
+  const { hidden } = useCompanyValueVisibility();
   if (!rows.length) return emptyBlock(emptyText || 'Sem dados para exibir.');
 
   const columns = rows[0]?.cells || [];
@@ -507,16 +514,16 @@ export function HeatmapChart({
               </div>
               {row.note ? (
                 <div
-                  style={{
+                  style={{ ...{
                     marginTop: 4,
                     fontSize: 10,
                     color: 'var(--ink-muted)',
                     whiteSpace: 'nowrap',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
-                  }}
+                  }, ...sensitiveMaskStyle(hidden) }}
                 >
-                  {row.note}
+                  {sensitiveText(row.note, hidden)}
                 </div>
               ) : null}
             </div>
@@ -553,7 +560,9 @@ export function HeatmapChart({
                     whiteSpace: 'nowrap',
                   }}
                 >
-                  {formatted}
+                  <span style={sensitiveMaskStyle(hidden)}>
+                    {sensitiveText(formatted, hidden)}
+                  </span>
                 </div>
                 {cell.note ? (
                   <div
@@ -563,9 +572,10 @@ export function HeatmapChart({
                       lineHeight: 1,
                       fontFamily: 'Geist Mono, monospace',
                       whiteSpace: 'nowrap',
+                      ...sensitiveMaskStyle(hidden),
                     }}
                   >
-                    {cell.note}
+                    {sensitiveText(cell.note, hidden)}
                   </div>
                 ) : null}
               </div>

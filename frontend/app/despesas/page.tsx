@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ChartPanel, ColumnChart, DonutChart, HorizontalBarChart, ViewModeSwitch, type ViewMode } from '@/components/finance/Charts';
 import { api } from '@/lib/api';
+import { useFinancialViewportMode } from '@/lib/company-values';
 
 const CATEGORIAS = ['Insumo', 'Servicos', 'Taxas', 'Aluguel', 'Sistemas', 'Imposto', 'Moto', 'Outros'];
 const RECORRENCIAS = [
@@ -409,6 +410,10 @@ export default function DespesasPage() {
   const [arquivoMercadoPago, setArquivoMercadoPago] = useState<{ name: string; dataUrl: string } | null>(null);
   const [previewMercadoPagoInfo, setPreviewMercadoPagoInfo] = useState<any | null>(null);
   const [previewMercadoPagoRows, setPreviewMercadoPagoRows] = useState<any[]>([]);
+  const viewportMode = useFinancialViewportMode();
+  const isPhone = viewportMode === 'phone';
+  const isTabletPortrait = viewportMode === 'tablet-portrait';
+  const isCompact = isPhone || isTabletPortrait;
   const [form, setForm] = useState({
     data: today(),
     detalhes: '',
@@ -779,24 +784,24 @@ export default function DespesasPage() {
 
   return (
     <>
-      <div style={{ height: 'var(--topbar-h)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 28px', background: 'var(--white)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, zIndex: 50 }}>
+      <div style={{ minHeight: 'var(--topbar-h)', display: 'flex', alignItems: isCompact ? 'flex-start' : 'center', justifyContent: 'space-between', flexDirection: isCompact ? 'column' : 'row', gap: 10, padding: isCompact ? '14px 16px' : '0 28px', background: 'var(--white)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, zIndex: 50 }}>
         <div>
           <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)', letterSpacing: '-0.3px' }}>Despesas</div>
           <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>Controle de vencimento, pagamento e comprovantes</div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, width: isCompact ? '100%' : 'auto', flexWrap: 'wrap' }}>
           <ViewModeSwitch value={modo} onChange={setModo} />
           <button
             onClick={toggleFormVisibility}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 7, background: 'var(--blue-500)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}
+            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px 18px', borderRadius: 7, background: 'var(--blue-500)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 500, cursor: 'pointer', width: isPhone ? '100%' : 'auto' }}
           >
             {showForm ? (editingDespesaId ? 'Fechar edicao' : 'Fechar') : '+ Nova despesa'}
           </button>
         </div>
       </div>
 
-      <div style={{ padding: 28 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 14, marginBottom: 20 }}>
+      <div style={{ padding: isCompact ? 16 : 28 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fit, minmax(170px, 1fr))', gap: 14, marginBottom: 20 }}>
           <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, padding: '16px 18px' }}>
             <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '.6px', textTransform: 'uppercase', marginBottom: 8 }}>Total despesas</div>
             <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--red)', letterSpacing: '-0.4px' }}>{fmt(total)}</div>
@@ -816,7 +821,7 @@ export default function DespesasPage() {
         </div>
 
         {showForm && (
-          <div style={{ background: 'var(--white)', border: '1px solid var(--blue-200)', borderRadius: 10, padding: 20, marginBottom: 20 }}>
+          <div style={{ background: 'var(--white)', border: '1px solid var(--blue-200)', borderRadius: 10, padding: isCompact ? 16 : 20, marginBottom: 20 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
               <div>
                 <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>Nova despesa</div>
@@ -829,7 +834,7 @@ export default function DespesasPage() {
                   Escolha se o lancamento sera feito manualmente ou revisado a partir de um CSV do Mercado Pago.
                 </div>
               </div>
-              <div style={{ display: 'inline-flex', gap: 8, padding: 4, borderRadius: 999, background: 'var(--gray-50)', border: '1px solid var(--border)' }}>
+              <div style={{ display: 'inline-flex', gap: 8, padding: 4, borderRadius: 999, background: 'var(--gray-50)', border: '1px solid var(--border)', width: isPhone ? '100%' : 'auto', flexWrap: 'wrap' }}>
                 <button
                   type="button"
                   onClick={() => setOrigemForm('manual')}
@@ -871,12 +876,12 @@ export default function DespesasPage() {
 
             {origemForm === 'manual' ? (
               <>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
                   <div>
                     <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Data</div>
                     <input style={{ ...inputStyle, width: '100%' }} type="date" value={form.data} onChange={(e) => setForm((value) => ({ ...value, data: e.target.value }))} />
                   </div>
-                  <div style={{ gridColumn: 'span 2' }}>
+                  <div style={{ gridColumn: isPhone ? '1 / -1' : 'span 2' }}>
                     <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Detalhes *</div>
                     <input style={{ ...inputStyle, width: '100%' }} placeholder="Ex: Boleto fornecedor pneus" value={form.detalhes} onChange={(e) => setForm((value) => ({ ...value, detalhes: e.target.value }))} />
                   </div>
@@ -925,7 +930,7 @@ export default function DespesasPage() {
                     <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Codigo de barras</div>
                     <input style={{ ...inputStyle, width: '100%' }} placeholder="Opcional" value={form.codigoBarras} onChange={(e) => setForm((value) => ({ ...value, codigoBarras: e.target.value }))} />
                   </div>
-                  <div style={{ gridColumn: 'span 2' }}>
+                  <div style={{ gridColumn: isPhone ? '1 / -1' : 'span 2' }}>
                     <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Observacao</div>
                     <input style={{ ...inputStyle, width: '100%' }} placeholder="Opcional" value={form.observacao} onChange={(e) => setForm((value) => ({ ...value, observacao: e.target.value }))} />
                   </div>
@@ -940,11 +945,11 @@ export default function DespesasPage() {
                     A serie sera criada com o mesmo valor e os mesmos dados ate <strong>{form.recorrenciaAte ? formatDateBr(form.recorrenciaAte) : '-'}</strong>.
                   </div>
                 )}
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
+                <div style={{ display: 'flex', justifyContent: isPhone ? 'stretch' : 'flex-end', marginTop: 14 }}>
                   <button
                     onClick={salvar}
                     disabled={saving || !form.detalhes || !form.valor || (form.recorrenciaTipo !== 'nenhuma' && !form.recorrenciaAte)}
-                    style={{ padding: '8px 18px', background: 'var(--blue-500)', color: '#fff', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                    style={{ padding: '8px 18px', background: 'var(--blue-500)', color: '#fff', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap', width: isPhone ? '100%' : 'auto' }}
                   >
                     {saving ? 'Salvando...' : editingDespesaId ? 'Salvar alteracoes' : 'Salvar'}
                   </button>
@@ -952,13 +957,13 @@ export default function DespesasPage() {
               </>
             ) : (
               <div style={{ display: 'grid', gap: 18 }}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 14 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fit, minmax(280px, 1fr))', gap: 14 }}>
                   <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 16, background: '#fafcff' }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }}>1. Solicitar extrato por email</div>
                     <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginBottom: 12 }}>
                       O ANB solicita ao Mercado Pago o <strong>release_report</strong> do primeiro dia do mes ate a data escolhida. O CSV chega por email e depois voce importa manualmente aqui.
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(160px, 220px) auto', gap: 10, alignItems: 'end' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'minmax(160px, 220px) auto', gap: 10, alignItems: 'end' }}>
                       <div>
                         <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Data ate</div>
                         <input
@@ -987,15 +992,15 @@ export default function DespesasPage() {
                     <div style={{ display: 'grid', gap: 10 }}>
                       <input type="file" accept=".csv,text/csv" onChange={handleArquivoMercadoPagoChange} />
                       <div style={{ fontSize: 12, color: 'var(--gray-500)' }}>{arquivoMercadoPago?.name || 'Nenhum arquivo CSV selecionado'}</div>
-                      <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
-                        <button
-                          type="button"
-                          onClick={analisarArquivoMercadoPago}
-                          disabled={analisandoCsvMp || !arquivoMercadoPago}
-                          style={{ padding: '8px 18px', background: '#0f766e', color: '#fff', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
-                        >
-                          {analisandoCsvMp ? 'Analisando...' : 'Analisar arquivo'}
-                        </button>
+                    <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+                      <button
+                        type="button"
+                        onClick={analisarArquivoMercadoPago}
+                        disabled={analisandoCsvMp || !arquivoMercadoPago}
+                        style={{ padding: '8px 18px', background: '#0f766e', color: '#fff', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', width: isPhone ? '100%' : 'auto' }}
+                      >
+                        {analisandoCsvMp ? 'Analisando...' : 'Analisar arquivo'}
+                      </button>
                       </div>
                     </div>
                   </div>
@@ -1003,7 +1008,7 @@ export default function DespesasPage() {
 
                 {previewMercadoPagoInfo && (
                   <div style={{ border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, padding: 16, background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr 1fr' : 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, padding: 16, background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
                       <div>
                         <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 6 }}>Arquivo</div>
                         <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>{previewMercadoPagoInfo.fileName}</div>
@@ -1145,11 +1150,11 @@ export default function DespesasPage() {
         )}
 
         <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden', marginBottom: 20 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 18px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: isCompact ? 'flex-start' : 'center', justifyContent: 'space-between', flexDirection: isCompact ? 'column' : 'row', padding: '12px 18px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', gap: 10 }}>
             <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>
               Visualizacao <span style={{ fontSize: 12, color: 'var(--ink-muted)', fontWeight: 400 }}>- {filtradas.length} registros</span>
             </div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : isCompact ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fit, minmax(140px, max-content))', gap: 8, width: isCompact ? '100%' : 'auto' }}>
               {modo === 'relatorio' && (
                 <>
                   <button
@@ -1213,7 +1218,7 @@ export default function DespesasPage() {
             <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, padding: 28, color: 'var(--ink-muted)' }}>Carregando visualizacao...</div>
           ) : (
             <div style={{ display: 'grid', gap: 18 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1.1fr)', gap: 18 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isCompact ? '1fr' : 'minmax(0, 1fr) minmax(0, 1.1fr)', gap: 18 }}>
                 <ChartPanel title="Distribuicao por categoria" subtitle="Entenda onde o caixa esta sendo consumido." accent="#ef4444">
                   <DonutChart items={categoriasOrdenadas} totalLabel="Despesas" totalDisplay={fmt(total)} valueFormatter={fmt} emptyText="Sem despesas para distribuir." />
                 </ChartPanel>

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { API_BASE } from '@/lib/api-base';
 import { api } from '@/lib/api';
+import { sensitiveMaskStyle, useCompanyValueVisibility } from '@/lib/company-values';
 
 const API = API_BASE;
 
@@ -120,15 +121,6 @@ function getCurrentMonthSalesRange() {
   };
 }
 
-function maskStyle(hidden: boolean) {
-  return hidden
-    ? {
-        filter: 'blur(6px)',
-        userSelect: 'none' as const,
-      }
-    : {};
-}
-
 function DashboardVisibilityButton({
   hidden,
   onToggle,
@@ -206,7 +198,7 @@ function renderMercadoLivreSaldoCard(saldo: any, hidden: boolean) {
         {rows.map((row) => (
           <div key={row.label} style={s.balanceRow}>
             <span style={s.balanceName}>{row.label}</span>
-            <span style={{ ...s.balanceValue, color: row.color, ...maskStyle(hidden) }}>{row.value}</span>
+            <span style={{ ...s.balanceValue, color: row.color, ...sensitiveMaskStyle(hidden) }}>{row.value}</span>
           </div>
         ))}
       </div>
@@ -231,20 +223,10 @@ export default function DashboardPage() {
   const [resumoVendasMes, setResumoVendasMes] = useState<any>(null);
   const [loadingResumoVendasMes, setLoadingResumoVendasMes] = useState(true);
   const [periodoResumoVendasMes, setPeriodoResumoVendasMes] = useState(() => getCurrentMonthSalesRange());
-  const [ocultarValores, setOcultarValores] = useState(false);
+  const { hidden: ocultarValores, toggleRawHidden } = useCompanyValueVisibility();
   const [loadingDashboard, setLoadingDashboard] = useState(true);
   const [loadingMotos, setLoadingMotos] = useState(true);
   const [viewportMode, setViewportMode] = useState<DashboardViewportMode>('default');
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    setOcultarValores(window.localStorage.getItem('dashboard-hide-values') === '1');
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    window.localStorage.setItem('dashboard-hide-values', ocultarValores ? '1' : '0');
-  }, [ocultarValores]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -395,7 +377,7 @@ export default function DashboardPage() {
             <div style={s.title}>Dashboard</div>
             <div style={s.sub}>Visao geral dos indicadores</div>
           </div>
-          <DashboardVisibilityButton hidden={ocultarValores} onToggle={() => setOcultarValores((current) => !current)} />
+          <DashboardVisibilityButton hidden={ocultarValores} onToggle={() => toggleRawHidden()} />
         </div>
         <div style={{ padding: 28, color: 'var(--ink-muted)', fontSize: 13 }}>Carregando...</div>
       </>
@@ -546,7 +528,7 @@ export default function DashboardPage() {
           <div style={s.title}>Dashboard</div>
           <div style={s.sub}>Visao geral dos indicadores</div>
         </div>
-        <DashboardVisibilityButton hidden={ocultarValores} onToggle={() => setOcultarValores((current) => !current)} />
+        <DashboardVisibilityButton hidden={ocultarValores} onToggle={() => toggleRawHidden()} />
       </div>
 
       <div style={{ padding: sectionPadding }}>
@@ -558,10 +540,10 @@ export default function DashboardPage() {
                 renderMercadoLivreSaldoCard((card as any).saldo, ocultarValores)
               ) : (
                 <>
-                  <div style={{ ...getValueStyle((card as any).color), ...maskStyle(ocultarValores) }}>{(card as any).val}</div>
-                  <div style={{ ...getSubStyle(), ...(card.label === 'Pecas em estoque' ? maskStyle(ocultarValores) : {}) }}>{(card as any).sub}</div>
+                  <div style={{ ...getValueStyle((card as any).color), ...sensitiveMaskStyle(ocultarValores) }}>{(card as any).val}</div>
+                  <div style={{ ...getSubStyle(), ...(card.label === 'Pecas em estoque' ? sensitiveMaskStyle(ocultarValores) : {}) }}>{(card as any).sub}</div>
                   {(card as any).details?.length ? (
-                    <div style={{ ...s.statList, ...maskStyle(ocultarValores) }}>
+                    <div style={{ ...s.statList, ...sensitiveMaskStyle(ocultarValores) }}>
                       {(card as any).details.map((detail: any) => (
                         <div key={detail.label} style={s.statRow}>
                           <span style={statLabelStyle}>{detail.label}</span>
@@ -609,9 +591,9 @@ export default function DashboardPage() {
             {cardsVendasMes.map((card) => (
               <div key={card.label} style={{ ...s.card, minWidth: 0, padding: isPhone ? '14px 14px' : isTabletLandscape ? '14px 12px' : s.card.padding }}>
                 <div style={getLabelStyle()}>{card.label}</div>
-                <div style={{ ...getValueStyle(card.color), ...maskStyle(ocultarValores) }}>{card.value}</div>
+                <div style={{ ...getValueStyle(card.color), ...sensitiveMaskStyle(ocultarValores) }}>{card.value}</div>
                 {card.percentageText ? (
-                  <div style={{ ...s.meta, fontSize: isTabletLandscape ? 9.5 : s.meta.fontSize, marginTop: isTabletLandscape ? 4 : s.meta.marginTop, ...maskStyle(ocultarValores) }}>{card.percentageText}</div>
+                  <div style={{ ...s.meta, fontSize: isTabletLandscape ? 9.5 : s.meta.fontSize, marginTop: isTabletLandscape ? 4 : s.meta.marginTop, ...sensitiveMaskStyle(ocultarValores) }}>{card.percentageText}</div>
                 ) : null}
                 <div style={getSubStyle()}>Periodo automatico do mes corrente.</div>
               </div>
@@ -644,7 +626,7 @@ export default function DashboardPage() {
                 fontWeight: 400,
               }}
             >
-              <span style={maskStyle(ocultarValores)}>
+              <span style={sensitiveMaskStyle(ocultarValores)}>
                 - {loadingMotos ? '...' : motosFiltradas.length}{!loadingMotos && filtroMarcaMoto ? ` de ${motos.length}` : ''}
               </span>
             </span>
@@ -698,7 +680,7 @@ export default function DashboardPage() {
                         borderRadius: 4,
                       }}
                     >
-                      <span style={maskStyle(ocultarValores)}>ID {moto.id} - {moto.ano}</span>
+                      <span style={sensitiveMaskStyle(ocultarValores)}>ID {moto.id} - {moto.ano}</span>
                     </span>
                     {skus.length > 0 && (
                       <span
@@ -711,7 +693,7 @@ export default function DashboardPage() {
                           borderRadius: 4,
                         }}
                       >
-                        <span style={maskStyle(ocultarValores)}>
+                        <span style={sensitiveMaskStyle(ocultarValores)}>
                           {skus.length === 1 ? `SKU ${skus[0]}` : `SKUs ${skus.join(' - ')}`}
                         </span>
                       </span>
@@ -731,7 +713,7 @@ export default function DashboardPage() {
                       borderColor: pctVendida >= 80 ? '#f5c6c6' : pctVendida >= 50 ? 'var(--amber-mid)' : 'var(--sage-mid)',
                     }}
                   >
-                    <span style={maskStyle(ocultarValores)}>{pctVendida}% vendido</span>
+                    <span style={sensitiveMaskStyle(ocultarValores)}>{pctVendida}% vendido</span>
                   </span>
                 </div>
 
@@ -780,7 +762,7 @@ export default function DashboardPage() {
                           fontSize: stat.sm ? 13 : 16,
                           fontWeight: 500,
                           color: stat.color,
-                          ...maskStyle(ocultarValores),
+                          ...sensitiveMaskStyle(ocultarValores),
                         }}
                       >
                         {stat.value}
@@ -800,7 +782,7 @@ export default function DashboardPage() {
                         fontFamily: 'Geist Mono, monospace',
                         color: pctRecuperada >= 100 ? 'var(--sage)' : pctRecuperada >= 50 ? 'var(--amber)' : 'var(--ink-muted)',
                         fontWeight: 600,
-                        ...maskStyle(ocultarValores),
+                        ...sensitiveMaskStyle(ocultarValores),
                       }}
                     >
                       {pctRecuperada}%
@@ -820,7 +802,7 @@ export default function DashboardPage() {
                 </div>
 
                 <div style={{ fontSize: 11, color: 'var(--ink-muted)', fontFamily: 'Geist Mono, monospace' }}>
-                  <span style={maskStyle(ocultarValores)}>{moto.qtdVendidas} de {totalPecasMoto}</span> pecas vendidas
+                  <span style={sensitiveMaskStyle(ocultarValores)}>{moto.qtdVendidas} de {totalPecasMoto}</span> pecas vendidas
                 </div>
               </div>
             );

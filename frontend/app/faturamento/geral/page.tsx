@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { ChartPanel, DonutChart, HeatmapChart, HorizontalBarChart, ViewModeSwitch, type ViewMode } from '@/components/finance/Charts';
 import { api } from '@/lib/api';
+import { sensitiveMaskStyle, sensitiveText, useCompanyValueVisibility, useFinancialViewportMode } from '@/lib/company-values';
 
 const MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 const MESES_FULL = ['Janeiro', 'Fevereiro', 'Marco', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
@@ -32,7 +33,7 @@ function periodKey(ano: number, mes: number) {
 
 const cs: any = {
   topbar: {
-    height: 'var(--topbar-h)',
+    minHeight: 'var(--topbar-h)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -75,6 +76,11 @@ export default function FaturamentoGeralPage() {
   const [filtAno, setFiltAno] = useState(currentYear());
   const [loading, setLoading] = useState(true);
   const [modo, setModo] = useState<ViewMode>('grafico');
+  const { hidden } = useCompanyValueVisibility();
+  const viewportMode = useFinancialViewportMode();
+  const isPhone = viewportMode === 'phone';
+  const isTabletPortrait = viewportMode === 'tablet-portrait';
+  const isCompact = isPhone || isTabletPortrait;
 
   useEffect(() => {
     api.faturamento.geral().then((response) => {
@@ -190,7 +196,7 @@ export default function FaturamentoGeralPage() {
 
   return (
     <>
-      <div style={cs.topbar}>
+      <div style={{ ...cs.topbar, alignItems: isCompact ? 'flex-start' : 'center', flexDirection: isCompact ? 'column' : 'row', gap: 10, padding: isCompact ? '14px 16px' : cs.topbar.padding }}>
         <div>
           <div style={cs.title}>Faturamento Geral</div>
           <div style={cs.sub}>Receita total consolidada</div>
@@ -198,8 +204,8 @@ export default function FaturamentoGeralPage() {
         <ViewModeSwitch value={modo} onChange={setModo} />
       </div>
 
-      <div style={{ padding: 28 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 20 }}>
+      <div style={{ padding: isCompact ? 16 : 28 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 20 }}>
           {[
             { label: 'Receita total', value: fmt(totalReceita), color: 'var(--sage)' },
             { label: 'Pecas vendidas', value: totalQtd.toLocaleString('pt-BR'), color: 'var(--ink)' },
@@ -214,16 +220,16 @@ export default function FaturamentoGeralPage() {
               <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '0.6px', textTransform: 'uppercase', marginBottom: 10 }}>
                 {card.label}
               </div>
-              <div style={{ fontFamily: 'Fraunces, serif', fontSize: 22, fontWeight: 500, color: card.color }}>{card.value}</div>
-              {card.sub && <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 4 }}>{card.sub}</div>}
+              <div style={{ fontFamily: 'Fraunces, serif', fontSize: 22, fontWeight: 500, color: card.color, ...sensitiveMaskStyle(hidden) }}>{sensitiveText(card.value, hidden)}</div>
+              {card.sub && <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 4, ...sensitiveMaskStyle(hidden) }}>{sensitiveText(card.sub, hidden)}</div>}
             </div>
           ))}
         </div>
 
         <div style={{ ...cs.card, marginBottom: 20 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: isCompact ? '14px 16px' : '14px 18px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', gap: 10 }}>
             <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>Filtros</div>
-            <select style={cs.sel} value={filtAno} onChange={(e) => setFiltAno(e.target.value)}>
+            <select style={{ ...cs.sel, width: isCompact ? '100%' : undefined }} value={filtAno} onChange={(e) => setFiltAno(e.target.value)}>
               <option value="">Todos os anos</option>
               {anos.map((ano) => <option key={ano} value={ano}>{ano}</option>)}
             </select>
@@ -243,7 +249,7 @@ export default function FaturamentoGeralPage() {
                 <HeatmapChart rows={painelMensalRows} rowHeaderLabel="Indicador" normalizeByRow emptyText="Sem periodos para exibir." />
               </ChartPanel>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1.2fr)', gap: 18 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isCompact ? '1fr' : 'minmax(0, 1fr) minmax(0, 1.2fr)', gap: 18 }}>
                 <ChartPanel
                   title="Distribuicao por trimestre"
                   subtitle={filtAno ? 'Resumo trimestral do ano selecionado.' : 'Resumo trimestral considerando o filtro atual.'}
@@ -263,12 +269,12 @@ export default function FaturamentoGeralPage() {
           )
         ) : (
           <div style={cs.card}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: isCompact ? '14px 16px' : '14px 18px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', gap: 10 }}>
               <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>Relatorio mensal</div>
               <div style={{ fontSize: 12, color: 'var(--ink-muted)' }}>{filtered.length} linhas no filtro</div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, minmax(0, 1fr))', gap: 8, padding: 18, borderBottom: '1px solid var(--border)' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isCompact ? 'repeat(3, minmax(0, 1fr))' : 'repeat(12, minmax(0, 1fr))', gap: 8, padding: isCompact ? 14 : 18, borderBottom: '1px solid var(--border)' }}>
               {MESES.map((mes, index) => {
                 const monthRows = filtered.filter((item) => item.mes === index + 1);
                 const receita = monthRows.reduce((sum, item) => sum + Number(item.receitaLiq || item.receita || 0), 0);
@@ -286,36 +292,67 @@ export default function FaturamentoGeralPage() {
                     }}
                   >
                     <div style={{ fontSize: 9, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: 4 }}>{mes}</div>
-                    <div style={{ fontFamily: 'Fraunces, serif', fontSize: 12, fontWeight: 600, color: active ? 'var(--sage)' : 'var(--gray-300)' }}>
-                      {active ? fmt(receita) : '--'}
+                    <div style={{ fontFamily: 'Fraunces, serif', fontSize: 12, fontWeight: 600, color: active ? 'var(--sage)' : 'var(--gray-300)', ...sensitiveMaskStyle(hidden) }}>
+                      {active ? sensitiveText(fmt(receita), hidden) : '--'}
                     </div>
-                    {active && <div style={{ fontSize: 9, color: 'var(--ink-muted)', fontFamily: 'Geist Mono, monospace', marginTop: 2 }}>{qtd} pecas</div>}
+                    {active && <div style={{ fontSize: 9, color: 'var(--ink-muted)', fontFamily: 'Geist Mono, monospace', marginTop: 2, ...sensitiveMaskStyle(hidden) }}>{sensitiveText(`${qtd} pecas`, hidden)}</div>}
                   </div>
                 );
               })}
             </div>
 
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
-                  <tr>{['Mes', 'Ano', 'Receita liquida', 'Qtd. pecas'].map((header) => <th key={header} style={cs.th}>{header}</th>)}</tr>
-                </thead>
-                <tbody>
-                  {loading ? (
-                    <tr><td colSpan={4} style={{ ...cs.td, textAlign: 'center', color: 'var(--ink-muted)', borderBottom: 'none' }}>Carregando...</td></tr>
-                  ) : filtered.length === 0 ? (
-                    <tr><td colSpan={4} style={{ ...cs.td, textAlign: 'center', color: 'var(--ink-muted)', padding: '40px 20px', borderBottom: 'none' }}>Sem dados</td></tr>
-                  ) : filtered.map((item, index) => (
-                    <tr key={`${item.ano}-${item.mes}-${index}`}>
-                      <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12 }}>{MESES_FULL[item.mes - 1]}</td>
-                      <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12 }}>{item.ano}</td>
-                      <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', color: 'var(--sage)' }}>{fmt(Number(item.receitaLiq || item.receita || 0))}</td>
-                      <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12 }}>{item.qtd}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            {isCompact ? (
+              <div style={{ display: 'grid', gap: 12, padding: 14 }}>
+                {loading ? (
+                  <div style={{ color: 'var(--ink-muted)', fontSize: 13 }}>Carregando...</div>
+                ) : !filtered.length ? (
+                  <div style={{ color: 'var(--ink-muted)', fontSize: 13 }}>Sem dados</div>
+                ) : filtered.map((item, index) => (
+                  <div key={`${item.ano}-${item.mes}-${index}`} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                      <div>
+                        <div style={{ fontSize: 11, color: 'var(--ink-muted)', fontFamily: 'Geist Mono, monospace' }}>Mes</div>
+                        <div style={{ fontSize: 12 }}>{MESES_FULL[item.mes - 1]}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 11, color: 'var(--ink-muted)', fontFamily: 'Geist Mono, monospace' }}>Ano</div>
+                        <div style={{ fontSize: 12 }}>{item.ano}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 11, color: 'var(--ink-muted)', fontFamily: 'Geist Mono, monospace' }}>Receita liquida</div>
+                        <div style={{ fontSize: 13, color: 'var(--sage)', fontFamily: 'Geist Mono, monospace', ...sensitiveMaskStyle(hidden) }}>{sensitiveText(fmt(Number(item.receitaLiq || item.receita || 0)), hidden)}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 11, color: 'var(--ink-muted)', fontFamily: 'Geist Mono, monospace' }}>Qtd. pecas</div>
+                        <div style={{ fontSize: 12, ...sensitiveMaskStyle(hidden) }}>{sensitiveText(String(item.qtd), hidden)}</div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
+                    <tr>{['Mes', 'Ano', 'Receita liquida', 'Qtd. pecas'].map((header) => <th key={header} style={cs.th}>{header}</th>)}</tr>
+                  </thead>
+                  <tbody>
+                    {loading ? (
+                      <tr><td colSpan={4} style={{ ...cs.td, textAlign: 'center', color: 'var(--ink-muted)', borderBottom: 'none' }}>Carregando...</td></tr>
+                    ) : filtered.length === 0 ? (
+                      <tr><td colSpan={4} style={{ ...cs.td, textAlign: 'center', color: 'var(--ink-muted)', padding: '40px 20px', borderBottom: 'none' }}>Sem dados</td></tr>
+                    ) : filtered.map((item, index) => (
+                      <tr key={`${item.ano}-${item.mes}-${index}`}>
+                        <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12 }}>{MESES_FULL[item.mes - 1]}</td>
+                        <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12 }}>{item.ano}</td>
+                        <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', color: 'var(--sage)', ...sensitiveMaskStyle(hidden) }}>{sensitiveText(fmt(Number(item.receitaLiq || item.receita || 0)), hidden)}</td>
+                        <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, ...sensitiveMaskStyle(hidden) }}>{sensitiveText(String(item.qtd), hidden)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
       </div>

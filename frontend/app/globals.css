@@ -87,3 +87,9 @@ input, select, textarea { font-family: inherit; }
   width: 0;
   height: 0;
 }
+
+[data-company-sensitive-auto="1"] {
+  filter: blur(6px);
+  user-select: none;
+  pointer-events: none;
+}

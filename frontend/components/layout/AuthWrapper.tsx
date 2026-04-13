@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { LoginPage, useAuth } from '@/lib/auth';
 import { API_BASE } from '@/lib/api-base';
+import { GlobalSensitiveNumberMask } from '@/lib/company-values';
 import { getNavLabel, Sidebar, type SidebarMode } from './Sidebar';
 
 const DESKTOP_SIDEBAR_WIDTH = 252;
@@ -328,7 +329,7 @@ export function AuthWrapper({ children }: { children: React.ReactNode }) {
             minHeight: headerVisible ? 'calc(100vh - 64px)' : '100vh',
           }}
         >
-          {children}
+          <GlobalSensitiveNumberMask>{children}</GlobalSensitiveNumberMask>
         </main>
       </div>
     </div>
