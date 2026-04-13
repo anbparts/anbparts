@@ -3890,16 +3890,17 @@ blingRouter.get('/auditoria-automatica/config', async (_req, res, next) => {
 
 blingRouter.post('/auditoria-automatica/config', async (req, res, next) => {
   try {
-    const auditoriaAtiva = !!req.body?.auditoriaAtiva;
-    const auditoriaHorario = normalizeHorarioAuditoria(req.body?.auditoriaHorario);
-    const auditoriaEscopo = normalizeAuditoriaEscopo(req.body?.auditoriaEscopo);
-    const auditoriaTamanhoLote = Math.max(10, Math.min(500, Math.round(toNumber(req.body?.auditoriaTamanhoLote, AUDITORIA_DEFAULT_TAMANHO_LOTE))));
-    const auditoriaPausaMs = Math.max(0, Math.min(15000, Math.round(toNumber(req.body?.auditoriaPausaMs, AUDITORIA_DEFAULT_PAUSA_MS))));
-    const consultaManualTamanhoLote = Math.max(10, Math.min(500, Math.round(toNumber(req.body?.consultaManualTamanhoLote, auditoriaTamanhoLote))));
-    const consultaManualPausaMs = Math.max(0, Math.min(15000, Math.round(toNumber(req.body?.consultaManualPausaMs, auditoriaPausaMs))));
-    const auditoriaLinkMlAtiva = !!req.body?.auditoriaLinkMlAtiva;
-    const auditoriaLinkMlHorario = normalizeHorarioAuditoriaLinkMl(req.body?.auditoriaLinkMlHorario);
-    const auditoriaLinkMlIntervaloDias = normalizeAuditoriaLinkMlIntervaloDias(req.body?.auditoriaLinkMlIntervaloDias);
+    const cfgAtual = await getConfig();
+    const auditoriaAtiva = req.body?.auditoriaAtiva == null ? cfgAtual.auditoriaAtiva : !!req.body?.auditoriaAtiva;
+    const auditoriaHorario = normalizeHorarioAuditoria(req.body?.auditoriaHorario ?? cfgAtual.auditoriaHorario);
+    const auditoriaEscopo = normalizeAuditoriaEscopo(req.body?.auditoriaEscopo ?? cfgAtual.auditoriaEscopo);
+    const auditoriaTamanhoLote = Math.max(10, Math.min(500, Math.round(toNumber(req.body?.auditoriaTamanhoLote, cfgAtual.auditoriaTamanhoLote))));
+    const auditoriaPausaMs = Math.max(0, Math.min(15000, Math.round(toNumber(req.body?.auditoriaPausaMs, cfgAtual.auditoriaPausaMs))));
+    const consultaManualTamanhoLote = Math.max(10, Math.min(500, Math.round(toNumber(req.body?.consultaManualTamanhoLote, cfgAtual.consultaManualTamanhoLote))));
+    const consultaManualPausaMs = Math.max(0, Math.min(15000, Math.round(toNumber(req.body?.consultaManualPausaMs, cfgAtual.consultaManualPausaMs))));
+    const auditoriaLinkMlAtiva = req.body?.auditoriaLinkMlAtiva == null ? cfgAtual.auditoriaLinkMlAtiva : !!req.body?.auditoriaLinkMlAtiva;
+    const auditoriaLinkMlHorario = normalizeHorarioAuditoriaLinkMl(req.body?.auditoriaLinkMlHorario ?? cfgAtual.auditoriaLinkMlHorario);
+    const auditoriaLinkMlIntervaloDias = normalizeAuditoriaLinkMlIntervaloDias(req.body?.auditoriaLinkMlIntervaloDias ?? cfgAtual.auditoriaLinkMlIntervaloDias);
 
     const data: any = {
       auditoriaAtiva,

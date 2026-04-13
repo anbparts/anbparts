@@ -71,6 +71,11 @@ type Comparacao = {
   warnings?: string[];
 };
 
+type ConfiguracaoConsultaManual = {
+  consultaManualTamanhoLote?: number;
+  consultaManualPausaMs?: number;
+};
+
 type TraceComparacaoResponse = {
   ok?: boolean;
   error?: string;
@@ -226,6 +231,9 @@ export default function BlingProdutosPage() {
   const [motoComparacaoId, setMotoComparacaoId] = useState('');
   const [comparando, setComparando] = useState(false);
   const [comparacao, setComparacao] = useState<Comparacao | null>(null);
+  const [consultaManualTamanhoLote, setConsultaManualTamanhoLote] = useState('100');
+  const [consultaManualPausaMs, setConsultaManualPausaMs] = useState('400');
+  const [salvandoConsultaManual, setSalvandoConsultaManual] = useState(false);
   const [csvArquivos, setCsvArquivos] = useState<CsvArquivoCarregado[]>([]);
   const [csvLinhas, setCsvLinhas] = useState<CsvLinha[]>([]);
   const [csvEscopoAnb, setCsvEscopoAnb] = useState<CsvEscopoAnb>('full');
@@ -330,7 +338,37 @@ export default function BlingProdutosPage() {
         taxaPadraoPct: Number(d.taxaPadraoPct ?? 17),
       }))
       .catch(() => {});
+    fetch(`${API}/bling/auditoria-automatica/config`)
+      .then((r) => r.json())
+      .then((d: ConfiguracaoConsultaManual) => {
+        setConsultaManualTamanhoLote(String(d.consultaManualTamanhoLote ?? 100));
+        setConsultaManualPausaMs(String(d.consultaManualPausaMs ?? 400));
+      })
+      .catch(() => {});
   }, []);
+
+  async function salvarConfiguracaoConsultaManual() {
+    setSalvandoConsultaManual(true);
+    try {
+      const response = await fetch(`${API}/bling/auditoria-automatica/config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          consultaManualTamanhoLote: Number(consultaManualTamanhoLote) || 100,
+          consultaManualPausaMs: Number(consultaManualPausaMs) || 0,
+        }),
+      });
+      const data = await ensureApiJson<any>(response, 'Erro ao salvar a configuracao da consulta manual');
+      if (!data.ok) {
+        alert(data.error || 'Erro ao salvar a configuracao da consulta manual');
+        return;
+      }
+      alert('Configuracao da consulta manual salva.');
+    } catch (e: any) {
+      alert(`Erro: ${e.message}`);
+    }
+    setSalvandoConsultaManual(false);
+  }
 
   function initItem(item: Item, currentDefaults: Defaults): Item {
     const preco = item.preco || 0;
@@ -551,6 +589,31 @@ export default function BlingProdutosPage() {
           <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 8 }}>Comparar lista de IDs de peca / SKUs</div>
           <div style={{ fontSize: 12, color: 'var(--gray-400)', marginBottom: 14 }}>
             Cole uma lista com PN, HD01_xxx, BM01_xxx ou outros IDs, ou selecione uma moto cadastrada para consultar todos os SKUs-base dela. O sistema agrupa sufixos como <span style={{ fontFamily: 'JetBrains Mono, monospace' }}>-2</span> no SKU base e mostra somente os produtos divergentes entre ANB e Bling.
+          </div>
+          <div style={{ background: '#f8fafc', border: '1px solid #dbe3ef', borderRadius: 10, padding: '14px 16px', marginBottom: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 4 }}>Configuracao da consulta manual</div>
+                <div style={{ fontSize: 12, color: 'var(--gray-500)' }}>Essa consulta usa o mesmo motor central da auditoria, mas com lote e pausa proprios para volumes maiores.</div>
+              </div>
+              <button
+                style={{ ...s.btn, background: 'var(--gray-100)', color: 'var(--gray-700)', border: '1px solid var(--border)', opacity: salvandoConsultaManual ? 0.7 : 1 }}
+                onClick={salvarConfiguracaoConsultaManual}
+                disabled={salvandoConsultaManual}
+              >
+                {salvandoConsultaManual ? 'Salvando...' : 'Salvar config manual'}
+              </button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
+              <div>
+                <label style={s.label}>Tamanho do lote manual</label>
+                <input style={{ ...s.input, width: '100%' }} type="number" min="10" max="500" value={consultaManualTamanhoLote} onChange={(e) => setConsultaManualTamanhoLote(e.target.value)} />
+              </div>
+              <div>
+                <label style={s.label}>Pausa manual entre lotes (ms)</label>
+                <input style={{ ...s.input, width: '100%' }} type="number" min="0" max="15000" value={consultaManualPausaMs} onChange={(e) => setConsultaManualPausaMs(e.target.value)} />
+              </div>
+            </div>
           </div>
           <div style={{ marginBottom: 12 }}>
             <label style={s.label}>Moto cadastrada para comparar tudo</label>
