@@ -2010,6 +2010,14 @@ async function collectMercadoLivreStatusByProductIds(
   };
 }
 
+function createEmptyMercadoLivreStatusCollectionResult(): MercadoLivreStatusCollectionResult {
+  return {
+    statuses: new Map<number, MercadoLivreStatusResult>(),
+    debugByProductId: new Map<number, MercadoLivreStatusDebugInfo>(),
+    productStoreLinks: new Map<number, any[]>(),
+  };
+}
+
 async function findMercadoLivreStatusByProductIds(
   ids: number[],
   options?: {
@@ -2419,6 +2427,7 @@ async function compareProdutosBlingCodes(
     syncDetran?: boolean;
     syncMercadoLivreItemId?: boolean;
     syncMercadoLivreLink?: boolean;
+    suppressMarketplaceErrors?: boolean;
     traceSkus?: Set<string> | string[];
     onProgress?: (payload: { totalParaProcessar: number; totalProcessados: number; fase: string }) => Promise<void> | void;
   },
@@ -2435,6 +2444,7 @@ async function compareProdutosBlingCodes(
     fase: 'Iniciando',
   };
   let lastProgressSignature = '';
+  const warnings = new Set<string>();
   const emitProgress = async (patch: Partial<typeof progressState>) => {
     progressState = { ...progressState, ...patch };
     if (!options?.onProgress) return;
@@ -2500,27 +2510,39 @@ async function compareProdutosBlingCodes(
   ));
 
   const [mercadoLivreStatusData, detalhesBlingByProductId] = await Promise.all([
-    collectMercadoLivreStatusByProductIds(produtoIdsParaStatus, false, {
-      batchSize: options?.batchSize,
-      pauseMs: options?.pauseMs,
-      onProductProcessed: async (productId) => {
-        if (processedProductIds.has(productId)) return;
-        processedProductIds.add(productId);
-        await emitProgress({
-          totalProcessados: Math.min(
-            totalParaProcessar,
-            codigosSemProdutoBling + Array.from(processedProductIds).reduce((sum, id) => sum + (productIdToCodeCount.get(id) || 0), 0),
-          ),
-          fase: 'Consultando status do Mercado Livre',
+    (async () => {
+      try {
+        return await collectMercadoLivreStatusByProductIds(produtoIdsParaStatus, false, {
+          batchSize: options?.batchSize,
+          pauseMs: options?.pauseMs,
+          onProductProcessed: async (productId) => {
+            if (processedProductIds.has(productId)) return;
+            processedProductIds.add(productId);
+            await emitProgress({
+              totalProcessados: Math.min(
+                totalParaProcessar,
+                codigosSemProdutoBling + Array.from(processedProductIds).reduce((sum, id) => sum + (productIdToCodeCount.get(id) || 0), 0),
+              ),
+              fase: 'Consultando status do Mercado Livre',
+            });
+          },
+          onRetryProgress: async ({ attempt, unresolvedCount }) => {
+            await emitProgress({
+              totalProcessados: totalParaProcessar,
+              fase: `Reprocessando ${unresolvedCount} pendente(s) no Mercado Livre (tentativa ${attempt}/${MERCADO_LIVRE_UNRESOLVED_RETRY_ATTEMPTS})`,
+            });
+          },
         });
-      },
-      onRetryProgress: async ({ attempt, unresolvedCount }) => {
+      } catch (error: any) {
+        if (!options?.suppressMarketplaceErrors) throw error;
+        warnings.add(error?.message || 'Falha ao consultar status do Mercado Livre.');
         await emitProgress({
-          totalProcessados: totalParaProcessar,
-          fase: `Reprocessando ${unresolvedCount} pendente(s) no Mercado Livre (tentativa ${attempt}/${MERCADO_LIVRE_UNRESOLVED_RETRY_ATTEMPTS})`,
+          totalProcessados: codigosSemProdutoBling,
+          fase: 'Seguindo sem status do Mercado Livre',
         });
-      },
-    }),
+        return createEmptyMercadoLivreStatusCollectionResult();
+      }
+    })(),
     findBlingProductDetailsByIds(produtoIdsParaDetalhe, options),
   ]);
   const statusMercadoLivreByProductId = mercadoLivreStatusData.statuses;
@@ -2819,12 +2841,13 @@ async function compareProdutosBlingCodes(
   
     return {
       ok: true,
-    totalConsultados: codigos.length,
-    totalDivergencias: divergencias.length,
-    totalSemDivergencia: codigos.length - divergencias.length,
-    divergencias,
-    traceSkus: Object.fromEntries(traceBySku.entries()),
-  };
+      totalConsultados: codigos.length,
+      totalDivergencias: divergencias.length,
+      totalSemDivergencia: codigos.length - divergencias.length,
+      divergencias,
+      traceSkus: Object.fromEntries(traceBySku.entries()),
+      warnings: Array.from(warnings),
+    };
 }
 
 function buildAuditoriaTraceResumo(
@@ -4150,12 +4173,13 @@ blingRouter.post('/sync/produtos', async (req, res, next) => {
       const resultado = await compareProdutosBlingCodes(codigos, {
         syncLocalizacao: true,
         syncDetran: true,
-        syncMercadoLivreItemId: true,
+        syncMercadoLivreItemId: false,
         syncMercadoLivreLink: false,
+        suppressMarketplaceErrors: true,
       });
       res.json(resultado);
-    } catch (e) {
-      next(e);
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message || 'Erro ao comparar produtos manualmente no Bling' });
     }
   });
 

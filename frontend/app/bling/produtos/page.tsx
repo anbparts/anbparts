@@ -62,10 +62,12 @@ type Divergencia = {
 };
 
 type Comparacao = {
+  ok?: boolean;
   totalConsultados: number;
   totalDivergencias: number;
   totalSemDivergencia: number;
   divergencias: Divergencia[];
+  warnings?: string[];
 };
 
 type CsvLinha = {
@@ -138,6 +140,43 @@ function defaultDateRange() {
     dataInicio: inputDateString(start),
     dataFim: inputDateString(end),
   };
+}
+
+async function readApiPayload(response: Response) {
+  const rawText = await response.text();
+
+  if (!rawText) {
+    return { data: null, rawText: '' };
+  }
+
+  try {
+    return {
+      data: JSON.parse(rawText),
+      rawText,
+    };
+  } catch {
+    return {
+      data: null,
+      rawText,
+    };
+  }
+}
+
+async function ensureApiJson<T = any>(response: Response, fallbackMessage: string): Promise<T> {
+  const { data, rawText } = await readApiPayload(response);
+
+  if (!response.ok) {
+    const apiError = data && typeof data === 'object' ? (data as any).error : null;
+    const rawError = String(rawText || '').trim();
+    const detail = apiError || rawError || response.statusText || fallbackMessage;
+    throw new Error(detail);
+  }
+
+  if (!data || typeof data !== 'object') {
+    throw new Error(fallbackMessage);
+  }
+
+  return data as T;
 }
 
 function normalizeHeader(value: string) {
@@ -314,7 +353,7 @@ export default function BlingProdutosPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dataInicio, dataFim, motoIdFallback: motoFallback || null }),
       });
-      const data = await response.json();
+      const data = await ensureApiJson<any>(response, 'Erro ao buscar produtos no Bling');
       if (!data.ok) {
         alert(data.error || 'Erro ao buscar');
         return;
@@ -344,13 +383,16 @@ export default function BlingProdutosPage() {
           motoId: motoComparacaoId ? Number(motoComparacaoId) : null,
         }),
       });
-      const data = await response.json();
+      const data = await ensureApiJson<Comparacao>(response, 'Erro ao comparar produtos no Bling');
       if (!data.ok) {
         alert(data.error || 'Erro ao comparar produtos');
         return;
       }
 
       setComparacao(data);
+      if (Array.isArray(data.warnings) && data.warnings.length) {
+        alert(data.warnings.join('\n'));
+      }
     } catch (e: any) {
       alert(`Erro: ${e.message}`);
     }
@@ -375,7 +417,7 @@ export default function BlingProdutosPage() {
           escopoArquivo: csvEscopoArquivo,
         }),
       });
-      const data = await response.json();
+      const data = await ensureApiJson<any>(response, 'Erro ao comparar CSV');
       if (!data.ok) {
         alert(data.error || 'Erro ao comparar CSV');
         return;
