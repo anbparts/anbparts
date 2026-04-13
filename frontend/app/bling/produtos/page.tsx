@@ -63,6 +63,7 @@ type Divergencia = {
 
 type Comparacao = {
   ok?: boolean;
+  error?: string;
   totalConsultados: number;
   totalDivergencias: number;
   totalSemDivergencia: number;
