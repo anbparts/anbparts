@@ -1,15 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-function getBackendUrl() {
-  return (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3333').replace(/\/$/, '');
-}
-
 export async function POST(request: NextRequest) {
   try {
-    const backendUrl = getBackendUrl();
     const payload = await request.text();
+    const origin = request.nextUrl.origin;
 
-    const response = await fetch(`${backendUrl}/bling/comparar-produtos`, {
+    const response = await fetch(`${origin}/api/bling/comparar-produtos`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
