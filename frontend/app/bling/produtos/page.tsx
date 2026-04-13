@@ -383,7 +383,7 @@ export default function BlingProdutosPage() {
     setComparando(true);
     setComparacao(null);
     try {
-      const response = await fetch('/proxy/bling/auditoria-automatica/trace-skus', {
+      const response = await fetch(`${API}/bling/auditoria-automatica/trace-skus`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
