@@ -30,6 +30,15 @@ function formatDateBr(value: string | Date) {
   return `${day}/${month}/${year}`;
 }
 
+function motivoAccent(motivo: string) {
+  if (motivo === 'Extravio no Envio') return { color: 'var(--amber)', border: '#fcd34d', background: '#fffbeb' };
+  if (motivo === 'Defeito') return { color: 'var(--red)', border: '#fecaca', background: '#fef2f2' };
+  if (motivo === 'SKU Cancelado') return { color: '#7c3aed', border: '#ddd6fe', background: '#f5f3ff' };
+  if (motivo === 'Peca Restrita - Sem Revenda') return { color: '#0f766e', border: '#99f6e4', background: '#f0fdfa' };
+  if (motivo === 'Extravio no Estoque') return { color: '#2563eb', border: '#bfdbfe', background: '#eff6ff' };
+  return { color: 'var(--gray-700)', border: 'var(--border)', background: 'var(--white)' };
+}
+
 function EditPrejuizoModal({ row, saving, onClose, onSave }: any) {
   const viewportMode = useFinancialViewportMode();
   const isPhone = viewportMode === 'phone';
@@ -171,6 +180,19 @@ export default function PrejuizosPage() {
   const totalValor = filteredRows.reduce((sum, row) => sum + (Number(row.valor) || 0), 0);
   const totalFrete = filteredRows.reduce((sum, row) => sum + (Number(row.frete) || 0), 0);
   const total = totalValor + totalFrete;
+  const totalsByMotivo = PREJUIZO_OPTIONS.map((motivo) => {
+    const motivoRows = filteredRows.filter((row) => String(row.motivo || '') === motivo);
+    const motivoValor = motivoRows.reduce((sum, row) => sum + (Number(row.valor) || 0), 0);
+    const motivoFrete = motivoRows.reduce((sum, row) => sum + (Number(row.frete) || 0), 0);
+    return {
+      motivo,
+      count: motivoRows.length,
+      total: motivoValor + motivoFrete,
+      valor: motivoValor,
+      frete: motivoFrete,
+      ...motivoAccent(motivo),
+    };
+  }).filter((item) => item.count > 0);
 
   async function reativar(row: any) {
     const label = row.idPeca ? `a peca ${row.idPeca}` : 'este prejuizo';
@@ -224,6 +246,37 @@ export default function PrejuizosPage() {
             </div>
           ))}
         </div>
+
+        {totalsByMotivo.length ? (
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 10 }}>Totais por motivo</div>
+            <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : isCompact ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
+              {totalsByMotivo.map((item) => (
+                <div
+                  key={item.motivo}
+                  style={{
+                    background: item.background,
+                    border: `1px solid ${item.border}`,
+                    borderRadius: 10,
+                    padding: '16px 18px',
+                  }}
+                >
+                  <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--gray-500)', letterSpacing: '.6px', textTransform: 'uppercase', marginBottom: 8 }}>
+                    {item.motivo}
+                  </div>
+                  <div style={{ fontSize: 22, fontWeight: 700, color: item.color, letterSpacing: '-0.4px', ...sensitiveMaskStyle(hidden) }}>
+                    {sensitiveText(fmt(item.total), hidden)}
+                  </div>
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 8, fontSize: 12, color: 'var(--gray-600)' }}>
+                    <span>{item.count} ocorr.</span>
+                    <span style={sensitiveMaskStyle(hidden)}>{sensitiveText(`Peca ${fmt(item.valor)}`, hidden)}</span>
+                    {(item.frete || 0) > 0 ? <span style={sensitiveMaskStyle(hidden)}>{sensitiveText(`Frete ${fmt(item.frete)}`, hidden)}</span> : null}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
 
         <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
           <div style={{ padding: '12px 18px', borderBottom: '1px solid var(--border)', fontSize: 14, fontWeight: 600, color: 'var(--gray-800)' }}>
@@ -309,29 +362,58 @@ export default function PrejuizosPage() {
               {!filteredRows.length && <div style={{ padding: 20, textAlign: 'center', color: 'var(--gray-400)', fontSize: 13 }}>Nenhum prejuizo encontrado com os filtros atuais</div>}
             </div>
           ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <div style={{ overflowX: 'hidden' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, tableLayout: 'fixed' }}>
+                <colgroup>
+                  <col style={{ width: '92px' }} />
+                  <col style={{ width: '72px' }} />
+                  <col style={{ width: '78px' }} />
+                  <col style={{ width: '102px' }} />
+                  <col />
+                  <col style={{ width: '210px' }} />
+                  <col style={{ width: '170px' }} />
+                  <col style={{ width: '110px' }} />
+                  <col style={{ width: '88px' }} />
+                  <col style={{ width: '110px' }} />
+                  <col style={{ width: '104px' }} />
+                </colgroup>
                 <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
                   <tr>
-                    {['Data', 'ID Moto', 'SKU Moto', 'ID Peca', 'Peca', 'Motivo', 'Observacao', 'Valor peca', 'Frete', 'Total', ''].map((header) => (
-                      <th key={header} style={{ padding: '9px 16px', textAlign: ['Valor peca', 'Frete', 'Total'].includes(header) ? 'right' : 'left', fontFamily: 'Geist Mono, monospace', fontSize: 10, letterSpacing: '.7px', textTransform: 'uppercase', color: 'var(--gray-400)', fontWeight: 500, whiteSpace: 'nowrap' }}>{header}</th>
+                    {['Data', 'ID Moto', 'SKU', 'ID Peca', 'Peca', 'Motivo', 'Obs.', 'Valor', 'Frete', 'Total', ''].map((header) => (
+                      <th key={header} style={{ padding: '8px 10px', textAlign: ['Valor', 'Frete', 'Total'].includes(header) ? 'right' : 'left', fontFamily: 'Geist Mono, monospace', fontSize: 9.5, letterSpacing: '.6px', textTransform: 'uppercase', color: 'var(--gray-400)', fontWeight: 500, whiteSpace: 'nowrap' }}>{header}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {filteredRows.map((row) => (
                     <tr key={row.id} style={{ borderBottom: '1px solid var(--gray-100)' }}>
-                      <td style={{ padding: '9px 16px', fontFamily: 'Geist Mono, monospace', fontSize: 12, color: 'var(--gray-500)', whiteSpace: 'nowrap' }}>{formatDateBr(row.data)}</td>
-                      <td style={{ padding: '9px 16px', fontFamily: 'Geist Mono, monospace', fontSize: 12, color: 'var(--gray-600)' }}>{row.idMoto ? `#${row.idMoto}` : '-'}</td>
-                      <td style={{ padding: '9px 16px', fontFamily: 'Geist Mono, monospace', fontSize: 12, color: 'var(--blue-500)' }}>{row.skuMoto || '-'}</td>
-                      <td style={{ padding: '9px 16px', fontFamily: 'Geist Mono, monospace', fontSize: 12, color: 'var(--gray-700)' }}>{row.idPeca || '-'}</td>
-                      <td style={{ padding: '9px 16px', color: 'var(--gray-700)', minWidth: 240 }}>{row.descricaoPeca || row.detalhe}</td>
-                      <td style={{ padding: '9px 16px', color: 'var(--gray-700)', whiteSpace: 'nowrap' }}>{row.motivo || '-'}</td>
-                      <td style={{ padding: '9px 16px', color: 'var(--gray-500)', minWidth: 220 }}>{row.observacao || '-'}</td>
-                      <td style={{ padding: '9px 16px', textAlign: 'right', fontFamily: 'Geist Mono, monospace', fontSize: 12, color: 'var(--gray-600)', ...sensitiveMaskStyle(hidden) }}>{sensitiveText(fmt(Number(row.valor) || 0), hidden)}</td>
-                      <td style={{ padding: '9px 16px', textAlign: 'right', fontFamily: 'Geist Mono, monospace', fontSize: 12, color: 'var(--gray-600)', ...sensitiveMaskStyle(hidden) }}>{sensitiveText(fmt(Number(row.frete) || 0), hidden)}</td>
-                      <td style={{ padding: '9px 16px', textAlign: 'right', fontFamily: 'Geist Mono, monospace', fontSize: 13, color: 'var(--red)', fontWeight: 600, ...sensitiveMaskStyle(hidden) }}>{sensitiveText(fmt((Number(row.valor) || 0) + (Number(row.frete) || 0)), hidden)}</td>
-                      <td style={{ padding: '9px 16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <td style={{ padding: '8px 10px', fontFamily: 'Geist Mono, monospace', fontSize: 11.5, color: 'var(--gray-500)', whiteSpace: 'nowrap' }}>{formatDateBr(row.data)}</td>
+                      <td style={{ padding: '8px 10px', fontFamily: 'Geist Mono, monospace', fontSize: 11.5, color: 'var(--gray-600)', whiteSpace: 'nowrap' }}>{row.idMoto ? `#${row.idMoto}` : '-'}</td>
+                      <td style={{ padding: '8px 10px', fontFamily: 'Geist Mono, monospace', fontSize: 11.5, color: 'var(--blue-500)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={row.skuMoto || '-'}>
+                        {row.skuMoto || '-'}
+                      </td>
+                      <td style={{ padding: '8px 10px', fontFamily: 'Geist Mono, monospace', fontSize: 11.5, color: 'var(--gray-700)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={row.idPeca || '-'}>
+                        {row.idPeca || '-'}
+                      </td>
+                      <td style={{ padding: '8px 10px', color: 'var(--gray-700)' }} title={row.descricaoPeca || row.detalhe}>
+                        <div style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', lineHeight: 1.25 }}>
+                          {row.descricaoPeca || row.detalhe}
+                        </div>
+                      </td>
+                      <td style={{ padding: '8px 10px', color: 'var(--gray-700)' }} title={row.motivo || '-'}>
+                        <div style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', lineHeight: 1.25 }}>
+                          {row.motivo || '-'}
+                        </div>
+                      </td>
+                      <td style={{ padding: '8px 10px', color: 'var(--gray-500)' }} title={row.observacao || '-'}>
+                        <div style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', lineHeight: 1.25 }}>
+                          {row.observacao || '-'}
+                        </div>
+                      </td>
+                      <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'Geist Mono, monospace', fontSize: 11.5, color: 'var(--gray-600)', whiteSpace: 'nowrap', ...sensitiveMaskStyle(hidden) }}>{sensitiveText(fmt(Number(row.valor) || 0), hidden)}</td>
+                      <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'Geist Mono, monospace', fontSize: 11.5, color: 'var(--gray-600)', whiteSpace: 'nowrap', ...sensitiveMaskStyle(hidden) }}>{sensitiveText(fmt(Number(row.frete) || 0), hidden)}</td>
+                      <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'Geist Mono, monospace', fontSize: 12.5, color: 'var(--red)', fontWeight: 600, whiteSpace: 'nowrap', ...sensitiveMaskStyle(hidden) }}>{sensitiveText(fmt((Number(row.valor) || 0) + (Number(row.frete) || 0)), hidden)}</td>
+                      <td style={{ padding: '8px 10px', textAlign: 'right', whiteSpace: 'nowrap' }}>
                         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                           <button onClick={() => setEditRow(row)} style={{ border: '1px solid var(--border)', background: 'var(--white)', color: 'var(--gray-700)', borderRadius: 7, padding: '6px 10px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
                             Editar
