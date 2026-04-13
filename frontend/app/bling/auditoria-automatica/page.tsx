@@ -41,6 +41,7 @@ type Execucao = {
 };
 type Config = {
   auditoriaAtiva: boolean; auditoriaHorario: string; auditoriaEscopo: AuditoriaEscopo; auditoriaTamanhoLote: number; auditoriaPausaMs: number;
+  consultaManualTamanhoLote: number; consultaManualPausaMs: number;
   auditoriaLinkMlAtiva: boolean; auditoriaLinkMlHorario: string; auditoriaLinkMlIntervaloDias: number; auditoriaLinkMlUltimaExecucaoChave?: string | null; auditoriaLinkMlUltimaExecucaoEm?: string | null; auditoriaLinkMlExecutandoAgora?: boolean;
   resendApiKeyConfigured: boolean; auditoriaEmailConfigurado?: boolean; detranEmailConfigurado?: boolean; configuracoesGeraisRemetente?: string;
   configuracoesGeraisAuditoriaDestinatario?: string; configuracoesGeraisAuditoriaTitulo?: string; auditoriaUltimaExecucaoChave?: string | null;
@@ -82,6 +83,8 @@ export default function AuditoriaAutomaticaPage() {
   const [auditoriaEscopo, setAuditoriaEscopo] = useState<AuditoriaEscopo>('full');
   const [auditoriaTamanhoLote, setAuditoriaTamanhoLote] = useState('100');
   const [auditoriaPausaMs, setAuditoriaPausaMs] = useState('400');
+  const [consultaManualTamanhoLote, setConsultaManualTamanhoLote] = useState('100');
+  const [consultaManualPausaMs, setConsultaManualPausaMs] = useState('400');
   const [auditoriaLinkMlAtiva, setAuditoriaLinkMlAtiva] = useState(false);
   const [auditoriaLinkMlHorario, setAuditoriaLinkMlHorario] = useState('05:00');
   const [auditoriaLinkMlIntervaloDias, setAuditoriaLinkMlIntervaloDias] = useState('1');
@@ -97,6 +100,8 @@ export default function AuditoriaAutomaticaPage() {
     setAuditoriaEscopo((data.auditoriaEscopo || 'full') as AuditoriaEscopo);
     setAuditoriaTamanhoLote(String(data.auditoriaTamanhoLote || 100));
     setAuditoriaPausaMs(String(data.auditoriaPausaMs || 400));
+    setConsultaManualTamanhoLote(String(data.consultaManualTamanhoLote || data.auditoriaTamanhoLote || 100));
+    setConsultaManualPausaMs(String(data.consultaManualPausaMs || data.auditoriaPausaMs || 400));
     setAuditoriaLinkMlAtiva(!!data.auditoriaLinkMlAtiva);
     setAuditoriaLinkMlHorario(data.auditoriaLinkMlHorario || '05:00');
     setAuditoriaLinkMlIntervaloDias(String(data.auditoriaLinkMlIntervaloDias || 1));
@@ -226,6 +231,8 @@ export default function AuditoriaAutomaticaPage() {
           auditoriaEscopo,
           auditoriaTamanhoLote: Number(auditoriaTamanhoLote) || 100,
           auditoriaPausaMs: Number(auditoriaPausaMs) || 0,
+          consultaManualTamanhoLote: Number(consultaManualTamanhoLote) || Number(auditoriaTamanhoLote) || 100,
+          consultaManualPausaMs: Number(consultaManualPausaMs) || 0,
           auditoriaLinkMlAtiva,
           auditoriaLinkMlHorario,
           auditoriaLinkMlIntervaloDias: Number(auditoriaLinkMlIntervaloDias) || 1,
@@ -336,6 +343,14 @@ export default function AuditoriaAutomaticaPage() {
             <div><label style={s.label}>Escopo da auditoria</label><select style={{ ...s.input, width: '100%', cursor: 'pointer' }} value={auditoriaEscopo} onChange={(e) => setAuditoriaEscopo(e.target.value as AuditoriaEscopo)}>{ESCOPOS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></div>
             <div><label style={s.label}>Tamanho do lote</label><input style={{ ...s.input, width: '100%' }} type="number" min="10" max="500" value={auditoriaTamanhoLote} onChange={(e) => setAuditoriaTamanhoLote(e.target.value)} /></div>
             <div><label style={s.label}>Pausa entre lotes (ms)</label><input style={{ ...s.input, width: '100%' }} type="number" min="0" max="15000" value={auditoriaPausaMs} onChange={(e) => setAuditoriaPausaMs(e.target.value)} /></div>
+          </div>
+          <div style={{ background: '#f8fafc', border: '1px solid #dbe3ef', borderRadius: 10, padding: '14px 16px', marginBottom: 16 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 6 }}>Consulta manual de varios registros</div>
+            <div style={{ fontSize: 12, color: 'var(--gray-500)', marginBottom: 12 }}>Essa configuracao e paralela a full. O botao de comparar lista / moto usa o mesmo motor central da auditoria, mas com lote e pausa proprios para evitar erro em volumes maiores.</div>
+            <div style={{ display: 'grid', gridTemplateColumns: configGridColumns, gap: 12 }}>
+              <div><label style={s.label}>Tamanho do lote manual</label><input style={{ ...s.input, width: '100%' }} type="number" min="10" max="500" value={consultaManualTamanhoLote} onChange={(e) => setConsultaManualTamanhoLote(e.target.value)} /></div>
+              <div><label style={s.label}>Pausa manual entre lotes (ms)</label><input style={{ ...s.input, width: '100%' }} type="number" min="0" max="15000" value={consultaManualPausaMs} onChange={(e) => setConsultaManualPausaMs(e.target.value)} /></div>
+            </div>
           </div>
           <div style={{ background: '#f8fafc', border: '1px solid #dbe3ef', borderRadius: 10, padding: '14px 16px', marginBottom: 16 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>

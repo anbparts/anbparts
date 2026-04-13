@@ -408,6 +408,8 @@ function getAuditoriaDefaults(cfg: any) {
     auditoriaEscopo: normalizeAuditoriaEscopo(cfg?.auditoriaEscopo),
     auditoriaTamanhoLote: Math.max(10, Math.min(500, Math.round(toNumber(cfg?.auditoriaTamanhoLote, AUDITORIA_DEFAULT_TAMANHO_LOTE)))),
     auditoriaPausaMs: Math.max(0, Math.min(15000, Math.round(toNumber(cfg?.auditoriaPausaMs, AUDITORIA_DEFAULT_PAUSA_MS)))),
+    consultaManualTamanhoLote: Math.max(10, Math.min(500, Math.round(toNumber(cfg?.consultaManualTamanhoLote, cfg?.auditoriaTamanhoLote ?? AUDITORIA_DEFAULT_TAMANHO_LOTE)))),
+    consultaManualPausaMs: Math.max(0, Math.min(15000, Math.round(toNumber(cfg?.consultaManualPausaMs, cfg?.auditoriaPausaMs ?? AUDITORIA_DEFAULT_PAUSA_MS)))),
     auditoriaUltimaExecucaoChave: cfg?.auditoriaUltimaExecucaoChave || null,
     auditoriaUltimaExecucaoEm: cfg?.auditoriaUltimaExecucaoEm || null,
     auditoriaLinkMlAtiva: !!cfg?.auditoriaLinkMlAtiva,
@@ -2927,6 +2929,7 @@ async function runTraceSkuComparison(rawSkus: any, rawMotoId: any) {
     }
   }
 
+  const requestedSkuSet = new Set(traceSkuSet);
   const traceCodigos = Array.from(traceSkuSet);
   if (!traceCodigos.length) {
     return {
@@ -2939,8 +2942,22 @@ async function runTraceSkuComparison(rawSkus: any, rawMotoId: any) {
   }
 
   const localEscopo = await loadAllLocalSkuResumo(cfg.auditoriaEscopo);
-  const localPecasTrace = localEscopo.pecas.filter((peca) => traceSkuSet.has(getBaseSku(peca.idPeca)));
-  const resultadoAgregado = await compareProdutosBlingCodes(traceCodigos, {
+  const localCodesInScope = localEscopo.codigos.filter((codigo) => requestedSkuSet.has(codigo));
+  const externalRequestedCodes = Array.from(requestedSkuSet).filter((codigo) => !localEscopo.localMap.has(codigo));
+  const codigosParaComparar = Array.from(new Set([...localCodesInScope, ...externalRequestedCodes]));
+  const localPecasTrace = localEscopo.pecas.filter((peca) => requestedSkuSet.has(getBaseSku(peca.idPeca)));
+
+  if (!codigosParaComparar.length) {
+    return {
+      cfg,
+      traceSkuSet,
+      traceCodigos: codigosParaComparar,
+      localEscopo,
+      resultado: null,
+    };
+  }
+
+  const resultadoAgregado = await compareProdutosBlingCodes(codigosParaComparar, {
     localMap: localEscopo.localMap,
     localPecas: localPecasTrace,
     syncLocalizacao: true,
@@ -2948,15 +2965,15 @@ async function runTraceSkuComparison(rawSkus: any, rawMotoId: any) {
     syncMercadoLivreItemId: true,
     syncMercadoLivreLink: false,
     suppressMarketplaceErrors: true,
-    batchSize: Math.max(10, Math.min(cfg.auditoriaTamanhoLote, traceCodigos.length || 1)),
-    pauseMs: Math.max(0, Math.min(150, cfg.auditoriaPausaMs)),
+    batchSize: Math.max(10, Math.min(cfg.consultaManualTamanhoLote, codigosParaComparar.length || 1)),
+    pauseMs: cfg.consultaManualPausaMs,
     traceSkus: traceSkuSet,
   });
 
   return {
     cfg,
     traceSkuSet,
-    traceCodigos,
+    traceCodigos: codigosParaComparar,
     localEscopo,
     resultado: resultadoAgregado,
   };
@@ -3847,6 +3864,8 @@ blingRouter.get('/auditoria-automatica/config', async (_req, res, next) => {
       auditoriaEscopo: cfg.auditoriaEscopo,
       auditoriaTamanhoLote: cfg.auditoriaTamanhoLote,
       auditoriaPausaMs: cfg.auditoriaPausaMs,
+      consultaManualTamanhoLote: cfg.consultaManualTamanhoLote,
+      consultaManualPausaMs: cfg.consultaManualPausaMs,
       auditoriaLinkMlAtiva: cfg.auditoriaLinkMlAtiva,
       auditoriaLinkMlHorario: cfg.auditoriaLinkMlHorario,
       auditoriaLinkMlIntervaloDias: cfg.auditoriaLinkMlIntervaloDias,
@@ -3876,6 +3895,8 @@ blingRouter.post('/auditoria-automatica/config', async (req, res, next) => {
     const auditoriaEscopo = normalizeAuditoriaEscopo(req.body?.auditoriaEscopo);
     const auditoriaTamanhoLote = Math.max(10, Math.min(500, Math.round(toNumber(req.body?.auditoriaTamanhoLote, AUDITORIA_DEFAULT_TAMANHO_LOTE))));
     const auditoriaPausaMs = Math.max(0, Math.min(15000, Math.round(toNumber(req.body?.auditoriaPausaMs, AUDITORIA_DEFAULT_PAUSA_MS))));
+    const consultaManualTamanhoLote = Math.max(10, Math.min(500, Math.round(toNumber(req.body?.consultaManualTamanhoLote, auditoriaTamanhoLote))));
+    const consultaManualPausaMs = Math.max(0, Math.min(15000, Math.round(toNumber(req.body?.consultaManualPausaMs, auditoriaPausaMs))));
     const auditoriaLinkMlAtiva = !!req.body?.auditoriaLinkMlAtiva;
     const auditoriaLinkMlHorario = normalizeHorarioAuditoriaLinkMl(req.body?.auditoriaLinkMlHorario);
     const auditoriaLinkMlIntervaloDias = normalizeAuditoriaLinkMlIntervaloDias(req.body?.auditoriaLinkMlIntervaloDias);
@@ -3886,6 +3907,8 @@ blingRouter.post('/auditoria-automatica/config', async (req, res, next) => {
       auditoriaEscopo,
       auditoriaTamanhoLote,
       auditoriaPausaMs,
+      consultaManualTamanhoLote,
+      consultaManualPausaMs,
       auditoriaLinkMlAtiva,
       auditoriaLinkMlHorario,
       auditoriaLinkMlIntervaloDias,

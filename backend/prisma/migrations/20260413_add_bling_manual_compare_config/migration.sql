@@ -1,0 +1,3 @@
+ALTER TABLE "BlingConfig"
+ADD COLUMN "consultaManualTamanhoLote" INTEGER NOT NULL DEFAULT 100,
+ADD COLUMN "consultaManualPausaMs" INTEGER NOT NULL DEFAULT 400;

@@ -134,6 +134,8 @@ model BlingConfig {
   auditoriaResendFrom         String   @default("alertas@mail.anbparts.com.br")
   auditoriaTamanhoLote        Int      @default(100)
   auditoriaPausaMs            Int      @default(400)
+  consultaManualTamanhoLote   Int      @default(100)
+  consultaManualPausaMs       Int      @default(400)
   auditoriaUltimaExecucaoChave String?
   auditoriaUltimaExecucaoEm   DateTime?
   auditoriaLinkMlAtiva        Boolean  @default(false)
