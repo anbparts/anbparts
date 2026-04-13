@@ -2909,6 +2909,60 @@ function buildAuditoriaTraceResumo(
   );
 }
 
+async function runTraceSkuComparison(rawSkus: any, rawMotoId: any) {
+  const cfg = await getConfig();
+  const traceSkuSet = buildAuditoriaTraceSkuSet(rawSkus);
+  const motoId = Number(rawMotoId) || 0;
+
+  if (motoId) {
+    const pecasDaMoto = await prisma.peca.findMany({
+      where: { motoId },
+      select: { idPeca: true },
+      orderBy: { idPeca: 'asc' },
+    });
+
+    for (const peca of pecasDaMoto) {
+      const codigo = getBaseSku(peca.idPeca);
+      if (codigo) traceSkuSet.add(codigo);
+    }
+  }
+
+  const traceCodigos = Array.from(traceSkuSet);
+  if (!traceCodigos.length) {
+    return {
+      cfg,
+      traceSkuSet,
+      traceCodigos,
+      localEscopo: null,
+      resultado: null,
+    };
+  }
+
+  const localEscopo = await loadAllLocalSkuResumo(cfg.auditoriaEscopo);
+  const localPecasTrace = localEscopo.pecas.filter((peca) => traceSkuSet.has(getBaseSku(peca.idPeca)));
+
+  const resultado = await compareProdutosBlingCodes(traceCodigos, {
+    localMap: localEscopo.localMap,
+    localPecas: localPecasTrace,
+    syncLocalizacao: true,
+    syncDetran: true,
+    syncMercadoLivreItemId: true,
+    syncMercadoLivreLink: false,
+    suppressMarketplaceErrors: true,
+    batchSize: Math.max(1, Math.min(10, traceCodigos.length || 1)),
+    pauseMs: Math.max(300, cfg.auditoriaPausaMs),
+    traceSkus: traceSkuSet,
+  });
+
+  return {
+    cfg,
+    traceSkuSet,
+    traceCodigos,
+    localEscopo,
+    resultado,
+  };
+}
+
 function collectMercadoLivreTexts(value: any, acc: string[] = [], inMlContext = false) {
   if (value === null || value === undefined) return acc;
   if (Array.isArray(value)) {
@@ -3938,36 +3992,14 @@ blingRouter.post('/auditoria-automatica/link-ml/executar', async (_req, res, nex
 
 blingRouter.post('/auditoria-automatica/trace-skus', async (req, res, next) => {
   try {
-    const cfg = await getConfig();
-    const traceSkuSet = buildAuditoriaTraceSkuSet(req.body?.skus || req.body?.codigos || req.body?.texto);
-    const motoId = Number(req.body?.motoId) || 0;
-    if (motoId) {
-      const pecasDaMoto = await prisma.peca.findMany({
-        where: { motoId },
-        select: { idPeca: true },
-        orderBy: { idPeca: 'asc' },
-      });
-      for (const peca of pecasDaMoto) {
-        const codigo = getBaseSku(peca.idPeca);
-        if (codigo) traceSkuSet.add(codigo);
-      }
-    }
-    const traceCodigos = Array.from(traceSkuSet);
-    const localEscopo = await loadAllLocalSkuResumo(cfg.auditoriaEscopo);
-    const localPecasTrace = localEscopo.pecas.filter((peca) => traceSkuSet.has(getBaseSku(peca.idPeca)));
+    const { cfg, traceSkuSet, traceCodigos, localEscopo, resultado } = await runTraceSkuComparison(
+      req.body?.skus || req.body?.codigos || req.body?.texto,
+      req.body?.motoId,
+    );
 
-    const resultado = await compareProdutosBlingCodes(traceCodigos, {
-      localMap: localEscopo.localMap,
-      localPecas: localPecasTrace,
-      syncLocalizacao: true,
-      syncDetran: true,
-      syncMercadoLivreItemId: true,
-      syncMercadoLivreLink: false,
-      suppressMarketplaceErrors: true,
-      batchSize: Math.max(1, Math.min(10, traceCodigos.length || 1)),
-      pauseMs: Math.max(300, cfg.auditoriaPausaMs),
-      traceSkus: traceSkuSet,
-    });
+    if (!traceCodigos.length || !localEscopo || !resultado) {
+      return res.status(400).json({ error: 'Informe pelo menos um ID de peca / SKU ou selecione uma moto para comparar' });
+    }
 
     res.json({
       ok: true,
@@ -4175,38 +4207,14 @@ blingRouter.post('/sync/produtos', async (req, res, next) => {
 
   blingRouter.post('/comparar-produtos', async (req, res, next) => {
     try {
-      const cfg = await getConfig();
-      const codigosManuais = parseSkuList(req.body?.codigos || req.body?.texto || req.body?.skus);
-      const motoId = Number(req.body?.motoId) || 0;
-      const pecasDaMoto = motoId
-        ? await prisma.peca.findMany({
-            where: { motoId },
-            select: { idPeca: true },
-            orderBy: { idPeca: 'asc' },
-          })
-        : [];
-      const codigosDaMoto = pecasDaMoto.map((peca) => getBaseSku(peca.idPeca)).filter(Boolean);
-      const codigos = Array.from(new Set([...codigosManuais, ...codigosDaMoto]));
+      const { resultado, traceCodigos } = await runTraceSkuComparison(
+        req.body?.codigos || req.body?.texto || req.body?.skus,
+        req.body?.motoId,
+      );
 
-      if (!codigos.length) {
+      if (!traceCodigos.length || !resultado) {
         return res.status(400).json({ error: 'Informe pelo menos um ID de peca / SKU ou selecione uma moto para comparar' });
       }
-
-      const localEscopo = await loadAllLocalSkuResumo(cfg.auditoriaEscopo);
-      const codigosSet = new Set(codigos);
-      const localPecasComparacao = localEscopo.pecas.filter((peca) => codigosSet.has(getBaseSku(peca.idPeca)));
-
-      const resultado = await compareProdutosBlingCodes(codigos, {
-        localMap: localEscopo.localMap,
-        localPecas: localPecasComparacao,
-        syncLocalizacao: true,
-        syncDetran: true,
-        syncMercadoLivreItemId: false,
-        syncMercadoLivreLink: false,
-        suppressMarketplaceErrors: true,
-        batchSize: Math.max(1, Math.min(10, codigos.length || 1)),
-        pauseMs: Math.max(300, cfg.auditoriaPausaMs),
-      });
       res.json(resultado);
     } catch (e: any) {
       res.status(500).json({ ok: false, error: e?.message || 'Erro ao comparar produtos manualmente no Bling' });
