@@ -37,8 +37,9 @@ const PREJUIZO_MOTIVOS = [
   },
 ] as const;
 
-const PREJUIZO_OPTIONS = PREJUIZO_MOTIVOS.map((item) => item.label);
 type PrejuizoOptionLabel = (typeof PREJUIZO_MOTIVOS)[number]['label'];
+const PREJUIZO_DEFAULT_MOTIVO: PrejuizoOptionLabel = PREJUIZO_MOTIVOS[0].label;
+const PREJUIZO_OPTIONS: PrejuizoOptionLabel[] = PREJUIZO_MOTIVOS.map((item) => item.label);
 
 type EditPrejuizoFormState = {
   data: string;
@@ -85,14 +86,19 @@ function resolveMotivoMeta(value: string | null | undefined) {
   )) || null;
 }
 
+function isPrejuizoOptionLabel(value: string): value is PrejuizoOptionLabel {
+  return PREJUIZO_MOTIVOS.some((item) => item.label === value);
+}
+
 function getMotivoLabel(value: string | null | undefined) {
   const meta = resolveMotivoMeta(value);
   return meta?.label || String(value || '-');
 }
 
 function getMotivoOption(value: string | null | undefined): PrejuizoOptionLabel {
+  if (value && isPrejuizoOptionLabel(value)) return value;
   const meta = resolveMotivoMeta(value);
-  return meta?.label || PREJUIZO_OPTIONS[0];
+  return meta?.label || PREJUIZO_DEFAULT_MOTIVO;
 }
 
 function getMotivoKey(value: string | null | undefined) {
@@ -116,7 +122,7 @@ function EditPrejuizoModal({ row, saving, onClose, onSave }: any) {
   const isCompact = isPhone || viewportMode === 'tablet-portrait';
   const [form, setForm] = useState<EditPrejuizoFormState>({
     data: '',
-    motivo: PREJUIZO_OPTIONS[0],
+    motivo: PREJUIZO_DEFAULT_MOTIVO,
     valor: '',
     frete: '',
     observacao: '',
@@ -158,7 +164,14 @@ function EditPrejuizoModal({ row, saving, onClose, onSave }: any) {
             </div>
             <div>
               <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-soft)' }}>Tipo de defeito</label>
-              <select style={{ width: '100%', background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 6, padding: '10px 12px', fontSize: 13.5, outline: 'none', marginTop: 5, cursor: 'pointer' }} value={form.motivo} onChange={(e) => setForm({ ...form, motivo: e.target.value })}>
+              <select
+                style={{ width: '100%', background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 6, padding: '10px 12px', fontSize: 13.5, outline: 'none', marginTop: 5, cursor: 'pointer' }}
+                value={form.motivo}
+                onChange={(e) => {
+                  const nextMotivo = getMotivoOption(e.target.value);
+                  setForm({ ...form, motivo: nextMotivo });
+                }}
+              >
                 {PREJUIZO_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
               </select>
             </div>
