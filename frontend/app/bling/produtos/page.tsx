@@ -231,7 +231,7 @@ export default function BlingProdutosPage() {
   const [motoComparacaoId, setMotoComparacaoId] = useState('');
   const [comparando, setComparando] = useState(false);
   const [comparacao, setComparacao] = useState<Comparacao | null>(null);
-  const [comparacaoProgresso, setComparacaoProgresso] = useState<{ loteAtual: number; totalLotes: number; skusProcessados: number; totalSkus: number } | null>(null);
+  const [comparacaoProgresso, setComparacaoProgresso] = useState<{ loteAtual: number; totalLotes: number; skusConsultados: number; totalSkus: number } | null>(null);
   const [consultaManualTamanhoLote, setConsultaManualTamanhoLote] = useState('100');
   const [consultaManualPausaMs, setConsultaManualPausaMs] = useState('400');
   const [salvandoConsultaManual, setSalvandoConsultaManual] = useState(false);
@@ -448,8 +448,8 @@ export default function BlingProdutosPage() {
         return;
       }
 
-      // 2. Divide em lotes de 20 SKUs e processa um por vez
-      const LOTE = 20;
+      // 2. Divide em lotes usando o tamanho configurado na tela e processa um por vez
+      const LOTE = Math.max(1, Math.min(Number(consultaManualTamanhoLote) || 20, skus.length));
       const lotes: string[][] = [];
       for (let i = 0; i < skus.length; i += LOTE) lotes.push(skus.slice(i, i + LOTE));
 
@@ -457,7 +457,7 @@ export default function BlingProdutosPage() {
       const warningsVistos = new Set<string>();
 
       for (let i = 0; i < lotes.length; i++) {
-        setComparacaoProgresso({ loteAtual: i + 1, totalLotes: lotes.length, skusProcessados: i * LOTE, totalSkus: skus.length });
+        setComparacaoProgresso({ loteAtual: i + 1, totalLotes: lotes.length, skusConsultados: acumulado.totalConsultados, totalSkus: skus.length });
 
         const response = await fetch('/api-proxy/comparar-produtos', {
           method: 'POST',
@@ -478,8 +478,9 @@ export default function BlingProdutosPage() {
         for (const div of (data.divergencias || [])) acumulado.divergencias.push(div);
         for (const w of (data.warnings || [])) { if (!warningsVistos.has(w)) { warningsVistos.add(w); acumulado.warnings!.push(w); } }
 
-        // Atualiza tela a cada lote
+        // Atualiza tela a cada lote com consultados reais acumulados
         setComparacao({ ...acumulado });
+        setComparacaoProgresso({ loteAtual: i + 1, totalLotes: lotes.length, skusConsultados: acumulado.totalConsultados, totalSkus: skus.length });
       }
 
       setComparacaoProgresso(null);
@@ -696,7 +697,7 @@ export default function BlingProdutosPage() {
             <div style={{ marginTop: 12, background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                 <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-700)' }}>
-                  Lote {comparacaoProgresso.loteAtual} de {comparacaoProgresso.totalLotes} — {Math.min(comparacaoProgresso.skusProcessados + 20, comparacaoProgresso.totalSkus)} de {comparacaoProgresso.totalSkus} SKUs
+                  Lote {comparacaoProgresso.loteAtual} de {comparacaoProgresso.totalLotes} — {comparacaoProgresso.skusConsultados} de {comparacaoProgresso.totalSkus} SKUs enviados
                 </span>
                 <span style={{ fontSize: 11, color: 'var(--gray-400)' }}>
                   {Math.round((comparacaoProgresso.loteAtual / comparacaoProgresso.totalLotes) * 100)}%
