@@ -5,7 +5,7 @@ export async function POST(request: NextRequest) {
     const payload = await request.text();
     const origin = request.nextUrl.origin;
 
-    const response = await fetch(`${origin}/api/bling/comparar-produtos`, {
+    const response = await fetch(`${origin}/proxy/bling/comparar-produtos`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
