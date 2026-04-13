@@ -456,17 +456,17 @@ export default function PrejuizosPage() {
             <div style={{ overflowX: 'hidden' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, tableLayout: 'fixed' }}>
                 <colgroup>
-                  <col style={{ width: '92px' }} />
-                  <col style={{ width: '72px' }} />
-                  <col style={{ width: '78px' }} />
-                  <col style={{ width: '102px' }} />
-                  <col />
-                  <col style={{ width: '210px' }} />
-                  <col style={{ width: '170px' }} />
-                  <col style={{ width: '110px' }} />
                   <col style={{ width: '88px' }} />
-                  <col style={{ width: '110px' }} />
-                  <col style={{ width: '104px' }} />
+                  <col style={{ width: '68px' }} />
+                  <col style={{ width: '74px' }} />
+                  <col style={{ width: '96px' }} />
+                  <col />
+                  <col style={{ width: '190px' }} />
+                  <col style={{ width: '150px' }} />
+                  <col style={{ width: '96px' }} />
+                  <col style={{ width: '82px' }} />
+                  <col style={{ width: '98px' }} />
+                  <col style={{ width: '116px' }} />
                 </colgroup>
                 <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
                   <tr>
@@ -505,11 +505,11 @@ export default function PrejuizosPage() {
                       <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'Geist Mono, monospace', fontSize: 11.5, color: 'var(--gray-600)', whiteSpace: 'nowrap' }}>{fmt(Number(row.frete) || 0)}</td>
                       <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'Geist Mono, monospace', fontSize: 12.5, color: 'var(--red)', fontWeight: 600, whiteSpace: 'nowrap' }}>{fmt((Number(row.valor) || 0) + (Number(row.frete) || 0))}</td>
                       <td style={{ padding: '8px 10px', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                          <button onClick={() => setEditRow(row)} style={{ border: '1px solid var(--border)', background: 'var(--white)', color: 'var(--gray-700)', borderRadius: 7, padding: '6px 10px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                        <div style={{ display: 'grid', gap: 6, justifyItems: 'end' }}>
+                          <button onClick={() => setEditRow(row)} style={{ minWidth: 82, border: '1px solid var(--border)', background: 'var(--white)', color: 'var(--gray-700)', borderRadius: 7, padding: '6px 10px', fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}>
                             Editar
                           </button>
-                          <button onClick={() => reativar(row)} disabled={busyId === row.id} style={{ border: '1px solid #bfdbfe', background: '#eff6ff', color: 'var(--blue-500)', borderRadius: 7, padding: '6px 10px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                          <button onClick={() => reativar(row)} disabled={busyId === row.id} style={{ minWidth: 82, border: '1px solid #bfdbfe', background: '#eff6ff', color: 'var(--blue-500)', borderRadius: 7, padding: '6px 10px', fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}>
                             {busyId === row.id ? '...' : row.idPeca ? 'Reativar' : 'Excluir'}
                           </button>
                         </div>
