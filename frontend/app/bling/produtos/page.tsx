@@ -1,10 +1,9 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { API_BASE, BACKEND_PUBLIC_URL } from '@/lib/api-base';
+import { API_BASE } from '@/lib/api-base';
 import { api } from '@/lib/api';
 
 const API = API_BASE;
-const BACKEND = BACKEND_PUBLIC_URL;
 
 const s: any = {
   topbar: { height: 'var(--topbar-h)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 28px', background: 'var(--white)', borderBottom: '1px solid var(--border)', position: 'sticky' as const, top: 0, zIndex: 50 },
@@ -422,9 +421,10 @@ export default function BlingProdutosPage() {
     setComparando(true);
     setComparacao(null);
     try {
-      const response = await fetch(`${BACKEND}/bling/comparar-produtos`, {
+      const response = await fetch(`${API}/bling/comparar-produtos`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({
           texto: listaComparacao,
           motoId: motoComparacaoId ? Number(motoComparacaoId) : null,
@@ -456,9 +456,10 @@ export default function BlingProdutosPage() {
     setCsvComparando(true);
     setCsvComparacao(null);
     try {
-      const response = await fetch(`${BACKEND}/bling/comparar-produtos-csv`, {
+      const response = await fetch(`${API}/bling/comparar-produtos-csv`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({
           linhas: csvLinhas,
           escopoAnb: csvEscopoAnb,

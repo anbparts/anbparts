@@ -29,13 +29,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         ok: false,
-        error: `[api-proxy/comparar-produtos] ${error?.message || 'Erro ao encaminhar comparacao manual'}`,
+        error: `[api-proxy/comparar-produtos] ${error?.message || 'Erro ao encaminhar requisicao'}`,
       },
       {
         status: 500,
-        headers: {
-          'Cache-Control': 'no-store',
-        },
+        headers: { 'Cache-Control': 'no-store' },
       },
     );
   }

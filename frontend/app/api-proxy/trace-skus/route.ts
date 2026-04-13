@@ -29,13 +29,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         ok: false,
-        error: `[api-proxy/trace-skus] ${error?.message || 'Erro ao encaminhar trace de SKUs'}`,
+        error: `[api-proxy/trace-skus] ${error?.message || 'Erro ao encaminhar requisicao'}`,
       },
       {
         status: 500,
-        headers: {
-          'Cache-Control': 'no-store',
-        },
+        headers: { 'Cache-Control': 'no-store' },
       },
     );
   }
