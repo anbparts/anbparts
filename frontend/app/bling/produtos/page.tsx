@@ -424,17 +424,15 @@ export default function BlingProdutosPage() {
     setComparacaoProgresso(null);
 
     try {
-      // 1. Resolve a lista de SKUs — se for por moto, busca do backend
+      // 1. Resolve a lista de SKUs já filtrada pelo escopo da auditoria
       let skus: string[] = [];
       if (motoComparacaoId) {
-        const moto = await api.motos.get(Number(motoComparacaoId));
-        const pecas: any[] = moto?.pecas || [];
-        const vistos = new Set<string>();
-        for (const p of pecas) {
-          const base = (p.idPeca || '').replace(/-\d+$/, '').trim().toUpperCase();
-          if (base && !vistos.has(base)) { vistos.add(base); skus.push(base); }
-        }
+        // Busca SKUs da moto já filtrados pelo escopo configurado na auditoria
+        const res = await fetch(`${API}/bling/skus-da-moto?motoId=${motoComparacaoId}`, { credentials: 'include' });
+        const resData = await res.json();
+        skus = resData?.skus || [];
       } else {
+        // Lista manual: deduplica e normaliza, o backend vai filtrar pelo escopo
         const vistos = new Set<string>();
         for (const linha of listaComparacao.split('\n')) {
           const base = linha.replace(/-\d+$/, '').trim().toUpperCase();

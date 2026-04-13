@@ -4257,6 +4257,34 @@ blingRouter.post('/sync/produtos', async (req, res, next) => {
   }
 });
 
+blingRouter.get('/skus-da-moto', async (req, res, next) => {
+  try {
+    const motoId = Number(req.query.motoId);
+    if (!motoId) return res.status(400).json({ error: 'Informe motoId' });
+
+    const cfg = await getConfig();
+    const escopo = cfg.auditoriaEscopo || 'full';
+
+    // Busca SKUs base da moto
+    const pecasDaMoto = await prisma.peca.findMany({
+      where: { motoId },
+      select: { idPeca: true },
+      orderBy: { idPeca: 'asc' },
+    });
+    const skusDaMoto = new Set(pecasDaMoto.map((p: any) => getBaseSku(p.idPeca)).filter(Boolean));
+
+    if (!skusDaMoto.size) return res.json({ ok: true, escopo, skus: [], total: 0 });
+
+    // Filtra pelo escopo da auditoria
+    const localEscopo = await loadAllLocalSkuResumo(escopo);
+    const skusFiltrados = localEscopo.codigos.filter((codigo: string) => skusDaMoto.has(codigo));
+
+    res.json({ ok: true, escopo, skus: skusFiltrados, total: skusFiltrados.length });
+  } catch (e) {
+    next(e);
+  }
+});
+
   blingRouter.post('/comparar-produtos', async (req, res, next) => {
     try {
       const { resultado, traceCodigos } = await runTraceSkuComparison(
