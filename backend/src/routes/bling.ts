@@ -2598,61 +2598,66 @@ async function compareProdutosBlingCodes(
         retryHistory: [],
       };
     if (!statusMercadoLivre.found && produtoBling?.id) {
-      let lojaRowsFinal = productStoreLinksByProductId.get(Number(produtoBling.id)) || [];
+      try {
+        let lojaRowsFinal = productStoreLinksByProductId.get(Number(produtoBling.id)) || [];
 
-      if (!lojaRowsFinal.length) {
-        const productLinksFallback = await findProdutoLojaLinksByProductIds([Number(produtoBling.id)]);
-        lojaRowsFinal = productLinksFallback.get(Number(produtoBling.id)) || [];
-      }
-
-      if (lojaRowsFinal.length) {
-        let collectedFinal: Array<{
-          code: number;
-          label: string;
-          isActive: boolean;
-          anuncioId: number | null;
-          lojaId: number;
-        }> = [];
-
-        const detailFallback = await collectMercadoLivreStatusesFromLojaRows(lojaRowsFinal, false);
-        if (detailFallback.collected.length) {
-          collectedFinal = detailFallback.collected;
+        if (!lojaRowsFinal.length) {
+          const productLinksFallback = await findProdutoLojaLinksByProductIds([Number(produtoBling.id)]);
+          lojaRowsFinal = productLinksFallback.get(Number(produtoBling.id)) || [];
         }
 
-        if (!collectedFinal.length) {
-          const lojaIdsFinal = getProdutoLojaIds(lojaRowsFinal);
-          const queryFallback = await collectMercadoLivreStatusesForProduct(Number(produtoBling.id), lojaIdsFinal, false);
-          if (queryFallback.collected.length) {
-            collectedFinal = queryFallback.collected;
+        if (lojaRowsFinal.length) {
+          let collectedFinal: Array<{
+            code: number;
+            label: string;
+            isActive: boolean;
+            anuncioId: number | null;
+            lojaId: number;
+          }> = [];
+
+          const detailFallback = await collectMercadoLivreStatusesFromLojaRows(lojaRowsFinal, false);
+          if (detailFallback.collected.length) {
+            collectedFinal = detailFallback.collected;
+          }
+
+          if (!collectedFinal.length) {
+            const lojaIdsFinal = getProdutoLojaIds(lojaRowsFinal);
+            const queryFallback = await collectMercadoLivreStatusesForProduct(Number(produtoBling.id), lojaIdsFinal, false);
+            if (queryFallback.collected.length) {
+              collectedFinal = queryFallback.collected;
+            }
+          }
+
+          if (collectedFinal.length) {
+            const prioritizedFinal = collectedFinal.find((item) => !item.isActive) || collectedFinal.find((item) => item.isActive) || null;
+            if (prioritizedFinal) {
+              statusMercadoLivre = {
+                found: true,
+                label: prioritizedFinal.label,
+                isActive: prioritizedFinal.isActive,
+                code: prioritizedFinal.code,
+                anuncioIds: Array.from(new Set(collectedFinal.map((item) => item.anuncioId).filter(Boolean))) as number[],
+                lojaIds: Array.from(new Set(collectedFinal.map((item) => item.lojaId))),
+                initialFound: statusMercadoLivre.initialFound,
+                retryAttempts: Math.max(1, Number(statusMercadoLivre.retryAttempts || 0)),
+                resolvedByRetry: true,
+                retryHistory: [
+                  ...(Array.isArray(statusMercadoLivre.retryHistory) ? statusMercadoLivre.retryHistory : []),
+                  {
+                    attempt: Math.max(1, Number(statusMercadoLivre.retryAttempts || 0) + 1),
+                    source: detailFallback.collected.length ? 'detail_fallback' : 'product_store_query',
+                    found: true,
+                    code: prioritizedFinal.code,
+                    label: prioritizedFinal.label,
+                  },
+                ],
+              };
+            }
           }
         }
-
-        if (collectedFinal.length) {
-          const prioritizedFinal = collectedFinal.find((item) => !item.isActive) || collectedFinal.find((item) => item.isActive) || null;
-          if (prioritizedFinal) {
-            statusMercadoLivre = {
-              found: true,
-              label: prioritizedFinal.label,
-              isActive: prioritizedFinal.isActive,
-              code: prioritizedFinal.code,
-              anuncioIds: Array.from(new Set(collectedFinal.map((item) => item.anuncioId).filter(Boolean))) as number[],
-              lojaIds: Array.from(new Set(collectedFinal.map((item) => item.lojaId))),
-              initialFound: statusMercadoLivre.initialFound,
-              retryAttempts: Math.max(1, Number(statusMercadoLivre.retryAttempts || 0)),
-              resolvedByRetry: true,
-              retryHistory: [
-                ...(Array.isArray(statusMercadoLivre.retryHistory) ? statusMercadoLivre.retryHistory : []),
-                {
-                  attempt: Math.max(1, Number(statusMercadoLivre.retryAttempts || 0) + 1),
-                  source: detailFallback.collected.length ? 'detail_fallback' : 'product_store_query',
-                  found: true,
-                  code: prioritizedFinal.code,
-                  label: prioritizedFinal.label,
-                },
-              ],
-            };
-          }
-        }
+      } catch (error: any) {
+        if (!options?.suppressMarketplaceErrors) throw error;
+        warnings.add(`Falha ao complementar status do Mercado Livre para ${codigo}: ${error?.message || 'erro desconhecido'}`);
       }
     }
     const estoqueMaximoBling = produtoBling?.id
@@ -3946,6 +3951,7 @@ blingRouter.post('/auditoria-automatica/trace-skus', async (req, res, next) => {
       syncDetran: true,
       syncMercadoLivreItemId: true,
       syncMercadoLivreLink: false,
+      suppressMarketplaceErrors: true,
       batchSize: Math.max(1, Math.min(10, traceCodigos.length || 1)),
       pauseMs: Math.max(300, cfg.auditoriaPausaMs),
       traceSkus: traceSkuSet,
@@ -3955,6 +3961,7 @@ blingRouter.post('/auditoria-automatica/trace-skus', async (req, res, next) => {
       ok: true,
       auditoriaEscopo: cfg.auditoriaEscopo,
       traceSkus: buildAuditoriaTraceResumo(localEscopo, resultado, traceSkuSet),
+      warnings: Array.isArray(resultado?.warnings) ? resultado.warnings : [],
     });
   } catch (e) {
     next(e);
