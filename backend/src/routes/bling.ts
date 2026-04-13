@@ -3940,6 +3940,18 @@ blingRouter.post('/auditoria-automatica/trace-skus', async (req, res, next) => {
   try {
     const cfg = await getConfig();
     const traceSkuSet = buildAuditoriaTraceSkuSet(req.body?.skus || req.body?.codigos || req.body?.texto);
+    const motoId = Number(req.body?.motoId) || 0;
+    if (motoId) {
+      const pecasDaMoto = await prisma.peca.findMany({
+        where: { motoId },
+        select: { idPeca: true },
+        orderBy: { idPeca: 'asc' },
+      });
+      for (const peca of pecasDaMoto) {
+        const codigo = getBaseSku(peca.idPeca);
+        if (codigo) traceSkuSet.add(codigo);
+      }
+    }
     const traceCodigos = Array.from(traceSkuSet);
     const localEscopo = await loadAllLocalSkuResumo(cfg.auditoriaEscopo);
     const localPecasTrace = localEscopo.pecas.filter((peca) => traceSkuSet.has(getBaseSku(peca.idPeca)));
@@ -3960,6 +3972,7 @@ blingRouter.post('/auditoria-automatica/trace-skus', async (req, res, next) => {
     res.json({
       ok: true,
       auditoriaEscopo: cfg.auditoriaEscopo,
+      comparacao: resultado,
       traceSkus: buildAuditoriaTraceResumo(localEscopo, resultado, traceSkuSet),
       warnings: Array.isArray(resultado?.warnings) ? resultado.warnings : [],
     });

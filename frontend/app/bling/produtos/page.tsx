@@ -71,6 +71,13 @@ type Comparacao = {
   warnings?: string[];
 };
 
+type TraceComparacaoResponse = {
+  ok?: boolean;
+  error?: string;
+  comparacao?: Comparacao;
+  warnings?: string[];
+};
+
 type CsvLinha = {
   id?: string;
   codigo: string;
@@ -376,23 +383,33 @@ export default function BlingProdutosPage() {
     setComparando(true);
     setComparacao(null);
     try {
-      const response = await fetch(`${API}/bling/comparar-produtos`, {
+      const response = await fetch(`${API}/bling/auditoria-automatica/trace-skus`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          codigos: listaComparacao,
+          texto: listaComparacao,
           motoId: motoComparacaoId ? Number(motoComparacaoId) : null,
         }),
       });
-      const data = await ensureApiJson<Comparacao>(response, 'Erro ao comparar produtos no Bling');
+      const data = await ensureApiJson<TraceComparacaoResponse>(response, 'Erro ao comparar produtos no Bling');
       if (!data.ok) {
         alert(data.error || 'Erro ao comparar produtos');
         return;
       }
 
-      setComparacao(data);
-      if (Array.isArray(data.warnings) && data.warnings.length) {
-        alert(data.warnings.join('\n'));
+      if (!data.comparacao) {
+        alert('A consulta retornou sem o bloco de comparacao.');
+        return;
+      }
+
+      setComparacao(data.comparacao);
+      const warnings = Array.isArray(data.warnings) && data.warnings.length
+        ? data.warnings
+        : Array.isArray(data.comparacao.warnings) && data.comparacao.warnings.length
+          ? data.comparacao.warnings
+          : [];
+      if (warnings.length) {
+        alert(warnings.join('\n'));
       }
     } catch (e: any) {
       alert(`Erro: ${e.message}`);
