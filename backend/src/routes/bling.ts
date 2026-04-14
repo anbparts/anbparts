@@ -2547,7 +2547,8 @@ async function compareProdutosBlingCodes(
         const locationMeta = resolveBlingLocation(produto);
         const needsLocationDetail = !!options?.syncLocalizacao && !locationMeta.resolved;
         const needsDetranDetail = !!options?.syncDetran && skusMissingDetran.has(codigo);
-        return qtdBling > 0 || needsLocationDetail || needsDetranDetail ? Number(produto.id) : 0;
+        const needsCamposFisicos = !!options?.syncCamposFisicos;
+        return qtdBling > 0 || needsLocationDetail || needsDetranDetail || needsCamposFisicos ? Number(produto.id) : 0;
       })
       .filter((id): id is number => Number.isFinite(id) && id > 0),
   ));
@@ -2593,14 +2594,15 @@ async function compareProdutosBlingCodes(
     ? mercadoLivreStatusData.productStoreLinks
     : new Map<number, any[]>();
 
-  if ((options?.syncLocalizacao || options?.syncDetran || options?.syncMercadoLivreItemId || options?.syncMercadoLivreLink) && localPecas.length) {
+  if ((options?.syncLocalizacao || options?.syncDetran || options?.syncMercadoLivreItemId || options?.syncMercadoLivreLink || options?.syncCamposFisicos) && localPecas.length) {
     await syncPecaMetadataFromBling(localPecas, produtosBling, detalhesBlingByProductId, productStoreLinksByProductId, {
       syncLocalizacao: options?.syncLocalizacao,
       syncDetran: options?.syncDetran,
       syncMercadoLivreItemId: options?.syncMercadoLivreItemId,
       syncMercadoLivreLink: options?.syncMercadoLivreLink,
+      syncCamposFisicos: options?.syncCamposFisicos,
       statusMercadoLivreByProductId,
-      });
+    });
     }
 
     await emitProgress({
