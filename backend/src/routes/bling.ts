@@ -3716,6 +3716,7 @@ async function executeAuditoriaAutomatica(origem: 'manual' | 'auto' = 'manual') 
       syncDetran: true,
       syncMercadoLivreItemId: true,
       syncMercadoLivreLink: false,
+      syncCamposFisicos: true,
       batchSize: cfg.auditoriaTamanhoLote,
       pauseMs: cfg.auditoriaPausaMs,
       traceSkus: traceSkuSet,
