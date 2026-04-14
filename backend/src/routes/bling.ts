@@ -2337,8 +2337,6 @@ async function syncPecaMetadataFromBling(
         })
       : { link: null, resolved: false };
 
-    if (!locationMeta.resolved && !detranMeta.resolved && !mercadoLivreItemIdResolved && !mercadoLivreLinkMeta.resolved && !camposFisicosResolved) continue;
-
     // Campos físicos e número de peça do detalhe do Bling
     const camposCustomizados: any[] = Array.isArray(detail?.camposCustomizados) ? detail.camposCustomizados : [];
     const pesoLiquido = detail?.pesoLiquido != null ? Number(detail.pesoLiquido) : null;
@@ -2348,6 +2346,8 @@ async function syncPecaMetadataFromBling(
     const profundidade = detail?.dimensoes?.profundidade != null ? Number(detail.dimensoes.profundidade) : null;
     const numeroPeca = camposCustomizados.find((c: any) => Number(c.idCampoCustomizado) === BLING_NUMERO_PECA_CAMPO_ID)?.valor || null;
     const camposFisicosResolved = options?.syncCamposFisicos && detail != null;
+
+    if (!locationMeta.resolved && !detranMeta.resolved && !mercadoLivreItemIdResolved && !mercadoLivreLinkMeta.resolved && !camposFisicosResolved) continue;
 
     targetBySku.set(skuBase, {
       location: locationMeta.location,
