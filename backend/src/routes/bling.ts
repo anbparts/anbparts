@@ -2175,6 +2175,12 @@ async function listPecasForComparacaoByCodes(codigos: string[]) {
       disponivel: true,
       emPrejuizo: true,
       dataVenda: true,
+      pesoLiquido: true,
+      pesoBruto: true,
+      largura: true,
+      altura: true,
+      profundidade: true,
+      numeroPeca: true,
       prejuizo: { select: { motivo: true } },
       moto: { select: { marca: true, modelo: true } },
     },
@@ -2980,7 +2986,25 @@ async function runTraceSkuComparison(rawSkus: any, rawMotoId: any) {
   const localCodesInScope = localEscopo.codigos.filter((codigo) => requestedSkuSet.has(codigo));
   const externalRequestedCodes = Array.from(requestedSkuSet).filter((codigo) => !localEscopo.localMap.has(codigo));
   const codigosParaComparar = Array.from(new Set([...localCodesInScope, ...externalRequestedCodes]));
-  const localPecasTrace = localEscopo.pecas.filter((peca) => requestedSkuSet.has(getBaseSku(peca.idPeca)));
+
+  // Busca TODAS as pecas dos SKUs solicitados diretamente (sem filtro de escopo)
+  // para garantir que campos físicos sejam atualizados mesmo em pecas vendidas
+  const whereOr = Array.from(requestedSkuSet).flatMap((sku) => [
+    { idPeca: sku },
+    { idPeca: { startsWith: `${sku}-` } },
+  ]);
+  const localPecasTrace = whereOr.length > 0
+    ? await prisma.peca.findMany({
+        where: { OR: whereOr },
+        select: {
+          id: true, idPeca: true, descricao: true, localizacao: true,
+          detranEtiqueta: true, mercadoLivreItemId: true, mercadoLivreLink: true,
+          disponivel: true, emPrejuizo: true, dataVenda: true,
+          pesoLiquido: true, pesoBruto: true, largura: true, altura: true,
+          profundidade: true, numeroPeca: true,
+        },
+      })
+    : localEscopo.pecas.filter((peca: any) => requestedSkuSet.has(getBaseSku(peca.idPeca)));
 
   if (!codigosParaComparar.length) {
     return {
