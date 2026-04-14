@@ -1154,7 +1154,7 @@ export default function DespesasPage() {
             <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>
               Visualizacao <span style={{ fontSize: 12, color: 'var(--ink-muted)', fontWeight: 400 }}>- {filtradas.length} registros</span>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : isCompact ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fit, minmax(140px, max-content))', gap: 8, width: isCompact ? '100%' : 'auto' }}>
+            <div style={{ display: 'flex', flexWrap: isCompact ? 'wrap' : 'nowrap', gap: 8, width: isCompact ? '100%' : 'auto', alignItems: 'center' }}>
               {modo === 'relatorio' && (
                 <>
                   <button
