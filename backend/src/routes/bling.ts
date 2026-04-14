@@ -4257,6 +4257,69 @@ blingRouter.post('/sync/produtos', async (req, res, next) => {
   }
 });
 
+blingRouter.post('/atualizar-link-ml-skus', async (req, res, next) => {
+  try {
+    const skus: string[] = Array.isArray(req.body?.skus) ? req.body.skus : [];
+    if (!skus.length) return res.status(400).json({ error: 'Informe ao menos um SKU' });
+
+    const mercadoLivreConfig = await prisma.mercadoLivreConfig.findFirst({
+      select: { accessToken: true },
+    });
+    if (!mercadoLivreConfig?.accessToken) {
+      return res.status(400).json({ error: 'Mercado Livre nao conectado para atualizar links' });
+    }
+
+    // Busca pecas dos SKUs informados que estao disponiveis e tem item ML
+    const whereOr = skus.flatMap((sku) => [
+      { idPeca: sku },
+      { idPeca: { startsWith: `${sku}-` } },
+    ]);
+    const pecas = await prisma.peca.findMany({
+      where: {
+        AND: [
+          { OR: whereOr },
+          { disponivel: true },
+          { mercadoLivreItemId: { not: null } },
+        ],
+      },
+      select: { id: true, mercadoLivreItemId: true, mercadoLivreLink: true },
+    });
+
+    const rowsByItemId = new Map<string, Array<{ id: number; mercadoLivreLink: string | null }>>();
+    for (const peca of pecas) {
+      const itemId = normalizeMercadoLivreItemCode(peca.mercadoLivreItemId);
+      if (!itemId) continue;
+      const current = rowsByItemId.get(itemId) || [];
+      current.push({ id: Number(peca.id), mercadoLivreLink: String(peca.mercadoLivreLink || '').trim() || null });
+      rowsByItemId.set(itemId, current);
+    }
+
+    const itemIds = Array.from(rowsByItemId.keys());
+    let totalAtualizadas = 0;
+    let totalSemPermalink = 0;
+
+    await processInBatches(itemIds, 10, 200, async (batch) => {
+      await mapWithConcurrency(batch, 4, async (itemId) => {
+        const permalink = await getMercadoLivreItemPermalink(itemId);
+        if (!permalink) { totalSemPermalink += 1; return null; }
+        const targetRows = rowsByItemId.get(itemId) || [];
+        const idsToUpdate = targetRows
+          .filter((row) => (String(row.mercadoLivreLink || '').trim() || null) !== permalink)
+          .map((row) => row.id);
+        if (idsToUpdate.length) {
+          await prisma.peca.updateMany({ where: { id: { in: idsToUpdate } }, data: { mercadoLivreLink: permalink } });
+          totalAtualizadas += idsToUpdate.length;
+        }
+        return null;
+      });
+    });
+
+    res.json({ ok: true, totalPecas: pecas.length, totalItensMl: itemIds.length, totalAtualizadas, totalSemPermalink });
+  } catch (e) {
+    next(e);
+  }
+});
+
 blingRouter.get('/skus-da-moto', async (req, res, next) => {
   try {
     const motoId = Number(req.query.motoId);

@@ -228,10 +228,13 @@ export default function BlingProdutosPage() {
   const [motoFallback, setMotoFallback] = useState('');
   const [defaults, setDefaults] = useState<Defaults>({ fretePadrao: 29.9, taxaPadraoPct: 17 });
   const [listaComparacao, setListaComparacao] = useState('');
-  const [motoComparacaoId, setMotoComparacaoId] = useState('');
+  const [motoComparacaoIds, setMotoComparacaoIds] = useState<number[]>([]);
+  const [prefixosMoto, setPrefixosMoto] = useState<Array<{ prefixo: string; motoId: number }>>([]);
   const [comparando, setComparando] = useState(false);
   const [comparacao, setComparacao] = useState<Comparacao | null>(null);
   const [comparacaoProgresso, setComparacaoProgresso] = useState<{ loteAtual: number; totalLotes: number; skusConsultados: number; totalSkus: number } | null>(null);
+  const [atualizandoLinkMl, setAtualizandoLinkMl] = useState(false);
+  const [linkMlProgresso, setLinkMlProgresso] = useState<{ loteAtual: number; totalLotes: number; totalAtualizadas: number } | null>(null);
   const [consultaManualTamanhoLote, setConsultaManualTamanhoLote] = useState('100');
   const [consultaManualPausaMs, setConsultaManualPausaMs] = useState('400');
   const [salvandoConsultaManual, setSalvandoConsultaManual] = useState(false);
@@ -331,6 +334,10 @@ export default function BlingProdutosPage() {
 
   useEffect(() => {
     api.motos.list().then(setMotos).catch(() => {});
+    fetch(`${API}/bling/prefixos`, { credentials: 'include' })
+      .then((r) => r.json())
+      .then((data) => setPrefixosMoto(Array.isArray(data) ? data.map((p: any) => ({ prefixo: String(p.prefixo || ''), motoId: Number(p.motoId) })) : []))
+      .catch(() => {});
     fetch(`${API}/bling/config`).then((r) => r.json()).then((d) => setConnected(d.hasTokens)).catch(() => setConnected(false));
     fetch(`${API}/bling/config-produtos`)
       .then((r) => r.json())
@@ -414,8 +421,8 @@ export default function BlingProdutosPage() {
   }
 
   async function compararProdutos() {
-    if (!listaComparacao.trim() && !motoComparacaoId) {
-      alert('Informe uma lista de IDs de peca / SKU ou selecione uma moto para comparar');
+    if (!listaComparacao.trim() && !motoComparacaoIds.length) {
+      alert('Informe uma lista de IDs de peca / SKU ou selecione ao menos uma moto para comparar');
       return;
     }
 
@@ -426,11 +433,16 @@ export default function BlingProdutosPage() {
     try {
       // 1. Resolve a lista de SKUs já filtrada pelo escopo da auditoria
       let skus: string[] = [];
-      if (motoComparacaoId) {
-        // Busca SKUs da moto já filtrados pelo escopo configurado na auditoria
-        const res = await fetch(`${API}/bling/skus-da-moto?motoId=${motoComparacaoId}`, { credentials: 'include' });
-        const resData = await res.json();
-        skus = resData?.skus || [];
+      if (motoComparacaoIds.length) {
+        // Busca SKUs de todas as motos selecionadas já filtrados pelo escopo
+        const vistos = new Set<string>();
+        for (const motoId of motoComparacaoIds) {
+          const res = await fetch(`${API}/bling/skus-da-moto?motoId=${motoId}`, { credentials: 'include' });
+          const resData = await res.json();
+          for (const sku of (resData?.skus || [])) {
+            if (!vistos.has(sku)) { vistos.add(sku); skus.push(sku); }
+          }
+        }
       } else {
         // Lista manual: deduplica e normaliza, o backend vai filtrar pelo escopo
         const vistos = new Set<string>();
@@ -488,6 +500,75 @@ export default function BlingProdutosPage() {
     }
     setComparando(false);
     setComparacaoProgresso(null);
+  }
+
+  async function atualizarLinkMl() {
+    if (!listaComparacao.trim() && !motoComparacaoIds.length) {
+      alert('Informe uma lista de IDs de peca / SKU ou selecione ao menos uma moto para atualizar links ML');
+      return;
+    }
+
+    setAtualizandoLinkMl(true);
+    setLinkMlProgresso(null);
+
+    try {
+      // 1. Resolve SKUs filtrados pelo escopo (mesma lógica do comparar)
+      let skus: string[] = [];
+      if (motoComparacaoIds.length) {
+        const vistos = new Set<string>();
+        for (const motoId of motoComparacaoIds) {
+          const res = await fetch(`${API}/bling/skus-da-moto?motoId=${motoId}`, { credentials: 'include' });
+          const resData = await res.json();
+          for (const sku of (resData?.skus || [])) {
+            if (!vistos.has(sku)) { vistos.add(sku); skus.push(sku); }
+          }
+        }
+      } else {
+        const vistos = new Set<string>();
+        for (const linha of listaComparacao.split('\n')) {
+          const base = linha.replace(/-\d+$/, '').trim().toUpperCase();
+          if (base && !vistos.has(base)) { vistos.add(base); skus.push(base); }
+        }
+      }
+
+      if (!skus.length) {
+        alert('Nenhum SKU encontrado para atualizar links ML');
+        setAtualizandoLinkMl(false);
+        return;
+      }
+
+      // 2. Divide em lotes de 20 SKUs e processa um por vez
+      const LOTE = 20;
+      const lotes: string[][] = [];
+      for (let i = 0; i < skus.length; i += LOTE) lotes.push(skus.slice(i, i + LOTE));
+
+      let totalAtualizadas = 0;
+
+      for (let i = 0; i < lotes.length; i++) {
+        setLinkMlProgresso({ loteAtual: i + 1, totalLotes: lotes.length, totalAtualizadas });
+
+        const response = await fetch('/api-proxy/atualizar-link-ml-skus', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ skus: lotes[i] }),
+        });
+        const data = await response.json();
+        if (!data.ok) {
+          alert(data.error || `Erro no lote ${i + 1}`);
+          break;
+        }
+        totalAtualizadas += data.totalAtualizadas || 0;
+        setLinkMlProgresso({ loteAtual: i + 1, totalLotes: lotes.length, totalAtualizadas });
+      }
+
+      setLinkMlProgresso(null);
+      alert(`Links ML atualizados: ${totalAtualizadas} peca(s) atualizada(s).`);
+    } catch (e: any) {
+      alert(`Erro: ${e.message}`);
+    }
+    setAtualizandoLinkMl(false);
+    setLinkMlProgresso(null);
   }
 
   async function compararCsv() {
@@ -661,17 +742,35 @@ export default function BlingProdutosPage() {
             </div>
           </div>
           <div style={{ marginBottom: 12 }}>
-            <label style={s.label}>Moto cadastrada para comparar tudo</label>
-            <select
-              style={{ ...s.input, width: '100%', cursor: 'pointer' }}
-              value={motoComparacaoId}
-              onChange={(e) => setMotoComparacaoId(e.target.value)}
-            >
-              <option value="">Selecionar moto opcionalmente</option>
-              {motos.map((moto: any) => (
-                <option key={moto.id} value={moto.id}>ID {moto.id} - {moto.marca} {moto.modelo}</option>
-              ))}
-            </select>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+              <label style={s.label}>Motos para comparar {motoComparacaoIds.length > 0 && <span style={{ color: 'var(--blue-500)', fontWeight: 700 }}>({motoComparacaoIds.length} selecionada{motoComparacaoIds.length > 1 ? 's' : ''})</span>}</label>
+              {motoComparacaoIds.length > 0 && (
+                <button onClick={() => setMotoComparacaoIds([])} style={{ fontSize: 11, color: 'var(--gray-400)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Limpar seleção</button>
+              )}
+            </div>
+            <div style={{ border: '1px solid var(--border)', borderRadius: 7, maxHeight: 180, overflowY: 'auto', background: 'var(--white)' }}>
+              {motos.map((moto: any) => {
+                const prefixo = prefixosMoto.find((p) => Number(p.motoId) === Number(moto.id));
+                const checked = motoComparacaoIds.includes(Number(moto.id));
+                return (
+                  <label key={moto.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', cursor: 'pointer', borderBottom: '1px solid var(--border)', background: checked ? 'rgba(59,130,246,.06)' : 'transparent' }}>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(e) => {
+                        const id = Number(moto.id);
+                        setMotoComparacaoIds((prev) => e.target.checked ? [...prev, id] : prev.filter((x) => x !== id));
+                      }}
+                      style={{ accentColor: 'var(--blue-500)', width: 14, height: 14, flexShrink: 0 }}
+                    />
+                    {prefixo && (
+                      <code style={{ fontFamily: 'JetBrains Mono, monospace', background: 'rgba(22,163,74,.1)', padding: '1px 6px', borderRadius: 4, color: 'var(--green)', fontWeight: 700, fontSize: 11, flexShrink: 0 }}>{prefixo.prefixo}</code>
+                    )}
+                    <span style={{ fontSize: 13, color: 'var(--gray-700)' }}>ID {moto.id} — {moto.marca} {moto.modelo}</span>
+                  </label>
+                );
+              })}
+            </div>
           </div>
           <textarea
             style={{ ...s.input, width: '100%', minHeight: 120, resize: 'vertical', fontFamily: 'JetBrains Mono, monospace', lineHeight: 1.5 }}
@@ -681,11 +780,18 @@ export default function BlingProdutosPage() {
           />
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginTop: 14 }}>
             <button
-              style={{ ...s.btn, background: 'var(--blue-500)', color: '#fff', opacity: (comparando || !connected) ? 0.6 : 1 }}
+              style={{ ...s.btn, background: 'var(--blue-500)', color: '#fff', opacity: (comparando || atualizandoLinkMl || !connected) ? 0.6 : 1 }}
               onClick={compararProdutos}
-              disabled={comparando || !connected}
+              disabled={comparando || atualizandoLinkMl || !connected}
             >
               {comparando ? 'Comparando...' : 'Comparar lista / moto'}
+            </button>
+            <button
+              style={{ ...s.btn, background: 'var(--amber)', color: '#fff', opacity: (comparando || atualizandoLinkMl || !connected) ? 0.6 : 1 }}
+              onClick={atualizarLinkMl}
+              disabled={comparando || atualizandoLinkMl || !connected}
+            >
+              {atualizandoLinkMl ? 'Atualizando...' : '🔗 Atualizar Link ML'}
             </button>
             <span style={{ fontSize: 12, color: 'var(--gray-400)' }}>
               Use essa revisao para encontrar divergencias de estoque entre a base do ANB e o saldo atual do Bling, incluindo alertas de anuncio do Mercado Livre fora do status ativo.
@@ -695,7 +801,7 @@ export default function BlingProdutosPage() {
             <div style={{ marginTop: 12, background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                 <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-700)' }}>
-                  Lote {comparacaoProgresso.loteAtual} de {comparacaoProgresso.totalLotes} — {comparacaoProgresso.skusConsultados} de {comparacaoProgresso.totalSkus} SKUs enviados
+                  Comparando — Lote {comparacaoProgresso.loteAtual} de {comparacaoProgresso.totalLotes} — {comparacaoProgresso.skusConsultados} de {comparacaoProgresso.totalSkus} SKUs
                 </span>
                 <span style={{ fontSize: 11, color: 'var(--gray-400)' }}>
                   {Math.round((comparacaoProgresso.loteAtual / comparacaoProgresso.totalLotes) * 100)}%
@@ -703,6 +809,21 @@ export default function BlingProdutosPage() {
               </div>
               <div style={{ height: 6, background: 'var(--border)', borderRadius: 4, overflow: 'hidden' }}>
                 <div style={{ height: '100%', background: 'var(--blue-500)', borderRadius: 4, width: `${Math.round((comparacaoProgresso.loteAtual / comparacaoProgresso.totalLotes) * 100)}%`, transition: 'width 0.3s ease' }} />
+              </div>
+            </div>
+          )}
+          {linkMlProgresso && (
+            <div style={{ marginTop: 12, background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-700)' }}>
+                  Atualizando Link ML — Lote {linkMlProgresso.loteAtual} de {linkMlProgresso.totalLotes} — {linkMlProgresso.totalAtualizadas} peca(s) atualizada(s)
+                </span>
+                <span style={{ fontSize: 11, color: 'var(--gray-400)' }}>
+                  {Math.round((linkMlProgresso.loteAtual / linkMlProgresso.totalLotes) * 100)}%
+                </span>
+              </div>
+              <div style={{ height: 6, background: 'var(--border)', borderRadius: 4, overflow: 'hidden' }}>
+                <div style={{ height: '100%', background: 'var(--amber)', borderRadius: 4, width: `${Math.round((linkMlProgresso.loteAtual / linkMlProgresso.totalLotes) * 100)}%`, transition: 'width 0.3s ease' }} />
               </div>
             </div>
           )}
