@@ -512,6 +512,47 @@ function DetranEtiquetaModal({ open, peca, onClose }: any) {
   );
 }
 
+function PecaDetalheModal({ open, peca, onClose }: any) {
+  if (!open || !peca) return null;
+
+  function Field({ label, value, mono = false }: { label: string; value?: any; mono?: boolean }) {
+    const display = value != null && value !== '' ? String(value) : '—';
+    return (
+      <div style={{ background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px' }}>
+        <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', marginBottom: 4 }}>{label}</div>
+        <div style={{ fontSize: 14, fontWeight: 600, color: display === '—' ? 'var(--gray-300)' : 'var(--gray-800)', fontFamily: mono ? 'Geist Mono, monospace' : 'inherit' }}>{display}</div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 235, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }}>
+      <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 16, width: '100%', maxWidth: 520, boxShadow: '0 12px 32px rgba(0,0,0,.10)' }}>
+        <div style={{ padding: '20px 22px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div style={{ fontFamily: 'Fraunces, serif', fontSize: 18, fontWeight: 600 }}>Detalhes da Peça</div>
+            <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 4 }}>{peca.idPeca} — {peca.descricao}</div>
+          </div>
+          <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer' }}>X</button>
+        </div>
+        <div style={{ padding: '20px 22px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <Field label="Peso Líquido (kg)" value={peca.pesoLiquido != null ? `${Number(peca.pesoLiquido)} kg` : null} />
+          <Field label="Peso Bruto (kg)"   value={peca.pesoBruto   != null ? `${Number(peca.pesoBruto)} kg`   : null} />
+          <Field label="Largura (cm)"      value={peca.largura      != null ? `${Number(peca.largura)} cm`      : null} />
+          <Field label="Altura (cm)"       value={peca.altura       != null ? `${Number(peca.altura)} cm`       : null} />
+          <Field label="Profundidade (cm)" value={peca.profundidade != null ? `${Number(peca.profundidade)} cm` : null} />
+          <Field label="Localização"       value={peca.localizacao} />
+          <Field label="Número de Peça"    value={peca.numeroPeca} mono />
+          <Field label="Etiqueta Detran"   value={peca.detranEtiqueta} mono />
+        </div>
+        <div style={{ padding: '0 22px 20px', display: 'flex', justifyContent: 'flex-end' }}>
+          <button onClick={onClose} style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink-soft)', borderColor: 'var(--border-strong)' }}>Fechar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PecaActionsModal({ open, peca, onClose, onEdit, onSell, onDelete }: any) {
   if (!open || !peca) return null;
   const bloqueadaPrejuizo = isPrejuizoPeca(peca);
@@ -1137,6 +1178,7 @@ export default function EstoquePage() {
   const [vendaPeca, setVendaPeca] = useState<any>(null);
   const [actionPeca, setActionPeca] = useState<any>(null);
   const [detranPeca, setDetranPeca] = useState<any>(null);
+  const [detalhePeca, setDetalhePeca] = useState<any>(null);
   const [selectedPecaIds, setSelectedPecaIds] = useState<number[]>([]);
   const [caixaFilterOpen, setCaixaFilterOpen] = useState(false);
   const [caixaFilterSearch, setCaixaFilterSearch] = useState('');
@@ -1612,7 +1654,7 @@ export default function EstoquePage() {
                           />
                           <div style={{ minWidth: 0 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                              <a href={`/estoque/peca?id=${p.id}`} style={{ fontFamily: 'Geist Mono, monospace', fontSize: 12.5, color: 'var(--blue-500)', textDecoration: 'none', fontWeight: 600 }} title="Ver detalhes">{p.idPeca}</a>
+                              <button onClick={() => setDetalhePeca(p)} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'Geist Mono, monospace', fontSize: 12.5, fontWeight: 600, color: 'var(--blue-500)' }} title="Ver detalhes">{p.idPeca}</button>
                               <span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11, color: 'var(--ink-muted)' }}>ID #{p.motoId}</span>
                               {bloqueadaPrejuizo ? <PrejuizoBadge /> : null}
                             </div>
@@ -1762,9 +1804,9 @@ export default function EstoquePage() {
                           </td>
                           <td style={{ ...cs.td, padding: denseTablePadding }}><span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11.5, color: 'var(--ink-muted)' }}>#{p.motoId}</span></td>
                           <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11.5, whiteSpace: 'nowrap' }}>
-                            <a href={`/estoque/peca?id=${p.id}`} style={{ color: isPrejuizoPeca(p) ? '#b91c1c' : 'var(--blue-500)', textDecoration: 'none', fontWeight: 600 }} title="Ver detalhes da peça">
+                            <button onClick={() => setDetalhePeca(p)} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'Geist Mono, monospace', fontSize: 11.5, fontWeight: 600, color: isPrejuizoPeca(p) ? '#b91c1c' : 'var(--blue-500)' }} title="Ver detalhes da peça">
                               {p.idPeca}
-                            </a>
+                            </button>
                           </td>
                           <td style={{ ...cs.td, padding: denseTablePadding, color: 'var(--ink-muted)', fontSize: 11.5, lineHeight: 1.35 }}>
                             <div style={{ display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden' }}>
@@ -1838,6 +1880,7 @@ export default function EstoquePage() {
       <PecaModal open={modal} onClose={() => { setModal(false); setEditPeca(null); }} onSave={handleSavePeca} onCancelSale={handleCancelSale} onMarkPrejuizo={handleMarkPrejuizo} peca={editPeca} motos={motos} viewportMode={viewportMode} />
       <VendaModal open={vendaModal} peca={vendaPeca} onClose={() => setVendaModal(false)} onConfirm={handleVenda} />
       <DetranEtiquetaModal open={Boolean(detranPeca)} peca={detranPeca} onClose={() => setDetranPeca(null)} />
+      <PecaDetalheModal open={Boolean(detalhePeca)} peca={detalhePeca} onClose={() => setDetalhePeca(null)} />
       <PecaActionsModal
         open={Boolean(actionPeca)}
         peca={actionPeca}
