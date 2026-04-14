@@ -2272,6 +2272,7 @@ async function syncPecaMetadataFromBling(
     syncDetran?: boolean;
     syncMercadoLivreItemId?: boolean;
     syncMercadoLivreLink?: boolean;
+    syncCamposFisicos?: boolean;
     statusMercadoLivreByProductId?: Map<number, {
       found: boolean;
       label: string | null;
@@ -2331,6 +2332,16 @@ async function syncPecaMetadataFromBling(
 
     if (!locationMeta.resolved && !detranMeta.resolved && !mercadoLivreItemIdResolved && !mercadoLivreLinkMeta.resolved) continue;
 
+    // Campos físicos e número de peça do detalhe do Bling
+    const camposCustomizados: any[] = Array.isArray(detail?.camposCustomizados) ? detail.camposCustomizados : [];
+    const pesoLiquido = detail?.pesoLiquido != null ? Number(detail.pesoLiquido) : null;
+    const pesoBruto = detail?.pesoBruto != null ? Number(detail.pesoBruto) : null;
+    const largura = detail?.dimensoes?.largura != null ? Number(detail.dimensoes.largura) : null;
+    const altura = detail?.dimensoes?.altura != null ? Number(detail.dimensoes.altura) : null;
+    const profundidade = detail?.dimensoes?.profundidade != null ? Number(detail.dimensoes.profundidade) : null;
+    const numeroPeca = camposCustomizados.find((c: any) => Number(c.idCampoCustomizado) === BLING_NUMERO_PECA_CAMPO_ID)?.valor || null;
+    const camposFisicosResolved = options?.syncCamposFisicos && detail != null;
+
     targetBySku.set(skuBase, {
       location: locationMeta.location,
       locationResolved: locationMeta.resolved,
@@ -2338,6 +2349,13 @@ async function syncPecaMetadataFromBling(
       detranResolved: detranMeta.resolved,
       mercadoLivreItemId,
       mercadoLivreItemIdResolved,
+      pesoLiquido,
+      pesoBruto,
+      largura,
+      altura,
+      profundidade,
+      numeroPeca,
+      camposFisicosResolved: !!camposFisicosResolved,
       mercadoLivreLink: mercadoLivreLinkMeta.link,
       mercadoLivreLinkResolved: mercadoLivreLinkMeta.resolved,
     });
@@ -2345,7 +2363,7 @@ async function syncPecaMetadataFromBling(
 
   if (!targetBySku.size) return 0;
 
-  const groupedUpdates = new Map<string, { ids: number[]; data: { localizacao?: string | null; detranEtiqueta?: string | null; mercadoLivreItemId?: string | null; mercadoLivreLink?: string | null } }>();
+  const groupedUpdates = new Map<string, { ids: number[]; data: { localizacao?: string | null; detranEtiqueta?: string | null; mercadoLivreItemId?: string | null; mercadoLivreLink?: string | null; pesoLiquido?: number | null; pesoBruto?: number | null; largura?: number | null; altura?: number | null; profundidade?: number | null; numeroPeca?: string | null } }>();
 
   for (const peca of localPecas) {
     const skuBase = getBaseSku(peca.idPeca);
@@ -2382,6 +2400,15 @@ async function syncPecaMetadataFromBling(
       if (currentLink !== target.mercadoLivreLink) {
         data.mercadoLivreLink = target.mercadoLivreLink;
       }
+    }
+
+    if (options?.syncCamposFisicos && target.camposFisicosResolved) {
+      if (target.pesoLiquido !== undefined) data.pesoLiquido = target.pesoLiquido;
+      if (target.pesoBruto !== undefined) data.pesoBruto = target.pesoBruto;
+      if (target.largura !== undefined) data.largura = target.largura;
+      if (target.altura !== undefined) data.altura = target.altura;
+      if (target.profundidade !== undefined) data.profundidade = target.profundidade;
+      if (target.numeroPeca !== undefined) data.numeroPeca = target.numeroPeca;
     }
 
     if (!Object.keys(data).length) continue;
@@ -2964,6 +2991,7 @@ async function runTraceSkuComparison(rawSkus: any, rawMotoId: any) {
     syncDetran: true,
     syncMercadoLivreItemId: true,
     syncMercadoLivreLink: false,
+    syncCamposFisicos: true,
     suppressMarketplaceErrors: true,
     batchSize: Math.max(10, Math.min(cfg.consultaManualTamanhoLote, codigosParaComparar.length || 1)),
     pauseMs: cfg.consultaManualPausaMs,
