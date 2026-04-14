@@ -4230,18 +4230,8 @@ blingRouter.post('/sync/produtos', async (req, res, next) => {
         if (!motoId && motoIdFallback) motoId = Number(motoIdFallback);
 
         const moto = motoId ? motosMap.get(Number(motoId)) : null;
-
         const qtdEstoque = Number(produto.estoque?.saldoVirtualTotal || produto.estoque?.saldo || 0);
         const localizacao = resolveBlingLocation(produto).location;
-
-        // Campos físicos e customizados
-        const pesoLiquido = produto.pesoLiquido != null ? Number(produto.pesoLiquido) : null;
-        const pesoBruto = produto.pesoBruto != null ? Number(produto.pesoBruto) : null;
-        const largura = produto.dimensoes?.largura != null ? Number(produto.dimensoes.largura) : null;
-        const altura = produto.dimensoes?.altura != null ? Number(produto.dimensoes.altura) : null;
-        const profundidade = produto.dimensoes?.profundidade != null ? Number(produto.dimensoes.profundidade) : null;
-        const camposCustomizados: any[] = Array.isArray(produto.camposCustomizados) ? produto.camposCustomizados : [];
-        const numeroPeca = camposCustomizados.find((c: any) => Number(c.idCampoCustomizado) === BLING_NUMERO_PECA_CAMPO_ID)?.valor || null;
 
         itens.push({
           id: produto.id,
@@ -4254,18 +4244,49 @@ blingRouter.post('/sync/produtos', async (req, res, next) => {
           moto: moto ? `${moto.marca} ${moto.modelo}` : null,
           jaExiste,
           semPrefixo: !motoId,
-          pesoLiquido,
-          pesoBruto,
-          largura,
-          altura,
-          profundidade,
-          numeroPeca,
+          // detalhes serão buscados abaixo para produtos novos
+          pesoLiquido: null,
+          pesoBruto: null,
+          largura: null,
+          altura: null,
+          profundidade: null,
+          numeroPeca: null,
+          mercadoLivreLink: null,
         });
       }
 
       if (produtos.length < 100) break;
       pagina += 1;
       await sleep(300);
+    }
+
+    // Busca detalhes dos produtos NOVOS em lotes para obter campos físicos e customizados
+    const novos = itens.filter((item) => !item.jaExiste);
+    if (novos.length > 0) {
+      const novosIds = novos.map((item) => Number(item.id));
+      await processInBatches(novosIds, 5, 300, async (batch) => {
+        await mapWithConcurrency(batch, 3, async (produtoId) => {
+          try {
+            const detalhe = await fetchBlingProductDetailById(produtoId);
+            if (!detalhe) return null;
+            const item = itens.find((i) => Number(i.id) === produtoId);
+            if (!item) return null;
+
+            item.pesoLiquido = detalhe.pesoLiquido != null ? Number(detalhe.pesoLiquido) : null;
+            item.pesoBruto = detalhe.pesoBruto != null ? Number(detalhe.pesoBruto) : null;
+            item.largura = detalhe.dimensoes?.largura != null ? Number(detalhe.dimensoes.largura) : null;
+            item.altura = detalhe.dimensoes?.altura != null ? Number(detalhe.dimensoes.altura) : null;
+            item.profundidade = detalhe.dimensoes?.profundidade != null ? Number(detalhe.dimensoes.profundidade) : null;
+            const campos: any[] = Array.isArray(detalhe.camposCustomizados) ? detalhe.camposCustomizados : [];
+            item.numeroPeca = campos.find((c: any) => Number(c.idCampoCustomizado) === BLING_NUMERO_PECA_CAMPO_ID)?.valor || null;
+            const lojaRows = await fetchProdutoLojaLinksByProductId(produtoId);
+            item.mercadoLivreLink = (await resolveBlingMercadoLivreLinkWithFallback(null, detalhe, lojaRows)).link || null;
+          } catch {
+            // ignora erros individuais
+          }
+          return null;
+        });
+      });
     }
 
     res.json({ ok: true, total: itens.length, itens });
