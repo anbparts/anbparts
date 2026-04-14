@@ -1172,6 +1172,7 @@ function VendaModal({ open, peca, onClose, onConfirm }: any) {
 
 export default function EstoquePage() {
   const [data, setData] = useState<any>({ total: 0, totalDisp: 0, totalVend: 0, data: [] });
+  const [exportando, setExportando] = useState(false);
   const [motos, setMotos] = useState<any[]>([]);
   const [prefixosMoto, setPrefixosMoto] = useState<Array<{ prefixo: string; motoId: number }>>([]);
   const [caixaOptions, setCaixaOptions] = useState<CaixaFilterOption[]>([]);
@@ -1410,6 +1411,69 @@ export default function EstoquePage() {
   }
 
   const hasActiveFilters = Boolean(filters.motoId || filters.marca || filters.disponivel !== '' || filters.mercadoLivreLink !== '' || filters.localizacao !== '' || filters.caixas.length || filters.detranEtiqueta !== '' || filters.dimensoes !== '' || filters.search || filters.numeroPeca || filters.dataVendaFrom || filters.dataVendaTo);
+  async function exportarExcel() {
+    setExportando(true);
+    try {
+      // Busca todos os registros com os mesmos filtros, sem paginação
+      const params: any = {
+        page: 1,
+        per: 99999,
+        orderBy: filters.orderBy,
+        orderDir: filters.orderDir,
+      };
+      if (filters.motoId) params.motoId = filters.motoId;
+      if (filters.marca) params.marca = filters.marca;
+      if (filters.disponivel !== '') params.disponivel = filters.disponivel;
+      if (filters.mercadoLivreLink !== '') params.mercadoLivreLink = filters.mercadoLivreLink;
+      if (filters.localizacao !== '') params.localizacao = filters.localizacao;
+      if (filters.caixas.length) params.caixas = filters.caixas;
+      if (filters.detranEtiqueta !== '') params.detranEtiqueta = filters.detranEtiqueta;
+      if (filters.dimensoes !== '') params.dimensoes = filters.dimensoes;
+      if (filters.search) params.search = filters.search;
+      if (filters.numeroPeca) params.numeroPeca = filters.numeroPeca;
+      if (filters.dataVendaFrom) params.dataVendaFrom = filters.dataVendaFrom;
+      if (filters.dataVendaTo) params.dataVendaTo = filters.dataVendaTo;
+
+      const result = await api.pecas.list(params);
+      const pecas = result?.data || [];
+
+      const XLSX = await import('xlsx');
+      const rows = pecas.map((p: any) => ({
+        'ID Peca': p.idPeca,
+        'Descricao': p.descricao,
+        'Moto': p.moto ? `${p.moto.marca} ${p.moto.modelo}` : '',
+        'Status': p.emPrejuizo ? 'Prejuizo' : p.disponivel ? 'Em estoque' : 'Vendida',
+        'Localizacao': p.localizacao || '',
+        'Numero de Peca': p.numeroPeca || '',
+        'Preco ML': Number(p.precoML) || 0,
+        'Valor Liquido': Number(p.valorLiq) || 0,
+        'Frete': Number(p.valorFrete) || 0,
+        'Taxas': Number(p.valorTaxas) || 0,
+        'Peso Liquido (kg)': p.pesoLiquido != null ? Number(p.pesoLiquido) : '',
+        'Peso Bruto (kg)': p.pesoBruto != null ? Number(p.pesoBruto) : '',
+        'Largura (cm)': p.largura != null ? Number(p.largura) : '',
+        'Altura (cm)': p.altura != null ? Number(p.altura) : '',
+        'Profundidade (cm)': p.profundidade != null ? Number(p.profundidade) : '',
+        'Etiqueta Detran': p.detranEtiqueta || '',
+        'Link ML': p.mercadoLivreLink || '',
+        'Data Cadastro': p.cadastro ? new Date(p.cadastro).toLocaleDateString('pt-BR') : '',
+        'Data Venda': p.dataVenda ? new Date(p.dataVenda).toLocaleDateString('pt-BR') : '',
+        'Pedido Bling': p.blingPedidoNum || '',
+      }));
+
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Estoque');
+      const now = new Date();
+      const fileName = `estoque_${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+    } catch (e: any) {
+      alert(`Erro ao exportar: ${e.message}`);
+    } finally {
+      setExportando(false);
+    }
+  }
+
   const totalPages = Math.max(1, Math.ceil((data.total || 0) / filters.perPage));
   const hasPrevPage = filters.page > 1;
   const hasNextPage = filters.page < totalPages;
@@ -1621,6 +1685,13 @@ export default function EstoquePage() {
                 }}
               >
                 Deletar em massa{selectedPecaIds.length ? ` (${selectedPecaIds.length})` : ''}
+              </button>
+              <button
+                style={{ ...cs.btn, background: 'var(--white)', border: '1px solid var(--border)', color: exportando ? 'var(--ink-muted)' : 'var(--ink)', padding: '6px 14px', fontSize: 13, width: isPhone ? '100%' : undefined, opacity: exportando ? 0.6 : 1 }}
+                onClick={exportarExcel}
+                disabled={exportando}
+              >
+                {exportando ? 'Exportando...' : '↓ Exportar Excel'}
               </button>
               <button style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)', padding: '6px 14px', fontSize: 13, width: isPhone ? '100%' : undefined }} onClick={() => { setEditPeca(null); setModal(true); }}>+ Nova peca</button>
             </div>
