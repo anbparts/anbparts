@@ -750,23 +750,24 @@ export default function BlingProdutosPage() {
             </div>
           </div>
           <div style={{ marginBottom: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-              <label style={s.label}>Motos para comparar {motoComparacaoIds.length > 0 && <span style={{ color: 'var(--blue-500)', fontWeight: 700 }}>({motoComparacaoIds.length} selecionada{motoComparacaoIds.length > 1 ? 's' : ''})</span>}</label>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <button onClick={() => setShowMotosPopup(true)} style={{ fontSize: 11, color: 'var(--blue-500)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'Inter, sans-serif' }}>📋 Ver todas</button>
-                {motoComparacaoIds.length > 0 && (
-                  <button onClick={() => setMotoComparacaoIds([])} style={{ fontSize: 11, color: 'var(--gray-400)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Limpar seleção</button>
-                )}
-              </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <button
+                onClick={() => setShowMotosPopup(true)}
+                style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-700)' }}
+              >
+                🏍️ Selecionar Moto {motoComparacaoIds.length > 0 && <span style={{ marginLeft: 4, color: 'var(--blue-500)', fontWeight: 700 }}>({motoComparacaoIds.length})</span>}
+              </button>
+              {motoComparacaoIds.length > 0 && (
+                <button onClick={() => setMotoComparacaoIds([])} style={{ fontSize: 11, color: 'var(--gray-400)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Limpar</button>
+              )}
             </div>
 
-            {/* Popup de seleção de motos */}
             {showMotosPopup && (
               <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }}>
                 <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 16, width: '100%', maxWidth: 480, boxShadow: '0 12px 32px rgba(0,0,0,.10)', display: 'flex', flexDirection: 'column', maxHeight: '80vh' }}>
                   <div style={{ padding: '20px 22px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
                     <div>
-                      <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--gray-800)' }}>Selecionar motos</div>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--gray-800)' }}>Selecionar Moto</div>
                       {motoComparacaoIds.length > 0 && <div style={{ fontSize: 12, color: 'var(--blue-500)', marginTop: 2 }}>{motoComparacaoIds.length} selecionada{motoComparacaoIds.length > 1 ? 's' : ''}</div>}
                     </div>
                     <button onClick={() => setShowMotosPopup(false)} style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', fontSize: 14 }}>X</button>
@@ -786,34 +787,11 @@ export default function BlingProdutosPage() {
                   </div>
                   <div style={{ padding: '14px 22px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
                     <button onClick={() => setMotoComparacaoIds([])} style={{ fontSize: 12, color: 'var(--gray-400)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Limpar tudo</button>
-                    <button onClick={() => setShowMotosPopup(false)} style={{ ...s.btn, background: 'var(--blue-500)', color: '#fff' }}>OK — Confirmar seleção</button>
+                    <button onClick={() => setShowMotosPopup(false)} style={{ ...s.btn, background: 'var(--blue-500)', color: '#fff' }}>OK — Confirmar</button>
                   </div>
                 </div>
               </div>
             )}
-            <div style={{ border: '1px solid var(--border)', borderRadius: 7, maxHeight: 180, overflowY: 'auto', background: 'var(--white)' }}>
-              {motos.map((moto: any) => {
-                const prefixo = prefixosMoto.find((p) => Number(p.motoId) === Number(moto.id));
-                const checked = motoComparacaoIds.includes(Number(moto.id));
-                return (
-                  <label key={moto.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', cursor: 'pointer', borderBottom: '1px solid var(--border)', background: checked ? 'rgba(59,130,246,.06)' : 'transparent' }}>
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={(e) => {
-                        const id = Number(moto.id);
-                        setMotoComparacaoIds((prev) => e.target.checked ? [...prev, id] : prev.filter((x) => x !== id));
-                      }}
-                      style={{ accentColor: 'var(--blue-500)', width: 14, height: 14, flexShrink: 0 }}
-                    />
-                    {prefixo && (
-                      <code style={{ fontFamily: 'JetBrains Mono, monospace', background: 'rgba(22,163,74,.1)', padding: '1px 6px', borderRadius: 4, color: 'var(--green)', fontWeight: 700, fontSize: 11, flexShrink: 0 }}>{prefixo.prefixo}</code>
-                    )}
-                    <span style={{ fontSize: 13, color: 'var(--gray-700)' }}>ID {moto.id} — {moto.marca} {moto.modelo}</span>
-                  </label>
-                );
-              })}
-            </div>
           </div>
           <textarea
             style={{ ...s.input, width: '100%', minHeight: 120, resize: 'vertical', fontFamily: 'JetBrains Mono, monospace', lineHeight: 1.5 }}

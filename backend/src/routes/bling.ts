@@ -2985,7 +2985,8 @@ async function runTraceSkuComparison(rawSkus: any, rawMotoId: any) {
   const localEscopo = await loadAllLocalSkuResumo(cfg.auditoriaEscopo);
   const localCodesInScope = localEscopo.codigos.filter((codigo) => requestedSkuSet.has(codigo));
   const externalRequestedCodes = Array.from(requestedSkuSet).filter((codigo) => !localEscopo.localMap.has(codigo));
-  const codigosParaComparar = Array.from(new Set([...localCodesInScope, ...externalRequestedCodes]));
+  // Inclui todos os SKUs solicitados — ignora filtro de escopo na consulta manual
+  const codigosParaComparar = Array.from(new Set([...localCodesInScope, ...externalRequestedCodes, ...Array.from(requestedSkuSet)]));
 
   // Busca TODAS as pecas dos SKUs solicitados diretamente (sem filtro de escopo)
   // para garantir que campos físicos sejam atualizados mesmo em pecas vendidas
