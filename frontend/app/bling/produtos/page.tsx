@@ -508,6 +508,7 @@ export default function BlingProdutosPage() {
     }
     setComparando(false);
     setComparacaoProgresso(null);
+    setMotoComparacaoIds([]);
   }
 
   async function atualizarLinkMl() {
@@ -577,6 +578,7 @@ export default function BlingProdutosPage() {
     }
     setAtualizandoLinkMl(false);
     setLinkMlProgresso(null);
+    setMotoComparacaoIds([]);
   }
 
   async function compararCsv() {
