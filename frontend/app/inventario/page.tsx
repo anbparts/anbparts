@@ -1239,6 +1239,25 @@ export default function InventarioPage() {
             <div style={{ display: 'grid', gridTemplateColumns: mainColumns, gap: 12 }}>
               <div style={s.card}>
                 <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 12 }}>Caixas para conferencia</div>
+                <div style={{ marginBottom: 12, background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
+                  <label style={{ ...s.label, marginBottom: 4 }}>📦 Bipe a caixa para selecioná-la</label>
+                  <input
+                    ref={bipeCaixaRef}
+                    style={{ ...s.input, width: '100%', fontFamily: 'JetBrains Mono, monospace', fontWeight: 600 }}
+                    value={bipeCaixaInput}
+                    onChange={(e) => setBipeCaixaInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && bipeCaixaInput.trim()) {
+                        handleBipeCaixa(bipeCaixaInput.trim());
+                        setBipeCaixaInput('');
+                      }
+                    }}
+                    placeholder="Bipe o código da caixa..."
+                    autoComplete="off"
+                    autoFocus
+                  />
+                  {selectedCaixa && <div style={{ fontSize: 11, color: 'var(--green)', fontWeight: 600, marginTop: 4 }}>✓ {selectedCaixa} selecionada</div>}
+                </div>
                 <div style={{ marginBottom: 12 }}>
                   <label style={s.label}>Buscar caixa</label>
                   <input
@@ -1309,32 +1328,6 @@ export default function InventarioPage() {
                       >
                         {finalizandoCaixa ? 'Finalizando...' : 'Finalizar Caixa'}
                       </button>
-                    </div>
-
-                    {/* Campo de bipe CAIXA */}
-                    <div style={{ marginBottom: 10, background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <span style={{ fontSize: 18 }}>📦</span>
-                      <div style={{ flex: 1 }}>
-                        <label style={{ ...s.label, marginBottom: 4 }}>1. Bipe a CAIXA para selecioná-la</label>
-                        <input
-                          ref={bipeCaixaRef}
-                          style={{ ...s.input, width: '100%', fontFamily: 'JetBrains Mono, monospace', fontWeight: 600 }}
-                          value={bipeCaixaInput}
-                          onChange={(e) => setBipeCaixaInput(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' && bipeCaixaInput.trim()) {
-                              handleBipeCaixa(bipeCaixaInput.trim());
-                              setBipeCaixaInput('');
-                            }
-                          }}
-                          placeholder="Bipe o código da caixa..."
-                          autoComplete="off"
-                          autoFocus
-                        />
-                      </div>
-                      <span style={{ fontSize: 12, color: 'var(--gray-500)', whiteSpace: 'nowrap' }}>
-                        {selectedCaixa ? `✓ ${selectedCaixa}` : 'Nenhuma selecionada'}
-                      </span>
                     </div>
 
                     {/* Campo de bipe SKU */}
