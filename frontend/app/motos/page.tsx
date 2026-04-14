@@ -48,31 +48,34 @@ function dataUrlToFile(dataUrl: string, fileName: string) {
 
 async function downloadDataUrl(dataUrl: string, fileName: string) {
   const file = dataUrlToFile(dataUrl, fileName);
-  const nav = navigator as Navigator & {
-    canShare?: (data: { files?: File[] }) => boolean;
-    share?: (data: { title?: string; files?: File[] }) => Promise<void>;
-  };
-
-  if (typeof nav.share === 'function' && typeof nav.canShare === 'function') {
-    try {
-      if (nav.canShare({ files: [file] })) {
-        await nav.share({ title: fileName, files: [file] });
-        return;
-      }
-    } catch (error: any) {
-      if (error?.name === 'AbortError') return;
-    }
-  }
-
-  const objectUrl = URL.createObjectURL(file);
   const isAppleMobile = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+  const isMobile = /Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || isAppleMobile;
 
-  if (isAppleMobile) {
+  // Em mobile, tenta Web Share API primeiro
+  if (isMobile) {
+    const nav = navigator as Navigator & {
+      canShare?: (data: { files?: File[] }) => boolean;
+      share?: (data: { title?: string; files?: File[] }) => Promise<void>;
+    };
+    if (typeof nav.share === 'function' && typeof nav.canShare === 'function') {
+      try {
+        if (nav.canShare({ files: [file] })) {
+          await nav.share({ title: fileName, files: [file] });
+          return;
+        }
+      } catch (error: any) {
+        if (error?.name === 'AbortError') return;
+      }
+    }
+    // fallback mobile: abre em nova aba
+    const objectUrl = URL.createObjectURL(file);
     window.open(objectUrl, '_blank', 'noopener,noreferrer');
     setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
     return;
   }
 
+  // Desktop: sempre usa link direto
+  const objectUrl = URL.createObjectURL(file);
   const link = document.createElement('a');
   link.href = objectUrl;
   link.download = fileName;
