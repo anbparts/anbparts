@@ -1194,7 +1194,8 @@ export default function EstoquePage() {
     mercadoLivreLink: '',
     localizacao: '',
     caixas: [] as string[],
-    precoMlZero: '',
+    detranEtiqueta: '',
+    dimensoes: '',
     search: '',
     numeroPeca: '',
     dataVendaFrom: '',
@@ -1219,7 +1220,8 @@ export default function EstoquePage() {
     if (filters.mercadoLivreLink !== '') params.mercadoLivreLink = filters.mercadoLivreLink;
     if (filters.localizacao !== '') params.localizacao = filters.localizacao;
     if (filters.caixas.length) params.caixas = filters.caixas;
-    if (filters.precoMlZero !== '') params.precoMlZero = filters.precoMlZero;
+    if (filters.detranEtiqueta !== '') params.detranEtiqueta = filters.detranEtiqueta;
+    if (filters.dimensoes !== '') params.dimensoes = filters.dimensoes;
     if (filters.search) params.search = filters.search;
     if (filters.numeroPeca) params.numeroPeca = filters.numeroPeca;
     if (filters.dataVendaFrom) params.dataVendaFrom = filters.dataVendaFrom;
@@ -1404,10 +1406,10 @@ export default function EstoquePage() {
   function clearFilters() {
     setCaixaFilterSearch('');
     setCaixaFilterOpen(false);
-    setFilters({ ...filters, motoId: '', marca: '', disponivel: '', mercadoLivreLink: '', localizacao: '', caixas: [], precoMlZero: '', search: '', numeroPeca: '', dataVendaFrom: '', dataVendaTo: '', page: 1 });
+    setFilters({ ...filters, motoId: '', marca: '', disponivel: '', mercadoLivreLink: '', localizacao: '', caixas: [], detranEtiqueta: '', dimensoes: '', search: '', numeroPeca: '', dataVendaFrom: '', dataVendaTo: '', page: 1 });
   }
 
-  const hasActiveFilters = Boolean(filters.motoId || filters.marca || filters.disponivel !== '' || filters.mercadoLivreLink !== '' || filters.localizacao !== '' || filters.caixas.length || filters.precoMlZero !== '' || filters.search || filters.numeroPeca || filters.dataVendaFrom || filters.dataVendaTo);
+  const hasActiveFilters = Boolean(filters.motoId || filters.marca || filters.disponivel !== '' || filters.mercadoLivreLink !== '' || filters.localizacao !== '' || filters.caixas.length || filters.detranEtiqueta !== '' || filters.dimensoes !== '' || filters.search || filters.numeroPeca || filters.dataVendaFrom || filters.dataVendaTo);
   const totalPages = Math.max(1, Math.ceil((data.total || 0) / filters.perPage));
   const hasPrevPage = filters.page > 1;
   const hasNextPage = filters.page < totalPages;
@@ -1556,9 +1558,15 @@ export default function EstoquePage() {
                   onClose={() => setCaixaFilterOpen(false)}
                 />
               </div>
-              <select style={{ ...cs.sel, width: '100%' }} value={filters.precoMlZero} onChange={(e) => setFilters({ ...filters, precoMlZero: e.target.value, page: 1 })}>
-                <option value="">Preco ML</option>
-                <option value="true">Preco ML zero</option>
+              <select style={{ ...cs.sel, width: '100%' }} value={filters.detranEtiqueta} onChange={(e) => setFilters({ ...filters, detranEtiqueta: e.target.value, page: 1 })}>
+                <option value="">Etiqueta Detran</option>
+                <option value="com">Com etiqueta</option>
+                <option value="sem">Sem etiqueta</option>
+              </select>
+              <select style={{ ...cs.sel, width: '100%' }} value={filters.dimensoes} onChange={(e) => setFilters({ ...filters, dimensoes: e.target.value, page: 1 })}>
+                <option value="">Dimensoes</option>
+                <option value="com">Com dimensoes</option>
+                <option value="sem">Sem dimensoes</option>
               </select>
               <input
                 style={{ ...cs.sel, width: '100%', paddingLeft: 11, gridColumn: isPhone ? 'span 1' : 'span 2' }}

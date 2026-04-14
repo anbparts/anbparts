@@ -255,7 +255,8 @@ pecasRouter.get('/', async (req, res, next) => {
       numeroPeca,
       dataVendaFrom,
       dataVendaTo,
-      precoMlZero,
+      detranEtiqueta,
+      dimensoes,
       page = '1',
       per = '20',
       orderBy = 'cadastro',
@@ -321,7 +322,29 @@ pecasRouter.get('/', async (req, res, next) => {
         andConditions.push({ OR: caixasConditions });
       }
     }
-    if (precoMlZero === 'true') where.precoML = 0;
+    // Filtro etiqueta detran
+    if (detranEtiqueta === 'com') {
+      andConditions.push({ detranEtiqueta: { not: null } });
+      andConditions.push({ NOT: { detranEtiqueta: '' } });
+    }
+    if (detranEtiqueta === 'sem') {
+      andConditions.push({ OR: [{ detranEtiqueta: null }, { detranEtiqueta: '' }] });
+    }
+    // Filtro dimensoes (largura, altura e profundidade todas preenchidas e > 0)
+    if (dimensoes === 'com') {
+      andConditions.push({ largura: { not: null, gt: 0 } });
+      andConditions.push({ altura: { not: null, gt: 0 } });
+      andConditions.push({ profundidade: { not: null, gt: 0 } });
+    }
+    if (dimensoes === 'sem') {
+      andConditions.push({
+        OR: [
+          { largura: null }, { largura: 0 },
+          { altura: null }, { altura: 0 },
+          { profundidade: null }, { profundidade: 0 },
+        ],
+      });
+    }
     if (searchText) {
       andConditions.push({
         OR: [
