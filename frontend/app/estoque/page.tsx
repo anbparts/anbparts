@@ -536,14 +536,18 @@ function PecaDetalheModal({ open, peca, onClose }: any) {
           <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer' }}>X</button>
         </div>
         <div style={{ padding: '20px 22px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-          <Field label="Peso Líquido (kg)" value={peca.pesoLiquido != null ? `${Number(peca.pesoLiquido)} kg` : null} />
-          <Field label="Peso Bruto (kg)"   value={peca.pesoBruto   != null ? `${Number(peca.pesoBruto)} kg`   : null} />
-          <Field label="Largura (cm)"      value={peca.largura      != null ? `${Number(peca.largura)} cm`      : null} />
-          <Field label="Altura (cm)"       value={peca.altura       != null ? `${Number(peca.altura)} cm`       : null} />
-          <Field label="Profundidade (cm)" value={peca.profundidade != null ? `${Number(peca.profundidade)} cm` : null} />
+          <Field label="Peso Líquido (kg)" value={peca.pesoLiquido != null ? Number(peca.pesoLiquido) : null} />
+          <Field label="Peso Bruto (kg)"   value={peca.pesoBruto   != null ? Number(peca.pesoBruto)   : null} />
+          <Field label="Largura (cm)"      value={peca.largura      != null ? Number(peca.largura)      : null} />
+          <Field label="Altura (cm)"       value={peca.altura       != null ? Number(peca.altura)       : null} />
+          <Field label="Profundidade (cm)" value={peca.profundidade != null ? Number(peca.profundidade) : null} />
           <Field label="Localização"       value={peca.localizacao} />
-          <Field label="Número de Peça"    value={peca.numeroPeca} mono />
-          <Field label="Etiqueta Detran"   value={peca.detranEtiqueta} mono />
+          <div style={{ gridColumn: '1 / -1' }}>
+            <Field label="Número de Peça" value={peca.numeroPeca} mono />
+          </div>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <Field label="Etiqueta Detran" value={peca.detranEtiqueta} mono />
+          </div>
         </div>
         <div style={{ padding: '0 22px 20px', display: 'flex', justifyContent: 'flex-end' }}>
           <button onClick={onClose} style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink-soft)', borderColor: 'var(--border-strong)' }}>Fechar</button>
