@@ -422,6 +422,7 @@ export default function DashboardPage() {
       details: [
         { label: 'Total de Pecas:', value: (dash?.totalPecas || 0).toLocaleString('pt-BR') },
         { label: 'Vendidas no sistema:', value: (dash?.totalVendidas || 0).toLocaleString('pt-BR') },
+        { label: 'Qtd Pecas Prejuizo:', value: (dash?.totalPrejuizo || 0).toLocaleString('pt-BR') },
       ],
     },
   ];

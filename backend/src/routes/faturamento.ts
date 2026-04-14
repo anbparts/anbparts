@@ -69,7 +69,7 @@ faturamentoRouter.get('/por-moto', async (req, res, next) => {
 // GET /faturamento/dashboard
 faturamentoRouter.get('/dashboard', async (req, res, next) => {
   try {
-    const [totalMotos, totalPecas, pecasVendidas, pecasDisp, motos, despesas, mercadoLivreSaldo] = await Promise.all([
+    const [totalMotos, totalPecas, pecasVendidas, pecasDisp, motos, despesas, mercadoLivreSaldo, totalPrejuizo] = await Promise.all([
       prisma.moto.count(),
       prisma.peca.count(),
       prisma.peca.findMany({ where: { disponivel: false, emPrejuizo: false, dataVenda: { not: null } }, select: { precoML: true, valorLiq: true, valorTaxas: true, valorFrete: true } }),
@@ -80,6 +80,7 @@ faturamentoRouter.get('/dashboard', async (req, res, next) => {
         connected: true,
         error: String(error?.message || 'Nao foi possivel consultar o saldo do Mercado Pago.'),
       })),
+      prisma.peca.count({ where: { emPrejuizo: true } }),
     ]);
 
     const receitaBruta  = pecasVendidas.reduce((s, p) => s + Number(p.precoML), 0);
@@ -108,6 +109,7 @@ faturamentoRouter.get('/dashboard', async (req, res, next) => {
       totalDisponivel: pecasDisp.length,
       totalIdsDisponiveis,
       totalVendidas:   pecasVendidas.length,
+      totalPrejuizo,
       receitaBruta,
       receitaLiq,
       comissaoML,

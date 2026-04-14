@@ -1173,6 +1173,7 @@ function VendaModal({ open, peca, onClose, onConfirm }: any) {
 export default function EstoquePage() {
   const [data, setData] = useState<any>({ total: 0, totalDisp: 0, totalVend: 0, data: [] });
   const [motos, setMotos] = useState<any[]>([]);
+  const [prefixosMoto, setPrefixosMoto] = useState<Array<{ prefixo: string; motoId: number }>>([]);
   const [caixaOptions, setCaixaOptions] = useState<CaixaFilterOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [viewportMode, setViewportMode] = useState<EstoqueViewportMode>('desktop');
@@ -1227,6 +1228,14 @@ export default function EstoquePage() {
     const [d, m, caixasData] = await Promise.all([api.pecas.list(params), api.motos.list(), api.pecas.caixas()]);
     setData(d);
     setMotos(m);
+    // Carregar prefixos SKU apenas uma vez se ainda não carregados
+    if (!prefixosMoto.length) {
+      try {
+        const prefRes = await fetch('/api/bling/prefixos', { credentials: 'include' });
+        const prefData = await prefRes.json();
+        if (Array.isArray(prefData)) setPrefixosMoto(prefData.map((p: any) => ({ prefixo: String(p.prefixo || ''), motoId: Number(p.motoId) })));
+      } catch { /* ignora */ }
+    }
     setCaixaOptions(Array.isArray(caixasData?.data) ? caixasData.data : []);
     setLoading(false);
   }, [filters]);
@@ -1505,7 +1514,10 @@ export default function EstoquePage() {
             <div style={{ display: 'grid', gridTemplateColumns: filterGridColumns, gap: 8 }}>
               <select style={{ ...cs.sel, width: '100%' }} value={filters.motoId} onChange={(e) => setFilters({ ...filters, motoId: e.target.value, page: 1 })}>
                 <option value="">Todas motos</option>
-                {motos.map((m: any) => <option key={m.id} value={m.id}>ID {m.id} - {m.marca} {m.modelo}</option>)}
+                {motos.map((m: any) => {
+                  const pref = prefixosMoto.find((p) => Number(p.motoId) === Number(m.id));
+                  return <option key={m.id} value={m.id}>{pref ? `${pref.prefixo} - ` : ''}ID {m.id} - {m.marca} {m.modelo}</option>;
+                })}
               </select>
               <select style={{ ...cs.sel, width: '100%' }} value={filters.marca} onChange={(e) => setFilters({ ...filters, marca: e.target.value, page: 1 })}>
                 <option value="">Marca da moto</option>
