@@ -45,9 +45,17 @@ function normalizeEmpresaAnexos(value: unknown) {
     : {};
 
   const anexos: Record<string, { name: string; dataUrl: string }> = {};
+  // Campos fixos
   for (const key of EMPRESA_ANEXO_KEYS) {
     const attachment = normalizeAttachment(source[key]);
     if (attachment) anexos[key] = attachment;
+  }
+  // Campos adicionais dinâmicos (extra_0, extra_1, ...)
+  for (const key of Object.keys(source)) {
+    if (/^extra_\d+$/.test(key)) {
+      const attachment = normalizeAttachment(source[key]);
+      if (attachment) anexos[key] = attachment;
+    }
   }
   return anexos;
 }
@@ -81,7 +89,7 @@ empresaRouter.post('/', async (req, res, next) => {
     const anexosAtuais = normalizeEmpresaAnexos(current?.empresaAnexos);
     const anexosAtualizados = normalizeEmpresaAnexos(payload.anexos);
     const removidos = Array.isArray(payload.removidos)
-      ? payload.removidos.filter((key) => EMPRESA_ANEXO_KEYS.includes(key as typeof EMPRESA_ANEXO_KEYS[number]))
+      ? payload.removidos.filter((key) => EMPRESA_ANEXO_KEYS.includes(key as typeof EMPRESA_ANEXO_KEYS[number]) || /^extra_\d+$/.test(key))
       : [];
     const anexos = {
       ...anexosAtuais,

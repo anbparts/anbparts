@@ -110,6 +110,7 @@ export default function EmpresaPage() {
   const [feedback, setFeedback] = useState('');
   const [localError, setLocalError] = useState('');
   const [isPhone, setIsPhone] = useState(false);
+  const [extras, setExtras] = useState<Array<{ id: string; name: string; dataUrl: string } | null>>([]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -137,7 +138,12 @@ export default function EmpresaPage() {
           telefoneWhats: data.telefoneWhats || '',
         });
         if (!changedKeys.length && !removedKeys.length) {
-          setAnexos(data.anexos || {});
+          const loadedAnexos = data.anexos || {};
+          setAnexos(loadedAnexos);
+          // Carregar extras dinâmicos
+          const extrasKeys = Object.keys(loadedAnexos).filter((k) => /^extra_\d+$/.test(k));
+          extrasKeys.sort((a, b) => Number(a.split('_')[1]) - Number(b.split('_')[1]));
+          setExtras(extrasKeys.map((k) => ({ id: k, name: loadedAnexos[k]?.name || '', dataUrl: loadedAnexos[k]?.dataUrl || '' })));
         }
       } catch (error: any) {
         if (!active) return;
@@ -194,7 +200,17 @@ export default function EmpresaPage() {
           .filter((key) => anexos[key])
           .map((key) => [key, anexos[key]])
       );
-      const response = await api.empresa.save({ ...form, anexos: anexosAlterados, removidos: removedKeys });
+      // Incluir extras dinâmicos
+      const extrasPayload = Object.fromEntries(
+        extras
+          .filter((e): e is { id: string; name: string; dataUrl: string } => e != null && Boolean(e.dataUrl))
+          .map((e) => [e.id, { name: e.name, dataUrl: e.dataUrl }])
+      );
+      // Marcar extras removidos (slots nulos)
+      const extrasRemovidos = extras
+        .filter((e) => e === null)
+        .map((_, i) => `extra_${i}`);
+      const response = await api.empresa.save({ ...form, anexos: { ...anexosAlterados, ...extrasPayload }, removidos: [...removedKeys, ...extrasRemovidos] });
       setForm({
         razaoSocial: response.razaoSocial || '',
         cnpj: response.cnpj || '',
@@ -401,6 +417,86 @@ export default function EmpresaPage() {
                   )}
                 </tbody>
               </table>
+            </div>
+          )}
+        </div>
+
+        {/* Bloco de Anexos Adicionais */}
+        <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, padding: isPhone ? 16 : 24, marginTop: 20 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
+            <div>
+              <div style={{ fontFamily: 'Fraunces, serif', fontSize: 16, fontWeight: 600 }}>Anexos Adicionais</div>
+              <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>Adicione quantos arquivos quiser — documentos avulsos, contratos extras, comprovantes, etc.</div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                const newId = `extra_${Date.now()}`;
+                setExtras((prev) => [...prev, { id: newId, name: '', dataUrl: '' }]);
+              }}
+              style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)', fontSize: isPhone ? 12 : 13 }}
+            >
+              + Incluir anexo
+            </button>
+          </div>
+
+          {extras.length === 0 ? (
+            <div style={{ padding: '20px 0', textAlign: 'center', color: 'var(--ink-muted)', fontSize: 13 }}>
+              Nenhum anexo adicional ainda. Clique em &quot;+ Incluir anexo&quot; para adicionar.
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gap: 12 }}>
+              {extras.map((extra, idx) => {
+                if (!extra) return null;
+                return (
+                  <div key={extra.id} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: isPhone ? 12 : 16, background: 'var(--gray-50)', display: 'flex', alignItems: isPhone ? 'flex-start' : 'center', gap: 12, flexDirection: isPhone ? 'column' : 'row', flexWrap: 'wrap' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginBottom: 4 }}>Arquivo {idx + 1}</div>
+                      <div style={{ fontSize: 13, fontWeight: extra.dataUrl ? 600 : 400, color: extra.dataUrl ? 'var(--ink)' : 'var(--ink-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {extra.name || 'Nenhum arquivo selecionado'}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}>
+                      <input
+                        type="file"
+                        accept=".pdf,application/pdf,image/*,.heic,.heif"
+                        style={{ fontSize: 12, maxWidth: isPhone ? '100%' : 200 }}
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          if (file.size > MAX_EMPRESA_ANEXO_FILE_SIZE_BYTES) {
+                            alert('Arquivo muito grande. Limite: 18 MB.');
+                            e.target.value = '';
+                            return;
+                          }
+                          const reader = new FileReader();
+                          reader.onload = () => {
+                            setExtras((prev) => prev.map((item, i) => i === idx ? { id: extra.id, name: file.name, dataUrl: String(reader.result) } : item));
+                          };
+                          reader.readAsDataURL(file);
+                          e.target.value = '';
+                        }}
+                      />
+                      {extra.dataUrl && (
+                        <button
+                          type="button"
+                          onClick={() => downloadDataUrl(extra.dataUrl, extra.name)}
+                          style={{ ...cs.btn, padding: '6px 10px', fontSize: 11, border: '1px solid var(--border)', background: 'var(--white)', color: 'var(--blue-500)' }}
+                        >
+                          Download
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setExtras((prev) => prev.filter((_, i) => i !== idx))}
+                        style={{ ...cs.btn, padding: '6px 10px', fontSize: 11, border: '1px solid #fecaca', background: '#fef2f2', color: 'var(--red)' }}
+                      >
+                        Remover
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
