@@ -740,6 +740,40 @@ inventarioRouter.post('/:id/finalizar', async (req, res, next) => {
   }
 });
 
+inventarioRouter.get('/buscar-sku', async (req, res, next) => {
+  try {
+    const sku = String(req.query.sku || '').trim().toUpperCase();
+    if (!sku) return res.status(400).json({ error: 'Informe o SKU' });
+
+    const aberto = await findInventarioAberto();
+    if (!aberto) return res.json({ ok: true, encontrado: false, itens: [] });
+
+    const itens = await prisma.inventarioItem.findMany({
+      where: {
+        inventarioId: aberto.id,
+        OR: [
+          { skuBase: { contains: sku, mode: 'insensitive' } },
+          { idPecaReferencia: { contains: sku, mode: 'insensitive' } },
+        ],
+      },
+      select: {
+        id: true,
+        caixa: true,
+        skuBase: true,
+        idPecaReferencia: true,
+        descricao: true,
+        status: true,
+        tipoDiferenca: true,
+        decidedAt: true,
+      },
+    });
+
+    res.json({ ok: true, encontrado: itens.length > 0, itens });
+  } catch (e) {
+    next(e);
+  }
+});
+
 inventarioRouter.get('/logs', async (req, res, next) => {
   try {
     const dataInicio = String(req.query?.dataInicio || '').trim();

@@ -95,6 +95,7 @@ export const api = {
       return req<any>(`/inventario/logs${qs}`);
     },
     log: (id: number) => req<any>(`/inventario/logs/${id}`),
+    buscarSku: (sku: string) => req<any>(`/inventario/buscar-sku?sku=${encodeURIComponent(sku)}`),
     excluirLog: (id: number) => req<any>(`/inventario/logs/${id}`, { method: 'DELETE' }),
   },
   faturamento: {

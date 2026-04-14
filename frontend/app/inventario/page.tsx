@@ -713,8 +713,10 @@ export default function InventarioPage() {
   const [buscaCaixa, setBuscaCaixa] = useState('');
   const [buscaItemCaixa, setBuscaItemCaixa] = useState('');
   const [bipeInput, setBipeInput] = useState('');
-  const [bipeFeedback, setBipeFeedback] = useState<{ tipo: 'ok' | 'erro' | 'ja'; msg: string } | null>(null);
+  const [bipeCaixaInput, setBipeCaixaInput] = useState('');
+  const [bipeFeedback, setBipeFeedback] = useState<{ tipo: 'ok' | 'erro' | 'ja' | 'outra-caixa'; msg: string; aguarda?: boolean } | null>(null);
   const bipeRef = useRef<HTMLInputElement>(null);
+  const bipeCaixaRef = useRef<HTMLInputElement>(null);
   const [filtroLogCaixa, setFiltroLogCaixa] = useState<CaixaLogFilter>('todos');
   const [logs, setLogs] = useState<InventarioLog[]>([]);
   const [logSelecionado, setLogSelecionado] = useState<InventarioLog | null>(null);
@@ -879,33 +881,85 @@ export default function InventarioPage() {
     ));
   }
 
+  async function handleBipeCaixa(caixaNome: string) {
+    const nomeBuscado = caixaNome.trim().toUpperCase();
+    if (!nomeBuscado || !inventario) return;
+
+    // Busca caixa pelo nome (exact ou contains)
+    const caixaEncontrada = caixas.find((c) =>
+      normalizeSearchText(c.caixa) === normalizeSearchText(nomeBuscado) ||
+      normalizeSearchText(c.caixa).includes(normalizeSearchText(nomeBuscado))
+    );
+
+    if (!caixaEncontrada) {
+      setBipeFeedback({ tipo: 'erro', msg: `Caixa "${caixaNome}" nao encontrada no inventario` });
+      setTimeout(() => setBipeFeedback(null), 3000);
+      setTimeout(() => bipeCaixaRef.current?.focus(), 50);
+      return;
+    }
+
+    // Seleciona a caixa e carrega os itens
+    setSelectedCaixa(caixaEncontrada.caixa);
+    setBipeFeedback({ tipo: 'ok', msg: `Caixa ${caixaEncontrada.caixa} selecionada — bipe os SKUs` });
+    setTimeout(() => setBipeFeedback(null), 2000);
+    await loadCaixa(caixaEncontrada.caixa, inventario.id);
+    // Move cursor para o campo de SKU
+    setTimeout(() => bipeRef.current?.focus(), 100);
+  }
+
   async function handleBipe(sku: string) {
     const skuNorm = normalizeSearchText(sku);
     if (!skuNorm || !caixaDetalhe) return;
 
-    // Busca item pendente que bate com o SKU bipado
-    const itensPendentes = (caixaDetalhe.itens || []).filter((item: ItemInventario) => item.status === 'pendente');
+    // Busca item pendente na caixa atual
+    const itensPendentes = caixaDetalhe.itensPendentes || [];
+    const itensNaoPendentes = [...(caixaDetalhe.itensConfirmados || []), ...(caixaDetalhe.diferencasRegistradas || [])];
     const item = itensPendentes.find((item: ItemInventario) =>
       normalizeSearchText(item.skuBase).includes(skuNorm) ||
       normalizeSearchText(item.idPecaReferencia || '').includes(skuNorm)
     );
 
     if (!item) {
-      const jaConfirmado = (caixaDetalhe.itens || []).find((item: ItemInventario) =>
-        item.status !== 'pendente' && (
-          normalizeSearchText(item.skuBase).includes(skuNorm) ||
-          normalizeSearchText(item.idPecaReferencia || '').includes(skuNorm)
-        )
+      // Verifica se já foi confirmado na caixa atual
+      const jaConfirmadoAqui = itensNaoPendentes.find((item: ItemInventario) =>
+        normalizeSearchText(item.skuBase).includes(skuNorm) ||
+        normalizeSearchText(item.idPecaReferencia || '').includes(skuNorm)
       );
-      if (jaConfirmado) {
-        setBipeFeedback({ tipo: 'ja', msg: `${sku} — ja confirmado` });
-      } else {
-        setBipeFeedback({ tipo: 'erro', msg: `${sku} — nao encontrado nesta caixa` });
+
+      if (jaConfirmadoAqui) {
+        setBipeFeedback({ tipo: 'ja', msg: `${sku} — ja confirmado nesta caixa` });
+        setTimeout(() => setBipeFeedback(null), 3000);
+        setTimeout(() => bipeRef.current?.focus(), 50);
+        return;
       }
-      setTimeout(() => setBipeFeedback(null), 3000);
+
+      // Busca em todas as caixas do inventário
+      try {
+        const resultado = await api.inventario.buscarSku(sku);
+        const itensEncontrados = resultado?.itens || [];
+
+        if (itensEncontrados.length > 0) {
+          const item = itensEncontrados[0];
+          const jaConferido = item.status !== 'pendente';
+          const msg = jaConferido
+            ? `${sku} — esta na ${item.caixa} e ja foi conferido`
+            : `${sku} — nao esta nesta caixa. Pertence a: ${item.caixa}`;
+          setBipeFeedback({ tipo: 'outra-caixa', msg, aguarda: true });
+          // Fica aguardando próximo bipe (não limpa automaticamente)
+        } else {
+          setBipeFeedback({ tipo: 'erro', msg: `${sku} — nao encontrado em nenhuma caixa` });
+          setTimeout(() => setBipeFeedback(null), 3000);
+        }
+      } catch {
+        setBipeFeedback({ tipo: 'erro', msg: `${sku} — nao encontrado nesta caixa` });
+        setTimeout(() => setBipeFeedback(null), 3000);
+      }
+      setTimeout(() => bipeRef.current?.focus(), 50);
       return;
     }
 
+    // Limpa feedback de espera se havia
+    setBipeFeedback(null);
     setBusyItemId(item.id);
     try {
       await api.inventario.confirmarItem(item.id);
@@ -922,7 +976,6 @@ export default function InventarioPage() {
       setTimeout(() => setBipeFeedback(null), 3000);
     }
     setBusyItemId(null);
-    // Mantém foco no campo de bipe para o próximo
     setTimeout(() => bipeRef.current?.focus(), 50);
   }
 
@@ -973,6 +1026,8 @@ export default function InventarioPage() {
       alert(e.message || 'Erro ao finalizar caixa');
     }
     setFinalizandoCaixa(false);
+    // Volta cursor para o campo de caixa para o próximo bipe
+    setTimeout(() => bipeCaixaRef.current?.focus(), 100);
   }
 
   async function handleFinalizarInventario() {
@@ -1256,11 +1311,37 @@ export default function InventarioPage() {
                       </button>
                     </div>
 
-                    {/* Campo de bipe por leitor de código de barras */}
-                    <div style={{ marginBottom: 14, background: bipeFeedback?.tipo === 'ok' ? '#f0fdf4' : bipeFeedback?.tipo === 'erro' ? '#fef2f2' : bipeFeedback?.tipo === 'ja' ? '#fffbeb' : 'var(--gray-50)', border: `1px solid ${bipeFeedback?.tipo === 'ok' ? '#86efac' : bipeFeedback?.tipo === 'erro' ? '#fecaca' : bipeFeedback?.tipo === 'ja' ? '#fcd34d' : 'var(--border)'}`, borderRadius: 8, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 12, transition: 'all 0.2s' }}>
+                    {/* Campo de bipe CAIXA */}
+                    <div style={{ marginBottom: 10, background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <span style={{ fontSize: 18 }}>📦</span>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ ...s.label, marginBottom: 4 }}>1. Bipe a CAIXA para selecioná-la</label>
+                        <input
+                          ref={bipeCaixaRef}
+                          style={{ ...s.input, width: '100%', fontFamily: 'JetBrains Mono, monospace', fontWeight: 600 }}
+                          value={bipeCaixaInput}
+                          onChange={(e) => setBipeCaixaInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && bipeCaixaInput.trim()) {
+                              handleBipeCaixa(bipeCaixaInput.trim());
+                              setBipeCaixaInput('');
+                            }
+                          }}
+                          placeholder="Bipe o código da caixa..."
+                          autoComplete="off"
+                          autoFocus
+                        />
+                      </div>
+                      <span style={{ fontSize: 12, color: 'var(--gray-500)', whiteSpace: 'nowrap' }}>
+                        {selectedCaixa ? `✓ ${selectedCaixa}` : 'Nenhuma selecionada'}
+                      </span>
+                    </div>
+
+                    {/* Campo de bipe SKU */}
+                    <div style={{ marginBottom: 14, background: bipeFeedback?.tipo === 'ok' ? '#f0fdf4' : bipeFeedback?.tipo === 'erro' ? '#fef2f2' : bipeFeedback?.tipo === 'ja' ? '#fffbeb' : bipeFeedback?.tipo === 'outra-caixa' ? '#fef2f2' : 'var(--gray-50)', border: `1px solid ${bipeFeedback?.tipo === 'ok' ? '#86efac' : bipeFeedback?.tipo === 'erro' ? '#fecaca' : bipeFeedback?.tipo === 'ja' ? '#fcd34d' : bipeFeedback?.tipo === 'outra-caixa' ? '#fecaca' : 'var(--border)'}`, borderRadius: 8, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 12, transition: 'all 0.2s' }}>
                       <span style={{ fontSize: 18 }}>📷</span>
                       <div style={{ flex: 1 }}>
-                        <label style={{ ...s.label, marginBottom: 4 }}>Leitura por código de barras — bipe o SKU da peça</label>
+                        <label style={{ ...s.label, marginBottom: 4 }}>2. Bipe o SKU da peça para confirmar</label>
                         <input
                           ref={bipeRef}
                           style={{ ...s.input, width: '100%', fontFamily: 'JetBrains Mono, monospace', fontWeight: 600 }}
@@ -1272,14 +1353,19 @@ export default function InventarioPage() {
                               setBipeInput('');
                             }
                           }}
-                          placeholder="Bipe o código de barras aqui..."
+                          placeholder="Bipe o SKU da peça aqui..."
                           autoComplete="off"
                         />
                       </div>
                       {bipeFeedback && (
-                        <span style={{ fontSize: 13, fontWeight: 600, color: bipeFeedback.tipo === 'ok' ? 'var(--green)' : bipeFeedback.tipo === 'ja' ? '#b45309' : 'var(--red)', whiteSpace: 'nowrap' }}>
-                          {bipeFeedback.msg}
-                        </span>
+                        <div style={{ textAlign: 'right', maxWidth: 280 }}>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: bipeFeedback.tipo === 'ok' ? 'var(--green)' : bipeFeedback.tipo === 'ja' ? '#b45309' : 'var(--red)', display: 'block', lineHeight: 1.4 }}>
+                            {bipeFeedback.msg}
+                          </span>
+                          {bipeFeedback.aguarda && (
+                            <span style={{ fontSize: 11, color: 'var(--gray-400)' }}>Aguardando próximo bipe...</span>
+                          )}
+                        </div>
                       )}
                     </div>
 
