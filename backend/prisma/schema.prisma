@@ -48,6 +48,12 @@ model Peca {
   dataVenda   DateTime?
   blingPedidoId  String?
   blingPedidoNum String?
+  pesoLiquido    Decimal? @db.Decimal(10, 3)
+  pesoBruto      Decimal? @db.Decimal(10, 3)
+  largura        Decimal? @db.Decimal(10, 2)
+  altura         Decimal? @db.Decimal(10, 2)
+  profundidade   Decimal? @db.Decimal(10, 2)
+  numeroPeca     String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

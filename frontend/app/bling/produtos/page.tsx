@@ -29,6 +29,13 @@ type Item = {
   moto: string | null;
   jaExiste: boolean;
   semPrefixo: boolean;
+  pesoLiquido?: number | null;
+  pesoBruto?: number | null;
+  largura?: number | null;
+  altura?: number | null;
+  profundidade?: number | null;
+  numeroPeca?: string | null;
+  mercadoLivreLink?: string | null;
   _motoId?: string;
   _preco?: string;
   _frete?: string;
@@ -1155,6 +1162,27 @@ export default function BlingProdutosPage() {
                     <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-800)', flex: 1 }}>{item.nome}</span>
                     {item.qtdEstoque > 0 && <span style={{ fontSize: 12, background: 'var(--blue-100)', color: 'var(--blue-500)', padding: '2px 8px', borderRadius: 5 }}>{item.qtdEstoque} em estoque</span>}
                     {item.semPrefixo && <span style={{ fontSize: 11, background: 'var(--amber-light)', color: 'var(--amber)', padding: '2px 8px', borderRadius: 5 }}>sem prefixo</span>}
+                  </div>
+
+                  {/* Informações extras compactas */}
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+                    {item.localizacao && <span style={{ fontSize: 11, background: 'var(--gray-100)', color: 'var(--gray-500)', padding: '2px 8px', borderRadius: 5 }}>📦 {item.localizacao}</span>}
+                    {item.numeroPeca && <span style={{ fontSize: 11, background: 'rgba(139,92,246,.1)', color: '#7c3aed', padding: '2px 8px', borderRadius: 5, fontFamily: 'JetBrains Mono, monospace' }}>Nº {item.numeroPeca}</span>}
+                    {(item.pesoLiquido != null || item.pesoBruto != null) && (
+                      <span style={{ fontSize: 11, background: 'var(--gray-100)', color: 'var(--gray-500)', padding: '2px 8px', borderRadius: 5 }}>
+                        ⚖️ {item.pesoLiquido ?? '—'}kg liq / {item.pesoBruto ?? '—'}kg bruto
+                      </span>
+                    )}
+                    {(item.largura != null || item.altura != null || item.profundidade != null) && (
+                      <span style={{ fontSize: 11, background: 'var(--gray-100)', color: 'var(--gray-500)', padding: '2px 8px', borderRadius: 5 }}>
+                        📐 {item.largura ?? '—'} × {item.altura ?? '—'} × {item.profundidade ?? '—'} cm
+                      </span>
+                    )}
+                    {item.mercadoLivreLink && (
+                      <a href={item.mercadoLivreLink} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, background: 'rgba(255,196,0,.15)', color: '#b45309', padding: '2px 8px', borderRadius: 5, textDecoration: 'none' }}>
+                        🛒 Ver no ML
+                      </a>
+                    )}
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 10, marginBottom: 12 }}>

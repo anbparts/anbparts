@@ -4192,6 +4192,8 @@ blingRouter.post('/prefixos', async (req, res, next) => {
   }
 });
 
+const BLING_NUMERO_PECA_CAMPO_ID = 2821431;
+
 blingRouter.post('/sync/produtos', async (req, res, next) => {
   try {
     const cfg = await getConfig();
@@ -4232,6 +4234,15 @@ blingRouter.post('/sync/produtos', async (req, res, next) => {
         const qtdEstoque = Number(produto.estoque?.saldoVirtualTotal || produto.estoque?.saldo || 0);
         const localizacao = resolveBlingLocation(produto).location;
 
+        // Campos físicos e customizados
+        const pesoLiquido = produto.pesoLiquido != null ? Number(produto.pesoLiquido) : null;
+        const pesoBruto = produto.pesoBruto != null ? Number(produto.pesoBruto) : null;
+        const largura = produto.dimensoes?.largura != null ? Number(produto.dimensoes.largura) : null;
+        const altura = produto.dimensoes?.altura != null ? Number(produto.dimensoes.altura) : null;
+        const profundidade = produto.dimensoes?.profundidade != null ? Number(produto.dimensoes.profundidade) : null;
+        const camposCustomizados: any[] = Array.isArray(produto.camposCustomizados) ? produto.camposCustomizados : [];
+        const numeroPeca = camposCustomizados.find((c: any) => Number(c.idCampoCustomizado) === BLING_NUMERO_PECA_CAMPO_ID)?.valor || null;
+
         itens.push({
           id: produto.id,
           sku,
@@ -4243,6 +4254,12 @@ blingRouter.post('/sync/produtos', async (req, res, next) => {
           moto: moto ? `${moto.marca} ${moto.modelo}` : null,
           jaExiste,
           semPrefixo: !motoId,
+          pesoLiquido,
+          pesoBruto,
+          largura,
+          altura,
+          profundidade,
+          numeroPeca,
         });
       }
 
@@ -4918,6 +4935,13 @@ blingRouter.post('/importar-produto', async (req, res, next) => {
     let mercadoLivreLink = null;
     let detail: any = null;
 
+    let pesoLiquido: number | null = null;
+    let pesoBruto: number | null = null;
+    let largura: number | null = null;
+    let altura: number | null = null;
+    let profundidade: number | null = null;
+    let numeroPeca: string | null = null;
+
     if (Number(id) > 0) {
       try {
         detail = await fetchBlingProductDetailById(Number(id));
@@ -4928,6 +4952,14 @@ blingRouter.post('/importar-produto', async (req, res, next) => {
         if (!localizacaoNormalizada) {
           localizacaoNormalizada = resolveBlingLocation(null, detail).location;
         }
+        // Campos físicos e número de peça
+        pesoLiquido = detail?.pesoLiquido != null ? Number(detail.pesoLiquido) : null;
+        pesoBruto = detail?.pesoBruto != null ? Number(detail.pesoBruto) : null;
+        largura = detail?.dimensoes?.largura != null ? Number(detail.dimensoes.largura) : null;
+        altura = detail?.dimensoes?.altura != null ? Number(detail.dimensoes.altura) : null;
+        profundidade = detail?.dimensoes?.profundidade != null ? Number(detail.dimensoes.profundidade) : null;
+        const campos: any[] = Array.isArray(detail?.camposCustomizados) ? detail.camposCustomizados : [];
+        numeroPeca = campos.find((c: any) => Number(c.idCampoCustomizado) === BLING_NUMERO_PECA_CAMPO_ID)?.valor || null;
       } catch {
         if (!localizacaoNormalizada) localizacaoNormalizada = null;
       }
@@ -4956,6 +4988,12 @@ blingRouter.post('/importar-produto', async (req, res, next) => {
           detranEtiqueta,
           mercadoLivreItemId,
           mercadoLivreLink,
+          pesoLiquido,
+          pesoBruto,
+          largura,
+          altura,
+          profundidade,
+          numeroPeca,
           disponivel: true,
           cadastro: new Date(),
         },
