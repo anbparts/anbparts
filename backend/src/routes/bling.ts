@@ -2302,6 +2302,13 @@ async function syncPecaMetadataFromBling(
     mercadoLivreItemIdResolved: boolean;
     mercadoLivreLink: string | null;
     mercadoLivreLinkResolved: boolean;
+    pesoLiquido: number | null;
+    pesoBruto: number | null;
+    largura: number | null;
+    altura: number | null;
+    profundidade: number | null;
+    numeroPeca: string | null;
+    camposFisicosResolved: boolean;
   }>();
   for (const peca of localPecas) {
     const skuBase = getBaseSku(peca.idPeca);
@@ -2372,7 +2379,7 @@ async function syncPecaMetadataFromBling(
     const target = targetBySku.get(skuBase);
     if (!target) continue;
 
-    const data: { localizacao?: string | null; detranEtiqueta?: string | null; mercadoLivreItemId?: string | null; mercadoLivreLink?: string | null } = {};
+    const data: { localizacao?: string | null; detranEtiqueta?: string | null; mercadoLivreItemId?: string | null; mercadoLivreLink?: string | null; pesoLiquido?: number | null; pesoBruto?: number | null; largura?: number | null; altura?: number | null; profundidade?: number | null; numeroPeca?: string | null } = {};
 
     if (options?.syncLocalizacao && target.locationResolved) {
       const currentLocation = normalizeLocation(peca.localizacao);
@@ -2456,6 +2463,7 @@ async function compareProdutosBlingCodes(
     syncDetran?: boolean;
     syncMercadoLivreItemId?: boolean;
     syncMercadoLivreLink?: boolean;
+    syncCamposFisicos?: boolean;
     suppressMarketplaceErrors?: boolean;
     traceSkus?: Set<string> | string[];
     onProgress?: (payload: { totalParaProcessar: number; totalProcessados: number; fase: string }) => Promise<void> | void;
