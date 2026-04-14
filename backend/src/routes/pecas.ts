@@ -252,6 +252,7 @@ pecasRouter.get('/', async (req, res, next) => {
       localizacao,
       caixas,
       search,
+      numeroPeca,
       dataVendaFrom,
       dataVendaTo,
       precoMlZero,
@@ -329,6 +330,12 @@ pecasRouter.get('/', async (req, res, next) => {
           { blingPedidoNum: { contains: searchText, mode: 'insensitive' } },
         ],
       });
+    }
+    if (numeroPeca) {
+      const numeroPecaText = String(numeroPeca).trim();
+      if (numeroPecaText) {
+        andConditions.push({ numeroPeca: { contains: numeroPecaText, mode: 'insensitive' } });
+      }
     }
     if (andConditions.length) {
       where.AND = andConditions;

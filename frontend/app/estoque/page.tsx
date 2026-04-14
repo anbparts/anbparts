@@ -1195,6 +1195,7 @@ export default function EstoquePage() {
     caixas: [] as string[],
     precoMlZero: '',
     search: '',
+    numeroPeca: '',
     dataVendaFrom: '',
     dataVendaTo: '',
     page: 1,
@@ -1219,6 +1220,7 @@ export default function EstoquePage() {
     if (filters.caixas.length) params.caixas = filters.caixas;
     if (filters.precoMlZero !== '') params.precoMlZero = filters.precoMlZero;
     if (filters.search) params.search = filters.search;
+    if (filters.numeroPeca) params.numeroPeca = filters.numeroPeca;
     if (filters.dataVendaFrom) params.dataVendaFrom = filters.dataVendaFrom;
     if (filters.dataVendaTo) params.dataVendaTo = filters.dataVendaTo;
 
@@ -1393,10 +1395,10 @@ export default function EstoquePage() {
   function clearFilters() {
     setCaixaFilterSearch('');
     setCaixaFilterOpen(false);
-    setFilters({ ...filters, motoId: '', marca: '', disponivel: '', mercadoLivreLink: '', localizacao: '', caixas: [], precoMlZero: '', search: '', dataVendaFrom: '', dataVendaTo: '', page: 1 });
+    setFilters({ ...filters, motoId: '', marca: '', disponivel: '', mercadoLivreLink: '', localizacao: '', caixas: [], precoMlZero: '', search: '', numeroPeca: '', dataVendaFrom: '', dataVendaTo: '', page: 1 });
   }
 
-  const hasActiveFilters = Boolean(filters.motoId || filters.marca || filters.disponivel !== '' || filters.mercadoLivreLink !== '' || filters.localizacao !== '' || filters.caixas.length || filters.precoMlZero !== '' || filters.search || filters.dataVendaFrom || filters.dataVendaTo);
+  const hasActiveFilters = Boolean(filters.motoId || filters.marca || filters.disponivel !== '' || filters.mercadoLivreLink !== '' || filters.localizacao !== '' || filters.caixas.length || filters.precoMlZero !== '' || filters.search || filters.numeroPeca || filters.dataVendaFrom || filters.dataVendaTo);
   const totalPages = Math.max(1, Math.ceil((data.total || 0) / filters.perPage));
   const hasPrevPage = filters.page > 1;
   const hasNextPage = filters.page < totalPages;
@@ -1551,6 +1553,12 @@ export default function EstoquePage() {
                 placeholder="ID, descricao ou pedido..."
                 value={filters.search}
                 onChange={(e) => setFilters({ ...filters, search: e.target.value, page: 1 })}
+              />
+              <input
+                style={{ ...cs.sel, width: '100%', paddingLeft: 11 }}
+                placeholder="Numero da peca..."
+                value={filters.numeroPeca}
+                onChange={(e) => setFilters({ ...filters, numeroPeca: e.target.value, page: 1 })}
               />
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 10px', background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 6, minHeight: 32 }}>
                 <span style={{ fontSize: 12, color: 'var(--ink-muted)', whiteSpace: 'nowrap' }}>Venda de</span>
