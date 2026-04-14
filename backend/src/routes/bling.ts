@@ -2337,7 +2337,7 @@ async function syncPecaMetadataFromBling(
         })
       : { link: null, resolved: false };
 
-    if (!locationMeta.resolved && !detranMeta.resolved && !mercadoLivreItemIdResolved && !mercadoLivreLinkMeta.resolved) continue;
+    if (!locationMeta.resolved && !detranMeta.resolved && !mercadoLivreItemIdResolved && !mercadoLivreLinkMeta.resolved && !camposFisicosResolved) continue;
 
     // Campos físicos e número de peça do detalhe do Bling
     const camposCustomizados: any[] = Array.isArray(detail?.camposCustomizados) ? detail.camposCustomizados : [];
