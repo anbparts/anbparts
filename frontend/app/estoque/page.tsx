@@ -1612,7 +1612,7 @@ export default function EstoquePage() {
                           />
                           <div style={{ minWidth: 0 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                              <span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 12.5, color: 'var(--blue-500)' }}>{p.idPeca}</span>
+                              <a href={`/estoque/peca?id=${p.id}`} style={{ fontFamily: 'Geist Mono, monospace', fontSize: 12.5, color: 'var(--blue-500)', textDecoration: 'none', fontWeight: 600 }} title="Ver detalhes">{p.idPeca}</a>
                               <span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11, color: 'var(--ink-muted)' }}>ID #{p.motoId}</span>
                               {bloqueadaPrejuizo ? <PrejuizoBadge /> : null}
                             </div>
@@ -1761,7 +1761,11 @@ export default function EstoquePage() {
                             />
                           </td>
                           <td style={{ ...cs.td, padding: denseTablePadding }}><span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11.5, color: 'var(--ink-muted)' }}>#{p.motoId}</span></td>
-                          <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11.5, color: isPrejuizoPeca(p) ? '#b91c1c' : 'var(--blue-500)', whiteSpace: 'nowrap' }}>{p.idPeca}</td>
+                          <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11.5, whiteSpace: 'nowrap' }}>
+                            <a href={`/estoque/peca?id=${p.id}`} style={{ color: isPrejuizoPeca(p) ? '#b91c1c' : 'var(--blue-500)', textDecoration: 'none', fontWeight: 600 }} title="Ver detalhes da peça">
+                              {p.idPeca}
+                            </a>
+                          </td>
                           <td style={{ ...cs.td, padding: denseTablePadding, color: 'var(--ink-muted)', fontSize: 11.5, lineHeight: 1.35 }}>
                             <div style={{ display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden' }}>
                               {[p.moto?.marca, p.moto?.modelo].filter(Boolean).join(' ')}

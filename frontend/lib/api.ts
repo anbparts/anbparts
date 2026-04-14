@@ -58,6 +58,7 @@ export const api = {
   },
   pecas: {
     list:   (params?: Record<string, any>) => req<any>(`/pecas${buildQueryString(params)}`),
+    get:    (id: number) => req<any>(`/pecas/${id}`),
     caixas: () => req<any>('/pecas/caixas'),
     sugerirId: (motoId: number) => req<any>(`/pecas/sugestao-id?motoId=${motoId}`),
     create: (data: any)     => req<any>('/pecas', { method: 'POST', body: JSON.stringify(data) }),

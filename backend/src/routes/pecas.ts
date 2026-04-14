@@ -377,6 +377,17 @@ pecasRouter.get('/', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+pecasRouter.get('/:id', async (req, res, next) => {
+  try {
+    const peca = await prisma.peca.findUnique({
+      where: { id: Number(req.params.id) },
+      include: { moto: true, prejuizo: true },
+    });
+    if (!peca) return res.status(404).json({ error: 'Peca nao encontrada' });
+    res.json(peca);
+  } catch (e) { next(e); }
+});
+
 pecasRouter.get('/caixas', async (_req, res, next) => {
   try {
     const pecas = await prisma.peca.findMany({
