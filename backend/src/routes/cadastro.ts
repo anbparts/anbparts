@@ -221,7 +221,7 @@ cadastroRouter.post('/:id/finalizar', async (req, res, next) => {
       formato: 'S',
       situacao: 'A',
       condicao: cadastro.condicao === 'novo' ? 0 : 1,
-      descricaoCurta: cadastro.descricaoPeca || '',
+      descricaoCurta: (cadastro.descricaoPeca || '').replace(/\r\n/g, '<br>').replace(/\n/g, '<br>'),
       marca: toTitleCase(cadastro.moto?.marca || ''),
       pesoLiquido: Number(cadastro.peso || 0),
       pesoBruto: Number(cadastro.peso || 0),
@@ -269,8 +269,14 @@ cadastroRouter.post('/:id/finalizar', async (req, res, next) => {
     // Lança estoque pela API específica após criar o produto
     if (blingProdutoId && Number(cadastro.estoque) > 0) {
       try {
+        // Busca o depósito padrão primeiro
+        const depositosResp = await blingReq('/depositos?pagina=1&limite=1&situacoes[]=1');
+        const depositoId = Number(depositosResp?.data?.[0]?.id || 0);
+        if (!depositoId) throw new Error('Nenhum depósito ativo encontrado no Bling');
+
         const estoquePayload = {
           produto: { id: Number(blingProdutoId) },
+          deposito: { id: depositoId },
           operacao: 'B', // B = Balanço (define saldo absoluto)
           preco: Number(cadastro.precoVenda) || 0,
           custo: 0,
