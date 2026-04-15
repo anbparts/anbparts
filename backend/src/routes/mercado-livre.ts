@@ -2088,6 +2088,25 @@ export function startMercadoLivreScheduler() {
   setInterval(runTick, MERCADO_LIVRE_SCHEDULER_INTERVAL_MS);
 }
 
+// GET /mercado-livre/categoria-predictor?titulo=TITULO
+// Proxy para evitar CORS na chamada direta do browser
+mercadoLivreRouter.get('/categoria-predictor', async (req, res, next) => {
+  try {
+    const titulo = String(req.query.titulo || '').trim();
+    if (!titulo || titulo.length < 3) return res.json([]);
+
+    const resp = await fetch(
+      `${MERCADO_LIVRE_API}/sites/MLB/category_predictor/predict?title=${encodeURIComponent(titulo)}`,
+    );
+    if (!resp.ok) return res.json([]);
+    const data = await resp.json();
+    const sugestoes = Array.isArray(data) ? data : [];
+    res.json(sugestoes.slice(0, 5));
+  } catch (e) {
+    next(e);
+  }
+});
+
 mercadoLivreRouter.get('/config', async (_req, res, next) => {
   try {
     const config = await getMercadoLivreConfig();

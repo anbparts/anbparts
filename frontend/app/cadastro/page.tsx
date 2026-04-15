@@ -139,9 +139,10 @@ export default function CadastroPage() {
     if (!titulo || titulo.length < 5) { setCategorias([]); return; }
     setBuscandoCategoria(true);
     try {
-      // API pública do ML — endpoint correto para Brasil (MLB)
+      // Proxy via backend para evitar CORS
       const resp = await fetch(
-        `https://api.mercadolibre.com/sites/MLB/category_predictor/predict?title=${encodeURIComponent(titulo + ' moto')}`,
+        `${API}/mercado-livre/categoria-predictor?titulo=${encodeURIComponent(titulo + ' moto')}`,
+        { credentials: 'include' },
       );
       if (!resp.ok) throw new Error('Erro na API ML');
       const d = await resp.json();
