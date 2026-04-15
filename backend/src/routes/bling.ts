@@ -2834,12 +2834,13 @@ async function compareProdutosBlingCodes(
               detalhe: 'Esse SKU tem estoque disponivel mas o anuncio na Nuvemshop esta pausado ou inativo.',
             }));
           }
-          // Caso 3: sem estoque mas anuncio está ativo
-          if (!temEstoque && !emPrejuizo && ns.publicado) {
+          // Caso 3: sem estoque mas anuncio está ativo COM estoque na Nuvemshop
+          // (se Nuvemshop também está zerado, o produto aparece como "Esgotado" — sem divergência)
+          if (!temEstoque && !emPrejuizo && ns.publicado && (ns.estoqueNuvemshop || 0) > 0) {
             divergenciasSku.push(buildDivergenciaPayload(codigo, local, qtdBling, descricaoBling, statusMercadoLivre, {
               tipo: 'nuvemshop_anuncio_ativo_sem_estoque',
               titulo: 'Anuncio Nuvemshop ativo sem estoque',
-              detalhe: 'Nao ha estoque disponivel no ANB nem no Bling, mas o anuncio na Nuvemshop segue ativo.',
+              detalhe: 'Nao ha estoque disponivel no ANB nem no Bling, mas o anuncio na Nuvemshop segue ativo com estoque.',
             }));
           }
           // Caso 4: em prejuízo e anuncio ainda ativo

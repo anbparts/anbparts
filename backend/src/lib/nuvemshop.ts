@@ -5,6 +5,7 @@ const prisma = new PrismaClient();
 export type NuvemshopAnuncioStatus = {
   encontrado: boolean;
   publicado: boolean;   // true = ativo na loja
+  estoqueNuvemshop: number; // soma do estoque das variantes na Nuvemshop
   productId?: number;
   sku?: string;
   nome?: string;
@@ -33,7 +34,7 @@ export function clearNuvemshopCredentialsCache() {
   _credentialsCache = null;
 }
 
-async function nuvemshopReq(path: string, accessToken: string, storeId: string) {
+async function nuvemshopReq<T = unknown>(path: string, accessToken: string, storeId: string): Promise<T> {
   const url = `https://api.nuvemshop.com.br/v1/${storeId}${path}`;
   const resp = await fetch(url, {
     headers: {
@@ -48,7 +49,7 @@ async function nuvemshopReq(path: string, accessToken: string, storeId: string) 
     throw new Error(`Nuvemshop API ${resp.status}: ${text.slice(0, 200)}`);
   }
 
-  return resp.json();
+  return (await resp.json()) as T;
 }
 
 /**
@@ -66,7 +67,7 @@ export async function getNuvemshopStatusBySku(sku: string): Promise<NuvemshopAnu
     const { accessToken, storeId } = creds;
 
     // Busca produto por SKU via variantes
-    const data: any[] = await nuvemshopReq(
+    const data = await nuvemshopReq<any[]>(
       `/products?sku=${encodeURIComponent(sku)}&fields=id,name,published,variants`,
       accessToken,
       storeId,
@@ -78,16 +79,21 @@ export async function getNuvemshopStatusBySku(sku: string): Promise<NuvemshopAnu
 
     const produto = data[0];
     const publicado = produto.published === true;
+    // Soma estoque de todas as variantes
+    const estoqueNuvemshop = Array.isArray(produto.variants)
+      ? produto.variants.reduce((sum: number, v: any) => sum + (Number(v.stock) || 0), 0)
+      : 0;
 
     return {
       encontrado: true,
       publicado,
+      estoqueNuvemshop,
       productId: produto.id,
       nome: typeof produto.name === 'object' ? (produto.name.pt || produto.name.en || '') : String(produto.name || ''),
       sku,
     };
   } catch (e: any) {
-    return { encontrado: false, publicado: false, erro: String(e?.message || e) };
+    return { encontrado: false, publicado: false, estoqueNuvemshop: 0, erro: String(e?.message || e) };
   }
 }
 
