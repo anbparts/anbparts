@@ -206,32 +206,36 @@ cadastroRouter.post('/:id/finalizar', async (req, res, next) => {
       camposCustomizados.push({ idCampoCustomizado: BLING_DETRAN_CAMPO_ID, valor: cadastro.detranEtiqueta });
     }
 
+    // Monta payload conforme campos aceitos pela API v3 do Bling
     const payload: any = {
       nome: cadastro.descricao,
       codigo: cadastro.idPeca,
       preco: Number(cadastro.precoVenda),
-      tipo: 'P',
-      situacao: 'A',
-      condicao: cadastro.condicao === 'novo' ? 1 : 2,
-      descricaoCurta: cadastro.descricaoPeca || '',
-      pesoLiquido: cadastro.peso ? Number(cadastro.peso) : null,
-      pesoBruto: cadastro.peso ? Number(cadastro.peso) : null,
-      largura: cadastro.largura ? Number(cadastro.largura) : null,
-      altura: cadastro.altura ? Number(cadastro.altura) : null,
-      profundidade: cadastro.profundidade ? Number(cadastro.profundidade) : null,
+      tipo: 'P',         // P = Produto
+      situacao: 'A',     // A = Ativo
+      condicao: cadastro.condicao === 'novo' ? 0 : 1, // 0=Novo, 1=Usado, 2=Recondicionado
+      descricao: cadastro.descricaoPeca || '',
+      pesoLiquido: cadastro.peso ? Number(cadastro.peso) : undefined,
+      pesoBruto: cadastro.peso ? Number(cadastro.peso) : undefined,
+      largura: cadastro.largura ? Number(cadastro.largura) : undefined,
+      altura: cadastro.altura ? Number(cadastro.altura) : undefined,
+      profundidade: cadastro.profundidade ? Number(cadastro.profundidade) : undefined,
       estoque: {
         minimo: Number(cadastro.estoque),
         maximo: Number(cadastro.estoque),
-        atual: Number(cadastro.estoque),
       },
-      camposCustomizados: camposCustomizados.length ? camposCustomizados : undefined,
     };
+    if (camposCustomizados.length) {
+      payload.camposCustomizados = camposCustomizados;
+    }
 
     // Cria produto no Bling
+    console.log('[cadastro] Payload Bling:', JSON.stringify(payload, null, 2));
     const blingResp = await blingReq('/produtos', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
+    console.log('[cadastro] Resposta Bling:', JSON.stringify(blingResp, null, 2));
 
     const blingProdutoId = String(blingResp?.data?.id || '');
 
