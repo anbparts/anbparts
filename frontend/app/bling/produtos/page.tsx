@@ -984,6 +984,7 @@ export default function BlingProdutosPage() {
                         <span style={{ fontSize: 12, background: '#fef2f2', color: borderColor, padding: '2px 8px', borderRadius: 5 }}>
                           {item.titulo}
                         </span>
+                        {item.tipo === 'sem_anuncio_nuvemshop' && <span style={{ fontSize: 12, background: '#fef9c3', color: '#92400e', padding: '2px 8px', borderRadius: 5 }}>🏪 Nuvemshop: Sem anuncio</span>}
                         {item.statusMercadoLivre && (
                           <span style={{ fontSize: 12, background: item.statusMercadoLivreAtivo ? '#ecfdf3' : '#fef2f2', color: item.statusMercadoLivreAtivo ? 'var(--green)' : 'var(--red)', padding: '2px 8px', borderRadius: 5 }}>
                             ML: {item.statusMercadoLivre}

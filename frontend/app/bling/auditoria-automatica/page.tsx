@@ -42,6 +42,7 @@ type Execucao = {
 type Config = {
   auditoriaAtiva: boolean; auditoriaHorario: string; auditoriaEscopo: AuditoriaEscopo; auditoriaTamanhoLote: number; auditoriaPausaMs: number;
   auditoriaLinkMlAtiva: boolean; auditoriaLinkMlHorario: string; auditoriaLinkMlIntervaloDias: number; auditoriaLinkMlUltimaExecucaoChave?: string | null; auditoriaLinkMlUltimaExecucaoEm?: string | null; auditoriaLinkMlExecutandoAgora?: boolean;
+  nuvemshopAtiva?: boolean; nuvemshopLojaId?: number; mercadoLivreLojaId?: number;
   resendApiKeyConfigured: boolean; auditoriaEmailConfigurado?: boolean; detranEmailConfigurado?: boolean; configuracoesGeraisRemetente?: string;
   configuracoesGeraisAuditoriaDestinatario?: string; configuracoesGeraisAuditoriaTitulo?: string; auditoriaUltimaExecucaoChave?: string | null;
   auditoriaUltimaExecucaoEm?: string | null; executandoAgora?: boolean; ultimaExecucao?: Execucao | null;
@@ -86,6 +87,9 @@ export default function AuditoriaAutomaticaPage() {
   const [auditoriaLinkMlHorario, setAuditoriaLinkMlHorario] = useState('05:00');
   const [auditoriaLinkMlIntervaloDias, setAuditoriaLinkMlIntervaloDias] = useState('1');
   const [executandoLinkMl, setExecutandoLinkMl] = useState(false);
+  const [nuvemshopAtiva, setNuvemshopAtiva] = useState(false);
+  const [nuvemshopLojaId, setNuvemshopLojaId] = useState('205449158');
+  const [mercadoLivreLojaId] = useState('205204423');
 
   async function loadConfig() {
     const response = await fetch(`${API}/bling/auditoria-automatica/config`);
@@ -100,6 +104,8 @@ export default function AuditoriaAutomaticaPage() {
     setAuditoriaLinkMlAtiva(!!data.auditoriaLinkMlAtiva);
     setAuditoriaLinkMlHorario(data.auditoriaLinkMlHorario || '05:00');
     setAuditoriaLinkMlIntervaloDias(String(data.auditoriaLinkMlIntervaloDias || 1));
+    setNuvemshopAtiva(!!data.nuvemshopAtiva);
+    if (data.nuvemshopLojaId) setNuvemshopLojaId(String(data.nuvemshopLojaId));
   }
 
   async function loadExecucaoDetalhe(id: number) {
@@ -229,6 +235,8 @@ export default function AuditoriaAutomaticaPage() {
           auditoriaLinkMlAtiva,
           auditoriaLinkMlHorario,
           auditoriaLinkMlIntervaloDias: Number(auditoriaLinkMlIntervaloDias) || 1,
+          nuvemshopAtiva,
+          nuvemshopLojaId: Number(nuvemshopLojaId) || 205449158,
         }),
       });
       const data = await response.json();
@@ -378,6 +386,43 @@ export default function AuditoriaAutomaticaPage() {
             <div style={{ fontSize: 12, color: 'var(--gray-700)' }}><strong>Status:</strong> <span style={{ color: auditoriaLinkMlAtiva ? 'var(--green)' : 'var(--amber)' }}>{auditoriaLinkMlAtiva ? 'Ativa' : 'Pausada'}</span></div>
             <div style={{ fontSize: 12, color: 'var(--gray-700)' }}><strong>Ultima execucao:</strong> {fmtDateTime(config?.auditoriaLinkMlUltimaExecucaoEm || null)}</div>
             <div style={{ fontSize: 12, color: 'var(--gray-700)' }}><strong>Executando agora:</strong> <span style={{ color: config?.auditoriaLinkMlExecutandoAgora ? 'var(--blue-500)' : 'var(--gray-700)' }}>{config?.auditoriaLinkMlExecutandoAgora ? 'Sim' : 'Nao'}</span></div>
+          </div>
+        </div>
+
+        {/* Lojas Monitoradas */}
+        <div style={s.card}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 4 }}>Lojas Monitoradas</div>
+          <div style={{ fontSize: 12, color: 'var(--gray-400)', marginBottom: 16 }}>Configure quais lojas devem ser consideradas nas verificacoes de divergencia da auditoria.</div>
+          <div style={{ display: 'grid', gap: 12 }}>
+            {/* Mercado Livre - informativo */}
+            <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 20 }}>🛒</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-800)' }}>Mercado Livre</div>
+                <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 2 }}>Sempre ativo — regras de divergencia de ML sao fixas</div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <label style={{ fontSize: 11, color: 'var(--gray-500)' }}>ID da loja Bling</label>
+                <input style={{ ...s.input, width: 120, fontSize: 12 }} type="number" value={mercadoLivreLojaId} readOnly disabled />
+              </div>
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--green)', background: '#f0fdf4', border: '1px solid #86efac', padding: '2px 10px', borderRadius: 6 }}>Sempre ativo</span>
+            </div>
+            {/* Nuvemshop - configuravel */}
+            <div style={{ border: `1px solid ${nuvemshopAtiva ? 'var(--blue-500)' : 'var(--border)'}`, borderRadius: 8, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', background: nuvemshopAtiva ? 'rgba(59,130,246,.04)' : 'transparent' }}>
+              <span style={{ fontSize: 20 }}>🏪</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-800)' }}>Nuvemshop</div>
+                <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 2 }}>Quando ativo, gera divergencia para produtos com estoque sem anuncio na Nuvemshop</div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <label style={{ fontSize: 11, color: 'var(--gray-500)' }}>ID da loja Bling</label>
+                <input style={{ ...s.input, width: 120, fontSize: 12 }} type="number" value={nuvemshopLojaId} onChange={(e) => setNuvemshopLojaId(e.target.value)} />
+              </div>
+              <select style={{ ...s.input, cursor: 'pointer', fontSize: 12 }} value={nuvemshopAtiva ? '1' : '0'} onChange={(e) => setNuvemshopAtiva(e.target.value === '1')}>
+                <option value="1">Ativa</option>
+                <option value="0">Pausada</option>
+              </select>
+            </div>
           </div>
         </div>
 
@@ -554,6 +599,7 @@ export default function AuditoriaAutomaticaPage() {
                           <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, background: 'var(--gray-100)', color: 'var(--gray-500)', padding: '2px 8px', borderRadius: 5 }}>{item.sku}</span>
                           <span style={{ fontSize: 12, background: '#fef2f2', color: borderColor(item.tipo), padding: '2px 8px', borderRadius: 5 }}>{item.titulo}</span>
                           {item.statusMercadoLivre && <span style={{ fontSize: 12, background: item.statusMercadoLivreAtivo ? '#ecfdf3' : '#fef2f2', color: item.statusMercadoLivreAtivo ? 'var(--green)' : 'var(--red)', padding: '2px 8px', borderRadius: 5 }}>ML: {item.statusMercadoLivre}</span>}
+                          {item.tipo === 'sem_anuncio_nuvemshop' && <span style={{ fontSize: 12, background: '#fef9c3', color: '#92400e', padding: '2px 8px', borderRadius: 5 }}>🏪 Nuvemshop: Sem anuncio</span>}
                           {item.moto && <span style={{ fontSize: 12, color: 'var(--gray-400)' }}>{item.moto}</span>}
                         </div>
                         <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 6 }}>{item.descricaoAnb || item.descricaoBling || 'Sem descricao'}</div>

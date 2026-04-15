@@ -417,6 +417,9 @@ function getAuditoriaDefaults(cfg: any) {
     auditoriaLinkMlIntervaloDias: normalizeAuditoriaLinkMlIntervaloDias(cfg?.auditoriaLinkMlIntervaloDias),
     auditoriaLinkMlUltimaExecucaoChave: cfg?.auditoriaLinkMlUltimaExecucaoChave || null,
     auditoriaLinkMlUltimaExecucaoEm: cfg?.auditoriaLinkMlUltimaExecucaoEm || null,
+    nuvemshopAtiva: !!cfg?.nuvemshopAtiva,
+    nuvemshopLojaId: Number(cfg?.nuvemshopLojaId || 205449158),
+    mercadoLivreLojaId: 205204423, // informativo, fixo por enquanto
   };
 }
 
@@ -2597,9 +2600,9 @@ async function compareProdutosBlingCodes(
     findBlingProductDetailsByIds(produtoIdsParaDetalhe, options),
   ]);
   const statusMercadoLivreByProductId = mercadoLivreStatusData.statuses;
-  const productStoreLinksByProductId = (options?.syncMercadoLivreItemId || options?.syncMercadoLivreLink) && localPecas.length
+  const productStoreLinksByProductId = (options?.syncMercadoLivreItemId || options?.syncMercadoLivreLink || options?.syncCamposFisicos || options?.checkNuvemshop) && localPecas.length
     ? mercadoLivreStatusData.productStoreLinks
-    : new Map<number, any[]>();
+    : mercadoLivreStatusData.productStoreLinks; // sempre popula para checagens de loja
 
   if ((options?.syncLocalizacao || options?.syncDetran || options?.syncMercadoLivreItemId || options?.syncMercadoLivreLink || options?.syncCamposFisicos) && localPecas.length) {
     await syncPecaMetadataFromBling(localPecas, produtosBling, detalhesBlingByProductId, productStoreLinksByProductId, {
@@ -2716,6 +2719,12 @@ async function compareProdutosBlingCodes(
       ? getBlingStockMaximum(detalhesBlingByProductId.get(Number(produtoBling.id)) || null)
       : null;
     const temEstoqueEmAlgumSistema = local.qtdDisponivelAnb > 0 || qtdBling > 0;
+
+    // Verificação Nuvemshop: produto com estoque no ANB sem link na Nuvemshop
+    const nuvemshopLojaId = cfg.nuvemshopLojaId || 205449158;
+    const lojaRowsDoProduto = produtoBling?.id ? (productStoreLinksByProductId.get(Number(produtoBling.id)) || []) : [];
+    const temLinkNuvemshop = lojaRowsDoProduto.some((row: any) => Number(row?.loja?.id || row?.idLoja) === nuvemshopLojaId);
+
     const divergenciasSku: any[] = [];
     const traceEntry = traceSkuSet.has(codigo)
       ? {
@@ -2782,6 +2791,15 @@ async function compareProdutosBlingCodes(
         tipo: 'peca_em_prejuizo',
         titulo: 'Peca em prejuizo no ANB',
         detalhe: `Esse SKU possui ${local.qtdPrejuizoAnb} item(ns) registrado(s) em prejuizo e precisa ser revisado na equalizacao.`,
+      }));
+    }
+
+    // Divergência Nuvemshop: tem estoque no ANB mas não tem link na Nuvemshop
+    if (cfg.nuvemshopAtiva && local.qtdDisponivelAnb > 0 && produtoBling && !temLinkNuvemshop) {
+      divergenciasSku.push(buildDivergenciaPayload(codigo, local, qtdBling, descricaoBling, statusMercadoLivre, {
+        tipo: 'sem_anuncio_nuvemshop',
+        titulo: 'Sem anuncio na Nuvemshop',
+        detalhe: 'Esse SKU tem estoque disponivel no ANB mas nao possui anuncio vinculado na Nuvemshop.',
       }));
     }
 
@@ -3943,6 +3961,8 @@ blingRouter.get('/auditoria-automatica/config', async (_req, res, next) => {
       auditoriaLinkMlUltimaExecucaoChave: cfg.auditoriaLinkMlUltimaExecucaoChave,
       auditoriaLinkMlUltimaExecucaoEm: cfg.auditoriaLinkMlUltimaExecucaoEm,
       auditoriaLinkMlExecutandoAgora: auditoriaLinkMlSchedulerState.running,
+      nuvemshopAtiva: cfg.nuvemshopAtiva,
+      nuvemshopLojaId: cfg.nuvemshopLojaId,
       resendApiKeyConfigured: !!generalConfig.resendApiKeyConfigured,
       auditoriaEmailConfigurado: !!generalConfig.auditoriaEmailConfigurado,
       detranEmailConfigurado: !!generalConfig.detranEmailConfigurado,
@@ -3972,6 +3992,8 @@ blingRouter.post('/auditoria-automatica/config', async (req, res, next) => {
     const auditoriaLinkMlAtiva = req.body?.auditoriaLinkMlAtiva == null ? cfgAtual.auditoriaLinkMlAtiva : !!req.body?.auditoriaLinkMlAtiva;
     const auditoriaLinkMlHorario = normalizeHorarioAuditoriaLinkMl(req.body?.auditoriaLinkMlHorario ?? cfgAtual.auditoriaLinkMlHorario);
     const auditoriaLinkMlIntervaloDias = normalizeAuditoriaLinkMlIntervaloDias(req.body?.auditoriaLinkMlIntervaloDias ?? cfgAtual.auditoriaLinkMlIntervaloDias);
+    const nuvemshopAtiva = req.body?.nuvemshopAtiva == null ? cfgAtual.nuvemshopAtiva : !!req.body?.nuvemshopAtiva;
+    const nuvemshopLojaId = req.body?.nuvemshopLojaId != null ? Math.max(1, Number(req.body.nuvemshopLojaId) || 205449158) : cfgAtual.nuvemshopLojaId;
 
     const data: any = {
       auditoriaAtiva,
@@ -3984,6 +4006,8 @@ blingRouter.post('/auditoria-automatica/config', async (req, res, next) => {
       auditoriaLinkMlAtiva,
       auditoriaLinkMlHorario,
       auditoriaLinkMlIntervaloDias,
+      nuvemshopAtiva,
+      nuvemshopLojaId,
     };
 
     await saveConfig(data);

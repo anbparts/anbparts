@@ -149,6 +149,8 @@ model BlingConfig {
   auditoriaLinkMlIntervaloDias Int     @default(1)
   auditoriaLinkMlUltimaExecucaoChave String?
   auditoriaLinkMlUltimaExecucaoEm DateTime?
+  nuvemshopAtiva   Boolean @default(false)
+  nuvemshopLojaId  Int     @default(205449158)
   updatedAt                   DateTime @default(now()) @updatedAt
 }
 
