@@ -231,25 +231,36 @@ cadastroRouter.post('/:id/finalizar', async (req, res, next) => {
       payload.camposCustomizados = camposCustomizados;
     }
 
-    // Cria produto no Bling
+    // Cria ou atualiza produto no Bling
     console.log('[cadastro] Payload Bling:', JSON.stringify(payload, null, 2));
     let blingResp: any;
+    let blingProdutoId = cadastro.blingProdutoId || '';
+
     try {
-      blingResp = await blingReq('/produtos', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
+      if (blingProdutoId) {
+        // Já existe — faz PUT para atualizar
+        blingResp = await blingReq(`/produtos/${blingProdutoId}`, {
+          method: 'PUT',
+          body: JSON.stringify(payload),
+        });
+        console.log('[cadastro] Produto atualizado no Bling:', blingProdutoId);
+      } else {
+        // Novo produto — faz POST
+        blingResp = await blingReq('/produtos', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+        blingProdutoId = String(blingResp?.data?.id || '');
+        console.log('[cadastro] Produto criado no Bling:', blingProdutoId);
+      }
     } catch (blingErr: any) {
       console.error('[cadastro] Erro Bling:', blingErr?.message);
       return res.status(400).json({
         ok: false,
-        error: blingErr?.message || 'Erro ao criar produto no Bling',
-        payload, // retorna o payload para debug
+        error: blingErr?.message || 'Erro ao salvar produto no Bling',
+        payload,
       });
     }
-    console.log('[cadastro] Resposta Bling:', JSON.stringify(blingResp, null, 2));
-
-    const blingProdutoId = String(blingResp?.data?.id || '');
 
     // Lança estoque pela API específica após criar o produto
     if (blingProdutoId && Number(cadastro.estoque) > 0) {
