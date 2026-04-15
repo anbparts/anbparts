@@ -220,10 +220,6 @@ cadastroRouter.post('/:id/finalizar', async (req, res, next) => {
       largura: cadastro.largura ? Number(cadastro.largura) : undefined,
       altura: cadastro.altura ? Number(cadastro.altura) : undefined,
       profundidade: cadastro.profundidade ? Number(cadastro.profundidade) : undefined,
-      estoque: {
-        minimo: Number(cadastro.estoque),
-        maximo: Number(cadastro.estoque),
-      },
     };
     if (camposCustomizados.length) {
       payload.camposCustomizados = camposCustomizados;
@@ -238,6 +234,29 @@ cadastroRouter.post('/:id/finalizar', async (req, res, next) => {
     console.log('[cadastro] Resposta Bling:', JSON.stringify(blingResp, null, 2));
 
     const blingProdutoId = String(blingResp?.data?.id || '');
+
+    // Lança estoque pela API específica após criar o produto
+    if (blingProdutoId && Number(cadastro.estoque) > 0) {
+      try {
+        const estoquePayload = {
+          produto: { id: Number(blingProdutoId) },
+          operacao: 'B', // B = Balanço (define saldo absoluto)
+          preco: Number(cadastro.precoVenda) || 0,
+          custo: 0,
+          quantidade: Number(cadastro.estoque),
+          observacoes: `Estoque inicial cadastro ANB Parts - ${cadastro.idPeca}`,
+        };
+        console.log('[cadastro] Lançando estoque:', JSON.stringify(estoquePayload));
+        await blingReq('/estoques', {
+          method: 'POST',
+          body: JSON.stringify(estoquePayload),
+        });
+        console.log('[cadastro] Estoque lançado com sucesso');
+      } catch (e: any) {
+        console.error('[cadastro] Erro ao lançar estoque:', e?.message);
+        // não falha o cadastro por causa do estoque
+      }
+    }
 
     // Upload da foto se fornecida e produto criado
     if (fotoCapa && blingProdutoId) {
