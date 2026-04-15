@@ -211,7 +211,7 @@ cadastroRouter.post('/:id/finalizar', async (req, res, next) => {
       nome: cadastro.descricao,
       codigo: cadastro.idPeca,
       preco: Number(cadastro.precoVenda),
-      tipo: 'S',         // S = Simples (E=Estrutura, V=Variação, S=Simples)
+      formato: 'S',      // S = Simples (E=Estrutura/Composição, V=Variação, S=Simples)
       situacao: 'A',     // A = Ativo
       condicao: cadastro.condicao === 'novo' ? 0 : 1, // 0=Novo, 1=Usado, 2=Recondicionado
       descricao: cadastro.descricaoPeca || '',

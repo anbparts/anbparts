@@ -2089,25 +2089,37 @@ export function startMercadoLivreScheduler() {
 }
 
 // GET /mercado-livre/categoria-predictor?titulo=TITULO
-// Proxy para evitar CORS na chamada direta do browser
+// Usa mercadoLivreReq autenticado para evitar CORS e restrições de domínio
 mercadoLivreRouter.get('/categoria-predictor', async (req, res, next) => {
   try {
     const titulo = String(req.query.titulo || '').trim();
     if (!titulo || titulo.length < 3) return res.json([]);
 
+    // Tenta domain_discovery (requer auth, mais preciso para BR)
+    try {
+      const data = await mercadoLivreReq(
+        `/sites/MLB/domain_discovery/search?q=${encodeURIComponent(titulo)}&limit=5`,
+      );
+      const sugestoes = Array.isArray(data) ? data : [];
+      console.log('[categoria-predictor] domain_discovery:', sugestoes.length, 'resultados');
+      if (sugestoes.length > 0) return res.json(sugestoes);
+    } catch (e1: any) {
+      console.log('[categoria-predictor] domain_discovery falhou:', e1?.message);
+    }
+
+    // Fallback: category_predictor sem auth
     const resp = await fetch(
       `${MERCADO_LIVRE_API}/sites/MLB/category_predictor/predict?title=${encodeURIComponent(titulo)}`,
     );
     const rawText = await resp.text();
-    console.log('[categoria-predictor] status:', resp.status, 'body:', rawText.slice(0, 500));
+    console.log('[categoria-predictor] predictor status:', resp.status, rawText.slice(0, 300));
     if (!resp.ok) return res.json([]);
     let data: any;
     try { data = JSON.parse(rawText); } catch { return res.json([]); }
-    // Pode retornar array ou objeto com predictions
     let sugestoes: any[] = [];
     if (Array.isArray(data)) sugestoes = data;
     else if (data?.predictions && Array.isArray(data.predictions)) sugestoes = data.predictions;
-    else if (data?.category_id) sugestoes = [data]; // objeto único
+    else if (data?.category_id) sugestoes = [data];
     res.json(sugestoes.slice(0, 5));
   } catch (e) {
     next(e);
