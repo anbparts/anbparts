@@ -191,11 +191,11 @@ cadastroRouter.post('/:id/finalizar', async (req, res, next) => {
 
     const cadastro = await prisma.cadastroPeca.findUnique({
       where: { id },
-      include: { moto: true },
+      include: { moto: { select: { marca: true, modelo: true, ano: true } } },
     });
 
     if (!cadastro) return res.status(404).json({ error: 'Cadastro não encontrado' });
-    if (cadastro.status === 'cadastrado') return res.status(400).json({ error: 'Já finalizado' });
+    // Permite re-finalizar para correções
 
     // Monta payload do produto Bling
     const camposCustomizados: any[] = [];
@@ -212,15 +212,20 @@ cadastroRouter.post('/:id/finalizar', async (req, res, next) => {
       codigo: cadastro.idPeca,
       preco: Number(cadastro.precoVenda),
       tipo: 'P',         // P = Produto
-      formato: 'S',      // S = Simples (E=Estrutura/Composição, V=Variação, S=Simples)
+      formato: 'S',      // S = Simples
       situacao: 'A',     // A = Ativo
-      condicao: cadastro.condicao === 'novo' ? 0 : 1, // 0=Novo, 1=Usado, 2=Recondicionado
-      descricao: cadastro.descricaoPeca || '',
-      pesoLiquido: cadastro.peso ? Number(cadastro.peso) : undefined,
-      pesoBruto: cadastro.peso ? Number(cadastro.peso) : undefined,
-      largura: cadastro.largura ? Number(cadastro.largura) : undefined,
-      altura: cadastro.altura ? Number(cadastro.altura) : undefined,
-      profundidade: cadastro.profundidade ? Number(cadastro.profundidade) : undefined,
+      condicao: cadastro.condicao === 'novo' ? 0 : 1, // 0=Novo, 1=Usado
+      descricaoCurta: cadastro.descricaoPeca || '',
+      marca: cadastro.moto?.marca || '',
+      pesoLiquido: cadastro.peso ? Number(cadastro.peso) : 0,
+      pesoBruto: cadastro.peso ? Number(cadastro.peso) : 0,
+      largura: cadastro.largura ? Number(cadastro.largura) : 0,
+      altura: cadastro.altura ? Number(cadastro.altura) : 0,
+      profundidade: cadastro.profundidade ? Number(cadastro.profundidade) : 0,
+      estoque: {
+        minimo: Number(cadastro.estoque),
+        maximo: Number(cadastro.estoque),
+      },
     };
     if (camposCustomizados.length) {
       payload.camposCustomizados = camposCustomizados;
@@ -255,17 +260,31 @@ cadastroRouter.post('/:id/finalizar', async (req, res, next) => {
           preco: Number(cadastro.precoVenda) || 0,
           custo: 0,
           quantidade: Number(cadastro.estoque),
-          observacoes: `Estoque inicial cadastro ANB Parts - ${cadastro.idPeca}`,
+          observacoes: `Estoque inicial - ${cadastro.idPeca}`,
         };
         console.log('[cadastro] Lançando estoque:', JSON.stringify(estoquePayload));
-        await blingReq('/estoques', {
+        const estoqueResp = await blingReq('/estoques', {
           method: 'POST',
           body: JSON.stringify(estoquePayload),
         });
-        console.log('[cadastro] Estoque lançado com sucesso');
+        console.log('[cadastro] Estoque OK:', JSON.stringify(estoqueResp));
       } catch (e: any) {
-        console.error('[cadastro] Erro ao lançar estoque:', e?.message);
-        // não falha o cadastro por causa do estoque
+        console.error('[cadastro] Erro estoque:', e?.message);
+      }
+    }
+
+    // Localização via API de depósitos/saldo do estoque (campo observações do estoque)
+    // A localização no Bling é definida via campo de localização no produto - enviada no payload principal
+    // mas também pode ser atualizada via PUT /produtos/{id}
+    if (blingProdutoId && cadastro.localizacao) {
+      try {
+        await blingReq(`/produtos/${blingProdutoId}`, {
+          method: 'PUT',
+          body: JSON.stringify({ localizacao: cadastro.localizacao }),
+        });
+        console.log('[cadastro] Localização atualizada:', cadastro.localizacao);
+      } catch (e: any) {
+        console.error('[cadastro] Erro localização:', e?.message);
       }
     }
 

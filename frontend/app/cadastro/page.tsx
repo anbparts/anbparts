@@ -329,17 +329,13 @@ export default function CadastroPage() {
                           </button>
                         </td>
                         <td style={s.td}>
-                          {cadastOk ? (
-                            <span style={s.badge('#2563eb', '#eff6ff', '#bfdbfe')}>✓ OK</span>
-                          ) : (
-                            <button
-                              onClick={() => openEtapa2(item)}
-                              style={{ ...s.badge('#dc2626', '#fef2f2', '#fecaca'), cursor: 'pointer' }}
-                              title="Finalizar cadastro"
-                            >
-                              Pendente
-                            </button>
-                          )}
+                          <button
+                          onClick={() => openEtapa2(item)}
+                          style={{ ...s.badge(cadastOk ? '#2563eb' : '#dc2626', cadastOk ? '#eff6ff' : '#fef2f2', cadastOk ? '#bfdbfe' : '#fecaca'), cursor: 'pointer' }}
+                          title={cadastOk ? 'Re-enviar para o Bling' : 'Finalizar cadastro'}
+                        >
+                          {cadastOk ? '✓ OK' : 'Pendente'}
+                        </button>
                         </td>
                         <td style={s.td}>
                           <div style={{ display: 'flex', gap: 6 }}>
