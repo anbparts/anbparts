@@ -3866,6 +3866,9 @@ blingRouter.get('/config', async (_req, res, next) => {
       prefixos: cfg.prefixos || [],
       fretePadrao: cfg.fretePadrao,
       taxaPadraoPct: cfg.taxaPadraoPct,
+      nuvemshopAtiva: cfg.nuvemshopAtiva,
+      nuvemshopLojaId: cfg.nuvemshopLojaId,
+      mercadoLivreLojaId: 205204423,
     });
   } catch (e) {
     next(e);
