@@ -196,6 +196,10 @@ model ConfiguracaoGeral {
   empresaEnderecoCompleto   String   @default("")
   empresaTelefoneWhats      String   @default("")
   empresaAnexos             Json     @default("{}")
+  nuvemshopAppId            String   @default("")
+  nuvemshopClientSecret     String   @default("")
+  nuvemshopAccessToken      String   @default("")
+  nuvemshopStoreId          String   @default("")
   createdAt                 DateTime @default(now())
   updatedAt                 DateTime @updatedAt
 }

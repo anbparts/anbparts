@@ -12,6 +12,7 @@ import { inventarioRouter } from './routes/inventario';
 import { configuracoesGeraisRouter } from './routes/configuracoes-gerais';
 import { empresaRouter } from './routes/empresa';
 import { mercadoLivreRouter, startMercadoLivreScheduler } from './routes/mercado-livre';
+import { nuvemshopRouter } from './routes/nuvemshop';
 import { authMiddleware } from './middlewares/auth';
 import { errorMiddleware } from './middlewares/error';
 
@@ -61,6 +62,7 @@ app.use('/financeiro', financeiroRouter);
 app.use('/inventario', inventarioRouter);
 app.use('/configuracoes-gerais', configuracoesGeraisRouter);
 app.use('/empresa', empresaRouter);
+app.use('/nuvemshop', nuvemshopRouter);
 
 app.use(errorMiddleware);
 
