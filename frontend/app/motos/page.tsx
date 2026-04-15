@@ -1,6 +1,8 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
+import { API_BASE } from '@/lib/api-base';
+const API = API_BASE;
 
 function fmt(v: number) {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -585,6 +587,9 @@ export default function MotosPage() {
   const [viewportMode, setViewportMode] = useState<MotosViewportMode>('desktop');
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState<any>(null);
+  const [textoModeloModal, setTextoModeloModal] = useState<any>(null); // moto selecionada
+  const [textoModelo, setTextoModelo] = useState('');
+  const [savingTexto, setSavingTexto] = useState(false);
   const [search, setSearch] = useState('');
   const [detranModalOpen, setDetranModalOpen] = useState(false);
   const [detranMoto, setDetranMoto] = useState<any>(null);
@@ -850,8 +855,40 @@ export default function MotosPage() {
         >
           Excluir
         </button>
+        <button
+          onClick={() => openTextoModeloModal(m)}
+          style={{ ...cs.btn, padding: stacked ? '8px 12px' : '5px 10px', fontSize: 12, background: '#eff6ff', color: '#3b82f6', borderColor: '#bfdbfe', width: stacked ? '100%' : undefined, justifyContent: 'center' }}
+          title="Texto modelo para cadastro de peças"
+        >
+          📝 Texto Modelo
+        </button>
       </div>
     );
+  }
+
+  async function openTextoModeloModal(m: any) {
+    setTextoModeloModal(m);
+    try {
+      const resp = await fetch(`${API}/cadastro/motos/${m.id}/descricao-modelo`, { credentials: 'include' });
+      const data = await resp.json();
+      setTextoModelo(data.descricaoModelo || '');
+    } catch { setTextoModelo(''); }
+  }
+
+  async function salvarTextoModelo() {
+    if (!textoModeloModal) return;
+    setSavingTexto(true);
+    try {
+      await fetch(`${API}/cadastro/motos/${textoModeloModal.id}/descricao-modelo`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ descricaoModelo: textoModelo }),
+      });
+      alert('Texto modelo salvo!');
+      setTextoModeloModal(null);
+    } catch { alert('Erro ao salvar'); }
+    setSavingTexto(false);
   }
 
   return (
@@ -981,6 +1018,38 @@ export default function MotosPage() {
       <Modal open={modal} title={editing ? 'Editar moto' : 'Nova moto'} onClose={() => { setModal(false); setEditing(null); }} onSave={handleSave} moto={editing} viewportMode={viewportMode} />
       <AnexosMotoModal open={anexosModalOpen} moto={anexosMoto} loading={anexosLoading} data={anexosData} saving={anexosSaving} onSave={handleSaveAnexos} onClose={closeAnexosModal} viewportMode={viewportMode} />
       <DetranModal open={detranModalOpen} moto={detranMoto} loading={detranLoading} data={detranData} updatingId={detranUpdatingId} onToggleStatus={handleDetranStatusToggle} onClose={closeDetranModal} viewportMode={viewportMode} />
+
+      {/* Modal Texto Modelo */}
+      {textoModeloModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ background: 'var(--white)', borderRadius: 14, width: '100%', maxWidth: 640, boxShadow: '0 20px 60px rgba(0,0,0,0.2)', display: 'flex', flexDirection: 'column', maxHeight: '90vh' }}>
+            <div style={{ padding: '20px 24px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--gray-800)' }}>📝 Texto Modelo</div>
+                <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>{textoModeloModal.marca} {textoModeloModal.modelo} {textoModeloModal.ano}</div>
+              </div>
+              <button onClick={() => setTextoModeloModal(null)} style={{ border: 'none', background: 'transparent', fontSize: 20, cursor: 'pointer', color: 'var(--gray-400)' }}>×</button>
+            </div>
+            <div style={{ padding: '16px 24px', fontSize: 12, color: 'var(--gray-500)' }}>
+              Este texto será usado como base na descrição das peças desta moto. O usuário poderá editar por peça no momento do cadastro.
+            </div>
+            <div style={{ padding: '0 24px', flex: 1 }}>
+              <textarea
+                style={{ width: '100%', minHeight: 280, border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', fontSize: 13, fontFamily: 'Inter, sans-serif', resize: 'vertical', outline: 'none', boxSizing: 'border-box', color: 'var(--gray-800)', lineHeight: 1.6 }}
+                value={textoModelo}
+                onChange={(e) => setTextoModelo(e.target.value)}
+                placeholder="Cole aqui o texto modelo para as peças desta moto..."
+              />
+            </div>
+            <div style={{ padding: '16px 24px', display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button onClick={() => setTextoModeloModal(null)} style={{ ...cs.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)' }}>Cancelar</button>
+              <button onClick={salvarTextoModelo} disabled={savingTexto} style={{ ...cs.btn, background: 'var(--ink)', color: '#fff', opacity: savingTexto ? 0.7 : 1 }}>
+                {savingTexto ? 'Salvando...' : 'Salvar texto modelo'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

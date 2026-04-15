@@ -445,7 +445,7 @@ async function saveConfig(data: any) {
   }
 }
 
-async function blingReq(pathUrl: string, options: any = {}, retries = 3): Promise<any> {
+export async function blingReq(pathUrl: string, options: any = {}, retries = 3): Promise<any> {
   const cfg = await getConfig();
   let token = cfg.accessToken;
 

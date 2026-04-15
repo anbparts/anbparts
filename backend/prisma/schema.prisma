@@ -19,12 +19,14 @@ model Moto {
   dataCompra   DateTime?
   precoCompra  Decimal  @default(0) @db.Decimal(12, 2)
   origemCompra String?
-  observacoes  String?
-  anexos       Json     @default("{}")
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  observacoes       String?
+  descricaoModelo   String?  @db.Text
+  anexos            Json     @default("{}")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  pecas        Peca[]
+  pecas             Peca[]
+  cadastrosPeca     CadastroPeca[]
 }
 
 model Peca {
@@ -64,6 +66,33 @@ model Peca {
   @@index([mercadoLivreItemId])
   @@index([mercadoLivreLink])
   @@index([motoId, detranEtiqueta])
+}
+
+model CadastroPeca {
+  id               Int      @id @default(autoincrement())
+  motoId           Int
+  idPeca           String   @unique
+  descricao        String   // titulo (max 60 chars)
+  descricaoPeca    String?  @db.Text // corpo do anuncio
+  precoVenda       Decimal  @default(0) @db.Decimal(12, 2)
+  condicao         String   @default("usado") // usado | novo
+  peso             Decimal? @db.Decimal(10, 3)
+  largura          Decimal? @db.Decimal(10, 2)
+  altura           Decimal? @db.Decimal(10, 2)
+  profundidade     Decimal? @db.Decimal(10, 2)
+  numeroPeca       String?
+  detranEtiqueta   String?
+  localizacao      String?
+  estoque          Int      @default(1)
+  categoriaMLId    String?
+  categoriaMLNome  String?
+  fotoCapa         String?  // URL ou base64 após upload
+  status           String   @default("pre_cadastro") // pre_cadastro | cadastrado
+  blingProdutoId   String?  // ID do produto criado no Bling
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  moto             Moto     @relation(fields: [motoId], references: [id])
 }
 
 model Despesa {
