@@ -229,7 +229,11 @@ export default function CadastroPage() {
         body: JSON.stringify({ fotoCapa: fotoBase64 }),
       });
       const d = await resp.json();
-      if (!d.ok) throw new Error(d.error || 'Erro ao finalizar');
+      if (!d.ok) {
+        const detalhe = d.error || 'Erro ao finalizar';
+        const payloadInfo = d.payload ? `\n\nPayload enviado:\n${JSON.stringify(d.payload, null, 2)}` : '';
+        throw new Error(detalhe + payloadInfo);
+      }
       alert(`Cadastrado no Bling! ID: ${d.blingProdutoId}`);
       setModal2(false);
       await loadAll();
@@ -411,10 +415,13 @@ export default function CadastroPage() {
 
               {/* Categoria ML */}
               <div>
-                <label style={s.label}>Categoria ML</label>
-                {categorias.length > 0 ? (
-                  <div>
-                    <select style={s.input} value={form.categoriaMLId} onChange={(e) => {
+                <label style={s.label}>
+                  Categoria ML
+                  {form.categoriaMLId && <span style={{ marginLeft: 8, fontSize: 10, color: 'var(--gray-400)', fontWeight: 400 }}>ID: {form.categoriaMLId}</span>}
+                </label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {categorias.length > 0 ? (
+                    <select style={{ ...s.input, flex: 1 }} value={form.categoriaMLId} onChange={(e) => {
                       const cat = categorias.find((c: any) => (c.category_id || c.id) === e.target.value);
                       setForm((p: any) => ({ ...p, categoriaMLId: e.target.value, categoriaMLNome: cat?.category_name || cat?.name || '' }));
                     }}>
@@ -423,11 +430,25 @@ export default function CadastroPage() {
                         <option key={c.category_id || c.id} value={c.category_id || c.id}>{c.category_name || c.name}</option>
                       ))}
                     </select>
-                    {form.categoriaMLId && <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 4 }}>ID: {form.categoriaMLId}</div>}
-                  </div>
-                ) : (
-                  <input style={s.input} value={form.categoriaMLNome || form.categoriaMLId || ''} placeholder="Digite a descrição para sugerir automaticamente" readOnly />
-                )}
+                  ) : (
+                    <input
+                      style={{ ...s.input, flex: 1 }}
+                      value={form.categoriaMLNome || ''}
+                      onChange={(e) => setForm((p: any) => ({ ...p, categoriaMLNome: e.target.value }))}
+                      placeholder={buscandoCategoria ? 'Buscando...' : 'Categoria selecionada ou busque pelo título'}
+                      readOnly={buscandoCategoria}
+                    />
+                  )}
+                  <button
+                    type="button"
+                    style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', fontSize: 12, whiteSpace: 'nowrap', opacity: buscandoCategoria ? 0.6 : 1 }}
+                    onClick={() => { setCategorias([]); buscarCategoriaML(form.descricao); }}
+                    disabled={buscandoCategoria || !form.descricao}
+                    title="Buscar categoria no ML pelo título"
+                  >
+                    {buscandoCategoria ? '...' : '🔍 Buscar'}
+                  </button>
+                </div>
               </div>
 
               {/* Preço e Estoque */}

@@ -479,7 +479,7 @@ export async function blingReq(pathUrl: string, options: any = {}, retries = 3):
 
   if (!resp.ok) {
     const err = await resp.text();
-    throw new Error(`Bling API ${resp.status}: ${err.slice(0, 200)}`);
+    throw new Error(`Bling API ${resp.status}: ${err.slice(0, 2000)}`);
   }
 
   return resp.json();

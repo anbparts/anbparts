@@ -227,10 +227,20 @@ cadastroRouter.post('/:id/finalizar', async (req, res, next) => {
 
     // Cria produto no Bling
     console.log('[cadastro] Payload Bling:', JSON.stringify(payload, null, 2));
-    const blingResp = await blingReq('/produtos', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
+    let blingResp: any;
+    try {
+      blingResp = await blingReq('/produtos', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+    } catch (blingErr: any) {
+      console.error('[cadastro] Erro Bling:', blingErr?.message);
+      return res.status(400).json({
+        ok: false,
+        error: blingErr?.message || 'Erro ao criar produto no Bling',
+        payload, // retorna o payload para debug
+      });
+    }
     console.log('[cadastro] Resposta Bling:', JSON.stringify(blingResp, null, 2));
 
     const blingProdutoId = String(blingResp?.data?.id || '');
