@@ -139,15 +139,22 @@ export default function CadastroPage() {
     if (!titulo || titulo.length < 5) { setCategorias([]); return; }
     setBuscandoCategoria(true);
     try {
+      // API pública do ML — endpoint correto para Brasil (MLB)
       const resp = await fetch(
-        `https://api.mercadolibre.com/category_predictor/predict?site_id=MLB&title=${encodeURIComponent(titulo + ' moto')}`,
+        `https://api.mercadolibre.com/sites/MLB/category_predictor/predict?title=${encodeURIComponent(titulo + ' moto')}`,
       );
+      if (!resp.ok) throw new Error('Erro na API ML');
       const d = await resp.json();
-      const sugestoes = Array.isArray(d) ? d : (d?.predictions || []);
+      // Retorna array direto: [{category_id, category_name, ...}]
+      const sugestoes = Array.isArray(d) ? d : [];
       setCategorias(sugestoes.slice(0, 5));
       if (sugestoes.length > 0) {
         const melhor = sugestoes[0];
-        setForm((prev: any) => ({ ...prev, categoriaMLId: melhor.id || melhor.category_id || '', categoriaMLNome: melhor.name || melhor.category_name || '' }));
+        setForm((prev: any) => ({
+          ...prev,
+          categoriaMLId: melhor.category_id || melhor.id || '',
+          categoriaMLNome: melhor.category_name || melhor.name || '',
+        }));
       }
     } catch { /* silent */ }
     setBuscandoCategoria(false);
@@ -407,12 +414,12 @@ export default function CadastroPage() {
                 {categorias.length > 0 ? (
                   <div>
                     <select style={s.input} value={form.categoriaMLId} onChange={(e) => {
-                      const cat = categorias.find((c: any) => (c.id || c.category_id) === e.target.value);
-                      setForm((p: any) => ({ ...p, categoriaMLId: e.target.value, categoriaMLNome: cat?.name || cat?.category_name || '' }));
+                      const cat = categorias.find((c: any) => (c.category_id || c.id) === e.target.value);
+                      setForm((p: any) => ({ ...p, categoriaMLId: e.target.value, categoriaMLNome: cat?.category_name || cat?.name || '' }));
                     }}>
                       <option value="">Selecione uma sugestão</option>
                       {categorias.map((c: any) => (
-                        <option key={c.id || c.category_id} value={c.id || c.category_id}>{c.name || c.category_name}</option>
+                        <option key={c.category_id || c.id} value={c.category_id || c.id}>{c.category_name || c.name}</option>
                       ))}
                     </select>
                     {form.categoriaMLId && <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 4 }}>ID: {form.categoriaMLId}</div>}
