@@ -2098,9 +2098,16 @@ mercadoLivreRouter.get('/categoria-predictor', async (req, res, next) => {
     const resp = await fetch(
       `${MERCADO_LIVRE_API}/sites/MLB/category_predictor/predict?title=${encodeURIComponent(titulo)}`,
     );
+    const rawText = await resp.text();
+    console.log('[categoria-predictor] status:', resp.status, 'body:', rawText.slice(0, 500));
     if (!resp.ok) return res.json([]);
-    const data = await resp.json();
-    const sugestoes = Array.isArray(data) ? data : [];
+    let data: any;
+    try { data = JSON.parse(rawText); } catch { return res.json([]); }
+    // Pode retornar array ou objeto com predictions
+    let sugestoes: any[] = [];
+    if (Array.isArray(data)) sugestoes = data;
+    else if (data?.predictions && Array.isArray(data.predictions)) sugestoes = data.predictions;
+    else if (data?.category_id) sugestoes = [data]; // objeto único
     res.json(sugestoes.slice(0, 5));
   } catch (e) {
     next(e);
