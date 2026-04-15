@@ -33,7 +33,7 @@ export function clearNuvemshopCredentialsCache() {
   _credentialsCache = null;
 }
 
-async function nuvemshopReq<T = unknown>(path: string, accessToken: string, storeId: string): Promise<T> {
+async function nuvemshopReq(path: string, accessToken: string, storeId: string) {
   const url = `https://api.nuvemshop.com.br/v1/${storeId}${path}`;
   const resp = await fetch(url, {
     headers: {
@@ -48,7 +48,7 @@ async function nuvemshopReq<T = unknown>(path: string, accessToken: string, stor
     throw new Error(`Nuvemshop API ${resp.status}: ${text.slice(0, 200)}`);
   }
 
-  return resp.json() as Promise<T>;
+  return resp.json();
 }
 
 /**
@@ -66,7 +66,7 @@ export async function getNuvemshopStatusBySku(sku: string): Promise<NuvemshopAnu
     const { accessToken, storeId } = creds;
 
     // Busca produto por SKU via variantes
-    const data = await nuvemshopReq<any[]>(
+    const data: any[] = await nuvemshopReq(
       `/products?sku=${encodeURIComponent(sku)}&fields=id,name,published,variants`,
       accessToken,
       storeId,
