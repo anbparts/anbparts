@@ -985,6 +985,9 @@ export default function BlingProdutosPage() {
                           {item.titulo}
                         </span>
                         {item.tipo === 'sem_anuncio_nuvemshop' && <span style={{ fontSize: 12, background: '#fef9c3', color: '#92400e', padding: '2px 8px', borderRadius: 5 }}>🏪 Nuvemshop: Sem anuncio</span>}
+                        {item.tipo === 'nuvemshop_anuncio_inativo' && <span style={{ fontSize: 12, background: '#fef9c3', color: '#92400e', padding: '2px 8px', borderRadius: 5 }}>🏪 Nuvemshop: Inativo c/ estoque</span>}
+                        {item.tipo === 'nuvemshop_anuncio_ativo_sem_estoque' && <span style={{ fontSize: 12, background: '#fef2f2', color: '#b91c1c', padding: '2px 8px', borderRadius: 5 }}>🏪 Nuvemshop: Ativo sem estoque</span>}
+                        {item.tipo === 'nuvemshop_anuncio_ativo_prejuizo' && <span style={{ fontSize: 12, background: '#fef2f2', color: '#b91c1c', padding: '2px 8px', borderRadius: 5 }}>🏪 Nuvemshop: Ativo c/ prejuizo</span>}
                         {item.statusMercadoLivre && (
                           <span style={{ fontSize: 12, background: item.statusMercadoLivreAtivo ? '#ecfdf3' : '#fef2f2', color: item.statusMercadoLivreAtivo ? 'var(--green)' : 'var(--red)', padding: '2px 8px', borderRadius: 5 }}>
                             ML: {item.statusMercadoLivre}

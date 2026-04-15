@@ -557,6 +557,9 @@ export default function AuditoriaAutomaticaPage() {
                           <span style={{ fontSize: 12, background: '#fef2f2', color: borderColor(item.tipo), padding: '2px 8px', borderRadius: 5 }}>{item.titulo}</span>
                           {item.statusMercadoLivre && <span style={{ fontSize: 12, background: item.statusMercadoLivreAtivo ? '#ecfdf3' : '#fef2f2', color: item.statusMercadoLivreAtivo ? 'var(--green)' : 'var(--red)', padding: '2px 8px', borderRadius: 5 }}>ML: {item.statusMercadoLivre}</span>}
                           {item.tipo === 'sem_anuncio_nuvemshop' && <span style={{ fontSize: 12, background: '#fef9c3', color: '#92400e', padding: '2px 8px', borderRadius: 5 }}>🏪 Nuvemshop: Sem anuncio</span>}
+                          {item.tipo === 'nuvemshop_anuncio_inativo' && <span style={{ fontSize: 12, background: '#fef9c3', color: '#92400e', padding: '2px 8px', borderRadius: 5 }}>🏪 Nuvemshop: Inativo c/ estoque</span>}
+                          {item.tipo === 'nuvemshop_anuncio_ativo_sem_estoque' && <span style={{ fontSize: 12, background: '#fef2f2', color: '#b91c1c', padding: '2px 8px', borderRadius: 5 }}>🏪 Nuvemshop: Ativo sem estoque</span>}
+                          {item.tipo === 'nuvemshop_anuncio_ativo_prejuizo' && <span style={{ fontSize: 12, background: '#fef2f2', color: '#b91c1c', padding: '2px 8px', borderRadius: 5 }}>🏪 Nuvemshop: Ativo c/ prejuizo</span>}
                           {item.moto && <span style={{ fontSize: 12, color: 'var(--gray-400)' }}>{item.moto}</span>}
                         </div>
                         <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 6 }}>{item.descricaoAnb || item.descricaoBling || 'Sem descricao'}</div>

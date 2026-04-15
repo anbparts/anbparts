@@ -16,6 +16,7 @@ import {
 } from '../lib/email';
 import { sendDetranBaixaEmailIfNeeded } from '../lib/detran-alert';
 import { getMercadoLivreItemPermalink } from '../lib/mercado-livre';
+import { getNuvemshopStatusBySkus, NuvemshopAnuncioStatus } from '../lib/nuvemshop';
 
 export const blingRouter = Router();
 
@@ -2482,6 +2483,7 @@ async function compareProdutosBlingCodes(
     syncCamposFisicos?: boolean;
     nuvemshopAtiva?: boolean;
     nuvemshopLojaId?: number;
+    nuvemshopStatusMap?: Map<string, NuvemshopAnuncioStatus>;
     suppressMarketplaceErrors?: boolean;
     traceSkus?: Set<string> | string[];
     onProgress?: (payload: { totalParaProcessar: number; totalProcessados: number; fase: string }) => Promise<void> | void;
@@ -2620,6 +2622,18 @@ async function compareProdutosBlingCodes(
       totalProcessados: Math.min(totalParaProcessar, codigosSemProdutoBling + Array.from(processedProductIds).reduce((sum, id) => sum + (productIdToCodeCount.get(id) || 0), 0)),
       fase: 'Consolidando divergencias',
     });
+
+    // Consulta Nuvemshop em lote se ativa (apenas SKUs com produto no Bling)
+    let nuvemshopStatusMap: Map<string, NuvemshopAnuncioStatus> = options?.nuvemshopStatusMap || new Map();
+    if (options?.nuvemshopAtiva && !options?.nuvemshopStatusMap) {
+      try {
+        await emitProgress({ totalProcessados: 0, fase: 'Consultando status Nuvemshop' });
+        const skusParaConsultar = codigos.filter((c) => produtosBling.has(c));
+        nuvemshopStatusMap = await getNuvemshopStatusBySkus(skusParaConsultar, 150);
+      } catch (e: any) {
+        warnings.add(`Falha ao consultar Nuvemshop: ${e?.message || 'erro desconhecido'}`);
+      }
+    }
 
     const divergencias: any[] = [];
     let processadosNaConsolidacao = 0;
@@ -2795,14 +2809,51 @@ async function compareProdutosBlingCodes(
       }));
     }
 
-    // Divergência Nuvemshop: tem estoque no ANB mas não tem link na Nuvemshop
-    if (options?.nuvemshopAtiva && local.qtdDisponivelAnb > 0 && produtoBling && !temLinkNuvemshop) {
-      divergenciasSku.push(buildDivergenciaPayload(codigo, local, qtdBling, descricaoBling, statusMercadoLivre, {
-        tipo: 'sem_anuncio_nuvemshop',
-        titulo: 'Sem anuncio na Nuvemshop',
-        detalhe: 'Esse SKU tem estoque disponivel no ANB mas nao possui anuncio vinculado na Nuvemshop.',
-      }));
+    // ── Divergências Nuvemshop ──────────────────────────────────────────────────
+    if (options?.nuvemshopAtiva) {
+      const ns = nuvemshopStatusMap.get(codigo);
+      const temEstoque = local.qtdDisponivelAnb > 0 || qtdBling > 0;
+      const emPrejuizo = local.qtdPrejuizoAnb > 0;
+
+      if (produtoBling) {
+        if (!temLinkNuvemshop) {
+          // Caso 1: tem estoque mas não existe na Nuvemshop
+          if (temEstoque) {
+            divergenciasSku.push(buildDivergenciaPayload(codigo, local, qtdBling, descricaoBling, statusMercadoLivre, {
+              tipo: 'sem_anuncio_nuvemshop',
+              titulo: 'Sem anuncio na Nuvemshop',
+              detalhe: 'Esse SKU tem estoque disponivel mas nao possui anuncio vinculado na Nuvemshop.',
+            }));
+          }
+        } else if (ns && !ns.erro) {
+          // Caso 2: tem estoque mas anuncio está pausado/inativo
+          if (temEstoque && !ns.publicado) {
+            divergenciasSku.push(buildDivergenciaPayload(codigo, local, qtdBling, descricaoBling, statusMercadoLivre, {
+              tipo: 'nuvemshop_anuncio_inativo',
+              titulo: 'Anuncio Nuvemshop inativo com estoque',
+              detalhe: 'Esse SKU tem estoque disponivel mas o anuncio na Nuvemshop esta pausado ou inativo.',
+            }));
+          }
+          // Caso 3: sem estoque mas anuncio está ativo
+          if (!temEstoque && !emPrejuizo && ns.publicado) {
+            divergenciasSku.push(buildDivergenciaPayload(codigo, local, qtdBling, descricaoBling, statusMercadoLivre, {
+              tipo: 'nuvemshop_anuncio_ativo_sem_estoque',
+              titulo: 'Anuncio Nuvemshop ativo sem estoque',
+              detalhe: 'Nao ha estoque disponivel no ANB nem no Bling, mas o anuncio na Nuvemshop segue ativo.',
+            }));
+          }
+          // Caso 4: em prejuízo e anuncio ainda ativo
+          if (emPrejuizo && ns.publicado) {
+            divergenciasSku.push(buildDivergenciaPayload(codigo, local, qtdBling, descricaoBling, statusMercadoLivre, {
+              tipo: 'nuvemshop_anuncio_ativo_prejuizo',
+              titulo: 'Anuncio Nuvemshop ativo com peca em prejuizo',
+              detalhe: 'Esse SKU possui pecas em prejuizo mas o anuncio na Nuvemshop ainda esta ativo.',
+            }));
+          }
+        }
+      }
     }
+    // ── Fim Divergências Nuvemshop ───────────────────────────────────────────
 
     if (!produtoBling) {
       divergenciasSku.push(buildDivergenciaPayload(codigo, local, 0, descricaoBling, statusMercadoLivre, {
