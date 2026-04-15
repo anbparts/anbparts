@@ -5,7 +5,7 @@ const prisma = new PrismaClient();
 export type NuvemshopAnuncioStatus = {
   encontrado: boolean;
   publicado: boolean;   // true = ativo na loja
-  estoqueNuvemshop: number; // soma do estoque das variantes na Nuvemshop
+  estoqueNuvemshop?: number; // soma do estoque das variantes na Nuvemshop
   productId?: number;
   sku?: string;
   nome?: string;
