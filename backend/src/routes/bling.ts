@@ -1380,7 +1380,14 @@ function getProdutoLojaIds(rows: any[]) {
 function isLikelyMercadoLivreLink(row: any) {
   const codigo = String(row?.codigo || row?.codigoLoja || '').trim().toUpperCase();
   const lojaNome = normalizeText(String(row?.loja?.nome || row?.nomeLoja || ''));
-  return /^ML[A-Z0-9]/.test(codigo) || /mercado ?livre/.test(lojaNome);
+  const lojaId = Number(row?.loja?.id || row?.idLoja || 0);
+  // Verifica pelo código MLB, nome da loja ou ID conhecido do ML no Bling
+  if (/^MLB/.test(codigo)) return true;
+  if (/mercado ?livre/.test(lojaNome)) return true;
+  // Rejeita explicitamente lojas conhecidas que não são ML
+  // (ex: Nuvemshop codigo numerico simples sem prefixo ML)
+  if (codigo && !/^ML/.test(codigo) && /^\d+$/.test(codigo)) return false;
+  return false;
 }
 
 async function fetchProdutoLojaLinksByProductId(productId: number) {
@@ -1763,7 +1770,7 @@ async function collectMercadoLivreStatusByProductIds(
             collected = primary.collected;
 
             if ((!collected.length || primary.hadErrors) && lojaRows.length) {
-              const fallback = await collectMercadoLivreStatusesFromLojaRows(lojaRows, false);
+              const fallback = await collectMercadoLivreStatusesFromLojaRows(lojaRows.filter(isLikelyMercadoLivreLink), false);
               if (fallback.collected.length) {
                 collected = [...collected, ...fallback.collected];
               }
@@ -1841,7 +1848,7 @@ async function collectMercadoLivreStatusByProductIds(
               lojaId: number;
             }> = [];
 
-            const detailFallback = await collectMercadoLivreStatusesFromLojaRows(lojaRows, false);
+            const detailFallback = await collectMercadoLivreStatusesFromLojaRows(lojaRows.filter(isLikelyMercadoLivreLink), false);
             if (detailFallback.collected.length) {
               collected = detailFallback.collected;
               const prioritized = collected.find((item) => !item.isActive) || collected.find((item) => item.isActive) || null;
@@ -1948,7 +1955,7 @@ async function collectMercadoLivreStatusByProductIds(
     const consultas = [...primary.consultas];
 
     if ((!collected.length || primary.hadErrors) && lojaRows.length) {
-      const fallback = await collectMercadoLivreStatusesFromLojaRows(lojaRows, true);
+      const fallback = await collectMercadoLivreStatusesFromLojaRows(lojaRows.filter(isLikelyMercadoLivreLink), true);
       if (fallback.collected.length) {
         collected = [...collected, ...fallback.collected];
       }
@@ -2660,7 +2667,7 @@ async function compareProdutosBlingCodes(
             lojaId: number;
           }> = [];
 
-          const detailFallback = await collectMercadoLivreStatusesFromLojaRows(lojaRowsFinal, false);
+          const detailFallback = await collectMercadoLivreStatusesFromLojaRows(lojaRowsFinal.filter(isLikelyMercadoLivreLink), false);
           if (detailFallback.collected.length) {
             collectedFinal = detailFallback.collected;
           }
