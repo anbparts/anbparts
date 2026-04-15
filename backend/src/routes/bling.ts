@@ -2480,6 +2480,8 @@ async function compareProdutosBlingCodes(
     syncMercadoLivreItemId?: boolean;
     syncMercadoLivreLink?: boolean;
     syncCamposFisicos?: boolean;
+    nuvemshopAtiva?: boolean;
+    nuvemshopLojaId?: number;
     suppressMarketplaceErrors?: boolean;
     traceSkus?: Set<string> | string[];
     onProgress?: (payload: { totalParaProcessar: number; totalProcessados: number; fase: string }) => Promise<void> | void;
@@ -2600,9 +2602,8 @@ async function compareProdutosBlingCodes(
     findBlingProductDetailsByIds(produtoIdsParaDetalhe, options),
   ]);
   const statusMercadoLivreByProductId = mercadoLivreStatusData.statuses;
-  const productStoreLinksByProductId = (options?.syncMercadoLivreItemId || options?.syncMercadoLivreLink || options?.syncCamposFisicos || options?.checkNuvemshop) && localPecas.length
-    ? mercadoLivreStatusData.productStoreLinks
-    : mercadoLivreStatusData.productStoreLinks; // sempre popula para checagens de loja
+  // productStoreLinks sempre populado — necessário para verificações de loja (ML, Nuvemshop)
+  const productStoreLinksByProductId = mercadoLivreStatusData.productStoreLinks;
 
   if ((options?.syncLocalizacao || options?.syncDetran || options?.syncMercadoLivreItemId || options?.syncMercadoLivreLink || options?.syncCamposFisicos) && localPecas.length) {
     await syncPecaMetadataFromBling(localPecas, produtosBling, detalhesBlingByProductId, productStoreLinksByProductId, {
@@ -2721,7 +2722,7 @@ async function compareProdutosBlingCodes(
     const temEstoqueEmAlgumSistema = local.qtdDisponivelAnb > 0 || qtdBling > 0;
 
     // Verificação Nuvemshop: produto com estoque no ANB sem link na Nuvemshop
-    const nuvemshopLojaId = cfg.nuvemshopLojaId || 205449158;
+    const nuvemshopLojaId = Number(options?.nuvemshopLojaId || 205449158);
     const lojaRowsDoProduto = produtoBling?.id ? (productStoreLinksByProductId.get(Number(produtoBling.id)) || []) : [];
     const temLinkNuvemshop = lojaRowsDoProduto.some((row: any) => Number(row?.loja?.id || row?.idLoja) === nuvemshopLojaId);
 
@@ -2795,7 +2796,7 @@ async function compareProdutosBlingCodes(
     }
 
     // Divergência Nuvemshop: tem estoque no ANB mas não tem link na Nuvemshop
-    if (cfg.nuvemshopAtiva && local.qtdDisponivelAnb > 0 && produtoBling && !temLinkNuvemshop) {
+    if (options?.nuvemshopAtiva && local.qtdDisponivelAnb > 0 && produtoBling && !temLinkNuvemshop) {
       divergenciasSku.push(buildDivergenciaPayload(codigo, local, qtdBling, descricaoBling, statusMercadoLivre, {
         tipo: 'sem_anuncio_nuvemshop',
         titulo: 'Sem anuncio na Nuvemshop',
@@ -3052,6 +3053,8 @@ async function runTraceSkuComparison(rawSkus: any, rawMotoId: any) {
     syncMercadoLivreItemId: true,
     syncMercadoLivreLink: false,
     syncCamposFisicos: true,
+    nuvemshopAtiva: cfg.nuvemshopAtiva,
+    nuvemshopLojaId: cfg.nuvemshopLojaId,
     suppressMarketplaceErrors: true,
     batchSize: Math.max(10, Math.min(cfg.consultaManualTamanhoLote, codigosParaComparar.length || 1)),
     pauseMs: cfg.consultaManualPausaMs,
@@ -3742,6 +3745,8 @@ async function executeAuditoriaAutomatica(origem: 'manual' | 'auto' = 'manual') 
       syncMercadoLivreItemId: true,
       syncMercadoLivreLink: false,
       syncCamposFisicos: true,
+      nuvemshopAtiva: cfg.nuvemshopAtiva,
+      nuvemshopLojaId: cfg.nuvemshopLojaId,
       batchSize: cfg.auditoriaTamanhoLote,
       pauseMs: cfg.auditoriaPausaMs,
       traceSkus: traceSkuSet,
