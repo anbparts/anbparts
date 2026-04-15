@@ -4,17 +4,23 @@ import { blingReq } from './bling';
 
 export const cadastroRouter = Router();
 
+function toTitleCase(str: string): string {
+  return str.toLowerCase().replace(/\w/g, (c) => c.toUpperCase());
+}
+
 const BLING_NUMERO_PECA_CAMPO_ID = 2821431;
 const BLING_DETRAN_CAMPO_ID = 5979929;
 
 async function uploadImagemBling(produtoId: string, base64: string): Promise<void> {
-  const imagemBase64 = base64.replace(/^data:image\/\w+;base64,/, '');
-  await blingReq(`/produtos/${produtoId}/imagens`, {
+  // Remove prefixo data:image/...;base64,
+  const imagemBase64 = base64.replace(/^data:image\/[a-zA-Z]+;base64,/, '');
+  const resp = await blingReq(`/produtos/${produtoId}/imagens`, {
     method: 'POST',
     body: JSON.stringify({
       imagens: [{ base64: imagemBase64, padrao: true }],
     }),
   });
+  console.log('[cadastro] Upload imagem OK:', JSON.stringify(resp));
 }
 
 // GET /cadastro - lista todos com filtros
@@ -211,25 +217,23 @@ cadastroRouter.post('/:id/finalizar', async (req, res, next) => {
       nome: cadastro.descricao,
       codigo: cadastro.idPeca,
       preco: Number(cadastro.precoVenda),
-      tipo: 'P',         // P = Produto
-      formato: 'S',      // S = Simples
-      situacao: 'A',     // A = Ativo
-      condicao: cadastro.condicao === 'novo' ? 0 : 1, // 0=Novo, 1=Usado
+      tipo: 'P',
+      formato: 'S',
+      situacao: 'A',
+      condicao: cadastro.condicao === 'novo' ? 0 : 1,
       descricaoCurta: cadastro.descricaoPeca || '',
-      marca: cadastro.moto?.marca || '',
-      pesoLiquido: cadastro.peso ? Number(cadastro.peso) : 0,
-      pesoBruto: cadastro.peso ? Number(cadastro.peso) : 0,
-      largura: cadastro.largura ? Number(cadastro.largura) : 0,
-      altura: cadastro.altura ? Number(cadastro.altura) : 0,
-      profundidade: cadastro.profundidade ? Number(cadastro.profundidade) : 0,
+      marca: toTitleCase(cadastro.moto?.marca || ''),
+      pesoLiquido: Number(cadastro.peso || 0),
+      pesoBruto: Number(cadastro.peso || 0),
+      largura: Number(cadastro.largura || 0),
+      altura: Number(cadastro.altura || 0),
+      profundidade: Number(cadastro.profundidade || 0),
       estoque: {
         minimo: Number(cadastro.estoque),
         maximo: Number(cadastro.estoque),
       },
     };
-    if (camposCustomizados.length) {
-      payload.camposCustomizados = camposCustomizados;
-    }
+    // Campos customizados NÃO vão no payload principal — usamos API específica depois
 
     // Cria ou atualiza produto no Bling
     console.log('[cadastro] Payload Bling:', JSON.stringify(payload, null, 2));
@@ -284,18 +288,25 @@ cadastroRouter.post('/:id/finalizar', async (req, res, next) => {
       }
     }
 
-    // Localização via API de depósitos/saldo do estoque (campo observações do estoque)
-    // A localização no Bling é definida via campo de localização no produto - enviada no payload principal
-    // mas também pode ser atualizada via PUT /produtos/{id}
-    if (blingProdutoId && cadastro.localizacao) {
+    // Campos customizados via API específica: /produtos/{id}/camposCustomizados
+    if (blingProdutoId && camposCustomizados.length) {
       try {
-        await blingReq(`/produtos/${blingProdutoId}`, {
-          method: 'PUT',
-          body: JSON.stringify({ localizacao: cadastro.localizacao }),
+        const ccResp = await blingReq(`/produtos/${blingProdutoId}/camposCustomizados`, {
+          method: 'PATCH',
+          body: JSON.stringify({ camposCustomizados }),
         });
-        console.log('[cadastro] Localização atualizada:', cadastro.localizacao);
+        console.log('[cadastro] Campos customizados OK:', JSON.stringify(ccResp));
       } catch (e: any) {
-        console.error('[cadastro] Erro localização:', e?.message);
+        // Tenta PUT se PATCH não funcionar
+        try {
+          await blingReq(`/produtos/${blingProdutoId}`, {
+            method: 'PUT',
+            body: JSON.stringify({ ...payload, camposCustomizados }),
+          });
+          console.log('[cadastro] Campos customizados via PUT OK');
+        } catch (e2: any) {
+          console.error('[cadastro] Erro campos customizados:', e2?.message);
+        }
       }
     }
 
