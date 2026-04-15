@@ -19,11 +19,17 @@ export default function ConfGeraisPage() {
   const [saving, setSaving] = useState(false);
   const [fretePadrao, setFretePadrao] = useState('29.90');
   const [taxaPadraoPct, setTaxaPadraoPct] = useState('17');
+  const [nuvemshopAtiva, setNuvemshopAtiva] = useState(false);
+  const [nuvemshopLojaId, setNuvemshopLojaId] = useState('205449158');
+  const [savingLojas, setSavingLojas] = useState(false);
 
   async function load() {
     const produtoConfig = await fetch(`${API}/bling/config-produtos`).then((r) => r.json());
     setFretePadrao(String(produtoConfig.fretePadrao ?? '29.90'));
     setTaxaPadraoPct(String(produtoConfig.taxaPadraoPct ?? '17'));
+    const blingCfg = await fetch(`${API}/bling/config`, { credentials: 'include' }).then((r) => r.json()).catch(() => ({}));
+    if (blingCfg.nuvemshopAtiva !== undefined) setNuvemshopAtiva(!!blingCfg.nuvemshopAtiva);
+    if (blingCfg.nuvemshopLojaId) setNuvemshopLojaId(String(blingCfg.nuvemshopLojaId));
   }
 
   useEffect(() => {
@@ -31,6 +37,22 @@ export default function ConfGeraisPage() {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
+
+  async function saveLojas() {
+    setSavingLojas(true);
+    try {
+      await fetch(`${API}/bling/auditoria-automatica/config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ nuvemshopAtiva, nuvemshopLojaId: Number(nuvemshopLojaId) || 205449158 }),
+      });
+      alert('Configuracao de lojas salva!');
+    } catch {
+      alert('Erro ao salvar');
+    }
+    setSavingLojas(false);
+  }
 
   async function salvar() {
     const frete = Number(fretePadrao);
@@ -118,6 +140,50 @@ export default function ConfGeraisPage() {
               />
             </div>
           </div>
+        </div>
+
+        {/* Lojas Monitoradas */}
+        <div style={s.card}>
+          <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 4 }}>Lojas Monitoradas</div>
+          <div style={{ fontSize: 12, color: 'var(--gray-400)', marginBottom: 16 }}>Configure quais lojas devem ser consideradas nas verificacoes de divergencia da auditoria e consulta manual.</div>
+          <div style={{ display: 'grid', gap: 12, marginBottom: 16 }}>
+            {/* ML - informativo */}
+            <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 20 }}>🛒</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-800)' }}>Mercado Livre</div>
+                <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 2 }}>Sempre ativo — regras de divergencia de ML sao fixas</div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <label style={{ fontSize: 11, color: 'var(--gray-500)' }}>ID loja Bling</label>
+                <input style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '5px 8px', fontSize: 12, width: 120, background: 'var(--gray-50)', color: 'var(--gray-400)' }} type="number" value="205204423" readOnly disabled />
+              </div>
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--green)', background: '#f0fdf4', border: '1px solid #86efac', padding: '2px 10px', borderRadius: 6 }}>Sempre ativo</span>
+            </div>
+            {/* Nuvemshop */}
+            <div style={{ border: `1px solid ${nuvemshopAtiva ? 'var(--blue-500)' : 'var(--border)'}`, borderRadius: 8, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', background: nuvemshopAtiva ? 'rgba(59,130,246,.04)' : 'transparent' }}>
+              <span style={{ fontSize: 20 }}>🏪</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-800)' }}>Nuvemshop</div>
+                <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 2 }}>Quando ativo, gera divergencia para produtos com estoque sem anuncio na Nuvemshop</div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <label style={{ fontSize: 11, color: 'var(--gray-500)' }}>ID loja Bling</label>
+                <input style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '5px 8px', fontSize: 12, width: 120 }} type="number" value={nuvemshopLojaId} onChange={(e) => setNuvemshopLojaId(e.target.value)} />
+              </div>
+              <select style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '5px 8px', fontSize: 12, cursor: 'pointer', background: 'var(--white)' }} value={nuvemshopAtiva ? '1' : '0'} onChange={(e) => setNuvemshopAtiva(e.target.value === '1')}>
+                <option value="1">Ativa</option>
+                <option value="0">Pausada</option>
+              </select>
+            </div>
+          </div>
+          <button
+            style={{ border: '1px solid var(--border)', borderRadius: 7, padding: '8px 18px', fontSize: 13, fontWeight: 500, cursor: savingLojas ? 'not-allowed' : 'pointer', background: 'var(--gray-800)', color: '#fff', opacity: savingLojas ? 0.7 : 1 }}
+            onClick={saveLojas}
+            disabled={savingLojas}
+          >
+            {savingLojas ? 'Salvando...' : 'Salvar configuracao de lojas'}
+          </button>
         </div>
       </div>
     </>
