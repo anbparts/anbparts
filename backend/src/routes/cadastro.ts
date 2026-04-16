@@ -10,6 +10,19 @@ const BLING_MARCA_CAMPO_ID = 2821430;
 const BLING_URL_REF_CAMPO_ID = 3066410;
 const BLING_CATEGORIA_ID = 10703871;
 
+function buildCadastroBlingErrorResponse(error: any) {
+  const message = String(error?.message || 'Falha ao criar produto no Bling.');
+  const isInputError = /Bling API 400|Bling API 404|Bling API 409|codigo.*exist|sku.*exist|já existe|ja existe|duplic/i.test(message);
+
+  return {
+    status: isInputError ? 400 : 502,
+    body: {
+      error: message,
+      source: 'bling',
+    },
+  };
+}
+
 function toTitleCase(str: string): string {
   if (!str) return '';
   return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
@@ -203,7 +216,9 @@ cadastroRouter.post('/', async (req, res, next) => {
       const updated = await prisma.cadastroPeca.update({ where: { id: record.id }, data: { blingProdutoId } });
       res.status(201).json({ ...updated, _blingOk: true });
     } catch (blingErr: any) {
-      res.status(201).json({ ...record, _blingOk: false, _blingErro: blingErr?.message });
+      await prisma.cadastroPeca.delete({ where: { id: record.id } }).catch(() => null);
+      const failure = buildCadastroBlingErrorResponse(blingErr);
+      return res.status(failure.status).json(failure.body);
     }
   } catch (e) { next(e); }
 });
