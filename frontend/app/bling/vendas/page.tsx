@@ -223,33 +223,31 @@ async function baixarSeparacaoPdf(relatorio: SeparacaoRelatorio) {
   const metrics = [
     ['Pedidos', String(relatorio.totaisGerais.totalPedidos)],
     ['Itens', String(relatorio.totaisGerais.totalItens)],
-    ['Linhas', String(relatorio.totaisGerais.totalLinhas)],
     ['Etiquetas Detran', String(relatorio.totaisGerais.totalEtiquetasDetran)],
-    ['Locais Divergentes', String(relatorio.totaisGerais.totalLocalizacoesDivergentes)],
   ];
 
   let y = 12;
 
   const drawHeader = () => {
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(18);
+    doc.setFontSize(15);
     doc.setTextColor(15, 23, 42);
     doc.text('Relatorio de Separacao', marginX, y);
 
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(10);
+    doc.setFontSize(8.5);
     doc.setTextColor(71, 85, 105);
     doc.text(`Data da separacao: ${dataSeparacao}`, pageWidth - marginX, y, { align: 'right' });
 
-    y += 4;
+    y += 3.5;
     doc.setDrawColor(30, 86, 160);
     doc.setLineWidth(0.5);
     doc.line(marginX, y, pageWidth - marginX, y);
-    y += 5;
+    y += 4;
   };
 
   const drawMetrics = () => {
-    const cardHeight = 14;
+    const cardHeight = 11;
     const cardWidth = (contentWidth - metricGap * (metrics.length - 1)) / metrics.length;
 
     metrics.forEach(([label, value], index) => {
@@ -259,17 +257,17 @@ async function baixarSeparacaoPdf(relatorio: SeparacaoRelatorio) {
       doc.roundedRect(x, y, cardWidth, cardHeight, 2, 2, 'FD');
 
       doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7);
+      doc.setFontSize(6.5);
       doc.setTextColor(100, 116, 139);
-      doc.text(String(label).toUpperCase(), x + 3, y + 4.5);
+      doc.text(String(label).toUpperCase(), x + 2.5, y + 3.7);
 
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(14);
+      doc.setFontSize(11.5);
       doc.setTextColor(15, 23, 42);
-      doc.text(String(value), x + 3, y + 10.5);
+      doc.text(String(value), x + 2.5, y + 8.2);
     });
 
-    y += cardHeight + 6;
+    y += cardHeight + 4;
   };
 
   const ensureSpace = (requiredHeight: number) => {
@@ -283,41 +281,49 @@ async function baixarSeparacaoPdf(relatorio: SeparacaoRelatorio) {
   drawMetrics();
 
   relatorio.pedidos.forEach((pedido, pedidoIndex) => {
-    ensureSpace(26);
+    if (pedidoIndex > 0) {
+      ensureSpace(8);
+      doc.setDrawColor(203, 213, 225);
+      doc.setLineWidth(0.3);
+      doc.line(marginX, y, pageWidth - marginX, y);
+      y += 4;
+    }
+
+    ensureSpace(20);
 
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(13);
+    doc.setFontSize(10.5);
     doc.setTextColor(15, 23, 42);
     doc.text(`Pedido #${pedido.pedidoNum}`, marginX, y);
 
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9);
+    doc.setFontSize(8);
     doc.setTextColor(71, 85, 105);
     doc.text(`${pedido.quantidadeItens} item(ns)`, pageWidth - marginX, y, { align: 'right' });
-    y += 4.5;
+    y += 3.5;
 
     doc.text(`Data da venda: ${fmtDate(pedido.dataVenda)}`, marginX, y);
-    y += 4;
+    y += 3.2;
     doc.text(`Transportador: ${pedido.transportador || 'Nao informado'}`, marginX, y);
-    y += 5;
+    y += 3.8;
 
     const observacaoInterna = String(pedido.observacoesInternas || '').trim();
     if (observacaoInterna) {
       const noteLines = doc.splitTextToSize(observacaoInterna, contentWidth - 8);
-      const noteHeight = Math.max(10, noteLines.length * 4 + 6);
-      ensureSpace(noteHeight + 6);
+      const noteHeight = Math.max(8, noteLines.length * 3.2 + 4.5);
+      ensureSpace(noteHeight + 4);
       doc.setDrawColor(191, 219, 254);
       doc.setFillColor(248, 251, 255);
       doc.roundedRect(marginX, y, contentWidth, noteHeight, 2, 2, 'FD');
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(7);
+      doc.setFontSize(6.5);
       doc.setTextColor(100, 116, 139);
-      doc.text('OBS. INTERNA', marginX + 3, y + 4.5);
+      doc.text('OBS. INTERNA', marginX + 2.5, y + 3.5);
       doc.setFont('helvetica', 'normal');
-      doc.setFontSize(8.5);
+      doc.setFontSize(7.5);
       doc.setTextColor(15, 23, 42);
-      doc.text(noteLines, marginX + 3, y + 8.5);
-      y += noteHeight + 4;
+      doc.text(noteLines, marginX + 2.5, y + 6.5);
+      y += noteHeight + 3;
     }
 
     autoTable(doc, {
@@ -335,8 +341,8 @@ async function baixarSeparacaoPdf(relatorio: SeparacaoRelatorio) {
       theme: 'grid',
       styles: {
         font: 'helvetica',
-        fontSize: 8,
-        cellPadding: 2,
+        fontSize: 7,
+        cellPadding: 1.6,
         overflow: 'linebreak',
         valign: 'top',
         lineColor: [226, 232, 240],
@@ -347,15 +353,15 @@ async function baixarSeparacaoPdf(relatorio: SeparacaoRelatorio) {
         fillColor: [239, 246, 255],
         textColor: [51, 65, 85],
         fontStyle: 'bold',
-        fontSize: 7,
+        fontSize: 6,
       },
       columnStyles: {
-        0: { cellWidth: 48 },
-        1: { cellWidth: 32 },
-        2: { cellWidth: 96 },
-        3: { cellWidth: 12, halign: 'center' },
-        4: { cellWidth: 44 },
-        5: { cellWidth: 45 },
+        0: { cellWidth: 44 },
+        1: { cellWidth: 26 },
+        2: { cellWidth: 101 },
+        3: { cellWidth: 10, halign: 'center' },
+        4: { cellWidth: 41 },
+        5: { cellWidth: 46 },
       },
       didParseCell: (data: any) => {
         if (data.section === 'body' && data.column.index === 5) {
@@ -368,11 +374,7 @@ async function baixarSeparacaoPdf(relatorio: SeparacaoRelatorio) {
       },
     });
 
-    y = ((doc as any).lastAutoTable?.finalY || y) + 6;
-
-    if (pedidoIndex < relatorio.pedidos.length - 1) {
-      ensureSpace(10);
-    }
+    y = ((doc as any).lastAutoTable?.finalY || y) + 4;
   });
 
   doc.save(filename);
@@ -622,17 +624,15 @@ export default function VendasBlingPage() {
               </button>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 16 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10, marginBottom: 14 }}>
               {[
                 { label: 'Pedidos', value: relatorioSeparacao.totaisGerais.totalPedidos, color: 'var(--gray-800)' },
                 { label: 'Itens', value: relatorioSeparacao.totaisGerais.totalItens, color: 'var(--gray-800)' },
-                { label: 'Linhas', value: relatorioSeparacao.totaisGerais.totalLinhas, color: 'var(--blue-500)' },
                 { label: 'Etiquetas Detran', value: relatorioSeparacao.totaisGerais.totalEtiquetasDetran, color: 'var(--amber)' },
-                { label: 'Locais Divergentes', value: relatorioSeparacao.totaisGerais.totalLocalizacoesDivergentes, color: 'var(--red)' },
               ].map((card) => (
-                <div key={card.label} style={{ background: 'var(--white)', border: '1px solid #dbeafe', borderRadius: 10, padding: '12px 14px' }}>
-                  <div style={{ fontSize: 10.5, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '0.7px', marginBottom: 6 }}>{card.label}</div>
-                  <div style={{ fontSize: 20, fontWeight: 700, color: card.color }}>{card.value}</div>
+                <div key={card.label} style={{ background: 'var(--white)', border: '1px solid #dbeafe', borderRadius: 10, padding: '10px 12px' }}>
+                  <div style={{ fontSize: 10, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '0.7px', marginBottom: 4 }}>{card.label}</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: card.color }}>{card.value}</div>
                 </div>
               ))}
             </div>
@@ -642,44 +642,54 @@ export default function VendasBlingPage() {
                 Nenhum pedido em aberto foi encontrado nesse periodo.
               </div>
             ) : (
-              <div style={{ display: 'grid', gap: 14 }}>
-                {relatorioSeparacao.pedidos.map((pedido) => (
-                  <div key={pedido.pedidoNum} style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
-                    <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+              <div style={{ display: 'grid', gap: 12 }}>
+                {relatorioSeparacao.pedidos.map((pedido, index) => (
+                  <div
+                    key={pedido.pedidoNum}
+                    style={{
+                      background: 'var(--white)',
+                      border: index === 0 ? '1px solid #cbd5e1' : '1px solid #cbd5e1',
+                      borderTop: index > 0 ? '3px solid #dbeafe' : '1px solid #cbd5e1',
+                      borderRadius: 12,
+                      overflow: 'hidden',
+                      boxShadow: '0 1px 2px rgba(15, 23, 42, 0.04)',
+                    }}
+                  >
+                    <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'flex-start' }}>
                       <div>
-                        <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--gray-800)' }}>Pedido #{pedido.pedidoNum}</div>
-                        <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 4 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-800)' }}>Pedido #{pedido.pedidoNum}</div>
+                        <div style={{ fontSize: 11.5, color: 'var(--gray-500)', marginTop: 3 }}>
                           Data da venda: {fmtDate(pedido.dataVenda)}
                         </div>
-                        <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 3 }}>
+                        <div style={{ fontSize: 11.5, color: 'var(--gray-500)', marginTop: 2 }}>
                           Transportador: {pedido.transportador || 'Nao informado'}
                         </div>
                       </div>
-                      <div style={{ fontSize: 12, background: '#eff6ff', color: 'var(--blue-500)', padding: '6px 10px', borderRadius: 999, fontWeight: 700 }}>
+                      <div style={{ fontSize: 11, background: '#eff6ff', color: 'var(--blue-500)', padding: '5px 9px', borderRadius: 999, fontWeight: 700 }}>
                         {pedido.quantidadeItens} item(ns)
                       </div>
                     </div>
 
                     {String(pedido.observacoesInternas || '').trim() && (
-                      <div style={{ margin: '12px 16px 0', border: '1px solid #dbeafe', background: '#f8fbff', borderRadius: 10, padding: '10px 12px' }}>
-                        <div style={{ fontSize: 10.5, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '.7px', marginBottom: 6 }}>Obs. interna</div>
-                        <div style={{ fontSize: 12.5, color: 'var(--gray-800)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{pedido.observacoesInternas}</div>
+                      <div style={{ margin: '10px 14px 0', border: '1px solid #dbeafe', background: '#f8fbff', borderRadius: 10, padding: '8px 10px' }}>
+                        <div style={{ fontSize: 10, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '.7px', marginBottom: 5 }}>Obs. interna</div>
+                        <div style={{ fontSize: 12, color: 'var(--gray-800)', lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>{pedido.observacoesInternas}</div>
                       </div>
                     )}
 
                     <div style={{ overflowX: 'auto' }}>
-                      <table style={{ width: '100%', minWidth: 860, borderCollapse: 'collapse', fontSize: 13 }}>
+                      <table style={{ width: '100%', minWidth: 840, borderCollapse: 'collapse', fontSize: 12.5 }}>
                         <thead style={{ background: 'var(--gray-50)' }}>
                           <tr>
                             {[
                               { label: 'Nome', width: '18%' },
                               { label: 'SKU', width: '14%' },
                               { label: 'Descricao', width: 'auto' },
-                              { label: 'Qtd', width: 70 },
+                              { label: 'Qtd', width: 56 },
                               { label: 'Localizacao', width: '18%' },
                               { label: 'Etiqueta Detran', width: '18%' },
                             ].map((header) => (
-                              <th key={header.label} style={{ padding: '9px 12px', width: header.width, textAlign: 'left', fontFamily: 'JetBrains Mono, monospace', fontSize: 10, letterSpacing: '.7px', textTransform: 'uppercase', color: 'var(--gray-400)', fontWeight: 500, borderBottom: '1px solid var(--border)' }}>
+                              <th key={header.label} style={{ padding: '8px 10px', width: header.width, textAlign: 'left', fontFamily: 'JetBrains Mono, monospace', fontSize: 9.5, letterSpacing: '.7px', textTransform: 'uppercase', color: 'var(--gray-400)', fontWeight: 500, borderBottom: '1px solid var(--border)' }}>
                                 {header.label}
                               </th>
                             ))}
@@ -688,19 +698,19 @@ export default function VendasBlingPage() {
                         <tbody>
                           {pedido.itens.map((item) => (
                             <tr key={item.lineKey} style={{ borderTop: '1px solid var(--gray-100)', background: 'var(--white)' }}>
-                              <td style={{ padding: '10px 12px', color: 'var(--gray-800)', lineHeight: 1.45 }}>{pedido.nomeCliente || '-'}</td>
-                              <td style={{ padding: '10px 12px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--blue-500)', fontWeight: 700 }}>{item.skuSistema || '-'}</td>
-                              <td style={{ padding: '10px 12px', color: 'var(--gray-800)', lineHeight: 1.45 }}>{item.descricao || '-'}</td>
-                              <td style={{ padding: '10px 12px', width: 70, fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--gray-700)' }}>{item.quantidade}</td>
-                              <td style={{ padding: '10px 12px', color: 'var(--gray-700)' }}>
+                              <td style={{ padding: '8px 10px', color: 'var(--gray-800)', lineHeight: 1.4 }}>{pedido.nomeCliente || '-'}</td>
+                              <td style={{ padding: '8px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 11.5, color: 'var(--blue-500)', fontWeight: 700 }}>{item.skuSistema || '-'}</td>
+                              <td style={{ padding: '8px 10px', color: 'var(--gray-800)', lineHeight: 1.4 }}>{item.descricao || '-'}</td>
+                              <td style={{ padding: '8px 10px', width: 56, fontFamily: 'JetBrains Mono, monospace', fontSize: 11.5, color: 'var(--gray-700)' }}>{item.quantidade}</td>
+                              <td style={{ padding: '8px 10px', color: 'var(--gray-700)' }}>
                                 <div>{item.localizacaoAnb || '-'}</div>
                                 {!item.localizacaoConfere && (
-                                  <div style={{ marginTop: 4, fontSize: 11, color: '#b91c1c', fontWeight: 600 }}>
+                                  <div style={{ marginTop: 3, fontSize: 10.5, color: '#b91c1c', fontWeight: 600 }}>
                                     Divergente da localizacao do Bling
                                   </div>
                                 )}
                               </td>
-                              <td style={{ padding: '10px 12px', color: item.detranRelatorio === 'ENVIAR FOTO DA ETIQUETA DETRAN' ? 'var(--amber)' : 'var(--gray-800)', fontWeight: item.detranRelatorio ? 700 : 500 }}>
+                              <td style={{ padding: '8px 10px', color: item.detranRelatorio === 'ENVIAR FOTO DA ETIQUETA DETRAN' ? 'var(--amber)' : 'var(--gray-800)', fontWeight: item.detranRelatorio ? 700 : 500 }}>
                                 {item.detranRelatorio || '-'}
                               </td>
                             </tr>

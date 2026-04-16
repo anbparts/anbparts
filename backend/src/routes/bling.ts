@@ -1201,6 +1201,10 @@ function matchesSku(idPeca: string, codigo: string) {
   return getBaseSku(idPeca) === getBaseSku(codigo);
 }
 
+function sameSkuValue(left: any, right: any) {
+  return normalizeText(String(left || '')) === normalizeText(String(right || ''));
+}
+
 function findLinkedPecasByPedido(
   allPecas: any[],
   pedidoId: number | string,
@@ -1221,6 +1225,10 @@ function findLinkedPecasByPedido(
   });
 
   return candidates.sort((a, b) => {
+    const exactA = codigos.some((codigo) => sameSkuValue(a.idPeca, codigo)) ? 1 : 0;
+    const exactB = codigos.some((codigo) => sameSkuValue(b.idPeca, codigo)) ? 1 : 0;
+    if (exactA !== exactB) return exactB - exactA;
+
     const soldA = !a.disponivel && !a.emPrejuizo ? 1 : 0;
     const soldB = !b.disponivel && !b.emPrejuizo ? 1 : 0;
     if (soldA !== soldB) return soldB - soldA;
@@ -2291,6 +2299,8 @@ async function listPecasForComparacaoByCodes(codigos: string[]) {
       idPeca: true,
       descricao: true,
       localizacao: true,
+      blingPedidoId: true,
+      blingPedidoNum: true,
       detranEtiqueta: true,
       mercadoLivreItemId: true,
       mercadoLivreLink: true,
@@ -5307,6 +5317,18 @@ blingRouter.get('/relatorio-separacao', async (req, res, next) => {
 
         const pecaReferencia = findSkuReferencePeca(todasPecas, item.skuBling, item.idBling);
         const localizacaoBling = normalizeLocation(resolveBlingLocation(produtoResumo, produtoDetalhe).location);
+        const pecasVinculadasSku = findLinkedPecasByPedido(
+          todasPecas,
+          pedidoRaw.pedidoId,
+          pedidoRaw.pedidoNum,
+          item.skuBling,
+          item.idBling,
+          reservedVendaPecaIds,
+        ).filter((peca) => !peca.emPrejuizo);
+        const pecasVinculadasSelecionadas = pecasVinculadasSku.slice(0, item.quantidade);
+        pecasVinculadasSelecionadas.forEach((peca) => reservedVendaPecaIds.add(peca.id));
+
+        const quantidadeRestante = Math.max(0, item.quantidade - pecasVinculadasSelecionadas.length);
         const pecasDisponiveisSku = todasPecas
           .filter((peca) =>
             peca.disponivel
@@ -5325,10 +5347,11 @@ blingRouter.get('/relatorio-separacao', async (req, res, next) => {
             ...pecasDisponiveisSku.filter((peca) => !locationMatchesBling(peca)),
           ]
           : pecasDisponiveisSku;
-        const pecasSelecionadas = pecasOrdenadasParaSeparacao.slice(0, item.quantidade);
-        pecasSelecionadas.forEach((peca) => reservedVendaPecaIds.add(peca.id));
+        const pecasDisponiveisSelecionadas = pecasOrdenadasParaSeparacao.slice(0, quantidadeRestante);
+        pecasDisponiveisSelecionadas.forEach((peca) => reservedVendaPecaIds.add(peca.id));
+        const pecasSelecionadas = [...pecasVinculadasSelecionadas, ...pecasDisponiveisSelecionadas];
         const etiquetasDetranDisponiveis = Array.from(new Set(
-          pecasDisponiveisSku
+          [...pecasVinculadasSku, ...pecasDisponiveisSku]
             .map((peca) => normalizeDetranEtiqueta(peca.detranEtiqueta))
             .filter((etiqueta): etiqueta is string => Boolean(etiqueta)),
         ));
