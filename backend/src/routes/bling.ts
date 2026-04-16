@@ -464,6 +464,16 @@ function isSituacaoEmAberto(situacao: { label: string; isCancelado: boolean; isC
   return /\babert/.test(normalizeText(String(situacao.label || '')));
 }
 
+function resolveSituacaoPedidoAberto(
+  situacaoLista: { label: string; isCancelado: boolean; isConcluido: boolean } | null | undefined,
+  situacaoDetalhe: { label: string; isCancelado: boolean; isConcluido: boolean } | null | undefined,
+) {
+  if (situacaoDetalhe?.isCancelado || situacaoDetalhe?.isConcluido) return situacaoDetalhe;
+  if (isSituacaoEmAberto(situacaoDetalhe)) return situacaoDetalhe;
+  if (isSituacaoEmAberto(situacaoLista)) return situacaoLista;
+  return situacaoDetalhe || situacaoLista || null;
+}
+
 function getProdutoDefaults(cfg: any) {
   return {
     fretePadrao: roundMoney(toNumber(cfg?.fretePadrao, DEFAULT_FRETE_PADRAO)),
@@ -5196,7 +5206,10 @@ blingRouter.get('/relatorio-separacao', async (req, res, next) => {
 
       const detalhe = await blingReq(`/pedidos/vendas/${pedidoMeta.id}`) as any;
       const pedido = detalhe?.data || {};
-      const situacao = classifyOrderSituation(pedido);
+      const situacao = resolveSituacaoPedidoAberto(
+        pedidoMeta.situacao,
+        classifyOrderSituation(pedido),
+      );
       if (!isSituacaoEmAberto(situacao)) continue;
 
       const pedidoId = Number(pedido?.id || pedidoMeta.id || 0);
