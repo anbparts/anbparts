@@ -1,6 +1,7 @@
 'use client';
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
+import { API_BASE } from '@/lib/api-base';
 
 function fmt(v: number) {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -534,7 +535,7 @@ function PecaDetalheModal({ open, peca, onClose, onSaved }: any) {
   async function salvarDimensoes() {
     setSaving(true);
     try {
-      const API = (window as any).__API_BASE__ || '';
+      const API = API_BASE;
       // Atualiza no ANB
       await fetch(`${API}/pecas/${peca.id}`, {
         method: 'PUT', credentials: 'include',
@@ -1266,8 +1267,6 @@ function VendaModal({ open, peca, onClose, onConfirm }: any) {
     </div>
   );
 }
-
-if (typeof window !== 'undefined') (window as any).__API_BASE__ = API_BASE;
 
 export default function EstoquePage() {
   const [data, setData] = useState<any>({ total: 0, totalDisp: 0, totalVend: 0, data: [] });
