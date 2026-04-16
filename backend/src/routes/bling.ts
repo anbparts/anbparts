@@ -5211,6 +5211,7 @@ blingRouter.get('/relatorio-separacao', async (req, res, next) => {
         classifyOrderSituation(pedido),
       );
       if (!isSituacaoEmAberto(situacao)) continue;
+      const statusLabel = situacao?.label || pedidoMeta.situacao?.label || 'Em Aberto';
 
       const pedidoId = Number(pedido?.id || pedidoMeta.id || 0);
       const pedidoNum = String(pedido?.numero || pedidoId || pedidoMeta.id || '').trim();
@@ -5243,7 +5244,7 @@ blingRouter.get('/relatorio-separacao', async (req, res, next) => {
         pedidoId,
         pedidoNum,
         dataVenda,
-        statusLabel: situacao.label,
+        statusLabel,
         transportador,
         itens,
       });
