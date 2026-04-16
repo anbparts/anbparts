@@ -1034,8 +1034,37 @@ export default function MotosPage() {
               Este texto será usado como base na descrição das peças desta moto. O usuário poderá editar por peça no momento do cadastro.
             </div>
             <div style={{ padding: '0 24px', flex: 1 }}>
+              {/* Toolbar HTML */}
+              <div style={{ display: 'flex', gap: 4, padding: '6px 8px', background: '#f8fafc', border: '1px solid var(--border)', borderBottom: 'none', borderRadius: '8px 8px 0 0' }}>
+                {[
+                  { label: 'B', tag: 'strong', style: { fontWeight: 700 } },
+                  { label: 'I', tag: 'em', style: { fontStyle: 'italic' } },
+                  { label: 'U', tag: 'u', style: { textDecoration: 'underline' } },
+                ].map(({ label, tag, style }) => (
+                  <button key={tag} type="button"
+                    style={{ ...style, border: '1px solid var(--border)', background: 'var(--white)', borderRadius: 4, padding: '2px 8px', fontSize: 12, cursor: 'pointer', fontFamily: 'serif' }}
+                    onClick={() => {
+                      const ta = document.getElementById('textoModelo-ta') as HTMLTextAreaElement;
+                      if (!ta) return;
+                      const start = ta.selectionStart; const end = ta.selectionEnd;
+                      const sel = ta.value.slice(start, end);
+                      const abre = `<${tag}>`; const fecha = `</${tag}>`;
+                      const novo = ta.value.slice(0, start) + abre + sel + fecha + ta.value.slice(end);
+                      const novoCursor = start + abre.length + sel.length + fecha.length;
+                      setTextoModelo(novo);
+                      // Restaura cursor após re-render
+                      requestAnimationFrame(() => {
+                        ta.focus();
+                        ta.setSelectionRange(novoCursor, novoCursor);
+                      });
+                    }}
+                  >{label}</button>
+                ))}
+                <span style={{ fontSize: 11, color: 'var(--gray-400)', alignSelf: 'center', marginLeft: 4 }}>Selecione o texto e clique para formatar</span>
+              </div>
               <textarea
-                style={{ width: '100%', minHeight: 280, border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', fontSize: 13, fontFamily: 'Inter, sans-serif', resize: 'vertical', outline: 'none', boxSizing: 'border-box', color: 'var(--gray-800)', lineHeight: 1.6 }}
+                id="textoModelo-ta"
+                style={{ width: '100%', minHeight: 260, border: '1px solid var(--border)', borderTop: 'none', borderRadius: '0 0 8px 8px', padding: '10px 12px', fontSize: 13, fontFamily: 'Inter, sans-serif', resize: 'vertical', outline: 'none', boxSizing: 'border-box' as const, color: 'var(--gray-800)', lineHeight: 1.6 }}
                 value={textoModelo}
                 onChange={(e) => setTextoModelo(e.target.value)}
                 placeholder="Cole aqui o texto modelo para as peças desta moto..."

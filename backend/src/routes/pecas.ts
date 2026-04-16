@@ -17,17 +17,24 @@ const PREJUIZO_MOTIVOS = new Set([
 ]);
 
 const pecaBaseSchema = z.object({
-  motoId:      z.number().int(),
-  descricao:   z.string().min(1),
-  localizacao: z.string().optional().nullable(),
-  precoML:     z.number().default(0),
-  valorLiq:    z.number().default(0),
-  valorFrete:  z.number().default(0),
-  valorTaxas:  z.number().default(0),
-  disponivel:  z.boolean().default(true),
+  motoId:        z.number().int(),
+  descricao:     z.string().min(1),
+  localizacao:   z.string().optional().nullable(),
+  detranEtiqueta: z.string().optional().nullable(),
+  numeroPeca:    z.string().optional().nullable(),
+  pesoLiquido:   z.number().optional().nullable(),
+  pesoBruto:     z.number().optional().nullable(),
+  largura:       z.number().optional().nullable(),
+  altura:        z.number().optional().nullable(),
+  profundidade:  z.number().optional().nullable(),
+  precoML:       z.number().default(0),
+  valorLiq:      z.number().default(0),
+  valorFrete:    z.number().default(0),
+  valorTaxas:    z.number().default(0),
+  disponivel:    z.boolean().default(true),
   blingPedidoNum: z.string().optional().nullable(),
-  dataVenda:   z.string().optional().nullable(),
-  cadastro:    z.string().optional().nullable(),
+  dataVenda:     z.string().optional().nullable(),
+  cadastro:      z.string().optional().nullable(),
 });
 
 const createPecaSchema = pecaBaseSchema.extend({

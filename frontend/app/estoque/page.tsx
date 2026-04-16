@@ -526,6 +526,7 @@ function PecaDetalheModal({ open, peca, onClose, onSaved }: any) {
       pesoLiquido: peca.pesoLiquido != null ? String(peca.pesoLiquido) : '',
       localizacao: peca.localizacao || '',
       detranEtiqueta: peca.detranEtiqueta || '',
+      numeroPeca: peca.numeroPeca || '',
     });
     setEditando(false);
   }, [peca]);
@@ -536,19 +537,30 @@ function PecaDetalheModal({ open, peca, onClose, onSaved }: any) {
     setSaving(true);
     try {
       const API = API_BASE;
-      // Atualiza no ANB
+      // Atualiza no ANB — envia APENAS os campos editáveis do modal
+      // Preserva todos os outros campos usando PATCH-style (só manda o que mudou)
+      const atualizacaoPeca: any = {
+        // Campos obrigatórios pelo schema (mantém os atuais se não editados)
+        motoId: peca.motoId,
+        descricao: peca.descricao,
+        precoML: Number(peca.precoML),
+        valorFrete: Number(peca.valorFrete),
+        valorTaxas: Number(peca.valorTaxas),
+        disponivel: peca.disponivel,
+        // Campos físicos editados
+        largura: form.largura ? Number(form.largura) : null,
+        altura: form.altura ? Number(form.altura) : null,
+        profundidade: form.profundidade ? Number(form.profundidade) : null,
+        pesoLiquido: form.pesoLiquido ? Number(form.pesoLiquido) : null,
+        pesoBruto: form.pesoLiquido ? Number(form.pesoLiquido) : null,
+        localizacao: form.localizacao || null,
+        detranEtiqueta: form.detranEtiqueta || null,
+        numeroPeca: form.numeroPeca || null,
+      };
       await fetch(`${API}/pecas/${peca.id}`, {
         method: 'PUT', credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          largura: form.largura ? Number(form.largura) : null,
-          altura: form.altura ? Number(form.altura) : null,
-          profundidade: form.profundidade ? Number(form.profundidade) : null,
-          pesoLiquido: form.pesoLiquido ? Number(form.pesoLiquido) : null,
-          pesoBruto: form.pesoLiquido ? Number(form.pesoLiquido) : null,
-          localizacao: form.localizacao || null,
-          detranEtiqueta: form.detranEtiqueta || null,
-        }),
+        body: JSON.stringify(atualizacaoPeca),
       });
       // Atualiza no Bling via pré-cadastro (busca pelo SKU base)
       const baseSku = peca.idPeca.replace(/-\d+$/, '');
