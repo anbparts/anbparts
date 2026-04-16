@@ -538,15 +538,26 @@ export default function BlingProdutosPage() {
         try {
           const blingProdutoId = item.id; // id do item = ID do produto no Bling
 
-          // 1. Atualiza no Bling via sync-bling-peca (lê Bling completo + sobrepõe só localização)
-          await fetch(`${API}/cadastro/sync-bling-peca`, {
+          // SKU base do item
+          const sku = (item.sku || '').replace(/-\d+$/, '').toUpperCase();
+
+          // 1. Atualiza no Bling via sync-bling-peca:
+          //    - lê produto completo no Bling
+          //    - sobrepõe só a localização
+          //    - devolve tudo ao Bling preservando demais campos
+          const syncResp = await fetch(`${API}/cadastro/sync-bling-peca`, {
             method: 'POST', credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ blingProdutoId, localizacao: locPara.trim() }),
+            body: JSON.stringify({
+              blingProdutoId: blingProdutoId || null,
+              sku,
+              localizacao: locPara.trim(),
+            }),
           });
+          const syncData = await syncResp.json();
+          if (!syncData.ok) console.warn('[loc-massa] Bling erro:', syncData.error);
 
           // 2. Atualiza no ANB (SKU base + todas variações -2, -3...)
-          const sku = item.sku || '';
           if (sku) {
             const baseSku = sku.replace(/-\d+$/, '');
             const pecaResp = await fetch(`${API}/pecas?search=${encodeURIComponent(baseSku)}&per=50`, { credentials: 'include' });
@@ -878,7 +889,7 @@ export default function BlingProdutosPage() {
             </button>
             <button
               style={{ ...s.btn, background: '#7c3aed', color: '#fff', opacity: (comparando || !connected || (!listaComparacao.trim() && itens.length === 0)) ? 0.6 : 1 }}
-              onClick={() => setModalLocalizacao(true)}
+              onClick={() => { setLocDe(''); setLocPara(''); setModalLocalizacao(true); }}
               disabled={comparando || !connected || (!listaComparacao.trim() && itens.length === 0)}
               title={(!listaComparacao.trim() && itens.length === 0) ? 'Informe SKUs na lista antes de atualizar localização' : 'Atualizar localização em massa'}
             >
