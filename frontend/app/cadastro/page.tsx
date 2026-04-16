@@ -480,7 +480,7 @@ Deseja forçar a exclusão mesmo assim?`);
             <div style={{ padding: '14px 24px', borderTop: '1px solid var(--border)', display: 'flex', gap: 10, justifyContent: 'flex-end', alignItems: 'center' }}>
               <button onClick={() => setModal(false)} style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)' }}>Cancelar</button>
               {editItem && (
-                <button onClick={excluir} disabled={excluindo}
+                <button onClick={() => excluir()} disabled={excluindo}
                   style={{ ...s.btn, background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', opacity: excluindo ? 0.7 : 1 }}>
                   {excluindo ? 'Excluindo...' : '🗑️ Excluir'}
                 </button>
