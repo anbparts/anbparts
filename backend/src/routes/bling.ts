@@ -20,6 +20,29 @@ import { getNuvemshopStatusBySkus, NuvemshopAnuncioStatus } from '../lib/nuvemsh
 
 export const blingRouter = Router();
 
+// GET /bling/debug-raw?path=PATH — proxy direto para a API do Bling (debug)
+blingRouter.get('/debug-raw', async (req, res, next) => {
+  try {
+    const path = String(req.query.path || '');
+    if (!path) return res.status(400).json({ error: 'path obrigatorio' });
+    const data = await blingReq(path);
+    res.json(data);
+  } catch (e: any) { res.status(400).json({ error: e?.message }); }
+});
+
+// POST /bling/debug-raw — proxy POST/PUT/PATCH direto para a API do Bling (debug)
+blingRouter.post('/debug-raw', async (req, res, next) => {
+  try {
+    const { path, method = 'POST', body } = req.body;
+    if (!path) return res.status(400).json({ error: 'path obrigatorio' });
+    const data = await blingReq(path, {
+      method,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    res.json(data);
+  } catch (e: any) { res.status(400).json({ error: e?.message }); }
+});
+
 const BLING_API = 'https://www.bling.com.br/Api/v3';
 const BLING_OAUTH = 'https://www.bling.com.br/Api/v3/oauth/token';
 const DEFAULT_FRETE_PADRAO = 29.9;
