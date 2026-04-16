@@ -379,13 +379,20 @@ cadastroRouter.delete('/:id', async (req, res, next) => {
     if (!cadastro) return res.status(404).json({ error: 'Não encontrado' });
     if (cadastro.blingProdutoId) {
       // Verifica se o produto ainda existe no Bling
+      let existeNoBling = false;
       try {
         const blingCheck = await blingReq(`/produtos/${cadastro.blingProdutoId}`);
-        if (blingCheck?.data?.id) {
-          return res.status(400).json({ error: 'Este pré-cadastro já foi replicado ao Bling e o produto ainda existe lá. Delete o produto no Bling primeiro.' });
+        // Só bloqueia se retornou dados com ID válido
+        if (blingCheck?.data?.id && String(blingCheck.data.id) === String(cadastro.blingProdutoId)) {
+          existeNoBling = true;
         }
-      } catch {
-        // Produto não encontrado no Bling (404) — pode excluir no ANB
+      } catch (e: any) {
+        // 404 = produto não existe mais — permite excluir
+        // Qualquer outro erro = assume que não existe para não bloquear o usuário
+        existeNoBling = false;
+      }
+      if (existeNoBling) {
+        return res.status(400).json({ error: 'Este pré-cadastro já foi replicado ao Bling e o produto ainda existe lá. Delete o produto no Bling primeiro.' });
       }
     }
     await prisma.cadastroPeca.delete({ where: { id } });
