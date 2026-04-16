@@ -82,6 +82,7 @@ type SeparacaoPedido = {
   statusLabel: string;
   nomeCliente: string | null;
   transportador: string | null;
+  enderecoEntrega: string | null;
   observacoesInternas: string | null;
   quantidadeItens: number;
   itens: SeparacaoItem[];
@@ -289,7 +290,17 @@ async function baixarSeparacaoPdf(relatorio: SeparacaoRelatorio) {
       y += 4;
     }
 
-    ensureSpace(20);
+    const observacaoInterna = String(pedido.observacoesInternas || '').trim() || '-';
+    const infoEndereco = `Endereco: ${pedido.enderecoEntrega || '-'}`;
+    const noteWidth = 84;
+    const columnGap = 4;
+    const leftWidth = contentWidth - noteWidth - columnGap;
+    const noteLines = doc.splitTextToSize(observacaoInterna, noteWidth - 6);
+    const noteHeight = Math.max(12, noteLines.length * 3 + 6);
+    const enderecoLines = doc.splitTextToSize(infoEndereco, contentWidth - 6);
+    const infoHeight = Math.max(11.5, 8 + enderecoLines.length * 3.1);
+
+    ensureSpace(noteHeight + infoHeight + 18);
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10.5);
@@ -299,39 +310,46 @@ async function baixarSeparacaoPdf(relatorio: SeparacaoRelatorio) {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
     doc.setTextColor(71, 85, 105);
-    doc.text(`${pedido.quantidadeItens} item(ns)`, pageWidth - marginX, y, { align: 'right' });
-    y += 3.5;
+    doc.text(`${pedido.quantidadeItens} item(ns)`, marginX + leftWidth, y, { align: 'right' });
 
-    doc.text(`Data da venda: ${fmtDate(pedido.dataVenda)}`, marginX, y);
-    y += 3.2;
-    doc.text(`Transportador: ${pedido.transportador || 'Nao informado'}`, marginX, y);
-    y += 3.8;
+    const metaRowY = y + 2.5;
+    const noteX = marginX + leftWidth + columnGap;
+    doc.setFontSize(7.7);
+    doc.text(`Data da venda: ${fmtDate(pedido.dataVenda)}`, marginX, metaRowY);
+    doc.text(`Transportador: ${pedido.transportador || 'Nao informado'}`, marginX, metaRowY + 3.4);
 
-    const observacaoInterna = String(pedido.observacoesInternas || '').trim();
-    if (observacaoInterna) {
-      const noteLines = doc.splitTextToSize(observacaoInterna, contentWidth - 8);
-      const noteHeight = Math.max(8, noteLines.length * 3.2 + 4.5);
-      ensureSpace(noteHeight + 4);
-      doc.setDrawColor(191, 219, 254);
-      doc.setFillColor(248, 251, 255);
-      doc.roundedRect(marginX, y, contentWidth, noteHeight, 2, 2, 'FD');
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(6.5);
-      doc.setTextColor(100, 116, 139);
-      doc.text('OBS. INTERNA', marginX + 2.5, y + 3.5);
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7.5);
-      doc.setTextColor(15, 23, 42);
-      doc.text(noteLines, marginX + 2.5, y + 6.5);
-      y += noteHeight + 3;
-    }
+    doc.setDrawColor(191, 219, 254);
+    doc.setFillColor(248, 251, 255);
+    doc.roundedRect(noteX, metaRowY - 2.5, noteWidth, noteHeight, 2, 2, 'FD');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.3);
+    doc.setTextColor(100, 116, 139);
+    doc.text('OBS. INTERNA', noteX + 2.5, metaRowY + 0.4);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(15, 23, 42);
+    doc.text(noteLines, noteX + 2.5, metaRowY + 3.5);
+
+    y = metaRowY + Math.max(6.8, noteHeight - 0.5) + 2.5;
+
+    doc.setDrawColor(226, 232, 240);
+    doc.setFillColor(255, 255, 255);
+    doc.roundedRect(marginX, y, contentWidth, infoHeight, 2, 2, 'FD');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.3);
+    doc.setTextColor(51, 65, 85);
+    doc.text(`Nome: ${pedido.nomeCliente || '-'}`, marginX + 2.5, y + 4);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(71, 85, 105);
+    doc.text(enderecoLines, marginX + 2.5, y + 8);
+    y += infoHeight + 3;
 
     autoTable(doc, {
       startY: y,
       margin: { left: marginX, right: marginX },
-      head: [['NOME', 'SKU', 'DESCRICAO', 'QTD', 'LOCALIZACAO', 'ETIQUETA DETRAN']],
+      head: [['SKU', 'DESCRICAO', 'QTD', 'LOCALIZACAO', 'ETIQUETA DETRAN']],
       body: pedido.itens.map((item) => [
-        pedido.nomeCliente || '-',
         item.skuSistema || '-',
         item.descricao || '-',
         String(item.quantidade || ''),
@@ -356,15 +374,14 @@ async function baixarSeparacaoPdf(relatorio: SeparacaoRelatorio) {
         fontSize: 6,
       },
       columnStyles: {
-        0: { cellWidth: 44 },
-        1: { cellWidth: 26 },
-        2: { cellWidth: 101 },
-        3: { cellWidth: 10, halign: 'center' },
-        4: { cellWidth: 41 },
-        5: { cellWidth: 46 },
+        0: { cellWidth: 28 },
+        1: { cellWidth: 130 },
+        2: { cellWidth: 10, halign: 'center' },
+        3: { cellWidth: 48 },
+        4: { cellWidth: 52 },
       },
       didParseCell: (data: any) => {
-        if (data.section === 'body' && data.column.index === 5) {
+        if (data.section === 'body' && data.column.index === 4) {
           const value = String(data.cell.raw || '').trim();
           if (value === 'ENVIAR FOTO DA ETIQUETA DETRAN') {
             data.cell.styles.textColor = [217, 119, 6];
@@ -655,39 +672,51 @@ export default function VendasBlingPage() {
                       boxShadow: '0 1px 2px rgba(15, 23, 42, 0.04)',
                     }}
                   >
-                    <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-                      <div>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-800)' }}>Pedido #{pedido.pedidoNum}</div>
-                        <div style={{ fontSize: 11.5, color: 'var(--gray-500)', marginTop: 3 }}>
-                          Data da venda: {fmtDate(pedido.dataVenda)}
+                    <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12, alignItems: 'stretch' }}>
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-800)' }}>Pedido #{pedido.pedidoNum}</div>
+                            <div style={{ fontSize: 11, background: '#eff6ff', color: 'var(--blue-500)', padding: '5px 9px', borderRadius: 999, fontWeight: 700 }}>
+                              {pedido.quantidadeItens} item(ns)
+                            </div>
+                          </div>
+                          <div style={{ fontSize: 11.5, color: 'var(--gray-500)', marginTop: 5 }}>
+                            Data da venda: {fmtDate(pedido.dataVenda)}
+                          </div>
+                          <div style={{ fontSize: 11.5, color: 'var(--gray-500)', marginTop: 2 }}>
+                            Transportador: {pedido.transportador || 'Nao informado'}
+                          </div>
                         </div>
-                        <div style={{ fontSize: 11.5, color: 'var(--gray-500)', marginTop: 2 }}>
-                          Transportador: {pedido.transportador || 'Nao informado'}
+
+                        <div style={{ border: '1px solid #dbeafe', background: '#f8fbff', borderRadius: 10, padding: '8px 10px' }}>
+                          <div style={{ fontSize: 10, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '.7px', marginBottom: 5 }}>Obs. interna</div>
+                          <div style={{ fontSize: 12, color: 'var(--gray-800)', lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>
+                            {String(pedido.observacoesInternas || '').trim() || '-'}
+                          </div>
                         </div>
-                      </div>
-                      <div style={{ fontSize: 11, background: '#eff6ff', color: 'var(--blue-500)', padding: '5px 9px', borderRadius: 999, fontWeight: 700 }}>
-                        {pedido.quantidadeItens} item(ns)
                       </div>
                     </div>
 
-                    {String(pedido.observacoesInternas || '').trim() && (
-                      <div style={{ margin: '10px 14px 0', border: '1px solid #dbeafe', background: '#f8fbff', borderRadius: 10, padding: '8px 10px' }}>
-                        <div style={{ fontSize: 10, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '.7px', marginBottom: 5 }}>Obs. interna</div>
-                        <div style={{ fontSize: 12, color: 'var(--gray-800)', lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>{pedido.observacoesInternas}</div>
+                    <div style={{ margin: '10px 14px 0', border: '1px solid #e2e8f0', background: '#fff', borderRadius: 10, padding: '8px 10px', display: 'grid', gap: 5 }}>
+                      <div style={{ fontSize: 11.5, color: 'var(--gray-800)', lineHeight: 1.45 }}>
+                        <span style={{ color: 'var(--gray-500)', fontWeight: 600 }}>Nome:</span> {pedido.nomeCliente || '-'}
                       </div>
-                    )}
+                      <div style={{ fontSize: 11.5, color: 'var(--gray-800)', lineHeight: 1.45 }}>
+                        <span style={{ color: 'var(--gray-500)', fontWeight: 600 }}>Endereco:</span> {pedido.enderecoEntrega || '-'}
+                      </div>
+                    </div>
 
                     <div style={{ overflowX: 'auto' }}>
-                      <table style={{ width: '100%', minWidth: 840, borderCollapse: 'collapse', fontSize: 12.5 }}>
+                      <table style={{ width: '100%', minWidth: 760, borderCollapse: 'collapse', fontSize: 12.5 }}>
                         <thead style={{ background: 'var(--gray-50)' }}>
                           <tr>
                             {[
-                              { label: 'Nome', width: '18%' },
-                              { label: 'SKU', width: '14%' },
+                              { label: 'SKU', width: '16%' },
                               { label: 'Descricao', width: 'auto' },
                               { label: 'Qtd', width: 56 },
-                              { label: 'Localizacao', width: '18%' },
-                              { label: 'Etiqueta Detran', width: '18%' },
+                              { label: 'Localizacao', width: '22%' },
+                              { label: 'Etiqueta Detran', width: '22%' },
                             ].map((header) => (
                               <th key={header.label} style={{ padding: '8px 10px', width: header.width, textAlign: 'left', fontFamily: 'JetBrains Mono, monospace', fontSize: 9.5, letterSpacing: '.7px', textTransform: 'uppercase', color: 'var(--gray-400)', fontWeight: 500, borderBottom: '1px solid var(--border)' }}>
                                 {header.label}
@@ -698,7 +727,6 @@ export default function VendasBlingPage() {
                         <tbody>
                           {pedido.itens.map((item) => (
                             <tr key={item.lineKey} style={{ borderTop: '1px solid var(--gray-100)', background: 'var(--white)' }}>
-                              <td style={{ padding: '8px 10px', color: 'var(--gray-800)', lineHeight: 1.4 }}>{pedido.nomeCliente || '-'}</td>
                               <td style={{ padding: '8px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 11.5, color: 'var(--blue-500)', fontWeight: 700 }}>{item.skuSistema || '-'}</td>
                               <td style={{ padding: '8px 10px', color: 'var(--gray-800)', lineHeight: 1.4 }}>{item.descricao || '-'}</td>
                               <td style={{ padding: '8px 10px', width: 56, fontFamily: 'JetBrains Mono, monospace', fontSize: 11.5, color: 'var(--gray-700)' }}>{item.quantidade}</td>

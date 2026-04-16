@@ -439,6 +439,57 @@ function resolvePedidoTransportadorNome(pedido: any) {
   return null;
 }
 
+function formatPedidoCep(value: any) {
+  const digits = String(value ?? '').replace(/\D/g, '');
+  if (digits.length === 8) return `${digits.slice(0, 5)}-${digits.slice(5)}`;
+  return normalizePrintableText(value);
+}
+
+function resolvePedidoEnderecoEntregaLinha(pedido: any) {
+  const blocks = [
+    pedido?.transporte?.etiqueta,
+    pedido?.etiqueta,
+    pedido?.entrega?.etiqueta,
+    pedido?.entrega,
+    pedido?.enderecoEntrega,
+    pedido?.destinatario?.endereco,
+  ];
+
+  for (const block of blocks) {
+    if (!block || typeof block !== 'object') continue;
+
+    const endereco = normalizePrintableText(
+      block?.endereco
+      ?? block?.logradouro
+      ?? block?.rua
+      ?? block?.address
+      ?? block?.linha1,
+    );
+    const numeroRaw = normalizePrintableText(
+      block?.numero
+      ?? block?.numeroEndereco
+      ?? block?.streetNumber
+      ?? block?.houseNumber,
+    );
+    const numero = endereco ? (numeroRaw || 'S/N') : numeroRaw;
+    const bairro = normalizePrintableText(block?.bairro ?? block?.distrito ?? block?.neighborhood);
+    const cep = formatPedidoCep(block?.cep ?? block?.codigoPostal ?? block?.postalCode ?? block?.zipCode);
+    const cidade = normalizePrintableText(block?.municipio ?? block?.cidade ?? block?.city);
+    const uf = normalizePrintableText(block?.uf ?? block?.estado ?? block?.state)?.toUpperCase() || null;
+
+    const parts = [];
+    if (endereco) parts.push(`${endereco}, ${numero || 'S/N'}`);
+    if (bairro) parts.push(`Bairro ${bairro}`);
+    if (cep) parts.push(`CEP ${cep}`);
+    if (cidade || uf) parts.push(`Cidade: ${[cidade, uf].filter(Boolean).join(' - ')}`);
+
+    const linha = parts.join(' - ');
+    if (linha) return linha;
+  }
+
+  return null;
+}
+
 function classifyOrderSituation(detail: any) {
   const source = detail?.situacao ?? detail?.situacaoPedido ?? detail?.situacoes ?? {};
   const rawText = extractSituationText(source)
@@ -5241,6 +5292,7 @@ blingRouter.get('/relatorio-separacao', async (req, res, next) => {
       const dataVenda = String(pedido?.data || '').split('T')[0] || '';
       const nomeCliente = String(pedido?.contato?.nome || '').trim() || null;
       const transportador = resolvePedidoTransportadorNome(pedido);
+      const enderecoEntrega = resolvePedidoEnderecoEntregaLinha(pedido);
       const observacoesInternas = String(pedido?.observacoesInternas || '').trim() || null;
 
       const itens = (pedido?.itens || [])
@@ -5272,6 +5324,7 @@ blingRouter.get('/relatorio-separacao', async (req, res, next) => {
         statusLabel,
         nomeCliente,
         transportador,
+        enderecoEntrega,
         observacoesInternas,
         itens,
       });
@@ -5400,6 +5453,7 @@ blingRouter.get('/relatorio-separacao', async (req, res, next) => {
         statusLabel: pedidoRaw.statusLabel,
         nomeCliente: pedidoRaw.nomeCliente,
         transportador: pedidoRaw.transportador,
+        enderecoEntrega: pedidoRaw.enderecoEntrega,
         observacoesInternas: pedidoRaw.observacoesInternas,
         quantidadeItens: itens.reduce((sum, item) => sum + Number(item.quantidade || 0), 0),
         itens,
