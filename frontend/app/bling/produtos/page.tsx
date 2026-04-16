@@ -538,12 +538,15 @@ export default function BlingProdutosPage() {
             body: JSON.stringify({ blingProdutoId, localizacao: locPara.trim() }),
           });
 
-          // 2. Atualiza no ANB (peças com esse SKU)
+          // 2. Atualiza no ANB (SKU base + todas variações -2, -3...)
           const sku = item.sku || '';
           if (sku) {
-            const pecaResp = await fetch(`${API}/pecas?idPeca=${encodeURIComponent(sku)}&per=10`, { credentials: 'include' });
+            const baseSku = sku.replace(/-\d+$/, '');
+            const pecaResp = await fetch(`${API}/pecas?search=${encodeURIComponent(baseSku)}&per=50`, { credentials: 'include' });
             const pecaData = await pecaResp.json();
-            const pecas: any[] = pecaData?.data || [];
+            const pecas: any[] = (pecaData?.data || []).filter((p: any) =>
+              p.idPeca === baseSku || p.idPeca.startsWith(`${baseSku}-`)
+            );
             for (const p of pecas) {
               await fetch(`${API}/pecas/${p.id}`, {
                 method: 'PUT', credentials: 'include',
