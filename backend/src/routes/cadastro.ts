@@ -371,6 +371,70 @@ cadastroRouter.post('/:id/finalizar', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// POST /cadastro/sync-bling-peca — atualiza campos físicos de uma peça diretamente no Bling
+cadastroRouter.post('/sync-bling-peca', async (req, res, next) => {
+  try {
+    const { blingProdutoId, largura, altura, profundidade, pesoLiquido, localizacao, detranEtiqueta, numeroPeca } = req.body;
+    if (!blingProdutoId) return res.status(400).json({ error: 'blingProdutoId obrigatório' });
+
+    // Busca produto atual no Bling para manter campos obrigatórios
+    const blingAtual = await blingReq(`/produtos/${blingProdutoId}`);
+    const b = blingAtual?.data;
+    if (!b) return res.status(404).json({ error: 'Produto não encontrado no Bling' });
+
+    // Monta payload usando os dados atuais do Bling como base
+    // e sobrepõe apenas os campos que vieram na requisição
+    const payload: any = {
+      // Preserva todos os campos do Bling
+      nome: b.nome,
+      codigo: b.codigo,
+      tipo: b.tipo || 'P',
+      formato: b.formato || 'S',
+      situacao: b.situacao || 'A',
+      preco: Number(b.preco || 0),
+      condicao: b.condicao ?? 0,
+      marca: b.marca || '',
+      pesoLiquido: pesoLiquido != null ? Number(pesoLiquido) : Number(b.pesoLiquido || 0),
+      pesoBruto: pesoLiquido != null ? Number(pesoLiquido) : Number(b.pesoBruto || 0),
+      volumes: b.volumes || 1,
+      descricaoCurta: b.descricaoCurta || '',
+      // Dimensões — sobrepõe só os que vieram
+      dimensoes: {
+        largura: largura != null ? Number(largura) : Number(b.dimensoes?.largura || 0),
+        altura: altura != null ? Number(altura) : Number(b.dimensoes?.altura || 0),
+        profundidade: profundidade != null ? Number(profundidade) : Number(b.dimensoes?.profundidade || 0),
+        unidadeMedida: b.dimensoes?.unidadeMedida || 2,
+      },
+      // Estoque — só sobrepõe localização
+      estoque: {
+        minimo: Number(b.estoque?.minimo || 0),
+        maximo: Number(b.estoque?.maximo || 0),
+        localizacao: localizacao != null ? String(localizacao || '') : String(b.estoque?.localizacao || ''),
+      },
+    };
+
+    // Campos customizados — merge com os existentes no Bling, sobrepõe só os que vieram
+    const ccExistentes: any[] = Array.isArray(b.camposCustomizados) ? b.camposCustomizados : [];
+    const ccMap = new Map(ccExistentes.map((c: any) => [Number(c.idCampoCustomizado), c.valor]));
+    if (numeroPeca !== undefined) ccMap.set(2821431, numeroPeca || '');
+    if (detranEtiqueta !== undefined) ccMap.set(5979929, detranEtiqueta || '');
+    if (ccMap.size > 0) {
+      payload.camposCustomizados = Array.from(ccMap.entries()).map(([id, valor]) => ({ idCampoCustomizado: id, valor }));
+    }
+
+    console.log('[sync-bling-peca] PUT produto', blingProdutoId);
+    await blingReq(`/produtos/${blingProdutoId}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+
+    res.json({ ok: true });
+  } catch (e: any) {
+    console.error('[sync-bling-peca] Erro:', e?.message);
+    res.status(400).json({ ok: false, error: e?.message });
+  }
+});
+
 // DELETE /cadastro/:id
 cadastroRouter.delete('/:id', async (req, res, next) => {
   try {
