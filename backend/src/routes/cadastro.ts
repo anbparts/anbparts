@@ -5,7 +5,8 @@ import { blingReq } from './bling';
 export const cadastroRouter = Router();
 
 function toTitleCase(str: string): string {
-  return str.toLowerCase().replace(/\w/g, (c) => c.toUpperCase());
+  if (!str) return '';
+  return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
 }
 
 const BLING_NUMERO_PECA_CAMPO_ID = 2821431;
@@ -269,20 +270,21 @@ cadastroRouter.post('/:id/finalizar', async (req, res, next) => {
     // Lança estoque pela API específica após criar o produto
     if (blingProdutoId && Number(cadastro.estoque) > 0) {
       try {
-        // Busca o depósito padrão primeiro
-        const depositosResp = await blingReq('/depositos?pagina=1&limite=1&situacoes[]=1');
-        const depositoId = Number(depositosResp?.data?.[0]?.id || 0);
-        if (!depositoId) throw new Error('Nenhum depósito ativo encontrado no Bling');
-
-        const estoquePayload = {
+        // idDeposito obrigatório — passado como campo direto conforme API v3
+        const estoquePayload: any = {
           produto: { id: Number(blingProdutoId) },
-          deposito: { id: depositoId },
-          operacao: 'B', // B = Balanço (define saldo absoluto)
+          operacao: 'B',
           preco: Number(cadastro.precoVenda) || 0,
           custo: 0,
           quantidade: Number(cadastro.estoque),
           observacoes: `Estoque inicial - ${cadastro.idPeca}`,
         };
+        // Busca depósito padrão (sem permissão via scope atual — tenta sem depósito primeiro)
+        try {
+          const depositosResp = await blingReq('/depositos?pagina=1&limite=1&situacoes[]=1');
+          const depositoId = Number(depositosResp?.data?.[0]?.id || 0);
+          if (depositoId) estoquePayload.deposito = { id: depositoId };
+        } catch { /* sem permissão — tenta sem depósito */ }
         console.log('[cadastro] Lançando estoque:', JSON.stringify(estoquePayload));
         const estoqueResp = await blingReq('/estoques', {
           method: 'POST',
@@ -294,25 +296,16 @@ cadastroRouter.post('/:id/finalizar', async (req, res, next) => {
       }
     }
 
-    // Campos customizados via API específica: /produtos/{id}/camposCustomizados
+    // Campos customizados via PUT do produto (endpoint /camposCustomizados não existe)
     if (blingProdutoId && camposCustomizados.length) {
       try {
-        const ccResp = await blingReq(`/produtos/${blingProdutoId}/camposCustomizados`, {
-          method: 'PATCH',
-          body: JSON.stringify({ camposCustomizados }),
+        const ccResp = await blingReq(`/produtos/${blingProdutoId}`, {
+          method: 'PUT',
+          body: JSON.stringify({ ...payload, camposCustomizados }),
         });
-        console.log('[cadastro] Campos customizados OK:', JSON.stringify(ccResp));
+        console.log('[cadastro] Campos customizados via PUT OK:', JSON.stringify(ccResp));
       } catch (e: any) {
-        // Tenta PUT se PATCH não funcionar
-        try {
-          await blingReq(`/produtos/${blingProdutoId}`, {
-            method: 'PUT',
-            body: JSON.stringify({ ...payload, camposCustomizados }),
-          });
-          console.log('[cadastro] Campos customizados via PUT OK');
-        } catch (e2: any) {
-          console.error('[cadastro] Erro campos customizados:', e2?.message);
-        }
+        console.error('[cadastro] Erro campos customizados:', e?.message);
       }
     }
 
