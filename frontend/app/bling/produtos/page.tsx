@@ -865,9 +865,10 @@ export default function BlingProdutosPage() {
               {atualizandoLinkMl ? 'Atualizando...' : '🔗 Atualizar Link ML'}
             </button>
             <button
-              style={{ ...s.btn, background: '#7c3aed', color: '#fff', opacity: (comparando || !connected) ? 0.6 : 1 }}
+              style={{ ...s.btn, background: '#7c3aed', color: '#fff', opacity: (comparando || !connected || itens.length === 0) ? 0.6 : 1 }}
               onClick={() => setModalLocalizacao(true)}
-              disabled={comparando || !connected}
+              disabled={comparando || !connected || itens.length === 0}
+              title={itens.length === 0 ? 'Informe SKUs na lista antes de atualizar localização' : 'Atualizar localização em massa'}
             >
               📦 Atualizar Localização
             </button>
