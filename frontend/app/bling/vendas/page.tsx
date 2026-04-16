@@ -64,6 +64,7 @@ type SeparacaoItem = {
   lineKey: string;
   skuBase: string;
   skuBling: string | null;
+  skuSistema: string;
   quantidade: number;
   descricao: string;
   idsPecaAnb: string[];
@@ -79,7 +80,9 @@ type SeparacaoPedido = {
   pedidoNum: string;
   dataVenda: string;
   statusLabel: string;
+  nomeCliente: string | null;
   transportador: string | null;
+  observacoesInternas: string | null;
   quantidadeItens: number;
   itens: SeparacaoItem[];
 };
@@ -123,6 +126,15 @@ function fmtDate(value: string) {
   return `${day}/${month}/${year}`;
 }
 
+function fmtIsoDate(value: string) {
+  if (!value) return '-';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return fmtDate(String(value).split('T')[0]);
+  }
+  return parsed.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+}
+
 function inputDateString(date: Date) {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
   return local.toISOString().split('T')[0];
@@ -148,8 +160,12 @@ function escapeHtml(value: any) {
     .replace(/'/g, '&#39;');
 }
 
+function escapeHtmlMultiline(value: any) {
+  return escapeHtml(value).replace(/\r?\n/g, '<br />');
+}
+
 function buildSeparacaoPrintHtml(relatorio: SeparacaoRelatorio) {
-  const periodo = `${fmtDate(relatorio.filtros.dataInicio)} a ${fmtDate(relatorio.filtros.dataFim)}`;
+  const dataSeparacao = fmtIsoDate(relatorio.geradoEm || '');
   const cards = [
     ['Pedidos', String(relatorio.totaisGerais.totalPedidos)],
     ['Itens', String(relatorio.totaisGerais.totalItens)],
@@ -167,16 +183,23 @@ function buildSeparacaoPrintHtml(relatorio: SeparacaoRelatorio) {
 
   const pedidosHtml = relatorio.pedidos
     .map((pedido) => {
+      const observacaoInterna = String(pedido.observacoesInternas || '').trim();
+      const observacaoInternaHtml = observacaoInterna
+        ? `
+          <div class="pedido-note">
+            <div class="pedido-note-label">Obs. interna</div>
+            <div class="pedido-note-value">${escapeHtmlMultiline(observacaoInterna)}</div>
+          </div>
+        `
+        : '';
       const rows = pedido.itens
         .map((item) => `
-          <tr class="${item.localizacaoConfere ? 'row-ok' : 'row-warn'}">
-            <td>${escapeHtml(item.skuBase || '-')}</td>
-            <td>${escapeHtml(item.idsPecaAnb.join(' / ') || '-')}</td>
+          <tr>
+            <td>${escapeHtml(pedido.nomeCliente || '-')}</td>
+            <td>${escapeHtml(item.skuSistema || '-')}</td>
             <td>${escapeHtml(item.descricao || '-')}</td>
-            <td class="center">${escapeHtml(item.quantidade)}</td>
-            <td>${escapeHtml(item.localizacaoBling || '-')}</td>
+            <td class="center col-qtd">${escapeHtml(item.quantidade)}</td>
             <td>${escapeHtml(item.localizacaoAnb || '-')}</td>
-            <td class="center status-cell">${item.localizacaoConfere ? 'Confere' : 'Divergente'}</td>
             <td>${escapeHtml(item.detranRelatorio || '-')}</td>
           </tr>
         `)
@@ -187,21 +210,20 @@ function buildSeparacaoPrintHtml(relatorio: SeparacaoRelatorio) {
           <div class="pedido-header">
             <div>
               <div class="pedido-title">Pedido #${escapeHtml(pedido.pedidoNum)}</div>
-              <div class="pedido-meta">Data da venda: ${escapeHtml(fmtDate(pedido.dataVenda))} | Status: ${escapeHtml(pedido.statusLabel || 'Em Aberto')}</div>
+              <div class="pedido-meta">Data da venda: ${escapeHtml(fmtDate(pedido.dataVenda))}</div>
               <div class="pedido-meta">Transportador: ${escapeHtml(pedido.transportador || 'Nao informado')}</div>
             </div>
             <div class="pedido-badge">${escapeHtml(`${pedido.quantidadeItens} item(ns)`)}</div>
           </div>
+          ${observacaoInternaHtml}
           <table>
             <thead>
               <tr>
-                <th>SKU Base</th>
-                <th>SKUs ANB</th>
+                <th class="col-nome">Nome</th>
+                <th class="col-sku">SKU</th>
                 <th>Descricao</th>
-                <th>Qtd</th>
-                <th>Loc. Bling</th>
-                <th>Loc. ANB</th>
-                <th>Status Loc.</th>
+                <th class="col-qtd">Qtd</th>
+                <th class="col-localizacao">Localizacao</th>
                 <th>Etiqueta DETRAN</th>
               </tr>
             </thead>
@@ -216,15 +238,24 @@ function buildSeparacaoPrintHtml(relatorio: SeparacaoRelatorio) {
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
-    <title>Relatorio de Separacao - ${escapeHtml(periodo)}</title>
+    <title>Relatorio de Separacao - ${escapeHtml(dataSeparacao)}</title>
     <style>
-      @page { size: A4 landscape; margin: 12mm; }
+      @page { size: A4 landscape; margin: 10mm; }
       * { box-sizing: border-box; }
+      html, body {
+        width: 100%;
+      }
       body {
         margin: 0;
         font-family: Inter, Arial, sans-serif;
         color: #1e293b;
         background: #ffffff;
+      }
+      @media print {
+        html, body {
+          width: 297mm;
+          min-height: 210mm;
+        }
       }
       .page {
         width: 100%;
@@ -303,6 +334,26 @@ function buildSeparacaoPrintHtml(relatorio: SeparacaoRelatorio) {
         font-weight: 600;
         color: #1e293b;
       }
+      .pedido-note {
+        margin-bottom: 10px;
+        border: 1px solid #dbeafe;
+        background: #f8fbff;
+        border-radius: 8px;
+        padding: 8px 10px;
+      }
+      .pedido-note-label {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: #64748b;
+        margin-bottom: 4px;
+      }
+      .pedido-note-value {
+        font-size: 11px;
+        color: #0f172a;
+        line-height: 1.5;
+        white-space: normal;
+      }
       table {
         width: 100%;
         border-collapse: collapse;
@@ -328,14 +379,17 @@ function buildSeparacaoPrintHtml(relatorio: SeparacaoRelatorio) {
       .center {
         text-align: center;
       }
-      .status-cell {
-        font-weight: 700;
+      .col-nome {
+        width: 18%;
       }
-      .row-warn td {
-        background: #fff7ed;
+      .col-sku {
+        width: 14%;
       }
-      .row-ok td {
-        background: #ffffff;
+      .col-qtd {
+        width: 6%;
+      }
+      .col-localizacao {
+        width: 18%;
       }
     </style>
   </head>
@@ -344,9 +398,8 @@ function buildSeparacaoPrintHtml(relatorio: SeparacaoRelatorio) {
       <div class="header">
         <div>
           <div class="title">Relatorio de Separacao</div>
-          <div class="subtitle">Periodo: ${escapeHtml(periodo)}<br />Status filtrado: ${escapeHtml(relatorio.filtros.status || 'Em Aberto')}</div>
         </div>
-        <div class="subtitle">Gerado em ${escapeHtml(fmtDate(String(relatorio.geradoEm || '').split('T')[0]))}</div>
+        <div class="subtitle">Data da separacao: ${escapeHtml(dataSeparacao)}</div>
       </div>
       <div class="metrics">${cards}</div>
       ${pedidosHtml}
@@ -593,7 +646,7 @@ export default function VendasBlingPage() {
               <div>
                 <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--gray-800)' }}>Relatorio de Separacao</div>
                 <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 4 }}>
-                  Previa dos pedidos <strong>{relatorioSeparacao.filtros.status}</strong> entre {fmtDate(relatorioSeparacao.filtros.dataInicio)} e {fmtDate(relatorioSeparacao.filtros.dataFim)}.
+                  Data da separacao: {fmtIsoDate(relatorioSeparacao.geradoEm || '')}
                 </div>
               </div>
               <button
@@ -623,7 +676,7 @@ export default function VendasBlingPage() {
 
             {relatorioSeparacao.pedidos.length === 0 ? (
               <div style={{ background: 'var(--white)', border: '1px dashed #bfdbfe', borderRadius: 10, padding: '18px 16px', fontSize: 13, color: 'var(--gray-500)' }}>
-                Nenhum pedido com status Em Aberto foi encontrado nesse periodo.
+                Nenhum pedido em aberto foi encontrado nesse periodo.
               </div>
             ) : (
               <div style={{ display: 'grid', gap: 14 }}>
@@ -633,7 +686,7 @@ export default function VendasBlingPage() {
                       <div>
                         <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--gray-800)' }}>Pedido #{pedido.pedidoNum}</div>
                         <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 4 }}>
-                          Data da venda: {fmtDate(pedido.dataVenda)} - Status: {pedido.statusLabel || 'Em Aberto'}
+                          Data da venda: {fmtDate(pedido.dataVenda)}
                         </div>
                         <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 3 }}>
                           Transportador: {pedido.transportador || 'Nao informado'}
@@ -644,30 +697,45 @@ export default function VendasBlingPage() {
                       </div>
                     </div>
 
+                    {String(pedido.observacoesInternas || '').trim() && (
+                      <div style={{ margin: '12px 16px 0', border: '1px solid #dbeafe', background: '#f8fbff', borderRadius: 10, padding: '10px 12px' }}>
+                        <div style={{ fontSize: 10.5, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '.7px', marginBottom: 6 }}>Obs. interna</div>
+                        <div style={{ fontSize: 12.5, color: 'var(--gray-800)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{pedido.observacoesInternas}</div>
+                      </div>
+                    )}
+
                     <div style={{ overflowX: 'auto' }}>
-                      <table style={{ width: '100%', minWidth: 980, borderCollapse: 'collapse', fontSize: 13 }}>
+                      <table style={{ width: '100%', minWidth: 860, borderCollapse: 'collapse', fontSize: 13 }}>
                         <thead style={{ background: 'var(--gray-50)' }}>
                           <tr>
-                            {['SKU Base', 'SKUs ANB', 'Descricao', 'Qtd', 'Loc. Bling', 'Loc. ANB', 'Status loc.', 'Etiqueta Detran'].map((header) => (
-                              <th key={header} style={{ padding: '9px 12px', textAlign: 'left', fontFamily: 'JetBrains Mono, monospace', fontSize: 10, letterSpacing: '.7px', textTransform: 'uppercase', color: 'var(--gray-400)', fontWeight: 500, borderBottom: '1px solid var(--border)' }}>
-                                {header}
+                            {[
+                              { label: 'Nome', width: '18%' },
+                              { label: 'SKU', width: '14%' },
+                              { label: 'Descricao', width: 'auto' },
+                              { label: 'Qtd', width: 70 },
+                              { label: 'Localizacao', width: '18%' },
+                              { label: 'Etiqueta Detran', width: '18%' },
+                            ].map((header) => (
+                              <th key={header.label} style={{ padding: '9px 12px', width: header.width, textAlign: 'left', fontFamily: 'JetBrains Mono, monospace', fontSize: 10, letterSpacing: '.7px', textTransform: 'uppercase', color: 'var(--gray-400)', fontWeight: 500, borderBottom: '1px solid var(--border)' }}>
+                                {header.label}
                               </th>
                             ))}
                           </tr>
                         </thead>
                         <tbody>
                           {pedido.itens.map((item) => (
-                            <tr key={item.lineKey} style={{ borderTop: '1px solid var(--gray-100)', background: item.localizacaoConfere ? 'var(--white)' : '#fff7ed' }}>
-                              <td style={{ padding: '10px 12px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--blue-500)', fontWeight: 700 }}>{item.skuBase || '-'}</td>
-                              <td style={{ padding: '10px 12px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--gray-700)' }}>{item.idsPecaAnb.join(' / ') || '-'}</td>
+                            <tr key={item.lineKey} style={{ borderTop: '1px solid var(--gray-100)', background: 'var(--white)' }}>
+                              <td style={{ padding: '10px 12px', color: 'var(--gray-800)', lineHeight: 1.45 }}>{pedido.nomeCliente || '-'}</td>
+                              <td style={{ padding: '10px 12px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--blue-500)', fontWeight: 700 }}>{item.skuSistema || '-'}</td>
                               <td style={{ padding: '10px 12px', color: 'var(--gray-800)', lineHeight: 1.45 }}>{item.descricao || '-'}</td>
-                              <td style={{ padding: '10px 12px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--gray-700)' }}>{item.quantidade}</td>
-                              <td style={{ padding: '10px 12px', color: 'var(--gray-700)' }}>{item.localizacaoBling || '-'}</td>
-                              <td style={{ padding: '10px 12px', color: 'var(--gray-700)' }}>{item.localizacaoAnb || '-'}</td>
-                              <td style={{ padding: '10px 12px' }}>
-                                <span style={{ display: 'inline-flex', alignItems: 'center', padding: '4px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700, background: item.localizacaoConfere ? '#dcfce7' : '#fee2e2', color: item.localizacaoConfere ? '#166534' : '#b91c1c' }}>
-                                  {item.localizacaoConfere ? 'Confere' : 'Divergente'}
-                                </span>
+                              <td style={{ padding: '10px 12px', width: 70, fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--gray-700)' }}>{item.quantidade}</td>
+                              <td style={{ padding: '10px 12px', color: 'var(--gray-700)' }}>
+                                <div>{item.localizacaoAnb || '-'}</div>
+                                {!item.localizacaoConfere && (
+                                  <div style={{ marginTop: 4, fontSize: 11, color: '#b91c1c', fontWeight: 600 }}>
+                                    Divergente da localizacao do Bling
+                                  </div>
+                                )}
                               </td>
                               <td style={{ padding: '10px 12px', color: item.detranRelatorio === 'ENVIAR FOTO DA ETIQUETA DETRAN' ? 'var(--amber)' : 'var(--gray-800)', fontWeight: item.detranRelatorio ? 700 : 500 }}>
                                 {item.detranRelatorio || '-'}

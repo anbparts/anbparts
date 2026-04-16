@@ -5229,7 +5229,9 @@ blingRouter.get('/relatorio-separacao', async (req, res, next) => {
       const pedidoId = Number(pedido?.id || pedidoMeta.id || 0);
       const pedidoNum = String(pedido?.numero || pedidoId || pedidoMeta.id || '').trim();
       const dataVenda = String(pedido?.data || '').split('T')[0] || '';
+      const nomeCliente = String(pedido?.contato?.nome || '').trim() || null;
       const transportador = resolvePedidoTransportadorNome(pedido);
+      const observacoesInternas = String(pedido?.observacoesInternas || '').trim() || null;
 
       const itens = (pedido?.itens || [])
         .map((item: any, lineIndex: number) => {
@@ -5258,7 +5260,9 @@ blingRouter.get('/relatorio-separacao', async (req, res, next) => {
         pedidoNum,
         dataVenda,
         statusLabel,
+        nomeCliente,
         transportador,
+        observacoesInternas,
         itens,
       });
     }
@@ -5351,6 +5355,7 @@ blingRouter.get('/relatorio-separacao', async (req, res, next) => {
           lineKey: item.lineKey,
           skuBase: item.baseSku || getBaseSku(pecaReferencia?.idPeca || item.skuBling || item.idBling),
           skuBling: item.skuBling || null,
+          skuSistema: pecasSelecionadas.map((peca) => peca.idPeca).join(' / ') || pecaReferencia?.idPeca || item.skuBling || item.idBling || '',
           quantidade: item.quantidade,
           descricao: item.descricao || pecaReferencia?.descricao || '',
           idsPecaAnb: pecasSelecionadas.map((peca) => peca.idPeca),
@@ -5370,7 +5375,9 @@ blingRouter.get('/relatorio-separacao', async (req, res, next) => {
         pedidoNum: pedidoRaw.pedidoNum,
         dataVenda: pedidoRaw.dataVenda,
         statusLabel: pedidoRaw.statusLabel,
+        nomeCliente: pedidoRaw.nomeCliente,
         transportador: pedidoRaw.transportador,
+        observacoesInternas: pedidoRaw.observacoesInternas,
         quantidadeItens: itens.reduce((sum, item) => sum + Number(item.quantidade || 0), 0),
         itens,
       });
