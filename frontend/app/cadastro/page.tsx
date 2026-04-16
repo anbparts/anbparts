@@ -342,113 +342,129 @@ export default function CadastroPage() {
 
       {/* MODAL PRÉ-CADASTRO */}
       {modal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 200, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '24px 16px', overflowY: 'auto' }}>
-          <div style={{ background: 'var(--white)', borderRadius: 14, width: '100%', maxWidth: 720, boxShadow: '0 20px 60px rgba(0,0,0,0.2)', marginBottom: 24 }}>
-            <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 200, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '20px 16px', overflowY: 'auto' }}>
+          <div style={{ background: 'var(--white)', borderRadius: 14, width: '100%', maxWidth: 1100, boxShadow: '0 20px 60px rgba(0,0,0,0.2)', marginBottom: 20 }}>
+
+            {/* Header */}
+            <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div style={{ fontSize: 16, fontWeight: 600 }}>{editItem ? 'Editar Pré-Cadastro' : 'Novo Pré-Cadastro'}</div>
               <button onClick={() => setModal(false)} style={{ border: 'none', background: 'transparent', fontSize: 20, cursor: 'pointer', color: 'var(--gray-400)' }}>×</button>
             </div>
-            <div style={{ padding: '20px 24px', display: 'grid', gap: 16 }}>
-              <ChecklistValidacao form={form} />
 
-              <div>
-                <label style={s.label}>Moto *</label>
-                <select style={s.input} value={form.motoId} onChange={async (e) => { setForm((p: any) => ({ ...p, motoId: e.target.value })); if (!editItem) await carregarProximoId(e.target.value); }}>
-                  <option value="">Selecione a moto</option>
-                  {motos.map((m) => <option key={m.id} value={m.id}>ID {m.id} - {m.marca} {m.modelo} {m.ano || ''}</option>)}
-                </select>
-                {motoSelecionada && <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 4 }}>Marca: {motoSelecionada.marca}</div>}
-              </div>
+            {/* Corpo: 2 colunas */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0 }}>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              {/* COLUNA ESQUERDA — campos do produto */}
+              <div style={{ padding: '20px 24px', display: 'grid', gap: 12, borderRight: '1px solid var(--border)' }}>
+
                 <div>
-                  <label style={s.label}>ID Peça (SKU) *</label>
-                  <input style={s.input} value={form.idPeca} onChange={(e) => setForm((p: any) => ({ ...p, idPeca: e.target.value.toUpperCase() }))} disabled={!!editItem} placeholder="Ex: HD04_0023" />
-                </div>
-                <div>
-                  <label style={s.label}>Condição</label>
-                  <select style={s.input} value={form.condicao} onChange={(e) => setForm((p: any) => ({ ...p, condicao: e.target.value }))}>
-                    <option value="usado">Usado</option>
-                    <option value="novo">Novo</option>
+                  <label style={s.label}>Moto *</label>
+                  <select style={s.input} value={form.motoId} onChange={async (e) => { setForm((p: any) => ({ ...p, motoId: e.target.value })); if (!editItem) await carregarProximoId(e.target.value); }}>
+                    <option value="">Selecione a moto</option>
+                    {motos.map((m) => <option key={m.id} value={m.id}>ID {m.id} - {m.marca} {m.modelo} {m.ano || ''}</option>)}
                   </select>
+                  {motoSelecionada && <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 3 }}>Marca: {motoSelecionada.marca}</div>}
                 </div>
-              </div>
 
-              <div>
-                <label style={s.label}>Descrição (título) * — {form.descricao.length}/60</label>
-                <input style={{ ...s.input, borderColor: form.descricao.length >= 55 ? '#fcd34d' : undefined }} value={form.descricao} onChange={(e) => handleDescricaoChange(e.target.value)} placeholder="Título para ML e Nuvemshop" />
-              </div>
-
-              <div>
-                <label style={s.label}>Categoria ML *{form.categoriaMLId && <span style={{ marginLeft: 8, fontSize: 10, color: 'var(--gray-400)', fontWeight: 400 }}>ID: {form.categoriaMLId}</span>}</label>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  {categorias.length > 0 ? (
-                    <select style={{ ...s.input, flex: 1 }} value={form.categoriaMLId} onChange={(e) => {
-                      const cat = categorias.find((c: any) => (c.category_id || c.id) === e.target.value);
-                      setForm((p: any) => ({ ...p, categoriaMLId: e.target.value, categoriaMLNome: cat?.category_name || cat?.name || '' }));
-                    }}>
-                      <option value="">Selecione</option>
-                      {categorias.map((c: any) => <option key={c.category_id || c.id} value={c.category_id || c.id}>{c.category_name || c.name}</option>)}
-                    </select>
-                  ) : (
-                    <input style={{ ...s.input, flex: 1 }} value={form.categoriaMLNome || ''} onChange={(e) => setForm((p: any) => ({ ...p, categoriaMLNome: e.target.value }))}
-                      placeholder={buscandoCategoria ? 'Buscando...' : 'Clique buscar para sugerir'} readOnly={buscandoCategoria} />
-                  )}
-                  <button type="button" style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', fontSize: 12, whiteSpace: 'nowrap' as const, opacity: buscandoCategoria ? 0.6 : 1 }}
-                    onClick={() => { setCategorias([]); buscarCategoriaML(form.descricao); }} disabled={buscandoCategoria || !form.descricao}>
-                    {buscandoCategoria ? '...' : '🔍 Buscar'}
-                  </button>
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <div><label style={s.label}>Preço de Venda (R$) *</label><input style={s.input} type="number" min="0" step="0.01" value={form.precoVenda} onChange={(e) => setForm((p: any) => ({ ...p, precoVenda: e.target.value }))} placeholder="0.00" /></div>
-                <div><label style={s.label}>Estoque *</label><input style={s.input} type="number" min="1" value={form.estoque} onChange={(e) => setForm((p: any) => ({ ...p, estoque: e.target.value }))} /></div>
-              </div>
-
-              <div>
-                <label style={s.label}>Dimensões e Peso *</label>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10 }}>
-                  {[{ key: 'peso', label: 'Peso (kg)' }, { key: 'largura', label: 'Largura (cm)' }, { key: 'altura', label: 'Altura (cm)' }, { key: 'profundidade', label: 'Prof. (cm)' }].map(({ key, label }) => (
-                    <div key={key}><div style={{ fontSize: 11, color: 'var(--gray-500)', marginBottom: 4 }}>{label}</div><input style={s.input} type="number" min="0" step="0.01" value={form[key]} onChange={(e) => setForm((p: any) => ({ ...p, [key]: e.target.value }))} placeholder="0" /></div>
-                  ))}
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <div>
-                  <label style={s.label}>Localização (Caixa) *</label>
-                  <input style={s.input} list="caixas-list" value={form.localizacao} onChange={(e) => setForm((p: any) => ({ ...p, localizacao: e.target.value }))} placeholder="Nome da caixa" />
-                  <datalist id="caixas-list">{caixas.map(c => <option key={c} value={c} />)}</datalist>
-                </div>
-                <div>
-                  <label style={s.label}>Etiqueta Detran <span style={{ color: '#f59e0b' }}>(opcional)</span></label>
-                  <input style={s.input} value={form.detranEtiqueta} onChange={(e) => setForm((p: any) => ({ ...p, detranEtiqueta: e.target.value }))} placeholder="Número da etiqueta" />
-                </div>
-              </div>
-
-              <div><label style={s.label}>Número da Peça *</label><input style={s.input} value={form.numeroPeca} onChange={(e) => setForm((p: any) => ({ ...p, numeroPeca: e.target.value }))} placeholder="Código do fabricante" /></div>
-              <div><label style={s.label}>URL de Referência</label><input style={s.input} value={form.urlRef || ''} onChange={(e) => setForm((p: any) => ({ ...p, urlRef: e.target.value }))} placeholder="Ex: www.site.com.br/produto" /></div>
-
-              <div>
-                <label style={s.label}>Descrição da Peça (corpo do anúncio)</label>
-                <div style={{ border: '1px solid var(--border)', borderRadius: 7, overflow: 'hidden' }}>
-                  <div style={{ display: 'flex', gap: 4, padding: '6px 10px', background: '#f8fafc', borderBottom: '1px solid var(--border)' }}>
-                    {[{ label: 'B', tag: 'strong', style: { fontWeight: 700 } }, { label: 'I', tag: 'em', style: { fontStyle: 'italic' } }, { label: 'U', tag: 'u', style: { textDecoration: 'underline' } }].map(({ label, tag, style }) => (
-                      <button key={tag} type="button" onClick={() => inserirHtml(tag)}
-                        style={{ ...style, border: '1px solid var(--border)', background: 'var(--white)', borderRadius: 4, padding: '2px 8px', fontSize: 12, cursor: 'pointer', fontFamily: 'serif' }}>{label}</button>
-                    ))}
-                    <span style={{ fontSize: 11, color: 'var(--gray-400)', alignSelf: 'center', marginLeft: 4 }}>Selecione o texto e clique para formatar</span>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <div>
+                    <label style={s.label}>ID Peça (SKU) *</label>
+                    <input style={s.input} value={form.idPeca} onChange={(e) => setForm((p: any) => ({ ...p, idPeca: e.target.value.toUpperCase() }))} disabled={!!editItem} placeholder="Ex: HD04_0023" />
                   </div>
-                  <textarea id="descricaoPeca-ta" style={{ ...s.input, minHeight: 160, resize: 'vertical' as const, borderRadius: 0, border: 'none' }}
-                    value={form.descricaoPeca} onChange={(e) => setForm((p: any) => ({ ...p, descricaoPeca: e.target.value }))}
-                    placeholder="Texto completo do anúncio (puxado do texto modelo da moto)" />
+                  <div>
+                    <label style={s.label}>Condição</label>
+                    <select style={s.input} value={form.condicao} onChange={(e) => setForm((p: any) => ({ ...p, condicao: e.target.value }))}>
+                      <option value="usado">Usado</option>
+                      <option value="novo">Novo</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label style={s.label}>Descrição (título) * — {form.descricao.length}/60</label>
+                  <input style={{ ...s.input, borderColor: form.descricao.length >= 55 ? '#fcd34d' : undefined }} value={form.descricao} onChange={(e) => handleDescricaoChange(e.target.value)} placeholder="Título para ML e Nuvemshop" />
+                </div>
+
+                <div>
+                  <label style={s.label}>Categoria ML *{form.categoriaMLId && <span style={{ marginLeft: 8, fontSize: 10, color: 'var(--gray-400)', fontWeight: 400 }}>ID: {form.categoriaMLId}</span>}</label>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    {categorias.length > 0 ? (
+                      <select style={{ ...s.input, flex: 1 }} value={form.categoriaMLId} onChange={(e) => {
+                        const cat = categorias.find((c: any) => (c.category_id || c.id) === e.target.value);
+                        setForm((p: any) => ({ ...p, categoriaMLId: e.target.value, categoriaMLNome: cat?.category_name || cat?.name || '' }));
+                      }}>
+                        <option value="">Selecione</option>
+                        {categorias.map((c: any) => <option key={c.category_id || c.id} value={c.category_id || c.id}>{c.category_name || c.name}</option>)}
+                      </select>
+                    ) : (
+                      <input style={{ ...s.input, flex: 1 }} value={form.categoriaMLNome || ''} onChange={(e) => setForm((p: any) => ({ ...p, categoriaMLNome: e.target.value }))}
+                        placeholder={buscandoCategoria ? 'Buscando...' : 'Clique buscar para sugerir'} readOnly={buscandoCategoria} />
+                    )}
+                    <button type="button" style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', fontSize: 12, whiteSpace: 'nowrap' as const, opacity: buscandoCategoria ? 0.6 : 1 }}
+                      onClick={() => { setCategorias([]); buscarCategoriaML(form.descricao); }} disabled={buscandoCategoria || !form.descricao}>
+                      {buscandoCategoria ? '...' : '🔍 Buscar'}
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <div><label style={s.label}>Preço de Venda (R$) *</label><input style={s.input} type="number" min="0" step="0.01" value={form.precoVenda} onChange={(e) => setForm((p: any) => ({ ...p, precoVenda: e.target.value }))} placeholder="0.00" /></div>
+                  <div><label style={s.label}>Estoque *</label><input style={s.input} type="number" min="1" value={form.estoque} onChange={(e) => setForm((p: any) => ({ ...p, estoque: e.target.value }))} /></div>
+                </div>
+
+                <div>
+                  <label style={s.label}>Dimensões e Peso *</label>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8 }}>
+                    {[{ key: 'peso', label: 'Peso (kg)' }, { key: 'largura', label: 'Largura (cm)' }, { key: 'altura', label: 'Altura (cm)' }, { key: 'profundidade', label: 'Prof. (cm)' }].map(({ key, label }) => (
+                      <div key={key}><div style={{ fontSize: 10, color: 'var(--gray-500)', marginBottom: 3 }}>{label}</div><input style={s.input} type="number" min="0" step="0.01" value={form[key]} onChange={(e) => setForm((p: any) => ({ ...p, [key]: e.target.value }))} placeholder="0" /></div>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <div>
+                    <label style={s.label}>Localização (Caixa) *</label>
+                    <input style={s.input} list="caixas-list" value={form.localizacao} onChange={(e) => setForm((p: any) => ({ ...p, localizacao: e.target.value }))} placeholder="Nome da caixa" />
+                    <datalist id="caixas-list">{caixas.map(c => <option key={c} value={c} />)}</datalist>
+                  </div>
+                  <div>
+                    <label style={s.label}>Etiqueta Detran <span style={{ color: '#f59e0b' }}>(opcional)</span></label>
+                    <input style={s.input} value={form.detranEtiqueta} onChange={(e) => setForm((p: any) => ({ ...p, detranEtiqueta: e.target.value }))} placeholder="Número da etiqueta" />
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <div><label style={s.label}>Número da Peça *</label><input style={s.input} value={form.numeroPeca} onChange={(e) => setForm((p: any) => ({ ...p, numeroPeca: e.target.value }))} placeholder="Código do fabricante" /></div>
+                  <div><label style={s.label}>URL de Referência</label><input style={s.input} value={form.urlRef || ''} onChange={(e) => setForm((p: any) => ({ ...p, urlRef: e.target.value }))} placeholder="Ex: www.site.com.br/produto" /></div>
+                </div>
+              </div>
+
+              {/* COLUNA DIREITA — checklist + descrição da peça */}
+              <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column' as const, gap: 12 }}>
+
+                <ChecklistValidacao form={form} />
+
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column' as const }}>
+                  <label style={s.label}>Descrição da Peça (corpo do anúncio)</label>
+                  <div style={{ border: '1px solid var(--border)', borderRadius: 7, overflow: 'hidden', flex: 1, display: 'flex', flexDirection: 'column' as const }}>
+                    <div style={{ display: 'flex', gap: 4, padding: '6px 10px', background: '#f8fafc', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+                      {[{ label: 'B', tag: 'strong', style: { fontWeight: 700 } }, { label: 'I', tag: 'em', style: { fontStyle: 'italic' } }, { label: 'U', tag: 'u', style: { textDecoration: 'underline' } }].map(({ label, tag, style }) => (
+                        <button key={tag} type="button" onClick={() => inserirHtml(tag)}
+                          style={{ ...style, border: '1px solid var(--border)', background: 'var(--white)', borderRadius: 4, padding: '2px 8px', fontSize: 12, cursor: 'pointer', fontFamily: 'serif' }}>{label}</button>
+                      ))}
+                      <span style={{ fontSize: 11, color: 'var(--gray-400)', alignSelf: 'center', marginLeft: 4 }}>Selecione e clique para formatar</span>
+                    </div>
+                    <textarea id="descricaoPeca-ta"
+                      style={{ ...s.input, flex: 1, minHeight: 320, resize: 'vertical' as const, borderRadius: 0, border: 'none' }}
+                      value={form.descricaoPeca} onChange={(e) => setForm((p: any) => ({ ...p, descricaoPeca: e.target.value }))}
+                      placeholder="Texto completo do anúncio (puxado do texto modelo da moto)" />
+                  </div>
                 </div>
               </div>
             </div>
 
-            <div style={{ padding: '16px 24px', borderTop: '1px solid var(--border)', display: 'flex', gap: 10, justifyContent: 'flex-end', alignItems: 'center' }}>
-              {!formOk && <span style={{ fontSize: 11, color: '#dc2626', marginRight: 'auto' }}>Preencha os campos obrigatórios</span>}
+            {/* Footer */}
+            <div style={{ padding: '14px 24px', borderTop: '1px solid var(--border)', display: 'flex', gap: 10, justifyContent: 'flex-end', alignItems: 'center' }}>
               <button onClick={() => setModal(false)} style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)' }}>Cancelar</button>
               {editItem && (
                 <button onClick={excluir} disabled={excluindo}
