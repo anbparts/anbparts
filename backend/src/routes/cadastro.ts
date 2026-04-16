@@ -265,6 +265,22 @@ cadastroRouter.post('/:id/finalizar', async (req, res, next) => {
     const blingData = await blingReq(`/produtos/${cadastro.blingProdutoId}`);
     const b = blingData?.data || {};
 
+    // Busca link do anúncio ML no Bling
+    let mercadoLivreLink: string | null = null;
+    let mercadoLivreItemId: string | null = null;
+    try {
+      const lojaML = 205204423; // ID loja ML hardcoded
+      const lojasData = await blingReq(`/produtos/lojas?pagina=1&limite=100&idProduto=${cadastro.blingProdutoId}`);
+      const lojas = lojasData?.data || [];
+      const lojaLink = lojas.find((l: any) => Number(l.loja?.id) === lojaML);
+      if (lojaLink?.idAnuncio) {
+        const anuncioData = await blingReq(`/anuncios/${lojaLink.idAnuncio}?tipoIntegracao=MercadoLivre&idLoja=${lojaML}`);
+        const anuncio = anuncioData?.data;
+        if (anuncio?.link) mercadoLivreLink = String(anuncio.link);
+        if (anuncio?.idAnuncio) mercadoLivreItemId = String(anuncio.idAnuncio);
+      }
+    } catch { /* sem anuncio ainda */ }
+
     // Busca config de taxa e frete
     const cfgProdutos = await prisma.blingConfig.findFirst();
     const fretePadrao = Number((cfgProdutos as any)?.fretePadrao || 29.9);
@@ -310,6 +326,8 @@ cadastroRouter.post('/:id/finalizar', async (req, res, next) => {
             disponivel: true,
             emPrejuizo: false,
             localizacao: b.estoque?.localizacao || cadastro.localizacao || null,
+            mercadoLivreLink: mercadoLivreLink || null,
+            mercadoLivreItemId: mercadoLivreItemId || null,
             pesoLiquido: bPeso || Number(cadastro.peso || 0),
             pesoBruto: bPeso || Number(cadastro.peso || 0),
             largura: bLargura || Number(cadastro.largura || 0),
@@ -345,9 +363,25 @@ cadastroRouter.post('/:id/finalizar', async (req, res, next) => {
         estoque: b.estoque?.saldoVirtualTotal || cadastro.estoque,
         fretePadrao,
         taxaPadraoPct,
+        mercadoLivreLink,
+        mercadoLivreItemId,
       },
       diff,
     });
+  } catch (e) { next(e); }
+});
+
+// DELETE /cadastro/:id
+cadastroRouter.delete('/:id', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const cadastro = await prisma.cadastroPeca.findUnique({ where: { id } });
+    if (!cadastro) return res.status(404).json({ error: 'Não encontrado' });
+    if (cadastro.blingProdutoId) {
+      return res.status(400).json({ error: 'Este pré-cadastro já foi replicado com sucesso ao Bling e não é permitida a exclusão.' });
+    }
+    await prisma.cadastroPeca.delete({ where: { id } });
+    res.json({ ok: true });
   } catch (e) { next(e); }
 });
 

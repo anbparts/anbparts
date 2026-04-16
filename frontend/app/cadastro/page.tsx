@@ -81,6 +81,7 @@ export default function CadastroPage() {
   const [editItem, setEditItem] = useState<CadastroPeca | null>(null);
   const [form, setForm] = useState<any>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
+  const [excluindo, setExcluindo] = useState(false);
   const [categorias, setCategorias] = useState<any[]>([]);
   const [buscandoCategoria, setBuscandoCategoria] = useState(false);
   const categoriaTimerRef = useRef<any>(null);
@@ -117,7 +118,9 @@ export default function CadastroPage() {
   }
 
   async function openNovo() {
-    const motoId = motos[0]?.id ? String(motos[0].id) : '';
+    // Moto default = a de ID mais alto (última adicionada)
+    const motoOrdenada = [...motos].sort((a, b) => b.id - a.id);
+    const motoId = motoOrdenada[0]?.id ? String(motoOrdenada[0].id) : '';
     const form0 = { ...EMPTY_FORM, motoId };
     setForm(form0); setEditItem(null); setCategorias([]);
     if (motoId) await carregarProximoId(motoId, form0);
@@ -214,6 +217,20 @@ export default function CadastroPage() {
       await loadAll();
     } catch (e: any) { alert(e.message || 'Erro ao salvar'); }
     setSaving(false);
+  }
+
+  async function excluir() {
+    if (!editItem) return;
+    if (!confirm(`Excluir o pré-cadastro ${editItem.idPeca}?`)) return;
+    setExcluindo(true);
+    try {
+      const resp = await fetch(`${API}/cadastro/${editItem.id}`, { method: 'DELETE', credentials: 'include' });
+      const d = await resp.json();
+      if (!resp.ok) throw new Error(d.error || 'Erro ao excluir');
+      setModal(false);
+      await loadAll();
+    } catch (e: any) { alert(e.message); }
+    setExcluindo(false);
   }
 
   async function abrirFinalizar(item: CadastroPeca) {
@@ -433,6 +450,12 @@ export default function CadastroPage() {
             <div style={{ padding: '16px 24px', borderTop: '1px solid var(--border)', display: 'flex', gap: 10, justifyContent: 'flex-end', alignItems: 'center' }}>
               {!formOk && <span style={{ fontSize: 11, color: '#dc2626', marginRight: 'auto' }}>Preencha os campos obrigatórios</span>}
               <button onClick={() => setModal(false)} style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)' }}>Cancelar</button>
+              {editItem && (
+                <button onClick={excluir} disabled={excluindo}
+                  style={{ ...s.btn, background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', opacity: excluindo ? 0.7 : 1 }}>
+                  {excluindo ? 'Excluindo...' : '🗑️ Excluir'}
+                </button>
+              )}
               <button onClick={salvar} disabled={saving} style={{ ...s.btn, background: 'var(--gray-800)', color: '#fff', opacity: saving ? 0.7 : 1 }}>
                 {saving ? 'Enviando...' : editItem ? '🔄 Atualizar Produto Bling' : '🚀 Criar Produto Bling'}
               </button>
@@ -485,6 +508,19 @@ export default function CadastroPage() {
                       <div><div style={{ fontSize: 10, color: 'var(--gray-500)', marginBottom: 2 }}>TAXAS + FRETE</div><div style={{ fontSize: 15, fontWeight: 700, color: '#dc2626' }}>- R$ {(valorTaxas + previewFrete).toFixed(2)}</div></div>
                       <div><div style={{ fontSize: 10, color: 'var(--gray-500)', marginBottom: 2 }}>LÍQUIDO</div><div style={{ fontSize: 15, fontWeight: 700, color: valorLiq >= 0 ? 'var(--green)' : '#dc2626' }}>R$ {valorLiq.toFixed(2)}</div></div>
                     </div>
+                  </div>
+
+                  {/* Link ML */}
+                  <div>
+                    <div style={{ fontSize: 11, color: 'var(--gray-500)', textTransform: 'uppercase' as const, letterSpacing: '0.04em', marginBottom: 3 }}>Anúncio ML</div>
+                    {previewBling.mercadoLivreLink ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: '#16a34a', background: '#f0fdf4', border: '1px solid #86efac', padding: '2px 8px', borderRadius: 10 }}>✓ OK</span>
+                        <a href={previewBling.mercadoLivreLink} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: '#2563eb' }}>Ver anúncio</a>
+                      </div>
+                    ) : (
+                      <span style={{ fontSize: 11, fontWeight: 600, color: '#dc2626', background: '#fef2f2', border: '1px solid #fecaca', padding: '2px 8px', borderRadius: 10 }}>Pendente</span>
+                    )}
                   </div>
 
                   {Number(previewBling.estoque) > 1 && (
