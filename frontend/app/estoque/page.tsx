@@ -512,8 +512,68 @@ function DetranEtiquetaModal({ open, peca, onClose }: any) {
   );
 }
 
-function PecaDetalheModal({ open, peca, onClose }: any) {
+function PecaDetalheModal({ open, peca, onClose, onSaved }: any) {
+  const [editando, setEditando] = React.useState(false);
+  const [form, setForm] = React.useState<any>({});
+  const [saving, setSaving] = React.useState(false);
+
+  React.useEffect(() => {
+    if (peca) setForm({
+      largura: peca.largura != null ? String(peca.largura) : '',
+      altura: peca.altura != null ? String(peca.altura) : '',
+      profundidade: peca.profundidade != null ? String(peca.profundidade) : '',
+      pesoLiquido: peca.pesoLiquido != null ? String(peca.pesoLiquido) : '',
+      localizacao: peca.localizacao || '',
+      detranEtiqueta: peca.detranEtiqueta || '',
+    });
+    setEditando(false);
+  }, [peca]);
+
   if (!open || !peca) return null;
+
+  async function salvarDimensoes() {
+    setSaving(true);
+    try {
+      const API = (window as any).__API_BASE__ || '';
+      // Atualiza no ANB
+      await fetch(`${API}/pecas/${peca.id}`, {
+        method: 'PUT', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          largura: form.largura ? Number(form.largura) : null,
+          altura: form.altura ? Number(form.altura) : null,
+          profundidade: form.profundidade ? Number(form.profundidade) : null,
+          pesoLiquido: form.pesoLiquido ? Number(form.pesoLiquido) : null,
+          pesoBruto: form.pesoLiquido ? Number(form.pesoLiquido) : null,
+          localizacao: form.localizacao || null,
+          detranEtiqueta: form.detranEtiqueta || null,
+        }),
+      });
+      // Atualiza no Bling via pré-cadastro (busca pelo SKU base)
+      const baseSku = peca.idPeca.replace(/-\d+$/, '');
+      const cadastroResp = await fetch(`${API}/cadastro?search=${encodeURIComponent(baseSku)}&per=1`, { credentials: 'include' });
+      const cadastroData = await cadastroResp.json();
+      const cadastro = cadastroData?.data?.[0];
+      if (cadastro?.blingProdutoId) {
+        await fetch(`${API}/cadastro/${cadastro.id}`, {
+          method: 'PUT', credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            largura: form.largura ? Number(form.largura) : null,
+            altura: form.altura ? Number(form.altura) : null,
+            profundidade: form.profundidade ? Number(form.profundidade) : null,
+            peso: form.pesoLiquido ? Number(form.pesoLiquido) : null,
+            localizacao: form.localizacao || null,
+            detranEtiqueta: form.detranEtiqueta || null,
+          }),
+        });
+      }
+      setEditando(false);
+      onSaved?.();
+      onClose();
+    } catch (e: any) { alert('Erro ao salvar: ' + e.message); }
+    setSaving(false);
+  }
 
   function Field({ label, value, mono = false }: { label: string; value?: any; mono?: boolean }) {
     const display = value != null && value !== '' ? String(value) : '—';
@@ -525,6 +585,8 @@ function PecaDetalheModal({ open, peca, onClose }: any) {
     );
   }
 
+  const inp: any = { width: '100%', background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px', fontSize: 13, outline: 'none', boxSizing: 'border-box' as const };
+
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 235, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }}>
       <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 16, width: '100%', maxWidth: 520, boxShadow: '0 12px 32px rgba(0,0,0,.10)' }}>
@@ -535,23 +597,58 @@ function PecaDetalheModal({ open, peca, onClose }: any) {
           </div>
           <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer' }}>X</button>
         </div>
-        <div style={{ padding: '20px 22px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-          <Field label="Peso Líquido (kg)" value={peca.pesoLiquido != null ? Number(peca.pesoLiquido) : null} />
-          <Field label="Peso Bruto (kg)"   value={peca.pesoBruto   != null ? Number(peca.pesoBruto)   : null} />
-          <Field label="Largura (cm)"      value={peca.largura      != null ? Number(peca.largura)      : null} />
-          <Field label="Altura (cm)"       value={peca.altura       != null ? Number(peca.altura)       : null} />
-          <Field label="Profundidade (cm)" value={peca.profundidade != null ? Number(peca.profundidade) : null} />
-          <Field label="Localização"       value={peca.localizacao} />
-          <div style={{ gridColumn: '1 / -1' }}>
-            <Field label="Número de Peça" value={peca.numeroPeca} mono />
-          </div>
-          <div style={{ gridColumn: '1 / -1' }}>
-            <Field label="Etiqueta Detran" value={peca.detranEtiqueta} mono />
-          </div>
-        </div>
-        <div style={{ padding: '0 22px 20px', display: 'flex', justifyContent: 'flex-end' }}>
-          <button onClick={onClose} style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink-soft)', borderColor: 'var(--border-strong)' }}>Fechar</button>
-        </div>
+
+        {!editando ? (
+          <>
+            <div style={{ padding: '20px 22px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <Field label="Peso Líquido (kg)" value={peca.pesoLiquido != null ? Number(peca.pesoLiquido) : null} />
+              <Field label="Peso Bruto (kg)"   value={peca.pesoBruto   != null ? Number(peca.pesoBruto)   : null} />
+              <Field label="Largura (cm)"      value={peca.largura      != null ? Number(peca.largura)      : null} />
+              <Field label="Altura (cm)"       value={peca.altura       != null ? Number(peca.altura)       : null} />
+              <Field label="Profundidade (cm)" value={peca.profundidade != null ? Number(peca.profundidade) : null} />
+              <Field label="Localização"       value={peca.localizacao} />
+              <div style={{ gridColumn: '1 / -1' }}><Field label="Número de Peça" value={peca.numeroPeca} mono /></div>
+              <div style={{ gridColumn: '1 / -1' }}><Field label="Etiqueta Detran" value={peca.detranEtiqueta} mono /></div>
+            </div>
+            <div style={{ padding: '0 22px 20px', display: 'flex', justifyContent: 'space-between' }}>
+              <button onClick={() => setEditando(true)} style={{ ...cs.btn, background: 'var(--gray-800)', color: '#fff' }}>✏️ Editar</button>
+              <button onClick={onClose} style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink-soft)', borderColor: 'var(--border-strong)' }}>Fechar</button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{ padding: '20px 22px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              {[
+                { key: 'pesoLiquido', label: 'Peso (kg)' },
+                { key: 'largura', label: 'Largura (cm)' },
+                { key: 'altura', label: 'Altura (cm)' },
+                { key: 'profundidade', label: 'Profundidade (cm)' },
+              ].map(({ key, label }) => (
+                <div key={key}>
+                  <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginBottom: 4 }}>{label}</div>
+                  <input style={inp} type="number" step="0.01" min="0" value={form[key]} onChange={(e) => setForm((p: any) => ({ ...p, [key]: e.target.value }))} />
+                </div>
+              ))}
+              <div style={{ gridColumn: '1 / -1' }}>
+                <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginBottom: 4 }}>Localização</div>
+                <input style={inp} value={form.localizacao} onChange={(e) => setForm((p: any) => ({ ...p, localizacao: e.target.value }))} />
+              </div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginBottom: 4 }}>Etiqueta Detran</div>
+                <input style={inp} value={form.detranEtiqueta} onChange={(e) => setForm((p: any) => ({ ...p, detranEtiqueta: e.target.value }))} />
+              </div>
+              <div style={{ gridColumn: '1 / -1', fontSize: 11, color: '#2563eb', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 6, padding: '6px 10px' }}>
+                💡 Ao salvar, os dados serão atualizados no ANB e enviados ao Bling automaticamente.
+              </div>
+            </div>
+            <div style={{ padding: '0 22px 20px', display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+              <button onClick={() => setEditando(false)} style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink-soft)', borderColor: 'var(--border-strong)' }}>Cancelar</button>
+              <button onClick={salvarDimensoes} disabled={saving} style={{ ...cs.btn, background: 'var(--gray-800)', color: '#fff', opacity: saving ? 0.7 : 1 }}>
+                {saving ? 'Salvando...' : '💾 Salvar e Sincronizar Bling'}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -1169,6 +1266,8 @@ function VendaModal({ open, peca, onClose, onConfirm }: any) {
     </div>
   );
 }
+
+if (typeof window !== 'undefined') (window as any).__API_BASE__ = API_BASE;
 
 export default function EstoquePage() {
   const [data, setData] = useState<any>({ total: 0, totalDisp: 0, totalVend: 0, data: [] });
@@ -1983,7 +2082,7 @@ export default function EstoquePage() {
       <PecaModal open={modal} onClose={() => { setModal(false); setEditPeca(null); }} onSave={handleSavePeca} onCancelSale={handleCancelSale} onMarkPrejuizo={handleMarkPrejuizo} peca={editPeca} motos={motos} viewportMode={viewportMode} />
       <VendaModal open={vendaModal} peca={vendaPeca} onClose={() => setVendaModal(false)} onConfirm={handleVenda} />
       <DetranEtiquetaModal open={Boolean(detranPeca)} peca={detranPeca} onClose={() => setDetranPeca(null)} />
-      <PecaDetalheModal open={Boolean(detalhePeca)} peca={detalhePeca} onClose={() => setDetalhePeca(null)} />
+      <PecaDetalheModal open={Boolean(detalhePeca)} peca={detalhePeca} onClose={() => setDetalhePeca(null)} onSaved={() => { setDetalhePeca(null); loadPecas(); }} />
       <PecaActionsModal
         open={Boolean(actionPeca)}
         peca={actionPeca}

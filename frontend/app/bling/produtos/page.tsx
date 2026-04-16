@@ -242,6 +242,10 @@ export default function BlingProdutosPage() {
   const [comparacao, setComparacao] = useState<Comparacao | null>(null);
   const [comparacaoProgresso, setComparacaoProgresso] = useState<{ loteAtual: number; totalLotes: number; skusConsultados: number; totalSkus: number } | null>(null);
   const [atualizandoLinkMl, setAtualizandoLinkMl] = useState(false);
+  const [modalLocalizacao, setModalLocalizacao] = useState(false);
+  const [locDe, setLocDe] = useState('');
+  const [locPara, setLocPara] = useState('');
+  const [atualizandoLoc, setAtualizandoLoc] = useState(false);
   const [linkMlProgresso, setLinkMlProgresso] = useState<{ loteAtual: number; totalLotes: number; totalAtualizadas: number } | null>(null);
   const [consultaManualTamanhoLote, setConsultaManualTamanhoLote] = useState('100');
   const [consultaManualPausaMs, setConsultaManualPausaMs] = useState('400');
@@ -509,6 +513,50 @@ export default function BlingProdutosPage() {
     setComparando(false);
     setComparacaoProgresso(null);
     setMotoComparacaoIds([]);
+  }
+
+  async function atualizarLocalizacao() {
+    if (!locPara.trim()) return alert('Informe a Localização Para');
+    setAtualizandoLoc(true);
+    try {
+      // Pega SKUs atualmente na lista (filtrados)
+      const skus = produtos.map((p: any) => String(p.codigo || '')).filter(Boolean);
+      if (skus.length === 0) return alert('Nenhum SKU na lista atual');
+
+      let atualizados = 0;
+      for (const sku of skus) {
+        try {
+          // Atualiza no ANB
+          const pecaResp = await fetch(`${API}/pecas?idPeca=${encodeURIComponent(sku)}&per=5`, { credentials: 'include' });
+          const pecaData = await pecaResp.json();
+          const pecas = pecaData?.data || pecaData || [];
+          for (const p of Array.isArray(pecas) ? pecas : []) {
+            if (!locDe || (p.localizacao || '').toUpperCase() === locDe.toUpperCase()) {
+              await fetch(`${API}/pecas/${p.id}`, {
+                method: 'PUT', credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ localizacao: locPara.trim() }),
+              });
+              atualizados++;
+            }
+          }
+          // Atualiza no Bling via cadastro
+          const cadResp = await fetch(`${API}/cadastro?search=${encodeURIComponent(sku)}&per=1`, { credentials: 'include' });
+          const cadData = await cadResp.json();
+          const cad = cadData?.data?.[0];
+          if (cad?.id && (!locDe || (cad.localizacao || '').toUpperCase() === locDe.toUpperCase())) {
+            await fetch(`${API}/cadastro/${cad.id}`, {
+              method: 'PUT', credentials: 'include',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ localizacao: locPara.trim() }),
+            });
+          }
+        } catch { /* continua */ }
+      }
+      alert(`✓ ${atualizados} peça(s) atualizadas para "${locPara.trim()}"`);
+      setModalLocalizacao(false); setLocDe(''); setLocPara('');
+    } catch (e: any) { alert('Erro: ' + e.message); }
+    setAtualizandoLoc(false);
   }
 
   async function atualizarLinkMl() {
@@ -815,6 +863,13 @@ export default function BlingProdutosPage() {
               disabled={comparando || atualizandoLinkMl || !connected}
             >
               {atualizandoLinkMl ? 'Atualizando...' : '🔗 Atualizar Link ML'}
+            </button>
+            <button
+              style={{ ...s.btn, background: '#7c3aed', color: '#fff', opacity: (comparando || !connected) ? 0.6 : 1 }}
+              onClick={() => setModalLocalizacao(true)}
+              disabled={comparando || !connected}
+            >
+              📦 Atualizar Localização
             </button>
             <span style={{ fontSize: 12, color: 'var(--gray-400)' }}>
               Use essa revisao para encontrar divergencias de estoque entre a base do ANB e o saldo atual do Bling, incluindo alertas de anuncio do Mercado Livre fora do status ativo.
@@ -1265,6 +1320,50 @@ export default function BlingProdutosPage() {
           <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--gray-400)', fontSize: 14 }}>Nenhum produto novo encontrado no periodo.</div>
         )}
       </div>
+    <>
+      {/* Modal Atualizar Localização em Massa */}
+      {modalLocalizacao && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <div style={{ background: 'var(--white)', borderRadius: 14, width: '100%', maxWidth: 440, boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 600 }}>Atualizar Localização em Massa</div>
+                <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>Aplica aos {produtos.length} SKUs da lista atual</div>
+              </div>
+              <button onClick={() => setModalLocalizacao(false)} style={{ border: 'none', background: 'transparent', fontSize: 20, cursor: 'pointer', color: 'var(--gray-400)' }}>×</button>
+            </div>
+            <div style={{ padding: '20px 24px', display: 'grid', gap: 14 }}>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 500, color: 'var(--gray-500)', textTransform: 'uppercase' as const, letterSpacing: '0.04em', marginBottom: 4, display: 'block' }}>
+                  Localização De: <span style={{ color: 'var(--gray-400)', fontWeight: 400 }}>(deixe vazio para atualizar todos)</span>
+                </label>
+                <input
+                  style={{ width: '100%', background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 7, padding: '8px 12px', fontSize: 13, outline: 'none', boxSizing: 'border-box' as const }}
+                  value={locDe} onChange={(e) => setLocDe(e.target.value)} placeholder="Ex: CAIXA ANTIGA" />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 500, color: 'var(--gray-500)', textTransform: 'uppercase' as const, letterSpacing: '0.04em', marginBottom: 4, display: 'block' }}>
+                  Localização Para: *
+                </label>
+                <input
+                  style={{ width: '100%', background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 7, padding: '8px 12px', fontSize: 13, outline: 'none', boxSizing: 'border-box' as const }}
+                  value={locPara} onChange={(e) => setLocPara(e.target.value)} placeholder="Ex: CAIXA NOVA" />
+              </div>
+              <div style={{ fontSize: 12, color: '#2563eb', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 6, padding: '8px 12px' }}>
+                💡 Atualiza no ANB e envia ao Bling para todos os SKUs da lista. Funciona apenas com a lista filtrada por SKUs, não por ID de moto.
+              </div>
+            </div>
+            <div style={{ padding: '0 24px 20px', display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button onClick={() => setModalLocalizacao(false)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', border: '1px solid var(--border)', background: 'var(--white)', color: 'var(--gray-600)', fontFamily: 'Inter, sans-serif' }}>Cancelar</button>
+              <button onClick={atualizarLocalizacao} disabled={atualizandoLoc || !locPara.trim()}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', border: '1px solid transparent', background: '#7c3aed', color: '#fff', opacity: (atualizandoLoc || !locPara.trim()) ? 0.7 : 1, fontFamily: 'Inter, sans-serif' }}>
+                {atualizandoLoc ? 'Atualizando...' : '✓ Atualizar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
     </>
   );
 }
