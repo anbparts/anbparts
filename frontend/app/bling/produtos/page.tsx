@@ -520,7 +520,7 @@ export default function BlingProdutosPage() {
     setAtualizandoLoc(true);
     try {
       // Pega SKUs atualmente na lista (filtrados)
-      const skus = produtos.map((p: any) => String(p.codigo || '')).filter(Boolean);
+      const skus = itens.map((p: any) => String(p.codigo || '')).filter(Boolean);
       if (skus.length === 0) return alert('Nenhum SKU na lista atual');
 
       let atualizados = 0;
@@ -1328,7 +1328,7 @@ export default function BlingProdutosPage() {
             <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
                 <div style={{ fontSize: 16, fontWeight: 600 }}>Atualizar Localização em Massa</div>
-                <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>Aplica aos {produtos.length} SKUs da lista atual</div>
+                <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>Aplica aos {itens.length} SKUs da lista atual</div>
               </div>
               <button onClick={() => setModalLocalizacao(false)} style={{ border: 'none', background: 'transparent', fontSize: 20, cursor: 'pointer', color: 'var(--gray-400)' }}>×</button>
             </div>
