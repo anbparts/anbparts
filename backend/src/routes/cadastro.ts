@@ -33,6 +33,42 @@ function gerarIdsPeca(baseSku: string, quantidade: number): string[] {
   return [baseSku, ...Array.from({ length: quantidade - 1 }, (_, i) => `${baseSku}-${i + 2}`)];
 }
 
+function getBaseSku(value: any) {
+  return String(value || '').replace(/-\d+$/, '').toUpperCase().trim();
+}
+
+function getSkuVariantOrder(idPeca: string) {
+  const match = String(idPeca || '').trim().toUpperCase().match(/-(\d+)$/);
+  return match ? Number(match[1]) : 1;
+}
+
+async function buildDetranEtiquetaConcatForBaseSku(baseSku: string) {
+  if (!baseSku) return '';
+
+  const pecas = await prisma.peca.findMany({
+    where: {
+      OR: [
+        { idPeca: { equals: baseSku, mode: 'insensitive' } },
+        { idPeca: { startsWith: `${baseSku}-` } },
+      ],
+    },
+    select: {
+      idPeca: true,
+      detranEtiqueta: true,
+    },
+  });
+
+  return pecas
+    .sort((a, b) => {
+      const orderDiff = getSkuVariantOrder(a.idPeca) - getSkuVariantOrder(b.idPeca);
+      if (orderDiff !== 0) return orderDiff;
+      return String(a.idPeca || '').localeCompare(String(b.idPeca || ''), 'pt-BR', { numeric: true, sensitivity: 'base' });
+    })
+    .map((item) => String(item.detranEtiqueta || '').trim())
+    .filter(Boolean)
+    .join(' / ');
+}
+
 async function buildBlingPayload(cadastro: any, isUpdate: boolean) {
   const camposCustomizados: any[] = [];
   if (cadastro.numeroPeca) camposCustomizados.push({ idCampoCustomizado: BLING_NUMERO_PECA_CAMPO_ID, valor: cadastro.numeroPeca });
@@ -406,11 +442,22 @@ cadastroRouter.post('/:id/finalizar', async (req, res, next) => {
 // Aceita blingProdutoId direto OU sku para buscar automaticamente
 cadastroRouter.post('/sync-bling-peca', async (req, res, next) => {
   try {
-    let { blingProdutoId, sku, largura, altura, profundidade, pesoLiquido, localizacao, detranEtiqueta, numeroPeca } = req.body;
+    let {
+      blingProdutoId,
+      sku,
+      largura,
+      altura,
+      profundidade,
+      pesoLiquido,
+      localizacao,
+      detranEtiqueta,
+      numeroPeca,
+      concatDetranEtiquetasVariacoes,
+    } = req.body;
+    const baseSku = getBaseSku(sku);
 
     // Se veio SKU mas não blingProdutoId, resolve pelo CadastroPeca
     if (!blingProdutoId && sku) {
-      const baseSku = String(sku).replace(/-\d+$/, '').toUpperCase().trim();
       const cadastro = await prisma.cadastroPeca.findFirst({
         where: { idPeca: { equals: baseSku, mode: 'insensitive' } },
         select: { blingProdutoId: true },
@@ -469,8 +516,14 @@ cadastroRouter.post('/sync-bling-peca', async (req, res, next) => {
     // Campos customizados — merge com os existentes no Bling, sobrepõe só os que vieram
     const ccExistentes: any[] = Array.isArray(b.camposCustomizados) ? b.camposCustomizados : [];
     const ccMap = new Map(ccExistentes.map((c: any) => [Number(c.idCampoCustomizado), c.valor]));
+    const shouldConcatDetranEtiquetas = Boolean(concatDetranEtiquetasVariacoes && baseSku);
+    const detranEtiquetaParaBling = shouldConcatDetranEtiquetas
+      ? await buildDetranEtiquetaConcatForBaseSku(baseSku)
+      : (detranEtiqueta || '');
     if (numeroPeca !== undefined) ccMap.set(2821431, numeroPeca || '');
-    if (detranEtiqueta !== undefined) ccMap.set(5979929, detranEtiqueta || '');
+    if (detranEtiqueta !== undefined || shouldConcatDetranEtiquetas) {
+      ccMap.set(5979929, detranEtiquetaParaBling);
+    }
     if (ccMap.size > 0) {
       payload.camposCustomizados = Array.from(ccMap.entries()).map(([id, valor]) => ({ idCampoCustomizado: id, valor }));
     }
@@ -481,7 +534,7 @@ cadastroRouter.post('/sync-bling-peca', async (req, res, next) => {
       body: JSON.stringify(payload),
     });
 
-    res.json({ ok: true });
+    res.json({ ok: true, detranEtiquetaEnviada: detranEtiquetaParaBling });
   } catch (e: any) {
     console.error('[sync-bling-peca] Erro:', e?.message);
     res.status(400).json({ ok: false, error: e?.message });

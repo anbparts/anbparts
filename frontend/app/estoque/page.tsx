@@ -564,13 +564,13 @@ function PecaDetalheModal({ open, peca, onClose, onSaved }: any) {
       });
       // SKU base (remove sufixo -2, -3, etc)
       const baseSku = peca.idPeca.replace(/-\d+$/, '');
-      const camposAlterados = {
+      const camposCompartilhados = {
         largura: form.largura ? Number(form.largura) : null,
         altura: form.altura ? Number(form.altura) : null,
         profundidade: form.profundidade ? Number(form.profundidade) : null,
         pesoLiquido: form.pesoLiquido ? Number(form.pesoLiquido) : null,
+        pesoBruto: form.pesoLiquido ? Number(form.pesoLiquido) : null,
         localizacao: form.localizacao || null,
-        detranEtiqueta: form.detranEtiqueta || null,
         numeroPeca: form.numeroPeca || null,
       };
 
@@ -581,7 +581,9 @@ function PecaDetalheModal({ open, peca, onClose, onSaved }: any) {
         body: JSON.stringify({
           blingProdutoId: peca.blingProdutoId || null,
           sku: baseSku,
-          ...camposAlterados,
+          ...camposCompartilhados,
+          detranEtiqueta: form.detranEtiqueta || null,
+          concatDetranEtiquetasVariacoes: true,
         }),
       });
       const blingData = await blingResp.json();
@@ -594,6 +596,7 @@ function PecaDetalheModal({ open, peca, onClose, onSaved }: any) {
         p.idPeca === baseSku || p.idPeca.startsWith(`${baseSku}-`)
       );
       for (const variacao of todasVariacoes) {
+        if (variacao.id === peca.id) continue;
         await fetch(`${API}/pecas/${variacao.id}`, {
           method: 'PUT', credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
@@ -604,7 +607,7 @@ function PecaDetalheModal({ open, peca, onClose, onSaved }: any) {
             valorFrete: Number(variacao.valorFrete),
             valorTaxas: Number(variacao.valorTaxas),
             disponivel: variacao.disponivel,
-            ...camposAlterados,
+            ...camposCompartilhados,
           }),
         });
       }
