@@ -219,14 +219,27 @@ export default function CadastroPage() {
     setSaving(false);
   }
 
-  async function excluir() {
+  async function excluir(force = false) {
     if (!editItem) return;
-    if (!confirm(`Excluir o pré-cadastro ${editItem.idPeca}?`)) return;
+    const msg = force
+      ? `FORÇAR exclusão de ${editItem.idPeca} ignorando verificação do Bling?`
+      : `Excluir o pré-cadastro ${editItem.idPeca}?`;
+    if (!confirm(msg)) return;
     setExcluindo(true);
     try {
-      const resp = await fetch(`${API}/cadastro/${editItem.id}`, { method: 'DELETE', credentials: 'include' });
+      const url = `${API}/cadastro/${editItem.id}${force ? '?force=true' : ''}`;
+      const resp = await fetch(url, { method: 'DELETE', credentials: 'include' });
       const d = await resp.json();
-      if (!resp.ok) throw new Error(d.error || 'Erro ao excluir');
+      if (!resp.ok) {
+        // Se bloqueado pelo Bling, oferecer força
+        if (!force && d.error?.includes('Bling')) {
+          const forcar = confirm(`${d.error}
+
+Deseja forçar a exclusão mesmo assim?`);
+          if (forcar) { setExcluindo(false); return excluir(true); }
+        }
+        throw new Error(d.error || 'Erro ao excluir');
+      }
       setModal(false);
       await loadAll();
     } catch (e: any) { alert(e.message); }

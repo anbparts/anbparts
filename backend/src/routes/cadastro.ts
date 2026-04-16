@@ -377,22 +377,28 @@ cadastroRouter.delete('/:id', async (req, res, next) => {
     const id = Number(req.params.id);
     const cadastro = await prisma.cadastroPeca.findUnique({ where: { id } });
     if (!cadastro) return res.status(404).json({ error: 'Não encontrado' });
-    if (cadastro.blingProdutoId) {
-      // Verifica se o produto ainda existe no Bling
+    // Se forceDelete=true, pula a verificação do Bling
+    const forceDelete = req.query.force === 'true';
+
+    if (cadastro.blingProdutoId && !forceDelete) {
       let existeNoBling = false;
+      let blingDebug: any = null;
       try {
         const blingCheck = await blingReq(`/produtos/${cadastro.blingProdutoId}`);
-        // Só bloqueia se retornou dados com ID válido
-        if (blingCheck?.data?.id && String(blingCheck.data.id) === String(cadastro.blingProdutoId)) {
+        blingDebug = blingCheck;
+        // Bling pode retornar produto "inativo/excluído" com situacao='E' — não bloquear nesses casos
+        const situacao = String(blingCheck?.data?.situacao || '');
+        const temId = blingCheck?.data?.id && String(blingCheck.data.id) === String(cadastro.blingProdutoId);
+        if (temId && situacao !== 'E' && situacao !== 'I') {
           existeNoBling = true;
         }
       } catch (e: any) {
-        // 404 = produto não existe mais — permite excluir
-        // Qualquer outro erro = assume que não existe para não bloquear o usuário
+        console.log('[cadastro delete] Bling check erro (produto não existe):', e?.message?.slice(0, 100));
         existeNoBling = false;
       }
+      console.log('[cadastro delete] blingProdutoId:', cadastro.blingProdutoId, '| existeNoBling:', existeNoBling, '| debug:', JSON.stringify(blingDebug?.data?.situacao));
       if (existeNoBling) {
-        return res.status(400).json({ error: 'Este pré-cadastro já foi replicado ao Bling e o produto ainda existe lá. Delete o produto no Bling primeiro.' });
+        return res.status(400).json({ error: 'Este pré-cadastro já foi replicado ao Bling e o produto ainda existe lá. Delete o produto no Bling primeiro, ou use a opção "Forçar exclusão".' });
       }
     }
     await prisma.cadastroPeca.delete({ where: { id } });
