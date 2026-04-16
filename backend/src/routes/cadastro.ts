@@ -311,7 +311,21 @@ cadastroRouter.post('/:id/finalizar', async (req, res, next) => {
       const ids = gerarIdsPeca(cadastro.idPeca, qtd);
       const pecasCriadas = [];
 
-      for (const idPeca of ids) {
+      // Split etiquetas detran por variação: "SP001 / SP002 / SP003" → ['SP001', 'SP002', 'SP003']
+      const etiquetasArray = cadastro.detranEtiqueta
+        ? cadastro.detranEtiqueta.split('/').map((e: string) => e.trim()).filter(Boolean)
+        : [];
+
+      // Validação: se há etiquetas, deve bater com a quantidade
+      if (etiquetasArray.length > 0 && etiquetasArray.length !== ids.length) {
+        return res.status(400).json({
+          ok: false,
+          error: `Quantidade de etiquetas Detran (${etiquetasArray.length}) não bate com o estoque (${ids.length}). Corrija no pré-cadastro antes de finalizar.`,
+        });
+      }
+
+      for (let i = 0; i < ids.length; i++) {
+        const idPeca = ids[i];
         const existing = await prisma.peca.findUnique({ where: { idPeca } });
         if (existing) continue;
         const peca = await prisma.peca.create({
@@ -334,7 +348,8 @@ cadastroRouter.post('/:id/finalizar', async (req, res, next) => {
             altura: bAltura || Number(cadastro.altura || 0),
             profundidade: bProf || Number(cadastro.profundidade || 0),
             numeroPeca: cadastro.numeroPeca || null,
-            detranEtiqueta: cadastro.detranEtiqueta || null,
+            // Cada variação recebe sua etiqueta, ou a concatenada se só há 1
+            detranEtiqueta: etiquetasArray.length > 0 ? (etiquetasArray[i] || null) : null,
             cadastro: new Date(),
           },
         });
@@ -361,6 +376,7 @@ cadastroRouter.post('/:id/finalizar', async (req, res, next) => {
         profundidade: bProf,
         localizacao: b.estoque?.localizacao || cadastro.localizacao,
         estoque: b.estoque?.saldoVirtualTotal || cadastro.estoque,
+        detranEtiqueta: cadastro.detranEtiqueta || null,
         fretePadrao,
         taxaPadraoPct,
         mercadoLivreLink,

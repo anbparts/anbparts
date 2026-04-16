@@ -54,7 +54,7 @@ function ChecklistValidacao({ form }: { form: any }) {
     { key: 'localizacao', label: 'Localização' },
     { key: 'numeroPeca', label: 'Número da Peça' },
     { key: 'categoriaMLId', label: 'Categoria ML' },
-    { key: 'detranEtiqueta', label: 'Etiqueta Detran (opcional)', optional: true },
+    { key: '_etiquetasValidas', label: 'Etiqueta Detran', optional: true },
   ];
   const invalidos = campos.filter(c => !form[c.key]);
   if (invalidos.length === 0) return null;
@@ -93,6 +93,7 @@ export default function CadastroPage() {
   const [previewTaxa, setPreviewTaxa] = useState(17);
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [confirmando, setConfirmando] = useState(false);
+  const [etiquetas, setEtiquetas] = useState<string[]>(['']); // array de etiquetas detran
 
   useEffect(() => { loadAll(); }, [filters, somentePendentes]);
 
@@ -122,7 +123,7 @@ export default function CadastroPage() {
     const motoOrdenada = [...motos].sort((a, b) => b.id - a.id);
     const motoId = motoOrdenada[0]?.id ? String(motoOrdenada[0].id) : '';
     const form0 = { ...EMPTY_FORM, motoId };
-    setForm(form0); setEditItem(null); setCategorias([]);
+    setForm(form0); setEditItem(null); setCategorias([]); setEtiquetas(['']);
     if (motoId) await carregarProximoId(motoId, form0);
     setModal(true);
   }
@@ -143,6 +144,11 @@ export default function CadastroPage() {
       categoriaMLId: item.categoriaMLId || '', categoriaMLNome: item.categoriaMLNome || '',
       urlRef: item.urlRef || '',
     });
+    // Carregar etiquetas do campo concatenado (SP001 / SP002 / SP003)
+    const etiquetasCarregadas = item.detranEtiqueta
+      ? item.detranEtiqueta.split('/').map((e: string) => e.trim()).filter(Boolean)
+      : [''];
+    setEtiquetas(etiquetasCarregadas.length > 0 ? etiquetasCarregadas : ['']);
     setCategorias([]); setModal(true);
   }
 
@@ -202,7 +208,10 @@ export default function CadastroPage() {
         condicao: form.condicao,
         peso: form.peso ? Number(form.peso) : null, largura: form.largura ? Number(form.largura) : null,
         altura: form.altura ? Number(form.altura) : null, profundidade: form.profundidade ? Number(form.profundidade) : null,
-        numeroPeca: form.numeroPeca || null, detranEtiqueta: form.detranEtiqueta || null,
+        numeroPeca: form.numeroPeca || null,
+        detranEtiqueta: etiquetas.filter(e => e.trim()).length > 0
+          ? etiquetas.filter(e => e.trim()).map(e => e.trim()).join(' / ')
+          : null,
         localizacao: form.localizacao || null, estoque: Number(form.estoque) || 1,
         categoriaMLId: form.categoriaMLId || null, categoriaMLNome: form.categoriaMLNome || null,
         urlRef: form.urlRef || null,
@@ -444,10 +453,45 @@ Deseja forçar a exclusão mesmo assim?`);
                     <input style={s.input} list="caixas-list" value={form.localizacao} onChange={(e) => setForm((p: any) => ({ ...p, localizacao: e.target.value }))} placeholder="Nome da caixa" />
                     <datalist id="caixas-list">{caixas.map(c => <option key={c} value={c} />)}</datalist>
                   </div>
-                  <div>
-                    <label style={s.label}>Etiqueta Detran <span style={{ color: '#f59e0b' }}>(opcional)</span></label>
-                    <input style={s.input} value={form.detranEtiqueta} onChange={(e) => setForm((p: any) => ({ ...p, detranEtiqueta: e.target.value }))} placeholder="Número da etiqueta" />
+                </div>
+
+                {/* Etiquetas Detran — campo dinâmico múltiplo */}
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <label style={{ ...s.label, marginBottom: 0 }}>Etiqueta Detran</label>
+                    <button type="button"
+                      onClick={() => setEtiquetas((prev: string[]) => [...prev, ''])}
+                      style={{ ...s.btn, fontSize: 11, padding: '3px 10px', background: '#eff6ff', border: '1px solid #bfdbfe', color: '#2563eb' }}>
+                      + Adicionar Etiqueta
+                    </button>
                   </div>
+                  {etiquetas.map((etq: string, idx: number) => (
+                    <div key={idx} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
+                      <div style={{ fontSize: 11, color: 'var(--gray-500)', minWidth: 130, whiteSpace: 'nowrap' as const }}>
+                        {idx === 0 ? 'Etiqueta Detran' : `Etiqueta Detran - ${idx + 1}`}
+                      </div>
+                      <input
+                        style={{ ...s.input, flex: 1 }}
+                        value={etq}
+                        onChange={(e) => setEtiquetas((prev: string[]) => prev.map((v, i) => i === idx ? e.target.value : v))}
+                        placeholder="Ex: SP83838383"
+                      />
+                      {etiquetas.length > 1 && (
+                        <button type="button"
+                          onClick={() => setEtiquetas((prev: string[]) => prev.filter((_: string, i: number) => i !== idx))}
+                          style={{ border: 'none', background: 'transparent', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px', lineHeight: 1 }}
+                          title="Remover etiqueta">×</button>
+                      )}
+                    </div>
+                  ))}
+                  {(() => {
+                    const preenchidas = etiquetas.filter((e: string) => e.trim()).length;
+                    const qtdEstoque = Number(form.estoque) || 1;
+                    if (preenchidas > 0 && preenchidas !== qtdEstoque) {
+                      return <div style={{ fontSize: 11, color: '#dc2626', marginTop: 2 }}>⚠ {preenchidas} etiqueta(s) mas estoque = {qtdEstoque}. Devem ser iguais.</div>;
+                    }
+                    return null;
+                  })()}
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -519,6 +563,7 @@ Deseja forçar a exclusão mesmo assim?`);
                     { key: 'altura', label: 'Altura (cm)', val: previewBling.altura },
                     { key: 'profundidade', label: 'Profundidade (cm)', val: previewBling.profundidade },
                     { key: null, label: 'Localização', val: previewBling.localizacao },
+                    { key: null, label: 'Etiquetas Detran', val: previewBling.detranEtiqueta || '—' },
                     { key: null, label: 'Estoque', val: previewBling.estoque },
                   ].map(({ key, label, val }) => (
                     <div key={label}>
@@ -561,6 +606,22 @@ Deseja forçar a exclusão mesmo assim?`);
                       ⚠ Estoque = {previewBling.estoque} → serão criados {previewBling.estoque} registros: {itemFinalizar.idPeca}{Number(previewBling.estoque) > 1 ? `, ${itemFinalizar.idPeca}-2` : ''}{Number(previewBling.estoque) > 2 ? '...' : ''}
                     </div>
                   )}
+                  {previewBling.detranEtiqueta && (() => {
+                    const etqs = previewBling.detranEtiqueta.split('/').map((e: string) => e.trim()).filter(Boolean);
+                    const qtd = Number(previewBling.estoque) || 1;
+                    if (etqs.length !== qtd) {
+                      return (
+                        <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: 10, fontSize: 12, color: '#dc2626' }}>
+                          ✗ {etqs.length} etiqueta(s) Detran mas estoque = {qtd}. Corrija no pré-cadastro antes de confirmar.
+                        </div>
+                      );
+                    }
+                    return (
+                      <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 8, padding: 10, fontSize: 12, color: '#16a34a' }}>
+                        ✓ {etqs.length} etiqueta(s) Detran — cada variação receberá a sua: {etqs.map((e: string, i: number) => `${itemFinalizar.idPeca}${i > 0 ? `-${i+1}` : ''} → ${e}`).join(', ')}
+                      </div>
+                    );
+                  })()}
                 </div>
               ) : null}
             </div>
