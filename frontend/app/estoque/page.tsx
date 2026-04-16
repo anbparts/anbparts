@@ -513,11 +513,11 @@ function DetranEtiquetaModal({ open, peca, onClose }: any) {
 }
 
 function PecaDetalheModal({ open, peca, onClose, onSaved }: any) {
-  const [editando, setEditando] = React.useState(false);
-  const [form, setForm] = React.useState<any>({});
-  const [saving, setSaving] = React.useState(false);
+  const [editando, setEditando] = useState(false);
+  const [form, setForm] = useState<any>({});
+  const [saving, setSaving] = useState(false);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (peca) setForm({
       largura: peca.largura != null ? String(peca.largura) : '',
       altura: peca.altura != null ? String(peca.altura) : '',
