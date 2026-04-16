@@ -60,6 +60,48 @@ type Item = {
   _valorLiq?: string;
 };
 
+type SeparacaoItem = {
+  lineKey: string;
+  skuBase: string;
+  skuBling: string | null;
+  quantidade: number;
+  descricao: string;
+  idsPecaAnb: string[];
+  localizacaoBling: string | null;
+  localizacaoAnb: string | null;
+  localizacaoConfere: boolean;
+  detranRelatorio: string;
+  etiquetasDetranDisponiveis: string[];
+};
+
+type SeparacaoPedido = {
+  pedidoId: number;
+  pedidoNum: string;
+  dataVenda: string;
+  statusLabel: string;
+  transportador: string | null;
+  quantidadeItens: number;
+  itens: SeparacaoItem[];
+};
+
+type SeparacaoRelatorio = {
+  ok: boolean;
+  filtros: {
+    dataInicio: string;
+    dataFim: string;
+    status: string;
+  };
+  totaisGerais: {
+    totalPedidos: number;
+    totalItens: number;
+    totalLinhas: number;
+    totalEtiquetasDetran: number;
+    totalLocalizacoesDivergentes: number;
+  };
+  pedidos: SeparacaoPedido[];
+  geradoEm: string;
+};
+
 function calcularLiq(precoML: number, frete: number, taxaPct: number) {
   const taxaValor = parseFloat((precoML * taxaPct / 100).toFixed(2));
   const valorLiq = parseFloat((precoML - frete - taxaValor).toFixed(2));
@@ -72,6 +114,13 @@ function fmtMoney(value: any) {
 
 function fmtPercent(value: number) {
   return `${value.toLocaleString('pt-BR', { minimumFractionDigits: value % 1 ? 2 : 0, maximumFractionDigits: 2 })}%`;
+}
+
+function fmtDate(value: string) {
+  if (!value) return '-';
+  const [year, month, day] = value.split('-');
+  if (!year || !month || !day) return value;
+  return `${day}/${month}/${year}`;
 }
 
 function inputDateString(date: Date) {
@@ -90,12 +139,236 @@ function defaultDateRange() {
   };
 }
 
+function escapeHtml(value: any) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function buildSeparacaoPrintHtml(relatorio: SeparacaoRelatorio) {
+  const periodo = `${fmtDate(relatorio.filtros.dataInicio)} a ${fmtDate(relatorio.filtros.dataFim)}`;
+  const cards = [
+    ['Pedidos', String(relatorio.totaisGerais.totalPedidos)],
+    ['Itens', String(relatorio.totaisGerais.totalItens)],
+    ['Linhas', String(relatorio.totaisGerais.totalLinhas)],
+    ['Etiquetas DETRAN', String(relatorio.totaisGerais.totalEtiquetasDetran)],
+    ['Divergencias loc.', String(relatorio.totaisGerais.totalLocalizacoesDivergentes)],
+  ]
+    .map(([label, value]) => `
+      <div class="metric-card">
+        <div class="metric-label">${escapeHtml(label)}</div>
+        <div class="metric-value">${escapeHtml(value)}</div>
+      </div>
+    `)
+    .join('');
+
+  const pedidosHtml = relatorio.pedidos
+    .map((pedido) => {
+      const rows = pedido.itens
+        .map((item) => `
+          <tr class="${item.localizacaoConfere ? 'row-ok' : 'row-warn'}">
+            <td>${escapeHtml(item.skuBase || '-')}</td>
+            <td>${escapeHtml(item.idsPecaAnb.join(' / ') || '-')}</td>
+            <td>${escapeHtml(item.descricao || '-')}</td>
+            <td class="center">${escapeHtml(item.quantidade)}</td>
+            <td>${escapeHtml(item.localizacaoBling || '-')}</td>
+            <td>${escapeHtml(item.localizacaoAnb || '-')}</td>
+            <td class="center status-cell">${item.localizacaoConfere ? 'Confere' : 'Divergente'}</td>
+            <td>${escapeHtml(item.detranRelatorio || '-')}</td>
+          </tr>
+        `)
+        .join('');
+
+      return `
+        <section class="pedido">
+          <div class="pedido-header">
+            <div>
+              <div class="pedido-title">Pedido #${escapeHtml(pedido.pedidoNum)}</div>
+              <div class="pedido-meta">Data da venda: ${escapeHtml(fmtDate(pedido.dataVenda))} | Status: ${escapeHtml(pedido.statusLabel || 'Em Aberto')}</div>
+              <div class="pedido-meta">Transportador: ${escapeHtml(pedido.transportador || 'Nao informado')}</div>
+            </div>
+            <div class="pedido-badge">${escapeHtml(`${pedido.quantidadeItens} item(ns)`)}</div>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>SKU Base</th>
+                <th>SKUs ANB</th>
+                <th>Descricao</th>
+                <th>Qtd</th>
+                <th>Loc. Bling</th>
+                <th>Loc. ANB</th>
+                <th>Status Loc.</th>
+                <th>Etiqueta DETRAN</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </section>
+      `;
+    })
+    .join('');
+
+  return `<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Relatorio de Separacao - ${escapeHtml(periodo)}</title>
+    <style>
+      @page { size: A4 landscape; margin: 12mm; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: Inter, Arial, sans-serif;
+        color: #1e293b;
+        background: #ffffff;
+      }
+      .page {
+        width: 100%;
+      }
+      .header {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: flex-start;
+        margin-bottom: 18px;
+        padding-bottom: 12px;
+        border-bottom: 2px solid #1e56a0;
+      }
+      .title {
+        font-size: 24px;
+        font-weight: 700;
+        color: #0f172a;
+        margin-bottom: 4px;
+      }
+      .subtitle {
+        font-size: 12px;
+        color: #475569;
+        line-height: 1.5;
+      }
+      .metrics {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(110px, 1fr));
+        gap: 10px;
+        margin-bottom: 18px;
+      }
+      .metric-card {
+        border: 1px solid #dbeafe;
+        background: #f8fbff;
+        border-radius: 10px;
+        padding: 10px 12px;
+      }
+      .metric-label {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: #64748b;
+        margin-bottom: 6px;
+      }
+      .metric-value {
+        font-size: 18px;
+        font-weight: 700;
+        color: #0f172a;
+      }
+      .pedido {
+        margin-bottom: 16px;
+        page-break-inside: avoid;
+      }
+      .pedido-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: flex-start;
+        margin-bottom: 10px;
+      }
+      .pedido-title {
+        font-size: 16px;
+        font-weight: 700;
+        color: #0f172a;
+      }
+      .pedido-meta {
+        margin-top: 3px;
+        font-size: 11px;
+        color: #475569;
+      }
+      .pedido-badge {
+        white-space: nowrap;
+        border: 1px solid #cbd5e1;
+        border-radius: 999px;
+        padding: 6px 10px;
+        font-size: 11px;
+        font-weight: 600;
+        color: #1e293b;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        table-layout: fixed;
+      }
+      th, td {
+        border: 1px solid #e2e8f0;
+        padding: 7px 8px;
+        vertical-align: top;
+        word-break: break-word;
+      }
+      th {
+        background: #eff6ff;
+        color: #334155;
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        text-align: left;
+      }
+      td {
+        font-size: 11px;
+      }
+      .center {
+        text-align: center;
+      }
+      .status-cell {
+        font-weight: 700;
+      }
+      .row-warn td {
+        background: #fff7ed;
+      }
+      .row-ok td {
+        background: #ffffff;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <div class="header">
+        <div>
+          <div class="title">Relatorio de Separacao</div>
+          <div class="subtitle">Periodo: ${escapeHtml(periodo)}<br />Status filtrado: ${escapeHtml(relatorio.filtros.status || 'Em Aberto')}</div>
+        </div>
+        <div class="subtitle">Gerado em ${escapeHtml(fmtDate(String(relatorio.geradoEm || '').split('T')[0]))}</div>
+      </div>
+      <div class="metrics">${cards}</div>
+      ${pedidosHtml}
+    </div>
+    <script>
+      window.addEventListener('load', function () {
+        setTimeout(function () { window.print(); }, 200);
+      });
+    </script>
+  </body>
+</html>`;
+}
+
 export default function VendasBlingPage() {
   const [dataInicio, setDataInicio] = useState(() => defaultDateRange().dataInicio);
   const [dataFim, setDataFim] = useState(() => defaultDateRange().dataFim);
   const [buscando, setBuscando] = useState(false);
+  const [carregandoSeparacao, setCarregandoSeparacao] = useState(false);
   const [itens, setItens] = useState<Item[]>([]);
   const [buscou, setBuscou] = useState(false);
+  const [buscouSeparacao, setBuscouSeparacao] = useState(false);
+  const [relatorioSeparacao, setRelatorioSeparacao] = useState<SeparacaoRelatorio | null>(null);
   const [defaults, setDefaults] = useState<Defaults>({ fretePadrao: 29.9, taxaPadraoPct: 17 });
 
   useEffect(() => {
@@ -145,6 +418,44 @@ export default function VendasBlingPage() {
       alert(`Erro: ${e.message}`);
     }
     setBuscando(false);
+  }
+
+  async function buscarRelatorioSeparacao() {
+    setCarregandoSeparacao(true);
+    setBuscouSeparacao(false);
+    setRelatorioSeparacao(null);
+    try {
+      const params = new URLSearchParams();
+      if (dataInicio) params.set('dataInicio', dataInicio);
+      if (dataFim) params.set('dataFim', dataFim);
+
+      const response = await fetch(`${API}/bling/relatorio-separacao?${params.toString()}`);
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        alert(data.error || 'Erro ao carregar relatorio de separacao');
+        return;
+      }
+
+      setRelatorioSeparacao(data);
+    } catch (e: any) {
+      alert(`Erro: ${e.message}`);
+    }
+    setBuscouSeparacao(true);
+    setCarregandoSeparacao(false);
+  }
+
+  function gerarPdfSeparacao() {
+    if (!relatorioSeparacao || relatorioSeparacao.pedidos.length === 0) return;
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert('Nao foi possivel abrir a janela de impressao do PDF.');
+      return;
+    }
+
+    printWindow.document.open();
+    printWindow.document.write(buildSeparacaoPrintHtml(relatorioSeparacao));
+    printWindow.document.close();
   }
 
   function updateItem(idx: number, field: string, value: any) {
@@ -262,11 +573,122 @@ export default function VendasBlingPage() {
             <button style={{ ...s.btn, background: '#FF6900', color: '#fff', opacity: buscando ? 0.7 : 1 }} onClick={buscarVendas} disabled={buscando}>
               {buscando ? 'Buscando...' : 'Buscar vendas'}
             </button>
+            <button
+              type="button"
+              style={{ ...s.btn, background: 'var(--blue-500)', color: '#fff', opacity: carregandoSeparacao ? 0.7 : 1 }}
+              onClick={buscarRelatorioSeparacao}
+              disabled={carregandoSeparacao}
+            >
+              {carregandoSeparacao ? 'Carregando relatorio...' : 'Relatorio de Separacao'}
+            </button>
           </div>
           <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 8 }}>
             A busca agora traz pedidos concluidos e cancelados. Frete padrao atual: {fmtMoney(defaults.fretePadrao)} · Taxa padrao: {fmtPercent(defaults.taxaPadraoPct)}
           </div>
         </div>
+
+        {relatorioSeparacao && (
+          <div style={{ ...s.card, borderColor: '#bfdbfe', background: '#f8fbff' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: 14 }}>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--gray-800)' }}>Relatorio de Separacao</div>
+                <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 4 }}>
+                  Previa dos pedidos <strong>{relatorioSeparacao.filtros.status}</strong> entre {fmtDate(relatorioSeparacao.filtros.dataInicio)} e {fmtDate(relatorioSeparacao.filtros.dataFim)}.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={gerarPdfSeparacao}
+                disabled={relatorioSeparacao.pedidos.length === 0}
+                style={{ ...s.btn, background: '#0f172a', color: '#fff', opacity: relatorioSeparacao.pedidos.length === 0 ? 0.5 : 1 }}
+              >
+                Gerar PDF
+              </button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 16 }}>
+              {[
+                { label: 'Pedidos', value: relatorioSeparacao.totaisGerais.totalPedidos, color: 'var(--gray-800)' },
+                { label: 'Itens', value: relatorioSeparacao.totaisGerais.totalItens, color: 'var(--gray-800)' },
+                { label: 'Linhas', value: relatorioSeparacao.totaisGerais.totalLinhas, color: 'var(--blue-500)' },
+                { label: 'Etiquetas Detran', value: relatorioSeparacao.totaisGerais.totalEtiquetasDetran, color: 'var(--amber)' },
+                { label: 'Locais Divergentes', value: relatorioSeparacao.totaisGerais.totalLocalizacoesDivergentes, color: 'var(--red)' },
+              ].map((card) => (
+                <div key={card.label} style={{ background: 'var(--white)', border: '1px solid #dbeafe', borderRadius: 10, padding: '12px 14px' }}>
+                  <div style={{ fontSize: 10.5, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '0.7px', marginBottom: 6 }}>{card.label}</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: card.color }}>{card.value}</div>
+                </div>
+              ))}
+            </div>
+
+            {relatorioSeparacao.pedidos.length === 0 ? (
+              <div style={{ background: 'var(--white)', border: '1px dashed #bfdbfe', borderRadius: 10, padding: '18px 16px', fontSize: 13, color: 'var(--gray-500)' }}>
+                Nenhum pedido com status Em Aberto foi encontrado nesse periodo.
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gap: 14 }}>
+                {relatorioSeparacao.pedidos.map((pedido) => (
+                  <div key={pedido.pedidoNum} style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
+                    <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+                      <div>
+                        <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--gray-800)' }}>Pedido #{pedido.pedidoNum}</div>
+                        <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 4 }}>
+                          Data da venda: {fmtDate(pedido.dataVenda)} - Status: {pedido.statusLabel || 'Em Aberto'}
+                        </div>
+                        <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 3 }}>
+                          Transportador: {pedido.transportador || 'Nao informado'}
+                        </div>
+                      </div>
+                      <div style={{ fontSize: 12, background: '#eff6ff', color: 'var(--blue-500)', padding: '6px 10px', borderRadius: 999, fontWeight: 700 }}>
+                        {pedido.quantidadeItens} item(ns)
+                      </div>
+                    </div>
+
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', minWidth: 980, borderCollapse: 'collapse', fontSize: 13 }}>
+                        <thead style={{ background: 'var(--gray-50)' }}>
+                          <tr>
+                            {['SKU Base', 'SKUs ANB', 'Descricao', 'Qtd', 'Loc. Bling', 'Loc. ANB', 'Status loc.', 'Etiqueta Detran'].map((header) => (
+                              <th key={header} style={{ padding: '9px 12px', textAlign: 'left', fontFamily: 'JetBrains Mono, monospace', fontSize: 10, letterSpacing: '.7px', textTransform: 'uppercase', color: 'var(--gray-400)', fontWeight: 500, borderBottom: '1px solid var(--border)' }}>
+                                {header}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {pedido.itens.map((item) => (
+                            <tr key={item.lineKey} style={{ borderTop: '1px solid var(--gray-100)', background: item.localizacaoConfere ? 'var(--white)' : '#fff7ed' }}>
+                              <td style={{ padding: '10px 12px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--blue-500)', fontWeight: 700 }}>{item.skuBase || '-'}</td>
+                              <td style={{ padding: '10px 12px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--gray-700)' }}>{item.idsPecaAnb.join(' / ') || '-'}</td>
+                              <td style={{ padding: '10px 12px', color: 'var(--gray-800)', lineHeight: 1.45 }}>{item.descricao || '-'}</td>
+                              <td style={{ padding: '10px 12px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--gray-700)' }}>{item.quantidade}</td>
+                              <td style={{ padding: '10px 12px', color: 'var(--gray-700)' }}>{item.localizacaoBling || '-'}</td>
+                              <td style={{ padding: '10px 12px', color: 'var(--gray-700)' }}>{item.localizacaoAnb || '-'}</td>
+                              <td style={{ padding: '10px 12px' }}>
+                                <span style={{ display: 'inline-flex', alignItems: 'center', padding: '4px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700, background: item.localizacaoConfere ? '#dcfce7' : '#fee2e2', color: item.localizacaoConfere ? '#166534' : '#b91c1c' }}>
+                                  {item.localizacaoConfere ? 'Confere' : 'Divergente'}
+                                </span>
+                              </td>
+                              <td style={{ padding: '10px 12px', color: item.detranRelatorio === 'ENVIAR FOTO DA ETIQUETA DETRAN' ? 'var(--amber)' : 'var(--gray-800)', fontWeight: item.detranRelatorio ? 700 : 500 }}>
+                                {item.detranRelatorio || '-'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {buscouSeparacao && !relatorioSeparacao && (
+          <div style={{ ...s.card, borderColor: '#fecaca', background: '#fff7f7', color: '#b91c1c' }}>
+            Nao foi possivel carregar o Relatorio de Separacao agora.
+          </div>
+        )}
 
         {cancelPendentes.length > 0 && (
           <div style={{ marginBottom: 24 }}>

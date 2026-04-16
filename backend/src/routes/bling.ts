@@ -378,6 +378,66 @@ function resolvePedidoFrete(pedido: any) {
   return roundMoney(Math.abs(toNumber(pedido?.transporte?.frete, 0)));
 }
 
+function normalizePrintableText(value: any) {
+  const text = String(value ?? '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return text || null;
+}
+
+function extractFirstNamedText(value: any): string | null {
+  if (value === null || value === undefined) return null;
+
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    const text = normalizePrintableText(value);
+    if (!text || /^\d+(?:[.,]\d+)?$/.test(text)) return null;
+    return text;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = extractFirstNamedText(item);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  if (typeof value === 'object') {
+    const preferredKeys = ['nome', 'razaoSocial', 'fantasia', 'descricao', 'nomeTransportador'];
+
+    for (const key of preferredKeys) {
+      if (!(key in value)) continue;
+      const found = extractFirstNamedText(value[key]);
+      if (found) return found;
+    }
+
+    for (const [key, nested] of Object.entries(value)) {
+      if (/frete|valor|cpf|cnpj|id|codigo|numero|documento/i.test(key)) continue;
+      const found = extractFirstNamedText(nested);
+      if (found) return found;
+    }
+  }
+
+  return null;
+}
+
+function resolvePedidoTransportadorNome(pedido: any) {
+  const blocks = [
+    pedido?.transportador,
+    pedido?.transportadora,
+    pedido?.transporte?.transportador,
+    pedido?.transporte?.transportadora,
+    pedido?.transporte,
+  ];
+
+  for (const block of blocks) {
+    const nome = extractFirstNamedText(block);
+    if (nome) return nome;
+  }
+
+  return null;
+}
+
 function classifyOrderSituation(detail: any) {
   const source = detail?.situacao ?? detail?.situacaoPedido ?? detail?.situacoes ?? {};
   const rawText = extractSituationText(source)
@@ -397,6 +457,11 @@ function classifyOrderSituation(detail: any) {
     isCancelado,
     isConcluido,
   };
+}
+
+function isSituacaoEmAberto(situacao: { label: string; isCancelado: boolean; isConcluido: boolean } | null | undefined) {
+  if (!situacao || situacao.isCancelado || situacao.isConcluido) return false;
+  return /\babert/.test(normalizeText(String(situacao.label || '')));
 }
 
 function getProdutoDefaults(cfg: any) {
@@ -5111,6 +5176,191 @@ blingRouter.get('/relatorio-vendas', async (req, res, next) => {
       },
       totaisGerais,
       pedidos,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+blingRouter.get('/relatorio-separacao', async (req, res, next) => {
+  try {
+    const dataInicio = String(req.query?.dataInicio || '').trim();
+    const dataFim = String(req.query?.dataFim || '').trim();
+
+    const pedidosMeta = await listPedidos(dataInicio, dataFim);
+    const pedidosAbertosRaw: any[] = [];
+    const codigosSeparacao = new Set<string>();
+
+    for (const pedidoMeta of pedidosMeta) {
+      await sleep(120);
+
+      const detalhe = await blingReq(`/pedidos/vendas/${pedidoMeta.id}`) as any;
+      const pedido = detalhe?.data || {};
+      const situacao = classifyOrderSituation(pedido);
+      if (!isSituacaoEmAberto(situacao)) continue;
+
+      const pedidoId = Number(pedido?.id || pedidoMeta.id || 0);
+      const pedidoNum = String(pedido?.numero || pedidoId || pedidoMeta.id || '').trim();
+      const dataVenda = String(pedido?.data || '').split('T')[0] || '';
+      const transportador = resolvePedidoTransportadorNome(pedido);
+
+      const itens = (pedido?.itens || [])
+        .map((item: any, lineIndex: number) => {
+          const skuBling = String(item?.produto?.codigo || item?.codigo || item?.sku || '').trim().toUpperCase();
+          const idBling = item?.produto?.id ? `BL${String(item.produto.id).padStart(8, '0')}` : '';
+          const baseSku = getBaseSku(skuBling || idBling);
+
+          if (baseSku) codigosSeparacao.add(baseSku);
+
+          return {
+            lineKey: `${pedidoId}-${lineIndex}-${baseSku || skuBling || idBling || 'item'}`,
+            produtoId: item?.produto?.id ? Number(item.produto.id) : null,
+            skuBling,
+            idBling,
+            baseSku,
+            descricao: String(item?.produto?.nome || item?.descricao || '').trim(),
+            quantidade: Math.max(1, Math.round(toNumber(item?.quantidade, 1))),
+          };
+        })
+        .filter((item: any) => item.baseSku || item.skuBling || item.idBling);
+
+      if (!itens.length) continue;
+
+      pedidosAbertosRaw.push({
+        pedidoId,
+        pedidoNum,
+        dataVenda,
+        statusLabel: situacao.label,
+        transportador,
+        itens,
+      });
+    }
+
+    const codigos = Array.from(codigosSeparacao);
+    const todasPecas = codigos.length ? await listPecasForComparacaoByCodes(codigos) : [];
+    const produtosByCode = codigos.length ? await findBlingProductsByCodes(codigos) : new Map<string, any>();
+    const productDetailCache = new Map<number, any | null>();
+    const reservedVendaPecaIds = new Set<number>();
+
+    const pedidosOrdenados = pedidosAbertosRaw.sort((a, b) => {
+      const dateDiff = new Date(a.dataVenda || 0).getTime() - new Date(b.dataVenda || 0).getTime();
+      if (dateDiff) return dateDiff;
+      return String(a.pedidoNum || '').localeCompare(String(b.pedidoNum || ''), 'pt-BR', { numeric: true, sensitivity: 'base' });
+    });
+
+    const totaisGerais = {
+      totalPedidos: 0,
+      totalItens: 0,
+      totalLinhas: 0,
+      totalEtiquetasDetran: 0,
+      totalLocalizacoesDivergentes: 0,
+    };
+
+    const pedidos = [];
+
+    for (const pedidoRaw of pedidosOrdenados) {
+      const itens = [];
+
+      for (const item of pedidoRaw.itens) {
+        const codigosItem = [item.skuBling, item.idBling].filter(Boolean);
+        const produtoResumo = item.baseSku ? (produtosByCode.get(item.baseSku) || null) : null;
+        const produtoIdResolved = item.produtoId || Number(produtoResumo?.id || 0) || null;
+        let produtoDetalhe = null;
+
+        if (produtoIdResolved) {
+          if (!productDetailCache.has(produtoIdResolved)) {
+            productDetailCache.set(produtoIdResolved, await fetchBlingProductDetailById(produtoIdResolved));
+          }
+          produtoDetalhe = productDetailCache.get(produtoIdResolved) || null;
+        }
+
+        const pecaReferencia = findSkuReferencePeca(todasPecas, item.skuBling, item.idBling);
+        const localizacaoBling = normalizeLocation(resolveBlingLocation(produtoResumo, produtoDetalhe).location);
+        const pecasDisponiveisSku = todasPecas
+          .filter((peca) =>
+            peca.disponivel
+            && !peca.emPrejuizo
+            && !reservedVendaPecaIds.has(peca.id)
+            && codigosItem.some((codigo) => matchesSku(peca.idPeca, codigo)),
+          )
+          .sort((a, b) => a.id - b.id);
+        const locationMatchesBling = (peca: any) => {
+          const location = normalizeLocation(peca.localizacao);
+          return !!localizacaoBling && !!location && normalizeText(location) === normalizeText(localizacaoBling);
+        };
+        const pecasOrdenadasParaSeparacao = localizacaoBling
+          ? [
+            ...pecasDisponiveisSku.filter((peca) => locationMatchesBling(peca)),
+            ...pecasDisponiveisSku.filter((peca) => !locationMatchesBling(peca)),
+          ]
+          : pecasDisponiveisSku;
+        const pecasSelecionadas = pecasOrdenadasParaSeparacao.slice(0, item.quantidade);
+        pecasSelecionadas.forEach((peca) => reservedVendaPecaIds.add(peca.id));
+        const etiquetasDetranDisponiveis = Array.from(new Set(
+          pecasDisponiveisSku
+            .map((peca) => normalizeDetranEtiqueta(peca.detranEtiqueta))
+            .filter((etiqueta): etiqueta is string => Boolean(etiqueta)),
+        ));
+        const localizacoesAnb = Array.from(new Set(
+          pecasSelecionadas
+            .map((peca) => normalizeLocation(peca.localizacao))
+            .filter((location): location is string => Boolean(location)),
+        ));
+        const localizacaoAnb = localizacoesAnb.join(' / ') || null;
+        const localizacaoConfere = (!localizacaoBling && localizacoesAnb.length === 0)
+          || (
+            !!localizacaoBling
+            && localizacoesAnb.length > 0
+            && localizacoesAnb.every((location) => normalizeText(location) === normalizeText(localizacaoBling))
+          );
+        const detranRelatorio = etiquetasDetranDisponiveis.length > 1
+          ? 'ENVIAR FOTO DA ETIQUETA DETRAN'
+          : (etiquetasDetranDisponiveis[0] || '');
+
+        if (detranRelatorio) totaisGerais.totalEtiquetasDetran += 1;
+        if (!localizacaoConfere) totaisGerais.totalLocalizacoesDivergentes += 1;
+
+        itens.push({
+          lineKey: item.lineKey,
+          skuBase: item.baseSku || getBaseSku(pecaReferencia?.idPeca || item.skuBling || item.idBling),
+          skuBling: item.skuBling || null,
+          quantidade: item.quantidade,
+          descricao: item.descricao || pecaReferencia?.descricao || '',
+          idsPecaAnb: pecasSelecionadas.map((peca) => peca.idPeca),
+          localizacaoBling,
+          localizacaoAnb,
+          localizacaoConfere,
+          detranRelatorio,
+          etiquetasDetranDisponiveis,
+        });
+
+        totaisGerais.totalItens += item.quantidade;
+        totaisGerais.totalLinhas += 1;
+      }
+
+      pedidos.push({
+        pedidoId: pedidoRaw.pedidoId,
+        pedidoNum: pedidoRaw.pedidoNum,
+        dataVenda: pedidoRaw.dataVenda,
+        statusLabel: pedidoRaw.statusLabel,
+        transportador: pedidoRaw.transportador,
+        quantidadeItens: itens.reduce((sum, item) => sum + Number(item.quantidade || 0), 0),
+        itens,
+      });
+    }
+
+    totaisGerais.totalPedidos = pedidos.length;
+
+    res.json({
+      ok: true,
+      filtros: {
+        dataInicio,
+        dataFim,
+        status: 'Em Aberto',
+      },
+      totaisGerais,
+      pedidos,
+      geradoEm: new Date().toISOString(),
     });
   } catch (e) {
     next(e);
