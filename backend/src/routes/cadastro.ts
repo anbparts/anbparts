@@ -12,13 +12,18 @@ function toTitleCase(str: string): string {
 const BLING_NUMERO_PECA_CAMPO_ID = 2821431;
 const BLING_DETRAN_CAMPO_ID = 5979929;
 
-async function uploadImagemBling(produtoId: string, base64: string): Promise<void> {
-  // Remove prefixo data:image/...;base64,
+async function uploadImagemBling(produtoId: string, base64: string, produtoPayload: any): Promise<void> {
+  // Imagem vai dentro de midia.imagens.internas no PUT do produto
   const imagemBase64 = base64.replace(/^data:image\/[a-zA-Z]+;base64,/, '');
-  const resp = await blingReq(`/produtos/${produtoId}/imagens`, {
-    method: 'POST',
+  const resp = await blingReq(`/produtos/${produtoId}`, {
+    method: 'PUT',
     body: JSON.stringify({
-      imagens: [{ base64: imagemBase64, padrao: true }],
+      ...produtoPayload,
+      midia: {
+        imagens: {
+          internas: [{ base64: imagemBase64, padrao: true }],
+        },
+      },
     }),
   });
   console.log('[cadastro] Upload imagem OK:', JSON.stringify(resp));
@@ -226,12 +231,18 @@ cadastroRouter.post('/:id/finalizar', async (req, res, next) => {
       marca: toTitleCase(cadastro.moto?.marca || ''),
       pesoLiquido: Number(cadastro.peso || 0),
       pesoBruto: Number(cadastro.peso || 0),
-      largura: Number(cadastro.largura || 0),
-      altura: Number(cadastro.altura || 0),
-      profundidade: Number(cadastro.profundidade || 0),
+      // Dimensões ficam dentro do objeto dimensoes
+      dimensoes: {
+        largura: Number(cadastro.largura || 0),
+        altura: Number(cadastro.altura || 0),
+        profundidade: Number(cadastro.profundidade || 0),
+        unidadeMedida: 2, // 2 = Centímetros
+      },
+      // Localização fica dentro do objeto estoque
       estoque: {
         minimo: Number(cadastro.estoque),
         maximo: Number(cadastro.estoque),
+        localizacao: cadastro.localizacao || '',
       },
     };
     // Campos customizados NÃO vão no payload principal — usamos API específica depois
@@ -312,7 +323,7 @@ cadastroRouter.post('/:id/finalizar', async (req, res, next) => {
     // Upload da foto se fornecida e produto criado
     if (fotoCapa && blingProdutoId) {
       try {
-        await uploadImagemBling(blingProdutoId, fotoCapa);
+        await uploadImagemBling(blingProdutoId, fotoCapa, payload);
       } catch (e: any) {
         console.error('Erro ao fazer upload da foto:', e?.message);
         // não falha o cadastro por causa da foto
