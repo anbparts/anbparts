@@ -519,11 +519,18 @@ export default function BlingProdutosPage() {
     if (!locPara.trim()) return alert('Informe a Localização Para');
     setAtualizandoLoc(true);
     try {
-      // Filtra itens da lista que correspondem ao "De" (ou todos se vazio)
-      const itensFiltrados = itens.filter((item: any) => {
-        if (!locDe) return true;
-        return (item.localizacao || '').toUpperCase() === locDe.toUpperCase();
-      });
+      // Usa itens carregados OU parseia a listaComparacao diretamente
+      let itensFiltrados: any[] = [];
+      if (itens.length > 0) {
+        itensFiltrados = itens.filter((item: any) => {
+          if (!locDe) return true;
+          return (item.localizacao || '').toUpperCase() === locDe.toUpperCase();
+        });
+      } else {
+        // Sem comparação carregada — usa SKUs da textarea diretamente
+        const skusRaw = listaComparacao.split('\n').map((s: string) => s.trim().toUpperCase()).filter(Boolean);
+        itensFiltrados = skusRaw.map((sku: string) => ({ id: null, sku, localizacao: null }));
+      }
       if (itensFiltrados.length === 0) return alert('Nenhum item na lista com essa localização');
 
       let atualizados = 0;
@@ -870,10 +877,10 @@ export default function BlingProdutosPage() {
               {atualizandoLinkMl ? 'Atualizando...' : '🔗 Atualizar Link ML'}
             </button>
             <button
-              style={{ ...s.btn, background: '#7c3aed', color: '#fff', opacity: (comparando || !connected || itens.length === 0) ? 0.6 : 1 }}
+              style={{ ...s.btn, background: '#7c3aed', color: '#fff', opacity: (comparando || !connected || (!listaComparacao.trim() && itens.length === 0)) ? 0.6 : 1 }}
               onClick={() => setModalLocalizacao(true)}
-              disabled={comparando || !connected || itens.length === 0}
-              title={itens.length === 0 ? 'Informe SKUs na lista antes de atualizar localização' : 'Atualizar localização em massa'}
+              disabled={comparando || !connected || (!listaComparacao.trim() && itens.length === 0)}
+              title={(!listaComparacao.trim() && itens.length === 0) ? 'Informe SKUs na lista antes de atualizar localização' : 'Atualizar localização em massa'}
             >
               📦 Atualizar Localização
             </button>
