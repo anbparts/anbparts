@@ -624,7 +624,19 @@ function PecaDetalheModal({ open, peca, onClose, onSaved }: any) {
               <div style={{ gridColumn: '1 / -1' }}><Field label="Etiqueta Detran" value={peca.detranEtiqueta} mono /></div>
             </div>
             <div style={{ padding: '0 22px 20px', display: 'flex', justifyContent: 'space-between' }}>
-              <button onClick={() => setEditando(true)} style={{ ...cs.btn, background: 'var(--gray-800)', color: '#fff' }}>✏️ Editar</button>
+              <button onClick={() => {
+            // Re-popula o form com os dados atuais da peça ao entrar em edição
+            setForm({
+              largura: peca.largura != null ? String(peca.largura) : '',
+              altura: peca.altura != null ? String(peca.altura) : '',
+              profundidade: peca.profundidade != null ? String(peca.profundidade) : '',
+              pesoLiquido: peca.pesoLiquido != null ? String(peca.pesoLiquido) : '',
+              localizacao: peca.localizacao || '',
+              detranEtiqueta: peca.detranEtiqueta || '',
+              numeroPeca: peca.numeroPeca || '',
+            });
+            setEditando(true);
+          }} style={{ ...cs.btn, background: 'var(--gray-800)', color: '#fff' }}>✏️ Editar</button>
               <button onClick={onClose} style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink-soft)', borderColor: 'var(--border-strong)' }}>Fechar</button>
             </div>
           </>
