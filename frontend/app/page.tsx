@@ -6,6 +6,9 @@ import { api } from '@/lib/api';
 import { sensitiveMaskStyle, useCompanyValueVisibility } from '@/lib/company-values';
 
 const API = API_BASE;
+const DASHBOARD_REQUEST_TIMEOUT_MS = 15000;
+const DASHBOARD_CONFIG_TIMEOUT_MS = 10000;
+const DASHBOARD_CACHE_KEY = 'anbparts.dashboard-cache.v1';
 
 const s: any = {
   topbar: {
@@ -81,6 +84,27 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
         reject(error);
       });
   });
+}
+
+function readDashboardCache() {
+  if (typeof window === 'undefined') return null;
+
+  try {
+    const raw = window.localStorage.getItem(DASHBOARD_CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeDashboardCache(value: any) {
+  if (typeof window === 'undefined') return;
+
+  try {
+    window.localStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify(value));
+  } catch {
+    // ignore storage errors
+  }
 }
 
 function fmt(value: number) {
@@ -170,6 +194,15 @@ function DashboardVisibilityButton({
 function renderMercadoLivreSaldoCard(saldo: any, hidden: boolean) {
   const fmtMaybe = (value: any) => (typeof value === 'number' && Number.isFinite(value) ? fmt(value) : '-');
 
+  if (!saldo) {
+    return (
+      <>
+        <div style={{ ...s.val, color: 'var(--ink)' }}>Indisponivel</div>
+        <div style={s.sub2}>Nao foi possivel carregar os indicadores do dashboard agora.</div>
+      </>
+    );
+  }
+
   if (!saldo?.connected) {
     return (
       <>
@@ -225,6 +258,7 @@ export default function DashboardPage() {
   const [periodoResumoVendasMes, setPeriodoResumoVendasMes] = useState(() => getCurrentMonthSalesRange());
   const { hidden: ocultarValores, toggleRawHidden } = useCompanyValueVisibility();
   const [loadingDashboard, setLoadingDashboard] = useState(true);
+  const [dashboardNotice, setDashboardNotice] = useState('');
   const [loadingMotos, setLoadingMotos] = useState(true);
   const [viewportMode, setViewportMode] = useState<DashboardViewportMode>('default');
 
@@ -278,10 +312,10 @@ export default function DashboardPage() {
     const loadDashboard = async () => {
       try {
         const [dashboardResult, configProdutosResult] = await Promise.allSettled([
-          withTimeout(api.faturamento.dashboard(), 10000, 'indicadores'),
+          withTimeout(api.faturamento.dashboard(), DASHBOARD_REQUEST_TIMEOUT_MS, 'indicadores'),
           withTimeout(
             fetch(`${API}/bling/config-produtos`).then((response) => (response.ok ? response.json() : { prefixos: [] })),
-            10000,
+            DASHBOARD_CONFIG_TIMEOUT_MS,
             'configuracao de produtos',
           ),
         ]);
@@ -299,11 +333,29 @@ export default function DashboardPage() {
           if (!grouped[motoId].includes(prefixo)) grouped[motoId].push(prefixo);
         }
 
-        setDash(dashboardResult.status === 'fulfilled' ? dashboardResult.value : null);
+        if (dashboardResult.status === 'fulfilled') {
+          setDash(dashboardResult.value);
+          writeDashboardCache(dashboardResult.value);
+          setDashboardNotice('');
+        } else {
+          const cachedDashboard = readDashboardCache();
+          setDash(cachedDashboard);
+          setDashboardNotice(
+            cachedDashboard
+              ? 'Exibindo a ultima leitura valida do dashboard por causa de uma instabilidade pontual.'
+              : 'Os indicadores do dashboard estao indisponiveis no momento. Tente atualizar em alguns instantes.',
+          );
+        }
         setSkuPorMoto(grouped);
       } catch {
         if (cancelled) return;
-        setDash(null);
+        const cachedDashboard = readDashboardCache();
+        setDash(cachedDashboard);
+        setDashboardNotice(
+          cachedDashboard
+            ? 'Exibindo a ultima leitura valida do dashboard por causa de uma instabilidade pontual.'
+            : 'Os indicadores do dashboard estao indisponiveis no momento. Tente atualizar em alguns instantes.',
+        );
         setSkuPorMoto({});
       } finally {
         clearTimeout(failsafe);
@@ -533,6 +585,23 @@ export default function DashboardPage() {
       </div>
 
       <div style={{ padding: sectionPadding }}>
+        {dashboardNotice ? (
+          <div
+            style={{
+              marginBottom: 14,
+              padding: '10px 12px',
+              borderRadius: 10,
+              border: '1px solid var(--border)',
+              background: 'var(--white)',
+              color: 'var(--ink-muted)',
+              fontSize: 12,
+              lineHeight: 1.45,
+            }}
+          >
+            {dashboardNotice}
+          </div>
+        ) : null}
+
         <div style={summaryGridStyle}>
           {cards.map((card) => (
             <div key={card.label} style={getCardStyle(card)}>

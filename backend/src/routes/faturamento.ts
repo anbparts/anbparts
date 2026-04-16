@@ -3,12 +3,38 @@ import { prisma } from '../lib/prisma';
 import { loadMercadoLivreSaldoResumo } from './mercado-livre';
 
 export const faturamentoRouter = Router();
+const DASHBOARD_MERCADO_PAGO_TIMEOUT_MS = 4000;
 
 function getBaseSku(value: string | null | undefined) {
   return String(value || '')
     .trim()
     .toUpperCase()
     .replace(/-\d+$/, '');
+}
+
+function normalizeDespesaCategoria(value: any) {
+  return String(value ?? '').trim().toLowerCase();
+}
+
+async function loadDashboardMercadoPagoSaldo() {
+  try {
+    return await Promise.race([
+      loadMercadoLivreSaldoResumo(),
+      new Promise((resolve) => {
+        setTimeout(() => resolve({
+          connected: true,
+          error: 'Mercado Pago demorando para responder. Os indicadores locais continuam disponiveis.',
+          consultadoEm: new Date().toISOString(),
+        }), DASHBOARD_MERCADO_PAGO_TIMEOUT_MS);
+      }),
+    ]);
+  } catch (error: any) {
+    return {
+      connected: true,
+      error: String(error?.message || 'Nao foi possivel consultar o saldo do Mercado Pago.'),
+      consultadoEm: new Date().toISOString(),
+    };
+  }
 }
 
 // GET /faturamento/geral — receita líquida mensal (Valor Líquido = já descontado taxa+frete)
@@ -76,10 +102,7 @@ faturamentoRouter.get('/dashboard', async (req, res, next) => {
       prisma.peca.findMany({ where: { disponivel: true, emPrejuizo: false }, select: { idPeca: true, precoML: true, valorLiq: true } }),
       prisma.moto.findMany({ select: { precoCompra: true } }),
       prisma.despesa.findMany({ select: { valor: true, categoria: true } }),
-      loadMercadoLivreSaldoResumo().catch((error: any) => ({
-        connected: true,
-        error: String(error?.message || 'Nao foi possivel consultar o saldo do Mercado Pago.'),
-      })),
+      loadDashboardMercadoPagoSaldo(),
       prisma.peca.count({ where: { emPrejuizo: true } }),
     ]);
 
@@ -97,11 +120,11 @@ faturamentoRouter.get('/dashboard', async (req, res, next) => {
 
     // CMV = preços de compra + despesas categoria Moto
     const investido     = motos.reduce((s, m) => s + Number(m.precoCompra), 0);
-    const comprasMoto   = despesas.filter(d => d.categoria.trim() === 'Moto').reduce((s, d) => s + Number(d.valor), 0);
+    const comprasMoto   = despesas.filter(d => normalizeDespesaCategoria(d.categoria) === 'moto').reduce((s, d) => s + Number(d.valor), 0);
     const cmv           = investido + comprasMoto;
 
     // Despesas operacionais (sem categoria Moto)
-    const totalDesp     = despesas.filter(d => d.categoria.trim() !== 'Moto').reduce((s, d) => s + Number(d.valor), 0);
+    const totalDesp     = despesas.filter(d => normalizeDespesaCategoria(d.categoria) !== 'moto').reduce((s, d) => s + Number(d.valor), 0);
 
     res.json({
       totalMotos,
