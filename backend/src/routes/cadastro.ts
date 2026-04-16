@@ -228,9 +228,10 @@ cadastroRouter.post('/:id/finalizar', async (req, res, next) => {
       tipo: 'P',
       formato: 'S',
       situacao: 'I', // I = Inativo na criação (ativar manualmente depois)
-      condicao: cadastro.condicao === 'novo' ? 0 : 1,
+      condicao: cadastro.condicao === 'novo' ? 1 : 0, // 0=Usado, 1=Novo
       descricaoCurta: (cadastro.descricaoPeca || '').replace(/\r\n/g, '<br>').replace(/\n/g, '<br>'),
       marca: toTitleCase(cadastro.moto?.marca || ''),
+      volumes: 1,
       pesoLiquido: Number(cadastro.peso || 0),
       pesoBruto: Number(cadastro.peso || 0),
       // Dimensões ficam dentro do objeto dimensoes
