@@ -539,7 +539,7 @@ export default function BlingProdutosPage() {
           });
 
           // 2. Atualiza no ANB (peças com esse SKU)
-          const sku = item.sku || item.codigo || '';
+          const sku = item.sku || '';
           if (sku) {
             const pecaResp = await fetch(`${API}/pecas?idPeca=${encodeURIComponent(sku)}&per=10`, { credentials: 'include' });
             const pecaData = await pecaResp.json();
