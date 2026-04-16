@@ -126,13 +126,50 @@ function fmtDate(value: string) {
   return `${day}/${month}/${year}`;
 }
 
-function fmtIsoDate(value: string) {
-  if (!value) return '-';
-  const parsed = new Date(value);
+function getSaoPauloDateTimeParts(value?: string | Date) {
+  const parsed = value ? new Date(value) : new Date();
   if (Number.isNaN(parsed.getTime())) {
-    return fmtDate(String(value).split('T')[0]);
+    return {
+      day: '00',
+      month: '00',
+      year: '0000',
+      hour: '00',
+      minute: '00',
+      second: '00',
+    };
   }
-  return parsed.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(parsed);
+
+  const map = Object.fromEntries(
+    parts
+      .filter((part) => part.type !== 'literal')
+      .map((part) => [part.type, part.value]),
+  ) as Record<string, string>;
+
+  return {
+    day: map.day || '00',
+    month: map.month || '00',
+    year: map.year || '0000',
+    hour: map.hour || '00',
+    minute: map.minute || '00',
+    second: map.second || '00',
+  };
+}
+
+function fmtIsoDate(value: string) {
+  const parts = getSaoPauloDateTimeParts(value);
+  if (parts.year === '0000') return '-';
+  return `${parts.day}/${parts.month}/${parts.year}`;
 }
 
 function inputDateString(date: Date) {
@@ -151,266 +188,194 @@ function defaultDateRange() {
   };
 }
 
-function escapeHtml(value: any) {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
+function buildSeparacaoPdfFilename(value?: string) {
+  const parts = getSaoPauloDateTimeParts(value);
+  return `Relatorio_Separacao_ANB_${parts.day}${parts.month}${parts.year}_${parts.hour}${parts.minute}${parts.second}.pdf`;
 }
 
-function escapeHtmlMultiline(value: any) {
-  return escapeHtml(value).replace(/\r?\n/g, '<br />');
-}
-
-function buildSeparacaoPrintHtml(relatorio: SeparacaoRelatorio) {
+async function baixarSeparacaoPdf(relatorio: SeparacaoRelatorio) {
+  const [{ jsPDF }, autoTableModule] = await Promise.all([
+    import('jspdf'),
+    import('jspdf-autotable'),
+  ]);
+  const autoTable = ((autoTableModule as any).default || autoTableModule) as any;
   const dataSeparacao = fmtIsoDate(relatorio.geradoEm || '');
-  const cards = [
+  const filename = buildSeparacaoPdfFilename(relatorio.geradoEm || '');
+  const doc = new jsPDF({
+    orientation: 'landscape',
+    unit: 'mm',
+    format: 'a4',
+    compress: true,
+  });
+
+  doc.setProperties({
+    title: filename.replace(/\.pdf$/i, ''),
+    subject: 'Relatorio de Separacao',
+    author: 'ANB Parts',
+    creator: 'ANB Parts',
+  });
+
+  const marginX = 10;
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const contentWidth = pageWidth - marginX * 2;
+  const metricGap = 3;
+  const metrics = [
     ['Pedidos', String(relatorio.totaisGerais.totalPedidos)],
     ['Itens', String(relatorio.totaisGerais.totalItens)],
     ['Linhas', String(relatorio.totaisGerais.totalLinhas)],
-    ['Etiquetas DETRAN', String(relatorio.totaisGerais.totalEtiquetasDetran)],
-    ['Divergencias loc.', String(relatorio.totaisGerais.totalLocalizacoesDivergentes)],
-  ]
-    .map(([label, value]) => `
-      <div class="metric-card">
-        <div class="metric-label">${escapeHtml(label)}</div>
-        <div class="metric-value">${escapeHtml(value)}</div>
-      </div>
-    `)
-    .join('');
+    ['Etiquetas Detran', String(relatorio.totaisGerais.totalEtiquetasDetran)],
+    ['Locais Divergentes', String(relatorio.totaisGerais.totalLocalizacoesDivergentes)],
+  ];
 
-  const pedidosHtml = relatorio.pedidos
-    .map((pedido) => {
-      const observacaoInterna = String(pedido.observacoesInternas || '').trim();
-      const observacaoInternaHtml = observacaoInterna
-        ? `
-          <div class="pedido-note">
-            <div class="pedido-note-label">Obs. interna</div>
-            <div class="pedido-note-value">${escapeHtmlMultiline(observacaoInterna)}</div>
-          </div>
-        `
-        : '';
-      const rows = pedido.itens
-        .map((item) => `
-          <tr>
-            <td>${escapeHtml(pedido.nomeCliente || '-')}</td>
-            <td>${escapeHtml(item.skuSistema || '-')}</td>
-            <td>${escapeHtml(item.descricao || '-')}</td>
-            <td class="center col-qtd">${escapeHtml(item.quantidade)}</td>
-            <td>${escapeHtml(item.localizacaoAnb || '-')}</td>
-            <td>${escapeHtml(item.detranRelatorio || '-')}</td>
-          </tr>
-        `)
-        .join('');
+  let y = 12;
 
-      return `
-        <section class="pedido">
-          <div class="pedido-header">
-            <div>
-              <div class="pedido-title">Pedido #${escapeHtml(pedido.pedidoNum)}</div>
-              <div class="pedido-meta">Data da venda: ${escapeHtml(fmtDate(pedido.dataVenda))}</div>
-              <div class="pedido-meta">Transportador: ${escapeHtml(pedido.transportador || 'Nao informado')}</div>
-            </div>
-            <div class="pedido-badge">${escapeHtml(`${pedido.quantidadeItens} item(ns)`)}</div>
-          </div>
-          ${observacaoInternaHtml}
-          <table>
-            <thead>
-              <tr>
-                <th class="col-nome">Nome</th>
-                <th class="col-sku">SKU</th>
-                <th>Descricao</th>
-                <th class="col-qtd">Qtd</th>
-                <th class="col-localizacao">Localizacao</th>
-                <th>Etiqueta DETRAN</th>
-              </tr>
-            </thead>
-            <tbody>${rows}</tbody>
-          </table>
-        </section>
-      `;
-    })
-    .join('');
+  const drawHeader = () => {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(18);
+    doc.setTextColor(15, 23, 42);
+    doc.text('Relatorio de Separacao', marginX, y);
 
-  return `<!DOCTYPE html>
-<html lang="pt-BR">
-  <head>
-    <meta charset="UTF-8" />
-    <title>Relatorio de Separacao - ${escapeHtml(dataSeparacao)}</title>
-    <style>
-      @page { size: A4 landscape; margin: 10mm; }
-      * { box-sizing: border-box; }
-      html, body {
-        width: 100%;
-      }
-      body {
-        margin: 0;
-        font-family: Inter, Arial, sans-serif;
-        color: #1e293b;
-        background: #ffffff;
-      }
-      @media print {
-        html, body {
-          width: 297mm;
-          min-height: 210mm;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.setTextColor(71, 85, 105);
+    doc.text(`Data da separacao: ${dataSeparacao}`, pageWidth - marginX, y, { align: 'right' });
+
+    y += 4;
+    doc.setDrawColor(30, 86, 160);
+    doc.setLineWidth(0.5);
+    doc.line(marginX, y, pageWidth - marginX, y);
+    y += 5;
+  };
+
+  const drawMetrics = () => {
+    const cardHeight = 14;
+    const cardWidth = (contentWidth - metricGap * (metrics.length - 1)) / metrics.length;
+
+    metrics.forEach(([label, value], index) => {
+      const x = marginX + index * (cardWidth + metricGap);
+      doc.setDrawColor(191, 219, 254);
+      doc.setFillColor(248, 251, 255);
+      doc.roundedRect(x, y, cardWidth, cardHeight, 2, 2, 'FD');
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7);
+      doc.setTextColor(100, 116, 139);
+      doc.text(String(label).toUpperCase(), x + 3, y + 4.5);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(14);
+      doc.setTextColor(15, 23, 42);
+      doc.text(String(value), x + 3, y + 10.5);
+    });
+
+    y += cardHeight + 6;
+  };
+
+  const ensureSpace = (requiredHeight: number) => {
+    if (y + requiredHeight <= pageHeight - 10) return;
+    doc.addPage('a4', 'landscape');
+    y = 12;
+    drawHeader();
+  };
+
+  drawHeader();
+  drawMetrics();
+
+  relatorio.pedidos.forEach((pedido, pedidoIndex) => {
+    ensureSpace(26);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.setTextColor(15, 23, 42);
+    doc.text(`Pedido #${pedido.pedidoNum}`, marginX, y);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(71, 85, 105);
+    doc.text(`${pedido.quantidadeItens} item(ns)`, pageWidth - marginX, y, { align: 'right' });
+    y += 4.5;
+
+    doc.text(`Data da venda: ${fmtDate(pedido.dataVenda)}`, marginX, y);
+    y += 4;
+    doc.text(`Transportador: ${pedido.transportador || 'Nao informado'}`, marginX, y);
+    y += 5;
+
+    const observacaoInterna = String(pedido.observacoesInternas || '').trim();
+    if (observacaoInterna) {
+      const noteLines = doc.splitTextToSize(observacaoInterna, contentWidth - 8);
+      const noteHeight = Math.max(10, noteLines.length * 4 + 6);
+      ensureSpace(noteHeight + 6);
+      doc.setDrawColor(191, 219, 254);
+      doc.setFillColor(248, 251, 255);
+      doc.roundedRect(marginX, y, contentWidth, noteHeight, 2, 2, 'FD');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7);
+      doc.setTextColor(100, 116, 139);
+      doc.text('OBS. INTERNA', marginX + 3, y + 4.5);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8.5);
+      doc.setTextColor(15, 23, 42);
+      doc.text(noteLines, marginX + 3, y + 8.5);
+      y += noteHeight + 4;
+    }
+
+    autoTable(doc, {
+      startY: y,
+      margin: { left: marginX, right: marginX },
+      head: [['NOME', 'SKU', 'DESCRICAO', 'QTD', 'LOCALIZACAO', 'ETIQUETA DETRAN']],
+      body: pedido.itens.map((item) => [
+        pedido.nomeCliente || '-',
+        item.skuSistema || '-',
+        item.descricao || '-',
+        String(item.quantidade || ''),
+        item.localizacaoAnb || '-',
+        item.detranRelatorio || '-',
+      ]),
+      theme: 'grid',
+      styles: {
+        font: 'helvetica',
+        fontSize: 8,
+        cellPadding: 2,
+        overflow: 'linebreak',
+        valign: 'top',
+        lineColor: [226, 232, 240],
+        lineWidth: 0.2,
+        textColor: [30, 41, 59],
+      },
+      headStyles: {
+        fillColor: [239, 246, 255],
+        textColor: [51, 65, 85],
+        fontStyle: 'bold',
+        fontSize: 7,
+      },
+      columnStyles: {
+        0: { cellWidth: 48 },
+        1: { cellWidth: 32 },
+        2: { cellWidth: 96 },
+        3: { cellWidth: 12, halign: 'center' },
+        4: { cellWidth: 44 },
+        5: { cellWidth: 45 },
+      },
+      didParseCell: (data: any) => {
+        if (data.section === 'body' && data.column.index === 5) {
+          const value = String(data.cell.raw || '').trim();
+          if (value === 'ENVIAR FOTO DA ETIQUETA DETRAN') {
+            data.cell.styles.textColor = [217, 119, 6];
+            data.cell.styles.fontStyle = 'bold';
+          }
         }
-      }
-      .page {
-        width: 100%;
-      }
-      .header {
-        display: flex;
-        justify-content: space-between;
-        gap: 16px;
-        align-items: flex-start;
-        margin-bottom: 18px;
-        padding-bottom: 12px;
-        border-bottom: 2px solid #1e56a0;
-      }
-      .title {
-        font-size: 24px;
-        font-weight: 700;
-        color: #0f172a;
-        margin-bottom: 4px;
-      }
-      .subtitle {
-        font-size: 12px;
-        color: #475569;
-        line-height: 1.5;
-      }
-      .metrics {
-        display: grid;
-        grid-template-columns: repeat(5, minmax(110px, 1fr));
-        gap: 10px;
-        margin-bottom: 18px;
-      }
-      .metric-card {
-        border: 1px solid #dbeafe;
-        background: #f8fbff;
-        border-radius: 10px;
-        padding: 10px 12px;
-      }
-      .metric-label {
-        font-size: 10px;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        color: #64748b;
-        margin-bottom: 6px;
-      }
-      .metric-value {
-        font-size: 18px;
-        font-weight: 700;
-        color: #0f172a;
-      }
-      .pedido {
-        margin-bottom: 16px;
-        page-break-inside: avoid;
-      }
-      .pedido-header {
-        display: flex;
-        justify-content: space-between;
-        gap: 12px;
-        align-items: flex-start;
-        margin-bottom: 10px;
-      }
-      .pedido-title {
-        font-size: 16px;
-        font-weight: 700;
-        color: #0f172a;
-      }
-      .pedido-meta {
-        margin-top: 3px;
-        font-size: 11px;
-        color: #475569;
-      }
-      .pedido-badge {
-        white-space: nowrap;
-        border: 1px solid #cbd5e1;
-        border-radius: 999px;
-        padding: 6px 10px;
-        font-size: 11px;
-        font-weight: 600;
-        color: #1e293b;
-      }
-      .pedido-note {
-        margin-bottom: 10px;
-        border: 1px solid #dbeafe;
-        background: #f8fbff;
-        border-radius: 8px;
-        padding: 8px 10px;
-      }
-      .pedido-note-label {
-        font-size: 10px;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        color: #64748b;
-        margin-bottom: 4px;
-      }
-      .pedido-note-value {
-        font-size: 11px;
-        color: #0f172a;
-        line-height: 1.5;
-        white-space: normal;
-      }
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        table-layout: fixed;
-      }
-      th, td {
-        border: 1px solid #e2e8f0;
-        padding: 7px 8px;
-        vertical-align: top;
-        word-break: break-word;
-      }
-      th {
-        background: #eff6ff;
-        color: #334155;
-        font-size: 10px;
-        text-transform: uppercase;
-        letter-spacing: 0.07em;
-        text-align: left;
-      }
-      td {
-        font-size: 11px;
-      }
-      .center {
-        text-align: center;
-      }
-      .col-nome {
-        width: 18%;
-      }
-      .col-sku {
-        width: 14%;
-      }
-      .col-qtd {
-        width: 6%;
-      }
-      .col-localizacao {
-        width: 18%;
-      }
-    </style>
-  </head>
-  <body>
-    <div class="page">
-      <div class="header">
-        <div>
-          <div class="title">Relatorio de Separacao</div>
-        </div>
-        <div class="subtitle">Data da separacao: ${escapeHtml(dataSeparacao)}</div>
-      </div>
-      <div class="metrics">${cards}</div>
-      ${pedidosHtml}
-    </div>
-    <script>
-      window.addEventListener('load', function () {
-        setTimeout(function () { window.print(); }, 200);
-      });
-    </script>
-  </body>
-</html>`;
+      },
+    });
+
+    y = ((doc as any).lastAutoTable?.finalY || y) + 6;
+
+    if (pedidoIndex < relatorio.pedidos.length - 1) {
+      ensureSpace(10);
+    }
+  });
+
+  doc.save(filename);
 }
 
 export default function VendasBlingPage() {
@@ -418,6 +383,7 @@ export default function VendasBlingPage() {
   const [dataFim, setDataFim] = useState(() => defaultDateRange().dataFim);
   const [buscando, setBuscando] = useState(false);
   const [carregandoSeparacao, setCarregandoSeparacao] = useState(false);
+  const [gerandoPdf, setGerandoPdf] = useState(false);
   const [itens, setItens] = useState<Item[]>([]);
   const [buscou, setBuscou] = useState(false);
   const [buscouSeparacao, setBuscouSeparacao] = useState(false);
@@ -497,18 +463,15 @@ export default function VendasBlingPage() {
     setCarregandoSeparacao(false);
   }
 
-  function gerarPdfSeparacao() {
+  async function gerarPdfSeparacao() {
     if (!relatorioSeparacao || relatorioSeparacao.pedidos.length === 0) return;
-
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      alert('Nao foi possivel abrir a janela de impressao do PDF.');
-      return;
+    setGerandoPdf(true);
+    try {
+      await baixarSeparacaoPdf(relatorioSeparacao);
+    } catch (e: any) {
+      alert(e?.message || 'Nao foi possivel gerar o PDF agora.');
     }
-
-    printWindow.document.open();
-    printWindow.document.write(buildSeparacaoPrintHtml(relatorioSeparacao));
-    printWindow.document.close();
+    setGerandoPdf(false);
   }
 
   function updateItem(idx: number, field: string, value: any) {
@@ -652,10 +615,10 @@ export default function VendasBlingPage() {
               <button
                 type="button"
                 onClick={gerarPdfSeparacao}
-                disabled={relatorioSeparacao.pedidos.length === 0}
-                style={{ ...s.btn, background: '#0f172a', color: '#fff', opacity: relatorioSeparacao.pedidos.length === 0 ? 0.5 : 1 }}
+                disabled={relatorioSeparacao.pedidos.length === 0 || gerandoPdf}
+                style={{ ...s.btn, background: '#0f172a', color: '#fff', opacity: relatorioSeparacao.pedidos.length === 0 || gerandoPdf ? 0.5 : 1 }}
               >
-                Gerar PDF
+                {gerandoPdf ? 'Gerando PDF...' : 'Gerar PDF'}
               </button>
             </div>
 
