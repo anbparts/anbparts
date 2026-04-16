@@ -55,6 +55,7 @@ const AUDITORIA_DEFAULT_PAUSA_MS = 400;
 const AUDITORIA_EMAIL_SUBJECT = 'ALERTA ANB Parts - Divergência de Produtos / Anúncios - Verifique';
 const AUDITORIA_TIMEZONE = 'America/Sao_Paulo';
 const AUDITORIA_SCHEDULER_INTERVAL_MS = 60 * 1000;
+const STATUS_IDS_EM_ABERTO = new Set([6]);
 const STATUS_ID_CONCLUIDO = 9;
 const STATUS_IDS_CANCELADO = new Set([12]);
 const AUDITORIA_ESCOPOS = new Set(['full', 'com_estoque', 'com_estoque_mais_vendidos_ano']);
@@ -444,29 +445,41 @@ function classifyOrderSituation(detail: any) {
     || extractSituationText(detail?.situacao)
     || extractSituationText(detail?.situacaoPedido)
     || extractSituationText(detail?.situacoes);
-  const normalized = normalizeText(rawText);
   const ids = extractSituationIds(source);
+  const normalized = normalizeText(rawText);
+  const hasNumericOnlyLabel = /^\d+(?:\s+\d+)*$/.test(String(rawText || '').trim());
 
   const isCancelado = ids.some((id) => STATUS_IDS_CANCELADO.has(id))
     || /cancel|anulad|reembols|estorn/.test(normalized);
   const isConcluido = ids.includes(STATUS_ID_CONCLUIDO)
     || /atendid|concluid|finaliz|faturad|entregue/.test(normalized);
+  const isAberto = ids.some((id) => STATUS_IDS_EM_ABERTO.has(id))
+    || /\babert/.test(normalized);
+
+  let label = String(rawText || '').trim();
+  if (!label || hasNumericOnlyLabel) {
+    if (isCancelado) label = 'Cancelado';
+    else if (isConcluido) label = 'Concluido';
+    else if (isAberto) label = 'Em Aberto';
+  }
 
   return {
-    label: rawText || 'Sem situacao',
+    label: label || 'Sem situacao',
     isCancelado,
     isConcluido,
+    ids,
   };
 }
 
-function isSituacaoEmAberto(situacao: { label: string; isCancelado: boolean; isConcluido: boolean } | null | undefined) {
+function isSituacaoEmAberto(situacao: { label: string; isCancelado: boolean; isConcluido: boolean; ids?: number[] } | null | undefined) {
   if (!situacao || situacao.isCancelado || situacao.isConcluido) return false;
+  if (Array.isArray(situacao.ids) && situacao.ids.some((id) => STATUS_IDS_EM_ABERTO.has(id))) return true;
   return /\babert/.test(normalizeText(String(situacao.label || '')));
 }
 
 function resolveSituacaoPedidoAberto(
-  situacaoLista: { label: string; isCancelado: boolean; isConcluido: boolean } | null | undefined,
-  situacaoDetalhe: { label: string; isCancelado: boolean; isConcluido: boolean } | null | undefined,
+  situacaoLista: { label: string; isCancelado: boolean; isConcluido: boolean; ids?: number[] } | null | undefined,
+  situacaoDetalhe: { label: string; isCancelado: boolean; isConcluido: boolean; ids?: number[] } | null | undefined,
 ) {
   if (situacaoDetalhe?.isCancelado || situacaoDetalhe?.isConcluido) return situacaoDetalhe;
   if (isSituacaoEmAberto(situacaoDetalhe)) return situacaoDetalhe;
