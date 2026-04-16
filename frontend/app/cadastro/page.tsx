@@ -333,10 +333,14 @@ Deseja forçar a exclusão mesmo assim?`);
                             : <button onClick={() => openEditar(item)} style={{ ...s.badge('var(--green)', '#f0fdf4', '#86efac'), cursor: 'pointer' }}>✓ OK</button>}
                         </td>
                         <td style={s.td}>
-                          <button onClick={() => abrirFinalizar(item)}
-                            style={{ ...s.badge(cadastOk ? '#2563eb' : '#dc2626', cadastOk ? '#eff6ff' : '#fef2f2', cadastOk ? '#bfdbfe' : '#fecaca'), cursor: 'pointer' }}>
-                            {cadastOk ? '✓ OK' : 'Pendente'}
-                          </button>
+                          {cadastOk ? (
+                            <span style={s.badge('#2563eb', '#eff6ff', '#bfdbfe')}>✓ OK</span>
+                          ) : (
+                            <button onClick={() => abrirFinalizar(item)}
+                              style={{ ...s.badge('#dc2626', '#fef2f2', '#fecaca'), cursor: 'pointer' }}>
+                              Pendente
+                            </button>
+                          )}
                         </td>
                         <td style={s.td}>
                           {!cadastOk && (
