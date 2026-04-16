@@ -562,25 +562,53 @@ function PecaDetalheModal({ open, peca, onClose, onSaved }: any) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(atualizacaoPeca),
       });
-      // Atualiza no Bling via pré-cadastro (busca pelo SKU base)
+      // SKU base (remove sufixo -2, -3, etc)
       const baseSku = peca.idPeca.replace(/-\d+$/, '');
-      const cadastroResp = await fetch(`${API}/cadastro?search=${encodeURIComponent(baseSku)}&per=1`, { credentials: 'include' });
-      const cadastroData = await cadastroResp.json();
-      const cadastro = cadastroData?.data?.[0];
-      if (cadastro?.blingProdutoId) {
-        await fetch(`${API}/cadastro/${cadastro.id}`, {
+      const camposAlterados = {
+        largura: form.largura ? Number(form.largura) : null,
+        altura: form.altura ? Number(form.altura) : null,
+        profundidade: form.profundidade ? Number(form.profundidade) : null,
+        pesoLiquido: form.pesoLiquido ? Number(form.pesoLiquido) : null,
+        localizacao: form.localizacao || null,
+        detranEtiqueta: form.detranEtiqueta || null,
+        numeroPeca: form.numeroPeca || null,
+      };
+
+      // Atualiza no Bling via sync-bling-peca (resolve ID automaticamente pelo SKU base)
+      const blingResp = await fetch(`${API}/cadastro/sync-bling-peca`, {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          blingProdutoId: peca.blingProdutoId || null,
+          sku: baseSku,
+          ...camposAlterados,
+        }),
+      });
+      const blingData = await blingResp.json();
+      if (!blingData.ok) console.warn('[sync-bling] Aviso:', blingData.error);
+
+      // Atualiza TODAS as variações do mesmo SKU base no ANB
+      const pecasResp = await fetch(`${API}/pecas?search=${encodeURIComponent(baseSku)}&per=50`, { credentials: 'include' });
+      const pecasData = await pecasResp.json();
+      const todasVariacoes: any[] = (pecasData?.data || []).filter((p: any) =>
+        p.idPeca === baseSku || p.idPeca.startsWith(`${baseSku}-`)
+      );
+      for (const variacao of todasVariacoes) {
+        await fetch(`${API}/pecas/${variacao.id}`, {
           method: 'PUT', credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            largura: form.largura ? Number(form.largura) : null,
-            altura: form.altura ? Number(form.altura) : null,
-            profundidade: form.profundidade ? Number(form.profundidade) : null,
-            peso: form.pesoLiquido ? Number(form.pesoLiquido) : null,
-            localizacao: form.localizacao || null,
-            detranEtiqueta: form.detranEtiqueta || null,
+            motoId: variacao.motoId,
+            descricao: variacao.descricao,
+            precoML: Number(variacao.precoML),
+            valorFrete: Number(variacao.valorFrete),
+            valorTaxas: Number(variacao.valorTaxas),
+            disponivel: variacao.disponivel,
+            ...camposAlterados,
           }),
         });
       }
+
       setEditando(false);
       onSaved?.();
       onClose();

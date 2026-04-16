@@ -372,10 +372,32 @@ cadastroRouter.post('/:id/finalizar', async (req, res, next) => {
 });
 
 // POST /cadastro/sync-bling-peca — atualiza campos físicos de uma peça diretamente no Bling
+// Aceita blingProdutoId direto OU sku para buscar automaticamente
 cadastroRouter.post('/sync-bling-peca', async (req, res, next) => {
   try {
-    const { blingProdutoId, largura, altura, profundidade, pesoLiquido, localizacao, detranEtiqueta, numeroPeca } = req.body;
-    if (!blingProdutoId) return res.status(400).json({ error: 'blingProdutoId obrigatório' });
+    let { blingProdutoId, sku, largura, altura, profundidade, pesoLiquido, localizacao, detranEtiqueta, numeroPeca } = req.body;
+
+    // Se veio SKU mas não blingProdutoId, resolve pelo CadastroPeca
+    if (!blingProdutoId && sku) {
+      const baseSku = String(sku).replace(/-\d+$/, '').toUpperCase().trim();
+      const cadastro = await prisma.cadastroPeca.findFirst({
+        where: { idPeca: { equals: baseSku, mode: 'insensitive' } },
+        select: { blingProdutoId: true },
+      });
+      if (cadastro?.blingProdutoId) {
+        blingProdutoId = cadastro.blingProdutoId;
+      } else {
+        // Tenta buscar direto no Bling pelo código/SKU
+        const blingSearch = await blingReq(`/produtos?criterio=2&tipo=P&codigo=${encodeURIComponent(baseSku)}&pagina=1&limite=5`);
+        const blingItems = blingSearch?.data || [];
+        const found = blingItems.find((p: any) => String(p.codigo || '').toUpperCase() === baseSku);
+        if (found) blingProdutoId = String(found.id);
+      }
+    }
+
+    if (!blingProdutoId) {
+      return res.status(404).json({ ok: false, error: `Produto não encontrado no Bling para SKU: ${sku}` });
+    }
 
     // Busca produto atual no Bling para manter campos obrigatórios
     const blingAtual = await blingReq(`/produtos/${blingProdutoId}`);

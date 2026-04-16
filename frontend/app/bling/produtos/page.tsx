@@ -519,41 +519,43 @@ export default function BlingProdutosPage() {
     if (!locPara.trim()) return alert('Informe a Localização Para');
     setAtualizandoLoc(true);
     try {
-      // Pega SKUs atualmente na lista (filtrados)
-      const skus = itens.map((p: any) => String(p.codigo || '')).filter(Boolean);
-      if (skus.length === 0) return alert('Nenhum SKU na lista atual');
+      // Filtra itens da lista que correspondem ao "De" (ou todos se vazio)
+      const itensFiltrados = itens.filter((item: any) => {
+        if (!locDe) return true;
+        return (item.localizacao || '').toUpperCase() === locDe.toUpperCase();
+      });
+      if (itensFiltrados.length === 0) return alert('Nenhum item na lista com essa localização');
 
       let atualizados = 0;
-      for (const sku of skus) {
+      for (const item of itensFiltrados) {
         try {
-          // Atualiza no ANB
-          const pecaResp = await fetch(`${API}/pecas?idPeca=${encodeURIComponent(sku)}&per=5`, { credentials: 'include' });
-          const pecaData = await pecaResp.json();
-          const pecas = pecaData?.data || pecaData || [];
-          for (const p of Array.isArray(pecas) ? pecas : []) {
-            if (!locDe || (p.localizacao || '').toUpperCase() === locDe.toUpperCase()) {
+          const blingProdutoId = item.id; // id do item = ID do produto no Bling
+
+          // 1. Atualiza no Bling via sync-bling-peca (lê Bling completo + sobrepõe só localização)
+          await fetch(`${API}/cadastro/sync-bling-peca`, {
+            method: 'POST', credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ blingProdutoId, localizacao: locPara.trim() }),
+          });
+
+          // 2. Atualiza no ANB (peças com esse SKU)
+          const sku = item.sku || item.codigo || '';
+          if (sku) {
+            const pecaResp = await fetch(`${API}/pecas?idPeca=${encodeURIComponent(sku)}&per=10`, { credentials: 'include' });
+            const pecaData = await pecaResp.json();
+            const pecas: any[] = pecaData?.data || [];
+            for (const p of pecas) {
               await fetch(`${API}/pecas/${p.id}`, {
                 method: 'PUT', credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ localizacao: locPara.trim() }),
               });
-              atualizados++;
             }
           }
-          // Atualiza no Bling via cadastro
-          const cadResp = await fetch(`${API}/cadastro?search=${encodeURIComponent(sku)}&per=1`, { credentials: 'include' });
-          const cadData = await cadResp.json();
-          const cad = cadData?.data?.[0];
-          if (cad?.id && (!locDe || (cad.localizacao || '').toUpperCase() === locDe.toUpperCase())) {
-            await fetch(`${API}/cadastro/${cad.id}`, {
-              method: 'PUT', credentials: 'include',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ localizacao: locPara.trim() }),
-            });
-          }
-        } catch { /* continua */ }
+          atualizados++;
+        } catch { /* continua para o próximo */ }
       }
-      alert(`✓ ${atualizados} peça(s) atualizadas para "${locPara.trim()}"`);
+      alert(`✓ ${atualizados} produto(s) atualizados para "${locPara.trim()}"`);
       setModalLocalizacao(false); setLocDe(''); setLocPara('');
     } catch (e: any) { alert('Erro: ' + e.message); }
     setAtualizandoLoc(false);
