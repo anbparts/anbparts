@@ -88,6 +88,7 @@ model CadastroPeca {
   categoriaMLNome  String?
   fotoCapa         String?  // URL ou base64 após upload
   status           String   @default("pre_cadastro") // pre_cadastro | cadastrado
+  urlRef           String?  // URL de referência do produto
   blingProdutoId   String?  // ID do produto criado no Bling
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt

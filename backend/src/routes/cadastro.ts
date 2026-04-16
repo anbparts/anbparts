@@ -149,6 +149,7 @@ cadastroRouter.post('/', async (req, res, next) => {
         estoque: Number(estoque) || 1,
         categoriaMLId: categoriaMLId ? String(categoriaMLId) : null,
         categoriaMLNome: categoriaMLNome ? String(categoriaMLNome) : null,
+        urlRef: req.body.urlRef ? String(req.body.urlRef).trim() : null,
         status: 'pre_cadastro',
       },
       include: { moto: { select: { id: true, marca: true, modelo: true, ano: true } } },
@@ -184,6 +185,7 @@ cadastroRouter.put('/:id', async (req, res, next) => {
     if (estoque !== undefined) data.estoque = Number(estoque);
     if (categoriaMLId !== undefined) data.categoriaMLId = categoriaMLId || null;
     if (categoriaMLNome !== undefined) data.categoriaMLNome = categoriaMLNome || null;
+    if (req.body.urlRef !== undefined) data.urlRef = req.body.urlRef ? String(req.body.urlRef).trim() : null;
 
     const record = await prisma.cadastroPeca.update({
       where: { id },
@@ -225,7 +227,7 @@ cadastroRouter.post('/:id/finalizar', async (req, res, next) => {
       preco: Number(cadastro.precoVenda),
       tipo: 'P',
       formato: 'S',
-      situacao: 'A',
+      situacao: 'I', // I = Inativo na criação (ativar manualmente depois)
       condicao: cadastro.condicao === 'novo' ? 0 : 1,
       descricaoCurta: (cadastro.descricaoPeca || '').replace(/\r\n/g, '<br>').replace(/\n/g, '<br>'),
       marca: toTitleCase(cadastro.moto?.marca || ''),
@@ -245,7 +247,20 @@ cadastroRouter.post('/:id/finalizar', async (req, res, next) => {
         localizacao: cadastro.localizacao || '',
       },
     };
-    // Campos customizados NÃO vão no payload principal — usamos API específica depois
+    // Categoria fixa e NCM obrigatório
+    payload.categoria = { id: 10703871 };
+    payload.tributacao = { ncm: '87141000' }; // NCM 8714.10.00
+
+    // Monta todos os campos customizados
+    if (cadastro.moto?.marca) {
+      camposCustomizados.push({ idCampoCustomizado: 2821430, valor: toTitleCase(cadastro.moto.marca) });
+    }
+    if ((cadastro as any).urlRef) {
+      camposCustomizados.push({ idCampoCustomizado: 3066410, valor: String((cadastro as any).urlRef) });
+    }
+    if (camposCustomizados.length) {
+      payload.camposCustomizados = camposCustomizados;
+    }
 
     // Cria ou atualiza produto no Bling
     console.log('[cadastro] Payload Bling:', JSON.stringify(payload, null, 2));

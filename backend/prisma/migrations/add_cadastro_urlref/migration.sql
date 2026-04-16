@@ -1,0 +1,1 @@
+ALTER TABLE "CadastroPeca" ADD COLUMN IF NOT EXISTS "urlRef" TEXT;

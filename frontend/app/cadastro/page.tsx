@@ -36,7 +36,7 @@ const EMPTY_FORM = {
   motoId: '', idPeca: '', descricao: '', descricaoPeca: '', precoVenda: '',
   condicao: 'usado', peso: '', largura: '', altura: '', profundidade: '',
   numeroPeca: '', detranEtiqueta: '', localizacao: '', estoque: '1',
-  categoriaMLId: '', categoriaMLNome: '',
+  categoriaMLId: '', categoriaMLNome: '', urlRef: '',
 };
 
 export default function CadastroPage() {
@@ -113,6 +113,7 @@ export default function CadastroPage() {
       estoque: String(item.estoque),
       categoriaMLId: item.categoriaMLId || '',
       categoriaMLNome: item.categoriaMLNome || '',
+      urlRef: (item as any).urlRef || '',
     });
     setCategorias([]);
     setModal(true);
@@ -190,6 +191,7 @@ export default function CadastroPage() {
         estoque: Number(form.estoque) || 1,
         categoriaMLId: form.categoriaMLId || null,
         categoriaMLNome: form.categoriaMLNome || null,
+        urlRef: form.urlRef || null,
       };
 
       if (editItem) {
@@ -502,6 +504,12 @@ export default function CadastroPage() {
               <div>
                 <label style={s.label}>Número da Peça</label>
                 <input style={s.input} value={form.numeroPeca} onChange={(e) => setForm((p: any) => ({ ...p, numeroPeca: e.target.value }))} placeholder="Código do fabricante" />
+              </div>
+
+              {/* URL de Referência */}
+              <div>
+                <label style={s.label}>URL de Referência</label>
+                <input style={s.input} value={form.urlRef || ''} onChange={(e) => setForm((p: any) => ({ ...p, urlRef: e.target.value }))} placeholder="Ex: www.site.com.br/produto" />
               </div>
 
               {/* Descrição da Peça (corpo do anúncio) */}
