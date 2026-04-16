@@ -662,6 +662,10 @@ function PecaDetalheModal({ open, peca, onClose, onSaved }: any) {
                 <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginBottom: 4 }}>Etiqueta Detran</div>
                 <input style={inp} value={form.detranEtiqueta} onChange={(e) => setForm((p: any) => ({ ...p, detranEtiqueta: e.target.value }))} />
               </div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginBottom: 4 }}>Número da Peça</div>
+                <input style={inp} value={form.numeroPeca} onChange={(e) => setForm((p: any) => ({ ...p, numeroPeca: e.target.value }))} placeholder="Código do fabricante" />
+              </div>
               <div style={{ gridColumn: '1 / -1', fontSize: 11, color: '#2563eb', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 6, padding: '6px 10px' }}>
                 💡 Ao salvar, os dados serão atualizados no ANB e enviados ao Bling automaticamente.
               </div>
