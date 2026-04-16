@@ -34,7 +34,7 @@ async function buildBlingPayload(cadastro: any, isUpdate: boolean) {
     tipo: 'P',
     formato: 'S',
     situacao: isUpdate ? 'A' : 'I',
-    condicao: cadastro.condicao === 'novo' ? 1 : 0,
+    condicao: cadastro.condicao === 'novo' ? 1 : 2, // 1=Novo, 2=Usado (0=Não especificado)
     descricaoCurta: (cadastro.descricaoPeca || '').replace(/\r\n/g, '<br>').replace(/\n/g, '<br>'),
     marca: toTitleCase(cadastro.moto?.marca || ''),
     volumes: 1,
@@ -378,7 +378,15 @@ cadastroRouter.delete('/:id', async (req, res, next) => {
     const cadastro = await prisma.cadastroPeca.findUnique({ where: { id } });
     if (!cadastro) return res.status(404).json({ error: 'Não encontrado' });
     if (cadastro.blingProdutoId) {
-      return res.status(400).json({ error: 'Este pré-cadastro já foi replicado com sucesso ao Bling e não é permitida a exclusão.' });
+      // Verifica se o produto ainda existe no Bling
+      try {
+        const blingCheck = await blingReq(`/produtos/${cadastro.blingProdutoId}`);
+        if (blingCheck?.data?.id) {
+          return res.status(400).json({ error: 'Este pré-cadastro já foi replicado ao Bling e o produto ainda existe lá. Delete o produto no Bling primeiro.' });
+        }
+      } catch {
+        // Produto não encontrado no Bling (404) — pode excluir no ANB
+      }
     }
     await prisma.cadastroPeca.delete({ where: { id } });
     res.json({ ok: true });
