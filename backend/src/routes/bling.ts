@@ -2849,6 +2849,7 @@ async function compareProdutosBlingCodes(
             }));
           }
         } else if (ns && !ns.erro) {
+          const temEstoqueNuvemshop = (ns.estoqueNuvemshop || 0) > 0;
           // Caso 2: tem estoque mas anuncio está pausado/inativo
           if (temEstoque && !ns.publicado) {
             divergenciasSku.push(buildDivergenciaPayload(codigo, local, qtdBling, descricaoBling, statusMercadoLivre, {
@@ -2859,7 +2860,7 @@ async function compareProdutosBlingCodes(
           }
           // Caso 3: sem estoque mas anuncio está ativo COM estoque na Nuvemshop
           // (se Nuvemshop também está zerado, o produto aparece como "Esgotado" — sem divergência)
-          if (!temEstoque && !emPrejuizo && ns.publicado && (ns.estoqueNuvemshop || 0) > 0) {
+          if (!temEstoque && !emPrejuizo && ns.publicado && temEstoqueNuvemshop) {
             divergenciasSku.push(buildDivergenciaPayload(codigo, local, qtdBling, descricaoBling, statusMercadoLivre, {
               tipo: 'nuvemshop_anuncio_ativo_sem_estoque',
               titulo: 'Anuncio Nuvemshop ativo sem estoque',
@@ -2867,11 +2868,11 @@ async function compareProdutosBlingCodes(
             }));
           }
           // Caso 4: em prejuízo e anuncio ainda ativo
-          if (emPrejuizo && ns.publicado) {
+          if (emPrejuizo && ns.publicado && temEstoqueNuvemshop) {
             divergenciasSku.push(buildDivergenciaPayload(codigo, local, qtdBling, descricaoBling, statusMercadoLivre, {
               tipo: 'nuvemshop_anuncio_ativo_prejuizo',
               titulo: 'Anuncio Nuvemshop ativo com peca em prejuizo',
-              detalhe: 'Esse SKU possui pecas em prejuizo mas o anuncio na Nuvemshop ainda esta ativo.',
+              detalhe: 'Esse SKU possui pecas em prejuizo e a Nuvemshop ainda mostra estoque disponivel no anuncio.',
             }));
           }
         }
