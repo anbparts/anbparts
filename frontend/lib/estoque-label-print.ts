@@ -13,6 +13,28 @@ export type SkuEtiquetaPrintItem = {
 const LABEL_WIDTH_MM = 50;
 const LABEL_HEIGHT_MM = 30;
 
+function normalizeFilterText(value: unknown) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+export function formatEtiquetaMotoLabel(peca: any) {
+  const marca = String(peca?.moto?.marca || '').trim();
+  const modelo = String(peca?.moto?.modelo || '').trim();
+  const motoCompleta = [marca, modelo].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+  const motoNormalizada = normalizeFilterText(motoCompleta);
+
+  if (motoNormalizada.startsWith('harley davidson')) {
+    const restante = motoCompleta.replace(/^\s*harley\s+davidson\b\s*/i, '').trim();
+    return ['HD', restante].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim().toUpperCase() || 'HD';
+  }
+
+  return motoCompleta.toUpperCase() || '-';
+}
+
 function buildTimestampFileToken() {
   const now = new Date();
   const dd = String(now.getDate()).padStart(2, '0');
@@ -174,9 +196,9 @@ export async function printSkuLabels(items: SkuEtiquetaPrintItem[]) {
 
     doc.setFont('helvetica', 'bold');
 
-    doc.setFontSize(7.2);
+    doc.setFontSize(6.3);
     doc.text('Moto:', 1.7, 4.3);
-    const motoFontSize = fitTextSize(doc, item.motoLabel.toUpperCase(), 36, 10.6, 7.2);
+    const motoFontSize = fitTextSize(doc, item.motoLabel.toUpperCase(), 36, 8.8, 6.4);
     doc.setFontSize(motoFontSize);
     doc.text(item.motoLabel.toUpperCase() || '-', 13.2, 4.3);
 

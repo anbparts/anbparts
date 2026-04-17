@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { API_BASE } from '@/lib/api-base';
 import { api } from '@/lib/api';
+import { formatEtiquetaMotoLabel, printSkuLabels } from '@/lib/estoque-label-print';
 
 const API = API_BASE;
 
@@ -70,6 +71,21 @@ function ChecklistValidacao({ form }: { form: any }) {
   );
 }
 
+function buildCadastroSkuEtiquetas(item: CadastroPeca) {
+  const quantidade = Math.max(1, Number(item.estoque) || 1);
+  const skuAtual = String(item.idPeca || '').trim().toUpperCase();
+  const skuBase = skuAtual.replace(/-\d+$/, '');
+  const skuInicial = quantidade > 1 ? skuBase : skuAtual;
+  const motoLabel = formatEtiquetaMotoLabel(item);
+  const descricao = String(item.descricao || '').trim();
+
+  return Array.from({ length: quantidade }, (_, index) => ({
+    motoLabel,
+    sku: index === 0 ? skuInicial : `${skuBase}-${index + 1}`,
+    descricao,
+  }));
+}
+
 export default function CadastroPage() {
   const [motos, setMotos] = useState<any[]>([]);
   const [caixas, setCaixas] = useState<string[]>([]);
@@ -94,6 +110,7 @@ export default function CadastroPage() {
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [confirmando, setConfirmando] = useState(false);
   const [etiquetas, setEtiquetas] = useState<string[]>(['']); // array de etiquetas detran
+  const [imprimindoItemId, setImprimindoItemId] = useState<number | null>(null);
 
   useEffect(() => { loadAll(); }, [filters, somentePendentes]);
 
@@ -288,6 +305,17 @@ Deseja forçar a exclusão mesmo assim?`);
     setConfirmando(false);
   }
 
+  async function imprimirEtiquetasCadastro(item: CadastroPeca) {
+    setImprimindoItemId(item.id);
+    try {
+      await printSkuLabels(buildCadastroSkuEtiquetas(item));
+    } catch (e: any) {
+      alert(e.message || 'Erro ao imprimir etiquetas');
+    } finally {
+      setImprimindoItemId(null);
+    }
+  }
+
   const valorTaxas = previewBling ? parseFloat((previewBling.precoML * previewTaxa / 100).toFixed(2)) : 0;
   const valorLiq = previewBling ? parseFloat((previewBling.precoML - previewFrete - valorTaxas).toFixed(2)) : 0;
   const motoSelecionada = motos.find((m) => String(m.id) === String(form.motoId));
@@ -352,9 +380,18 @@ Deseja forçar a exclusão mesmo assim?`);
                           )}
                         </td>
                         <td style={s.td}>
-                          {!cadastOk && (
-                            <button style={{ ...s.btn, fontSize: 11, padding: '4px 10px', background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)' }} onClick={() => openEditar(item)}>Editar</button>
-                          )}
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' as const }}>
+                            <button
+                              style={{ ...s.btn, fontSize: 11, padding: '4px 10px', background: '#eff6ff', border: '1px solid #bfdbfe', color: '#2563eb', opacity: imprimindoItemId === item.id ? 0.7 : 1 }}
+                              onClick={() => imprimirEtiquetasCadastro(item)}
+                              disabled={imprimindoItemId === item.id}
+                            >
+                              {imprimindoItemId === item.id ? 'Imprimindo...' : 'Impressão'}
+                            </button>
+                            {!cadastOk && (
+                              <button style={{ ...s.btn, fontSize: 11, padding: '4px 10px', background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)' }} onClick={() => openEditar(item)}>Editar</button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );

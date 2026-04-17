@@ -2,7 +2,7 @@
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { API_BASE } from '@/lib/api-base';
-import { printCaixaLabels, printSkuLabels } from '@/lib/estoque-label-print';
+import { formatEtiquetaMotoLabel, printCaixaLabels, printSkuLabels } from '@/lib/estoque-label-print';
 
 function fmt(v: number) {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -38,20 +38,6 @@ function normalizeFilterText(value: unknown) {
 function displayCaixaLabel(value: unknown) {
   const text = String(value ?? '').replace(/\s+/g, ' ').trim();
   return text || 'Sem Localizacao';
-}
-
-function formatEtiquetaMotoLabel(peca: any) {
-  const marca = String(peca?.moto?.marca || '').trim();
-  const modelo = String(peca?.moto?.modelo || '').trim();
-  const motoCompleta = [marca, modelo].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
-  const motoNormalizada = normalizeFilterText(motoCompleta);
-
-  if (motoNormalizada.startsWith('harley davidson')) {
-    const restante = motoCompleta.replace(/^\s*harley\s+davidson\b\s*/i, '').trim();
-    return ['HD', restante].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim().toUpperCase() || 'HD';
-  }
-
-  return motoCompleta.toUpperCase() || '-';
 }
 
 function roundMoney(value: number) {
@@ -1501,6 +1487,7 @@ export default function EstoquePage() {
   const [detranPeca, setDetranPeca] = useState<any>(null);
   const [detalhePeca, setDetalhePeca] = useState<any>(null);
   const [selectedPecaIds, setSelectedPecaIds] = useState<number[]>([]);
+  const [selectedPecasById, setSelectedPecasById] = useState<Record<number, any>>({});
   const [impressaoCaixaOpen, setImpressaoCaixaOpen] = useState(false);
   const [caixasSelecionadasImpressao, setCaixasSelecionadasImpressao] = useState<string[]>([]);
   const [buscaCaixaImpressao, setBuscaCaixaImpressao] = useState('');
@@ -1606,9 +1593,23 @@ export default function EstoquePage() {
   }, []);
 
   useEffect(() => {
-    const visibleIds = new Set((data.data || []).filter((p: any) => !isPrejuizoPeca(p)).map((p: any) => p.id));
-    setSelectedPecaIds((current) => current.filter((id) => visibleIds.has(id)));
-  }, [data.data]);
+    const visibleSelectedPecas = (data.data || []).filter((p: any) => selectedPecaIds.includes(p.id) && !isPrejuizoPeca(p));
+    if (!visibleSelectedPecas.length) return;
+
+    setSelectedPecasById((current) => {
+      let changed = false;
+      const next = { ...current };
+
+      for (const peca of visibleSelectedPecas) {
+        if (next[peca.id] !== peca) {
+          next[peca.id] = peca;
+          changed = true;
+        }
+      }
+
+      return changed ? next : current;
+    });
+  }, [data.data, selectedPecaIds]);
 
   useEffect(() => {
     const available = new Set(caixaOptions.map((option) => option.caixa));
@@ -1665,6 +1666,12 @@ export default function EstoquePage() {
     await api.pecas.delete(peca.id);
     setActionPeca(null);
     setSelectedPecaIds((current) => current.filter((id) => id !== peca.id));
+    setSelectedPecasById((current) => {
+      if (!(peca.id in current)) return current;
+      const next = { ...current };
+      delete next[peca.id];
+      return next;
+    });
     load();
   }
 
@@ -1673,21 +1680,51 @@ export default function EstoquePage() {
     if (!confirm(`Excluir ${selectedPecaIds.length} peca(s) selecionada(s)?`)) return;
     await Promise.all(selectedPecaIds.map((id) => api.pecas.delete(id)));
     setSelectedPecaIds([]);
+    setSelectedPecasById({});
     load();
   }
 
   function toggleSelectedPeca(id: number) {
-    setSelectedPecaIds((current) => (
-      current.includes(id) ? current.filter((item) => item !== id) : [...current, id]
-    ));
+    const peca = (data.data || []).find((item: any) => item.id === id);
+
+    if (selectedPecaIds.includes(id)) {
+      setSelectedPecaIds((current) => current.filter((item) => item !== id));
+      setSelectedPecasById((current) => {
+        if (!(id in current)) return current;
+        const next = { ...current };
+        delete next[id];
+        return next;
+      });
+      return;
+    }
+
+    if (!peca || isPrejuizoPeca(peca)) return;
+
+    setSelectedPecaIds((current) => (current.includes(id) ? current : [...current, id]));
+    setSelectedPecasById((current) => ({ ...current, [id]: peca }));
   }
 
   function toggleSelectAllVisible() {
-    const visibleIds = (data.data || [])
-      .filter((p: any) => !isPrejuizoPeca(p))
-      .map((p: any) => p.id);
+    const visiblePecas = (data.data || []).filter((p: any) => !isPrejuizoPeca(p));
+    const visibleIds = visiblePecas.map((p: any) => p.id);
     const allSelected = visibleIds.length > 0 && visibleIds.every((id: number) => selectedPecaIds.includes(id));
-    setSelectedPecaIds(allSelected ? [] : visibleIds);
+
+    if (allSelected) {
+      setSelectedPecaIds((current) => current.filter((id) => !visibleIds.includes(id)));
+      setSelectedPecasById((current) => {
+        const next = { ...current };
+        for (const id of visibleIds) delete next[id];
+        return next;
+      });
+      return;
+    }
+
+    setSelectedPecaIds((current) => Array.from(new Set([...current, ...visibleIds])));
+    setSelectedPecasById((current) => {
+      const next = { ...current };
+      for (const peca of visiblePecas) next[peca.id] = peca;
+      return next;
+    });
   }
 
   function toggleSort(column: string) {
@@ -1898,7 +1935,9 @@ export default function EstoquePage() {
   }
 
   async function handleImprimirSkus() {
-    const selectedPecas = displayedPecas.filter((peca: any) => selectedPecaIds.includes(peca.id) && !isPrejuizoPeca(peca));
+    const selectedPecas = selectedPecaIds
+      .map((id) => selectedPecasById[id] || displayedPecas.find((peca: any) => peca.id === id))
+      .filter((peca: any) => Boolean(peca) && !isPrejuizoPeca(peca));
     if (!selectedPecas.length) {
       alert('Selecione as pecas desejadas para imprimir as etiquetas SKU.');
       return;
@@ -2113,7 +2152,7 @@ export default function EstoquePage() {
 
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: isPhone ? '10px 14px' : '10px 18px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', gap: 10, background: '#fcfcfd' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '0.5px', textTransform: 'uppercase' }}>Periodo rapido</span>
+              <span style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '0.5px', textTransform: 'uppercase' }}>Periodo Venda</span>
               <button onClick={() => applyDatePreset('today')} style={{ ...cs.btn, padding: '4px 10px', fontSize: 12, background: 'var(--white)', borderColor: 'var(--border)', color: 'var(--ink-soft)' }}>Hoje</button>
               <button onClick={() => applyDatePreset('7days')} style={{ ...cs.btn, padding: '4px 10px', fontSize: 12, background: 'var(--white)', borderColor: 'var(--border)', color: 'var(--ink-soft)' }}>7 dias</button>
               <button onClick={() => applyDatePreset('30days')} style={{ ...cs.btn, padding: '4px 10px', fontSize: 12, background: 'var(--white)', borderColor: 'var(--border)', color: 'var(--ink-soft)' }}>30 dias</button>
