@@ -144,11 +144,10 @@ etiquetasRouter.post('/sku', async (req, res, next) => {
     res.setHeader('Content-Disposition', 'inline; filename="etiquetas-sku.pdf"');
     doc.pipe(res);
 
-    const ML       = MM(3.5);
+    const ML       = MM(5.5);   // margem esquerda maior para não cortar
     const MR       = MM(2.5);
-    const QR_SIZE  = MM(13.5);  // QR code menor
+    const QR_SIZE  = MM(13.5);
     const QR_X     = LABEL_W - MR - QR_SIZE;
-    const QR_Y     = MM(2.5);
     const TEXT_W   = QR_X - ML - MM(1.5);
 
     for (let i = 0; i < items.length; i++) {
@@ -162,24 +161,22 @@ etiquetasRouter.post('/sku', async (req, res, next) => {
       const qrPng = await gerarQrPng(item.sku);
       doc.image(qrPng, QR_X, MM(4.0), { width: QR_SIZE, height: QR_SIZE });
 
-      // "Moto:" + valor (linha do topo)
+      // "Moto:" + valor colados (sem gap grande)
       doc.font('Helvetica').fontSize(MM(2.0));
       doc.text('Moto:', ML, MM(3.5), { lineBreak: false });
+      const motoLabelW = doc.widthOfString('Moto:');
 
-      const motoFontSize = fitFontSize(doc, item.motoLabel, TEXT_W - MM(9.5), MM(2.2), MM(1.5));
+      const motoFontSize = fitFontSize(doc, item.motoLabel, TEXT_W - motoLabelW - MM(1.5), MM(2.2), MM(1.5));
       doc.font('Helvetica-Bold').fontSize(motoFontSize);
-      doc.text(item.motoLabel || '-', ML + MM(10.0), MM(3.5), { lineBreak: false });
+      doc.text(item.motoLabel || '-', ML + motoLabelW + MM(1.5), MM(3.5), { lineBreak: false });
 
       // SKU — destaque, fonte grande
       const skuFontSize = fitFontSize(doc, item.sku, TEXT_W, MM(7.0), MM(4.0));
       doc.font('Helvetica-Bold').fontSize(skuFontSize);
       doc.text(item.sku, ML, MM(9.0), { lineBreak: false });
 
-      // Linha divisória sutil
-      doc.moveTo(ML, MM(20.0)).lineTo(LABEL_W - MR, MM(20.0)).strokeColor('#cccccc').lineWidth(0.5).stroke();
-
-      // Descrição — parte inferior
-      doc.font('Helvetica-Bold').fontSize(MM(2.4)).strokeColor('#000000').fillColor('#000000');
+      // Descrição — parte inferior (sem linha divisória)
+      doc.font('Helvetica-Bold').fontSize(MM(2.4)).fillColor('#000000');
       doc.text(item.descricao || '-', ML, MM(21.5), {
         width: LABEL_W - ML - MR,
         height: MM(7.0),
