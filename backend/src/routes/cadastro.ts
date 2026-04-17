@@ -882,6 +882,8 @@ cadastroRouter.post('/sync-bling-peca', async (req, res, next) => {
       detranEtiqueta,
       numeroPeca,
       concatDetranEtiquetasVariacoes,
+      precoML,
+      descricao,
     } = req.body;
     const baseSku = getBaseSku(sku);
 
@@ -915,12 +917,12 @@ cadastroRouter.post('/sync-bling-peca', async (req, res, next) => {
     // e sobrepõe apenas os campos que vieram na requisição
     const payload: any = {
       // Preserva todos os campos do Bling
-      nome: b.nome,
+      nome: descricao != null ? String(descricao) : b.nome,
       codigo: b.codigo,
       tipo: b.tipo || 'P',
       formato: b.formato || 'S',
       situacao: b.situacao || 'A',
-      preco: Number(b.preco || 0),
+      preco: precoML != null ? Number(precoML) : Number(b.preco || 0),
       condicao: b.condicao ?? 0,
       marca: b.marca || '',
       pesoLiquido: pesoLiquido != null ? Number(pesoLiquido) : Number(b.pesoLiquido || 0),

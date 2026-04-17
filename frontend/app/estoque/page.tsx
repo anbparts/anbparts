@@ -1770,8 +1770,64 @@ export default function EstoquePage() {
       alert('Essa peca esta em prejuizo e nao pode ser editada pela tela de estoque.');
       return;
     }
-    if (editPeca) await api.pecas.update(editPeca.id, formData);
-    else await api.pecas.create(formData);
+    if (editPeca) {
+      await api.pecas.update(editPeca.id, formData);
+
+      const precoMudou = Number(formData.precoML) !== Number(editPeca.precoML);
+      const descricaoMudou = String(formData.descricao || '').trim() !== String(editPeca.descricao || '').trim();
+
+      if (precoMudou || descricaoMudou) {
+        const API = API_BASE;
+        const baseSku = String(editPeca.idPeca || '').replace(/-\d+$/, '');
+
+        // Sincroniza precoML e/ou descricao com o Bling (mesmo padrão do sync-bling-peca das dimensões)
+        try {
+          const syncBody: any = { sku: baseSku };
+          if (precoMudou) syncBody.precoML = formData.precoML;
+          if (descricaoMudou) syncBody.descricao = formData.descricao;
+          const blingResp = await fetch(`${API}/cadastro/sync-bling-peca`, {
+            method: 'POST', credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(syncBody),
+          });
+          const blingData = await blingResp.json();
+          if (!blingData.ok) console.warn('[sync-bling] Aviso:', blingData.error);
+        } catch (e: any) {
+          console.warn('[sync-bling] Erro ao sincronizar com Bling:', e.message);
+        }
+
+        // Se o preço mudou, replica para todas as variações em estoque (disponivel=true) no ANB
+        if (precoMudou) {
+          try {
+            const pecasResp = await fetch(`${API}/pecas?search=${encodeURIComponent(baseSku)}&per=50`, { credentials: 'include' });
+            const pecasData = await pecasResp.json();
+            const todasVariacoes: any[] = (pecasData?.data || []).filter((p: any) =>
+              p.id !== editPeca.id &&
+              p.disponivel === true &&
+              (p.idPeca === baseSku || p.idPeca.startsWith(`${baseSku}-`))
+            );
+            for (const variacao of todasVariacoes) {
+              await fetch(`${API}/pecas/${variacao.id}`, {
+                method: 'PUT', credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  motoId: variacao.motoId,
+                  descricao: variacao.descricao,
+                  precoML: formData.precoML,
+                  valorFrete: Number(variacao.valorFrete),
+                  valorTaxas: Number(variacao.valorTaxas),
+                  disponivel: variacao.disponivel,
+                }),
+              });
+            }
+          } catch (e: any) {
+            console.warn('[sync-variacoes] Erro ao replicar preço:', e.message);
+          }
+        }
+      }
+    } else {
+      await api.pecas.create(formData);
+    }
     setModal(false);
     setEditPeca(null);
     load();
