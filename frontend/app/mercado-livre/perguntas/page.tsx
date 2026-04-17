@@ -124,7 +124,8 @@ export default function MercadoLivrePerguntasPage() {
   const isDesktop = layoutMode === 'desktop';
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
-  const [respondingId, setRespondingId] = useState<string | null>(null);\n  const [successMessage, setSuccessMessage] = useState('');
+  const [respondingId, setRespondingId] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [perguntas, setPerguntas] = useState<any[]>([]);
   const [respostas, setRespostas] = useState<Record<string, string>>({});
