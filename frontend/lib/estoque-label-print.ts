@@ -62,34 +62,42 @@ function ensureBrowserEnvironment() {
   }
 }
 
-async function renderBarcodeDataUrl(value: string, options: { width: number; height: number }) {
+async function renderBarcodeSvgString(value: string): Promise<string> {
   ensureBrowserEnvironment();
 
   const JsBarcode = await loadBarcode();
-  const canvas = document.createElement('canvas');
-  let valido = true;
+  const svgEl = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
 
-  JsBarcode(canvas, value, {
+  JsBarcode(svgEl, value, {
     format: 'CODE128',
     displayValue: false,
     margin: 0,
-    width: options.width,
-    height: options.height,
+    width: 2,
+    height: 100,
     background: '#ffffff',
     lineColor: '#000000',
-    flat: true,
+    flat: false,
     textMargin: 0,
     fontSize: 0,
-    valid: (nextValid: boolean) => {
-      valido = nextValid;
-    },
+    xmlDocument: document,
   });
 
-  if (!valido) {
-    throw new Error(`Nao foi possivel gerar o codigo de barras para "${value}".`);
-  }
+  const serializer = new XMLSerializer();
+  return serializer.serializeToString(svgEl);
+}
 
-  return canvas.toDataURL('image/png');
+async function addBarcodeSvgToPdf(
+  doc: any,
+  svgString: string,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+) {
+  await doc.svg(
+    new DOMParser().parseFromString(svgString, 'image/svg+xml').documentElement,
+    { x, y, width, height },
+  );
 }
 
 function createPdfDocument(jsPDF: any) {
@@ -145,7 +153,7 @@ export async function printCaixaLabels(items: CaixaEtiquetaPrintItem[]) {
     Promise.all(
       sanitizedItems.map(async (item) => ({
         ...item,
-        barcodeDataUrl: await renderBarcodeDataUrl(item.caixa, { width: 5, height: 280 }),
+        barcodeSvg: await renderBarcodeSvgString(item.caixa),
       })),
     ),
   ]);
@@ -155,14 +163,15 @@ export async function printCaixaLabels(items: CaixaEtiquetaPrintItem[]) {
   const MARGIN_LEFT = 3.5;
   const BARCODE_WIDTH = 43.0;
 
-  labels.forEach((item, index) => {
+  for (let index = 0; index < labels.length; index++) {
+    const item = labels[index];
     prepareLabelPage(doc, index);
-    doc.addImage(item.barcodeDataUrl, 'PNG', MARGIN_LEFT, 2.0, BARCODE_WIDTH, 17.5, undefined, 'NONE');
+    await addBarcodeSvgToPdf(doc, item.barcodeSvg, MARGIN_LEFT, 2.0, BARCODE_WIDTH, 17.5);
     doc.setFont('helvetica', 'bold');
     const fontSize = fitTextSize(doc, item.caixa.toUpperCase(), BARCODE_WIDTH, 11.2, 7.5);
     doc.setFontSize(fontSize);
     doc.text(item.caixa.toUpperCase(), MARGIN_LEFT + BARCODE_WIDTH / 2, 24.4, { align: 'center' });
-  });
+  }
 
   downloadPdf(doc, `Etiquetas_Caixa_ANB_${buildTimestampFileToken()}.pdf`);
 }
@@ -187,37 +196,42 @@ export async function printSkuLabels(items: SkuEtiquetaPrintItem[]) {
     Promise.all(
       sanitizedItems.map(async (item) => ({
         ...item,
-        barcodeDataUrl: await renderBarcodeDataUrl(item.sku, { width: 2.35, height: 104 }),
+        barcodeSvg: await renderBarcodeSvgString(item.sku),
       })),
     ),
   ]);
 
   const doc = createPdfDocument(jsPDF);
 
-  labels.forEach((item, index) => {
+  const SKU_MARGIN_LEFT = 3.5;
+  const SKU_LABEL_X = 15.0;
+  const SKU_BARCODE_WIDTH = 43.0;
+
+  for (let index = 0; index < labels.length; index++) {
+    const item = labels[index];
     prepareLabelPage(doc, index);
 
     doc.setFont('helvetica', 'bold');
 
     doc.setFontSize(6.3);
-    doc.text('Moto:', 1.7, 4.3);
-    const motoFontSize = fitTextSize(doc, item.motoLabel.toUpperCase(), 36, 8.8, 6.4);
+    doc.text('Moto:', SKU_MARGIN_LEFT, 4.3);
+    const motoFontSize = fitTextSize(doc, item.motoLabel.toUpperCase(), 34, 8.8, 6.4);
     doc.setFontSize(motoFontSize);
-    doc.text(item.motoLabel.toUpperCase() || '-', 13.2, 4.3);
+    doc.text(item.motoLabel.toUpperCase() || '-', SKU_LABEL_X, 4.3);
 
     doc.setFontSize(7.2);
-    doc.text('Cod:', 1.7, 8.7);
-    const skuFontSize = fitTextSize(doc, item.sku, 36, 11.2, 7.8);
+    doc.text('Cod:', SKU_MARGIN_LEFT, 8.7);
+    const skuFontSize = fitTextSize(doc, item.sku, 34, 11.2, 7.8);
     doc.setFontSize(skuFontSize);
-    doc.text(item.sku, 13.2, 8.7);
+    doc.text(item.sku, SKU_LABEL_X, 8.7);
 
     doc.setFontSize(9.8);
-    const descricaoLinhas = doc.splitTextToSize(item.descricao || '-', 46);
+    const descricaoLinhas = doc.splitTextToSize(item.descricao || '-', SKU_BARCODE_WIDTH);
     const descricaoLimitada = descricaoLinhas.slice(0, 2);
-    doc.text(descricaoLimitada, 1.7, 13.7, { maxWidth: 46 });
+    doc.text(descricaoLimitada, SKU_MARGIN_LEFT, 13.7, { maxWidth: SKU_BARCODE_WIDTH });
 
-    doc.addImage(item.barcodeDataUrl, 'PNG', 1.6, 21.2, 46.8, 7.3, undefined, 'FAST');
-  });
+    await addBarcodeSvgToPdf(doc, item.barcodeSvg, SKU_MARGIN_LEFT, 19.5, SKU_BARCODE_WIDTH, 7.0);
+  }
 
   downloadPdf(doc, `Etiquetas_SKU_ANB_${buildTimestampFileToken()}.pdf`);
 }
