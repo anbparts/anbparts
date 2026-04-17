@@ -292,9 +292,9 @@ async function baixarSeparacaoPdf(relatorio: SeparacaoRelatorio) {
 
     const observacaoInterna = String(pedido.observacoesInternas || '').trim() || '-';
     const infoEndereco = `Endereco: ${pedido.enderecoEntrega || '-'}`;
-    const noteWidth = 84;
     const columnGap = 4;
-    const leftWidth = contentWidth - noteWidth - columnGap;
+    const leftWidth = 84;
+    const noteWidth = contentWidth - leftWidth - columnGap;
     const noteLines = doc.splitTextToSize(observacaoInterna, noteWidth - 6);
     const noteHeight = Math.max(12, noteLines.length * 3 + 6);
     const enderecoLines = doc.splitTextToSize(infoEndereco, contentWidth - 6);
@@ -310,7 +310,6 @@ async function baixarSeparacaoPdf(relatorio: SeparacaoRelatorio) {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
     doc.setTextColor(71, 85, 105);
-    doc.text(`${pedido.quantidadeItens} item(ns)`, marginX + leftWidth, y, { align: 'right' });
 
     const metaRowY = y + 2.5;
     const noteX = marginX + leftWidth + columnGap;
@@ -673,14 +672,9 @@ export default function VendasBlingPage() {
                     }}
                   >
                     <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)' }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12, alignItems: 'stretch' }}>
-                        <div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-                            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-800)' }}>Pedido #{pedido.pedidoNum}</div>
-                            <div style={{ fontSize: 11, background: '#eff6ff', color: 'var(--blue-500)', padding: '5px 9px', borderRadius: 999, fontWeight: 700 }}>
-                              {pedido.quantidadeItens} item(ns)
-                            </div>
-                          </div>
+                      <div style={{ display: 'flex', gap: 12, alignItems: 'stretch', flexWrap: 'wrap' }}>
+                        <div style={{ flex: '0 1 300px', minWidth: 240 }}>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-800)' }}>Pedido #{pedido.pedidoNum}</div>
                           <div style={{ fontSize: 11.5, color: 'var(--gray-500)', marginTop: 5 }}>
                             Data da venda: {fmtDate(pedido.dataVenda)}
                           </div>
@@ -689,7 +683,7 @@ export default function VendasBlingPage() {
                           </div>
                         </div>
 
-                        <div style={{ border: '1px solid #dbeafe', background: '#f8fbff', borderRadius: 10, padding: '8px 10px' }}>
+                        <div style={{ flex: '1 1 520px', minWidth: 320, border: '1px solid #dbeafe', background: '#f8fbff', borderRadius: 10, padding: '8px 10px' }}>
                           <div style={{ fontSize: 10, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '.7px', marginBottom: 5 }}>Obs. interna</div>
                           <div style={{ fontSize: 12, color: 'var(--gray-800)', lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>
                             {String(pedido.observacoesInternas || '').trim() || '-'}
