@@ -82,6 +82,7 @@ export default function DespesasReceitaPage() {
   }, [filtroAno, filtroMes]);
 
   const months = Array.isArray(payload?.months) ? payload.months : [];
+  const categorias: string[] = Array.isArray(payload?.categorias) ? payload.categorias : [];
   const totals = payload?.totals || {
     receitaBruta: 0,
     taxasMl: 0,
@@ -89,7 +90,13 @@ export default function DespesasReceitaPage() {
     despesasGerais: 0,
     totalSaidas: 0,
     resultadoBruto: 0,
+    porCategoria: {},
   };
+
+  function pctReceita(value: number) {
+    if (!totals.receitaBruta) return null;
+    return ((value / totals.receitaBruta) * 100).toFixed(1) + '% da receita';
+  }
 
   const heatmapRows = useMemo(() => {
     const buildRow = (label: string, field: string, note?: string) => ({
@@ -102,15 +109,26 @@ export default function DespesasReceitaPage() {
       })),
     });
 
+    const categoriaRows = categorias.map((cat) => ({
+      label: `↳ ${cat}`,
+      note: `Despesas da categoria ${cat}`,
+      cells: months.map((item: any) => ({
+        label: MESES[(item.mes || 1) - 1] || item.label,
+        value: Number(item.despesasPorCategoria?.[cat] || 0),
+        displayValue: fmt(Number(item.despesasPorCategoria?.[cat] || 0)),
+      })),
+    }));
+
     return [
       buildRow('Receita bruta', 'receitaBruta', 'Base bruta das vendas por mes'),
       buildRow('Taxas ML', 'taxasMl', 'Taxas cobradas pelo Mercado Livre'),
       buildRow('Frete pago', 'fretePago', 'Frete vinculado as vendas do periodo'),
       buildRow('Despesas gerais', 'despesasGerais', 'Despesas cadastradas no periodo'),
+      ...categoriaRows,
       buildRow('Saidas totais', 'totalSaidas', 'Taxas + frete + despesas gerais'),
       buildRow('Resultado bruto', 'resultadoBruto', 'Receita bruta menos as saidas do periodo'),
     ];
-  }, [months]);
+  }, [months, categorias]);
 
   const anosDisponiveis = useMemo(() => {
     const current = Number(filtroAno) || new Date().getFullYear();
@@ -157,8 +175,32 @@ export default function DespesasReceitaPage() {
               <div style={{ fontFamily: 'Fraunces, serif', fontSize: 22, fontWeight: 500, color: card.color, ...sensitiveMaskStyle(hidden) }}>
                 {sensitiveText(fmt(card.value), hidden)}
               </div>
+              {pctReceita(card.value) && card.label !== 'Receita bruta' && (
+                <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginTop: 4 }}>
+                  {pctReceita(card.value)}
+                </div>
+              )}
             </div>
           ))}
+          {/* Cards por categoria de despesa */}
+          {categorias.map((cat) => {
+            const val = totals.porCategoria?.[cat] || 0;
+            return (
+              <div key={cat} style={cs.sCard}>
+                <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '.6px', textTransform: 'uppercase', marginBottom: 8 }}>
+                  {cat}
+                </div>
+                <div style={{ fontFamily: 'Fraunces, serif', fontSize: 22, fontWeight: 500, color: 'var(--red)', ...sensitiveMaskStyle(hidden) }}>
+                  {sensitiveText(fmt(val), hidden)}
+                </div>
+                {pctReceita(val) && (
+                  <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginTop: 4 }}>
+                    {pctReceita(val)}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
 
         <div style={{ ...cs.card, marginBottom: 20 }}>

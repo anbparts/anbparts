@@ -716,6 +716,10 @@ financeiroRouter.get('/despesas-receita', async (req, res, next) => {
     ]);
 
     const monthIndexes = mes ? [mes] : Array.from({ length: 12 }, (_, index) => index + 1);
+
+    // Coleta todas as categorias únicas
+    const todasCategorias = Array.from(new Set(despesas.map((d) => String(d.categoria || 'Outros').trim()))).sort();
+
     const months = monthIndexes.map((monthIndex) => {
       const receitaBruta = pecasVendidas
         .filter((item) => matchesYearMonth(item.dataVenda, ano, monthIndex))
@@ -737,6 +741,14 @@ financeiroRouter.get('/despesas-receita', async (req, res, next) => {
         .filter((item) => item.statusPagamento === 'pendente' && matchesYearMonth(item.data, ano, monthIndex))
         .reduce((sum, item) => sum + toNumber(item.valor), 0);
 
+      // Breakdown por categoria
+      const despesasPorCategoria: Record<string, number> = {};
+      todasCategorias.forEach((cat) => {
+        despesasPorCategoria[cat] = despesas
+          .filter((item) => matchesYearMonth(item.data, ano, monthIndex) && String(item.categoria || 'Outros').trim() === cat)
+          .reduce((sum, item) => sum + toNumber(item.valor), 0);
+      });
+
       const totalSaidas = taxasMl + fretePago + despesasMes;
       const resultadoBruto = receitaBruta - totalSaidas;
 
@@ -749,6 +761,7 @@ financeiroRouter.get('/despesas-receita', async (req, res, next) => {
         fretePago,
         despesasGerais: despesasMes,
         despesasPendentes,
+        despesasPorCategoria,
         totalSaidas,
         resultadoBruto,
       };
@@ -761,9 +774,16 @@ financeiroRouter.get('/despesas-receita', async (req, res, next) => {
     const totalSaidas = months.reduce((sum, item) => sum + item.totalSaidas, 0);
     const totalResultadoBruto = months.reduce((sum, item) => sum + item.resultadoBruto, 0);
 
+    // Totais por categoria
+    const totalPorCategoria: Record<string, number> = {};
+    todasCategorias.forEach((cat) => {
+      totalPorCategoria[cat] = months.reduce((sum, item) => sum + (item.despesasPorCategoria[cat] || 0), 0);
+    });
+
     res.json({
       ano,
       mes: mes || null,
+      categorias: todasCategorias,
       months,
       totals: {
         receitaBruta: totalReceitaBruta,
@@ -772,6 +792,7 @@ financeiroRouter.get('/despesas-receita', async (req, res, next) => {
         despesasGerais: totalDespesasGerais,
         totalSaidas,
         resultadoBruto: totalResultadoBruto,
+        porCategoria: totalPorCategoria,
       },
     });
   } catch (e) {
