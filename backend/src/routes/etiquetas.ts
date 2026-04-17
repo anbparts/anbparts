@@ -144,12 +144,12 @@ etiquetasRouter.post('/sku', async (req, res, next) => {
     res.setHeader('Content-Disposition', 'inline; filename="etiquetas-sku.pdf"');
     doc.pipe(res);
 
-    const ML       = MM(3.5);   // margem esquerda
-    const MR       = MM(2.5);   // margem direita
-    const QR_SIZE  = MM(20.0);  // QR code quadrado
+    const ML       = MM(3.5);
+    const MR       = MM(2.5);
+    const QR_SIZE  = MM(13.5);  // QR code menor
     const QR_X     = LABEL_W - MR - QR_SIZE;
-    const QR_Y     = MM(2.0);
-    const TEXT_W   = QR_X - ML - MM(1.5); // largura da área de texto
+    const QR_Y     = MM(2.5);
+    const TEXT_W   = QR_X - ML - MM(1.5);
 
     for (let i = 0; i < items.length; i++) {
       if (i > 0) {
@@ -160,7 +160,7 @@ etiquetasRouter.post('/sku', async (req, res, next) => {
 
       // QR Code (lado direito)
       const qrPng = await gerarQrPng(item.sku);
-      doc.image(qrPng, QR_X, QR_Y, { width: QR_SIZE, height: QR_SIZE });
+      doc.image(qrPng, QR_X, MM(4.0), { width: QR_SIZE, height: QR_SIZE });
 
       // "Moto:" + valor (linha do topo)
       doc.font('Helvetica').fontSize(MM(2.0));
