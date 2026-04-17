@@ -227,10 +227,13 @@ export default function PrejuizosPage() {
   const [editSaving, setEditSaving] = useState(false);
   const [filters, setFilters] = useState({
     idPeca: '',
+    descricao: '',
     motivo: '',
     dataFrom: '',
     dataTo: '',
   });
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(20);
   const { hidden } = useCompanyValueVisibility();
   const viewportMode = useFinancialViewportMode();
   const isPhone = viewportMode === 'phone';
@@ -255,12 +258,17 @@ export default function PrejuizosPage() {
     return rows.filter((row) => {
       const rowDate = toInputDate(row.data);
       const matchesIdPeca = !filters.idPeca || String(row.idPeca || '').toLowerCase().includes(filters.idPeca.toLowerCase());
+      const matchesDescricao = !filters.descricao || String(row.descricaoPeca || row.detalhe || '').toLowerCase().includes(filters.descricao.toLowerCase());
       const matchesMotivo = !filters.motivo || getMotivoKey(row.motivo) === filters.motivo;
       const matchesFrom = !filters.dataFrom || rowDate >= filters.dataFrom;
       const matchesTo = !filters.dataTo || rowDate <= filters.dataTo;
-      return matchesIdPeca && matchesMotivo && matchesFrom && matchesTo;
+      return matchesIdPeca && matchesDescricao && matchesMotivo && matchesFrom && matchesTo;
     });
   }, [rows, filters]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / perPage));
+  const safePage = Math.min(page, totalPages);
+  const pagedRows = filteredRows.slice((safePage - 1) * perPage, safePage * perPage);
 
   const totalValor = filteredRows.reduce((sum, row) => sum + (Number(row.valor) || 0), 0);
   const totalFrete = filteredRows.reduce((sum, row) => sum + (Number(row.frete) || 0), 0);
@@ -306,7 +314,12 @@ export default function PrejuizosPage() {
     }
   }
 
-  const hasFilters = Boolean(filters.idPeca || filters.motivo || filters.dataFrom || filters.dataTo);
+  const hasFilters = Boolean(filters.idPeca || filters.descricao || filters.motivo || filters.dataFrom || filters.dataTo);
+
+  function setFiltersAndReset(next: typeof filters) {
+    setFilters(next);
+    setPage(1);
+  }
 
   return (
     <>
@@ -379,20 +392,34 @@ export default function PrejuizosPage() {
               type="text"
               placeholder="ID Peca"
               value={filters.idPeca}
-              onChange={(e) => setFilters({ ...filters, idPeca: e.target.value })}
+              onChange={(e) => setFiltersAndReset({ ...filters, idPeca: e.target.value })}
+              style={{ width: '100%', background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 6, padding: '10px 12px', fontSize: 13, outline: 'none' }}
+            />
+            <input
+              type="text"
+              placeholder="Descricao do produto"
+              value={filters.descricao}
+              onChange={(e) => setFiltersAndReset({ ...filters, descricao: e.target.value })}
               style={{ width: '100%', background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 6, padding: '10px 12px', fontSize: 13, outline: 'none' }}
             />
             <select
               value={filters.motivo}
-              onChange={(e) => setFilters({ ...filters, motivo: e.target.value })}
+              onChange={(e) => setFiltersAndReset({ ...filters, motivo: e.target.value })}
               style={{ width: '100%', background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 6, padding: '10px 12px', fontSize: 13, outline: 'none', cursor: 'pointer' }}
             >
               <option value="">Tipo de defeito</option>
               {PREJUIZO_MOTIVOS.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
             </select>
-            <input type="date" value={filters.dataFrom} max={filters.dataTo || undefined} onChange={(e) => setFilters({ ...filters, dataFrom: e.target.value })} style={{ width: '100%', background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 6, padding: '10px 12px', fontSize: 13, outline: 'none' }} />
-            <input type="date" value={filters.dataTo} min={filters.dataFrom || undefined} onChange={(e) => setFilters({ ...filters, dataTo: e.target.value })} style={{ width: '100%', background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 6, padding: '10px 12px', fontSize: 13, outline: 'none' }} />
-            <button onClick={() => setFilters({ idPeca: '', motivo: '', dataFrom: '', dataTo: '' })} disabled={!hasFilters} style={{ border: '1px solid var(--border)', background: 'var(--white)', color: hasFilters ? 'var(--gray-700)' : 'var(--gray-400)', borderRadius: 7, padding: '10px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+            <input type="date" value={filters.dataFrom} max={filters.dataTo || undefined} onChange={(e) => setFiltersAndReset({ ...filters, dataFrom: e.target.value })} style={{ width: '100%', background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 6, padding: '10px 12px', fontSize: 13, outline: 'none' }} />
+            <input type="date" value={filters.dataTo} min={filters.dataFrom || undefined} onChange={(e) => setFiltersAndReset({ ...filters, dataTo: e.target.value })} style={{ width: '100%', background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 6, padding: '10px 12px', fontSize: 13, outline: 'none' }} />
+            <select
+              value={perPage}
+              onChange={(e) => { setPerPage(Number(e.target.value)); setPage(1); }}
+              style={{ width: '100%', background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 6, padding: '10px 12px', fontSize: 13, outline: 'none', cursor: 'pointer' }}
+            >
+              {[10, 20, 50, 100, 250].map((n) => <option key={n} value={n}>{n} por pagina</option>)}
+            </select>
+            <button onClick={() => setFiltersAndReset({ idPeca: '', descricao: '', motivo: '', dataFrom: '', dataTo: '' })} disabled={!hasFilters} style={{ border: '1px solid var(--border)', background: 'var(--white)', color: hasFilters ? 'var(--gray-700)' : 'var(--gray-400)', borderRadius: 7, padding: '10px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
               Limpar filtros
             </button>
           </div>
@@ -401,7 +428,7 @@ export default function PrejuizosPage() {
             <div style={{ padding: 28, color: 'var(--gray-400)', fontSize: 13 }}>Carregando...</div>
           ) : isCompact ? (
             <div style={{ display: 'grid', gap: 12, padding: 14 }}>
-              {filteredRows.map((row) => (
+              {pagedRows.map((row) => (
                 <div key={row.id} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
                     <div>
@@ -476,7 +503,7 @@ export default function PrejuizosPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredRows.map((row) => (
+                  {pagedRows.map((row) => (
                     <tr key={row.id} style={{ borderBottom: '1px solid var(--gray-100)' }}>
                       <td style={{ padding: '8px 10px', fontFamily: 'Geist Mono, monospace', fontSize: 11.5, color: 'var(--gray-500)', whiteSpace: 'nowrap' }}>{formatDateBr(row.data)}</td>
                       <td style={{ padding: '8px 10px', fontFamily: 'Geist Mono, monospace', fontSize: 11.5, color: 'var(--gray-600)', whiteSpace: 'nowrap' }}>{row.idMoto ? `#${row.idMoto}` : '-'}</td>
@@ -527,6 +554,23 @@ export default function PrejuizosPage() {
               </table>
             </div>
           )}
+
+          {/* Paginação */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 18px', borderTop: '1px solid var(--border)', fontSize: 12, color: 'var(--ink-muted)', fontFamily: 'Geist Mono, monospace', flexWrap: 'wrap', gap: 10, background: '#fcfcfd' }}>
+            <span>Pagina {safePage} de {totalPages} · {filteredRows.length} total · {perPage} por pagina</span>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button
+                disabled={safePage <= 1}
+                onClick={() => setPage(safePage - 1)}
+                style={{ border: '1px solid var(--border)', background: 'var(--white)', borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: safePage <= 1 ? 'not-allowed' : 'pointer', color: safePage <= 1 ? 'var(--ink-muted)' : 'var(--ink-soft)', opacity: safePage <= 1 ? 0.5 : 1 }}
+              >Anterior</button>
+              <button
+                disabled={safePage >= totalPages}
+                onClick={() => setPage(safePage + 1)}
+                style={{ border: '1px solid var(--border)', background: 'var(--white)', borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: safePage >= totalPages ? 'not-allowed' : 'pointer', color: safePage >= totalPages ? 'var(--ink-muted)' : 'var(--ink-soft)', opacity: safePage >= totalPages ? 0.5 : 1 }}
+              >Proxima</button>
+            </div>
+          </div>
         </div>
       </div>
 
