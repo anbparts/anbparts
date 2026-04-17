@@ -86,11 +86,12 @@ etiquetasRouter.post('/caixa', async (req, res, next) => {
     res.setHeader('Content-Disposition', 'inline; filename="etiquetas-caixa.pdf"');
     doc.pipe(res);
 
-    const ML_CAIXA     = MM(3.0);
-    const MR_CAIXA     = MM(10.0);  // aumenta margem esquerda física (direita no PDF)
+    const ML_CAIXA     = MM(8.0);   // margem esquerda do QR
+    const MR_CAIXA     = MM(2.5);
     const QR_CAIXA     = MM(12.0);
-    const QR_X_CAIXA   = LABEL_W - MR_CAIXA - QR_CAIXA;
-    const TEXT_W_CAIXA = QR_X_CAIXA - ML_CAIXA - MM(1.5);
+    const QR_X_CAIXA   = ML_CAIXA;  // QR no lado esquerdo
+    const TEXT_X_CAIXA = ML_CAIXA + QR_CAIXA + MM(2.5);
+    const TEXT_W_CAIXA = LABEL_W - TEXT_X_CAIXA - MR_CAIXA;
 
     for (let i = 0; i < items.length; i++) {
       if (i > 0) {
@@ -99,14 +100,12 @@ etiquetasRouter.post('/caixa', async (req, res, next) => {
 
       const label = items[i].caixa.toUpperCase();
 
-      // QR Code — canto direito
       const qrPng = await gerarQrPng(items[i].caixa);
       doc.image(qrPng, QR_X_CAIXA, MM(3.0), { width: QR_CAIXA, height: QR_CAIXA });
 
-      // Nome da caixa — lado esquerdo
       const fontSize = fitFontSize(doc, label, TEXT_W_CAIXA, MM(7.5), MM(4.0));
       doc.font('Helvetica-Bold').fontSize(fontSize).fillColor('#000000');
-      doc.text(label, ML_CAIXA, MM(7.5), {
+      doc.text(label, TEXT_X_CAIXA, MM(7.5), {
         width: TEXT_W_CAIXA,
         align: 'left',
         lineBreak: false,
