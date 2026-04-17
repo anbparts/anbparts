@@ -519,6 +519,8 @@ export default function DespesasPage() {
   const total = filtradas.reduce((sum, item) => sum + Number(item.valor || 0), 0);
   const totalPendentes = filtradas.filter((item) => item.statusPagamento === 'pendente').length;
   const totalPagas = filtradas.filter((item) => item.statusPagamento === 'pago').length;
+  const totalValorPago = filtradas.filter((item) => item.statusPagamento === 'pago').reduce((sum, item) => sum + Number(item.valor || 0), 0);
+  const totalValorPendente = filtradas.filter((item) => item.statusPagamento === 'pendente').reduce((sum, item) => sum + Number(item.valor || 0), 0);
 
   const porCategoriaMap = new Map<string, number>();
   const porMesMap = new Map<string, { label: string; value: number }>();
@@ -817,6 +819,14 @@ export default function DespesasPage() {
           <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, padding: '16px 18px' }}>
             <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '.6px', textTransform: 'uppercase', marginBottom: 8 }}>Vencem hoje</div>
             <div style={{ fontSize: 24, fontWeight: 700, color: resumoPendenteHoje > 0 ? 'var(--amber)' : 'var(--gray-700)', letterSpacing: '-0.4px' }}>{resumoPendenteHoje}</div>
+          </div>
+          <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, padding: '16px 18px' }}>
+            <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '.6px', textTransform: 'uppercase', marginBottom: 8 }}>Valor pago</div>
+            <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--green)', letterSpacing: '-0.4px' }}>{fmt(totalValorPago)}</div>
+          </div>
+          <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, padding: '16px 18px' }}>
+            <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '.6px', textTransform: 'uppercase', marginBottom: 8 }}>Valor pendente</div>
+            <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--red)', letterSpacing: '-0.4px' }}>{fmt(totalValorPendente)}</div>
           </div>
         </div>
 
