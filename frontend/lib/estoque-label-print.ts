@@ -62,42 +62,26 @@ function ensureBrowserEnvironment() {
   }
 }
 
-async function renderBarcodeSvgString(value: string): Promise<string> {
+async function renderBarcodeDataUrl(value: string, options: { width: number; height: number }) {
   ensureBrowserEnvironment();
 
   const JsBarcode = await loadBarcode();
-  const svgEl = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  const canvas = document.createElement('canvas');
 
-  JsBarcode(svgEl, value, {
+  JsBarcode(canvas, value, {
     format: 'CODE128',
     displayValue: false,
     margin: 0,
-    width: 2,
-    height: 100,
+    width: options.width,
+    height: options.height,
     background: '#ffffff',
     lineColor: '#000000',
     flat: false,
     textMargin: 0,
     fontSize: 0,
-    xmlDocument: document,
   });
 
-  const serializer = new XMLSerializer();
-  return serializer.serializeToString(svgEl);
-}
-
-async function addBarcodeSvgToPdf(
-  doc: any,
-  svgString: string,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-) {
-  await doc.svg(
-    new DOMParser().parseFromString(svgString, 'image/svg+xml').documentElement,
-    { x, y, width, height },
-  );
+  return canvas.toDataURL('image/png');
 }
 
 function createPdfDocument(jsPDF: any) {
@@ -133,8 +117,9 @@ function fitTextSize(doc: any, text: string, maxWidth: number, initialSize: numb
   return currentSize;
 }
 
-function downloadPdf(doc: any, fileName: string) {
-  doc.save(fileName);
+function openPdfInBrowser(doc: any) {
+  const blobUrl = doc.output('bloburl');
+  window.open(blobUrl, '_blank', 'noopener');
 }
 
 export async function printCaixaLabels(items: CaixaEtiquetaPrintItem[]) {
@@ -153,7 +138,7 @@ export async function printCaixaLabels(items: CaixaEtiquetaPrintItem[]) {
     Promise.all(
       sanitizedItems.map(async (item) => ({
         ...item,
-        barcodeSvg: await renderBarcodeSvgString(item.caixa),
+        barcodeDataUrl: await renderBarcodeDataUrl(item.caixa, { width: 8, height: 400 }),
       })),
     ),
   ]);
@@ -166,14 +151,14 @@ export async function printCaixaLabels(items: CaixaEtiquetaPrintItem[]) {
   for (let index = 0; index < labels.length; index++) {
     const item = labels[index];
     prepareLabelPage(doc, index);
-    await addBarcodeSvgToPdf(doc, item.barcodeSvg, MARGIN_LEFT, 2.0, BARCODE_WIDTH, 17.5);
+    doc.addImage(item.barcodeDataUrl, 'PNG', MARGIN_LEFT, 2.0, BARCODE_WIDTH, 17.5, undefined, 'NONE');
     doc.setFont('helvetica', 'bold');
     const fontSize = fitTextSize(doc, item.caixa.toUpperCase(), BARCODE_WIDTH, 11.2, 7.5);
     doc.setFontSize(fontSize);
     doc.text(item.caixa.toUpperCase(), MARGIN_LEFT + BARCODE_WIDTH / 2, 24.4, { align: 'center' });
   }
 
-  downloadPdf(doc, `Etiquetas_Caixa_ANB_${buildTimestampFileToken()}.pdf`);
+  openPdfInBrowser(doc);
 }
 
 export async function printSkuLabels(items: SkuEtiquetaPrintItem[]) {
@@ -196,7 +181,7 @@ export async function printSkuLabels(items: SkuEtiquetaPrintItem[]) {
     Promise.all(
       sanitizedItems.map(async (item) => ({
         ...item,
-        barcodeSvg: await renderBarcodeSvgString(item.sku),
+        barcodeDataUrl: await renderBarcodeDataUrl(item.sku, { width: 8, height: 280 }),
       })),
     ),
   ]);
@@ -230,8 +215,8 @@ export async function printSkuLabels(items: SkuEtiquetaPrintItem[]) {
     const descricaoLimitada = descricaoLinhas.slice(0, 2);
     doc.text(descricaoLimitada, SKU_MARGIN_LEFT, 13.7, { maxWidth: SKU_BARCODE_WIDTH });
 
-    await addBarcodeSvgToPdf(doc, item.barcodeSvg, SKU_MARGIN_LEFT, 19.5, SKU_BARCODE_WIDTH, 7.0);
+    doc.addImage(item.barcodeDataUrl, 'PNG', SKU_MARGIN_LEFT, 19.5, SKU_BARCODE_WIDTH, 7.0, undefined, 'NONE');
   }
 
-  downloadPdf(doc, `Etiquetas_SKU_ANB_${buildTimestampFileToken()}.pdf`);
+  openPdfInBrowser(doc);
 }
