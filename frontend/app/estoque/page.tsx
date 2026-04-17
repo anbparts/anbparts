@@ -1493,6 +1493,7 @@ export default function EstoquePage() {
   const [buscaCaixaImpressao, setBuscaCaixaImpressao] = useState('');
   const [imprimindoCaixas, setImprimindoCaixas] = useState(false);
   const [imprimindoSkus, setImprimindoSkus] = useState(false);
+  const [selecionandoTudo, setSelecionandoTudo] = useState(false);
   const [caixaFilterOpen, setCaixaFilterOpen] = useState(false);
   const [caixaFilterSearch, setCaixaFilterSearch] = useState('');
   const [filters, setFilters] = useState({
@@ -1514,11 +1515,10 @@ export default function EstoquePage() {
     orderDir: 'desc' as 'asc' | 'desc',
   });
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  function buildPecaListParams(overrides?: Partial<{ page: number; per: number }>) {
     const params: any = {
-      page: filters.page,
-      per: filters.perPage,
+      page: overrides?.page ?? filters.page,
+      per: overrides?.per ?? filters.perPage,
       orderBy: filters.orderBy,
       orderDir: filters.orderDir,
     };
@@ -1534,6 +1534,13 @@ export default function EstoquePage() {
     if (filters.numeroPeca) params.numeroPeca = filters.numeroPeca;
     if (filters.dataVendaFrom) params.dataVendaFrom = filters.dataVendaFrom;
     if (filters.dataVendaTo) params.dataVendaTo = filters.dataVendaTo;
+
+    return params;
+  }
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const params = buildPecaListParams();
 
     const [d, m, caixasData] = await Promise.all([api.pecas.list(params), api.motos.list(), api.pecas.caixas()]);
     setData(d);
@@ -1769,31 +1776,17 @@ export default function EstoquePage() {
     setFilters({ ...filters, motoId: '', marca: '', disponivel: '', mercadoLivreLink: '', localizacao: '', caixas: [], detranEtiqueta: '', dimensoes: '', search: '', numeroPeca: '', dataVendaFrom: '', dataVendaTo: '', page: 1 });
   }
 
+  function clearSelection() {
+    setSelectedPecaIds([]);
+    setSelectedPecasById({});
+  }
+
   const hasActiveFilters = Boolean(filters.motoId || filters.marca || filters.disponivel !== '' || filters.mercadoLivreLink !== '' || filters.localizacao !== '' || filters.caixas.length || filters.detranEtiqueta !== '' || filters.dimensoes !== '' || filters.search || filters.numeroPeca || filters.dataVendaFrom || filters.dataVendaTo);
   async function exportarExcel() {
     setExportando(true);
     try {
       // Busca todos os registros com os mesmos filtros, sem paginação
-      const params: any = {
-        page: 1,
-        per: 99999,
-        orderBy: filters.orderBy,
-        orderDir: filters.orderDir,
-      };
-      if (filters.motoId) params.motoId = filters.motoId;
-      if (filters.marca) params.marca = filters.marca;
-      if (filters.disponivel !== '') params.disponivel = filters.disponivel;
-      if (filters.mercadoLivreLink !== '') params.mercadoLivreLink = filters.mercadoLivreLink;
-      if (filters.localizacao !== '') params.localizacao = filters.localizacao;
-      if (filters.caixas.length) params.caixas = filters.caixas;
-      if (filters.detranEtiqueta !== '') params.detranEtiqueta = filters.detranEtiqueta;
-      if (filters.dimensoes !== '') params.dimensoes = filters.dimensoes;
-      if (filters.search) params.search = filters.search;
-      if (filters.numeroPeca) params.numeroPeca = filters.numeroPeca;
-      if (filters.dataVendaFrom) params.dataVendaFrom = filters.dataVendaFrom;
-      if (filters.dataVendaTo) params.dataVendaTo = filters.dataVendaTo;
-
-      const result = await api.pecas.list(params);
+      const result = await api.pecas.list(buildPecaListParams({ page: 1, per: 99999 }));
       const pecas = result?.data || [];
 
       const XLSX = await import('xlsx');
@@ -1831,6 +1824,19 @@ export default function EstoquePage() {
     } finally {
       setExportando(false);
     }
+  }
+
+  async function handleSelecionarTodasFiltradas() {
+    setSelecionandoTudo(true);
+    try {
+      const result = await api.pecas.list(buildPecaListParams({ page: 1, per: 99999 }));
+      const pecas = (result?.data || []).filter((peca: any) => !isPrejuizoPeca(peca));
+      setSelectedPecaIds(pecas.map((peca: any) => peca.id));
+      setSelectedPecasById(Object.fromEntries(pecas.map((peca: any) => [peca.id, peca])));
+    } catch (e: any) {
+      alert(`Erro ao selecionar todas as pecas: ${e.message}`);
+    }
+    setSelecionandoTudo(false);
   }
 
   const totalPages = Math.max(1, Math.ceil((data.total || 0) / filters.perPage));
@@ -2157,6 +2163,22 @@ export default function EstoquePage() {
               <button onClick={() => applyDatePreset('7days')} style={{ ...cs.btn, padding: '4px 10px', fontSize: 12, background: 'var(--white)', borderColor: 'var(--border)', color: 'var(--ink-soft)' }}>7 dias</button>
               <button onClick={() => applyDatePreset('30days')} style={{ ...cs.btn, padding: '4px 10px', fontSize: 12, background: 'var(--white)', borderColor: 'var(--border)', color: 'var(--ink-soft)' }}>30 dias</button>
               <button onClick={() => applyDatePreset('month')} style={{ ...cs.btn, padding: '4px 10px', fontSize: 12, background: 'var(--white)', borderColor: 'var(--border)', color: 'var(--ink-soft)' }}>Este mes</button>
+              <button
+                type="button"
+                onClick={handleSelecionarTodasFiltradas}
+                disabled={selecionandoTudo || loading}
+                style={{ ...cs.btn, padding: '4px 10px', fontSize: 12, background: 'var(--white)', borderColor: 'var(--border)', color: selecionandoTudo ? 'var(--ink-muted)' : 'var(--blue-500)', opacity: selecionandoTudo || loading ? 0.65 : 1 }}
+              >
+                {selecionandoTudo ? 'Selecionando...' : 'Selecionar tudo'}
+              </button>
+              <button
+                type="button"
+                onClick={clearSelection}
+                disabled={!selectedPecaIds.length}
+                style={{ ...cs.btn, padding: '4px 10px', fontSize: 12, background: 'var(--white)', borderColor: 'var(--border)', color: selectedPecaIds.length ? 'var(--red)' : 'var(--ink-muted)', opacity: selectedPecaIds.length ? 1 : 0.65 }}
+              >
+                Limpar selecao{selectedPecaIds.length ? ` (${selectedPecaIds.length})` : ''}
+              </button>
             </div>
             <button
               onClick={clearFilters}
