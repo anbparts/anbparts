@@ -2,6 +2,7 @@
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { API_BASE } from '@/lib/api-base';
+import { useAuth } from '@/lib/auth';
 import { formatEtiquetaMotoLabel, printCaixaLabels, printSkuLabels } from '@/lib/estoque-label-print';
 
 function fmt(v: number) {
@@ -367,7 +368,6 @@ function CopySkuModal({
                 <Field label="Moto" value={motoLabel} />
                 <Field label="SKU origem" value={origem?.idPeca} mono />
                 <Field label="Novo SKU" value={preview.novoIdPeca} mono />
-                <Field label="Variações atuais" value={preview.totalVariacoes} mono />
               </div>
 
               <div style={{ display: 'grid', gap: 10 }}>
@@ -1602,6 +1602,7 @@ function VendaModal({ open, peca, onClose, onConfirm }: any) {
 }
 
 export default function EstoquePage() {
+  const { user } = useAuth();
   const [data, setData] = useState<any>({ total: 0, totalDisp: 0, totalVend: 0, data: [] });
   const [exportando, setExportando] = useState(false);
   const [motos, setMotos] = useState<any[]>([]);
@@ -1629,6 +1630,7 @@ export default function EstoquePage() {
   const [copySkuSaving, setCopySkuSaving] = useState(false);
   const [copySkuError, setCopySkuError] = useState('');
   const [copySkuDetran, setCopySkuDetran] = useState('');
+  const isBruno = String(user?.username || '').trim().toLowerCase() === 'bruno';
   const [selecionandoTudo, setSelecionandoTudo] = useState(false);
   const [caixaFilterOpen, setCaixaFilterOpen] = useState(false);
   const [caixaFilterSearch, setCaixaFilterSearch] = useState('');
@@ -1819,13 +1821,21 @@ export default function EstoquePage() {
   }
 
   async function handleDeleteSelecionadas() {
+    if (!isBruno) {
+      alert('Apenas o usuario Bruno pode deletar pecas em massa.');
+      return;
+    }
     if (!selectedPecaIds.length) return;
     if (!confirm(`Excluir ${selectedPecaIds.length} peca(s) selecionada(s)?`)) return;
     if (!confirm(`Tem certeza que deseja excluir ${selectedPecaIds.length} peca(s) selecionada(s)? Essa acao nao pode ser desfeita.`)) return;
-    await Promise.all(selectedPecaIds.map((id) => api.pecas.delete(id)));
-    setSelectedPecaIds([]);
-    setSelectedPecasById({});
-    load();
+    try {
+      await api.pecas.bulkDelete(selectedPecaIds);
+      setSelectedPecaIds([]);
+      setSelectedPecasById({});
+      load();
+    } catch (e: any) {
+      alert(e.message || 'Erro ao deletar pecas em massa');
+    }
   }
 
   function toggleSelectedPeca(id: number) {
@@ -2312,22 +2322,24 @@ export default function EstoquePage() {
               <select style={{ ...cs.sel, width: isPhone ? '100%' : undefined }} value={String(filters.perPage)} onChange={(e) => setFilters({ ...filters, perPage: Number(e.target.value), page: 1 })}>
                 {pageSizeOptions.map((size) => <option key={size} value={size}>{size} por pagina</option>)}
               </select>
-              <button
-                disabled={!selectedPecaIds.length}
-                onClick={handleDeleteSelecionadas}
-                style={{
-                  ...cs.btn,
-                  background: selectedPecaIds.length ? '#fff1f2' : 'var(--gray-50)',
-                  color: selectedPecaIds.length ? 'var(--red)' : 'var(--ink-muted)',
-                  borderColor: selectedPecaIds.length ? '#fecdd3' : 'var(--border)',
-                  padding: '6px 14px',
-                  fontSize: 13,
-                  opacity: selectedPecaIds.length ? 1 : 0.7,
-                  width: isPhone ? '100%' : undefined,
-                }}
-              >
-                Deletar em massa{selectedPecaIds.length ? ` (${selectedPecaIds.length})` : ''}
-              </button>
+              {isBruno && (
+                <button
+                  disabled={!selectedPecaIds.length}
+                  onClick={handleDeleteSelecionadas}
+                  style={{
+                    ...cs.btn,
+                    background: selectedPecaIds.length ? '#fff1f2' : 'var(--gray-50)',
+                    color: selectedPecaIds.length ? 'var(--red)' : 'var(--ink-muted)',
+                    borderColor: selectedPecaIds.length ? '#fecdd3' : 'var(--border)',
+                    padding: '6px 14px',
+                    fontSize: 13,
+                    opacity: selectedPecaIds.length ? 1 : 0.7,
+                    width: isPhone ? '100%' : undefined,
+                  }}
+                >
+                  Deletar em massa{selectedPecaIds.length ? ` (${selectedPecaIds.length})` : ''}
+                </button>
+              )}
               <button
                 style={{ ...cs.btn, background: 'var(--white)', border: '1px solid var(--border)', color: exportando ? 'var(--ink-muted)' : 'var(--ink)', padding: '6px 14px', fontSize: 13, width: isPhone ? '100%' : undefined, opacity: exportando ? 0.6 : 1 }}
                 onClick={exportarExcel}

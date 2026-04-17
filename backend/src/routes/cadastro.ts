@@ -75,6 +75,10 @@ function normalizeNullableText(value: any, options?: { uppercase?: boolean }) {
   return options?.uppercase ? text.toUpperCase() : text;
 }
 
+function isBrunoAuthUser(req: any) {
+  return String(req?.authUser?.username || '').trim().toLowerCase() === 'bruno';
+}
+
 async function listRelatedSkuIdsForBase(baseSku: string) {
   if (!baseSku) return [];
 
@@ -933,6 +937,10 @@ cadastroRouter.delete('/:id', async (req, res, next) => {
     if (!cadastro) return res.status(404).json({ error: 'Não encontrado' });
     // Se forceDelete=true, pula a verificação do Bling
     const forceDelete = req.query.force === 'true';
+
+    if (forceDelete && !isBrunoAuthUser(req)) {
+      return res.status(403).json({ error: 'Apenas o usuario Bruno pode eliminar linhas finalizadas do cadastro.' });
+    }
 
     if (cadastro.blingProdutoId && !forceDelete) {
       let existeNoBling = false;

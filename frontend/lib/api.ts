@@ -66,6 +66,7 @@ export const api = {
     vender: (id: number, data: any) => req<any>(`/pecas/${id}/vender`, { method: 'PATCH', body: JSON.stringify(data) }),
     marcarPrejuizo: (id: number, data: any) => req<any>(`/pecas/${id}/prejuizo`, { method: 'PATCH', body: JSON.stringify(data) }),
     cancelarVenda: (id: number) => req<any>(`/pecas/${id}/cancelar-venda`, { method: 'PATCH' }),
+    bulkDelete: (ids: number[]) => req<any>('/pecas/bulk-delete', { method: 'POST', body: JSON.stringify({ ids }) }),
     delete: (id: number)    => req<any>(`/pecas/${id}`, { method: 'DELETE' }),
   },
   inventario: {

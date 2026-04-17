@@ -54,6 +54,14 @@ const prejuizoPayloadSchema = z.object({
   observacao: z.string().optional().nullable(),
 });
 
+const bulkDeletePecasSchema = z.object({
+  ids: z.array(z.number().int().positive()).min(1),
+});
+
+function isBrunoAuthUser(req: any) {
+  return String(req?.authUser?.username || '').trim().toLowerCase() === 'bruno';
+}
+
 async function gerarIdPeca(): Promise<string> {
   const last = await prisma.peca.findFirst({ orderBy: { idPeca: 'desc' } });
   if (!last) return 'PN0001';
@@ -752,6 +760,27 @@ pecasRouter.get('/:id', async (req, res, next) => {
     });
     if (!peca) return res.status(404).json({ error: 'Peca nao encontrada' });
     res.json(peca);
+  } catch (e) { next(e); }
+});
+
+pecasRouter.post('/bulk-delete', async (req, res, next) => {
+  try {
+    if (!isBrunoAuthUser(req)) {
+      return res.status(403).json({ error: 'Apenas o usuario Bruno pode deletar pecas em massa.' });
+    }
+
+    const parsed = bulkDeletePecasSchema.safeParse(req.body || {});
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Informe ao menos uma peca valida para exclusao em massa.' });
+    }
+
+    const result = await prisma.peca.deleteMany({
+      where: {
+        id: { in: parsed.data.ids },
+      },
+    });
+
+    res.json({ ok: true, deletedCount: result.count });
   } catch (e) { next(e); }
 });
 

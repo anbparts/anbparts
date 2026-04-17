@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { API_BASE } from '@/lib/api-base';
 import { api } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
 import { formatEtiquetaMotoLabel, printSkuLabels } from '@/lib/estoque-label-print';
 
 const API = API_BASE;
@@ -87,6 +88,7 @@ function buildCadastroSkuEtiquetas(item: CadastroPeca) {
 }
 
 export default function CadastroPage() {
+  const { user } = useAuth();
   const [motos, setMotos] = useState<any[]>([]);
   const [caixas, setCaixas] = useState<string[]>([]);
   const [data, setData] = useState<{ total: number; data: CadastroPeca[] }>({ total: 0, data: [] });
@@ -111,6 +113,8 @@ export default function CadastroPage() {
   const [confirmando, setConfirmando] = useState(false);
   const [etiquetas, setEtiquetas] = useState<string[]>(['']); // array de etiquetas detran
   const [imprimindoItemId, setImprimindoItemId] = useState<number | null>(null);
+  const [eliminandoLinhaId, setEliminandoLinhaId] = useState<number | null>(null);
+  const isBruno = String(user?.username || '').trim().toLowerCase() === 'bruno';
 
   useEffect(() => { loadAll(); }, [filters, somentePendentes]);
 
@@ -247,6 +251,10 @@ export default function CadastroPage() {
 
   async function excluir(force = false) {
     if (!editItem) return;
+    if (!isBruno) {
+      alert('Apenas o usuario Bruno pode excluir linhas do cadastro.');
+      return;
+    }
     const msg = force
       ? `FORÇAR exclusão de ${editItem.idPeca} ignorando verificação do Bling?`
       : `Excluir o pré-cadastro ${editItem.idPeca}?`;
@@ -270,6 +278,33 @@ Deseja forçar a exclusão mesmo assim?`);
       await loadAll();
     } catch (e: any) { alert(e.message); }
     setExcluindo(false);
+  }
+
+  async function eliminarLinhaCadastro(item: CadastroPeca) {
+    if (!isBruno) {
+      alert('Apenas o usuario Bruno pode eliminar linhas do cadastro.');
+      return;
+    }
+    if (!confirm(`Eliminar a linha ${item.idPeca} do cadastro?`)) return;
+    if (!confirm(`Tem certeza que deseja eliminar ${item.idPeca}? Essa acao remove a linha mesmo se ela ja estiver finalizada.`)) return;
+
+    setEliminandoLinhaId(item.id);
+    try {
+      const resp = await fetch(`${API}/cadastro/${item.id}?force=true`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      const d = await resp.json();
+      if (!resp.ok) throw new Error(d.error || 'Erro ao eliminar linha');
+      if (editItem?.id === item.id) {
+        setModal(false);
+        setEditItem(null);
+      }
+      await loadAll();
+    } catch (e: any) {
+      alert(e.message || 'Erro ao eliminar linha');
+    }
+    setEliminandoLinhaId(null);
   }
 
   async function abrirFinalizar(item: CadastroPeca) {
@@ -390,6 +425,15 @@ Deseja forçar a exclusão mesmo assim?`);
                             </button>
                             {!cadastOk && (
                               <button style={{ ...s.btn, fontSize: 11, padding: '4px 10px', background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)' }} onClick={() => openEditar(item)}>Editar</button>
+                            )}
+                            {isBruno && (
+                              <button
+                                style={{ ...s.btn, fontSize: 11, padding: '4px 10px', background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', opacity: eliminandoLinhaId === item.id ? 0.7 : 1 }}
+                                onClick={() => eliminarLinhaCadastro(item)}
+                                disabled={eliminandoLinhaId === item.id}
+                              >
+                                {eliminandoLinhaId === item.id ? 'Eliminando...' : 'Eliminar linha'}
+                              </button>
                             )}
                           </div>
                         </td>
@@ -564,7 +608,7 @@ Deseja forçar a exclusão mesmo assim?`);
             {/* Footer */}
             <div style={{ padding: '14px 24px', borderTop: '1px solid var(--border)', display: 'flex', gap: 10, justifyContent: 'flex-end', alignItems: 'center' }}>
               <button onClick={() => setModal(false)} style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)' }}>Cancelar</button>
-              {editItem && (
+              {editItem && isBruno && (
                 <button onClick={() => excluir()} disabled={excluindo}
                   style={{ ...s.btn, background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', opacity: excluindo ? 0.7 : 1 }}>
                   {excluindo ? 'Excluindo...' : '🗑️ Excluir'}
