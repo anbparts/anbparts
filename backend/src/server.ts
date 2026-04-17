@@ -14,6 +14,7 @@ import { empresaRouter } from './routes/empresa';
 import { mercadoLivreRouter, startMercadoLivreScheduler } from './routes/mercado-livre';
 import { nuvemshopRouter } from './routes/nuvemshop';
 import { cadastroRouter } from './routes/cadastro';
+import { etiquetasRouter } from './routes/etiquetas';
 import { authMiddleware } from './middlewares/auth';
 import { errorMiddleware } from './middlewares/error';
 
@@ -65,6 +66,7 @@ app.use('/configuracoes-gerais', configuracoesGeraisRouter);
 app.use('/empresa', empresaRouter);
 app.use('/nuvemshop', nuvemshopRouter);
 app.use('/cadastro', cadastroRouter);
+app.use('/etiquetas', etiquetasRouter);
 
 app.use(errorMiddleware);
 
