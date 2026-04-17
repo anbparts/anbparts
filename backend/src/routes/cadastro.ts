@@ -256,6 +256,7 @@ async function buildBlingPayload(cadastro: any, isUpdate: boolean) {
     nome: cadastro.descricao,
     codigo: cadastro.idPeca,
     preco: Number(cadastro.precoVenda),
+    unidade: 'UN',
     tipo: 'P',
     formato: 'S',
     situacao: isUpdate ? 'A' : 'I',
@@ -277,7 +278,7 @@ async function buildBlingPayload(cadastro: any, isUpdate: boolean) {
       localizacao: cadastro.localizacao || '',
     },
     categoria: { id: BLING_CATEGORIA_ID },
-    tributacao: { ncm: '87141000' },
+    tributacao: { ncm: '87141000', cest: '01.076.00' },
   };
 
   if (camposCustomizados.length) payload.camposCustomizados = camposCustomizados;
