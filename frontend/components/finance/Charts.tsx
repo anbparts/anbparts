@@ -443,9 +443,9 @@ export function HeatmapChart({
     <div style={{ overflowX: 'auto' }}>
       <div
         style={{
-          minWidth: Math.max(1180, 190 + columns.length * 96),
+          minWidth: Math.max(1180, 190 + columns.length * 160),
           display: 'grid',
-          gridTemplateColumns: `190px repeat(${columns.length}, 96px)`,
+          gridTemplateColumns: `190px repeat(${columns.length}, 160px)`,
           gap: 1,
           background: 'var(--border)',
           border: '1px solid var(--border)',
