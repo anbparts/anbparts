@@ -1685,6 +1685,7 @@ export default function EstoquePage() {
   async function handleDeleteSelecionadas() {
     if (!selectedPecaIds.length) return;
     if (!confirm(`Excluir ${selectedPecaIds.length} peca(s) selecionada(s)?`)) return;
+    if (!confirm(`Tem certeza que deseja excluir ${selectedPecaIds.length} peca(s) selecionada(s)? Essa acao nao pode ser desfeita.`)) return;
     await Promise.all(selectedPecaIds.map((id) => api.pecas.delete(id)));
     setSelectedPecaIds([]);
     setSelectedPecasById({});
