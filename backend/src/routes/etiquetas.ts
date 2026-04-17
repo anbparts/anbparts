@@ -127,22 +127,12 @@ etiquetasRouter.post('/sku', async (req, res, next) => {
     res.setHeader('Content-Disposition', 'inline; filename="etiquetas-sku.pdf"');
     doc.pipe(res);
 
-    const ML      = MM(3.5);   // margin left
-    const LABEL_X = MM(15.0);  // x dos valores (moto, cod)
-    const BAR_W   = MM(43.0);
-    const BAR_H   = MM(7.0);
-    const BAR_Y   = MM(19.5);
-
-    // tamanhos de fonte em pt
-    const PT = (mm: number) => mm * (72 / 25.4);
-    const MOTO_LABEL_PT  = PT(2.2);
-    const MOTO_VALUE_PT  = PT(2.5);
-    const COD_LABEL_PT   = PT(2.0);
-    const COD_VALUE_PT   = PT(3.2);
-    const DESC_PT        = PT(2.7);
-    const MOTO_Y         = MM(4.3);
-    const COD_Y          = MM(8.7);
-    const DESC_Y         = MM(13.7);
+    const ML       = MM(3.5);   // margem esquerda
+    const MR       = MM(2.5);   // margem direita
+    const QR_SIZE  = MM(20.0);  // QR code quadrado
+    const QR_X     = LABEL_W - MR - QR_SIZE;
+    const QR_Y     = MM(2.0);
+    const TEXT_W   = QR_X - ML - MM(1.5); // largura da área de texto
 
     for (let i = 0; i < items.length; i++) {
       if (i > 0) {
@@ -150,35 +140,41 @@ etiquetasRouter.post('/sku', async (req, res, next) => {
       }
 
       const item = items[i];
-      const barcodePng = await gerarBarcodePng(item.sku);
 
-      // Moto:
-      doc.font('Helvetica-Bold').fontSize(MOTO_LABEL_PT);
-      doc.text('Moto:', ML, MOTO_Y, { lineBreak: false });
+      // QR Code (lado direito)
+      const qrPng = await bwipjs.toBuffer({
+        bcid: 'qrcode',
+        text: item.sku,
+        scale: 6,
+        eclevel: 'M',
+        backgroundcolor: 'ffffff',
+      });
+      doc.image(qrPng, QR_X, QR_Y, { width: QR_SIZE, height: QR_SIZE });
 
-      const motoFontSize = fitFontSize(doc, item.motoLabel, BAR_W - MM(11.5), MOTO_VALUE_PT, PT(1.6));
+      // "Moto:" + valor (linha do topo)
+      doc.font('Helvetica').fontSize(MM(2.0));
+      doc.text('Moto:', ML, MM(3.5), { lineBreak: false });
+
+      const motoFontSize = fitFontSize(doc, item.motoLabel, TEXT_W - MM(9.5), MM(2.2), MM(1.5));
       doc.font('Helvetica-Bold').fontSize(motoFontSize);
-      doc.text(item.motoLabel || '-', LABEL_X, MOTO_Y, { lineBreak: false });
+      doc.text(item.motoLabel || '-', ML + MM(10.0), MM(3.5), { lineBreak: false });
 
-      // Cód:
-      doc.font('Helvetica-Bold').fontSize(COD_LABEL_PT);
-      doc.text('Cod:', ML, COD_Y, { lineBreak: false });
-
-      const skuFontSize = fitFontSize(doc, item.sku, BAR_W - MM(11.5), COD_VALUE_PT, PT(2.0));
+      // SKU — destaque, fonte grande
+      const skuFontSize = fitFontSize(doc, item.sku, TEXT_W, MM(7.0), MM(4.0));
       doc.font('Helvetica-Bold').fontSize(skuFontSize);
-      doc.text(item.sku, LABEL_X, COD_Y, { lineBreak: false });
+      doc.text(item.sku, ML, MM(9.0), { lineBreak: false });
 
-      // Descrição (max 2 linhas)
-      doc.font('Helvetica-Bold').fontSize(DESC_PT);
-      doc.text(item.descricao || '-', ML, DESC_Y, {
-        width: BAR_W,
-        height: MM(5.0),
+      // Linha divisória sutil
+      doc.moveTo(ML, MM(20.0)).lineTo(LABEL_W - MR, MM(20.0)).strokeColor('#cccccc').lineWidth(0.5).stroke();
+
+      // Descrição — parte inferior
+      doc.font('Helvetica-Bold').fontSize(MM(2.4)).strokeColor('#000000').fillColor('#000000');
+      doc.text(item.descricao || '-', ML, MM(21.5), {
+        width: LABEL_W - ML - MR,
+        height: MM(7.0),
         ellipsis: true,
         lineBreak: true,
       });
-
-      // Barcode
-      doc.image(barcodePng, ML, BAR_Y, { width: BAR_W, height: BAR_H });
     }
 
     doc.end();
