@@ -145,20 +145,23 @@ export async function printCaixaLabels(items: CaixaEtiquetaPrintItem[]) {
     Promise.all(
       sanitizedItems.map(async (item) => ({
         ...item,
-        barcodeDataUrl: await renderBarcodeDataUrl(item.caixa, { width: 3.1, height: 200 }),
+        barcodeDataUrl: await renderBarcodeDataUrl(item.caixa, { width: 5, height: 280 }),
       })),
     ),
   ]);
 
   const doc = createPdfDocument(jsPDF);
 
+  const MARGIN_LEFT = 3.5;
+  const BARCODE_WIDTH = 43.0;
+
   labels.forEach((item, index) => {
     prepareLabelPage(doc, index);
-    doc.addImage(item.barcodeDataUrl, 'PNG', 1.4, 2.1, 47.2, 17.2, undefined, 'FAST');
+    doc.addImage(item.barcodeDataUrl, 'PNG', MARGIN_LEFT, 2.0, BARCODE_WIDTH, 17.5, undefined, 'NONE');
     doc.setFont('helvetica', 'bold');
-    const fontSize = fitTextSize(doc, item.caixa.toUpperCase(), 45.5, 11.2, 7.5);
+    const fontSize = fitTextSize(doc, item.caixa.toUpperCase(), BARCODE_WIDTH, 11.2, 7.5);
     doc.setFontSize(fontSize);
-    doc.text(item.caixa.toUpperCase(), LABEL_WIDTH_MM / 2, 24.4, { align: 'center' });
+    doc.text(item.caixa.toUpperCase(), MARGIN_LEFT + BARCODE_WIDTH / 2, 24.4, { align: 'center' });
   });
 
   downloadPdf(doc, `Etiquetas_Caixa_ANB_${buildTimestampFileToken()}.pdf`);
