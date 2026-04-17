@@ -11,9 +11,9 @@ const s = {
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    padding: '10px 18px',
-    borderRadius: 12,
-    fontSize: 13,
+    padding: '8px 14px',
+    borderRadius: 8,
+    fontSize: 12.5,
     fontWeight: 600,
     cursor: 'pointer',
     border: '1px solid transparent',
@@ -24,13 +24,13 @@ const s = {
     width: '100%',
     background: 'var(--white)',
     border: '1px solid #dbe3ef',
-    borderRadius: 12,
-    padding: '12px 14px',
-    fontSize: 14,
+    borderRadius: 8,
+    padding: '9px 12px',
+    fontSize: 13,
     fontFamily: 'Inter, sans-serif',
     color: 'var(--gray-800)',
     outline: 'none',
-    lineHeight: 1.6,
+    lineHeight: 1.5,
   },
 };
 
@@ -131,7 +131,7 @@ export default function MercadoLivrePerguntasPage() {
 
   const shellOffset = isDesktop ? 0 : 64;
   const pagePadding = isPhone ? 14 : isTabletPortrait ? 18 : isTabletLandscape ? 22 : 28;
-  const cardPadding = isPhone ? 14 : isTabletPortrait ? 18 : isTabletLandscape ? 20 : 22;
+  const cardPadding = isPhone ? 12 : isTabletPortrait ? 14 : isTabletLandscape ? 16 : 16;
   const topbarSticky = isDesktop || isTabletLandscape;
   const containerMaxWidth = isDesktop ? 1180 : isTabletLandscape ? 1080 : isTabletPortrait ? 860 : '100%';
   const stackIntro = isPhone || isTabletPortrait;
@@ -333,7 +333,7 @@ export default function MercadoLivrePerguntasPage() {
               Nenhuma pergunta pendente encontrada.
             </div>
           ) : (
-            <div style={{ display: 'grid', gap: isPhone ? 14 : 16 }}>
+            <div style={{ display: 'grid', gap: isPhone ? 10 : 12 }}>
               {perguntas.map((pergunta) => {
                 const questionId = String(pergunta.questionId);
                 const busy = deletingId === questionId || respondingId === questionId;
@@ -344,7 +344,7 @@ export default function MercadoLivrePerguntasPage() {
                     style={{
                       background: 'var(--white)',
                       border: '1px solid #fcd34d',
-                      borderRadius: isPhone ? 18 : 20,
+                      borderRadius: isPhone ? 12 : 14,
                       padding: cardPadding,
                       boxShadow: '0 12px 30px rgba(15, 23, 42, 0.04)',
                     }}
@@ -356,7 +356,7 @@ export default function MercadoLivrePerguntasPage() {
                         alignItems: stackCardHeader ? 'stretch' : 'flex-start',
                         justifyContent: 'space-between',
                         gap: 12,
-                        marginBottom: 14,
+                        marginBottom: 10,
                       }}
                     >
                       <div style={{ minWidth: 0 }}>
@@ -375,7 +375,7 @@ export default function MercadoLivrePerguntasPage() {
 
                         <div
                           style={{
-                            fontSize: isPhone ? 17 : isTabletPortrait ? 22 : 21,
+                            fontSize: isPhone ? 15 : isTabletPortrait ? 18 : 17,
                             fontWeight: 700,
                             color: 'var(--gray-800)',
                             marginBottom: 6,
@@ -389,7 +389,7 @@ export default function MercadoLivrePerguntasPage() {
 
                         <div
                           style={{
-                            fontSize: isPhone ? 13.5 : 14,
+                            fontSize: isPhone ? 12.5 : 13,
                             color: 'var(--gray-500)',
                             lineHeight: 1.65,
                             overflowWrap: 'anywhere',
@@ -426,7 +426,7 @@ export default function MercadoLivrePerguntasPage() {
                         display: 'grid',
                         gridTemplateColumns: metaColumns,
                         gap: 10,
-                        marginBottom: 14,
+                        marginBottom: 10,
                       }}
                     >
                       {[
@@ -440,8 +440,8 @@ export default function MercadoLivrePerguntasPage() {
                           style={{
                             background: '#f8fafc',
                             border: '1px solid #e2e8f0',
-                            borderRadius: 14,
-                            padding: isPhone ? '11px 11px 10px' : '12px 13px',
+                            borderRadius: 10,
+                            padding: isPhone ? '8px 10px' : '9px 11px',
                             minWidth: 0,
                           }}
                         >
@@ -474,7 +474,7 @@ export default function MercadoLivrePerguntasPage() {
                       style={{
                         display: 'grid',
                         gridTemplateColumns: contentColumns,
-                        gap: 14,
+                        gap: 10,
                         alignItems: 'start',
                       }}
                     >
@@ -482,8 +482,8 @@ export default function MercadoLivrePerguntasPage() {
                         style={{
                           background: '#f8fafc',
                           border: '1px solid #dbe3ef',
-                          borderRadius: 16,
-                          padding: isPhone ? 14 : 16,
+                          borderRadius: 10,
+                          padding: isPhone ? 10 : 12,
                         }}
                       >
                         <div
@@ -499,7 +499,7 @@ export default function MercadoLivrePerguntasPage() {
                         </div>
                         <div
                           style={{
-                            fontSize: isPhone ? 14 : 14.5,
+                            fontSize: isPhone ? 13 : 13.5,
                             color: 'var(--gray-800)',
                             lineHeight: 1.75,
                             overflowWrap: 'anywhere',
@@ -513,8 +513,8 @@ export default function MercadoLivrePerguntasPage() {
                         style={{
                           background: '#fbfdff',
                           border: '1px solid #dbe3ef',
-                          borderRadius: 16,
-                          padding: isPhone ? 14 : 16,
+                          borderRadius: 10,
+                          padding: isPhone ? 10 : 12,
                         }}
                       >
                         <div
@@ -532,7 +532,7 @@ export default function MercadoLivrePerguntasPage() {
                         <textarea
                           style={{
                             ...s.input,
-                            minHeight: isPhone ? 122 : isTabletPortrait ? 132 : 150,
+                            minHeight: isPhone ? 90 : isTabletPortrait ? 100 : 110,
                             resize: 'vertical',
                           }}
                           value={respostas[questionId] || ''}
@@ -547,7 +547,7 @@ export default function MercadoLivrePerguntasPage() {
                             alignItems: isPhone ? 'stretch' : 'center',
                             justifyContent: 'space-between',
                             gap: 12,
-                            marginTop: 12,
+                            marginTop: 8,
                           }}
                         >
                           <div style={{ minWidth: 0 }}>
@@ -586,7 +586,7 @@ export default function MercadoLivrePerguntasPage() {
                                 background: 'var(--red-light)',
                                 color: 'var(--red)',
                                 borderColor: '#fca5a5',
-                                minHeight: 42,
+                                minHeight: 34,
                               }}
                               onClick={() => excluir(questionId)}
                               disabled={busy}
@@ -600,7 +600,7 @@ export default function MercadoLivrePerguntasPage() {
                                 width: isPhone ? '100%' : 'auto',
                                 background: 'var(--blue-500)',
                                 color: '#fff',
-                                minHeight: 42,
+                                minHeight: 34,
                               }}
                               onClick={() => responder(questionId)}
                               disabled={busy}
