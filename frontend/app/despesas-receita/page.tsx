@@ -94,30 +94,43 @@ export default function DespesasReceitaPage() {
   };
 
   function pctReceita(value: number) {
-    if (!totals.receitaBruta) return null;
-    return ((value / totals.receitaBruta) * 100).toFixed(1) + '% da receita';
+    if (!totals.receitaBruta || value === 0) return '';
+    return ` (${((value / totals.receitaBruta) * 100).toFixed(1)}%)`;
   }
 
   const heatmapRows = useMemo(() => {
+    const receitaTotal = months.reduce((s: number, m: any) => s + Number(m.receitaBruta || 0), 0);
+
     const buildRow = (label: string, field: string, note?: string) => ({
       label,
       note,
-      cells: months.map((item: any) => ({
-        label: MESES[(item.mes || 1) - 1] || item.label,
-        value: Number(item[field] || 0),
-        displayValue: fmt(Number(item[field] || 0)),
-      })),
+      cells: months.map((item: any) => {
+        const val = Number(item[field] || 0);
+        const pct = receitaTotal > 0 && val !== 0 ? ` (${((val / receitaTotal) * 100).toFixed(1)}%)` : '';
+        return {
+          label: MESES[(item.mes || 1) - 1] || item.label,
+          value: val,
+          displayValue: fmt(val) + pct,
+        };
+      }),
     });
 
-    const categoriaRows = categorias.map((cat) => ({
-      label: `↳ ${cat}`,
-      note: `Despesas da categoria ${cat}`,
-      cells: months.map((item: any) => ({
-        label: MESES[(item.mes || 1) - 1] || item.label,
-        value: Number(item.despesasPorCategoria?.[cat] || 0),
-        displayValue: fmt(Number(item.despesasPorCategoria?.[cat] || 0)),
-      })),
-    }));
+    // Linhas de categoria — só inclui se tiver valor > 0 no período
+    const categoriaRows = categorias
+      .filter((cat) => (totals.porCategoria?.[cat] || 0) > 0)
+      .map((cat) => ({
+        label: `↳ ${cat}`,
+        note: `Despesas da categoria ${cat}`,
+        cells: months.map((item: any) => {
+          const val = Number(item.despesasPorCategoria?.[cat] || 0);
+          const pct = receitaTotal > 0 && val !== 0 ? ` (${((val / receitaTotal) * 100).toFixed(1)}%)` : '';
+          return {
+            label: MESES[(item.mes || 1) - 1] || item.label,
+            value: val,
+            displayValue: fmt(val) + pct,
+          };
+        }),
+      }));
 
     return [
       buildRow('Receita bruta', 'receitaBruta', 'Base bruta das vendas por mes'),
@@ -128,7 +141,7 @@ export default function DespesasReceitaPage() {
       buildRow('Saidas totais', 'totalSaidas', 'Taxas + frete + despesas gerais'),
       buildRow('Resultado bruto', 'resultadoBruto', 'Receita bruta menos as saidas do periodo'),
     ];
-  }, [months, categorias]);
+  }, [months, categorias, totals]);
 
   const anosDisponiveis = useMemo(() => {
     const current = Number(filtroAno) || new Date().getFullYear();
@@ -175,32 +188,8 @@ export default function DespesasReceitaPage() {
               <div style={{ fontFamily: 'Fraunces, serif', fontSize: 22, fontWeight: 500, color: card.color, ...sensitiveMaskStyle(hidden) }}>
                 {sensitiveText(fmt(card.value), hidden)}
               </div>
-              {pctReceita(card.value) && card.label !== 'Receita bruta' && (
-                <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginTop: 4 }}>
-                  {pctReceita(card.value)}
-                </div>
-              )}
             </div>
           ))}
-          {/* Cards por categoria de despesa */}
-          {categorias.map((cat) => {
-            const val = totals.porCategoria?.[cat] || 0;
-            return (
-              <div key={cat} style={cs.sCard}>
-                <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '.6px', textTransform: 'uppercase', marginBottom: 8 }}>
-                  {cat}
-                </div>
-                <div style={{ fontFamily: 'Fraunces, serif', fontSize: 22, fontWeight: 500, color: 'var(--red)', ...sensitiveMaskStyle(hidden) }}>
-                  {sensitiveText(fmt(val), hidden)}
-                </div>
-                {pctReceita(val) && (
-                  <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginTop: 4 }}>
-                    {pctReceita(val)}
-                  </div>
-                )}
-              </div>
-            );
-          })}
         </div>
 
         <div style={{ ...cs.card, marginBottom: 20 }}>

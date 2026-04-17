@@ -717,8 +717,11 @@ financeiroRouter.get('/despesas-receita', async (req, res, next) => {
 
     const monthIndexes = mes ? [mes] : Array.from({ length: 12 }, (_, index) => index + 1);
 
-    // Coleta todas as categorias únicas
-    const todasCategorias = Array.from(new Set(despesas.map((d) => String(d.categoria || 'Outros').trim()))).sort();
+    // Coleta todas as categorias únicas — exclui "Contador" e categorias sem valor no período
+    const CATEGORIAS_EXCLUIDAS = ['contador'];
+    const todasCategorias = Array.from(new Set(despesas.map((d) => String(d.categoria || 'Outros').trim())))
+      .filter((cat) => !CATEGORIAS_EXCLUIDAS.includes(cat.toLowerCase()))
+      .sort();
 
     const months = monthIndexes.map((monthIndex) => {
       const receitaBruta = pecasVendidas
@@ -774,16 +777,18 @@ financeiroRouter.get('/despesas-receita', async (req, res, next) => {
     const totalSaidas = months.reduce((sum, item) => sum + item.totalSaidas, 0);
     const totalResultadoBruto = months.reduce((sum, item) => sum + item.resultadoBruto, 0);
 
-    // Totais por categoria
+    // Totais por categoria — só retorna categorias com valor > 0 no período
     const totalPorCategoria: Record<string, number> = {};
     todasCategorias.forEach((cat) => {
       totalPorCategoria[cat] = months.reduce((sum, item) => sum + (item.despesasPorCategoria[cat] || 0), 0);
     });
 
+    const categoriasComValor = todasCategorias.filter((cat) => (totalPorCategoria[cat] || 0) > 0);
+
     res.json({
       ano,
       mes: mes || null,
-      categorias: todasCategorias,
+      categorias: categoriasComValor,
       months,
       totals: {
         receitaBruta: totalReceitaBruta,
