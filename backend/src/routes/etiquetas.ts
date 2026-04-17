@@ -12,12 +12,21 @@ const LABEL_H_MM = 30;
 const LABEL_W = MM(LABEL_W_MM);
 const LABEL_H = MM(LABEL_H_MM);
 
+async function gerarPng(options: Record<string, any>): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    (bwipjs as any).toBuffer(options, (err: Error | null, png: Buffer) => {
+      if (err) reject(err);
+      else resolve(png);
+    });
+  });
+}
+
 async function gerarBarcodePng(value: string): Promise<Buffer> {
-  return bwipjs.toBuffer({
+  return gerarPng({
     bcid: 'code128',
     text: value,
-    scale: 4,          // alta resolução — sem tremor
-    height: 28,        // altura das barras em "unidades de escala"
+    scale: 4,
+    height: 28,
     includetext: false,
     backgroundcolor: 'ffffff',
     barcolor: '000000',
@@ -25,6 +34,16 @@ async function gerarBarcodePng(value: string): Promise<Buffer> {
     paddingright: 0,
     paddingtop: 0,
     paddingbottom: 0,
+  });
+}
+
+async function gerarQrPng(value: string): Promise<Buffer> {
+  return gerarPng({
+    bcid: 'qrcode',
+    text: value,
+    scale: 6,
+    eclevel: 'M',
+    backgroundcolor: 'ffffff',
   });
 }
 
@@ -142,13 +161,7 @@ etiquetasRouter.post('/sku', async (req, res, next) => {
       const item = items[i];
 
       // QR Code (lado direito)
-      const qrPng = await bwipjs.toBuffer({
-        bcid: 'qrcode',
-        text: item.sku,
-        scale: 6,
-        eclevel: 'M',
-        backgroundcolor: 'ffffff',
-      });
+      const qrPng = await gerarQrPng(item.sku);
       doc.image(qrPng, QR_X, QR_Y, { width: QR_SIZE, height: QR_SIZE });
 
       // "Moto:" + valor (linha do topo)
