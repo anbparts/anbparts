@@ -69,6 +69,178 @@ async function buildDetranEtiquetaConcatForBaseSku(baseSku: string) {
     .join(' / ');
 }
 
+function normalizeNullableText(value: any, options?: { uppercase?: boolean }) {
+  const text = String(value ?? '').trim();
+  if (!text) return null;
+  return options?.uppercase ? text.toUpperCase() : text;
+}
+
+async function listRelatedSkuIdsForBase(baseSku: string) {
+  if (!baseSku) return [];
+
+  const [pecas, cadastros] = await Promise.all([
+    prisma.peca.findMany({
+      where: {
+        OR: [
+          { idPeca: { equals: baseSku, mode: 'insensitive' } },
+          { idPeca: { startsWith: `${baseSku}-` } },
+        ],
+      },
+      select: { idPeca: true },
+    }),
+    prisma.cadastroPeca.findMany({
+      where: {
+        OR: [
+          { idPeca: { equals: baseSku, mode: 'insensitive' } },
+          { idPeca: { startsWith: `${baseSku}-` } },
+        ],
+      },
+      select: { idPeca: true },
+    }),
+  ]);
+
+  return Array.from(new Set([...pecas, ...cadastros].map((item) => String(item.idPeca || '').trim().toUpperCase()).filter(Boolean)));
+}
+
+function getNextVariantSku(baseSku: string, existingIds: string[]) {
+  const normalizedBaseSku = getBaseSku(baseSku);
+  let maxOrder = existingIds.some((id) => getBaseSku(id) === normalizedBaseSku) ? 1 : 0;
+
+  for (const id of existingIds) {
+    if (getBaseSku(id) !== normalizedBaseSku) continue;
+    maxOrder = Math.max(maxOrder, getSkuVariantOrder(id));
+  }
+
+  const nextOrder = Math.max(2, maxOrder + 1);
+  return `${normalizedBaseSku}-${nextOrder}`;
+}
+
+async function resolveBlingProductStateForBaseSku(baseSku: string) {
+  let blingProdutoId = '';
+
+  const cadastro = await prisma.cadastroPeca.findFirst({
+    where: { idPeca: { equals: baseSku, mode: 'insensitive' } },
+    select: { blingProdutoId: true },
+  });
+  if (cadastro?.blingProdutoId) {
+    blingProdutoId = String(cadastro.blingProdutoId);
+  }
+
+  if (!blingProdutoId) {
+    const blingSearch = await blingReq(`/produtos?criterio=2&tipo=P&codigo=${encodeURIComponent(baseSku)}&pagina=1&limite=5`);
+    const blingItems = blingSearch?.data || [];
+    const found = blingItems.find((produto: any) => String(produto.codigo || '').toUpperCase() === baseSku);
+    if (found?.id) blingProdutoId = String(found.id);
+  }
+
+  if (!blingProdutoId) {
+    throw new Error(`Produto nao encontrado no Bling para SKU base: ${baseSku}`);
+  }
+
+  const blingAtual = await blingReq(`/produtos/${blingProdutoId}`);
+  const produto = blingAtual?.data;
+  if (!produto) {
+    throw new Error(`Falha ao carregar o produto ${baseSku} no Bling.`);
+  }
+
+  return {
+    blingProdutoId,
+    produto,
+  };
+}
+
+function buildBlingProdutoPayloadFromCurrent(
+  produtoAtual: any,
+  overrides?: {
+    largura?: number | null;
+    altura?: number | null;
+    profundidade?: number | null;
+    pesoLiquido?: number | null;
+    localizacao?: string | null;
+    numeroPeca?: string | null;
+    detranEtiqueta?: string | null;
+    estoqueDelta?: number;
+  },
+) {
+  const payload: any = {
+    nome: produtoAtual.nome,
+    codigo: produtoAtual.codigo,
+    tipo: produtoAtual.tipo || 'P',
+    formato: produtoAtual.formato || 'S',
+    situacao: produtoAtual.situacao || 'A',
+    preco: Number(produtoAtual.preco || 0),
+    condicao: produtoAtual.condicao ?? 0,
+    marca: produtoAtual.marca || '',
+    pesoLiquido: overrides?.pesoLiquido != null ? Number(overrides.pesoLiquido) : Number(produtoAtual.pesoLiquido || 0),
+    pesoBruto: overrides?.pesoLiquido != null ? Number(overrides.pesoLiquido) : Number(produtoAtual.pesoBruto || 0),
+    volumes: produtoAtual.volumes || 1,
+    descricaoCurta: produtoAtual.descricaoCurta || '',
+    dimensoes: {
+      largura: overrides?.largura != null ? Number(overrides.largura) : Number(produtoAtual.dimensoes?.largura || 0),
+      altura: overrides?.altura != null ? Number(overrides.altura) : Number(produtoAtual.dimensoes?.altura || 0),
+      profundidade: overrides?.profundidade != null ? Number(overrides.profundidade) : Number(produtoAtual.dimensoes?.profundidade || 0),
+      unidadeMedida: produtoAtual.dimensoes?.unidadeMedida || 2,
+    },
+    estoque: {
+      minimo: Math.max(0, Number(produtoAtual.estoque?.minimo || 0) + Number(overrides?.estoqueDelta || 0)),
+      maximo: Math.max(0, Number(produtoAtual.estoque?.maximo || 0) + Number(overrides?.estoqueDelta || 0)),
+      localizacao: overrides?.localizacao != null
+        ? String(overrides.localizacao || '')
+        : String(produtoAtual.estoque?.localizacao || ''),
+    },
+  };
+
+  const ccExistentes: any[] = Array.isArray(produtoAtual.camposCustomizados) ? produtoAtual.camposCustomizados : [];
+  const ccMap = new Map(ccExistentes.map((campo: any) => [Number(campo.idCampoCustomizado), campo.valor]));
+
+  if (overrides?.numeroPeca !== undefined) {
+    ccMap.set(BLING_NUMERO_PECA_CAMPO_ID, overrides.numeroPeca || '');
+  }
+  if (overrides?.detranEtiqueta !== undefined) {
+    ccMap.set(BLING_DETRAN_CAMPO_ID, overrides.detranEtiqueta || '');
+  }
+  if (ccMap.size > 0) {
+    payload.camposCustomizados = Array.from(ccMap.entries()).map(([idCampoCustomizado, valor]) => ({ idCampoCustomizado, valor }));
+  }
+
+  return payload;
+}
+
+async function getPrimeiroDepositoAtivoId() {
+  try {
+    const dep = await blingReq('/depositos?pagina=1&limite=1&situacoes[]=1');
+    return Number(dep?.data?.[0]?.id || 0) || null;
+  } catch {
+    return null;
+  }
+}
+
+async function lancarEstoqueNoBling(params: {
+  blingProdutoId: string;
+  quantidade: number;
+  preco: number;
+  observacoes: string;
+}) {
+  const estoquePayload: any = {
+    produto: { id: Number(params.blingProdutoId) },
+    operacao: 'B',
+    preco: Number(params.preco) || 0,
+    custo: 0,
+    quantidade: Number(params.quantidade) || 0,
+    observacoes: params.observacoes,
+  };
+
+  const depositoId = await getPrimeiroDepositoAtivoId();
+  if (depositoId) {
+    estoquePayload.deposito = { id: depositoId };
+  }
+
+  await blingReq('/estoques', {
+    method: 'POST',
+    body: JSON.stringify(estoquePayload),
+  });
+}
+
 async function buildBlingPayload(cadastro: any, isUpdate: boolean) {
   const camposCustomizados: any[] = [];
   if (cadastro.numeroPeca) camposCustomizados.push({ idCampoCustomizado: BLING_NUMERO_PECA_CAMPO_ID, valor: cadastro.numeroPeca });
@@ -256,6 +428,218 @@ cadastroRouter.post('/', async (req, res, next) => {
       const failure = buildCadastroBlingErrorResponse(blingErr);
       return res.status(failure.status).json(failure.body);
     }
+  } catch (e) { next(e); }
+});
+
+// GET /cadastro/copiar-peca/:pecaId/preview
+cadastroRouter.get('/copiar-peca/:pecaId/preview', async (req, res, next) => {
+  try {
+    const pecaId = Number(req.params.pecaId);
+    const origem = await prisma.peca.findUnique({
+      where: { id: pecaId },
+      include: {
+        moto: {
+          select: {
+            id: true,
+            marca: true,
+            modelo: true,
+            ano: true,
+          },
+        },
+      },
+    });
+
+    if (!origem) {
+      return res.status(404).json({ error: 'Peca de origem nao encontrada' });
+    }
+    if (origem.emPrejuizo) {
+      return res.status(400).json({ error: 'Pecas em prejuizo nao podem ser copiadas.' });
+    }
+
+    const baseSku = getBaseSku(origem.idPeca);
+    const existingIds = await listRelatedSkuIdsForBase(baseSku);
+    const novoIdPeca = getNextVariantSku(baseSku, existingIds);
+
+    res.json({
+      ok: true,
+      baseSku,
+      novoIdPeca,
+      totalVariacoes: existingIds.length,
+      detranObrigatorio: Boolean(String(origem.detranEtiqueta || '').trim()),
+      limpaVenda: Boolean(origem.dataVenda || origem.blingPedidoId || origem.blingPedidoNum),
+      origem: {
+        id: origem.id,
+        idPeca: origem.idPeca,
+        descricao: origem.descricao,
+        localizacao: origem.localizacao,
+        detranEtiqueta: origem.detranEtiqueta,
+        numeroPeca: origem.numeroPeca,
+        precoML: origem.precoML,
+        valorLiq: origem.valorLiq,
+        valorFrete: origem.valorFrete,
+        valorTaxas: origem.valorTaxas,
+        pesoLiquido: origem.pesoLiquido,
+        pesoBruto: origem.pesoBruto,
+        largura: origem.largura,
+        altura: origem.altura,
+        profundidade: origem.profundidade,
+        moto: origem.moto,
+      },
+    });
+  } catch (e) { next(e); }
+});
+
+// POST /cadastro/copiar-peca/:pecaId - cria nova variacao no estoque e sincroniza Bling
+cadastroRouter.post('/copiar-peca/:pecaId', async (req, res, next) => {
+  try {
+    const pecaId = Number(req.params.pecaId);
+    const origem = await prisma.peca.findUnique({
+      where: { id: pecaId },
+      include: {
+        moto: {
+          select: {
+            id: true,
+            marca: true,
+            modelo: true,
+            ano: true,
+          },
+        },
+      },
+    });
+
+    if (!origem) {
+      return res.status(404).json({ error: 'Peca de origem nao encontrada' });
+    }
+    if (origem.emPrejuizo) {
+      return res.status(400).json({ error: 'Pecas em prejuizo nao podem ser copiadas.' });
+    }
+
+    const baseSku = getBaseSku(origem.idPeca);
+    const existingIds = await listRelatedSkuIdsForBase(baseSku);
+    const novoIdPeca = getNextVariantSku(baseSku, existingIds);
+    const detranOrigem = normalizeNullableText(origem.detranEtiqueta, { uppercase: true });
+    const novaEtiquetaDetran = normalizeNullableText(req.body?.detranEtiqueta, { uppercase: true });
+
+    if (detranOrigem && !novaEtiquetaDetran) {
+      return res.status(400).json({ error: 'Informe uma nova etiqueta Detran para copiar este SKU.' });
+    }
+    if (detranOrigem && novaEtiquetaDetran === detranOrigem) {
+      return res.status(400).json({ error: 'A nova etiqueta Detran nao pode repetir a etiqueta da variacao de origem.' });
+    }
+
+    if (novaEtiquetaDetran) {
+      const detranDuplicada = await prisma.peca.findFirst({
+        where: {
+          id: { not: origem.id },
+          detranEtiqueta: { equals: novaEtiquetaDetran, mode: 'insensitive' },
+          OR: [
+            { idPeca: { equals: baseSku, mode: 'insensitive' } },
+            { idPeca: { startsWith: `${baseSku}-` } },
+          ],
+        },
+        select: { idPeca: true },
+      });
+
+      if (detranDuplicada) {
+        return res.status(400).json({ error: `A etiqueta Detran ${novaEtiquetaDetran} ja esta em uso na variacao ${detranDuplicada.idPeca}.` });
+      }
+    }
+
+    const { blingProdutoId, produto } = await resolveBlingProductStateForBaseSku(baseSku);
+
+    const novaPeca = await prisma.peca.create({
+      data: {
+        motoId: origem.motoId,
+        idPeca: novoIdPeca,
+        descricao: origem.descricao,
+        localizacao: normalizeNullableText(origem.localizacao),
+        detranEtiqueta: novaEtiquetaDetran,
+        mercadoLivreItemId: origem.mercadoLivreItemId || null,
+        mercadoLivreLink: origem.mercadoLivreLink || null,
+        precoML: Number(origem.precoML || 0),
+        valorLiq: Number(origem.valorLiq || 0),
+        valorFrete: Number(origem.valorFrete || 0),
+        valorTaxas: Number(origem.valorTaxas || 0),
+        disponivel: true,
+        emPrejuizo: false,
+        dataVenda: null,
+        blingPedidoId: null,
+        blingPedidoNum: null,
+        pesoLiquido: origem.pesoLiquido != null ? Number(origem.pesoLiquido) : null,
+        pesoBruto: origem.pesoBruto != null ? Number(origem.pesoBruto) : (origem.pesoLiquido != null ? Number(origem.pesoLiquido) : null),
+        largura: origem.largura != null ? Number(origem.largura) : null,
+        altura: origem.altura != null ? Number(origem.altura) : null,
+        profundidade: origem.profundidade != null ? Number(origem.profundidade) : null,
+        numeroPeca: normalizeNullableText(origem.numeroPeca),
+        cadastro: new Date(),
+      },
+      include: {
+        moto: {
+          select: {
+            id: true,
+            marca: true,
+            modelo: true,
+            ano: true,
+          },
+        },
+      },
+    });
+
+    const detranConcat = await buildDetranEtiquetaConcatForBaseSku(baseSku);
+    const blingPayload = buildBlingProdutoPayloadFromCurrent(produto, {
+      largura: origem.largura != null ? Number(origem.largura) : null,
+      altura: origem.altura != null ? Number(origem.altura) : null,
+      profundidade: origem.profundidade != null ? Number(origem.profundidade) : null,
+      pesoLiquido: origem.pesoLiquido != null ? Number(origem.pesoLiquido) : null,
+      localizacao: normalizeNullableText(origem.localizacao),
+      numeroPeca: normalizeNullableText(origem.numeroPeca),
+      detranEtiqueta: detranConcat,
+      estoqueDelta: 1,
+    });
+
+    let produtoAtualizadoNoBling = false;
+
+    try {
+      await blingReq(`/produtos/${blingProdutoId}`, {
+        method: 'PUT',
+        body: JSON.stringify(blingPayload),
+      });
+      produtoAtualizadoNoBling = true;
+
+      await lancarEstoqueNoBling({
+        blingProdutoId,
+        quantidade: 1,
+        preco: Number(origem.precoML || 0),
+        observacoes: `Copia SKU - ${novoIdPeca}`,
+      });
+    } catch (blingError: any) {
+      await prisma.peca.delete({ where: { id: novaPeca.id } }).catch(() => null);
+
+      if (produtoAtualizadoNoBling) {
+        try {
+          const restorePayload = buildBlingProdutoPayloadFromCurrent(produto);
+          await blingReq(`/produtos/${blingProdutoId}`, {
+            method: 'PUT',
+            body: JSON.stringify(restorePayload),
+          });
+        } catch (restoreError: any) {
+          console.error('[copiar-sku] Falha ao reverter produto no Bling:', restoreError?.message);
+        }
+      }
+
+      const failure = buildCadastroBlingErrorResponse(blingError);
+      return res.status(failure.status).json({
+        ...failure.body,
+        error: `Falha ao copiar SKU e sincronizar com o Bling: ${failure.body.error}`,
+      });
+    }
+
+    res.status(201).json({
+      ok: true,
+      novoIdPeca,
+      detranEtiquetaEnviada: detranConcat,
+      peca: novaPeca,
+    });
   } catch (e) { next(e); }
 });
 

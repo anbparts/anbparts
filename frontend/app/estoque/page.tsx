@@ -305,6 +305,136 @@ function DetranBadge({ ativo }: { ativo: boolean }) {
   );
 }
 
+function CopySkuModal({
+  open,
+  preview,
+  loading,
+  saving,
+  detranEtiqueta,
+  error,
+  onChangeDetran,
+  onClose,
+  onConfirm,
+}: {
+  open: boolean;
+  preview: any;
+  loading: boolean;
+  saving: boolean;
+  detranEtiqueta: string;
+  error: string;
+  onChangeDetran: (value: string) => void;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  if (!open) return null;
+
+  const origem = preview?.origem;
+  const motoLabel = [origem?.moto?.marca, origem?.moto?.modelo].filter(Boolean).join(' ') || '-';
+  const detranObrigatorio = Boolean(preview?.detranObrigatorio);
+  const confirmDisabled = loading || saving || !preview || (detranObrigatorio && !String(detranEtiqueta || '').trim());
+
+  function Field({ label, value, mono = false }: { label: string; value?: any; mono?: boolean }) {
+    const display = value != null && value !== '' ? String(value) : '—';
+    return (
+      <div style={{ background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
+        <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', marginBottom: 4 }}>{label}</div>
+        <div style={{ fontSize: mono ? 13 : 13.5, fontWeight: 600, color: display === '—' ? 'var(--gray-300)' : 'var(--gray-800)', fontFamily: mono ? 'Geist Mono, monospace' : 'inherit', overflowWrap: 'anywhere' }}>{display}</div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 242, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }}>
+      <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 16, width: '100%', maxWidth: 860, maxHeight: '92vh', overflowY: 'auto', boxShadow: '0 12px 32px rgba(0,0,0,.10)' }}>
+        <div style={{ padding: '20px 22px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+          <div>
+            <div style={{ fontFamily: 'Fraunces, serif', fontSize: 18, fontWeight: 600 }}>Copiar SKU</div>
+            <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 4 }}>
+              {preview?.baseSku ? `SKU base ${preview.baseSku}` : 'Preparando dados da cópia...'}
+            </div>
+          </div>
+          <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', flexShrink: 0 }}>X</button>
+        </div>
+
+        <div style={{ padding: '20px 22px', display: 'grid', gap: 14 }}>
+          {loading ? (
+            <div style={{ ...cs.sCard, textAlign: 'center', color: 'var(--ink-muted)' }}>Carregando dados do SKU selecionado...</div>
+          ) : !preview ? (
+            <div style={{ ...cs.sCard, textAlign: 'center', color: 'var(--red)' }}>{error || 'Nao foi possivel carregar a copia do SKU.'}</div>
+          ) : (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
+                <Field label="Moto" value={motoLabel} />
+                <Field label="SKU origem" value={origem?.idPeca} mono />
+                <Field label="Novo SKU" value={preview.novoIdPeca} mono />
+                <Field label="Variações atuais" value={preview.totalVariacoes} mono />
+              </div>
+
+              <div style={{ display: 'grid', gap: 10 }}>
+                <Field label="Descrição" value={origem?.descricao} />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
+                <Field label="Preço ML" value={fmt(Number(origem?.precoML || 0))} mono />
+                <Field label="Valor Líq." value={fmt(Number(origem?.valorLiq || 0))} mono />
+                <Field label="Frete" value={fmt(Number(origem?.valorFrete || 0))} mono />
+                <Field label="Taxas" value={fmt(Number(origem?.valorTaxas || 0))} mono />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
+                <Field label="Peso (kg)" value={origem?.pesoLiquido != null ? Number(origem.pesoLiquido) : null} mono />
+                <Field label="Largura (cm)" value={origem?.largura != null ? Number(origem.largura) : null} mono />
+                <Field label="Altura (cm)" value={origem?.altura != null ? Number(origem.altura) : null} mono />
+                <Field label="Profundidade (cm)" value={origem?.profundidade != null ? Number(origem.profundidade) : null} mono />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
+                <Field label="Localização" value={origem?.localizacao} />
+                <Field label="Número da peça" value={origem?.numeroPeca} mono />
+              </div>
+
+              {preview?.limpaVenda ? (
+                <div style={{ fontSize: 12, color: '#2563eb', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: '10px 12px' }}>
+                  Os dados de venda do SKU origem não serão copiados. A nova variação será criada sem data de venda e sem pedido Bling.
+                </div>
+              ) : null}
+
+              <div style={{ display: 'grid', gap: 8 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-soft)' }}>
+                  Nova Etiqueta Detran {detranObrigatorio ? '*' : '(opcional)'}
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--ink-muted)' }}>
+                  Etiqueta atual da origem: <span style={{ fontFamily: 'Geist Mono, monospace', color: 'var(--ink)' }}>{origem?.detranEtiqueta || '—'}</span>
+                </div>
+                <input
+                  style={{ ...cs.fi, marginTop: 0, fontFamily: 'Geist Mono, monospace' }}
+                  value={detranEtiqueta}
+                  onChange={(e) => onChangeDetran(e.target.value.toUpperCase())}
+                  placeholder={detranObrigatorio ? 'Informe uma nova etiqueta Detran' : 'Pode deixar em branco'}
+                />
+                <div style={{ fontSize: 11.5, color: detranObrigatorio ? '#b45309' : 'var(--ink-muted)' }}>
+                  {detranObrigatorio
+                    ? 'A etiqueta Detran da nova variação precisa ser diferente da etiqueta da origem.'
+                    : 'Se você informar uma nova etiqueta, ela será concatenada com as demais variações no Bling.'}
+                </div>
+              </div>
+
+              {error ? <div style={{ fontSize: 12, color: 'var(--red)' }}>! {error}</div> : null}
+            </>
+          )}
+        </div>
+
+        <div style={{ padding: '16px 22px 20px', display: 'flex', gap: 8, justifyContent: 'flex-end', borderTop: '1px solid var(--border)' }}>
+          <button onClick={onClose} style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink-soft)', borderColor: 'var(--border-strong)' }}>Cancelar</button>
+          <button onClick={onConfirm} disabled={confirmDisabled} style={{ ...cs.btn, background: 'var(--ink)', color: '#fff', opacity: confirmDisabled ? 0.7 : 1 }}>
+            {saving ? 'Criando cópia...' : 'Criar cópia SKU'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CaixaMultiSelectFilter({
   open,
   loading,
@@ -1493,6 +1623,12 @@ export default function EstoquePage() {
   const [buscaCaixaImpressao, setBuscaCaixaImpressao] = useState('');
   const [imprimindoCaixas, setImprimindoCaixas] = useState(false);
   const [imprimindoSkus, setImprimindoSkus] = useState(false);
+  const [copySkuOpen, setCopySkuOpen] = useState(false);
+  const [copySkuPreview, setCopySkuPreview] = useState<any>(null);
+  const [copySkuLoading, setCopySkuLoading] = useState(false);
+  const [copySkuSaving, setCopySkuSaving] = useState(false);
+  const [copySkuError, setCopySkuError] = useState('');
+  const [copySkuDetran, setCopySkuDetran] = useState('');
   const [selecionandoTudo, setSelecionandoTudo] = useState(false);
   const [caixaFilterOpen, setCaixaFilterOpen] = useState(false);
   const [caixaFilterSearch, setCaixaFilterSearch] = useState('');
@@ -1782,6 +1918,15 @@ export default function EstoquePage() {
     setSelectedPecasById({});
   }
 
+  function resetCopySkuModal() {
+    setCopySkuOpen(false);
+    setCopySkuPreview(null);
+    setCopySkuLoading(false);
+    setCopySkuSaving(false);
+    setCopySkuError('');
+    setCopySkuDetran('');
+  }
+
   const hasActiveFilters = Boolean(filters.motoId || filters.marca || filters.disponivel !== '' || filters.mercadoLivreLink !== '' || filters.localizacao !== '' || filters.caixas.length || filters.detranEtiqueta !== '' || filters.dimensoes !== '' || filters.search || filters.numeroPeca || filters.dataVendaFrom || filters.dataVendaTo);
   async function exportarExcel() {
     setExportando(true);
@@ -1884,6 +2029,10 @@ export default function EstoquePage() {
         })
         .map((entry: any) => entry.peca)
     : (data.data || []);
+  const selectedPecas = selectedPecaIds
+    .map((id) => selectedPecasById[id] || displayedPecas.find((peca: any) => peca.id === id))
+    .filter((peca: any) => Boolean(peca) && !isPrejuizoPeca(peca));
+  const copySkuSelecionada = selectedPecaIds.length === 1 ? selectedPecas[0] : null;
 
   function toggleCaixaFilter(caixa: string) {
     setFilters((current) => ({
@@ -1942,9 +2091,6 @@ export default function EstoquePage() {
   }
 
   async function handleImprimirSkus() {
-    const selectedPecas = selectedPecaIds
-      .map((id) => selectedPecasById[id] || displayedPecas.find((peca: any) => peca.id === id))
-      .filter((peca: any) => Boolean(peca) && !isPrejuizoPeca(peca));
     if (!selectedPecas.length) {
       alert('Selecione as pecas desejadas para imprimir as etiquetas SKU.');
       return;
@@ -1963,6 +2109,59 @@ export default function EstoquePage() {
       alert(`Erro ao imprimir etiquetas SKU: ${e.message}`);
     }
     setImprimindoSkus(false);
+  }
+
+  async function openCopySkuModal() {
+    if (!copySkuSelecionada) return;
+
+    setCopySkuOpen(true);
+    setCopySkuLoading(true);
+    setCopySkuPreview(null);
+    setCopySkuError('');
+    setCopySkuDetran('');
+
+    try {
+      const resp = await fetch(`${API_BASE}/cadastro/copiar-peca/${copySkuSelecionada.id}/preview`, {
+        credentials: 'include',
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || 'Erro ao carregar os dados da cópia do SKU');
+      setCopySkuPreview(data);
+    } catch (e: any) {
+      setCopySkuError(e.message || 'Erro ao carregar os dados da cópia do SKU');
+    }
+
+    setCopySkuLoading(false);
+  }
+
+  async function handleCopySkuConfirm() {
+    if (!copySkuSelecionada || !copySkuPreview) return;
+
+    setCopySkuSaving(true);
+    setCopySkuError('');
+    try {
+      const resp = await fetch(`${API_BASE}/cadastro/copiar-peca/${copySkuSelecionada.id}`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          detranEtiqueta: copySkuDetran.trim() || null,
+        }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || 'Erro ao copiar SKU');
+
+      resetCopySkuModal();
+      clearSelection();
+      await load();
+      alert(`Nova variacao ${data.novoIdPeca || 'criada'} e sincronizada com o Bling.`);
+    } catch (e: any) {
+      setCopySkuError(e.message || 'Erro ao copiar SKU');
+      setCopySkuSaving(false);
+      return;
+    }
+
+    setCopySkuSaving(false);
   }
   const tableHeaders: EstoqueTableHeader[] = [
     { label: '', sort: null, kind: 'select', width: 38 },
@@ -2135,6 +2334,25 @@ export default function EstoquePage() {
                 disabled={exportando}
               >
                 {exportando ? 'Exportando...' : '↓ Exportar Excel'}
+              </button>
+              <button
+                type="button"
+                onClick={openCopySkuModal}
+                disabled={!copySkuSelecionada || copySkuLoading || copySkuSaving}
+                title={selectedPecaIds.length === 1 ? 'Copiar SKU selecionado' : 'Selecione exatamente 1 SKU para copiar'}
+                style={{
+                  ...cs.btn,
+                  background: copySkuSelecionada ? '#f5f3ff' : 'var(--gray-50)',
+                  color: copySkuSelecionada ? '#6d28d9' : 'var(--ink-muted)',
+                  borderColor: copySkuSelecionada ? '#ddd6fe' : 'var(--border)',
+                  padding: '6px 14px',
+                  fontSize: 13,
+                  width: isPhone ? '100%' : undefined,
+                  opacity: !copySkuSelecionada || copySkuLoading || copySkuSaving ? 0.7 : 1,
+                  justifyContent: 'center',
+                }}
+              >
+                {copySkuLoading ? 'Carregando cópia...' : copySkuSaving ? 'Copiando SKU...' : 'Copiar SKU'}
               </button>
               <button
                 type="button"
@@ -2471,6 +2689,17 @@ export default function EstoquePage() {
         onToggleCaixa={toggleCaixaImpressao}
         onSelectVisible={selectVisibleCaixasImpressao}
         onClearSelection={() => setCaixasSelecionadasImpressao([])}
+      />
+      <CopySkuModal
+        open={copySkuOpen}
+        preview={copySkuPreview}
+        loading={copySkuLoading}
+        saving={copySkuSaving}
+        detranEtiqueta={copySkuDetran}
+        error={copySkuError}
+        onChangeDetran={setCopySkuDetran}
+        onClose={resetCopySkuModal}
+        onConfirm={handleCopySkuConfirm}
       />
       <VendaModal open={vendaModal} peca={vendaPeca} onClose={() => setVendaModal(false)} onConfirm={handleVenda} />
       <DetranEtiquetaModal open={Boolean(detranPeca)} peca={detranPeca} onClose={() => setDetranPeca(null)} />
