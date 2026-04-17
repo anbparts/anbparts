@@ -557,6 +557,7 @@ Deseja forçar a exclusão mesmo assim?`);
                     <input style={s.input} list="caixas-list" value={form.localizacao} onChange={(e) => setForm((p: any) => ({ ...p, localizacao: e.target.value }))} placeholder="Nome da caixa" />
                     <datalist id="caixas-list">{caixas.map(c => <option key={c} value={c} />)}</datalist>
                   </div>
+                  <div><label style={s.label}>Número da Peça *</label><input style={s.input} value={form.numeroPeca} onChange={(e) => setForm((p: any) => ({ ...p, numeroPeca: e.target.value }))} placeholder="Código do fabricante" /></div>
                 </div>
 
                 {/* Etiquetas Detran — campo dinâmico múltiplo */}
@@ -600,9 +601,9 @@ Deseja forçar a exclusão mesmo assim?`);
                   })()}
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                  <div><label style={s.label}>Número da Peça *</label><input style={s.input} value={form.numeroPeca} onChange={(e) => setForm((p: any) => ({ ...p, numeroPeca: e.target.value }))} placeholder="Código do fabricante" /></div>
-                  <div><label style={s.label}>URL de Referência</label><input style={s.input} value={form.urlRef || ''} onChange={(e) => setForm((p: any) => ({ ...p, urlRef: e.target.value }))} placeholder="Ex: www.site.com.br/produto" /></div>
+                <div>
+                  <label style={s.label}>URL de Referência</label>
+                  <input style={s.input} value={form.urlRef || ''} onChange={(e) => setForm((p: any) => ({ ...p, urlRef: e.target.value }))} placeholder="Ex: www.site.com.br/produto" />
                 </div>
               </div>
 
