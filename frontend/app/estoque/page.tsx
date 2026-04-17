@@ -1246,7 +1246,7 @@ function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, peca, 
           <div style={{ display: 'grid', gridTemplateColumns: modalTopColumns, gap: 12, alignItems: 'start' }}>
             <div style={{ marginBottom: 14 }}>
               <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-soft)' }}>Moto *</label>
-              <select style={{ ...cs.fi, cursor: 'pointer' }} value={form.motoId} onChange={(e) => handleMotoChange(e.target.value)}>
+              <select style={{ ...cs.fi, cursor: peca ? 'not-allowed' : 'pointer', background: peca ? 'var(--gray-50)' : undefined, color: peca ? 'var(--ink-muted)' : undefined }} value={form.motoId} onChange={(e) => handleMotoChange(e.target.value)} disabled={Boolean(peca)}>
                 <option value="">Selecione...</option>
                 {motos.map((m: any) => <option key={m.id} value={m.id}>ID {m.id} - {m.marca} {m.modelo}</option>)}
               </select>

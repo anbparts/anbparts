@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { sendDetranBaixaEmailIfNeeded } from '../lib/detran-alert';
+import { blingReq } from './bling';
 import { z } from 'zod';
 
 export const pecasRouter = Router();
@@ -539,7 +540,7 @@ pecasRouter.put('/:id', async (req, res, next) => {
     const data = updatePecaSchema.parse(req.body);
     const current = await prisma.peca.findUnique({
       where: { id: Number(req.params.id) },
-      select: { id: true, precoML: true, valorFrete: true, valorTaxas: true, emPrejuizo: true },
+      select: { id: true, idPeca: true, descricao: true, precoML: true, valorFrete: true, valorTaxas: true, emPrejuizo: true, blingProdutoId: true },
     });
     if (!current) return res.status(404).json({ error: 'Peca nao encontrada' });
     if (current.emPrejuizo) {
@@ -570,6 +571,108 @@ pecasRouter.put('/:id', async (req, res, next) => {
         dataVenda: data.dataVenda ? new Date(data.dataVenda) : null,
       }
     });
+
+    // Sincroniza precoML e/ou descricao com o Bling se houve mudança
+    const precoMudou = data.precoML !== undefined && roundMoney(Number(data.precoML)) !== roundMoney(Number(current.precoML));
+    const descricaoMudou = data.descricao !== undefined && data.descricao.trim() !== (current.descricao || '').trim();
+
+    if (precoMudou || descricaoMudou) {
+      try {
+        // Resolve o produto Bling pelo blingProdutoId ou pelo SKU base
+        const baseSku = String(current.idPeca || '').replace(/-\d+$/, '');
+        let blingProdutoId = current.blingProdutoId ? String(current.blingProdutoId) : '';
+
+        if (!blingProdutoId) {
+          const blingSearch = await blingReq(`/produtos?criterio=2&tipo=P&codigo=${encodeURIComponent(baseSku)}&pagina=1&limite=5`);
+          const blingItems = blingSearch?.data || [];
+          const found = blingItems.find((p: any) => String(p.codigo || '').toUpperCase() === baseSku.toUpperCase());
+          if (found?.id) blingProdutoId = String(found.id);
+        }
+
+        if (blingProdutoId) {
+          // Lê o produto atual do Bling para preservar todos os demais campos
+          const blingAtual = await blingReq(`/produtos/${blingProdutoId}`);
+          const produtoAtual = blingAtual?.data;
+
+          if (produtoAtual) {
+            const blingPayload: any = {
+              nome: descricaoMudou ? (data.descricao || produtoAtual.nome) : produtoAtual.nome,
+              codigo: produtoAtual.codigo,
+              tipo: produtoAtual.tipo || 'P',
+              formato: produtoAtual.formato || 'S',
+              situacao: produtoAtual.situacao || 'A',
+              // Preço de venda = precoML (apenas atualiza se mudou; caso contrário mantém o atual)
+              preco: precoMudou ? financials.precoML : Number(produtoAtual.preco || 0),
+              condicao: produtoAtual.condicao ?? 0,
+              marca: produtoAtual.marca || '',
+              pesoLiquido: Number(produtoAtual.pesoLiquido || 0),
+              pesoBruto: Number(produtoAtual.pesoBruto || 0),
+              volumes: produtoAtual.volumes || 1,
+              descricaoCurta: produtoAtual.descricaoCurta || '',
+              dimensoes: {
+                largura: Number(produtoAtual.dimensoes?.largura || 0),
+                altura: Number(produtoAtual.dimensoes?.altura || 0),
+                profundidade: Number(produtoAtual.dimensoes?.profundidade || 0),
+                unidadeMedida: produtoAtual.dimensoes?.unidadeMedida || 2,
+              },
+              estoque: {
+                minimo: Number(produtoAtual.estoque?.minimo || 0),
+                maximo: Number(produtoAtual.estoque?.maximo || 0),
+                localizacao: String(produtoAtual.estoque?.localizacao || ''),
+              },
+            };
+
+            // Preserva campos customizados
+            if (Array.isArray(produtoAtual.camposCustomizados) && produtoAtual.camposCustomizados.length > 0) {
+              blingPayload.camposCustomizados = produtoAtual.camposCustomizados.map((c: any) => ({
+                idCampoCustomizado: c.idCampoCustomizado,
+                valor: c.valor,
+              }));
+            }
+
+            await blingReq(`/produtos/${blingProdutoId}`, {
+              method: 'PUT',
+              body: JSON.stringify(blingPayload),
+            });
+          }
+        }
+
+        // Se o preço mudou, replica o novo precoML para todas as outras variações em estoque (disponivel=true)
+        if (precoMudou) {
+          const todasVariacoes = await prisma.peca.findMany({
+            where: {
+              id: { not: Number(req.params.id) },
+              disponivel: true,
+              OR: [
+                { idPeca: { equals: baseSku, mode: 'insensitive' } },
+                { idPeca: { startsWith: `${baseSku}-` } },
+              ],
+            },
+            select: { id: true, valorFrete: true, valorTaxas: true },
+          });
+
+          for (const variacao of todasVariacoes) {
+            const variacaoFinancials = calculatePecaFinancialValues(
+              { precoML: current.precoML, valorFrete: variacao.valorFrete, valorTaxas: variacao.valorTaxas },
+              financials.precoML,
+              undefined,
+              undefined,
+            );
+            await prisma.peca.update({
+              where: { id: variacao.id },
+              data: {
+                precoML: variacaoFinancials.precoML,
+                valorLiq: variacaoFinancials.valorLiq,
+              },
+            });
+          }
+        }
+      } catch (blingErr: any) {
+        // Não falha o request principal - apenas loga o erro de sync
+        console.warn('[editar-peca] Aviso ao sincronizar com Bling:', blingErr?.message);
+      }
+    }
+
     res.json(peca);
   } catch (e) { next(e); }
 });

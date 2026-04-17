@@ -646,9 +646,10 @@ cadastroRouter.post('/copiar-peca/:pecaId', async (req, res, next) => {
       });
       produtoAtualizadoNoBling = true;
 
+      const saldoAtual = Number(produto.estoque?.saldoVirtualTotal || 0);
       await lancarEstoqueNoBling({
         blingProdutoId,
-        quantidade: 1,
+        quantidade: saldoAtual + 1,
         preco: Number(origem.precoML || 0),
         observacoes: `Copia SKU - ${novoIdPeca}`,
       });
