@@ -75,6 +75,28 @@ function normalizeNullableText(value: any, options?: { uppercase?: boolean }) {
   return options?.uppercase ? text.toUpperCase() : text;
 }
 
+function parseDetranEtiquetas(value: any) {
+  return String(value ?? '')
+    .split('/')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function getDetranEtiquetasValidationMessage(detranEtiqueta: any, estoque: any) {
+  const etiquetas = parseDetranEtiquetas(detranEtiqueta);
+  if (!etiquetas.length) return null;
+
+  const qtdEstoque = Math.max(1, Number(estoque) || 1);
+  if (etiquetas.length < qtdEstoque) {
+    return `Falta o preenchimento de ${qtdEstoque - etiquetas.length} etiqueta(s) Detran ainda para bater com o estoque (${qtdEstoque}).`;
+  }
+  if (etiquetas.length > qtdEstoque) {
+    return `Existem ${etiquetas.length - qtdEstoque} etiqueta(s) Detran a mais para o estoque (${qtdEstoque}).`;
+  }
+
+  return null;
+}
+
 function isBrunoAuthUser(req: any) {
   return String(req?.authUser?.username || '').trim().toLowerCase() === 'bruno';
 }
@@ -395,6 +417,8 @@ cadastroRouter.post('/', async (req, res, next) => {
     const { motoId, idPeca, descricao, descricaoPeca, precoVenda, condicao, peso, largura, altura, profundidade, numeroPeca, detranEtiqueta, localizacao, estoque, categoriaMLId, categoriaMLNome, urlRef } = req.body;
 
     if (!motoId || !idPeca || !descricao) return res.status(400).json({ error: 'motoId, idPeca e descricao sao obrigatorios' });
+    const detranValidationMessage = getDetranEtiquetasValidationMessage(detranEtiqueta, estoque);
+    if (detranValidationMessage) return res.status(400).json({ error: detranValidationMessage });
 
     const existing = await prisma.cadastroPeca.findUnique({ where: { idPeca } });
     if (existing) return res.status(400).json({ error: 'ID de peça já existe no cadastro' });
@@ -657,6 +681,10 @@ cadastroRouter.put('/:id', async (req, res, next) => {
     if (atual.status === 'cadastrado') return res.status(400).json({ error: 'Cadastro já finalizado — não é possível editar' });
 
     const { descricao, descricaoPeca, precoVenda, condicao, peso, largura, altura, profundidade, numeroPeca, detranEtiqueta, localizacao, estoque, categoriaMLId, categoriaMLNome, urlRef } = req.body;
+    const estoqueEfetivo = estoque !== undefined ? Number(estoque) : Number(atual.estoque);
+    const detranEtiquetaEfetiva = detranEtiqueta !== undefined ? detranEtiqueta : atual.detranEtiqueta;
+    const detranValidationMessage = getDetranEtiquetasValidationMessage(detranEtiquetaEfetiva, estoqueEfetivo);
+    if (detranValidationMessage) return res.status(400).json({ error: detranValidationMessage });
     const data: any = {};
     if (descricao !== undefined) data.descricao = String(descricao).trim().slice(0, 60);
     if (descricaoPeca !== undefined) data.descricaoPeca = descricaoPeca || null;

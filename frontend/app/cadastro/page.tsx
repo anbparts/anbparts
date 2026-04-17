@@ -71,6 +71,23 @@ function ChecklistValidacao({ form }: { form: any }) {
   );
 }
 
+function getDetranEtiquetasResumo(etiquetas: string[], estoque: any) {
+  const qtdEstoque = Math.max(1, Number(estoque) || 1);
+  const preenchidas = etiquetas.filter((e) => String(e || '').trim()).length;
+  const faltantes = Math.max(0, qtdEstoque - preenchidas);
+  const excedentes = Math.max(0, preenchidas - qtdEstoque);
+  const possuiAlguma = preenchidas > 0;
+
+  return {
+    qtdEstoque,
+    preenchidas,
+    faltantes,
+    excedentes,
+    possuiAlguma,
+    invalida: possuiAlguma && (faltantes > 0 || excedentes > 0),
+  };
+}
+
 function buildCadastroSkuEtiquetas(item: CadastroPeca) {
   const quantidade = Math.max(1, Number(item.estoque) || 1);
   const skuAtual = String(item.idPeca || '').trim().toUpperCase();
@@ -220,6 +237,13 @@ export default function CadastroPage() {
 
   async function salvar() {
     if (!form.motoId || !form.idPeca || !form.descricao) return alert('Moto, ID da Peça e Descrição são obrigatórios');
+    const detranResumo = getDetranEtiquetasResumo(etiquetas, form.estoque);
+    if (detranResumo.possuiAlguma && detranResumo.faltantes > 0) {
+      return alert(`Falta o preenchimento de ${detranResumo.faltantes} etiqueta(s) Detran ainda para bater com o estoque (${detranResumo.qtdEstoque}).`);
+    }
+    if (detranResumo.excedentes > 0) {
+      return alert(`Existem ${detranResumo.excedentes} etiqueta(s) Detran a mais para o estoque (${detranResumo.qtdEstoque}).`);
+    }
     setSaving(true);
     try {
       const body = {
@@ -565,10 +589,12 @@ Deseja forçar a exclusão mesmo assim?`);
                     </div>
                   ))}
                   {(() => {
-                    const preenchidas = etiquetas.filter((e: string) => e.trim()).length;
-                    const qtdEstoque = Number(form.estoque) || 1;
-                    if (preenchidas > 0 && preenchidas !== qtdEstoque) {
-                      return <div style={{ fontSize: 11, color: '#dc2626', marginTop: 2 }}>⚠ {preenchidas} etiqueta(s) mas estoque = {qtdEstoque}. Devem ser iguais.</div>;
+                    const resumoDetran = getDetranEtiquetasResumo(etiquetas, form.estoque);
+                    if (resumoDetran.possuiAlguma && resumoDetran.faltantes > 0) {
+                      return <div style={{ fontSize: 11, color: '#dc2626', marginTop: 2 }}>⚠ Falta o preenchimento de {resumoDetran.faltantes} etiqueta(s) Detran ainda. Estoque = {resumoDetran.qtdEstoque}.</div>;
+                    }
+                    if (resumoDetran.excedentes > 0) {
+                      return <div style={{ fontSize: 11, color: '#dc2626', marginTop: 2 }}>⚠ Existem {resumoDetran.excedentes} etiqueta(s) Detran a mais. Estoque = {resumoDetran.qtdEstoque}.</div>;
                     }
                     return null;
                   })()}
