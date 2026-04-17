@@ -299,37 +299,41 @@ async function baixarSeparacaoPdf(relatorio: SeparacaoRelatorio) {
     const noteHeight = Math.max(12, noteLines.length * 3 + 6);
     const enderecoLines = doc.splitTextToSize(infoEndereco, contentWidth - 6);
     const infoHeight = Math.max(11.5, 8 + enderecoLines.length * 3.1);
+    const leftBlockHeight = 8.4;
+    const leftShiftY = Math.max(0.8, Math.min(2.6, (noteHeight - leftBlockHeight) / 2));
 
     ensureSpace(noteHeight + infoHeight + 18);
+
+    const noteBoxY = y;
+    const titleY = noteBoxY + leftShiftY;
+    const metaRowY = titleY + 2.5;
+    const noteX = marginX + leftWidth + columnGap;
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10.5);
     doc.setTextColor(15, 23, 42);
-    doc.text(`Pedido #${pedido.pedidoNum}`, marginX, y);
+    doc.text(`Pedido #${pedido.pedidoNum}`, marginX, titleY);
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
     doc.setTextColor(71, 85, 105);
-
-    const metaRowY = y + 2.5;
-    const noteX = marginX + leftWidth + columnGap;
     doc.setFontSize(7.7);
     doc.text(`Data da venda: ${fmtDate(pedido.dataVenda)}`, marginX, metaRowY);
     doc.text(`Transportador: ${pedido.transportador || 'Nao informado'}`, marginX, metaRowY + 3.4);
 
     doc.setDrawColor(191, 219, 254);
     doc.setFillColor(248, 251, 255);
-    doc.roundedRect(noteX, metaRowY - 2.5, noteWidth, noteHeight, 2, 2, 'FD');
+    doc.roundedRect(noteX, noteBoxY, noteWidth, noteHeight, 2, 2, 'FD');
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(6.3);
     doc.setTextColor(100, 116, 139);
-    doc.text('OBS. INTERNA', noteX + 2.5, metaRowY + 0.4);
+    doc.text('OBS. INTERNA', noteX + 2.5, noteBoxY + 2.9);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7);
     doc.setTextColor(15, 23, 42);
-    doc.text(noteLines, noteX + 2.5, metaRowY + 3.5);
+    doc.text(noteLines, noteX + 2.5, noteBoxY + 6);
 
-    y = metaRowY + Math.max(6.8, noteHeight - 0.5) + 2.5;
+    y = noteBoxY + noteHeight + 2.5;
 
     doc.setDrawColor(226, 232, 240);
     doc.setFillColor(255, 255, 255);
@@ -672,8 +676,8 @@ export default function VendasBlingPage() {
                     }}
                   >
                     <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)' }}>
-                      <div style={{ display: 'flex', gap: 12, alignItems: 'stretch', flexWrap: 'wrap' }}>
-                        <div style={{ flex: '0 1 300px', minWidth: 240 }}>
+                      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <div style={{ flex: '0 1 300px', minWidth: 240, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                           <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-800)' }}>Pedido #{pedido.pedidoNum}</div>
                           <div style={{ fontSize: 11.5, color: 'var(--gray-500)', marginTop: 5 }}>
                             Data da venda: {fmtDate(pedido.dataVenda)}
