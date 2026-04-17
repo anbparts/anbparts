@@ -124,7 +124,7 @@ export default function MercadoLivrePerguntasPage() {
   const isDesktop = layoutMode === 'desktop';
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
-  const [respondingId, setRespondingId] = useState<string | null>(null);
+  const [respondingId, setRespondingId] = useState<string | null>(null);\n  const [successMessage, setSuccessMessage] = useState('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [perguntas, setPerguntas] = useState<any[]>([]);
   const [respostas, setRespostas] = useState<Record<string, string>>({});
@@ -189,7 +189,9 @@ export default function MercadoLivrePerguntasPage() {
     setRespondingId(questionId);
     try {
       await api.mercadoLivre.responderPergunta(questionId, text);
+      setSuccessMessage('Mensagem respondida com sucesso!');
       await load();
+      setTimeout(() => setSuccessMessage(''), 4000);
     } catch (error: any) {
       alert(error.message || 'Erro ao responder a pergunta');
     } finally {
@@ -317,6 +319,23 @@ export default function MercadoLivrePerguntasPage() {
       </div>
 
       <div style={{ padding: pagePadding }}>
+        {successMessage && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            background: '#f0fdf4',
+            border: '1px solid #86efac',
+            borderRadius: 10,
+            padding: '12px 16px',
+            marginBottom: 16,
+            fontSize: 13.5,
+            fontWeight: 600,
+            color: '#16a34a',
+          }}>
+            ✓ {successMessage}
+          </div>
+        )}
         <div style={{ maxWidth: containerMaxWidth, margin: '0 auto' }}>
           {!perguntas.length ? (
             <div
