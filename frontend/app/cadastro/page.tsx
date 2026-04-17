@@ -56,7 +56,6 @@ function ChecklistValidacao({ form }: { form: any }) {
     { key: 'localizacao', label: 'Localização' },
     { key: 'numeroPeca', label: 'Número da Peça' },
     { key: 'categoriaMLId', label: 'Categoria ML' },
-    { key: '_etiquetasValidas', label: 'Etiqueta Detran', optional: true },
   ];
   const invalidos = campos.filter(c => !form[c.key]);
   if (invalidos.length === 0) return null;
@@ -64,8 +63,8 @@ function ChecklistValidacao({ form }: { form: any }) {
     <div style={{ background: '#fff7f7', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', fontSize: 12 }}>
       <div style={{ fontWeight: 600, color: '#dc2626', marginBottom: 6 }}>Campos pendentes:</div>
       {invalidos.map((c: any) => (
-        <div key={c.key} style={{ color: c.optional ? '#f59e0b' : '#dc2626', marginBottom: 2 }}>
-          {c.optional ? '⚠' : '✗'} {c.label}
+        <div key={c.key} style={{ color: '#dc2626', marginBottom: 2 }}>
+          ✗ {c.label}
         </div>
       ))}
     </div>
