@@ -274,6 +274,16 @@ async function buildBlingPayload(cadastro: any, isUpdate: boolean) {
   if (cadastro.moto?.marca) camposCustomizados.push({ idCampoCustomizado: BLING_MARCA_CAMPO_ID, valor: toTitleCase(cadastro.moto.marca) });
   if (cadastro.urlRef) camposCustomizados.push({ idCampoCustomizado: BLING_URL_REF_CAMPO_ID, valor: String(cadastro.urlRef) });
 
+  let situacao = 'I';
+  if (isUpdate && cadastro.blingProdutoId) {
+    try {
+      const produtoAtual = await blingReq(`/produtos/${cadastro.blingProdutoId}`);
+      situacao = String(produtoAtual?.data?.situacao || '').trim().toUpperCase() || 'I';
+    } catch {
+      situacao = 'I';
+    }
+  }
+
   const payload: any = {
     nome: cadastro.descricao,
     codigo: cadastro.idPeca,
@@ -282,7 +292,7 @@ async function buildBlingPayload(cadastro: any, isUpdate: boolean) {
     tipo: 'P',
     formato: 'S',
     tipoProducao: 'T',
-    situacao: isUpdate ? 'A' : 'I',
+    situacao,
     condicao: cadastro.condicao === 'novo' ? 1 : 2, // 1=Novo, 2=Usado (0=Não especificado)
     descricaoCurta: (cadastro.descricaoPeca || '').replace(/\r\n/g, '<br>').replace(/\n/g, '<br>'),
     marca: toTitleCase(cadastro.moto?.marca || ''),
