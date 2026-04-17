@@ -281,6 +281,7 @@ async function buildBlingPayload(cadastro: any, isUpdate: boolean) {
     unidade: 'UN',
     tipo: 'P',
     formato: 'S',
+    tipoProducao: 'T',
     situacao: isUpdate ? 'A' : 'I',
     condicao: cadastro.condicao === 'novo' ? 1 : 2, // 1=Novo, 2=Usado (0=Não especificado)
     descricaoCurta: (cadastro.descricaoPeca || '').replace(/\r\n/g, '<br>').replace(/\n/g, '<br>'),
@@ -292,7 +293,7 @@ async function buildBlingPayload(cadastro: any, isUpdate: boolean) {
       largura: Number(cadastro.largura || 0),
       altura: Number(cadastro.altura || 0),
       profundidade: Number(cadastro.profundidade || 0),
-      unidadeMedida: 2,
+      unidadeMedida: 1,
     },
     estoque: {
       minimo: Number(cadastro.estoque),
