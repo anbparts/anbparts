@@ -2706,3 +2706,42 @@ mercadoLivreRouter.delete('/perguntas/:questionId', async (req, res, next) => {
     next(e);
   }
 });
+
+// GET /mercado-livre/visitas-hoje — visitas do dia atual nos anúncios do ML
+mercadoLivreRouter.get('/visitas-hoje', async (req, res, next) => {
+  try {
+    const config = await getMercadoLivreConfig();
+    const sellerId = normalizeText(config.sellerId);
+
+    if (!sellerId) {
+      // Tenta buscar o sellerId dinamicamente
+      const me = await mercadoLivreReq('/users/me');
+      if (!me?.id) return res.status(400).json({ error: 'Seller ID nao configurado no Mercado Livre.' });
+      config.sellerId = String(me.id);
+    }
+
+    const activeSellerId = normalizeText(config.sellerId);
+
+    const hoje = new Date();
+    const dateFrom = hoje.toISOString().split('T')[0]; // YYYY-MM-DD
+    const dateTo = dateFrom;
+
+    // Busca visitas do dia agrupadas por item
+    const visitasResp = await mercadoLivreReq(
+      `/users/${encodeURIComponent(activeSellerId)}/items_visits?date_from=${dateFrom}&date_to=${dateTo}&time_window=1DAY`
+    );
+
+    const totalVisitas = Number(visitasResp?.total_visits || visitasResp?.total || 0);
+    const visitasUnicas = Number(visitasResp?.total_unique_visits || visitasResp?.unique || visitasResp?.total_visits || totalVisitas);
+
+    res.json({
+      ok: true,
+      data: dateFrom,
+      totalVisitas,
+      visitasUnicas,
+      raw: visitasResp,
+    });
+  } catch (e: any) {
+    res.status(400).json({ ok: false, error: e?.message || 'Erro ao buscar visitas do ML' });
+  }
+});

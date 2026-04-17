@@ -256,6 +256,7 @@ export default function DashboardPage() {
   const [resumoVendasMes, setResumoVendasMes] = useState<any>(null);
   const [loadingResumoVendasMes, setLoadingResumoVendasMes] = useState(true);
   const [periodoResumoVendasMes, setPeriodoResumoVendasMes] = useState(() => getCurrentMonthSalesRange());
+  const [visitasML, setVisitasML] = useState<any>(null);
   const { hidden: ocultarValores, toggleRawHidden } = useCompanyValueVisibility();
   const [loadingDashboard, setLoadingDashboard] = useState(true);
   const [dashboardNotice, setDashboardNotice] = useState('');
@@ -347,6 +348,9 @@ export default function DashboardPage() {
           );
         }
         setSkuPorMoto(grouped);
+
+        // Busca visitas do ML hoje (silencioso — não bloqueia o dashboard)
+        api.mercadoLivre.visitasHoje().then((v) => { if (!cancelled) setVisitasML(v); }).catch(() => {});
       } catch {
         if (cancelled) return;
         const cachedDashboard = readDashboardCache();
@@ -441,6 +445,12 @@ export default function DashboardPage() {
       label: 'Mercado Pago',
       kind: 'mercado-livre-saldo',
       saldo: dash?.mercadoLivreSaldo || null,
+    },
+    {
+      label: 'Visitas hoje (ML)',
+      kind: 'ml-visitas',
+      visitasUnicas: visitasML?.visitasUnicas ?? null,
+      totalVisitas: visitasML?.totalVisitas ?? null,
     },
     {
       label: 'Receita bruta',
@@ -608,6 +618,21 @@ export default function DashboardPage() {
               <div style={getLabelStyle()}>{card.label}</div>
               {card.kind === 'mercado-livre-saldo' ? (
                 renderMercadoLivreSaldoCard((card as any).saldo, ocultarValores)
+              ) : card.kind === 'ml-visitas' ? (
+                <>
+                  <div style={{ ...getValueStyle('var(--blue-500)') }}>
+                    {(card as any).visitasUnicas === null ? '...' : String((card as any).visitasUnicas)}
+                  </div>
+                  <div style={getSubStyle()}>visitas unicas hoje</div>
+                  {(card as any).totalVisitas !== null && (card as any).totalVisitas !== (card as any).visitasUnicas ? (
+                    <div style={{ ...s.statList }}>
+                      <div style={s.statRow}>
+                        <span style={statLabelStyle}>Total visitas:</span>
+                        <span style={statValueStyle}>{(card as any).totalVisitas}</span>
+                      </div>
+                    </div>
+                  ) : null}
+                </>
               ) : (
                 <>
                   <div style={{ ...getValueStyle((card as any).color), ...sensitiveMaskStyle(ocultarValores) }}>{(card as any).val}</div>

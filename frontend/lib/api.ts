@@ -165,6 +165,7 @@ export const api = {
     excluirPergunta: (questionId: string) => req<any>(`/mercado-livre/perguntas/${questionId}`, {
       method: 'DELETE',
     }),
+    visitasHoje: () => req<any>('/mercado-livre/visitas-hoje'),
   },
   bling: {
     relatorioVendas: (params?: Record<string, any>) => {
