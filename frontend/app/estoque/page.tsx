@@ -2,6 +2,7 @@
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { API_BASE } from '@/lib/api-base';
+import { printCaixaLabels, printSkuLabels } from '@/lib/estoque-label-print';
 
 function fmt(v: number) {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -37,6 +38,14 @@ function normalizeFilterText(value: unknown) {
 function displayCaixaLabel(value: unknown) {
   const text = String(value ?? '').replace(/\s+/g, ' ').trim();
   return text || 'Sem Localizacao';
+}
+
+function formatEtiquetaMotoLabel(peca: any) {
+  const marca = String(peca?.moto?.marca || '').trim();
+  const modelo = String(peca?.moto?.modelo || '').trim();
+  const marcaNormalizada = normalizeFilterText(marca);
+  const marcaEtiqueta = marcaNormalizada === 'harley davidson' ? 'HD' : marca;
+  return [marcaEtiqueta, modelo].filter(Boolean).join(' ').trim().toUpperCase() || '-';
 }
 
 function roundMoney(value: number) {
@@ -101,6 +110,7 @@ type EstoqueTableHeader = {
 type CaixaFilterOption = {
   caixa: string;
   totalPecas: number;
+  totalSkus?: number;
 };
 
 const cs: any = {
@@ -480,6 +490,148 @@ function CaixaMultiSelectFilter({
           </div>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function ImpressaoCaixaModal({
+  open,
+  loading,
+  printing,
+  options,
+  selected,
+  search,
+  viewportMode,
+  onClose,
+  onConfirm,
+  onSearchChange,
+  onToggleCaixa,
+  onSelectVisible,
+  onClearSelection,
+}: {
+  open: boolean;
+  loading: boolean;
+  printing: boolean;
+  options: CaixaFilterOption[];
+  selected: string[];
+  search: string;
+  viewportMode: EstoqueViewportMode;
+  onClose: () => void;
+  onConfirm: () => void;
+  onSearchChange: (value: string) => void;
+  onToggleCaixa: (caixa: string) => void;
+  onSelectVisible: (caixas: string[]) => void;
+  onClearSelection: () => void;
+}) {
+  if (!open) return null;
+
+  const isPhone = viewportMode === 'phone';
+  const isTabletPortrait = viewportMode === 'tablet-portrait';
+  const compactLayout = isPhone || isTabletPortrait;
+  const searchNormalized = normalizeFilterText(search);
+  const visibleOptions = options.filter((option) => (
+    !searchNormalized || normalizeFilterText(option.caixa).includes(searchNormalized)
+  ));
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 260, display: 'flex', alignItems: compactLayout ? 'stretch' : 'center', justifyContent: 'center', padding: compactLayout ? 0 : 24, backdropFilter: 'blur(2px)' }}>
+      <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: compactLayout ? 0 : 18, width: '100%', maxWidth: 760, maxHeight: compactLayout ? '100dvh' : '90vh', minHeight: compactLayout ? '100dvh' : undefined, overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 18px 40px rgba(0,0,0,.12)' }}>
+        <div style={{ padding: compactLayout ? '18px 16px 14px' : '22px 24px 16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
+          <div>
+            <div style={{ fontFamily: 'Fraunces, serif', fontSize: compactLayout ? 17 : 18, fontWeight: 600 }}>Impressao Caixa</div>
+            <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 4 }}>Selecione as caixas para imprimir as etiquetas termicas de codigo de barras.</div>
+          </div>
+          <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', flexShrink: 0 }}>X</button>
+        </div>
+
+        <div style={{ padding: compactLayout ? '16px' : '18px 24px', display: 'grid', gap: 12, borderBottom: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-800)' }}>Selecionar caixas</div>
+              <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 4, lineHeight: 1.45 }}>
+                Escolha uma ou mais caixas para gerar as etiquetas no tamanho termico 50x30.
+              </div>
+            </div>
+            <div style={{ padding: '8px 12px', borderRadius: 999, background: '#eff6ff', border: '1px solid #bfdbfe', fontSize: 12, fontWeight: 700, color: 'var(--blue-500)' }}>
+              {selected.length} caixa(s) selecionada(s)
+            </div>
+          </div>
+
+          <input
+            style={{ ...cs.fi, marginTop: 0 }}
+            placeholder="Buscar caixa pelo nome"
+            value={search}
+            onChange={(e) => onSearchChange(e.target.value)}
+          />
+
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              onClick={() => onSelectVisible(visibleOptions.map((option) => option.caixa))}
+              disabled={loading || visibleOptions.length === 0}
+              style={{ ...cs.btn, background: 'var(--white)', color: 'var(--gray-700)', borderColor: 'var(--border)', padding: '6px 14px', fontSize: 13, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}
+            >
+              Selecionar visiveis
+            </button>
+            <button
+              type="button"
+              onClick={onClearSelection}
+              disabled={!selected.length}
+              style={{ ...cs.btn, background: 'var(--white)', color: selected.length ? 'var(--gray-700)' : 'var(--ink-muted)', borderColor: 'var(--border)', padding: '6px 14px', fontSize: 13, opacity: selected.length ? 1 : 0.65, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}
+            >
+              Limpar
+            </button>
+          </div>
+        </div>
+
+        <div style={{ padding: compactLayout ? 12 : 16, overflow: 'auto', display: 'grid', gap: 10 }}>
+          {loading ? (
+            <div style={{ padding: 16, color: 'var(--gray-500)', fontSize: 13 }}>Carregando caixas...</div>
+          ) : visibleOptions.length === 0 ? (
+            <div style={{ padding: 16, color: 'var(--gray-500)', fontSize: 13 }}>Nenhuma caixa encontrada para impressao.</div>
+          ) : (
+            visibleOptions.map((option) => {
+              const checked = selected.includes(option.caixa);
+
+              return (
+                <label
+                  key={option.caixa}
+                  style={{
+                    display: 'flex',
+                    gap: 12,
+                    alignItems: 'flex-start',
+                    border: checked ? '1px solid var(--blue-500)' : '1px solid var(--border)',
+                    background: checked ? '#eff6ff' : 'var(--white)',
+                    borderRadius: 12,
+                    padding: compactLayout ? 14 : 16,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => onToggleCaixa(option.caixa)}
+                    style={{ width: 16, height: 16, marginTop: 2, cursor: 'pointer' }}
+                  />
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-800)', overflowWrap: 'anywhere' }}>{displayCaixaLabel(option.caixa)}</div>
+                    <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 4 }}>
+                      {(option.totalSkus ?? option.totalPecas)} SKU(s) · {option.totalPecas} peca(s)
+                    </div>
+                  </div>
+                </label>
+              );
+            })
+          )}
+        </div>
+
+        <div style={{ padding: compactLayout ? '14px 16px calc(14px + env(safe-area-inset-bottom))' : '14px 24px 20px', display: 'flex', flexDirection: isPhone ? 'column-reverse' : 'row', gap: 8, justifyContent: 'flex-end', borderTop: '1px solid var(--border)' }}>
+          <button onClick={onClose} style={{ ...cs.btn, background: 'var(--white)', color: 'var(--gray-700)', borderColor: 'var(--border)' }}>Cancelar</button>
+          <button onClick={onConfirm} disabled={!selected.length || printing} style={{ ...cs.btn, background: 'var(--ink)', color: '#fff', opacity: !selected.length || printing ? 0.65 : 1 }}>
+            {printing ? 'Preparando impressao...' : 'Imprimir'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1343,6 +1495,11 @@ export default function EstoquePage() {
   const [detranPeca, setDetranPeca] = useState<any>(null);
   const [detalhePeca, setDetalhePeca] = useState<any>(null);
   const [selectedPecaIds, setSelectedPecaIds] = useState<number[]>([]);
+  const [impressaoCaixaOpen, setImpressaoCaixaOpen] = useState(false);
+  const [caixasSelecionadasImpressao, setCaixasSelecionadasImpressao] = useState<string[]>([]);
+  const [buscaCaixaImpressao, setBuscaCaixaImpressao] = useState('');
+  const [imprimindoCaixas, setImprimindoCaixas] = useState(false);
+  const [imprimindoSkus, setImprimindoSkus] = useState(false);
   const [caixaFilterOpen, setCaixaFilterOpen] = useState(false);
   const [caixaFilterSearch, setCaixaFilterSearch] = useState('');
   const [filters, setFilters] = useState({
@@ -1520,7 +1677,9 @@ export default function EstoquePage() {
   }
 
   function toggleSelectAllVisible() {
-    const visibleIds = (data.data || []).map((p: any) => p.id);
+    const visibleIds = (data.data || [])
+      .filter((p: any) => !isPrejuizoPeca(p))
+      .map((p: any) => p.id);
     const allSelected = visibleIds.length > 0 && visibleIds.every((id: number) => selectedPecaIds.includes(id));
     setSelectedPecaIds(allSelected ? [] : visibleIds);
   }
@@ -1694,6 +1853,65 @@ export default function EstoquePage() {
       caixas: Array.from(new Set([...current.caixas, ...caixas])),
     }));
   }
+
+  function openImpressaoCaixaModal() {
+    setBuscaCaixaImpressao('');
+    setCaixasSelecionadasImpressao([]);
+    setImpressaoCaixaOpen(true);
+  }
+
+  function toggleCaixaImpressao(caixa: string) {
+    setCaixasSelecionadasImpressao((current) => (
+      current.includes(caixa)
+        ? current.filter((item) => item !== caixa)
+        : [...current, caixa]
+    ));
+  }
+
+  function selectVisibleCaixasImpressao(caixas: string[]) {
+    if (!caixas.length) return;
+    setCaixasSelecionadasImpressao((current) => Array.from(new Set([...current, ...caixas])));
+  }
+
+  async function handleImprimirCaixas() {
+    if (!caixasSelecionadasImpressao.length) return;
+
+    setImprimindoCaixas(true);
+    try {
+      const orderedOptions = caixaOptions.filter((option) => caixasSelecionadasImpressao.includes(option.caixa));
+      const fallbackCaixas = caixasSelecionadasImpressao.filter((caixa) => !orderedOptions.some((option) => option.caixa === caixa));
+      await printCaixaLabels([
+        ...orderedOptions.map((option) => ({ caixa: displayCaixaLabel(option.caixa) })),
+        ...fallbackCaixas.map((caixa) => ({ caixa: displayCaixaLabel(caixa) })),
+      ]);
+      setImpressaoCaixaOpen(false);
+    } catch (e: any) {
+      alert(`Erro ao imprimir etiquetas das caixas: ${e.message}`);
+    }
+    setImprimindoCaixas(false);
+  }
+
+  async function handleImprimirSkus() {
+    const selectedPecas = displayedPecas.filter((peca: any) => selectedPecaIds.includes(peca.id) && !isPrejuizoPeca(peca));
+    if (!selectedPecas.length) {
+      alert('Selecione as pecas desejadas para imprimir as etiquetas SKU.');
+      return;
+    }
+
+    setImprimindoSkus(true);
+    try {
+      await printSkuLabels(
+        selectedPecas.map((peca: any) => ({
+          motoLabel: formatEtiquetaMotoLabel(peca),
+          sku: String(peca.idPeca || '').trim().toUpperCase(),
+          descricao: String(peca.descricao || '').trim(),
+        })),
+      );
+    } catch (e: any) {
+      alert(`Erro ao imprimir etiquetas SKU: ${e.message}`);
+    }
+    setImprimindoSkus(false);
+  }
   const tableHeaders: EstoqueTableHeader[] = [
     { label: '', sort: null, kind: 'select', width: 38 },
     { label: 'ID', sort: 'motoId', width: 52 },
@@ -1714,10 +1932,26 @@ export default function EstoquePage() {
 
   return (
     <>
-      <div style={cs.topbar}>
+      <div style={{ ...cs.topbar, minHeight: 'var(--topbar-h)', height: 'auto', padding: isPhone ? '12px 14px' : '0 28px', gap: 12, flexWrap: isPhone ? 'wrap' : 'nowrap' }}>
         <div>
           <div style={cs.title}>Estoque</div>
           <div style={cs.sub}>Controle de pecas e disponibilidade</div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', width: isPhone ? '100%' : undefined, justifyContent: isPhone ? 'stretch' : 'flex-end' }}>
+          <button
+            type="button"
+            onClick={openImpressaoCaixaModal}
+            style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink)', borderColor: 'var(--border)', padding: '7px 14px', fontSize: 13, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}
+          >
+            Impressao Caixa
+          </button>
+          <button
+            type="button"
+            onClick={() => { setEditPeca(null); setModal(true); }}
+            style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)', padding: '7px 14px', fontSize: 13, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}
+          >
+            + Nova peca
+          </button>
         </div>
       </div>
       <div style={{ padding: pagePadding }}>
@@ -1850,7 +2084,24 @@ export default function EstoquePage() {
               >
                 {exportando ? 'Exportando...' : '↓ Exportar Excel'}
               </button>
-              <button style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)', padding: '6px 14px', fontSize: 13, width: isPhone ? '100%' : undefined }} onClick={() => { setEditPeca(null); setModal(true); }}>+ Nova peca</button>
+              <button
+                type="button"
+                onClick={handleImprimirSkus}
+                disabled={!selectedPecaIds.length || imprimindoSkus}
+                style={{
+                  ...cs.btn,
+                  background: selectedPecaIds.length ? '#eff6ff' : 'var(--gray-50)',
+                  color: selectedPecaIds.length ? 'var(--blue-500)' : 'var(--ink-muted)',
+                  borderColor: selectedPecaIds.length ? '#bfdbfe' : 'var(--border)',
+                  padding: '6px 14px',
+                  fontSize: 13,
+                  width: isPhone ? '100%' : undefined,
+                  opacity: !selectedPecaIds.length || imprimindoSkus ? 0.7 : 1,
+                  justifyContent: 'center',
+                }}
+              >
+                {imprimindoSkus ? 'Preparando impressao...' : 'Impressao SKU'}
+              </button>
             </div>
           </div>
 
@@ -2138,6 +2389,21 @@ export default function EstoquePage() {
       </div>
 
       <PecaModal open={modal} onClose={() => { setModal(false); setEditPeca(null); }} onSave={handleSavePeca} onCancelSale={handleCancelSale} onMarkPrejuizo={handleMarkPrejuizo} peca={editPeca} motos={motos} viewportMode={viewportMode} />
+      <ImpressaoCaixaModal
+        open={impressaoCaixaOpen}
+        loading={loading && caixaOptions.length === 0}
+        printing={imprimindoCaixas}
+        options={caixaOptions}
+        selected={caixasSelecionadasImpressao}
+        search={buscaCaixaImpressao}
+        viewportMode={viewportMode}
+        onClose={() => setImpressaoCaixaOpen(false)}
+        onConfirm={handleImprimirCaixas}
+        onSearchChange={setBuscaCaixaImpressao}
+        onToggleCaixa={toggleCaixaImpressao}
+        onSelectVisible={selectVisibleCaixasImpressao}
+        onClearSelection={() => setCaixasSelecionadasImpressao([])}
+      />
       <VendaModal open={vendaModal} peca={vendaPeca} onClose={() => setVendaModal(false)} onConfirm={handleVenda} />
       <DetranEtiquetaModal open={Boolean(detranPeca)} peca={detranPeca} onClose={() => setDetranPeca(null)} />
       <PecaDetalheModal open={Boolean(detalhePeca)} peca={detalhePeca} onClose={() => setDetalhePeca(null)} onSaved={() => { setDetalhePeca(null); load(); }} />

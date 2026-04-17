@@ -422,6 +422,7 @@ pecasRouter.get('/caixas', async (_req, res, next) => {
         emPrejuizo: false,
       },
       select: {
+        idPeca: true,
         localizacao: true,
       },
       orderBy: {
@@ -429,27 +430,38 @@ pecasRouter.get('/caixas', async (_req, res, next) => {
       },
     });
 
-    const counters = new Map<string, number>();
+    const counters = new Map<string, { totalPecas: number; skus: Set<string> }>();
     let semLocalizacaoCount = 0;
+    const semLocalizacaoSkus = new Set<string>();
 
     for (const peca of pecas) {
       const caixa = normalizePecaLocalizacao(peca.localizacao);
+      const skuBase = String(peca.idPeca || '').replace(/-\d+$/, '');
       if (!caixa) {
         semLocalizacaoCount += 1;
+        if (skuBase) semLocalizacaoSkus.add(skuBase);
         continue;
       }
 
-      counters.set(caixa, (counters.get(caixa) || 0) + 1);
+      const current = counters.get(caixa) || { totalPecas: 0, skus: new Set<string>() };
+      current.totalPecas += 1;
+      if (skuBase) current.skus.add(skuBase);
+      counters.set(caixa, current);
     }
 
     const data = Array.from(counters.entries())
-      .map(([caixa, totalPecas]) => ({ caixa, totalPecas }))
+      .map(([caixa, summary]) => ({
+        caixa,
+        totalPecas: summary.totalPecas,
+        totalSkus: summary.skus.size,
+      }))
       .sort((a, b) => a.caixa.localeCompare(b.caixa, 'pt-BR', { numeric: true, sensitivity: 'base' }));
 
     if (semLocalizacaoCount > 0) {
       data.unshift({
         caixa: CAIXA_SEM_LOCALIZACAO,
         totalPecas: semLocalizacaoCount,
+        totalSkus: semLocalizacaoSkus.size,
       });
     }
 
