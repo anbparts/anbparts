@@ -87,10 +87,10 @@ etiquetasRouter.post('/caixa', async (req, res, next) => {
     doc.pipe(res);
 
     const MARGIN_LEFT  = MM(3.5);
-    const BARCODE_W    = MM(43.0);
-    const BARCODE_H    = MM(17.5);
-    const BARCODE_Y    = MM(2.0);
-    const TEXT_Y       = MM(24.4);
+    const MR_CAIXA     = MM(2.5);
+    const QR_CAIXA     = MM(13.5);  // QR no canto superior esquerdo
+    const TEXT_X       = MM(3.5) + QR_CAIXA + MM(2.5); // texto ao lado do QR
+    const TEXT_W_CAIXA = LABEL_W - TEXT_X - MR_CAIXA;
 
     for (let i = 0; i < items.length; i++) {
       if (i > 0) {
@@ -98,16 +98,16 @@ etiquetasRouter.post('/caixa', async (req, res, next) => {
       }
 
       const label = items[i].caixa.toUpperCase();
-      const barcodePng = await gerarBarcodePng(items[i].caixa);
 
-      // Barcode
-      doc.image(barcodePng, MARGIN_LEFT, BARCODE_Y, { width: BARCODE_W, height: BARCODE_H });
+      // QR Code — canto superior esquerdo
+      const qrPng = await gerarQrPng(items[i].caixa);
+      doc.image(qrPng, MM(3.5), MM(2.5), { width: QR_CAIXA, height: QR_CAIXA });
 
-      // Texto centralizado
-      const fontSize = fitFontSize(doc, label, BARCODE_W, 11.5 * (72 / 25.4 / 2.5), 7 * (72 / 25.4 / 2.5));
-      doc.font('Helvetica-Bold').fontSize(fontSize);
-      doc.text(label, MARGIN_LEFT, TEXT_Y, {
-        width: BARCODE_W,
+      // Nome da caixa — lado direito do QR, centralizado verticalmente
+      const fontSize = fitFontSize(doc, label, TEXT_W_CAIXA, MM(8.0), MM(4.5));
+      doc.font('Helvetica-Bold').fontSize(fontSize).fillColor('#000000');
+      doc.text(label, TEXT_X, MM(7.0), {
+        width: TEXT_W_CAIXA,
         align: 'center',
         lineBreak: false,
       });
@@ -144,7 +144,7 @@ etiquetasRouter.post('/sku', async (req, res, next) => {
     res.setHeader('Content-Disposition', 'inline; filename="etiquetas-sku.pdf"');
     doc.pipe(res);
 
-    const ML       = MM(5.5);   // margem esquerda maior para não cortar
+    const ML       = MM(7.5);   // margem esquerda maior
     const MR       = MM(2.5);
     const QR_SIZE  = MM(13.5);
     const QR_X     = LABEL_W - MR - QR_SIZE;
