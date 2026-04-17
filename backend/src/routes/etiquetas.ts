@@ -77,7 +77,6 @@ etiquetasRouter.post('/caixa', async (req, res, next) => {
 
     const doc = new PDFDocument({
       size: [LABEL_W, LABEL_H],
-      layout: 'landscape',
       margin: 0,
       autoFirstPage: true,
       compress: true,
@@ -95,7 +94,7 @@ etiquetasRouter.post('/caixa', async (req, res, next) => {
 
     for (let i = 0; i < items.length; i++) {
       if (i > 0) {
-        doc.addPage({ size: [LABEL_W, LABEL_H], layout: 'landscape', margin: 0 });
+        doc.addPage({ size: [LABEL_W, LABEL_H], margin: 0 });
       }
 
       const label = items[i].caixa.toUpperCase();
@@ -136,7 +135,6 @@ etiquetasRouter.post('/sku', async (req, res, next) => {
 
     const doc = new PDFDocument({
       size: [LABEL_W, LABEL_H],
-      layout: 'landscape',
       margin: 0,
       autoFirstPage: true,
       compress: true,
@@ -155,7 +153,7 @@ etiquetasRouter.post('/sku', async (req, res, next) => {
 
     for (let i = 0; i < items.length; i++) {
       if (i > 0) {
-        doc.addPage({ size: [LABEL_W, LABEL_H], layout: 'landscape', margin: 0 });
+        doc.addPage({ size: [LABEL_W, LABEL_H], margin: 0 });
       }
 
       const item = items[i];
