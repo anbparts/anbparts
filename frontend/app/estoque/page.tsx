@@ -43,9 +43,15 @@ function displayCaixaLabel(value: unknown) {
 function formatEtiquetaMotoLabel(peca: any) {
   const marca = String(peca?.moto?.marca || '').trim();
   const modelo = String(peca?.moto?.modelo || '').trim();
-  const marcaNormalizada = normalizeFilterText(marca);
-  const marcaEtiqueta = marcaNormalizada === 'harley davidson' ? 'HD' : marca;
-  return [marcaEtiqueta, modelo].filter(Boolean).join(' ').trim().toUpperCase() || '-';
+  const motoCompleta = [marca, modelo].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+  const motoNormalizada = normalizeFilterText(motoCompleta);
+
+  if (motoNormalizada.startsWith('harley davidson')) {
+    const restante = motoCompleta.replace(/^\s*harley\s+davidson\b\s*/i, '').trim();
+    return ['HD', restante].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim().toUpperCase() || 'HD';
+  }
+
+  return motoCompleta.toUpperCase() || '-';
 }
 
 function roundMoney(value: number) {
