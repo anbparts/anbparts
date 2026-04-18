@@ -329,7 +329,7 @@ export default function RelatorioVendasPage() {
               {buscando ? 'Buscando...' : 'Buscar relatorio'}
             </button>
             {/* Filtros rápidos */}
-            <button type="button" style={{ ...s.btn, background: 'var(--white)', color: 'var(--blue-500)', borderColor: '#bfdbfe', background: '#eff6ff', width: isPhone ? '100%' : undefined, justifyContent: 'center' }}
+            <button type="button" style={{ ...s.btn, background: '#eff6ff', color: 'var(--blue-500)', borderColor: '#bfdbfe', width: isPhone ? '100%' : undefined, justifyContent: 'center' }}
               onClick={() => { applyQuickFilter('semana'); buscarRelatorio(); }}>
               Esta semana
             </button>
