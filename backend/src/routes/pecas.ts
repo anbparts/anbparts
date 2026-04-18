@@ -409,7 +409,7 @@ pecasRouter.get('/', async (req, res, next) => {
       prisma.peca.count({ where }),
       prisma.peca.findMany({
         where,
-        include: { moto: { select: { marca: true, modelo: true } } },
+        include: { moto: { select: { marca: true, modelo: true, etiquetaSkuLabel: true } } },
         orderBy: prismaOrderBy,
         skip: (Number(page) - 1) * Number(per),
         take: Number(per),
@@ -623,7 +623,7 @@ pecasRouter.patch('/:id/vender', async (req, res, next) => {
         precoML: true,
         valorFrete: true,
         valorTaxas: true,
-        moto: { select: { marca: true, modelo: true } },
+        moto: { select: { marca: true, modelo: true, etiquetaSkuLabel: true } },
       }
     });
     if (!current) return res.status(404).json({ error: 'Peça não encontrada' });
