@@ -11,8 +11,8 @@ const API = API_BASE;
 const s: any = {
   topbar: { height: 'var(--topbar-h)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 28px', background: 'var(--white)', borderBottom: '1px solid var(--border)', position: 'sticky' as const, top: 0, zIndex: 50 },
   card: { background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 12, padding: 22, marginBottom: 16 },
-  label: { fontSize: 10, fontWeight: 600, color: 'var(--gray-500)', textTransform: 'uppercase' as const, letterSpacing: '0.04em', marginBottom: 3, display: 'block' },
-  input: { width: '100%', background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', fontSize: 12.5, fontFamily: 'Inter, sans-serif', outline: 'none', color: 'var(--gray-800)', boxSizing: 'border-box' as const },
+  label: { fontSize: 10, fontWeight: 600, color: 'var(--gray-500)', textTransform: 'uppercase' as const, letterSpacing: '0.04em', marginBottom: 2, display: 'block' },
+  input: { width: '100%', background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 9px', fontSize: 12.5, fontFamily: 'Inter, sans-serif', outline: 'none', color: 'var(--gray-800)', boxSizing: 'border-box' as const },
   btn: { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 6, fontSize: 12.5, fontWeight: 500, cursor: 'pointer', border: '1px solid transparent', fontFamily: 'Inter, sans-serif' },
   badge: (color: string, bg: string, border: string) => ({ fontSize: 11, fontWeight: 600, color, background: bg, border: `1px solid ${border}`, padding: '2px 8px', borderRadius: 12 }),
   th: { fontSize: 11, fontWeight: 600, color: 'var(--gray-500)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', padding: '10px 12px', textAlign: 'left' as const, borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' as const },
@@ -510,7 +510,7 @@ Deseja forçar a exclusão mesmo assim?`);
             <div style={{ flex: 1, overflowY: 'auto', display: isPhone ? 'block' : 'grid', gridTemplateColumns: isPhone ? undefined : isMobile ? '1fr' : '1fr 1fr', gap: 0 }}>
 
               {/* COLUNA ESQUERDA — campos do produto */}
-              <div style={{ padding: isPhone ? '12px 14px' : '14px 18px', display: 'grid', gap: 8, borderRight: (!isPhone && !isMobile) ? '1px solid var(--border)' : 'none', borderBottom: isMobile && !isPhone ? '1px solid var(--border)' : 'none' }}>
+              <div style={{ padding: isPhone ? '12px 14px' : '10px 14px', display: 'grid', gap: isPhone ? 8 : 5, borderRight: (!isPhone && !isMobile) ? '1px solid var(--border)' : 'none', borderBottom: isMobile && !isPhone ? '1px solid var(--border)' : 'none' }}>
 
                 <div>
                   <label style={s.label}>Moto *</label>
@@ -632,7 +632,7 @@ Deseja forçar a exclusão mesmo assim?`);
               </div>
 
               {/* COLUNA DIREITA — checklist + descrição */}
-              <div style={{ padding: isPhone ? '0 14px 12px' : '14px 18px', display: 'flex', flexDirection: 'column' as const, gap: 8 }}>
+              <div style={{ padding: isPhone ? '0 14px 12px' : '10px 14px', display: 'flex', flexDirection: 'column' as const, gap: isPhone ? 8 : 5 }}>
 
                 <ChecklistValidacao form={form} />
 
@@ -651,7 +651,7 @@ Deseja forçar a exclusão mesmo assim?`);
                       id="descricaoPeca-wysiwyg"
                       contentEditable
                       suppressContentEditableWarning
-                      style={{ ...s.input, flex: 1, minHeight: isPhone ? 200 : 320, borderRadius: 0, border: 'none', overflowY: 'auto', whiteSpace: 'pre-wrap', outline: 'none' }}
+                      style={{ ...s.input, flex: 1, minHeight: isPhone ? 200 : 220, borderRadius: 0, border: 'none', overflowY: 'auto', whiteSpace: 'pre-wrap', outline: 'none' }}
                       dangerouslySetInnerHTML={{ __html: form.descricaoPeca || '' }}
                       onInput={(e) => setForm((p: any) => ({ ...p, descricaoPeca: (e.target as HTMLDivElement).innerHTML }))}
                     />
