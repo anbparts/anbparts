@@ -126,7 +126,7 @@ function AjustarFreteModal({ pedido, onClose, onSaved }: { pedido: PedidoGroup; 
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
               <tr style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
-                {['ID Peça', 'Descrição', 'Preço ML', 'Frete atual', 'Liq. atual'].map((h) => (
+                {['ID Peça', 'Descrição', 'Preço ML', 'Frete atual'].map((h) => (
                   <th key={h} style={{ padding: '7px 10px', textAlign: 'left', fontWeight: 600, color: 'var(--gray-600)', whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
@@ -138,13 +138,11 @@ function AjustarFreteModal({ pedido, onClose, onSaved }: { pedido: PedidoGroup; 
                   <td style={{ padding: '7px 10px', color: 'var(--gray-700)' }}>{item.descricao}</td>
                   <td style={{ padding: '7px 10px', whiteSpace: 'nowrap' }}>{fmtMoney(item.precoML)}</td>
                   <td style={{ padding: '7px 10px', whiteSpace: 'nowrap', color: 'var(--gray-700)' }}>{fmtMoney(item.valorFrete)}</td>
-                  <td style={{ padding: '7px 10px', whiteSpace: 'nowrap', color: 'var(--green)', fontWeight: 600 }}>{fmtMoney(item.valorLiq)}</td>
                 </tr>
               ))}
               <tr style={{ background: 'var(--gray-50)' }}>
                 <td colSpan={3} style={{ padding: '8px 10px', fontWeight: 700, fontSize: 12, color: 'var(--gray-700)' }}>Total do Pedido</td>
                 <td style={{ padding: '8px 10px', fontWeight: 700, color: 'var(--gray-700)', whiteSpace: 'nowrap' }}>{fmtMoney(freteTotalAtual)}</td>
-                <td style={{ padding: '8px 10px', fontWeight: 700, color: 'var(--green)', whiteSpace: 'nowrap' }}>{fmtMoney(pedido.subtotalValorLiq)}</td>
               </tr>
             </tbody>
           </table>

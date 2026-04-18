@@ -399,6 +399,7 @@ export default function DashboardPage() {
           api.bling.relatorioVendas({
             dataDe: periodoResumoVendasMes.dataDe,
             dataAte: periodoResumoVendasMes.dataAte,
+            skipNomeCliente: 'true',
           }),
           15000,
           'resumo de vendas do mes',

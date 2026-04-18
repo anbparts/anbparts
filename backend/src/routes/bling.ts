@@ -5184,9 +5184,13 @@ blingRouter.get('/relatorio-vendas', async (req, res, next) => {
     });
 
     // Busca nomes de clientes no Bling para cada pedido único que tem blingPedidoId
+    // Só faz isso quando explicitamente solicitado (não no dashboard)
+    const skipNomeCliente = req.query?.skipNomeCliente === 'true';
     const pedidoIdSet = new Set<string>();
-    for (const peca of pecas) {
-      if (peca.blingPedidoId) pedidoIdSet.add(String(peca.blingPedidoId));
+    if (!skipNomeCliente) {
+      for (const peca of pecas) {
+        if (peca.blingPedidoId) pedidoIdSet.add(String(peca.blingPedidoId));
+      }
     }
     const nomeClienteMap = new Map<string, string>();
     for (const pedidoId of pedidoIdSet) {
