@@ -74,6 +74,15 @@ export default function BlingConfigPage() {
   const [clientSecret, setClientSecret] = useState('');
   const [saving, setSaving] = useState(false);
   const [connStatus, setConnStatus] = useState<any>(null);
+  const [isPhone, setIsPhone] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)');
+    const sync = () => setIsPhone(mq.matches);
+    sync();
+    mq.addEventListener('change', sync);
+    return () => mq.removeEventListener('change', sync);
+  }, []);
 
   useEffect(() => {
     load();
@@ -148,35 +157,35 @@ export default function BlingConfigPage() {
 
   return (
     <>
-      <div style={s.topbar}>
+      <div style={{ ...s.topbar, padding: isPhone ? '0 14px' : '0 28px' }}>
         <div>
           <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)', letterSpacing: '-0.3px' }}>Conf. Conexao Bling</div>
-          <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>Credenciais OAuth e conexao do Bling</div>
+          {!isPhone && <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>Credenciais OAuth e conexao do Bling</div>}
         </div>
         <div>
           {connected ? (
-            <span style={{ ...s.badge, background: 'var(--green-light)', color: 'var(--green)', border: '1px solid #86efac' }}>
-              OK Bling conectado
+            <span style={{ ...s.badge, background: 'var(--green-light)', color: 'var(--green)', border: '1px solid #86efac', fontSize: isPhone ? 11 : 13 }}>
+              {isPhone ? '✓ Conectado' : 'OK Bling conectado'}
             </span>
           ) : config?.clientId ? (
-            <span style={{ ...s.badge, background: 'var(--amber-light)', color: 'var(--amber)', border: '1px solid #fcd34d' }}>
-              Aguardando autorizacao
+            <span style={{ ...s.badge, background: 'var(--amber-light)', color: 'var(--amber)', border: '1px solid #fcd34d', fontSize: isPhone ? 11 : 13 }}>
+              {isPhone ? 'Aguardando' : 'Aguardando autorizacao'}
             </span>
           ) : (
-            <span style={{ ...s.badge, background: 'var(--gray-100)', color: 'var(--gray-400)', border: '1px solid var(--border)' }}>
-              Nao configurado
+            <span style={{ ...s.badge, background: 'var(--gray-100)', color: 'var(--gray-400)', border: '1px solid var(--border)', fontSize: isPhone ? 11 : 13 }}>
+              {isPhone ? 'Nao conf.' : 'Nao configurado'}
             </span>
           )}
         </div>
       </div>
 
-      <div style={{ padding: 28, maxWidth: 680 }}>
+      <div style={{ padding: isPhone ? 14 : 28, maxWidth: 680 }}>
         <div style={s.card}>
           <div style={s.h3}>Como configurar</div>
           <p style={s.p}>A API do Bling usa OAuth 2.0. Crie um aplicativo no painel do Bling:</p>
           {[
             { n: 1, t: <>No Bling: <strong>Preferencias / Todas as Configuracoes / Cadastro de Aplicativos / CRIAR NOVO</strong></> },
-            { n: 2, t: <>Nome: <strong>ANB Parts</strong> · URL de Redirecionamento: <code style={{ background: 'var(--gray-100)', padding: '1px 6px', borderRadius: 4, fontSize: 12, fontFamily: 'JetBrains Mono, monospace' }}>{API}/bling/callback</code></> },
+            { n: 2, t: <>Nome: <strong>ANB Parts</strong> · URL de Redirecionamento: <code style={{ background: 'var(--gray-100)', padding: '1px 6px', borderRadius: 4, fontSize: 12, fontFamily: 'JetBrains Mono, monospace', wordBreak: 'break-all' as const }}>{API}/bling/callback</code></> },
             { n: 3, t: <>Escopos: marque <strong>Produtos</strong> e <strong>Pedidos de Venda</strong>. Salve.</> },
             { n: 4, t: <>Copie o <strong>Client ID</strong> e <strong>Client Secret</strong> e cole abaixo.</> },
           ].map(({ n, t }) => (
@@ -199,7 +208,7 @@ export default function BlingConfigPage() {
               )}
             </div>
           )}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '1fr 1fr', gap: 14, marginBottom: 16 }}>
             <div>
               <label style={s.label}>Client ID</label>
               <input style={s.input} autoComplete="off" placeholder="Cole aqui o Client ID" value={clientId} onChange={(e) => setClientId(e.target.value)} />
@@ -209,7 +218,7 @@ export default function BlingConfigPage() {
               <input style={s.input} type="password" autoComplete="new-password" placeholder="Cole aqui o Client Secret" value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} />
             </div>
           </div>
-          <button style={{ ...s.btn, background: 'var(--blue-500)', color: '#fff' }} onClick={saveCredentials} disabled={saving || !clientId || !clientSecret}>
+          <button style={{ ...s.btn, background: 'var(--blue-500)', color: '#fff', width: isPhone ? '100%' : undefined, justifyContent: 'center' }} onClick={saveCredentials} disabled={saving || !clientId || !clientSecret}>
             {saving ? 'Salvando...' : 'Salvar credenciais'}
           </button>
         </div>
@@ -218,15 +227,15 @@ export default function BlingConfigPage() {
           <div style={s.card}>
             <div style={s.h3}>Autorizacao OAuth</div>
             <p style={s.p}>Clique em <strong>Conectar com Bling</strong> para autorizar. Voce sera redirecionado ao Bling e voltara automaticamente.</p>
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', flexDirection: isPhone ? 'column' : 'row' }}>
               {!connected ? (
-                <button style={{ ...s.btn, background: '#FF6900', color: '#fff' }} onClick={connectBling}>Conectar com Bling</button>
+                <button style={{ ...s.btn, background: '#FF6900', color: '#fff', width: isPhone ? '100%' : undefined, justifyContent: 'center' }} onClick={connectBling}>Conectar com Bling</button>
               ) : (
                 <>
-                  <button style={{ ...s.btn, background: 'var(--green-light)', color: 'var(--green)', border: '1px solid #86efac' }} onClick={testConn}>
+                  <button style={{ ...s.btn, background: 'var(--green-light)', color: 'var(--green)', border: '1px solid #86efac', width: isPhone ? '100%' : undefined, justifyContent: 'center' }} onClick={testConn}>
                     {connStatus?.loading ? 'Testando...' : 'Testar conexao'}
                   </button>
-                  <button style={{ ...s.btn, background: 'var(--red-light)', color: 'var(--red)', border: '1px solid #fca5a5' }} onClick={disconnect}>
+                  <button style={{ ...s.btn, background: 'var(--red-light)', color: 'var(--red)', border: '1px solid #fca5a5', width: isPhone ? '100%' : undefined, justifyContent: 'center' }} onClick={disconnect}>
                     Desconectar
                   </button>
                 </>
@@ -243,7 +252,7 @@ export default function BlingConfigPage() {
         <div style={{ ...s.card, background: 'var(--gray-50)' }}>
           <div style={{ fontSize: 12, color: 'var(--gray-400)', lineHeight: 1.9 }}>
             • URL de callback no Bling:{' '}
-            <code style={{ fontFamily: 'JetBrains Mono, monospace', background: 'var(--gray-200)', padding: '0 4px', borderRadius: 3 }}>
+            <code style={{ fontFamily: 'JetBrains Mono, monospace', background: 'var(--gray-200)', padding: '0 4px', borderRadius: 3, wordBreak: 'break-all' as const }}>
               {API}/bling/callback
             </code>
             <br />
