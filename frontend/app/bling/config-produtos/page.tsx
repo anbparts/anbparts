@@ -27,6 +27,22 @@ export default function BlingConfigProdutosPage() {
   const [saving, setSaving] = useState(false);
   const [exibirBuscarProdutos, setExibirBuscarProdutos] = useState(true);
   const [exibirCompararCSV, setExibirCompararCSV] = useState(true);
+  const [savingVisibilidade, setSavingVisibilidade] = useState(false);
+
+  async function saveVisibilidade() {
+    setSavingVisibilidade(true);
+    try {
+      await fetch(`${API}/bling/config-produtos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ exibirBuscarProdutos, exibirCompararCSV }),
+      });
+      alert('Visibilidade salva!');
+    } catch {
+      alert('Erro ao salvar');
+    }
+    setSavingVisibilidade(false);
+  }
 
   useEffect(() => {
     api.motos.list().then(setMotos).catch(() => {});
@@ -201,6 +217,9 @@ export default function BlingConfigProdutosPage() {
               </div>
             ))}
           </div>
+          <button style={{ ...s.btn, background: 'var(--blue-500)', color: '#fff', marginTop: 16 }} onClick={saveVisibilidade} disabled={savingVisibilidade}>
+            {savingVisibilidade ? 'Salvando...' : 'Salvar visibilidade'}
+          </button>
         </div>
 
         <div style={{ ...s.card, background: 'var(--gray-50)' }}>

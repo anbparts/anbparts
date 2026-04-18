@@ -339,20 +339,6 @@ export default function AuditoriaAutomaticaPage() {
             <div><label style={s.label}>Tamanho do lote</label><input style={{ ...s.input, width: '100%' }} type="number" min="10" max="500" value={auditoriaTamanhoLote} onChange={(e) => setAuditoriaTamanhoLote(e.target.value)} /></div>
             <div><label style={s.label}>Pausa entre lotes (ms)</label><input style={{ ...s.input, width: '100%' }} type="number" min="0" max="15000" value={auditoriaPausaMs} onChange={(e) => setAuditoriaPausaMs(e.target.value)} /></div>
           </div>
-          <div style={{ background: '#f8fafc', border: '1px solid #dbe3ef', borderRadius: 10, padding: '14px 16px', marginBottom: 16 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 6 }}>Configuracoes de email da auditoria</div>
-                <div style={{ fontSize: 12, color: 'var(--gray-500)', marginBottom: 10 }}>API Key do Resend, remetente, destinatario e titulo agora ficam centralizados em Config. Gerais para reaproveitar o envio de email em outros fluxos do sistema.</div>
-                <div style={{ display: 'grid', gridTemplateColumns: emailGridColumns, gap: 8 }}>
-                  <div style={{ fontSize: 12, color: 'var(--gray-700)' }}><strong>Remetente:</strong> {infoValue(config?.configuracoesGeraisRemetente)}</div>
-                  <div style={{ fontSize: 12, color: 'var(--gray-700)' }}><strong>Destinatario:</strong> {infoValue(config?.configuracoesGeraisAuditoriaDestinatario)}</div>
-                  <div style={{ fontSize: 12, color: 'var(--gray-700)' }}><strong>Titulo:</strong> {infoValue(config?.configuracoesGeraisAuditoriaTitulo)}</div>
-                </div>
-              </div>
-              <Link href="/configuracoes-gerais" style={{ ...s.btnGhost, whiteSpace: 'nowrap' }}>Abrir Config. Gerais</Link>
-            </div>
-          </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>{ESCOPOS.map((item) => <div key={item.value} style={{ padding: '7px 10px', borderRadius: 999, border: `1px solid ${auditoriaEscopo === item.value ? '#93c5fd' : 'var(--border)'}`, background: auditoriaEscopo === item.value ? '#eff6ff' : 'var(--gray-50)', color: auditoriaEscopo === item.value ? 'var(--blue-500)' : 'var(--gray-700)', fontSize: 12, fontWeight: 600 }}>{item.label}</div>)}</div>
           <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>{ESCOPOS.find((item) => item.value === auditoriaEscopo)?.detail}</div>
         </div>
