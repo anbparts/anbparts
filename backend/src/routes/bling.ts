@@ -5183,6 +5183,243 @@ blingRouter.get('/relatorio-vendas', async (req, res, next) => {
       ],
     });
 
+    // Busca nomes de clientes no Bling para cada pedido único que tem blingPedidoId
+    const pedidoIdSet = new Set<string>();
+    for (const peca of pecas) {
+      if (peca.blingPedidoId) pedidoIdSet.add(String(peca.blingPedidoId));
+    }
+    const nomeClienteMap = new Map<string, string>();
+    for (const pedidoId of pedidoIdSet) {
+      try {
+        const detalhe = await blingReq(`/pedidos/vendas/${pedidoId}`) as any;
+        const nome = String(detalhe?.data?.contato?.nome || '').trim();
+        if (nome) nomeClienteMap.set(pedidoId, nome);
+      } catch { /* ignora falha individual */ }
+    }
+
+    const pedidosMap = new Map<string, any>();
+    const totaisGerais = {
+      totalPedidos: 0,
+      totalItens: 0,
+      precoML: 0,
+      valorTaxas: 0,
+      valorFrete: 0,
+      valorLiq: 0,
+    };
+
+    for (const peca of pecas) {
+      const pedidoNum = String(peca.blingPedidoNum || '').trim();
+      if (!pedidoNum) continue;
+
+      const item = {
+        id: peca.id,
+        idPeca: peca.idPeca,
+        descricao: peca.descricao,
+        dataVenda: formatDateOnly(peca.dataVenda),
+        pedidoId: peca.blingPedidoId ? String(peca.blingPedidoId) : null,
+        pedidoNum,
+        motoId: peca.moto?.id ?? null,
+        moto: peca.moto ? `${peca.moto.marca} ${peca.moto.modelo}` : null,
+        precoML: roundMoney(toNumber(peca.precoML)),
+        valorTaxas: roundMoney(toNumber(peca.valorTaxas)),
+        valorFrete: roundMoney(toNumber(peca.valorFrete)),
+        valorLiq: roundMoney(toNumber(peca.valorLiq)),
+      };
+
+      if (!pedidosMap.has(pedidoNum)) {
+        const pedidoId = item.pedidoId;
+        const nomeCliente = pedidoId ? (nomeClienteMap.get(pedidoId) || null) : null;
+        pedidosMap.set(pedidoNum, {
+          pedidoNum,
+          pedidoId: item.pedidoId,
+          nomeCliente,
+          dataVenda: item.dataVenda,
+          quantidadeItens: 0,
+          subtotalPrecoML: 0,
+          subtotalTaxas: 0,
+          subtotalFrete: 0,
+          subtotalValorLiq: 0,
+          itens: [],
+        });
+      }
+
+      const pedidoGroup = pedidosMap.get(pedidoNum);
+      pedidoGroup.itens.push(item);
+      pedidoGroup.quantidadeItens += 1;
+      pedidoGroup.subtotalPrecoML = roundMoney(pedidoGroup.subtotalPrecoML + item.precoML);
+      pedidoGroup.subtotalTaxas = roundMoney(pedidoGroup.subtotalTaxas + item.valorTaxas);
+      pedidoGroup.subtotalFrete = roundMoney(pedidoGroup.subtotalFrete + item.valorFrete);
+      pedidoGroup.subtotalValorLiq = roundMoney(pedidoGroup.subtotalValorLiq + item.valorLiq);
+
+      totaisGerais.totalItens += 1;
+      totaisGerais.precoML = roundMoney(totaisGerais.precoML + item.precoML);
+      totaisGerais.valorTaxas = roundMoney(totaisGerais.valorTaxas + item.valorTaxas);
+      totaisGerais.valorFrete = roundMoney(totaisGerais.valorFrete + item.valorFrete);
+      totaisGerais.valorLiq = roundMoney(totaisGerais.valorLiq + item.valorLiq);
+    }
+
+    const pedidos = Array.from(pedidosMap.values())
+      .map((pedidoGroup) => ({
+        ...pedidoGroup,
+        itens: pedidoGroup.itens.sort((a: any, b: any) => a.idPeca.localeCompare(b.idPeca)),
+      }))
+      .sort((a, b) => {
+        const dateDiff = new Date(b.dataVenda || 0).getTime() - new Date(a.dataVenda || 0).getTime();
+        if (dateDiff) return dateDiff;
+        return String(b.pedidoNum).localeCompare(String(a.pedidoNum), 'pt-BR', { numeric: true });
+      });
+
+    totaisGerais.totalPedidos = pedidos.length;
+
+    res.json({
+      ok: true,
+      filtros: {
+        dataDe,
+        dataAte,
+        pedido,
+        idPeca,
+      },
+      totaisGerais,
+      pedidos,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// POST /bling/ajustar-frete-pedido — redistribui frete proporcionalmente entre peças de um pedido
+blingRouter.post('/ajustar-frete-pedido', async (req, res, next) => {
+  try {
+    const { pedidoNum, freteAtualizado, valorAdicional } = req.body;
+    if (!pedidoNum) return res.status(400).json({ error: 'pedidoNum obrigatorio' });
+
+    // Busca todas as peças do pedido
+    const pecas = await prisma.peca.findMany({
+      where: {
+        blingPedidoNum: { equals: String(pedidoNum), mode: 'insensitive' },
+        disponivel: false,
+        emPrejuizo: false,
+      },
+      select: { id: true, precoML: true, valorTaxas: true, valorFrete: true, valorLiq: true },
+    });
+
+    if (!pecas.length) return res.status(404).json({ error: 'Nenhuma peca encontrada para este pedido' });
+
+    // Calcula o frete total atual
+    const freteTotalAtual = pecas.reduce((s, p) => s + roundMoney(toNumber(p.valorFrete)), 0);
+
+    // Determina o novo frete total
+    let novoFreteTotalBruto: number;
+    if (freteAtualizado !== undefined && freteAtualizado !== null && freteAtualizado !== '') {
+      novoFreteTotalBruto = Math.max(0, roundMoney(Number(freteAtualizado)));
+    } else if (valorAdicional !== undefined && valorAdicional !== null && valorAdicional !== '') {
+      novoFreteTotalBruto = roundMoney(freteTotalAtual + Math.max(0, Number(valorAdicional)));
+    } else {
+      return res.status(400).json({ error: 'Informe freteAtualizado ou valorAdicional' });
+    }
+
+    // Calcula total de precoML para distribuição proporcional
+    const totalPrecoML = pecas.reduce((s, p) => s + roundMoney(toNumber(p.precoML)), 0);
+
+    // Redistribui proporcionalmente (mesmo algoritmo da importação)
+    let freteDistribuido = 0;
+    const updates: { id: number; valorFrete: number; valorLiq: number }[] = [];
+
+    for (let i = 0; i < pecas.length; i++) {
+      const peca = pecas[i];
+      const precoML = roundMoney(toNumber(peca.precoML));
+      const taxas = roundMoney(toNumber(peca.valorTaxas));
+
+      let novoFrete: number;
+      if (i === pecas.length - 1) {
+        // Última peça absorve a diferença de arredondamento
+        novoFrete = roundMoney(novoFreteTotalBruto - freteDistribuido);
+      } else if (totalPrecoML > 0) {
+        novoFrete = roundMoney((precoML / totalPrecoML) * novoFreteTotalBruto);
+      } else {
+        novoFrete = roundMoney(novoFreteTotalBruto / pecas.length);
+      }
+
+      const novoLiq = roundMoney(precoML - novoFrete - taxas);
+      freteDistribuido = roundMoney(freteDistribuido + novoFrete);
+      updates.push({ id: peca.id, valorFrete: novoFrete, valorLiq: novoLiq });
+    }
+
+    // Aplica atualizações
+    for (const upd of updates) {
+      await prisma.peca.update({
+        where: { id: upd.id },
+        data: { valorFrete: upd.valorFrete, valorLiq: upd.valorLiq },
+      });
+    }
+
+    res.json({
+      ok: true,
+      pedidoNum,
+      freteTotalAnterior: freteTotalAtual,
+      freteTotalNovo: novoFreteTotalBruto,
+      pecasAtualizadas: updates.length,
+      itens: updates,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+    const andFilters: any[] = [
+      { dataVenda: { not: null } },
+      { blingPedidoNum: { not: null } },
+      { disponivel: false },
+      { emPrejuizo: false },
+    ];
+
+    if (dataDe) andFilters.push({ dataVenda: { gte: parseDateStart(dataDe) } });
+    if (dataAte) andFilters.push({ dataVenda: { lte: parseDateEnd(dataAte) } });
+    if (pedido) {
+      andFilters.push({
+        blingPedidoNum: {
+          contains: pedido,
+          mode: 'insensitive',
+        },
+      });
+    }
+    if (idPeca) {
+      andFilters.push({
+        idPeca: {
+          contains: idPeca,
+          mode: 'insensitive',
+        },
+      });
+    }
+
+    const pecas = await prisma.peca.findMany({
+      where: { AND: andFilters },
+      select: {
+        id: true,
+        idPeca: true,
+        descricao: true,
+        precoML: true,
+        valorTaxas: true,
+        valorFrete: true,
+        valorLiq: true,
+        dataVenda: true,
+        blingPedidoId: true,
+        blingPedidoNum: true,
+        moto: {
+          select: {
+            id: true,
+            marca: true,
+            modelo: true,
+          },
+        },
+      },
+      orderBy: [
+        { dataVenda: 'desc' },
+        { blingPedidoNum: 'desc' },
+        { idPeca: 'asc' },
+      ],
+    });
+
     const pedidosMap = new Map<string, any>();
     const totaisGerais = {
       totalPedidos: 0,
