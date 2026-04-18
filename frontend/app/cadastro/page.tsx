@@ -139,6 +139,7 @@ export default function CadastroPage() {
   const isTabletLandscape = viewportMode === 'tablet-landscape';
   const isMobile = isPhone || isTabletPortrait;
 
+  const [modal, setModal] = useState(false);
   const [editItem, setEditItem] = useState<CadastroPeca | null>(null);
   const [form, setForm] = useState<any>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
