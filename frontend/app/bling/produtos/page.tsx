@@ -234,6 +234,8 @@ export default function BlingProdutosPage() {
   const [dataFim, setDataFim] = useState(() => defaultDateRange().dataFim);
   const [motoFallback, setMotoFallback] = useState('');
   const [defaults, setDefaults] = useState<Defaults>({ fretePadrao: 29.9, taxaPadraoPct: 17 });
+  const [exibirBuscarProdutos, setExibirBuscarProdutos] = useState(true);
+  const [exibirCompararCSV, setExibirCompararCSV] = useState(true);
   const [listaComparacao, setListaComparacao] = useState('');
   const [motoComparacaoIds, setMotoComparacaoIds] = useState<number[]>([]);
   const [showMotosPopup, setShowMotosPopup] = useState(false);
@@ -353,10 +355,14 @@ export default function BlingProdutosPage() {
     fetch(`${API}/bling/config`).then((r) => r.json()).then((d) => setConnected(d.hasTokens)).catch(() => setConnected(false));
     fetch(`${API}/bling/config-produtos`)
       .then((r) => r.json())
-      .then((d) => setDefaults({
-        fretePadrao: Number(d.fretePadrao ?? 29.9),
-        taxaPadraoPct: Number(d.taxaPadraoPct ?? 17),
-      }))
+      .then((d) => {
+        setDefaults({
+          fretePadrao: Number(d.fretePadrao ?? 29.9),
+          taxaPadraoPct: Number(d.taxaPadraoPct ?? 17),
+        });
+        setExibirBuscarProdutos(d.exibirBuscarProdutos !== false);
+        setExibirCompararCSV(d.exibirCompararCSV !== false);
+      })
       .catch(() => {});
     fetch(`${API}/bling/auditoria-automatica/config`)
       .then((r) => r.json())
@@ -765,6 +771,7 @@ export default function BlingProdutosPage() {
       <div style={{ padding: 28 }}>
         <div style={s.card}>
           <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 14 }}>Buscar produtos ativos no Bling</div>
+        {exibirBuscarProdutos && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 12 }}>
             <div>
               <label style={s.label}>Data inclusao - inicio</label>
@@ -793,9 +800,12 @@ export default function BlingProdutosPage() {
         </div>
 
         <div style={s.card}>
-          <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 8 }}>Comparar lista de IDs de peca / SKUs</div>
+        )}
+          <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 8 }}>Atualizar Informações Produtos</div>
           <div style={{ fontSize: 12, color: 'var(--gray-400)', marginBottom: 14 }}>
-            Cole uma lista com PN, HD01_xxx, BM01_xxx ou outros IDs, ou selecione uma moto cadastrada para consultar todos os SKUs-base dela. O sistema agrupa sufixos como <span style={{ fontFamily: 'JetBrains Mono, monospace' }}>-2</span> no SKU base e mostra somente os produtos divergentes entre ANB e Bling.
+            <strong>Sincronizar Informações Bling:</strong> Atualização e comparativo do SKU no Sistema ANB x Sistema Bling, com apontamento de divergências<br />
+            <strong>Atualizar Link ML:</strong> Atualização do link ML para o SKU no Sistema ANB<br />
+            <strong>Atualizar Localização:</strong> Atualização em massa da Localização do Sistema ANB e Bling dos SKU's informados
           </div>
           <div style={{ background: '#f8fafc', border: '1px solid #dbe3ef', borderRadius: 10, padding: '14px 16px', marginBottom: 14 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
@@ -878,7 +888,7 @@ export default function BlingProdutosPage() {
               onClick={compararProdutos}
               disabled={comparando || atualizandoLinkMl || !connected}
             >
-              {comparando ? 'Comparando...' : 'Comparar lista / moto'}
+              {comparando ? 'Sincronizando...' : 'Sincronizar Informações Bling'}
             </button>
             <button
               style={{ ...s.btn, background: 'var(--amber)', color: '#fff', opacity: (comparando || atualizandoLinkMl || !connected) ? 0.6 : 1 }}
@@ -929,6 +939,7 @@ export default function BlingProdutosPage() {
               </div>
             </div>
           )}
+        {exibirCompararCSV && (
         </div>
 
         <div style={s.card}>
@@ -1020,6 +1031,7 @@ export default function BlingProdutosPage() {
                 </span>
               ))}
             </div>
+        )}
           )}
         </div>
 

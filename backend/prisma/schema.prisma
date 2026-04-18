@@ -182,6 +182,8 @@ model BlingConfig {
   auditoriaLinkMlUltimaExecucaoEm DateTime?
   nuvemshopAtiva   Boolean @default(false)
   nuvemshopLojaId  Int     @default(205449158)
+  exibirBuscarProdutos Boolean @default(true)
+  exibirCompararCSV    Boolean @default(true)
   updatedAt                   DateTime @default(now()) @updatedAt
 }
 

@@ -25,6 +25,8 @@ export default function BlingConfigProdutosPage() {
   const [prefixos, setPrefixos] = useState<PrefixoItem[]>([emptyPrefixo()]);
   const [savedPrefs, setSavedPrefs] = useState<any[]>([]);
   const [saving, setSaving] = useState(false);
+  const [exibirBuscarProdutos, setExibirBuscarProdutos] = useState(true);
+  const [exibirCompararCSV, setExibirCompararCSV] = useState(true);
 
   useEffect(() => {
     api.motos.list().then(setMotos).catch(() => {});
@@ -37,6 +39,8 @@ export default function BlingConfigProdutosPage() {
           prefixo: String(item.prefixo || ''),
           motoId: String(item.motoId || ''),
         })) : [emptyPrefixo()]);
+        setExibirBuscarProdutos(data.exibirBuscarProdutos !== false);
+        setExibirCompararCSV(data.exibirCompararCSV !== false);
       })
       .catch(() => {});
   }, []);
@@ -51,7 +55,7 @@ export default function BlingConfigProdutosPage() {
       await fetch(`${API}/bling/config-produtos`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prefixos: validos }),
+        body: JSON.stringify({ prefixos: validos, exibirBuscarProdutos, exibirCompararCSV }),
       });
       setSavedPrefs(validos);
       alert('Configuracoes salvas com sucesso!');
@@ -164,6 +168,39 @@ export default function BlingConfigProdutosPage() {
           <button style={{ ...s.btn, background: 'var(--blue-500)', color: '#fff' }} onClick={save} disabled={saving}>
             {saving ? 'Salvando...' : 'Salvar configuracoes'}
           </button>
+        </div>
+
+        <div style={{ ...s.card, marginBottom: 16 }}>
+          <div style={s.h3}>Visibilidade dos Blocos — Página Produtos</div>
+          <p style={s.p}>Ative ou desative a exibição dos blocos avançados na página de Produtos Bling.</p>
+          <div style={{ display: 'grid', gap: 12 }}>
+            {[
+              { label: 'Buscar produtos ativos no Bling', desc: 'Permite buscar e importar produtos ativos diretamente do Bling.', value: exibirBuscarProdutos, set: setExibirBuscarProdutos },
+              { label: 'Comparar CSV exportado do Bling', desc: 'Permite comparar um CSV exportado do Bling com a base do ANB.', value: exibirCompararCSV, set: setExibirCompararCSV },
+            ].map(({ label, desc, value, set }) => (
+              <div key={label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 9, padding: '12px 16px' }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-800)' }}>{label}</div>
+                  <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>{desc}</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => set(!value)}
+                  style={{
+                    width: 44, height: 24, borderRadius: 999, border: 'none', cursor: 'pointer', flexShrink: 0,
+                    background: value ? 'var(--blue-500)' : 'var(--gray-300)',
+                    position: 'relative', transition: 'background 150ms',
+                  }}
+                >
+                  <span style={{
+                    position: 'absolute', top: 2, left: value ? 22 : 2,
+                    width: 20, height: 20, borderRadius: 999, background: '#fff',
+                    transition: 'left 150ms', boxShadow: '0 1px 3px rgba(0,0,0,.2)',
+                  }} />
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
 
         <div style={{ ...s.card, background: 'var(--gray-50)' }}>
