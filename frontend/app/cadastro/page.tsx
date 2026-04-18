@@ -11,9 +11,9 @@ const API = API_BASE;
 const s: any = {
   topbar: { height: 'var(--topbar-h)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 28px', background: 'var(--white)', borderBottom: '1px solid var(--border)', position: 'sticky' as const, top: 0, zIndex: 50 },
   card: { background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 12, padding: 22, marginBottom: 16 },
-  label: { fontSize: 11, fontWeight: 500, color: 'var(--gray-500)', textTransform: 'uppercase' as const, letterSpacing: '0.04em', marginBottom: 4, display: 'block' },
-  input: { width: '100%', background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 7, padding: '8px 12px', fontSize: 13, fontFamily: 'Inter, sans-serif', outline: 'none', color: 'var(--gray-800)', boxSizing: 'border-box' as const },
-  btn: { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', border: '1px solid transparent', fontFamily: 'Inter, sans-serif' },
+  label: { fontSize: 10, fontWeight: 600, color: 'var(--gray-500)', textTransform: 'uppercase' as const, letterSpacing: '0.04em', marginBottom: 3, display: 'block' },
+  input: { width: '100%', background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', fontSize: 12.5, fontFamily: 'Inter, sans-serif', outline: 'none', color: 'var(--gray-800)', boxSizing: 'border-box' as const },
+  btn: { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 6, fontSize: 12.5, fontWeight: 500, cursor: 'pointer', border: '1px solid transparent', fontFamily: 'Inter, sans-serif' },
   badge: (color: string, bg: string, border: string) => ({ fontSize: 11, fontWeight: 600, color, background: bg, border: `1px solid ${border}`, padding: '2px 8px', borderRadius: 12 }),
   th: { fontSize: 11, fontWeight: 600, color: 'var(--gray-500)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', padding: '10px 12px', textAlign: 'left' as const, borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' as const },
   td: { fontSize: 13, color: 'var(--gray-700)', padding: '10px 12px', borderBottom: '1px solid var(--border)', verticalAlign: 'middle' as const },
@@ -226,13 +226,10 @@ export default function CadastroPage() {
     categoriaTimerRef.current = setTimeout(() => buscarCategoriaML(val), 800);
   }
 
-  function inserirHtml(tag: string) {
-    const ta = document.getElementById('descricaoPeca-ta') as HTMLTextAreaElement;
-    if (!ta) return;
-    const start = ta.selectionStart; const end = ta.selectionEnd;
-    const sel = ta.value.slice(start, end);
-    const novo = ta.value.slice(0, start) + `<${tag}>${sel}</${tag}>` + ta.value.slice(end);
-    setForm((p: any) => ({ ...p, descricaoPeca: novo }));
+  function inserirHtml(cmd: string) {
+    document.execCommand(cmd, false);
+    const el = document.getElementById('descricaoPeca-wysiwyg');
+    if (el) setForm((p: any) => ({ ...p, descricaoPeca: el.innerHTML }));
   }
 
   async function salvar() {
@@ -476,16 +473,16 @@ Deseja forçar a exclusão mesmo assim?`);
           <div style={{ background: 'var(--white)', borderRadius: 14, width: '100%', maxWidth: 1100, boxShadow: '0 20px 60px rgba(0,0,0,0.2)', marginBottom: 20 }}>
 
             {/* Header */}
-            <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ fontSize: 16, fontWeight: 600 }}>{editItem ? 'Editar Pré-Cadastro' : 'Novo Pré-Cadastro'}</div>
-              <button onClick={() => setModal(false)} style={{ border: 'none', background: 'transparent', fontSize: 20, cursor: 'pointer', color: 'var(--gray-400)' }}>×</button>
+            <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ fontSize: 14, fontWeight: 600 }}>{editItem ? 'Editar Pré-Cadastro' : 'Novo Pré-Cadastro'}</div>
+              <button onClick={() => setModal(false)} style={{ border: 'none', background: 'transparent', fontSize: 18, cursor: 'pointer', color: 'var(--gray-400)' }}>×</button>
             </div>
 
             {/* Corpo: 2 colunas */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0 }}>
 
               {/* COLUNA ESQUERDA — campos do produto */}
-              <div style={{ padding: '20px 24px', display: 'grid', gap: 12, borderRight: '1px solid var(--border)' }}>
+              <div style={{ padding: '14px 18px', display: 'grid', gap: 8, borderRight: '1px solid var(--border)' }}>
 
                 <div>
                   <label style={s.label}>Moto *</label>
@@ -608,7 +605,7 @@ Deseja forçar a exclusão mesmo assim?`);
               </div>
 
               {/* COLUNA DIREITA — checklist + descrição da peça */}
-              <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column' as const, gap: 12 }}>
+              <div style={{ padding: '14px 18px', display: 'flex', flexDirection: 'column' as const, gap: 8 }}>
 
                 <ChecklistValidacao form={form} />
 
@@ -616,16 +613,21 @@ Deseja forçar a exclusão mesmo assim?`);
                   <label style={s.label}>Descrição da Peça (corpo do anúncio)</label>
                   <div style={{ border: '1px solid var(--border)', borderRadius: 7, overflow: 'hidden', flex: 1, display: 'flex', flexDirection: 'column' as const }}>
                     <div style={{ display: 'flex', gap: 4, padding: '6px 10px', background: '#f8fafc', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-                      {[{ label: 'B', tag: 'strong', style: { fontWeight: 700 } }, { label: 'I', tag: 'em', style: { fontStyle: 'italic' } }, { label: 'U', tag: 'u', style: { textDecoration: 'underline' } }].map(({ label, tag, style }) => (
-                        <button key={tag} type="button" onClick={() => inserirHtml(tag)}
+                      {[{ label: 'B', cmd: 'bold', style: { fontWeight: 700 } }, { label: 'I', cmd: 'italic', style: { fontStyle: 'italic' } }, { label: 'U', cmd: 'underline', style: { textDecoration: 'underline' } }].map(({ label, cmd, style }) => (
+                        <button key={cmd} type="button"
+                          onMouseDown={(e) => { e.preventDefault(); inserirHtml(cmd); }}
                           style={{ ...style, border: '1px solid var(--border)', background: 'var(--white)', borderRadius: 4, padding: '2px 8px', fontSize: 12, cursor: 'pointer', fontFamily: 'serif' }}>{label}</button>
                       ))}
                       <span style={{ fontSize: 11, color: 'var(--gray-400)', alignSelf: 'center', marginLeft: 4 }}>Selecione e clique para formatar</span>
                     </div>
-                    <textarea id="descricaoPeca-ta"
-                      style={{ ...s.input, flex: 1, minHeight: 320, resize: 'vertical' as const, borderRadius: 0, border: 'none' }}
-                      value={form.descricaoPeca} onChange={(e) => setForm((p: any) => ({ ...p, descricaoPeca: e.target.value }))}
-                      placeholder="Texto completo do anúncio (puxado do texto modelo da moto)" />
+                    <div
+                      id="descricaoPeca-wysiwyg"
+                      contentEditable
+                      suppressContentEditableWarning
+                      style={{ ...s.input, flex: 1, minHeight: 320, borderRadius: 0, border: 'none', overflowY: 'auto', whiteSpace: 'pre-wrap', outline: 'none' }}
+                      dangerouslySetInnerHTML={{ __html: form.descricaoPeca || '' }}
+                      onInput={(e) => setForm((p: any) => ({ ...p, descricaoPeca: (e.target as HTMLDivElement).innerHTML }))}
+                    />
                   </div>
                 </div>
               </div>
