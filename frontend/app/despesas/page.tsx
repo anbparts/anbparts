@@ -1245,7 +1245,52 @@ export default function DespesasPage() {
           <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
             {loading ? (
               <div style={{ padding: 28, color: 'var(--ink-muted)', fontSize: 13 }}>Carregando...</div>
+            ) : isCompact ? (
+              /* MOBILE: cards */
+              <div style={{ padding: isPhone ? 12 : 14, display: 'grid', gap: 10 }}>
+                {!filtradas.length ? (
+                  <div style={{ padding: '28px 16px', textAlign: 'center', color: 'var(--ink-muted)', fontSize: 13 }}>Nenhuma despesa encontrada</div>
+                ) : filtradas.map((item) => (
+                  <div key={item.id} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: isPhone ? '12px 14px' : '14px 16px', background: 'var(--white)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 8 }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', lineHeight: 1.4, marginBottom: 4 }}>{item.detalhes}</div>
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                          <CategBadge categoria={item.categoria} />
+                          <span style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)' }}>{formatDateBr(item.data)}</span>
+                        </div>
+                      </div>
+                      <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 14, fontWeight: 700, color: 'var(--red)', flexShrink: 0 }}>
+                        {fmt(Number(item.valor || 0))}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                        <StatusBadge status={item.statusPagamento} onClick={() => setPagamentoDespesa(item)} />
+                        {item.dataPagamento && <span style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)' }}>{formatDateBr(item.dataPagamento)}</span>}
+                        {item.chavePix ? <InfoPill label="PIX" title={item.chavePix} /> : null}
+                        {item.codigoBarras ? <InfoPill label="Barras" title={item.codigoBarras} /> : null}
+                        {item.observacao ? <InfoPill label="Obs" title={item.observacao} /> : null}
+                        {item.recorrenciaTipo ? <InfoPill label={recurrenceLabel(item.recorrenciaTipo)} title={`Recorrente ate ${formatDateBr(item.recorrenciaFim)}`} /> : null}
+                        <FileButton label="PDF" dataUrl={item.anexoArquivo} fileName={item.anexoNome} />
+                        <FileButton label="Comp." dataUrl={item.comprovanteArquivo} fileName={item.comprovanteNome} />
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                        <button type="button" onClick={() => startEditDespesa(item)}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--blue-500)', fontSize: 12, fontWeight: 700 }}>
+                          Editar
+                        </button>
+                        <button onClick={() => solicitarExclusao(item)}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-muted)', fontSize: 14 }}>
+                          ×
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             ) : (
+              /* DESKTOP: tabela */
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
@@ -1303,12 +1348,9 @@ export default function DespesasPage() {
                         </td>
                         <td style={{ padding: '9px 10px', width: 92 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <button
-                              type="button"
-                              onClick={() => startEditDespesa(item)}
+                            <button type="button" onClick={() => startEditDespesa(item)}
                               style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--blue-500)', fontSize: 12, padding: '2px 0', borderRadius: 4, fontWeight: 700 }}
-                              title="Editar"
-                            >
+                              title="Editar">
                               Editar
                             </button>
                             <button onClick={() => solicitarExclusao(item)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-muted)', fontSize: 14, padding: '2px 6px', borderRadius: 4 }} title="Excluir">
