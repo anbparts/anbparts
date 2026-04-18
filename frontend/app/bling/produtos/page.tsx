@@ -1032,7 +1032,6 @@ export default function BlingProdutosPage() {
               ))}
             </div>
         )}
-          )}
         </div>
         )}
 
