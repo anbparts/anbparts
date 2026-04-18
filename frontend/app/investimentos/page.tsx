@@ -419,13 +419,6 @@ export default function InvestimentosPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', width: topbarActionsWidth }}>
           <ViewModeSwitch value={modo} onChange={setModo} />
           <button
-            onClick={limparBase}
-            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px 18px', borderRadius: 7, background: '#fff7ed', color: 'var(--amber)', border: '1px solid #fdba74', fontSize: 13, fontWeight: 600, cursor: 'pointer', flex: isPhone ? '1 1 150px' : undefined }}
-            disabled={saving}
-          >
-            Limpar base
-          </button>
-          <button
             onClick={() => {
               if (showForm) {
                 resetFormState();

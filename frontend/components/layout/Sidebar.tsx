@@ -64,7 +64,6 @@ export const NAV: NavGroup[] = [
       { href: '/conf-gerais', icon: 'settings', label: 'Conf. Gerais' },
       { href: '/config-ml', icon: 'store', label: 'Config. ML' },
       { href: '/conf-nuvemshop', icon: 'cloud', label: 'Conf. Nuvemshop' },
-      { href: '/import', icon: 'upload', label: 'Importar Excel' },
     ],
   },
 ];
