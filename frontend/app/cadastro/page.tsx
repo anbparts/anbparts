@@ -111,7 +111,34 @@ export default function CadastroPage() {
   const [loading, setLoading] = useState(true);
   const [somentePendentes, setSomentePendentes] = useState(true);
   const [filters, setFilters] = useState({ motoId: '', search: '', semDimensoes: '' });
-  const [modal, setModal] = useState(false);
+  const [viewportMode, setViewportMode] = useState<'phone' | 'tablet-portrait' | 'tablet-landscape' | 'desktop'>('desktop');
+
+  useEffect(() => {
+    const phoneMedia = window.matchMedia('(max-width: 767px)');
+    const tabletPortraitMedia = window.matchMedia('(pointer: coarse) and (min-width: 768px) and (max-width: 1024px) and (orientation: portrait)');
+    const tabletLandscapeMedia = window.matchMedia('(pointer: coarse) and (min-width: 900px) and (max-width: 1600px) and (orientation: landscape)');
+    const sync = () => {
+      if (phoneMedia.matches) { setViewportMode('phone'); return; }
+      if (tabletPortraitMedia.matches) { setViewportMode('tablet-portrait'); return; }
+      if (tabletLandscapeMedia.matches) { setViewportMode('tablet-landscape'); return; }
+      setViewportMode('desktop');
+    };
+    sync();
+    phoneMedia.addEventListener('change', sync);
+    tabletPortraitMedia.addEventListener('change', sync);
+    tabletLandscapeMedia.addEventListener('change', sync);
+    return () => {
+      phoneMedia.removeEventListener('change', sync);
+      tabletPortraitMedia.removeEventListener('change', sync);
+      tabletLandscapeMedia.removeEventListener('change', sync);
+    };
+  }, []);
+
+  const isPhone = viewportMode === 'phone';
+  const isTabletPortrait = viewportMode === 'tablet-portrait';
+  const isTabletLandscape = viewportMode === 'tablet-landscape';
+  const isMobile = isPhone || isTabletPortrait;
+
   const [editItem, setEditItem] = useState<CadastroPeca | null>(null);
   const [form, setForm] = useState<any>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
@@ -378,27 +405,27 @@ Deseja forçar a exclusão mesmo assim?`);
 
   return (
     <>
-      <div style={s.topbar}>
+      <div style={{ ...s.topbar, padding: isPhone ? '0 14px' : '0 28px' }}>
         <div>
           <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)', letterSpacing: '-0.3px' }}>Cadastro</div>
           <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>Pré-cadastro e cadastro de peças</div>
         </div>
-        <button style={{ ...s.btn, background: 'var(--gray-800)', color: '#fff' }} onClick={openNovo}>+ Novo Pré-cadastro</button>
+        <button style={{ ...s.btn, background: 'var(--gray-800)', color: '#fff', fontSize: isPhone ? 12 : 12.5, padding: isPhone ? '7px 12px' : '7px 14px' }} onClick={openNovo}>+ Novo Pré-cadastro</button>
       </div>
 
-      <div style={{ padding: '20px 24px' }}>
-        <div style={{ ...s.card, padding: '14px 18px' }}>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' as const, alignItems: 'center' }}>
+      <div style={{ padding: isPhone ? '14px' : '20px 24px' }}>
+        <div style={{ ...s.card, padding: isPhone ? '10px 12px' : '14px 18px' }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' as const, alignItems: 'center', flexDirection: isPhone ? 'column' : 'row' }}>
             <button
-              style={{ ...s.btn, fontSize: 12, background: somentePendentes ? 'var(--gray-800)' : 'var(--white)', color: somentePendentes ? '#fff' : 'var(--gray-600)', border: '1px solid var(--border)' }}
+              style={{ ...s.btn, fontSize: 12, background: somentePendentes ? 'var(--gray-800)' : 'var(--white)', color: somentePendentes ? '#fff' : 'var(--gray-600)', border: '1px solid var(--border)', width: isPhone ? '100%' : undefined }}
               onClick={() => setSomentePendentes(!somentePendentes)}
             >{somentePendentes ? '📋 Só Pendentes' : '📋 Todos'}</button>
-            <select style={{ ...s.input, width: 200 }} value={filters.motoId} onChange={(e) => setFilters({ ...filters, motoId: e.target.value })}>
+            <select style={{ ...s.input, width: isPhone ? '100%' : 200 }} value={filters.motoId} onChange={(e) => setFilters({ ...filters, motoId: e.target.value })}>
               <option value="">Todas as motos</option>
               {motos.map((m) => <option key={m.id} value={m.id}>ID {m.id} - {m.marca} {m.modelo}</option>)}
             </select>
-            <input style={{ ...s.input, width: 200 }} placeholder="Buscar ID ou descrição..." value={filters.search} onChange={(e) => setFilters({ ...filters, search: e.target.value })} />
-            <button style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', fontSize: 12 }} onClick={() => setFilters({ motoId: '', search: '', semDimensoes: '' })}>Limpar</button>
+            <input style={{ ...s.input, width: isPhone ? '100%' : 200 }} placeholder="Buscar ID ou descrição..." value={filters.search} onChange={(e) => setFilters({ ...filters, search: e.target.value })} />
+            <button style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', fontSize: 12, width: isPhone ? '100%' : undefined }} onClick={() => setFilters({ motoId: '', search: '', semDimensoes: '' })}>Limpar</button>
           </div>
         </div>
 
@@ -469,20 +496,20 @@ Deseja forçar a exclusão mesmo assim?`);
 
       {/* MODAL PRÉ-CADASTRO */}
       {modal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 200, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '20px 16px', overflowY: 'auto' }}>
-          <div style={{ background: 'var(--white)', borderRadius: 14, width: '100%', maxWidth: 1100, boxShadow: '0 20px 60px rgba(0,0,0,0.2)', marginBottom: 20 }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 200, display: 'flex', alignItems: isPhone ? 'stretch' : 'flex-start', justifyContent: 'center', padding: isPhone ? 0 : isTabletLandscape ? '16px' : '20px 16px', overflowY: isPhone ? 'hidden' : 'auto' }}>
+          <div style={{ background: 'var(--white)', borderRadius: isPhone ? 0 : 14, width: '100%', maxWidth: isPhone ? undefined : isMobile ? 680 : 1100, boxShadow: '0 20px 60px rgba(0,0,0,0.2)', marginBottom: isPhone ? 0 : 20, display: 'flex', flexDirection: 'column', maxHeight: isPhone ? '100dvh' : undefined, minHeight: isPhone ? '100dvh' : undefined }}>
 
             {/* Header */}
-            <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ fontSize: 14, fontWeight: 600 }}>{editItem ? 'Editar Pré-Cadastro' : 'Novo Pré-Cadastro'}</div>
-              <button onClick={() => setModal(false)} style={{ border: 'none', background: 'transparent', fontSize: 18, cursor: 'pointer', color: 'var(--gray-400)' }}>×</button>
+            <div style={{ padding: isPhone ? '14px 14px 12px' : '12px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+              <div style={{ fontSize: isPhone ? 16 : 14, fontWeight: 600 }}>{editItem ? 'Editar Pré-Cadastro' : 'Novo Pré-Cadastro'}</div>
+              <button onClick={() => setModal(false)} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', fontSize: 16, flexShrink: 0 }}>×</button>
             </div>
 
-            {/* Corpo: 2 colunas */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0 }}>
+            {/* Corpo */}
+            <div style={{ flex: 1, overflowY: 'auto', display: isPhone ? 'block' : 'grid', gridTemplateColumns: isPhone ? undefined : isMobile ? '1fr' : '1fr 1fr', gap: 0 }}>
 
               {/* COLUNA ESQUERDA — campos do produto */}
-              <div style={{ padding: '14px 18px', display: 'grid', gap: 8, borderRight: '1px solid var(--border)' }}>
+              <div style={{ padding: isPhone ? '12px 14px' : '14px 18px', display: 'grid', gap: 8, borderRight: (!isPhone && !isMobile) ? '1px solid var(--border)' : 'none', borderBottom: isMobile && !isPhone ? '1px solid var(--border)' : 'none' }}>
 
                 <div>
                   <label style={s.label}>Moto *</label>
@@ -557,7 +584,7 @@ Deseja forçar a exclusão mesmo assim?`);
                   <div><label style={s.label}>Número da Peça *</label><input style={s.input} value={form.numeroPeca} onChange={(e) => setForm((p: any) => ({ ...p, numeroPeca: e.target.value }))} placeholder="Código do fabricante" /></div>
                 </div>
 
-                {/* Etiquetas Detran — campo dinâmico múltiplo */}
+                {/* Etiquetas Detran */}
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                     <label style={{ ...s.label, marginBottom: 0 }}>Etiqueta Detran</label>
@@ -569,8 +596,8 @@ Deseja forçar a exclusão mesmo assim?`);
                   </div>
                   {etiquetas.map((etq: string, idx: number) => (
                     <div key={idx} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
-                      <div style={{ fontSize: 11, color: 'var(--gray-500)', minWidth: 130, whiteSpace: 'nowrap' as const }}>
-                        {idx === 0 ? 'Etiqueta Detran' : `Etiqueta Detran - ${idx + 1}`}
+                      <div style={{ fontSize: 11, color: 'var(--gray-500)', minWidth: isPhone ? 80 : 130, whiteSpace: 'nowrap' as const }}>
+                        {idx === 0 ? 'Etiqueta Detran' : `Detran - ${idx + 1}`}
                       </div>
                       <input
                         style={{ ...s.input, flex: 1 }}
@@ -581,8 +608,7 @@ Deseja forçar a exclusão mesmo assim?`);
                       {etiquetas.length > 1 && (
                         <button type="button"
                           onClick={() => setEtiquetas((prev: string[]) => prev.filter((_: string, i: number) => i !== idx))}
-                          style={{ border: 'none', background: 'transparent', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px', lineHeight: 1 }}
-                          title="Remover etiqueta">×</button>
+                          style={{ border: 'none', background: 'transparent', color: '#dc2626', cursor: 'pointer', fontSize: 18, padding: '0 4px', lineHeight: 1 }}>×</button>
                       )}
                     </div>
                   ))}
@@ -604,8 +630,8 @@ Deseja forçar a exclusão mesmo assim?`);
                 </div>
               </div>
 
-              {/* COLUNA DIREITA — checklist + descrição da peça */}
-              <div style={{ padding: '14px 18px', display: 'flex', flexDirection: 'column' as const, gap: 8 }}>
+              {/* COLUNA DIREITA — checklist + descrição */}
+              <div style={{ padding: isPhone ? '0 14px 12px' : '14px 18px', display: 'flex', flexDirection: 'column' as const, gap: 8 }}>
 
                 <ChecklistValidacao form={form} />
 
@@ -616,15 +642,15 @@ Deseja forçar a exclusão mesmo assim?`);
                       {[{ label: 'B', cmd: 'bold', style: { fontWeight: 700 } }, { label: 'I', cmd: 'italic', style: { fontStyle: 'italic' } }, { label: 'U', cmd: 'underline', style: { textDecoration: 'underline' } }].map(({ label, cmd, style }) => (
                         <button key={cmd} type="button"
                           onMouseDown={(e) => { e.preventDefault(); inserirHtml(cmd); }}
-                          style={{ ...style, border: '1px solid var(--border)', background: 'var(--white)', borderRadius: 4, padding: '2px 8px', fontSize: 12, cursor: 'pointer', fontFamily: 'serif' }}>{label}</button>
+                          style={{ ...style, border: '1px solid var(--border)', background: 'var(--white)', borderRadius: 4, padding: '4px 10px', fontSize: 13, cursor: 'pointer', fontFamily: 'serif' }}>{label}</button>
                       ))}
-                      <span style={{ fontSize: 11, color: 'var(--gray-400)', alignSelf: 'center', marginLeft: 4 }}>Selecione e clique para formatar</span>
+                      {!isPhone && <span style={{ fontSize: 11, color: 'var(--gray-400)', alignSelf: 'center', marginLeft: 4 }}>Selecione e clique para formatar</span>}
                     </div>
                     <div
                       id="descricaoPeca-wysiwyg"
                       contentEditable
                       suppressContentEditableWarning
-                      style={{ ...s.input, flex: 1, minHeight: 320, borderRadius: 0, border: 'none', overflowY: 'auto', whiteSpace: 'pre-wrap', outline: 'none' }}
+                      style={{ ...s.input, flex: 1, minHeight: isPhone ? 200 : 320, borderRadius: 0, border: 'none', overflowY: 'auto', whiteSpace: 'pre-wrap', outline: 'none' }}
                       dangerouslySetInnerHTML={{ __html: form.descricaoPeca || '' }}
                       onInput={(e) => setForm((p: any) => ({ ...p, descricaoPeca: (e.target as HTMLDivElement).innerHTML }))}
                     />
@@ -634,22 +660,21 @@ Deseja forçar a exclusão mesmo assim?`);
             </div>
 
             {/* Footer */}
-            <div style={{ padding: '14px 24px', borderTop: '1px solid var(--border)', display: 'flex', gap: 10, justifyContent: 'flex-end', alignItems: 'center' }}>
-              <button onClick={() => setModal(false)} style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)' }}>Cancelar</button>
+            <div style={{ padding: isPhone ? '14px' : '14px 24px', borderTop: '1px solid var(--border)', display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'center', flexDirection: isPhone ? 'column-reverse' : 'row', flexShrink: 0 }}>
+              <button onClick={() => setModal(false)} style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>Cancelar</button>
               {editItem && isBruno && (
                 <button onClick={() => excluir()} disabled={excluindo}
-                  style={{ ...s.btn, background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', opacity: excluindo ? 0.7 : 1 }}>
+                  style={{ ...s.btn, background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', opacity: excluindo ? 0.7 : 1, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>
                   {excluindo ? 'Excluindo...' : '🗑️ Excluir'}
                 </button>
               )}
-              <button onClick={salvar} disabled={saving} style={{ ...s.btn, background: 'var(--gray-800)', color: '#fff', opacity: saving ? 0.7 : 1 }}>
+              <button onClick={salvar} disabled={saving} style={{ ...s.btn, background: 'var(--gray-800)', color: '#fff', opacity: saving ? 0.7 : 1, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>
                 {saving ? 'Enviando...' : editItem ? '🔄 Atualizar Produto Bling' : '🚀 Criar Produto Bling'}
               </button>
             </div>
           </div>
         </div>
       )}
-
       {/* MODAL FINALIZAR */}
       {modalFinalizar && itemFinalizar && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
