@@ -69,10 +69,18 @@ function AjustarFreteModal({ pedido, onClose, onSaved }: { pedido: PedidoGroup; 
   const [valorAdicional, setValorAdicional] = useState('');
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
+  const [isPhone, setIsPhone] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)');
+    const sync = () => setIsPhone(mq.matches);
+    sync();
+    mq.addEventListener('change', sync);
+    return () => mq.removeEventListener('change', sync);
+  }, []);
 
   const freteTotalAtual = pedido.itens.reduce((s, i) => roundMoney(s + i.valorFrete), 0);
 
-  // Preview do novo frete total
   let previewNovoFrete: number | null = null;
   if (freteAtualizado !== '') {
     previewNovoFrete = Math.max(0, Number(freteAtualizado) || 0);
@@ -109,84 +117,112 @@ function AjustarFreteModal({ pedido, onClose, onSaved }: { pedido: PedidoGroup; 
   }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }}>
-      <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 16, width: '100%', maxWidth: 580, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 12px 32px rgba(0,0,0,.12)' }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 300, display: 'flex', alignItems: isPhone ? 'stretch' : 'center', justifyContent: 'center', padding: isPhone ? 0 : 24, backdropFilter: 'blur(2px)' }}>
+      <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: isPhone ? 0 : 16, width: '100%', maxWidth: isPhone ? undefined : 580, maxHeight: isPhone ? '100dvh' : '90vh', minHeight: isPhone ? '100dvh' : undefined, display: 'flex', flexDirection: 'column', boxShadow: '0 12px 32px rgba(0,0,0,.12)', overflow: 'hidden' }}>
+
         {/* Header */}
-        <div style={{ padding: '18px 22px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ padding: isPhone ? '16px 14px 12px' : '18px 22px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
           <div>
-            <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--gray-800)' }}>Ajustar Frete — Pedido #{pedido.pedidoNum}</div>
+            <div style={{ fontSize: isPhone ? 15 : 16, fontWeight: 700, color: 'var(--gray-800)' }}>Ajustar Frete — Pedido #{pedido.pedidoNum}</div>
             <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 2 }}>Frete total atual: <strong>{fmtMoney(freteTotalAtual)}</strong></div>
           </div>
-          <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', fontSize: 14 }}>×</button>
+          <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', fontSize: 16, flexShrink: 0 }}>×</button>
         </div>
 
-        {/* Itens */}
-        <div style={{ padding: '16px 22px', borderBottom: '1px solid var(--border)' }}>
-          <div style={{ fontSize: 11, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '0.7px', marginBottom: 10 }}>Itens do pedido</div>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-            <thead>
-              <tr style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
-                {['ID Peça', 'Descrição', 'Preço ML', 'Frete atual'].map((h) => (
-                  <th key={h} style={{ padding: '7px 10px', textAlign: 'left', fontWeight: 600, color: 'var(--gray-600)', whiteSpace: 'nowrap' }}>{h}</th>
+        {/* Scrollable body */}
+        <div style={{ flex: 1, overflowY: 'auto' }}>
+
+          {/* Itens */}
+          <div style={{ padding: isPhone ? '12px 14px' : '16px 22px', borderBottom: '1px solid var(--border)' }}>
+            <div style={{ fontSize: 11, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '0.7px', marginBottom: 10 }}>Itens do pedido</div>
+
+            {isPhone ? (
+              /* Cards no mobile */
+              <div style={{ display: 'grid', gap: 8 }}>
+                {pedido.itens.map((item) => (
+                  <div key={item.id} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 4 }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--blue-500)' }}>{item.idPeca}</span>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-700)', whiteSpace: 'nowrap' }}>{fmtMoney(item.valorFrete)}</span>
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--gray-600)', lineHeight: 1.4, marginBottom: 4 }}>{item.descricao}</div>
+                    <div style={{ fontSize: 11, color: 'var(--gray-400)' }}>Preço ML: {fmtMoney(item.precoML)}</div>
+                  </div>
                 ))}
-              </tr>
-            </thead>
-            <tbody>
-              {pedido.itens.map((item) => (
-                <tr key={item.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                  <td style={{ padding: '7px 10px', color: 'var(--blue-500)', fontWeight: 600, whiteSpace: 'nowrap' }}>{item.idPeca}</td>
-                  <td style={{ padding: '7px 10px', color: 'var(--gray-700)' }}>{item.descricao}</td>
-                  <td style={{ padding: '7px 10px', whiteSpace: 'nowrap' }}>{fmtMoney(item.precoML)}</td>
-                  <td style={{ padding: '7px 10px', whiteSpace: 'nowrap', color: 'var(--gray-700)' }}>{fmtMoney(item.valorFrete)}</td>
-                </tr>
-              ))}
-              <tr style={{ background: 'var(--gray-50)' }}>
-                <td colSpan={3} style={{ padding: '8px 10px', fontWeight: 700, fontSize: 12, color: 'var(--gray-700)' }}>Total do Pedido</td>
-                <td style={{ padding: '8px 10px', fontWeight: 700, color: 'var(--gray-700)', whiteSpace: 'nowrap' }}>{fmtMoney(freteTotalAtual)}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        {/* Campos de ajuste */}
-        <div style={{ padding: '16px 22px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-            <div>
-              <label style={{ ...s.label, marginBottom: 6 }}>Frete Atualizado (R$)</label>
-              <input
-                style={{ ...s.input }}
-                type="number" step="0.01" min="0"
-                placeholder="Ex: 35.00"
-                value={freteAtualizado}
-                onChange={(e) => { setFreteAtualizado(e.target.value); setValorAdicional(''); }}
-              />
-              <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 4 }}>Distribui o novo valor total proporcionalmente</div>
-            </div>
-            <div>
-              <label style={{ ...s.label, marginBottom: 6 }}>Valor Adicional de Frete (R$)</label>
-              <input
-                style={{ ...s.input }}
-                type="number" step="0.01" min="0"
-                placeholder="Ex: 5.00"
-                value={valorAdicional}
-                onChange={(e) => { setValorAdicional(e.target.value); setFreteAtualizado(''); }}
-              />
-              <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 4 }}>Soma ao frete atual e redistribui</div>
-            </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 12px', background: 'var(--gray-50)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--gray-700)' }}>Total do Pedido</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--gray-700)' }}>{fmtMoney(freteTotalAtual)}</span>
+                </div>
+              </div>
+            ) : (
+              /* Tabela no desktop */
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                <thead>
+                  <tr style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
+                    {['ID Peça', 'Descrição', 'Preço ML', 'Frete atual'].map((h) => (
+                      <th key={h} style={{ padding: '7px 10px', textAlign: 'left', fontWeight: 600, color: 'var(--gray-600)', whiteSpace: 'nowrap' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {pedido.itens.map((item) => (
+                    <tr key={item.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                      <td style={{ padding: '7px 10px', color: 'var(--blue-500)', fontWeight: 600, whiteSpace: 'nowrap' }}>{item.idPeca}</td>
+                      <td style={{ padding: '7px 10px', color: 'var(--gray-700)' }}>{item.descricao}</td>
+                      <td style={{ padding: '7px 10px', whiteSpace: 'nowrap' }}>{fmtMoney(item.precoML)}</td>
+                      <td style={{ padding: '7px 10px', whiteSpace: 'nowrap', color: 'var(--gray-700)' }}>{fmtMoney(item.valorFrete)}</td>
+                    </tr>
+                  ))}
+                  <tr style={{ background: 'var(--gray-50)' }}>
+                    <td colSpan={3} style={{ padding: '8px 10px', fontWeight: 700, fontSize: 12, color: 'var(--gray-700)' }}>Total do Pedido</td>
+                    <td style={{ padding: '8px 10px', fontWeight: 700, color: 'var(--gray-700)', whiteSpace: 'nowrap' }}>{fmtMoney(freteTotalAtual)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            )}
           </div>
 
-          {previewNovoFrete !== null && (
-            <div style={{ marginTop: 14, padding: '10px 14px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, fontSize: 13, color: '#2563eb' }}>
-              Novo frete total: <strong>{fmtMoney(previewNovoFrete)}</strong> (era {fmtMoney(freteTotalAtual)})
+          {/* Campos de ajuste */}
+          <div style={{ padding: isPhone ? '14px' : '16px 22px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '1fr 1fr', gap: isPhone ? 12 : 14 }}>
+              <div>
+                <label style={{ ...s.label, marginBottom: 6 }}>Frete Atualizado (R$)</label>
+                <input
+                  style={{ ...s.input }}
+                  type="number" step="0.01" min="0"
+                  placeholder="Ex: 35.00"
+                  value={freteAtualizado}
+                  onChange={(e) => { setFreteAtualizado(e.target.value); setValorAdicional(''); }}
+                />
+                <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 4 }}>Distribui o novo valor total proporcionalmente</div>
+              </div>
+              <div>
+                <label style={{ ...s.label, marginBottom: 6 }}>Valor Adicional de Frete (R$)</label>
+                <input
+                  style={{ ...s.input }}
+                  type="number" step="0.01" min="0"
+                  placeholder="Ex: 5.00"
+                  value={valorAdicional}
+                  onChange={(e) => { setValorAdicional(e.target.value); setFreteAtualizado(''); }}
+                />
+                <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 4 }}>Soma ao frete atual e redistribui</div>
+              </div>
             </div>
-          )}
 
-          {err && <div style={{ marginTop: 10, fontSize: 12, color: 'var(--red)' }}>! {err}</div>}
+            {previewNovoFrete !== null && (
+              <div style={{ marginTop: 14, padding: '10px 14px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, fontSize: 13, color: '#2563eb' }}>
+                Novo frete total: <strong>{fmtMoney(previewNovoFrete)}</strong> (era {fmtMoney(freteTotalAtual)})
+              </div>
+            )}
+
+            {err && <div style={{ marginTop: 10, fontSize: 12, color: 'var(--red)' }}>! {err}</div>}
+          </div>
         </div>
 
-        <div style={{ padding: '0 22px 20px', display: 'flex', gap: 8, justifyContent: 'flex-end', borderTop: '1px solid var(--border)', paddingTop: 14 }}>
-          <button onClick={onClose} style={{ ...s.btn, background: 'var(--white)', color: 'var(--gray-600)', borderColor: 'var(--border)' }}>Cancelar</button>
-          <button onClick={salvar} disabled={saving} style={{ ...s.btn, background: 'var(--ink)', color: '#fff', opacity: saving ? 0.7 : 1 }}>
+        {/* Footer */}
+        <div style={{ padding: isPhone ? '14px' : '14px 22px 20px', display: 'flex', gap: 8, justifyContent: 'flex-end', borderTop: '1px solid var(--border)', flexDirection: isPhone ? 'column-reverse' : 'row', flexShrink: 0 }}>
+          <button onClick={onClose} style={{ ...s.btn, background: 'var(--white)', color: 'var(--gray-600)', borderColor: 'var(--border)', width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>Cancelar</button>
+          <button onClick={salvar} disabled={saving} style={{ ...s.btn, background: 'var(--ink)', color: '#fff', opacity: saving ? 0.7 : 1, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>
             {saving ? 'Salvando...' : 'Confirmar Ajuste'}
           </button>
         </div>
