@@ -1016,19 +1016,22 @@ cadastroRouter.get('/motos/:motoId/descricao-modelo', async (req, res, next) => 
   try {
     const moto = await prisma.moto.findUnique({
       where: { id: Number(req.params.motoId) },
-      select: { id: true, descricaoModelo: true },
+      select: { id: true, descricaoModelo: true, etiquetaSkuLabel: true },
     });
-    res.json({ descricaoModelo: moto?.descricaoModelo || '' });
+    res.json({ descricaoModelo: moto?.descricaoModelo || '', etiquetaSkuLabel: moto?.etiquetaSkuLabel || '' });
   } catch (e) { next(e); }
 });
 
 // PUT /cadastro/motos/:motoId/descricao-modelo
 cadastroRouter.put('/motos/:motoId/descricao-modelo', async (req, res, next) => {
   try {
-    const { descricaoModelo } = req.body;
+    const { descricaoModelo, etiquetaSkuLabel } = req.body;
     await prisma.moto.update({
       where: { id: Number(req.params.motoId) },
-      data: { descricaoModelo: descricaoModelo ? String(descricaoModelo).trim() : null },
+      data: {
+        descricaoModelo: descricaoModelo ? String(descricaoModelo).trim() : null,
+        etiquetaSkuLabel: etiquetaSkuLabel ? String(etiquetaSkuLabel).trim().toUpperCase() : null,
+      },
     });
     res.json({ ok: true });
   } catch (e) { next(e); }

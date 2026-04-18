@@ -589,6 +589,7 @@ export default function MotosPage() {
   const [editing, setEditing] = useState<any>(null);
   const [textoModeloModal, setTextoModeloModal] = useState<any>(null); // moto selecionada
   const [textoModelo, setTextoModelo] = useState('');
+  const [etiquetaSkuLabel, setEtiquetaSkuLabel] = useState('');
   const [savingTexto, setSavingTexto] = useState(false);
   const [search, setSearch] = useState('');
   const [detranModalOpen, setDetranModalOpen] = useState(false);
@@ -872,7 +873,8 @@ export default function MotosPage() {
       const resp = await fetch(`${API}/cadastro/motos/${m.id}/descricao-modelo`, { credentials: 'include' });
       const data = await resp.json();
       setTextoModelo(data.descricaoModelo || '');
-    } catch { setTextoModelo(''); }
+      setEtiquetaSkuLabel(data.etiquetaSkuLabel || '');
+    } catch { setTextoModelo(''); setEtiquetaSkuLabel(''); }
   }
 
   async function salvarTextoModelo() {
@@ -883,7 +885,7 @@ export default function MotosPage() {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ descricaoModelo: textoModelo }),
+        body: JSON.stringify({ descricaoModelo: textoModelo, etiquetaSkuLabel }),
       });
       alert('Texto modelo salvo!');
       setTextoModeloModal(null);
@@ -1022,7 +1024,7 @@ export default function MotosPage() {
       {/* Modal Texto Modelo */}
       {textoModeloModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-          <div style={{ background: 'var(--white)', borderRadius: 14, width: '100%', maxWidth: 640, boxShadow: '0 20px 60px rgba(0,0,0,0.2)', display: 'flex', flexDirection: 'column', maxHeight: '90vh' }}>
+          <div style={{ background: 'var(--white)', borderRadius: 14, width: '100%', maxWidth: 660, boxShadow: '0 20px 60px rgba(0,0,0,0.2)', display: 'flex', flexDirection: 'column', maxHeight: '92vh' }}>
             <div style={{ padding: '20px 24px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
                 <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--gray-800)' }}>📝 Texto Modelo</div>
@@ -1030,47 +1032,87 @@ export default function MotosPage() {
               </div>
               <button onClick={() => setTextoModeloModal(null)} style={{ border: 'none', background: 'transparent', fontSize: 20, cursor: 'pointer', color: 'var(--gray-400)' }}>×</button>
             </div>
-            <div style={{ padding: '16px 24px', fontSize: 12, color: 'var(--gray-500)' }}>
+            <div style={{ padding: '14px 24px 0', fontSize: 12, color: 'var(--gray-500)' }}>
               Este texto será usado como base na descrição das peças desta moto. O usuário poderá editar por peça no momento do cadastro.
             </div>
-            <div style={{ padding: '0 24px', flex: 1 }}>
-              {/* Toolbar HTML */}
+            {/* Campo abreviação SKU */}
+            <div style={{ padding: '16px 24px 0' }}>
+              <div style={{ background: '#f8fafc', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px' }}>
+                <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '.6px', textTransform: 'uppercase', marginBottom: 10 }}>
+                  Abreviação para Etiqueta SKU
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
+                  <div>
+                    <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginBottom: 4 }}>Marca</div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', background: 'var(--gray-100)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px' }}>
+                      {textoModeloModal.marca}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginBottom: 4 }}>Modelo</div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', background: 'var(--gray-100)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px' }}>
+                      {textoModeloModal.modelo}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginBottom: 4 }}>Label na Etiqueta SKU</div>
+                    <input
+                      style={{ width: '100%', fontSize: 13, fontWeight: 600, background: 'var(--white)', border: '1px solid var(--blue-500)', borderRadius: 6, padding: '6px 10px', outline: 'none', boxSizing: 'border-box' as const, textTransform: 'uppercase' as const }}
+                      value={etiquetaSkuLabel}
+                      onChange={(e) => setEtiquetaSkuLabel(e.target.value.toUpperCase())}
+                      placeholder="Ex: HD ULTRA"
+                    />
+                  </div>
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--ink-muted)' }}>
+                  Aparece no campo <strong>Moto:</strong> da etiqueta SKU. Se vazio, usa marca + modelo padrão.
+                </div>
+              </div>
+            </div>
+            {/* Editor WYSIWYG */}
+            <div style={{ padding: '16px 24px', flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
               <div style={{ display: 'flex', gap: 4, padding: '6px 8px', background: '#f8fafc', border: '1px solid var(--border)', borderBottom: 'none', borderRadius: '8px 8px 0 0' }}>
                 {[
-                  { label: 'B', tag: 'strong', style: { fontWeight: 700 } },
-                  { label: 'I', tag: 'em', style: { fontStyle: 'italic' } },
-                  { label: 'U', tag: 'u', style: { textDecoration: 'underline' } },
-                ].map(({ label, tag, style }) => (
-                  <button key={tag} type="button"
+                  { label: 'B', cmd: 'bold', style: { fontWeight: 700 } },
+                  { label: 'I', cmd: 'italic', style: { fontStyle: 'italic' } },
+                  { label: 'U', cmd: 'underline', style: { textDecoration: 'underline' } },
+                ].map(({ label, cmd, style }) => (
+                  <button key={cmd} type="button"
                     style={{ ...style, border: '1px solid var(--border)', background: 'var(--white)', borderRadius: 4, padding: '2px 8px', fontSize: 12, cursor: 'pointer', fontFamily: 'serif' }}
-                    onClick={() => {
-                      const ta = document.getElementById('textoModelo-ta') as HTMLTextAreaElement;
-                      if (!ta) return;
-                      const start = ta.selectionStart; const end = ta.selectionEnd;
-                      const sel = ta.value.slice(start, end);
-                      const abre = `<${tag}>`; const fecha = `</${tag}>`;
-                      const novo = ta.value.slice(0, start) + abre + sel + fecha + ta.value.slice(end);
-                      const novoCursor = start + abre.length + sel.length + fecha.length;
-                      setTextoModelo(novo);
-                      // Restaura cursor após re-render
-                      requestAnimationFrame(() => {
-                        ta.focus();
-                        ta.setSelectionRange(novoCursor, novoCursor);
-                      });
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      document.execCommand(cmd, false);
+                      const el = document.getElementById('textoModelo-wysiwyg');
+                      if (el) setTextoModelo(el.innerHTML);
                     }}
                   >{label}</button>
                 ))}
                 <span style={{ fontSize: 11, color: 'var(--gray-400)', alignSelf: 'center', marginLeft: 4 }}>Selecione o texto e clique para formatar</span>
               </div>
-              <textarea
-                id="textoModelo-ta"
-                style={{ width: '100%', minHeight: 260, border: '1px solid var(--border)', borderTop: 'none', borderRadius: '0 0 8px 8px', padding: '10px 12px', fontSize: 13, fontFamily: 'Inter, sans-serif', resize: 'vertical', outline: 'none', boxSizing: 'border-box' as const, color: 'var(--gray-800)', lineHeight: 1.6 }}
-                value={textoModelo}
-                onChange={(e) => setTextoModelo(e.target.value)}
-                placeholder="Cole aqui o texto modelo para as peças desta moto..."
+              <div
+                id="textoModelo-wysiwyg"
+                contentEditable
+                suppressContentEditableWarning
+                style={{
+                  flex: 1,
+                  minHeight: 180,
+                  border: '1px solid var(--border)',
+                  borderTop: 'none',
+                  borderRadius: '0 0 8px 8px',
+                  padding: '10px 12px',
+                  fontSize: 13,
+                  fontFamily: 'Inter, sans-serif',
+                  outline: 'none',
+                  overflowY: 'auto',
+                  color: 'var(--gray-800)',
+                  lineHeight: 1.6,
+                  whiteSpace: 'pre-wrap',
+                }}
+                dangerouslySetInnerHTML={{ __html: textoModelo }}
+                onInput={(e) => setTextoModelo((e.target as HTMLDivElement).innerHTML)}
               />
             </div>
-            <div style={{ padding: '16px 24px', display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            <div style={{ padding: '0 24px 20px', display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
               <button onClick={() => setTextoModeloModal(null)} style={{ ...cs.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)' }}>Cancelar</button>
               <button onClick={salvarTextoModelo} disabled={savingTexto} style={{ ...cs.btn, background: 'var(--ink)', color: '#fff', opacity: savingTexto ? 0.7 : 1 }}>
                 {savingTexto ? 'Salvando...' : 'Salvar texto modelo'}

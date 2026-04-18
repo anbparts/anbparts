@@ -5,17 +5,18 @@ import { z } from 'zod';
 export const motosRouter = Router();
 
 const motoSchema = z.object({
-  marca:        z.string().min(1),
-  modelo:       z.string().min(1),
-  ano:          z.number().int().optional().nullable(),
-  cor:          z.string().optional().nullable(),
-  placa:        z.string().optional().nullable(),
-  chassi:       z.string().optional().nullable(),
-  renavam:      z.string().optional().nullable(),
-  dataCompra:   z.string().optional().nullable(),
-  precoCompra:  z.number().default(0),
-  origemCompra: z.string().optional().nullable(),
-  observacoes:  z.string().optional().nullable(),
+  marca:             z.string().min(1),
+  modelo:            z.string().min(1),
+  ano:               z.number().int().optional().nullable(),
+  cor:               z.string().optional().nullable(),
+  placa:             z.string().optional().nullable(),
+  chassi:            z.string().optional().nullable(),
+  renavam:           z.string().optional().nullable(),
+  dataCompra:        z.string().optional().nullable(),
+  precoCompra:       z.number().default(0),
+  origemCompra:      z.string().optional().nullable(),
+  observacoes:       z.string().optional().nullable(),
+  etiquetaSkuLabel:  z.string().optional().nullable(),
 });
 
 const detranEtiquetaStatusSchema = z.object({

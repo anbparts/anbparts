@@ -1,0 +1,1 @@
+ALTER TABLE "Moto" ADD COLUMN IF NOT EXISTS "etiquetaSkuLabel" TEXT;

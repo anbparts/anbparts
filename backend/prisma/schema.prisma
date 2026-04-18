@@ -21,6 +21,7 @@ model Moto {
   origemCompra String?
   observacoes       String?
   descricaoModelo   String?  @db.Text
+  etiquetaSkuLabel  String?  // Abreviação para etiqueta SKU (ex: "HD ULTRA")
   anexos            Json     @default("{}")
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
