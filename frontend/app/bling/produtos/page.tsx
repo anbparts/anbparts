@@ -769,9 +769,9 @@ export default function BlingProdutosPage() {
       </div>
 
       <div style={{ padding: 28 }}>
+        {exibirBuscarProdutos && (
         <div style={s.card}>
           <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 14 }}>Buscar produtos ativos no Bling</div>
-        {exibirBuscarProdutos && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 12 }}>
             <div>
               <label style={s.label}>Data inclusao - inicio</label>
@@ -798,9 +798,9 @@ export default function BlingProdutosPage() {
             Frete padrao: {fmtMoney(defaults.fretePadrao)} · Taxa padrao: {fmtPercent(defaults.taxaPadraoPct)}
           </span>
         </div>
+        )}
 
         <div style={s.card}>
-        )}
           <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 8 }}>Atualizar Informações Produtos</div>
           <div style={{ fontSize: 12, color: 'var(--gray-400)', marginBottom: 14 }}>
             <strong>Sincronizar Informações Bling:</strong> Atualização e comparativo do SKU no Sistema ANB x Sistema Bling, com apontamento de divergências<br />
@@ -939,9 +939,9 @@ export default function BlingProdutosPage() {
               </div>
             </div>
           )}
-        {exibirCompararCSV && (
         </div>
 
+        {exibirCompararCSV && (
         <div style={s.card}>
           <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 8 }}>Comparar CSV exportado do Bling</div>
           <div style={{ fontSize: 12, color: 'var(--gray-400)', marginBottom: 14 }}>
@@ -1034,6 +1034,7 @@ export default function BlingProdutosPage() {
         )}
           )}
         </div>
+        )}
 
         {comparacao && (
           <>
