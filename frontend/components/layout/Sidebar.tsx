@@ -56,6 +56,12 @@ export const NAV: NavGroup[] = [
     ],
   },
   {
+    section: 'Nuvemshop',
+    items: [
+      { href: '/nuvemshop/produtos', icon: 'sparkles', label: 'Produtos' },
+    ],
+  },
+  {
     section: 'Configuracoes',
     items: [
       { href: '/bling', icon: 'plug', label: 'Conf. Conexao Bling' },
@@ -141,6 +147,7 @@ function SidebarIcon({ name, active, size = 16 }: { name: string; active: boolea
     store: <svg {...common}><path d="M4 10h16v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V10Z" /><path d="M3 10 5 4h14l2 6" /><path d="M9 14h6" /></svg>,
     cloud: <svg {...common}><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10Z" /></svg>,
     settings: <svg {...common}><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.54V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.54 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.54-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.54-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06A2 2 0 1 1 7.06 3.4l.06.06a1.7 1.7 0 0 0 1.87.34H9a1.7 1.7 0 0 0 1-1.54V2a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.54h.01a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V8c0 .68.4 1.3 1.03 1.58.16.07.33.1.51.1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1.32Z" /></svg>,
+    sparkles: <svg {...common}><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z" /><path d="M5 3v4" /><path d="M3 5h4" /><path d="M19 17v4" /><path d="M17 19h4" /></svg>,
   };
 
   return icons[name] || <span style={{ width: 16, height: 16 }} />;
