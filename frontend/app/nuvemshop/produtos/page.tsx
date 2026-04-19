@@ -114,7 +114,7 @@ export default function NuvemshopProdutosPage() {
       });
       const data = await resp.json();
       const erros = (data.resultados || []).filter((r: any) => !r.ok);
-      if (erros.length) alert(`${erros.length} produto(s) com erro ao aplicar.`);
+      if (erros.length) alert(`${erros.length} produto(s) com erro:\n${data.errosDetalhados || erros.map((e: any) => `Produto ${e.produtoId}: ${e.error}`).join('\n')}`);
       else alert(`✓ ${aplicacoes.length} produto(s) atualizados na Nuvemshop!`);
       setSugestoes([]);
       setEditandoSugestao({});

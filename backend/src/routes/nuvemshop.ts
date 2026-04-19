@@ -333,6 +333,6 @@ nuvemshopRouter.post('/aplicar', async (req, res, next) => {
       }
     }
 
-    res.json({ ok: true, resultados });
+    res.json({ ok: true, resultados, errosDetalhados: resultados.filter(r => !r.ok).map((e: any) => `Produto ${e.produtoId}: ${e.error}`).join(' | ') || null });
   } catch (e) { next(e); }
 });
