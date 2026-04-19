@@ -529,15 +529,26 @@ export default function NuvemshopProdutosPage() {
                         }),
                       });
                       const data = await resp.json();
-                      const resultados = new Map<number, any>(
-                        (data.resultados || [])
-                          .filter((r: any) => typeof r.queueIndex === 'number')
-                          .map((r: any) => [r.queueIndex, r])
-                      );
+                      if (!resp.ok || data.ok === false) {
+                        throw new Error(data.error || `Falha no envio (${resp.status})`);
+                      }
+
+                      const resultados = new Map<number, any>();
+                      (data.resultados || []).forEach((r: any, ordem: number) => {
+                        const idx = typeof r?.queueIndex === 'number'
+                          ? r.queueIndex
+                          : pendentesComIndice[ordem]?.idx;
+                        if (typeof idx === 'number') {
+                          resultados.set(idx, r);
+                        }
+                      });
 
                       setFotosQueue(prev => prev.map((f, idx) => {
+                        if (!pendentesComIndice.some(item => item.idx === idx)) return f;
                         const resultado = resultados.get(idx);
-                        if (!resultado) return f;
+                        if (!resultado) {
+                          return { ...f, status: 'erro', erro: 'Sem retorno para esta foto' };
+                        }
                         return {
                           ...f,
                           status: resultado.ok ? 'ok' : 'erro',
