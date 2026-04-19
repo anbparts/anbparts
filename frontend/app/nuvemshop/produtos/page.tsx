@@ -42,6 +42,9 @@ export default function NuvemshopProdutosPage() {
   const [aplicando, setAplicando] = useState(false);
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
   const [modalSku, setModalSku] = useState<string | null>(null);
+  const [modalFoto, setModalFoto] = useState<Produto | null>(null);
+  const [fotosQueue, setFotosQueue] = useState<{file: File; preview: string; base64: string; status: 'aguardando'|'enviando'|'ok'|'erro'; erro?: string}[]>([]);
+  const [enviandoFotos, setEnviandoFotos] = useState(false);
 
   useEffect(() => {
     api.motos.list().then(setMotos).catch(() => {});
@@ -264,9 +267,12 @@ export default function NuvemshopProdutosPage() {
                           </td>
                           <td style={{ ...s.td, textAlign: 'center' }}>
                             {p.encontradoNuvemshop ? (
-                              <span style={{ fontSize: 12, fontWeight: 600, color: p.imagens > 0 ? 'var(--green)' : 'var(--red)' }}>
-                                {p.imagens > 0 ? `📷 ${p.imagens}` : '0'}
-                              </span>
+                              <button onClick={() => { setModalFoto(p); setFotosQueue([]); }}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <span style={{ fontSize: 12, fontWeight: 600, color: p.imagens > 0 ? 'var(--green)' : 'var(--red)', textDecoration: 'underline dotted' }}>
+                              📷 {p.imagens}
+                            </span>
+                          </button>
                             ) : '-'}
                           </td>
                           <td style={s.td}>
@@ -401,6 +407,128 @@ export default function NuvemshopProdutosPage() {
 
             <div style={{ padding: '14px 22px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <button onClick={() => setModalSku(null)} style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)' }}>Fechar</button>
+            </div>
+          </div>
+        </div>
+      )}
+    <>
+      {/* MODAL UPLOAD FOTOS */}
+      {modalFoto && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.5)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }}>
+          <div style={{ background: 'var(--white)', borderRadius: 14, width: '100%', maxWidth: 700, maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 12px 40px rgba(0,0,0,.15)', overflow: 'hidden' }}>
+
+            {/* Header */}
+            <div style={{ padding: '18px 22px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 700 }}>📷 Fotos — {modalFoto.sku}</div>
+                <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>
+                  {modalFoto.titulo} · {modalFoto.imagens} foto(s) já cadastrada(s)
+                </div>
+              </div>
+              <button onClick={() => { setModalFoto(null); setFotosQueue([]); }}
+                style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', fontSize: 16 }}>×</button>
+            </div>
+
+            {/* Drop zone */}
+            <div style={{ padding: '16px 22px', flexShrink: 0 }}>
+              <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '2px dashed var(--border)', borderRadius: 10, padding: 24, cursor: 'pointer', background: '#fafafa', gap: 8 }}>
+                <div style={{ fontSize: 32 }}>📁</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-700)' }}>Clique para selecionar fotos</div>
+                <div style={{ fontSize: 11, color: 'var(--gray-400)' }}>JPG, PNG, WEBP · Várias de uma vez</div>
+                <input type="file" multiple accept="image/*" style={{ display: 'none' }}
+                  onChange={async (e) => {
+                    const files = Array.from(e.target.files || []);
+                    const novas = await Promise.all(files.map(file => new Promise<any>(resolve => {
+                      const reader = new FileReader();
+                      reader.onload = (ev) => resolve({
+                        file,
+                        preview: ev.target?.result as string,
+                        base64: (ev.target?.result as string).split(',')[1],
+                        status: 'aguardando',
+                      });
+                      reader.readAsDataURL(file);
+                    })));
+                    setFotosQueue(prev => [...prev, ...novas]);
+                    e.target.value = '';
+                  }}
+                />
+              </label>
+            </div>
+
+            {/* Preview grid */}
+            {fotosQueue.length > 0 && (
+              <div style={{ flex: 1, overflowY: 'auto', padding: '0 22px 16px' }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 10 }}>
+                  {fotosQueue.length} foto(s) na fila · serão adicionadas a partir da posição {modalFoto.imagens + 1}
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 10 }}>
+                  {fotosQueue.map((foto, idx) => (
+                    <div key={idx} style={{ position: 'relative', borderRadius: 8, overflow: 'hidden', border: `2px solid ${foto.status === 'ok' ? '#86efac' : foto.status === 'erro' ? '#fca5a5' : foto.status === 'enviando' ? '#93c5fd' : 'var(--border)'}` }}>
+                      <img src={foto.preview} alt={foto.file.name} style={{ width: '100%', height: 110, objectFit: 'cover', display: 'block' }} />
+                      {/* Status overlay */}
+                      {foto.status !== 'aguardando' && (
+                        <div style={{ position: 'absolute', inset: 0, background: foto.status === 'enviando' ? 'rgba(37,99,235,.4)' : foto.status === 'ok' ? 'rgba(22,163,74,.4)' : 'rgba(220,38,38,.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24 }}>
+                          {foto.status === 'enviando' ? '⏳' : foto.status === 'ok' ? '✓' : '✗'}
+                        </div>
+                      )}
+                      {/* Remove button (só quando aguardando) */}
+                      {foto.status === 'aguardando' && (
+                        <button onClick={() => setFotosQueue(prev => prev.filter((_, i) => i !== idx))}
+                          style={{ position: 'absolute', top: 4, right: 4, width: 22, height: 22, borderRadius: 999, background: 'rgba(0,0,0,.6)', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          ×
+                        </button>
+                      )}
+                      <div style={{ padding: '4px 6px', fontSize: 10, color: 'var(--gray-600)', background: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {foto.status === 'erro' ? `✗ ${foto.erro}` : foto.file.name}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Footer */}
+            <div style={{ padding: '14px 22px', borderTop: '1px solid var(--border)', display: 'flex', gap: 10, justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+              <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>
+                {fotosQueue.filter(f => f.status === 'ok').length > 0 && `✓ ${fotosQueue.filter(f => f.status === 'ok').length} enviada(s)`}
+                {fotosQueue.filter(f => f.status === 'erro').length > 0 && ` · ✗ ${fotosQueue.filter(f => f.status === 'erro').length} com erro`}
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={() => { setModalFoto(null); setFotosQueue([]); if (fotosQueue.some(f => f.status === 'ok')) buscar(); }}
+                  style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)' }}>
+                  {fotosQueue.some(f => f.status === 'ok') ? 'Fechar e atualizar' : 'Fechar'}
+                </button>
+                <button
+                  disabled={enviandoFotos || fotosQueue.filter(f => f.status === 'aguardando').length === 0}
+                  onClick={async () => {
+                    const pendentes = fotosQueue.filter(f => f.status === 'aguardando');
+                    if (!pendentes.length) return;
+                    setEnviandoFotos(true);
+
+                    for (let i = 0; i < fotosQueue.length; i++) {
+                      if (fotosQueue[i].status !== 'aguardando') continue;
+                      setFotosQueue(prev => prev.map((f, idx) => idx === i ? { ...f, status: 'enviando' } : f));
+                      try {
+                        const resp = await fetch(`${API}/nuvemshop/upload-imagens`, {
+                          method: 'POST', credentials: 'include',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ produtoId: modalFoto.produtoId, imagens: [{ filename: fotosQueue[i].file.name, base64: fotosQueue[i].base64 }] }),
+                        });
+                        const data = await resp.json();
+                        const r = data.resultados?.[0];
+                        setFotosQueue(prev => prev.map((f, idx) => idx === i ? { ...f, status: r?.ok ? 'ok' : 'erro', erro: r?.error } : f));
+                        // Atualiza contador de imagens no produto
+                        if (r?.ok) setProdutos(prev => prev.map(p => p.sku === modalFoto.sku ? { ...p, imagens: p.imagens + 1 } : p));
+                      } catch (e: any) {
+                        setFotosQueue(prev => prev.map((f, idx) => idx === i ? { ...f, status: 'erro', erro: e.message } : f));
+                      }
+                    }
+                    setEnviandoFotos(false);
+                  }}
+                  style={{ ...s.btn, background: '#7c3aed', color: '#fff', opacity: (enviandoFotos || fotosQueue.filter(f => f.status === 'aguardando').length === 0) ? 0.6 : 1 }}>
+                  {enviandoFotos ? '⏳ Enviando...' : `Enviar ${fotosQueue.filter(f => f.status === 'aguardando').length} foto(s)`}
+                </button>
+              </div>
             </div>
           </div>
         </div>

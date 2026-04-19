@@ -336,3 +336,35 @@ nuvemshopRouter.post('/aplicar', async (req, res, next) => {
     res.json({ ok: true, resultados, errosDetalhados: resultados.filter(r => !r.ok).map((e: any) => `Produto ${e.produtoId}: ${e.error}`).join(' | ') || null });
   } catch (e) { next(e); }
 });
+
+// ─── POST /nuvemshop/upload-imagens ──────────────────────────────────────────
+// Body: { produtoId, imagens: [{filename, base64}] }
+
+nuvemshopRouter.post('/upload-imagens', async (req, res, next) => {
+  try {
+    const { produtoId, imagens } = req.body || {};
+    if (!produtoId) return res.status(400).json({ ok: false, error: 'produtoId obrigatorio' });
+    if (!Array.isArray(imagens) || !imagens.length) return res.status(400).json({ ok: false, error: 'imagens obrigatorio' });
+
+    const resultados: any[] = [];
+    for (const img of imagens) {
+      try {
+        // Remove o prefixo data:image/...;base64, se vier do FileReader
+        const base64 = String(img.base64 || '').replace(/^data:[^;]+;base64,/, '');
+        const data = await nuvemReq(`/products/${produtoId}/images`, {
+          method: 'POST',
+          body: JSON.stringify({
+            attachment: base64,
+            filename: img.filename || 'foto.jpg',
+          }),
+        });
+        resultados.push({ filename: img.filename, ok: true, id: data.id, src: data.src });
+      } catch (e: any) {
+        resultados.push({ filename: img.filename, ok: false, error: e.message });
+      }
+    }
+
+    const erros = resultados.filter(r => !r.ok);
+    res.json({ ok: true, enviadas: resultados.filter(r => r.ok).length, erros: erros.length, resultados });
+  } catch (e) { next(e); }
+});
