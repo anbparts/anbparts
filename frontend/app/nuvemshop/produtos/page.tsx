@@ -411,7 +411,6 @@ export default function NuvemshopProdutosPage() {
           </div>
         </div>
       )}
-    <>
       {/* MODAL UPLOAD FOTOS */}
       {modalFoto && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.5)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }}>

@@ -82,7 +82,7 @@ nuvemshopRouter.post('/testar-conexao', async (_req, res, next) => {
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
-async function nuvemReq(path: string, options: RequestInit = {}) {
+async function nuvemReq<T = unknown>(path: string, options: RequestInit = {}): Promise<T> {
   const cfg = await getConfig();
   const accessToken = cfg.nuvemshopAccessToken;
   const storeId = cfg.nuvemshopStoreId;
@@ -100,7 +100,7 @@ async function nuvemReq(path: string, options: RequestInit = {}) {
     const text = await res.text();
     throw new Error(`Nuvemshop ${res.status}: ${text.slice(0, 300)}`);
   }
-  return res.json();
+  return res.json() as Promise<T>;
 }
 
 function resolverMotoIdPorPrefixo(sku: string, prefixos: any[]): number | null {
@@ -351,7 +351,7 @@ nuvemshopRouter.post('/upload-imagens', async (req, res, next) => {
       try {
         // Remove o prefixo data:image/...;base64, se vier do FileReader
         const base64 = String(img.base64 || '').replace(/^data:[^;]+;base64,/, '');
-        const data = await nuvemReq(`/products/${produtoId}/images`, {
+        const data = await nuvemReq<{ id: number | string; src?: string | null }>(`/products/${produtoId}/images`, {
           method: 'POST',
           body: JSON.stringify({
             attachment: base64,
