@@ -26,6 +26,55 @@ type Produto = {
   semCategoria: boolean; semTags: boolean;
 };
 type Sugestao = { sku: string; categorias: { id: number; nome: string }[]; tags: string[] };
+type FotoQueueItem = {
+  file: File;
+  preview: string;
+  base64: string;
+  status: 'aguardando'|'enviando'|'ok'|'erro';
+  erro?: string;
+};
+type FotoPendente = { foto: FotoQueueItem; idx: number };
+
+const MAX_UPLOAD_BATCH_BYTES = 18 * 1024 * 1024;
+
+function montarPayloadFotos(produtoId: number | null, itens: FotoPendente[]) {
+  return {
+    produtoId,
+    imagens: itens.map(({ foto, idx }) => ({
+      queueIndex: idx,
+      filename: foto.file.name,
+      base64: foto.base64,
+    })),
+  };
+}
+
+function estimarPayloadFotosBytes(produtoId: number | null, itens: FotoPendente[]) {
+  return new TextEncoder().encode(JSON.stringify(montarPayloadFotos(produtoId, itens))).length;
+}
+
+function dividirLotesPorTamanho(produtoId: number | null, itens: FotoPendente[]) {
+  const lotes: FotoPendente[][] = [];
+  let loteAtual: FotoPendente[] = [];
+
+  for (const item of itens) {
+    const loteTeste = [...loteAtual, item];
+    const tamanhoTeste = estimarPayloadFotosBytes(produtoId, loteTeste);
+
+    if (loteAtual.length > 0 && tamanhoTeste > MAX_UPLOAD_BATCH_BYTES) {
+      lotes.push(loteAtual);
+      loteAtual = [item];
+      continue;
+    }
+
+    loteAtual = loteTeste;
+  }
+
+  if (loteAtual.length > 0) {
+    lotes.push(loteAtual);
+  }
+
+  return lotes;
+}
 
 export default function NuvemshopProdutosPage() {
   const [motos, setMotos] = useState<Moto[]>([]);
@@ -43,7 +92,7 @@ export default function NuvemshopProdutosPage() {
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
   const [modalSku, setModalSku] = useState<string | null>(null);
   const [modalFoto, setModalFoto] = useState<Produto | null>(null);
-  const [fotosQueue, setFotosQueue] = useState<{file: File; preview: string; base64: string; status: 'aguardando'|'enviando'|'ok'|'erro'; erro?: string}[]>([]);
+  const [fotosQueue, setFotosQueue] = useState<FotoQueueItem[]>([]);
   const [enviandoFotos, setEnviandoFotos] = useState(false);
 
   useEffect(() => {
@@ -508,6 +557,7 @@ export default function NuvemshopProdutosPage() {
                     const pendentesComIndice = fotosQueue
                       .map((foto, idx) => ({ foto, idx }))
                       .filter(item => item.foto.status === 'aguardando');
+                    const lotes = dividirLotesPorTamanho(modalFotoAtual.produtoId, pendentesComIndice);
 
                     setFotosQueue(prev => prev.map((f, idx) => (
                       pendentesComIndice.some(item => item.idx === idx)
@@ -516,57 +566,53 @@ export default function NuvemshopProdutosPage() {
                     )));
 
                     try {
-                      const resp = await fetch(`${API}/nuvemshop/upload-imagens`, {
-                        method: 'POST', credentials: 'include',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          produtoId: modalFotoAtual.produtoId,
-                          imagens: pendentesComIndice.map(({ foto, idx }) => ({
-                            queueIndex: idx,
-                            filename: foto.file.name,
-                            base64: foto.base64,
-                          })),
-                        }),
-                      });
-                      const data = await resp.json();
-                      if (!resp.ok || data.ok === false) {
-                        throw new Error(data.error || `Falha no envio (${resp.status})`);
-                      }
+                      for (const lote of lotes) {
+                        const resp = await fetch(`${API}/nuvemshop/upload-imagens`, {
+                          method: 'POST', credentials: 'include',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify(montarPayloadFotos(modalFotoAtual.produtoId, lote)),
+                        });
+                        const data = await resp.json();
 
-                      const resultados = new Map<number, any>();
-                      (data.resultados || []).forEach((r: any, ordem: number) => {
-                        const idx = typeof r?.queueIndex === 'number'
-                          ? r.queueIndex
-                          : pendentesComIndice[ordem]?.idx;
-                        if (typeof idx === 'number') {
-                          resultados.set(idx, r);
+                        if (!resp.ok || data.ok === false) {
+                          throw new Error(data.error || `Falha no envio (${resp.status})`);
                         }
-                      });
 
-                      setFotosQueue(prev => prev.map((f, idx) => {
-                        if (!pendentesComIndice.some(item => item.idx === idx)) return f;
-                        const resultado = resultados.get(idx);
-                        if (!resultado) {
-                          return { ...f, status: 'erro', erro: 'Sem retorno para esta foto' };
+                        const resultados = new Map<number, any>();
+                        (data.resultados || []).forEach((r: any, ordem: number) => {
+                          const idx = typeof r?.queueIndex === 'number'
+                            ? r.queueIndex
+                            : lote[ordem]?.idx;
+                          if (typeof idx === 'number') {
+                            resultados.set(idx, r);
+                          }
+                        });
+
+                        setFotosQueue(prev => prev.map((f, idx) => {
+                          if (!lote.some(item => item.idx === idx)) return f;
+                          const resultado = resultados.get(idx);
+                          if (!resultado) {
+                            return { ...f, status: 'erro', erro: 'Sem retorno para esta foto' };
+                          }
+                          return {
+                            ...f,
+                            status: resultado.ok ? 'ok' : 'erro',
+                            erro: resultado.ok ? undefined : (resultado.error || 'Falha no envio'),
+                          };
+                        }));
+
+                        const enviadasComSucesso = (data.resultados || []).filter((r: any) => r.ok).length;
+                        if (enviadasComSucesso) {
+                          setProdutos(prev => prev.map(p => (
+                            p.sku === modalFotoAtual.sku
+                              ? { ...p, imagens: p.imagens + enviadasComSucesso }
+                              : p
+                          )));
                         }
-                        return {
-                          ...f,
-                          status: resultado.ok ? 'ok' : 'erro',
-                          erro: resultado.ok ? undefined : (resultado.error || 'Falha no envio'),
-                        };
-                      }));
-
-                      const enviadasComSucesso = (data.resultados || []).filter((r: any) => r.ok).length;
-                      if (enviadasComSucesso) {
-                        setProdutos(prev => prev.map(p => (
-                          p.sku === modalFotoAtual.sku
-                            ? { ...p, imagens: p.imagens + enviadasComSucesso }
-                            : p
-                        )));
                       }
                     } catch (e: any) {
                       setFotosQueue(prev => prev.map((f, idx) => (
-                        pendentesComIndice.some(item => item.idx === idx)
+                        pendentesComIndice.some(item => item.idx === idx) && f.status === 'enviando'
                           ? { ...f, status: 'erro', erro: e.message }
                           : f
                       )));
