@@ -13,7 +13,7 @@ const FINANCEIRO_TIMEZONE = 'America/Sao_Paulo';
 const DESPESAS_SCHEDULER_INTERVAL_MS = 60 * 1000;
 const INVESTIMENTO_TIPOS = ['Moto', 'Insumos', 'Infra-Estrutura', 'Obra', 'Operacional'] as const;
 const DESPESA_STATUS = ['pendente', 'pago'] as const;
-const DESPESA_RECORRENCIA = ['nenhuma', 'semanal', 'mensal'] as const;
+const DESPESA_RECORRENCIA = ['nenhuma', 'semanal', 'mensal', 'trimestral'] as const;
 const PREJUIZO_MOTIVOS = new Set([
   'Extravio no Envio',
   'Defeito',
@@ -132,7 +132,7 @@ function addMonthsUtcPreservingDay(date: Date, months: number) {
 
 function buildDespesaRecorrenteDatas(
   startDate: Date,
-  recorrenciaTipo: 'semanal' | 'mensal' | null,
+  recorrenciaTipo: 'semanal' | 'mensal' | 'trimestral' | null,
   recorrenciaAte: Date | null,
 ) {
   const datas = [new Date(startDate)];
@@ -144,7 +144,9 @@ function buildDespesaRecorrenteDatas(
   while (true) {
     cursor = recorrenciaTipo === 'semanal'
       ? addDaysUtc(cursor, 7)
-      : addMonthsUtcPreservingDay(cursor, 1);
+      : recorrenciaTipo === 'trimestral'
+        ? addMonthsUtcPreservingDay(cursor, 3)
+        : addMonthsUtcPreservingDay(cursor, 1);
 
     if (cursor.getTime() > recorrenciaAte.getTime()) break;
     datas.push(new Date(cursor));

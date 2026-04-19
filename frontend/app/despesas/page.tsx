@@ -10,6 +10,7 @@ const RECORRENCIAS = [
   { value: 'nenhuma', label: 'Nao repetir' },
   { value: 'semanal', label: 'Semanalmente' },
   { value: 'mensal', label: 'Mensalmente' },
+  { value: 'trimestral', label: 'Trimestralmente' },
 ] as const;
 const MESES = Array.from({ length: 12 }, (_, index) => ({
   value: String(index + 1),
@@ -125,6 +126,7 @@ function downloadDataUrl(dataUrl: string, fileName: string) {
 function recurrenceLabel(tipo: string) {
   if (tipo === 'mensal') return 'Mensal';
   if (tipo === 'semanal') return 'Semanal';
+  if (tipo === 'trimestral') return 'Trimestral';
   return '';
 }
 
