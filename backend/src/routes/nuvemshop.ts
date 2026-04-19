@@ -323,7 +323,7 @@ nuvemshopRouter.post('/aplicar', async (req, res, next) => {
         await nuvemReq(`/products/${produtoId}`, {
           method: 'PUT',
           body: JSON.stringify({
-            categories: (categorias || []).map((c: any) => ({ id: c.id })),
+            categories: (categorias || []).map((c: any) => Number(c.id)),
             tags: (tags || []).join(', '),
           }),
         });
