@@ -346,22 +346,39 @@ nuvemshopRouter.post('/upload-imagens', async (req, res, next) => {
     if (!produtoId) return res.status(400).json({ ok: false, error: 'produtoId obrigatorio' });
     if (!Array.isArray(imagens) || !imagens.length) return res.status(400).json({ ok: false, error: 'imagens obrigatorio' });
 
-    const resultados: any[] = [];
-    for (const img of imagens) {
-      try {
-        // Remove o prefixo data:image/...;base64, se vier do FileReader
-        const base64 = String(img.base64 || '').replace(/^data:[^;]+;base64,/, '');
-        const data = await nuvemReq<{ id: number | string; src?: string | null }>(`/products/${produtoId}/images`, {
-          method: 'POST',
-          body: JSON.stringify({
-            attachment: base64,
-            filename: img.filename || 'foto.jpg',
-          }),
-        });
-        resultados.push({ filename: img.filename, ok: true, id: data.id, src: data.src });
-      } catch (e: any) {
-        resultados.push({ filename: img.filename, ok: false, error: e.message });
-      }
+    const concorrencia = 4;
+    const resultados: any[] = new Array(imagens.length);
+
+    for (let inicio = 0; inicio < imagens.length; inicio += concorrencia) {
+      const lote = imagens.slice(inicio, inicio + concorrencia);
+      await Promise.all(lote.map(async (img: any, offset: number) => {
+        const indice = inicio + offset;
+        try {
+          // Remove o prefixo data:image/...;base64, se vier do FileReader
+          const base64 = String(img.base64 || '').replace(/^data:[^;]+;base64,/, '');
+          const data = await nuvemReq<{ id: number | string; src?: string | null }>(`/products/${produtoId}/images`, {
+            method: 'POST',
+            body: JSON.stringify({
+              attachment: base64,
+              filename: img.filename || 'foto.jpg',
+            }),
+          });
+          resultados[indice] = {
+            queueIndex: img.queueIndex ?? indice,
+            filename: img.filename,
+            ok: true,
+            id: data.id,
+            src: data.src,
+          };
+        } catch (e: any) {
+          resultados[indice] = {
+            queueIndex: img.queueIndex ?? indice,
+            filename: img.filename,
+            ok: false,
+            error: e.message,
+          };
+        }
+      }));
     }
 
     const erros = resultados.filter(r => !r.ok);

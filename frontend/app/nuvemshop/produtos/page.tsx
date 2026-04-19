@@ -504,25 +504,63 @@ export default function NuvemshopProdutosPage() {
                     if (!pendentes.length) return;
                     setEnviandoFotos(true);
 
-                    for (let i = 0; i < fotosQueue.length; i++) {
-                      if (fotosQueue[i].status !== 'aguardando') continue;
-                      setFotosQueue(prev => prev.map((f, idx) => idx === i ? { ...f, status: 'enviando' } : f));
-                      try {
-                        const resp = await fetch(`${API}/nuvemshop/upload-imagens`, {
-                          method: 'POST', credentials: 'include',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ produtoId: modalFoto.produtoId, imagens: [{ filename: fotosQueue[i].file.name, base64: fotosQueue[i].base64 }] }),
-                        });
-                        const data = await resp.json();
-                        const r = data.resultados?.[0];
-                        setFotosQueue(prev => prev.map((f, idx) => idx === i ? { ...f, status: r?.ok ? 'ok' : 'erro', erro: r?.error } : f));
-                        // Atualiza contador de imagens no produto
-                        if (r?.ok) setProdutos(prev => prev.map(p => p.sku === modalFoto.sku ? { ...p, imagens: p.imagens + 1 } : p));
-                      } catch (e: any) {
-                        setFotosQueue(prev => prev.map((f, idx) => idx === i ? { ...f, status: 'erro', erro: e.message } : f));
+                    const pendentesComIndice = fotosQueue
+                      .map((foto, idx) => ({ foto, idx }))
+                      .filter(item => item.foto.status === 'aguardando');
+
+                    setFotosQueue(prev => prev.map((f, idx) => (
+                      pendentesComIndice.some(item => item.idx === idx)
+                        ? { ...f, status: 'enviando', erro: undefined }
+                        : f
+                    )));
+
+                    try {
+                      const resp = await fetch(`${API}/nuvemshop/upload-imagens`, {
+                        method: 'POST', credentials: 'include',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          produtoId: modalFoto.produtoId,
+                          imagens: pendentesComIndice.map(({ foto, idx }) => ({
+                            queueIndex: idx,
+                            filename: foto.file.name,
+                            base64: foto.base64,
+                          })),
+                        }),
+                      });
+                      const data = await resp.json();
+                      const resultados = new Map<number, any>(
+                        (data.resultados || [])
+                          .filter((r: any) => typeof r.queueIndex === 'number')
+                          .map((r: any) => [r.queueIndex, r])
+                      );
+
+                      setFotosQueue(prev => prev.map((f, idx) => {
+                        const resultado = resultados.get(idx);
+                        if (!resultado) return f;
+                        return {
+                          ...f,
+                          status: resultado.ok ? 'ok' : 'erro',
+                          erro: resultado.ok ? undefined : (resultado.error || 'Falha no envio'),
+                        };
+                      }));
+
+                      const enviadasComSucesso = (data.resultados || []).filter((r: any) => r.ok).length;
+                      if (enviadasComSucesso) {
+                        setProdutos(prev => prev.map(p => (
+                          p.sku === modalFoto.sku
+                            ? { ...p, imagens: p.imagens + enviadasComSucesso }
+                            : p
+                        )));
                       }
+                    } catch (e: any) {
+                      setFotosQueue(prev => prev.map((f, idx) => (
+                        pendentesComIndice.some(item => item.idx === idx)
+                          ? { ...f, status: 'erro', erro: e.message }
+                          : f
+                      )));
+                    } finally {
+                      setEnviandoFotos(false);
                     }
-                    setEnviandoFotos(false);
                   }}
                   style={{ ...s.btn, background: '#7c3aed', color: '#fff', opacity: (enviandoFotos || fotosQueue.filter(f => f.status === 'aguardando').length === 0) ? 0.6 : 1 }}>
                   {enviandoFotos ? '⏳ Enviando...' : `Enviar ${fotosQueue.filter(f => f.status === 'aguardando').length} foto(s)`}
