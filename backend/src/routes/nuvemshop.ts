@@ -255,11 +255,17 @@ Regras das categorias: escolha categoria pai E subcategoria mais especifica. Pod
 Responda APENAS com JSON valido, sem texto antes ou depois, sem markdown:
 {"sugestoes":[{"sku":"SKU_AQUI","categorias":[{"id":1,"nome":"Nome"}],"tags":["tag1","tag2"]}]}`;
 
+    const anthropicKey = process.env.ANTHROPIC_API_KEY;
+    if (!anthropicKey) {
+      return res.status(500).json({ ok: false, error: 'ANTHROPIC_API_KEY nao configurado nas variaveis de ambiente do servidor' });
+    }
+
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'anthropic-version': '2023-06-01',
+        'x-api-key': anthropicKey,
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
