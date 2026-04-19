@@ -145,6 +145,7 @@ export default function NuvemshopProdutosPage() {
   // Modal de edição de sugestão
   const modalProd = modalSku ? produtos.find(p => p.sku === modalSku) : null;
   const modalSugestao = modalSku ? editandoSugestao[modalSku] : null;
+  const modalFotoAtual = modalFoto ? (produtos.find(p => p.sku === modalFoto.sku) || modalFoto) : null;
 
   return (
     <>
@@ -412,16 +413,16 @@ export default function NuvemshopProdutosPage() {
         </div>
       )}
       {/* MODAL UPLOAD FOTOS */}
-      {modalFoto && (
+      {modalFotoAtual && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.5)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }}>
           <div style={{ background: 'var(--white)', borderRadius: 14, width: '100%', maxWidth: 700, maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 12px 40px rgba(0,0,0,.15)', overflow: 'hidden' }}>
 
             {/* Header */}
             <div style={{ padding: '18px 22px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
               <div>
-                <div style={{ fontSize: 15, fontWeight: 700 }}>📷 Fotos — {modalFoto.sku}</div>
+                <div style={{ fontSize: 15, fontWeight: 700 }}>📷 Fotos — {modalFotoAtual.sku}</div>
                 <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>
-                  {modalFoto.titulo} · {modalFoto.imagens} foto(s) já cadastrada(s)
+                  {modalFotoAtual.titulo} · {modalFotoAtual.imagens} foto(s) já cadastrada(s)
                 </div>
               </div>
               <button onClick={() => { setModalFoto(null); setFotosQueue([]); }}
@@ -458,7 +459,7 @@ export default function NuvemshopProdutosPage() {
             {fotosQueue.length > 0 && (
               <div style={{ flex: 1, overflowY: 'auto', padding: '0 22px 16px' }}>
                 <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 10 }}>
-                  {fotosQueue.length} foto(s) na fila · serão adicionadas a partir da posição {modalFoto.imagens + 1}
+                  {fotosQueue.length} foto(s) na fila · serão adicionadas a partir da posição {modalFotoAtual.imagens + 1}
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 10 }}>
                   {fotosQueue.map((foto, idx) => (
@@ -493,9 +494,9 @@ export default function NuvemshopProdutosPage() {
                 {fotosQueue.filter(f => f.status === 'erro').length > 0 && ` · ✗ ${fotosQueue.filter(f => f.status === 'erro').length} com erro`}
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={() => { setModalFoto(null); setFotosQueue([]); if (fotosQueue.some(f => f.status === 'ok')) buscar(); }}
+                <button onClick={() => { setModalFoto(null); setFotosQueue([]); }}
                   style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)' }}>
-                  {fotosQueue.some(f => f.status === 'ok') ? 'Fechar e atualizar' : 'Fechar'}
+                  Fechar
                 </button>
                 <button
                   disabled={enviandoFotos || fotosQueue.filter(f => f.status === 'aguardando').length === 0}
@@ -519,7 +520,7 @@ export default function NuvemshopProdutosPage() {
                         method: 'POST', credentials: 'include',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                          produtoId: modalFoto.produtoId,
+                          produtoId: modalFotoAtual.produtoId,
                           imagens: pendentesComIndice.map(({ foto, idx }) => ({
                             queueIndex: idx,
                             filename: foto.file.name,
@@ -547,7 +548,7 @@ export default function NuvemshopProdutosPage() {
                       const enviadasComSucesso = (data.resultados || []).filter((r: any) => r.ok).length;
                       if (enviadasComSucesso) {
                         setProdutos(prev => prev.map(p => (
-                          p.sku === modalFoto.sku
+                          p.sku === modalFotoAtual.sku
                             ? { ...p, imagens: p.imagens + enviadasComSucesso }
                             : p
                         )));
