@@ -75,7 +75,6 @@ export default function NuvemshopProdutosPage() {
   }
 
   async function sugerirIA() {
-    // Usa selecionados ou todos sem categoria/tag
     const alvo = produtos.filter(p => p.encontradoNuvemshop && (selecionados.size ? selecionados.has(p.sku) : (p.semCategoria || p.semTags)));
     if (!alvo.length) { alert('Nenhum produto selecionado ou pendente de sugestão.'); return; }
     setSugerindo(true);
@@ -86,12 +85,12 @@ export default function NuvemshopProdutosPage() {
         body: JSON.stringify({ produtos: alvo, categorias }),
       });
       const data = await resp.json();
-      if (!data.ok) throw new Error(data.error);
+      if (!data.ok) throw new Error(data.error || 'Erro ao chamar IA');
       const map: Record<string, Sugestao> = {};
       (data.sugestoes || []).forEach((s: Sugestao) => { map[s.sku] = s; });
       setSugestoes(data.sugestoes || []);
       setEditandoSugestao(map);
-    } catch (e: any) { alert(e.message); }
+    } catch (e: any) { alert(`Erro IA: ${e.message}`); }
     setSugerindo(false);
   }
 

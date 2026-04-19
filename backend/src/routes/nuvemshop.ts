@@ -216,7 +216,7 @@ nuvemshopRouter.post('/sugerir-ia', async (req, res, next) => {
   try {
     const { produtos, categorias } = req.body || {};
     if (!produtos?.length || !categorias?.length) {
-      return res.status(400).json({ error: 'produtos e categorias sao obrigatorios' });
+      return res.status(400).json({ ok: false, error: 'produtos e categorias sao obrigatorios' });
     }
 
     // Monta árvore de categorias para contexto
@@ -224,48 +224,43 @@ nuvemshopRouter.post('/sugerir-ia', async (req, res, next) => {
     const filhos = categorias.filter((c: any) => c.parent_id);
     const arvore = pais.map((pai: any) => ({
       id: pai.id,
-      nome: pai.name?.pt || pai.name?.['pt-BR'] || Object.values(pai.name || {})[0] || '',
+      nome: pai.name?.pt || pai.name?.['pt-BR'] || (Object.values(pai.name || {}) as string[])[0] || String(pai.id),
       filhos: filhos
-        .filter((f: any) => f.parent_id === pai.id)
+        .filter((f: any) => String(f.parent_id) === String(pai.id))
         .map((f: any) => ({
           id: f.id,
-          nome: f.name?.pt || f.name?.['pt-BR'] || Object.values(f.name || {})[0] || '',
+          nome: f.name?.pt || f.name?.['pt-BR'] || (Object.values(f.name || {}) as string[])[0] || String(f.id),
         })),
-    }));
+    })).filter((p: any) => p.nome);
 
-    // Monta o prompt para a IA
     const listaCategoriasTexto = arvore.map((p: any) =>
       `${p.nome} (ID:${p.id})${p.filhos.length ? '\n  ' + p.filhos.map((f: any) => `${f.nome} (ID:${f.id})`).join('\n  ') : ''}`
     ).join('\n');
 
     const listaProdutos = produtos.map((p: any) =>
-      `SKU: ${p.sku} | Título: ${p.titulo} | Moto: ${p.moto?.marca || ''} ${p.moto?.modelo || ''} ${p.moto?.ano || ''}`
+      `SKU: ${p.sku} | Titulo: ${p.titulo} | Moto: ${p.moto?.marca || ''} ${p.moto?.modelo || ''} ${p.moto?.ano || ''}`
     ).join('\n');
 
-    const prompt = `Você é um especialista em e-commerce de peças de moto usadas. Analise cada produto e sugira:
-1. Categorias: escolha a categoria pai E a subcategoria mais específica da lista. Você pode sugerir múltiplas categorias se o produto se encaixar em mais de uma (ex: pai + subcategoria).
-2. Tags: palavras-chave relevantes para busca. Inclua: partes do nome do produto, marca da moto, modelo da moto, ano, prefixo do SKU, termos técnicos relacionados.
+    const prompt = `Voce e um especialista em e-commerce de pecas de moto usadas. Analise cada produto e sugira categorias e tags.
 
-CATEGORIAS DISPONÍVEIS:
+CATEGORIAS DISPONIVEIS:
 ${listaCategoriasTexto}
 
-PRODUTOS PARA ANALISAR:
+PRODUTOS:
 ${listaProdutos}
 
-Responda SOMENTE em JSON, sem texto extra, no formato:
-{
-  "sugestoes": [
-    {
-      "sku": "HD01_0074",
-      "categorias": [{"id": 123, "nome": "Escape"}, {"id": 456, "nome": "Coletor e Intermediário"}],
-      "tags": ["Escapamento", "Coletor", "Harley", "HD01", "Street Glide", "2019", "Touring"]
-    }
-  ]
-}`;
+Regras das tags: inclua partes do nome do produto, marca da moto, modelo, ano, prefixo do SKU e termos tecnicos.
+Regras das categorias: escolha categoria pai E subcategoria mais especifica. Pode sugerir ambas.
+
+Responda APENAS com JSON valido, sem texto antes ou depois, sem markdown:
+{"sugestoes":[{"sku":"SKU_AQUI","categorias":[{"id":1,"nome":"Nome"}],"tags":["tag1","tag2"]}]}`;
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'anthropic-version': '2023-06-01',
+      },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 4000,
@@ -273,10 +268,31 @@ Responda SOMENTE em JSON, sem texto extra, no formato:
       }),
     });
 
+    if (!response.ok) {
+      const errText = await response.text();
+      return res.status(500).json({ ok: false, error: `Claude API ${response.status}: ${errText.slice(0, 200)}` });
+    }
+
     const data = await response.json() as any;
-    const text = data.content?.[0]?.text || '';
-    const clean = text.replace(/```json|```/g, '').trim();
-    const parsed = JSON.parse(clean);
+    const text = (data.content?.[0]?.text || '').trim();
+
+    if (!text) {
+      return res.status(500).json({ ok: false, error: 'Resposta vazia da IA' });
+    }
+
+    // Extrai JSON robusto
+    const start = text.indexOf('{');
+    const end = text.lastIndexOf('}');
+    if (start === -1 || end === -1) {
+      return res.status(500).json({ ok: false, error: `IA nao retornou JSON. Resposta: ${text.slice(0, 200)}` });
+    }
+
+    let parsed: any;
+    try {
+      parsed = JSON.parse(text.slice(start, end + 1));
+    } catch (parseErr: any) {
+      return res.status(500).json({ ok: false, error: `Erro ao parsear JSON: ${parseErr.message}` });
+    }
 
     res.json({ ok: true, sugestoes: parsed.sugestoes || [] });
   } catch (e: any) {
