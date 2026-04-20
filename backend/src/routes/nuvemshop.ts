@@ -212,7 +212,56 @@ nuvemshopRouter.post('/buscar-produtos', async (req, res, next) => {
 // ─── POST /nuvemshop/sugerir-ia ───────────────────────────────────────────────
 // Body: { produtos: [{sku, titulo, moto}], categorias: [{id, nome, parentId?}] }
 
+async function listarModelosAnthropic(apiKey: string) {
+  const response = await fetch('https://api.anthropic.com/v1/models', {
+    headers: {
+      'anthropic-version': '2023-06-01',
+      'x-api-key': apiKey,
+    },
+  });
+
+  const text = await response.text();
+  let data: any = null;
+
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = null;
+  }
+
+  const modelos = Array.isArray(data?.data)
+    ? data.data.map((item: any) => String(item.id || '').trim()).filter(Boolean)
+    : [];
+
+  return {
+    ok: response.ok,
+    status: response.status,
+    text,
+    modelos,
+  };
+}
+
+nuvemshopRouter.get('/testar-ia', async (_req, res) => {
+  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  if (!anthropicKey) {
+    return res.status(500).json({ ok: false, error: 'ANTHROPIC_API_KEY nao configurado nas variaveis de ambiente do servidor' });
+  }
+
+  try {
+    const modelosInfo = await listarModelosAnthropic(anthropicKey);
+    return res.json({
+      ok: modelosInfo.ok,
+      status: modelosInfo.status,
+      modelos: modelosInfo.modelos,
+      raw: modelosInfo.ok ? undefined : modelosInfo.text.slice(0, 500),
+    });
+  } catch (e: any) {
+    return res.status(500).json({ ok: false, error: `Falha ao listar modelos da Anthropic: ${e?.message || String(e)}` });
+  }
+});
+
 nuvemshopRouter.post('/sugerir-ia', async (req, res, next) => {
+  let etapa = 'inicio';
   try {
     const { produtos, categorias } = req.body || {};
     if (!produtos?.length || !categorias?.length) {
@@ -268,18 +317,10 @@ Responda APENAS com JSON valido, sem texto antes ou depois, sem markdown:
 
     let modelosDisponiveis: string[] = [];
     try {
-      const modelosResp = await fetch('https://api.anthropic.com/v1/models', {
-        headers: {
-          'anthropic-version': '2023-06-01',
-          'x-api-key': anthropicKey,
-        },
-      });
-
-      if (modelosResp.ok) {
-        const modelosData = await modelosResp.json() as any;
-        modelosDisponiveis = Array.isArray(modelosData?.data)
-          ? modelosData.data.map((item: any) => String(item.id || '').trim()).filter(Boolean)
-          : [];
+      etapa = 'listar-modelos';
+      const modelosInfo = await listarModelosAnthropic(anthropicKey);
+      if (modelosInfo.ok) {
+        modelosDisponiveis = modelosInfo.modelos;
       }
     } catch {}
 
@@ -295,6 +336,7 @@ Responda APENAS com JSON valido, sem texto antes ou depois, sem markdown:
     let ultimoErro: string | null = null;
 
     for (const anthropicModel of anthropicModels) {
+      etapa = `mensagem:${anthropicModel}`;
       const response = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
@@ -332,6 +374,7 @@ Responda APENAS com JSON valido, sem texto antes ou depois, sem markdown:
       });
     }
 
+    etapa = `parse-resposta:${modeloUsado || 'desconhecido'}`;
     const text = (data.content?.[0]?.text || '').trim();
 
     if (!text) {
@@ -354,7 +397,8 @@ Responda APENAS com JSON valido, sem texto antes ou depois, sem markdown:
 
     res.json({ ok: true, sugestoes: parsed.sugestoes || [], modelo: modeloUsado });
   } catch (e: any) {
-    res.status(500).json({ ok: false, error: e.message });
+    console.error('[nuvemshop/sugerir-ia]', { etapa, erro: e });
+    res.status(500).json({ ok: false, error: `Falha em ${etapa}: ${e?.message || String(e)}` });
   }
 });
 
