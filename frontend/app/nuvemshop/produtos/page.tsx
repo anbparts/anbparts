@@ -76,6 +76,33 @@ function dividirLotesPorTamanho(produtoId: number | null, itens: FotoPendente[])
   return lotes;
 }
 
+async function lerRespostaApi<T = any>(resp: Response): Promise<T> {
+  const text = await resp.text();
+
+  let data: any = null;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = null;
+    }
+  }
+
+  if (!resp.ok) {
+    throw new Error(data?.error || text || `Erro ${resp.status}`);
+  }
+
+  if (!data) {
+    throw new Error(text || 'Resposta invalida da API');
+  }
+
+  if (data.ok === false) {
+    throw new Error(data.error || 'Erro na API');
+  }
+
+  return data as T;
+}
+
 export default function NuvemshopProdutosPage() {
   const [motos, setMotos] = useState<Moto[]>([]);
   const [motoId, setMotoId] = useState('');
@@ -98,8 +125,8 @@ export default function NuvemshopProdutosPage() {
   useEffect(() => {
     api.motos.list().then(setMotos).catch(() => {});
     fetch(`${API}/nuvemshop/categorias`, { credentials: 'include' })
-      .then(r => r.json())
-      .then(d => { if (d.ok) setCategorias(d.categorias || []); })
+      .then(lerRespostaApi)
+      .then((d: any) => { if (d.ok) setCategorias(d.categorias || []); })
       .catch(() => {});
   }, []);
 
@@ -118,7 +145,7 @@ export default function NuvemshopProdutosPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-      const data = await resp.json();
+      const data = await lerRespostaApi(resp);
       if (data.ok) setProdutos(data.produtos || []);
       else alert(data.error || 'Erro ao buscar');
       setBuscou(true);
@@ -136,7 +163,7 @@ export default function NuvemshopProdutosPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ produtos: alvo, categorias }),
       });
-      const data = await resp.json();
+      const data = await lerRespostaApi(resp);
       if (!data.ok) throw new Error(data.error || 'Erro ao chamar IA');
       const map: Record<string, Sugestao> = {};
       (data.sugestoes || []).forEach((s: Sugestao) => { map[s.sku] = s; });
@@ -164,7 +191,7 @@ export default function NuvemshopProdutosPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ aplicacoes }),
       });
-      const data = await resp.json();
+      const data = await lerRespostaApi(resp);
       const erros = (data.resultados || []).filter((r: any) => !r.ok);
       if (erros.length) alert(`${erros.length} produto(s) com erro:\n${data.errosDetalhados || erros.map((e: any) => `Produto ${e.produtoId}: ${e.error}`).join('\n')}`);
       else alert(`✓ ${aplicacoes.length} produto(s) atualizados na Nuvemshop!`);
@@ -572,11 +599,7 @@ export default function NuvemshopProdutosPage() {
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify(montarPayloadFotos(modalFotoAtual.produtoId, lote)),
                         });
-                        const data = await resp.json();
-
-                        if (!resp.ok || data.ok === false) {
-                          throw new Error(data.error || `Falha no envio (${resp.status})`);
-                        }
+                        const data = await lerRespostaApi(resp);
 
                         const resultados = new Map<number, any>();
                         (data.resultados || []).forEach((r: any, ordem: number) => {

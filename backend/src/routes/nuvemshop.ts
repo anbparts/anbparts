@@ -256,6 +256,7 @@ Responda APENAS com JSON valido, sem texto antes ou depois, sem markdown:
 {"sugestoes":[{"sku":"SKU_AQUI","categorias":[{"id":1,"nome":"Nome"}],"tags":["tag1","tag2"]}]}`;
 
     const anthropicKey = process.env.ANTHROPIC_API_KEY;
+    const anthropicModel = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514';
     if (!anthropicKey) {
       return res.status(500).json({ ok: false, error: 'ANTHROPIC_API_KEY nao configurado nas variaveis de ambiente do servidor' });
     }
@@ -268,7 +269,7 @@ Responda APENAS com JSON valido, sem texto antes ou depois, sem markdown:
         'x-api-key': anthropicKey,
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
+        model: anthropicModel,
         max_tokens: 4000,
         messages: [{ role: 'user', content: prompt }],
       }),
