@@ -305,74 +305,36 @@ Responda APENAS com JSON valido, sem texto antes ou depois, sem markdown:
 {"sugestoes":[{"sku":"SKU_AQUI","categorias":[{"id":1,"nome":"Nome"}],"tags":["tag1","tag2"]}]}`;
 
     const anthropicKey = process.env.ANTHROPIC_API_KEY;
-    const anthropicModelsPreferidos = Array.from(new Set(
-      String(process.env.ANTHROPIC_MODELS || process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6,claude-sonnet-4-20250514,claude-3-7-sonnet-20250219,claude-3-5-sonnet-20241022,claude-3-5-haiku-20241022')
-        .split(',')
-        .map((item) => item.trim())
-        .filter(Boolean)
-    ));
     if (!anthropicKey) {
       return res.status(500).json({ ok: false, error: 'ANTHROPIC_API_KEY nao configurado nas variaveis de ambiente do servidor' });
     }
 
-    let modelosDisponiveis: string[] = [];
-    try {
-      etapa = 'listar-modelos';
-      const modelosInfo = await listarModelosAnthropic(anthropicKey);
-      if (modelosInfo.ok) {
-        modelosDisponiveis = modelosInfo.modelos;
-      }
-    } catch {}
-
-    const anthropicModels = modelosDisponiveis.length
-      ? [
-          ...anthropicModelsPreferidos.filter((id) => modelosDisponiveis.includes(id)),
-          ...modelosDisponiveis.filter((id) => !anthropicModelsPreferidos.includes(id)),
-        ]
-      : anthropicModelsPreferidos;
-
+    const anthropicModel = 'claude-sonnet-4-6';
     let data: any = null;
     let modeloUsado: string | null = null;
-    let ultimoErro: string | null = null;
 
-    for (const anthropicModel of anthropicModels) {
-      etapa = `mensagem:${anthropicModel}`;
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'anthropic-version': '2023-06-01',
-          'x-api-key': anthropicKey,
-        },
-        body: JSON.stringify({
-          model: anthropicModel,
-          max_tokens: 4000,
-          messages: [{ role: 'user', content: prompt }],
-        }),
-      });
+    etapa = `mensagem:${anthropicModel}`;
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'anthropic-version': '2023-06-01',
+        'x-api-key': anthropicKey,
+      },
+      body: JSON.stringify({
+        model: anthropicModel,
+        max_tokens: 4000,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
 
-      if (!response.ok) {
-        const errText = await response.text();
-        ultimoErro = `Claude API ${response.status} [${anthropicModel}]: ${errText.slice(0, 200)}`;
-
-        if (response.status === 404) {
-          continue;
-        }
-
-        return res.status(500).json({ ok: false, error: ultimoErro });
-      }
-
-      data = await response.json() as any;
-      modeloUsado = anthropicModel;
-      break;
+    if (!response.ok) {
+      const errText = await response.text();
+      return res.status(500).json({ ok: false, error: `Claude API ${response.status}: ${errText.slice(0, 300)}` });
     }
 
-    if (!data) {
-      return res.status(500).json({
-        ok: false,
-        error: ultimoErro || `Nenhum modelo da Anthropic respondeu. Tentados: ${anthropicModels.join(', ')}${modelosDisponiveis.length ? `. Disponiveis para esta chave: ${modelosDisponiveis.join(', ')}` : ''}`,
-      });
-    }
+    data = await response.json() as any;
+    modeloUsado = anthropicModel;
 
     etapa = `parse-resposta:${modeloUsado || 'desconhecido'}`;
     const text = (data.content?.[0]?.text || '').trim();
