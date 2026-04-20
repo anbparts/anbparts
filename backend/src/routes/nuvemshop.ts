@@ -256,31 +256,58 @@ Responda APENAS com JSON valido, sem texto antes ou depois, sem markdown:
 {"sugestoes":[{"sku":"SKU_AQUI","categorias":[{"id":1,"nome":"Nome"}],"tags":["tag1","tag2"]}]}`;
 
     const anthropicKey = process.env.ANTHROPIC_API_KEY;
-    const anthropicModel = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514';
+    const anthropicModels = Array.from(new Set(
+      String(process.env.ANTHROPIC_MODELS || process.env.ANTHROPIC_MODEL || 'claude-3-7-sonnet-latest,claude-3-5-sonnet-latest')
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean)
+    ));
     if (!anthropicKey) {
       return res.status(500).json({ ok: false, error: 'ANTHROPIC_API_KEY nao configurado nas variaveis de ambiente do servidor' });
     }
 
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'anthropic-version': '2023-06-01',
-        'x-api-key': anthropicKey,
-      },
-      body: JSON.stringify({
-        model: anthropicModel,
-        max_tokens: 4000,
-        messages: [{ role: 'user', content: prompt }],
-      }),
-    });
+    let data: any = null;
+    let modeloUsado: string | null = null;
+    let ultimoErro: string | null = null;
 
-    if (!response.ok) {
-      const errText = await response.text();
-      return res.status(500).json({ ok: false, error: `Claude API ${response.status}: ${errText.slice(0, 200)}` });
+    for (const anthropicModel of anthropicModels) {
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'anthropic-version': '2023-06-01',
+          'x-api-key': anthropicKey,
+        },
+        body: JSON.stringify({
+          model: anthropicModel,
+          max_tokens: 4000,
+          messages: [{ role: 'user', content: prompt }],
+        }),
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        ultimoErro = `Claude API ${response.status} [${anthropicModel}]: ${errText.slice(0, 200)}`;
+
+        if (response.status === 404) {
+          continue;
+        }
+
+        return res.status(500).json({ ok: false, error: ultimoErro });
+      }
+
+      data = await response.json() as any;
+      modeloUsado = anthropicModel;
+      break;
     }
 
-    const data = await response.json() as any;
+    if (!data) {
+      return res.status(500).json({
+        ok: false,
+        error: ultimoErro || `Nenhum modelo da Anthropic respondeu. Tentados: ${anthropicModels.join(', ')}`,
+      });
+    }
+
     const text = (data.content?.[0]?.text || '').trim();
 
     if (!text) {
@@ -301,7 +328,7 @@ Responda APENAS com JSON valido, sem texto antes ou depois, sem markdown:
       return res.status(500).json({ ok: false, error: `Erro ao parsear JSON: ${parseErr.message}` });
     }
 
-    res.json({ ok: true, sugestoes: parsed.sugestoes || [] });
+    res.json({ ok: true, sugestoes: parsed.sugestoes || [], modelo: modeloUsado });
   } catch (e: any) {
     res.status(500).json({ ok: false, error: e.message });
   }
