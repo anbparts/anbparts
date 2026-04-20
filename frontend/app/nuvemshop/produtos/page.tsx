@@ -113,6 +113,7 @@ export default function NuvemshopProdutosPage() {
   const [buscou, setBuscou] = useState(false);
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [sugerindo, setSugerindo] = useState(false);
+  const [sugerindoLabel, setSugerindoLabel] = useState('');
   const [sugestoes, setSugestoes] = useState<Sugestao[]>([]);
   const [editandoSugestao, setEditandoSugestao] = useState<Record<string, Sugestao>>({});
   const [aplicando, setAplicando] = useState(false);
@@ -157,19 +158,49 @@ export default function NuvemshopProdutosPage() {
     const alvo = produtos.filter(p => p.encontradoNuvemshop && (selecionados.size ? selecionados.has(p.sku) : (p.semCategoria || p.semTags)));
     if (!alvo.length) { alert('Nenhum produto selecionado ou pendente de sugestão.'); return; }
     setSugerindo(true);
-    try {
-      const resp = await fetch(`${API}/nuvemshop/sugerir-ia`, {
-        method: 'POST', credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ produtos: alvo, categorias }),
-      });
-      const data = await lerRespostaApi(resp);
-      if (!data.ok) throw new Error(data.error || 'Erro ao chamar IA');
-      const map: Record<string, Sugestao> = {};
-      (data.sugestoes || []).forEach((s: Sugestao) => { map[s.sku] = s; });
-      setSugestoes(data.sugestoes || []);
-      setEditandoSugestao(map);
-    } catch (e: any) { alert(`Erro IA: ${e.message}`); }
+    setSugestoes([]);
+    setEditandoSugestao({});
+
+    // Divide em lotes de 10 para não estourar o limite de tokens
+    const LOTE = 10;
+    const lotes: typeof alvo[] = [];
+    for (let i = 0; i < alvo.length; i += LOTE) lotes.push(alvo.slice(i, i + LOTE));
+
+    const todasSugestoes: Sugestao[] = [];
+    const map: Record<string, Sugestao> = {};
+    let erros = 0;
+
+    for (let i = 0; i < lotes.length; i++) {
+      setSugerindoLabel(`✨ Analisando lote ${i + 1} de ${lotes.length}...`);
+      try {
+        const resp = await fetch(`${API}/nuvemshop/sugerir-ia`, {
+          method: 'POST', credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            produtos: lotes[i].map((p: any) => ({ sku: p.sku, titulo: p.titulo, moto: p.moto })),
+            categorias: categorias.map((c: any) => ({ id: c.id, name: c.name, parent_id: c.parent_id })),
+          }),
+        });
+        const data = await lerRespostaApi(resp);
+        (data.sugestoes || []).forEach((s: Sugestao) => {
+          todasSugestoes.push(s);
+          map[s.sku] = s;
+        });
+        // Atualiza progressivamente
+        setSugestoes([...todasSugestoes]);
+        setEditandoSugestao({ ...map });
+      } catch (e: any) {
+        erros++;
+        console.error(`Erro no lote ${i + 1}:`, e.message);
+      }
+    }
+
+    if (erros > 0 && todasSugestoes.length === 0) {
+      alert(`Erro ao chamar IA em todos os lotes.`);
+    } else if (erros > 0) {
+      alert(`⚠️ ${erros} lote(s) falharam, mas ${todasSugestoes.length} produto(s) foram processados.`);
+    }
+    setSugerindoLabel('');
     setSugerindo(false);
   }
 
@@ -305,7 +336,7 @@ export default function NuvemshopProdutosPage() {
                   </div>
                 </div>
                 <button style={{ ...s.btn, background: '#7c3aed', color: '#fff', opacity: sugerindo ? 0.7 : 1 }} onClick={sugerirIA} disabled={sugerindo}>
-                  {sugerindo ? '✨ Analisando...' : '✨ Sugerir com IA'}
+                  {sugerindo ? (sugerindoLabel || '✨ Analisando...') : '✨ Sugerir com IA'}
                 </button>
               </div>
             )}

@@ -312,19 +312,33 @@ Responda APENAS com JSON valido, sem texto antes ou depois, sem markdown:
 {"sugestoes":[{"sku":"SKU_AQUI","categorias":[{"id":1,"nome":"Nome"}],"tags":["tag1","tag2"]}]}`;
 
     etapa = 'mensagem';
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'anthropic-version': '2023-06-01',
-        'x-api-key': anthropicKey,
-      },
-      body: JSON.stringify({
-        model: anthropicModel,
-        max_tokens: 8000,
-        messages: [{ role: 'user', content: prompt }],
-      }),
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 55000); // 55s antes do Railway matar
+
+    let response: Response;
+    try {
+      response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          'anthropic-version': '2023-06-01',
+          'x-api-key': anthropicKey,
+        },
+        body: JSON.stringify({
+          model: anthropicModel,
+          max_tokens: 8000,
+          messages: [{ role: 'user', content: prompt }],
+        }),
+      });
+    } catch (fetchErr: any) {
+      clearTimeout(timeoutId);
+      const msg = fetchErr?.name === 'AbortError'
+        ? `Timeout: a IA demorou mais de 55s. Tente com menos produtos.`
+        : `Erro de conexao com a IA: ${fetchErr?.message}`;
+      return res.status(500).json({ ok: false, error: msg });
+    }
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       const errText = await response.text();
