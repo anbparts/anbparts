@@ -256,8 +256,8 @@ Responda APENAS com JSON valido, sem texto antes ou depois, sem markdown:
 {"sugestoes":[{"sku":"SKU_AQUI","categorias":[{"id":1,"nome":"Nome"}],"tags":["tag1","tag2"]}]}`;
 
     const anthropicKey = process.env.ANTHROPIC_API_KEY;
-    const anthropicModels = Array.from(new Set(
-      String(process.env.ANTHROPIC_MODELS || process.env.ANTHROPIC_MODEL || 'claude-3-7-sonnet-latest,claude-3-5-sonnet-latest')
+    const anthropicModelsPreferidos = Array.from(new Set(
+      String(process.env.ANTHROPIC_MODELS || process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6,claude-sonnet-4-20250514,claude-3-7-sonnet-20250219,claude-3-5-sonnet-20241022,claude-3-5-haiku-20241022')
         .split(',')
         .map((item) => item.trim())
         .filter(Boolean)
@@ -265,6 +265,30 @@ Responda APENAS com JSON valido, sem texto antes ou depois, sem markdown:
     if (!anthropicKey) {
       return res.status(500).json({ ok: false, error: 'ANTHROPIC_API_KEY nao configurado nas variaveis de ambiente do servidor' });
     }
+
+    let modelosDisponiveis: string[] = [];
+    try {
+      const modelosResp = await fetch('https://api.anthropic.com/v1/models', {
+        headers: {
+          'anthropic-version': '2023-06-01',
+          'x-api-key': anthropicKey,
+        },
+      });
+
+      if (modelosResp.ok) {
+        const modelosData = await modelosResp.json() as any;
+        modelosDisponiveis = Array.isArray(modelosData?.data)
+          ? modelosData.data.map((item: any) => String(item.id || '').trim()).filter(Boolean)
+          : [];
+      }
+    } catch {}
+
+    const anthropicModels = modelosDisponiveis.length
+      ? [
+          ...anthropicModelsPreferidos.filter((id) => modelosDisponiveis.includes(id)),
+          ...modelosDisponiveis.filter((id) => !anthropicModelsPreferidos.includes(id)),
+        ]
+      : anthropicModelsPreferidos;
 
     let data: any = null;
     let modeloUsado: string | null = null;
@@ -304,7 +328,7 @@ Responda APENAS com JSON valido, sem texto antes ou depois, sem markdown:
     if (!data) {
       return res.status(500).json({
         ok: false,
-        error: ultimoErro || `Nenhum modelo da Anthropic respondeu. Tentados: ${anthropicModels.join(', ')}`,
+        error: ultimoErro || `Nenhum modelo da Anthropic respondeu. Tentados: ${anthropicModels.join(', ')}${modelosDisponiveis.length ? `. Disponiveis para esta chave: ${modelosDisponiveis.join(', ')}` : ''}`,
       });
     }
 
