@@ -439,10 +439,21 @@ motosRouter.post('/:id/detran-cartela', async (req, res, next) => {
       if (!posicao || !tipo) continue;
 
       // 1. Salva/atualiza em MotoDetranPosicao (sempre — incluindo Inexistente sem SKU)
+      // Se etiqueta é null e idPeca existe = remoção → limpa idPeca e etiqueta na tabela
+      const ehRemocao = idPeca && !etiqueta;
       await prisma.motoDetranPosicao.upsert({
         where: { motoId_posicao: { motoId, posicao: Number(posicao) } },
-        create: { motoId, posicao: Number(posicao), tipo, status: status || null, idPeca: idPeca || null, etiqueta: etiqueta || null },
-        update: { tipo, status: status || null, idPeca: idPeca || null, etiqueta: etiqueta || null },
+        create: {
+          motoId, posicao: Number(posicao), tipo,
+          status: status || null,
+          idPeca: ehRemocao ? null : (idPeca || null),
+          etiqueta: etiqueta || null
+        },
+        update: {
+          tipo, status: status || null,
+          idPeca: ehRemocao ? null : (idPeca || null),
+          etiqueta: etiqueta || null
+        },
       });
 
       if (idPeca) {
@@ -451,7 +462,7 @@ motosRouter.post('/:id/detran-cartela', async (req, res, next) => {
           where: { idPeca: String(idPeca).toUpperCase() },
           data: {
             detranEtiqueta: etiqueta || null,
-            detranStatus: status || null,
+            detranStatus: ehRemocao ? null : (status || null),
           },
         });
 

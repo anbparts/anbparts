@@ -229,7 +229,7 @@ export default function EtiquetaCartelaModal({ motoId, motoLabel, onClose, onSav
       }
 
       if (!posicoesParaSalvar.length) {
-        alert('Nenhuma posição com status ou SKU para salvar.');
+        alert('Nenhuma posição com status, SKU ou remoção para salvar.');
         setSaving(false);
         return;
       }
@@ -429,9 +429,9 @@ export default function EtiquetaCartelaModal({ motoId, motoLabel, onClose, onSav
               style={{ padding: '8px 18px', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', border: '1px solid var(--border)', background: 'var(--white)', color: 'var(--gray-600)', fontFamily: 'Inter, sans-serif' }}>
               Cancelar
             </button>
-            <button onClick={salvar} disabled={saving || !preenchidas}
-              style={{ padding: '8px 22px', borderRadius: 7, fontSize: 13, fontWeight: 600, cursor: saving || !preenchidas ? 'not-allowed' : 'pointer', border: 'none', background: '#1d4ed8', color: '#fff', fontFamily: 'Inter, sans-serif', opacity: saving || !preenchidas ? 0.6 : 1 }}>
-              {saving ? 'Salvando...' : `Salvar ${preenchidas} peça(s)`}
+            <button onClick={salvar} disabled={saving || (!preenchidas && !comStatus && Object.keys(skusRemovidos).length === 0)}
+              style={{ padding: '8px 22px', borderRadius: 7, fontSize: 13, fontWeight: 600, cursor: 'pointer', border: 'none', background: '#1d4ed8', color: '#fff', fontFamily: 'Inter, sans-serif', opacity: saving ? 0.6 : 1 }}>
+              {saving ? 'Salvando...' : Object.keys(skusRemovidos).length > 0 && !preenchidas ? `Remover ${Object.keys(skusRemovidos).length} etiqueta(s)` : `Salvar ${preenchidas} peça(s)`}
             </button>
           </div>
         </div>
