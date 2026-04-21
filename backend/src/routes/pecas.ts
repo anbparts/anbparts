@@ -341,6 +341,8 @@ pecasRouter.get('/', async (req, res, next) => {
     if (detranEtiqueta === 'com') {
       andConditions.push({ detranEtiqueta: { not: null } });
       andConditions.push({ NOT: { detranEtiqueta: '' } });
+      // Mostra também peças em prejuízo que têm etiqueta cadastrada
+      delete where.emPrejuizo;
     }
     if (detranEtiqueta === 'sem') {
       andConditions.push({ OR: [{ detranEtiqueta: null }, { detranEtiqueta: '' }] });
