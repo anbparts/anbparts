@@ -28,6 +28,7 @@ model Moto {
 
   pecas             Peca[]
   cadastrosPeca     CadastroPeca[]
+  detranPosicoes    MotoDetranPosicao[]
 }
 
 model Peca {
@@ -343,4 +344,19 @@ model InventarioItem {
   @@index([inventarioId, caixa, status])
   @@index([status])
   @@index([tipoDiferenca])
+}
+
+model MotoDetranPosicao {
+  id       Int     @id @default(autoincrement())
+  motoId   Int
+  posicao  Int     // 1 a 34
+  tipo     String  // nome do tipo (ex: 'Balança')
+  status   String? // 'Inexistente' | 'Sucata' | 'Reutilizavel'
+  idPeca   String? // opcional — só quando tem SKU vinculado
+  etiqueta String? // código completo gerado (ex: SP22102017680001)
+
+  moto Moto @relation(fields: [motoId], references: [id])
+
+  @@unique([motoId, posicao])
+  @@index([motoId])
 }

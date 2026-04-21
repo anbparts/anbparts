@@ -410,3 +410,56 @@ motosRouter.delete('/:id', async (req, res, next) => {
     res.json({ ok: true });
   } catch (e) { next(e); }
 });
+
+// GET /motos/:id/detran-cartela — carrega posições salvas
+motosRouter.get('/:id/detran-cartela', async (req, res, next) => {
+  try {
+    const posicoes = await prisma.motoDetranPosicao.findMany({
+      where: { motoId: Number(req.params.id) },
+      orderBy: { posicao: 'asc' },
+    });
+    res.json({ ok: true, posicoes });
+  } catch (e) { next(e); }
+});
+
+// POST /motos/:id/detran-cartela — salva todas as posições (upsert)
+// Body: { posicoes: [{posicao, tipo, status, idPeca?, etiqueta?}] }
+motosRouter.post('/:id/detran-cartela', async (req, res, next) => {
+  try {
+    const motoId = Number(req.params.id);
+    const { posicoes } = req.body || {};
+    if (!Array.isArray(posicoes)) return res.status(400).json({ error: 'posicoes obrigatorio' });
+
+    const resultados: any[] = [];
+
+    for (const pos of posicoes) {
+      const { posicao, tipo, status, idPeca, etiqueta } = pos;
+      if (!posicao || !tipo) continue;
+
+      // 1. Salva/atualiza em MotoDetranPosicao (sempre)
+      await prisma.motoDetranPosicao.upsert({
+        where: { motoId_posicao: { motoId, posicao: Number(posicao) } },
+        create: { motoId, posicao: Number(posicao), tipo, status: status || null, idPeca: idPeca || null, etiqueta: etiqueta || null },
+        update: { tipo, status: status || null, idPeca: idPeca || null, etiqueta: etiqueta || null },
+      });
+
+      // 2. Se tem SKU vinculado, atualiza detranEtiqueta e detranStatus na Peca
+      if (idPeca && etiqueta) {
+        try {
+          await prisma.peca.updateMany({
+            where: { idPeca: String(idPeca).toUpperCase() },
+            data: { detranEtiqueta: etiqueta, detranStatus: status || null },
+          });
+          resultados.push({ posicao, idPeca, ok: true });
+        } catch (e: any) {
+          resultados.push({ posicao, idPeca, ok: false, error: e.message });
+        }
+      } else {
+        // Sem SKU (Inexistente) — só salva na tabela, nada no Bling
+        resultados.push({ posicao, ok: true, semSku: true });
+      }
+    }
+
+    res.json({ ok: true, resultados, total: posicoes.length });
+  } catch (e) { next(e); }
+});

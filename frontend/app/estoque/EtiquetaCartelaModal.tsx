@@ -50,7 +50,7 @@ export default function EtiquetaCartelaModal({ motoId, motoLabel, onClose, onSav
   const [buscandoPecas, setBuscandoPecas] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  // Carrega etiquetas existentes da moto ao abrir
+  // Carrega posições salvas da moto ao abrir
   useEffect(() => {
     carregarExistentes();
   }, []);
@@ -58,40 +58,70 @@ export default function EtiquetaCartelaModal({ motoId, motoLabel, onClose, onSav
   async function carregarExistentes() {
     setLoadingExistentes(true);
     try {
-      // Busca todas as peças da moto (com e sem estoque) usando per=500
-      const resp = await fetch(`${API}/pecas?motoId=${motoId}&per=500&page=1`, { credentials: 'include' });
-      const data = await resp.json();
-      const pecas: any[] = data.data || [];
-
       const novasPosicoes = DETRAN_TIPOS.map(() => ({ status: '' as const, skuId: '', skuDescricao: '', skuDisponivel: null }));
       let prefixoEncontrado = '';
 
-      // Preenche a partir das etiquetas existentes
-      for (const peca of pecas) {
-        if (!peca.detranEtiqueta) continue;
-        const etiq = String(peca.detranEtiqueta).trim();
-        if (etiq.length < 4) continue;
-        // Extrai os últimos 3 dígitos para determinar a posição
-        const posStr = etiq.slice(-3);
-        const posNum = parseInt(posStr, 10);
-        if (posNum >= 1 && posNum <= 34) {
-          const idx = posNum - 1;
+      // 1. Carrega da tabela MotoDetranPosicao (histórico completo incluindo Inexistente)
+      const respCartela = await fetch(`${API}/motos/${motoId}/detran-cartela`, { credentials: 'include' });
+      const dataCartela = await respCartela.json();
+      const posicoesSalvas: any[] = dataCartela.posicoes || [];
+
+      if (posicoesSalvas.length > 0) {
+        for (const pos of posicoesSalvas) {
+          const idx = pos.posicao - 1;
+          if (idx < 0 || idx >= 34) continue;
+          if (pos.etiqueta && !prefixoEncontrado) {
+            prefixoEncontrado = pos.etiqueta.slice(0, -3);
+          }
           novasPosicoes[idx] = {
-            status: (peca.detranStatus || '') as any,
-            skuId: peca.idPeca,
-            skuDescricao: peca.descricao || '',
-            skuDisponivel: peca.disponivel,
+            status: (pos.status || '') as any,
+            skuId: pos.idPeca || '',
+            skuDescricao: '', // vamos buscar abaixo
+            skuDisponivel: null,
           };
-          // Infere o prefixo da cartela pelo primeiro encontrado
-          if (!prefixoEncontrado && etiq.length > 3) {
-            prefixoEncontrado = etiq.slice(0, -3);
+        }
+      }
+
+      // 2. Complementa com dados das peças (descrição e disponível) + fallback para motos sem histórico
+      const respPecas = await fetch(`${API}/pecas?motoId=${motoId}&per=500&page=1`, { credentials: 'include' });
+      const dataPecas = await respPecas.json();
+      const pecas: any[] = dataPecas.data || [];
+      const pecaByIdPeca: Record<string, any> = {};
+      for (const p of pecas) pecaByIdPeca[p.idPeca] = p;
+
+      // Preenche descrição/disponível nos que têm SKU
+      for (let i = 0; i < novasPosicoes.length; i++) {
+        const pos = novasPosicoes[i];
+        if (pos.skuId && pecaByIdPeca[pos.skuId]) {
+          novasPosicoes[i] = {
+            ...pos,
+            skuDescricao: pecaByIdPeca[pos.skuId].descricao || '',
+            skuDisponivel: pecaByIdPeca[pos.skuId].disponivel,
+          };
+        }
+      }
+
+      // Fallback: se não tem histórico, tenta inferir pelo detranEtiqueta das peças
+      if (posicoesSalvas.length === 0) {
+        for (const peca of pecas) {
+          if (!peca.detranEtiqueta) continue;
+          const etiq = String(peca.detranEtiqueta).trim();
+          if (etiq.length < 4) continue;
+          const posNum = parseInt(etiq.slice(-3), 10);
+          if (posNum >= 1 && posNum <= 34) {
+            const idx = posNum - 1;
+            novasPosicoes[idx] = {
+              status: (peca.detranStatus || '') as any,
+              skuId: peca.idPeca,
+              skuDescricao: peca.descricao || '',
+              skuDisponivel: peca.disponivel,
+            };
+            if (!prefixoEncontrado) prefixoEncontrado = etiq.slice(0, -3);
           }
         }
       }
 
-      if (prefixoEncontrado) {
-        setCartelaId(prefixoEncontrado);
-      }
+      if (prefixoEncontrado) setCartelaId(prefixoEncontrado);
       setPosicoes(novasPosicoes);
     } catch (e) {
       console.error('Erro ao carregar existentes:', e);
@@ -167,33 +197,35 @@ export default function EtiquetaCartelaModal({ motoId, motoLabel, onClose, onSav
   async function salvar() {
     setSaving(true);
     try {
-      // Monta os itens para salvar (só os que têm SKU vinculado ou status definido)
-      const itens = posicoes
+      // Monta TODAS as posições com status ou SKU (incluindo Inexistente sem SKU)
+      const posicoesParaSalvar = posicoes
         .map((p, idx) => ({
+          posicao: idx + 1,
+          tipo: DETRAN_TIPOS[idx],
+          status: p.status || null,
           idPeca: p.skuId || null,
-          detranEtiqueta: p.skuId ? gerarEtiqueta(idx + 1) : null,
-          detranStatus: p.status || null,
+          etiqueta: gerarEtiqueta(idx + 1) || null,
         }))
-        .filter(item => item.idPeca);
+        .filter(item => item.status || item.idPeca);
 
-      if (!itens.length) {
-        alert('Nenhuma peça vinculada para salvar.');
+      if (!posicoesParaSalvar.length) {
+        alert('Nenhuma posição com status ou SKU para salvar.');
         setSaving(false);
         return;
       }
 
-      const resp = await fetch(`${API}/pecas/bulk-detran-cartela`, {
+      const resp = await fetch(`${API}/motos/${motoId}/detran-cartela`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ itens }),
+        body: JSON.stringify({ posicoes: posicoesParaSalvar }),
       });
       const data = await resp.json();
       if (!data.ok) throw new Error(data.error || 'Erro ao salvar');
 
-      const erros = data.erros || 0;
-      if (erros > 0) alert(`Salvo com ${erros} erro(s). ${data.total - erros} atualizado(s).`);
-      else alert(`✓ ${data.total} peça(s) atualizadas com sucesso!`);
+      const comSku = posicoesParaSalvar.filter(p => p.idPeca).length;
+      const semSku = posicoesParaSalvar.filter(p => !p.idPeca).length;
+      alert(`✓ Salvo! ${comSku} peça(s) atualizada(s) no sistema${semSku > 0 ? ` · ${semSku} posição(ões) Inexistente registradas` : ''}.`);
 
       onSaved();
       onClose();
