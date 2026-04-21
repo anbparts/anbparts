@@ -1,7 +1,7 @@
 /**
- * Função compartilhada para sincronizar a etiqueta Detran de uma peça no Bling.
- * Usada tanto pelo estoque quanto pela cartela de etiquetas da moto.
- * Concatena as etiquetas de todas as variações do SKU base.
+ * Sincroniza APENAS a etiqueta Detran no Bling.
+ * Estratégia: lê o produto completo do Bling, troca só o campo customizado Detran,
+ * e devolve o payload exatamente como veio — sem perder nenhum campo.
  */
 import { prisma } from './prisma';
 import { blingReq } from '../routes/bling';
@@ -36,8 +36,9 @@ export async function syncDetranEtiquetaBling(idPeca: string): Promise<{ ok: boo
   try {
     const baseSku = String(idPeca).toUpperCase().replace(/-\d+$/, '');
 
-    // Busca blingProdutoId no cadastro
+    // 1. Resolve o blingProdutoId
     let blingProdutoId: string | null = null;
+
     const cadastro = await prisma.cadastroPeca.findFirst({
       where: { idPeca: { equals: baseSku, mode: 'insensitive' } },
       select: { blingProdutoId: true },
@@ -45,11 +46,10 @@ export async function syncDetranEtiquetaBling(idPeca: string): Promise<{ ok: boo
     if (cadastro?.blingProdutoId) {
       blingProdutoId = cadastro.blingProdutoId;
     } else {
-      // Tenta buscar direto no Bling pelo código
       try {
         const blingSearch = await blingReq(`/produtos?criterio=2&tipo=P&codigo=${encodeURIComponent(baseSku)}&pagina=1&limite=5`);
-        const blingItems = blingSearch?.data || [];
-        const found = blingItems.find((p: any) => String(p.codigo || '').toUpperCase() === baseSku);
+        const items = blingSearch?.data || [];
+        const found = items.find((p: any) => String(p.codigo || '').toUpperCase() === baseSku);
         if (found) blingProdutoId = String(found.id);
       } catch {}
     }
@@ -58,46 +58,41 @@ export async function syncDetranEtiquetaBling(idPeca: string): Promise<{ ok: boo
       return { ok: false, error: `Produto não encontrado no Bling para SKU: ${baseSku}` };
     }
 
-    // Busca produto atual no Bling para preservar todos os campos
+    // 2. Busca produto COMPLETO do Bling
     const blingAtual = await blingReq(`/produtos/${blingProdutoId}`);
     const b = blingAtual?.data;
     if (!b) return { ok: false, error: 'Produto não encontrado no Bling' };
 
-    // Concatena etiquetas de todas as variações
+    // 3. Calcula a nova etiqueta concatenada
     const etiquetasConcat = await buildDetranEtiquetaConcatForBaseSku(baseSku);
 
-    // Monta campos customizados preservando os existentes
+    // 4. Atualiza APENAS o campo customizado Detran (ID 5979929)
+    //    Preserva todos os outros campos customizados existentes
     const ccExistentes: any[] = Array.isArray(b.camposCustomizados) ? b.camposCustomizados : [];
     const ccMap = new Map(ccExistentes.map((c: any) => [Number(c.idCampoCustomizado), c.valor]));
-    ccMap.set(5979929, etiquetasConcat); // campo Detran no Bling
+    ccMap.set(5979929, etiquetasConcat);
 
+    // 5. Monta payload espelhando EXATAMENTE o que veio do Bling
+    //    Só sobrescreve camposCustomizados — todo o resto vem do b
     const payload: any = {
-      nome: b.nome,
-      codigo: b.codigo,
-      tipo: b.tipo || 'P',
-      formato: b.formato || 'S',
-      situacao: b.situacao || 'A',
-      preco: Number(b.preco || 0),
-      condicao: b.condicao ?? 0,
-      marca: b.marca || '',
-      pesoLiquido: Number(b.pesoLiquido || 0),
-      pesoBruto: Number(b.pesoBruto || 0),
-      volumes: b.volumes || 1,
-      descricaoCurta: b.descricaoCurta || '',
-      dimensoes: {
-        largura: Number(b.dimensoes?.largura || 0),
-        altura: Number(b.dimensoes?.altura || 0),
-        profundidade: Number(b.dimensoes?.profundidade || 0),
-        unidadeMedida: b.dimensoes?.unidadeMedida || 2,
-      },
-      estoque: {
-        minimo: Number(b.estoque?.minimo || 0),
-        maximo: Number(b.estoque?.maximo || 0),
-        localizacao: String(b.estoque?.localizacao || ''),
-      },
+      ...b, // copia tudo: nome, codigo, ncm, unidade, tipoProducao, etc
       camposCustomizados: Array.from(ccMap.entries()).map(([id, valor]) => ({ idCampoCustomizado: id, valor })),
     };
 
+    // Remove campos que o Bling não aceita no PUT (campos somente-leitura)
+    delete payload.id;
+    delete payload.situacoes;
+    delete payload.dataCriacao;
+    delete payload.dataAlteracao;
+    delete payload.imagemURL;
+    delete payload.imagens;
+    delete payload.depositos;
+    delete payload.variacoes;
+    delete payload.categorias;
+    delete payload.anexos;
+    delete payload.estrutura;
+
+    // 6. Faz PUT no Bling
     await blingReq(`/produtos/${blingProdutoId}`, {
       method: 'PUT',
       body: JSON.stringify(payload),
