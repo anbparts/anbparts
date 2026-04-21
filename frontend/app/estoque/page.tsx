@@ -99,6 +99,7 @@ type EstoqueTableHeader = {
   sort: string | null;
   width: number | string;
   kind?: 'select';
+  colKey?: string;
 };
 type CaixaFilterOption = {
   caixa: string;
@@ -1634,6 +1635,39 @@ export default function EstoquePage() {
   const [selecionandoTudo, setSelecionandoTudo] = useState(false);
   const [caixaFilterOpen, setCaixaFilterOpen] = useState(false);
   const [caixaFilterSearch, setCaixaFilterSearch] = useState('');
+  const [colSelectorOpen, setColSelectorOpen] = useState(false);
+
+  // Colunas visíveis — salvo no localStorage por usuário
+  const COL_STORAGE_KEY = `estoque_colunas_v1_${user?.username || 'default'}`;
+  const COL_ALL = ['motoId','idPeca','moto','descricao','cadastro','precoML','valorLiq','valorFrete','valorTaxas','dataVenda','blingPedidoNum','detranEtiqueta','detranStatus','status'] as const;
+  type ColKey = typeof COL_ALL[number];
+  const COL_DEFAULT: ColKey[] = ['motoId','idPeca','moto','descricao','cadastro','precoML','valorLiq','valorFrete','valorTaxas','dataVenda','blingPedidoNum','detranStatus','status'];
+  const COL_LABELS: Record<ColKey, string> = {
+    motoId: 'ID Moto', idPeca: 'ID Peça', moto: 'Moto', descricao: 'Descrição',
+    cadastro: 'Cadastro', precoML: 'Preço ML', valorLiq: 'Vl. Liq.',
+    valorFrete: 'Frete', valorTaxas: 'Taxas', dataVenda: 'Venda',
+    blingPedidoNum: 'Pedido', detranEtiqueta: 'Etiqueta Detran',
+    detranStatus: 'Detran', status: 'Status',
+  };
+
+  const [colsVisiveis, setColsVisiveis] = useState<ColKey[]>(() => {
+    try {
+      const saved = localStorage.getItem(COL_STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved) as ColKey[];
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return COL_DEFAULT;
+  });
+
+  function toggleCol(key: ColKey) {
+    setColsVisiveis(prev => {
+      const next = prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key];
+      try { localStorage.setItem(COL_STORAGE_KEY, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }
   const [filters, setFilters] = useState({
     motoId: '',
     marca: '',
@@ -2229,23 +2263,28 @@ export default function EstoquePage() {
 
     setCopySkuSaving(false);
   }
-  const tableHeaders: EstoqueTableHeader[] = [
-    { label: '', sort: null, kind: 'select', width: 38 },
-    { label: 'ID', sort: 'motoId', width: 52 },
-    { label: 'ID Peca', sort: 'idPeca', width: 88 },
-    { label: 'Moto', sort: 'moto', width: isTabletLandscape ? 124 : 138 },
-    { label: 'Descricao', sort: 'descricao', width: isTabletLandscape ? '18%' : '21%' },
-    { label: isTabletLandscape ? 'Cad.' : 'Cadastro', sort: 'cadastro', width: isTabletLandscape ? 68 : 72 },
-    { label: 'Preco ML', sort: 'precoML', width: 90 },
-    { label: 'Vl. Liq.', sort: 'valorLiq', width: 86 },
-    { label: 'Frete', sort: 'valorFrete', width: 78 },
-    { label: 'Taxas', sort: 'valorTaxas', width: 78 },
-    { label: 'Venda', sort: 'dataVenda', width: 70 },
-    { label: 'Pedido', sort: 'blingPedidoNum', width: 72 },
-    { label: 'Detran', sort: null, width: 58 },
-    { label: 'Status', sort: 'disponivel', width: 94 },
-    { label: '', sort: null, width: 42 },
+  const ALL_TABLE_HEADERS: EstoqueTableHeader[] = [
+    { label: '', sort: null, kind: 'select', width: 38, colKey: 'select' as any },
+    { label: 'ID', sort: 'motoId', width: 52, colKey: 'motoId' },
+    { label: 'ID Peca', sort: 'idPeca', width: 88, colKey: 'idPeca' },
+    { label: 'Moto', sort: 'moto', width: isTabletLandscape ? 124 : 138, colKey: 'moto' },
+    { label: 'Descricao', sort: 'descricao', width: isTabletLandscape ? '18%' : '21%', colKey: 'descricao' },
+    { label: isTabletLandscape ? 'Cad.' : 'Cadastro', sort: 'cadastro', width: isTabletLandscape ? 68 : 72, colKey: 'cadastro' },
+    { label: 'Preco ML', sort: 'precoML', width: 90, colKey: 'precoML' },
+    { label: 'Vl. Liq.', sort: 'valorLiq', width: 86, colKey: 'valorLiq' },
+    { label: 'Frete', sort: 'valorFrete', width: 78, colKey: 'valorFrete' },
+    { label: 'Taxas', sort: 'valorTaxas', width: 78, colKey: 'valorTaxas' },
+    { label: 'Venda', sort: 'dataVenda', width: 70, colKey: 'dataVenda' },
+    { label: 'Pedido', sort: 'blingPedidoNum', width: 72, colKey: 'blingPedidoNum' },
+    { label: 'Et. Detran', sort: null, width: 90, colKey: 'detranEtiqueta' },
+    { label: 'Detran', sort: null, width: 58, colKey: 'detranStatus' },
+    { label: 'Status', sort: 'disponivel', width: 94, colKey: 'status' },
+    { label: '', sort: null, width: 42, colKey: 'actions' as any },
   ];
+
+  const tableHeaders: EstoqueTableHeader[] = ALL_TABLE_HEADERS.filter(h =>
+    h.colKey === 'select' || h.colKey === 'actions' || colsVisiveis.includes(h.colKey as ColKey)
+  );
 
   return (
     <>
@@ -2264,6 +2303,13 @@ export default function EstoquePage() {
           </button>
           <button
             type="button"
+            onClick={() => setColSelectorOpen(v => !v)}
+            style={{ ...cs.btn, background: colSelectorOpen ? 'var(--gray-100)' : 'var(--white)', color: 'var(--ink)', borderColor: 'var(--border)', padding: '7px 14px', fontSize: 13, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}
+          >
+            ⚙ Colunas
+          </button>
+          <button
+            type="button"
             onClick={() => { setEditPeca(null); setModal(true); }}
             style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)', padding: '7px 14px', fontSize: 13, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}
           >
@@ -2272,6 +2318,33 @@ export default function EstoquePage() {
         </div>
       </div>
       <div style={{ padding: pagePadding }}>
+        {/* Seletor de colunas */}
+        {colSelectorOpen && (
+          <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 18px', marginBottom: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-800)' }}>Colunas visíveis</div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={() => { const all = COL_ALL.filter(k => k !== 'detranEtiqueta') as ColKey[]; setColsVisiveis(all); try { localStorage.setItem(COL_STORAGE_KEY, JSON.stringify(all)); } catch {} }}
+                  style={{ fontSize: 11, color: 'var(--blue-500)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px' }}>
+                  Selecionar todas
+                </button>
+                <button onClick={() => { const min: ColKey[] = ['idPeca','moto','descricao','status']; setColsVisiveis(min); try { localStorage.setItem(COL_STORAGE_KEY, JSON.stringify(min)); } catch {} }}
+                  style={{ fontSize: 11, color: 'var(--gray-400)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px' }}>
+                  Mínimo
+                </button>
+              </div>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {COL_ALL.map(key => (
+                <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', border: `1px solid ${colsVisiveis.includes(key) ? 'var(--blue-500)' : 'var(--border)'}`, borderRadius: 6, cursor: 'pointer', background: colsVisiveis.includes(key) ? '#eff6ff' : 'var(--white)', fontSize: 12, color: colsVisiveis.includes(key) ? 'var(--blue-500)' : 'var(--gray-600)', userSelect: 'none' }}>
+                  <input type="checkbox" checked={colsVisiveis.includes(key)} onChange={() => toggleCol(key)} style={{ width: 13, height: 13, cursor: 'pointer' }} />
+                  {COL_LABELS[key]}
+                  {key === 'detranEtiqueta' && <span style={{ fontSize: 10, background: '#fef9c3', color: '#92400e', padding: '1px 4px', borderRadius: 3 }}>off por padrão</span>}
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
         <div style={{ display: 'grid', gridTemplateColumns: summaryGridColumns, gap: isPhone ? 12 : 14, marginBottom: 20 }}>
           {summaryCards.map((card) => (
             <div key={card.l} style={{ ...cs.sCard, padding: isPhone ? '14px 14px' : '18px 20px' }}>
@@ -2657,8 +2730,7 @@ export default function EstoquePage() {
                           </tr>
                         ) : null}
                         <tr style={{ background: isPrejuizoPeca(p) ? '#fff7f7' : 'transparent' }}>
-                          <td style={{ ...cs.td, padding: denseTablePadding }}>
-                            <input
+                          <td style={{ ...cs.td, padding: denseTablePadding }}>                            <input
                               type="checkbox"
                               disabled={isPrejuizoPeca(p)}
                               checked={selectedPecaIds.includes(p.id)}
@@ -2673,27 +2745,28 @@ export default function EstoquePage() {
                               {p.idPeca}
                             </button>
                           </td>
-                          <td style={{ ...cs.td, padding: denseTablePadding, color: 'var(--ink-muted)', fontSize: 11.5, lineHeight: 1.35 }}>
+                          {colsVisiveis.includes('moto') && <td style={{ ...cs.td, padding: denseTablePadding, color: 'var(--ink-muted)', fontSize: 11.5, lineHeight: 1.35 }}>
                             <div style={{ display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden' }}>
                               {[p.moto?.marca, p.moto?.modelo].filter(Boolean).join(' ')}
                             </div>
-                          </td>
-                          <td style={{ ...cs.td, padding: denseTablePadding, fontSize: 12 }}>
+                          </td>}
+                          {colsVisiveis.includes('descricao') && <td style={{ ...cs.td, padding: denseTablePadding, fontSize: 12 }}>
                             <div title={p.descricao} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.descricao}</div>
                             {isPrejuizoPeca(p) ? (
                               <div style={{ marginTop: 4 }}>
                                 <PrejuizoBadge />
                               </div>
                             ) : null}
-                          </td>
-                          <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11, color: 'var(--ink-muted)', whiteSpace: 'nowrap' }}>{formatCompactDate(p.cadastro)}</td>
-                          <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11.5, whiteSpace: 'nowrap' }}>{fmt(Number(p.precoML))}</td>
-                          <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11.5, color: 'var(--ink-muted)', whiteSpace: 'nowrap' }}>{fmt(Number(p.valorLiq))}</td>
-                          <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11.5, color: 'var(--ink-muted)', whiteSpace: 'nowrap' }}>{fmt(Number(p.valorFrete))}</td>
-                          <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11.5, color: 'var(--ink-muted)', whiteSpace: 'nowrap' }}>{fmt(Number(p.valorTaxas))}</td>
-                          <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11, color: 'var(--ink-muted)', whiteSpace: 'nowrap' }}>{formatCompactDate(p.dataVenda)}</td>
-                          <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11, color: p.blingPedidoNum ? 'var(--blue-500)' : 'var(--ink-muted)', whiteSpace: 'nowrap' }}>{p.blingPedidoNum || '-'}</td>
-                          <td style={{ ...cs.td, padding: denseTablePadding, textAlign: 'center' }}>
+                          </td>}
+                          {colsVisiveis.includes('cadastro') && <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11, color: 'var(--ink-muted)', whiteSpace: 'nowrap' }}>{formatCompactDate(p.cadastro)}</td>}
+                          {colsVisiveis.includes('precoML') && <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11.5, whiteSpace: 'nowrap' }}>{fmt(Number(p.precoML))}</td>}
+                          {colsVisiveis.includes('valorLiq') && <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11.5, color: 'var(--ink-muted)', whiteSpace: 'nowrap' }}>{fmt(Number(p.valorLiq))}</td>}
+                          {colsVisiveis.includes('valorFrete') && <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11.5, color: 'var(--ink-muted)', whiteSpace: 'nowrap' }}>{fmt(Number(p.valorFrete))}</td>}
+                          {colsVisiveis.includes('valorTaxas') && <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11.5, color: 'var(--ink-muted)', whiteSpace: 'nowrap' }}>{fmt(Number(p.valorTaxas))}</td>}
+                          {colsVisiveis.includes('dataVenda') && <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11, color: 'var(--ink-muted)', whiteSpace: 'nowrap' }}>{formatCompactDate(p.dataVenda)}</td>}
+                          {colsVisiveis.includes('blingPedidoNum') && <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11, color: p.blingPedidoNum ? 'var(--blue-500)' : 'var(--ink-muted)', whiteSpace: 'nowrap' }}>{p.blingPedidoNum || '-'}</td>}
+                          {colsVisiveis.includes('detranEtiqueta') && <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11, color: 'var(--ink-muted)', whiteSpace: 'nowrap' }}>{p.detranEtiqueta || '-'}</td>}
+                          {colsVisiveis.includes('detranStatus') && <td style={{ ...cs.td, padding: denseTablePadding, textAlign: 'center' }}>
                             {hasDetranEtiqueta(p.detranEtiqueta) ? (
                               <button
                                 onClick={() => setDetranPeca(p)}
@@ -2705,14 +2778,14 @@ export default function EstoquePage() {
                             ) : (
                               <DetranBadge ativo={false} />
                             )}
-                          </td>
-                          <td style={{ ...cs.td, padding: denseTablePadding, textAlign: 'center' }}>
+                          </td>}
+                          {colsVisiveis.includes('status') && <td style={{ ...cs.td, padding: denseTablePadding, textAlign: 'center' }}>
                             {isPrejuizoPeca(p) ? (
                               <PrejuizoBadge />
                             ) : (
                               <StatusLinkButton disponivel={Boolean(p.disponivel)} link={p.mercadoLivreLink} />
                             )}
-                          </td>
+                          </td>}
                           <td style={{ ...cs.td, padding: denseTablePadding, textAlign: 'center' }}>
                             <ActionIconButton
                               onClick={() => {
