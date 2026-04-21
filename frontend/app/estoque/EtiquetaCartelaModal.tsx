@@ -191,9 +191,6 @@ export default function EtiquetaCartelaModal({ motoId, motoLabel, onClose, onSav
     setPosicoes(prev => prev.map((p, i) => i === idx ? { ...p, status } : p));
   }
 
-  // Rastreia SKUs que foram removidos nesta sessão para limpar no Bling
-  const [skusRemovidos, setSkusRemovidos] = useState<Record<number, string>>({}); // idx -> idPeca antigo
-
   function limparPosicao(idx: number) {
     const skuAtual = posicoes[idx].skuId;
     if (skuAtual) {
