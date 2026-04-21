@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { z } from 'zod';
-import { blingReq } from './bling';
+import { syncDetranEtiquetaBling } from '../lib/sync-bling-detran';
 
 export const motosRouter = Router();
 
@@ -423,7 +423,7 @@ motosRouter.get('/:id/detran-cartela', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// POST /motos/:id/detran-cartela — salva todas as posições (upsert)
+// POST /motos/:id/detran-cartela — salva todas as posições (upsert) + sync Bling
 // Body: { posicoes: [{posicao, tipo, status, idPeca?, etiqueta?}] }
 motosRouter.post('/:id/detran-cartela', async (req, res, next) => {
   try {
@@ -432,6 +432,7 @@ motosRouter.post('/:id/detran-cartela', async (req, res, next) => {
     if (!Array.isArray(posicoes)) return res.status(400).json({ error: 'posicoes obrigatorio' });
 
     const resultados: any[] = [];
+    const skusSyncados = new Set<string>(); // evita sync duplo para mesmo SKU base
 
     for (const pos of posicoes) {
       const { posicao, tipo, status, idPeca, etiqueta } = pos;
@@ -444,90 +445,24 @@ motosRouter.post('/:id/detran-cartela', async (req, res, next) => {
         update: { tipo, status: status || null, idPeca: idPeca || null, etiqueta: etiqueta || null },
       });
 
-      // 2. Se tem SKU vinculado — atualiza Peca local E sincroniza com Bling
-      if (idPeca && etiqueta) {
-        try {
-          // 2a. Atualiza detranEtiqueta e detranStatus na tabela Peca
-          await prisma.peca.updateMany({
-            where: { idPeca: String(idPeca).toUpperCase() },
-            data: { detranEtiqueta: etiqueta, detranStatus: status || null },
-          });
+      if (idPeca) {
+        // 2a. Atualiza detranEtiqueta e detranStatus na tabela Peca
+        await prisma.peca.updateMany({
+          where: { idPeca: String(idPeca).toUpperCase() },
+          data: {
+            detranEtiqueta: etiqueta || null,
+            detranStatus: status || null,
+          },
+        });
 
-          // 2b. Busca o SKU base (sem sufixo -2, -3 etc)
-          const baseSku = String(idPeca).toUpperCase().replace(/-\d+$/, '');
-
-          // 2c. Busca blingProdutoId no cadastro
-          let blingProdutoId: string | null = null;
-          const cadastro = await prisma.cadastroPeca.findFirst({
-            where: { idPeca: { equals: baseSku, mode: 'insensitive' } },
-            select: { blingProdutoId: true },
-          });
-          if (cadastro?.blingProdutoId) {
-            blingProdutoId = cadastro.blingProdutoId;
-          }
-
-          // 2d. Sincroniza com Bling usando o mesmo padrão do estoque
-          if (blingProdutoId) {
-            // Busca produto atual no Bling para não perder nenhum campo
-            const blingAtual = await blingReq(`/produtos/${blingProdutoId}`);
-            const b = blingAtual?.data;
-            if (b) {
-              // Concatena etiquetas de todas as variações do SKU base
-              const todasEtiquetas = await prisma.peca.findMany({
-                where: { idPeca: { startsWith: baseSku } },
-                select: { detranEtiqueta: true },
-              });
-              const etiquetasConcat = [...new Set(
-                todasEtiquetas
-                  .map((p: any) => (p.detranEtiqueta || '').trim())
-                  .filter(Boolean)
-              )].join(' / ');
-
-              const ccExistentes: any[] = Array.isArray(b.camposCustomizados) ? b.camposCustomizados : [];
-              const ccMap = new Map(ccExistentes.map((c: any) => [Number(c.idCampoCustomizado), c.valor]));
-              ccMap.set(5979929, etiquetasConcat); // campo Detran no Bling
-
-              const payload: any = {
-                nome: b.nome,
-                codigo: b.codigo,
-                tipo: b.tipo || 'P',
-                formato: b.formato || 'S',
-                situacao: b.situacao || 'A',
-                preco: Number(b.preco || 0),
-                condicao: b.condicao ?? 0,
-                marca: b.marca || '',
-                pesoLiquido: Number(b.pesoLiquido || 0),
-                pesoBruto: Number(b.pesoBruto || 0),
-                volumes: b.volumes || 1,
-                descricaoCurta: b.descricaoCurta || '',
-                dimensoes: {
-                  largura: Number(b.dimensoes?.largura || 0),
-                  altura: Number(b.dimensoes?.altura || 0),
-                  profundidade: Number(b.dimensoes?.profundidade || 0),
-                  unidadeMedida: b.dimensoes?.unidadeMedida || 2,
-                },
-                estoque: {
-                  minimo: Number(b.estoque?.minimo || 0),
-                  maximo: Number(b.estoque?.maximo || 0),
-                  localizacao: String(b.estoque?.localizacao || ''),
-                },
-                camposCustomizados: Array.from(ccMap.entries()).map(([id, valor]) => ({ idCampoCustomizado: id, valor })),
-              };
-
-              await blingReq(`/produtos/${blingProdutoId}`, {
-                method: 'PUT',
-                body: JSON.stringify(payload),
-              });
-
-              resultados.push({ posicao, idPeca, ok: true, blingSync: true });
-            } else {
-              resultados.push({ posicao, idPeca, ok: true, blingSync: false, blingAviso: 'Produto não encontrado no Bling' });
-            }
-          } else {
-            resultados.push({ posicao, idPeca, ok: true, blingSync: false, blingAviso: 'Produto sem blingProdutoId no cadastro' });
-          }
-        } catch (e: any) {
-          resultados.push({ posicao, idPeca, ok: false, error: e.message });
+        // 2b. Sync Bling (uma vez por SKU base)
+        const baseSku = String(idPeca).toUpperCase().replace(/-\d+$/, '');
+        if (!skusSyncados.has(baseSku)) {
+          skusSyncados.add(baseSku);
+          const blingResult = await syncDetranEtiquetaBling(idPeca);
+          resultados.push({ posicao, idPeca, ok: true, blingSync: blingResult.ok, blingError: blingResult.error });
+        } else {
+          resultados.push({ posicao, idPeca, ok: true, blingSync: true, note: 'SKU base já sincronizado' });
         }
       } else {
         // Sem SKU (Inexistente) — só salva local, nada no Bling

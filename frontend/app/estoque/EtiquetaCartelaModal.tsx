@@ -45,6 +45,7 @@ export default function EtiquetaCartelaModal({ motoId, motoLabel, onClose, onSav
   const [saving, setSaving] = useState(false);
   const [loadingExistentes, setLoadingExistentes] = useState(false);
   const [buscaAberta, setBuscaAberta] = useState<number | null>(null);
+  const [skusRemovidos, setSkusRemovidos] = useState<Record<number, string>>({});
   const [buscaTexto, setBuscaTexto] = useState('');
   const [buscaResultados, setBuscaResultados] = useState<any[]>([]);
   const [buscandoPecas, setBuscandoPecas] = useState(false);
@@ -190,7 +191,14 @@ export default function EtiquetaCartelaModal({ motoId, motoLabel, onClose, onSav
     setPosicoes(prev => prev.map((p, i) => i === idx ? { ...p, status } : p));
   }
 
+  // Rastreia SKUs que foram removidos nesta sessão para limpar no Bling
+  const [skusRemovidos, setSkusRemovidos] = useState<Record<number, string>>({}); // idx -> idPeca antigo
+
   function limparPosicao(idx: number) {
+    const skuAtual = posicoes[idx].skuId;
+    if (skuAtual) {
+      setSkusRemovidos(prev => ({ ...prev, [idx]: skuAtual }));
+    }
     setPosicoes(prev => prev.map((p, i) => i === idx ? { status: '', skuId: '', skuDescricao: '', skuDisponivel: null } : p));
   }
 
@@ -204,9 +212,24 @@ export default function EtiquetaCartelaModal({ motoId, motoLabel, onClose, onSav
           tipo: DETRAN_TIPOS[idx],
           status: p.status || null,
           idPeca: p.skuId || null,
-          etiqueta: gerarEtiqueta(idx + 1) || null,
+          etiqueta: p.skuId ? gerarEtiqueta(idx + 1) : null,
         }))
         .filter(item => item.status || item.idPeca);
+
+      // Adiciona posições onde o SKU foi removido (para limpar etiqueta no ANB e Bling)
+      for (const [idxStr, idPecaRemovido] of Object.entries(skusRemovidos)) {
+        const idx = Number(idxStr);
+        // Só adiciona se a posição atual não tem mais SKU
+        if (!posicoes[idx].skuId) {
+          posicoesParaSalvar.push({
+            posicao: idx + 1,
+            tipo: DETRAN_TIPOS[idx],
+            status: posicoes[idx].status || null,
+            idPeca: idPecaRemovido, // manda o SKU antigo para zerar
+            etiqueta: null, // etiqueta null = limpar
+          });
+        }
+      }
 
       if (!posicoesParaSalvar.length) {
         alert('Nenhuma posição com status ou SKU para salvar.');
@@ -223,9 +246,10 @@ export default function EtiquetaCartelaModal({ motoId, motoLabel, onClose, onSav
       const data = await resp.json();
       if (!data.ok) throw new Error(data.error || 'Erro ao salvar');
 
-      const comSku = posicoesParaSalvar.filter(p => p.idPeca).length;
-      const semSku = posicoesParaSalvar.filter(p => !p.idPeca).length;
-      alert(`✓ Salvo! ${comSku} peça(s) atualizada(s) no sistema${semSku > 0 ? ` · ${semSku} posição(ões) Inexistente registradas` : ''}.`);
+      const comSku = posicoesParaSalvar.filter(p => p.idPeca && p.etiqueta).length;
+      const semSku = posicoesParaSalvar.filter(p => !p.etiqueta).length;
+      const removidos = Object.keys(skusRemovidos).length;
+      alert(`✓ Salvo! ${comSku} peça(s) atualizada(s) no Bling${semSku > 0 ? ` · ${semSku} Inexistente(s) registrado(s)` : ''}${removidos > 0 ? ` · ${removidos} etiqueta(s) removida(s)` : ''}.`);
 
       onSaved();
       onClose();
