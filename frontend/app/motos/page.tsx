@@ -1,6 +1,7 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
+import EtiquetaCartelaModal from '../estoque/EtiquetaCartelaModal';
 import { API_BASE } from '@/lib/api-base';
 const API = API_BASE;
 
@@ -590,6 +591,7 @@ export default function MotosPage() {
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState<any>(null);
   const [textoModeloModal, setTextoModeloModal] = useState<any>(null); // moto selecionada
+  const [etiquetaMoto, setEtiquetaMoto] = useState<any>(null); // moto para cartela etiqueta
   const [textoModelo, setTextoModelo] = useState('');
   const [etiquetaSkuLabel, setEtiquetaSkuLabel] = useState('');
   const [savingTexto, setSavingTexto] = useState(false);
@@ -864,6 +866,13 @@ export default function MotosPage() {
           title="Texto modelo para cadastro de peças"
         >
           📝 Texto Modelo
+        </button>
+        <button
+          onClick={() => setEtiquetaMoto(m)}
+          style={{ ...cs.btn, padding: stacked ? '8px 12px' : '5px 10px', fontSize: 12, background: '#1d4ed8', color: '#fff', borderColor: '#1d4ed8', width: stacked ? '100%' : undefined, justifyContent: 'center' }}
+          title="Cartela de etiquetas Detran"
+        >
+          🏷 Etiqueta
         </button>
       </div>
     );
@@ -1167,6 +1176,14 @@ export default function MotosPage() {
             </div>
           </div>
         </div>
+      )}
+      {etiquetaMoto && (
+        <EtiquetaCartelaModal
+          motoId={etiquetaMoto.id}
+          motoLabel={`${etiquetaMoto.marca} ${etiquetaMoto.modelo} ${etiquetaMoto.ano || ''}`.trim()}
+          onClose={() => setEtiquetaMoto(null)}
+          onSaved={() => setEtiquetaMoto(null)}
+        />
       )}
     </>
   );
