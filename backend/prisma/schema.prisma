@@ -69,6 +69,16 @@ model Peca {
   @@index([mercadoLivreItemId])
   @@index([mercadoLivreLink])
   @@index([motoId, detranEtiqueta])
+  // Índices de performance para filtros do estoque
+  @@index([motoId, disponivel, emPrejuizo])
+  @@index([disponivel, emPrejuizo])
+  @@index([disponivel, emPrejuizo, cadastro])
+  @@index([motoId, disponivel, emPrejuizo, cadastro])
+  @@index([blingPedidoNum])
+  @@index([dataVenda])
+  @@index([emPrejuizo])
+  @@index([numeroPeca])
+  @@index([detranStatus])
 }
 
 model CadastroPeca {
