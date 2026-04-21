@@ -34,8 +34,8 @@ export async function buildDetranEtiquetaConcatForBaseSku(baseSku: string): Prom
 
 // Campos que o Bling rejeita no PUT (somente leitura na API)
 const BLING_READONLY_FIELDS = [
-  'id', 'dataCriacao', 'dataAlteracao', 'imagemURL',
-  'depositos', 'variacoes', 'estrutura',
+  'id', 'dataCriacao', 'dataAlteracao', 'imagemURL', 'imagens',
+  'depositos', 'variacoes', 'estrutura', 'categorias', 'anexos',
 ];
 
 export async function syncDetranEtiquetaBling(idPeca: string): Promise<{ ok: boolean; error?: string }> {

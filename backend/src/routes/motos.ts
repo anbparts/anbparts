@@ -118,10 +118,23 @@ motosRouter.get('/', async (req, res, next) => {
       const vlVendidas  = vendidas.reduce((s, p) => s + Number(p.valorLiq), 0);
       const vlEstoque   = disponiveis.reduce((s, p) => s + Number(p.valorLiq), 0);
       const lucro       = (vlVendidas + vlEstoque) - Number(m.precoCompra);
+      // Detran: conta etiquetas reais (split por '/') e inclui peças em prejuízo
       const detranPecas = m.pecas.filter((p) => normalizeDetranEtiqueta(p.detranEtiqueta));
-      const detranCount = detranPecas.length;
-      const detranAtivas = detranPecas.filter((p) => !p.detranBaixada).length;
-      const detranBaixadas = detranPecas.filter((p) => p.detranBaixada).length;
+      const detranCount = detranPecas.reduce((total, p) => {
+        const etiq = String(p.detranEtiqueta || '').trim();
+        const qtd = etiq ? etiq.split('/').map(e => e.trim()).filter(Boolean).length : 0;
+        return total + (qtd || 1);
+      }, 0);
+      const detranAtivas = detranPecas.filter((p) => !p.detranBaixada).reduce((total, p) => {
+        const etiq = String(p.detranEtiqueta || '').trim();
+        const qtd = etiq ? etiq.split('/').map(e => e.trim()).filter(Boolean).length : 0;
+        return total + (qtd || 1);
+      }, 0);
+      const detranBaixadas = detranPecas.filter((p) => p.detranBaixada).reduce((total, p) => {
+        const etiq = String(p.detranEtiqueta || '').trim();
+        const qtd = etiq ? etiq.split('/').map(e => e.trim()).filter(Boolean).length : 0;
+        return total + (qtd || 1);
+      }, 0);
 
       // % recuperada = quanto do investimento já voltou (valor líq. vendidas / preço compra)
       const pctRecuperada = Number(m.precoCompra) > 0

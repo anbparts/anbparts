@@ -914,7 +914,7 @@ cadastroRouter.post('/sync-bling-peca', async (req, res, next) => {
     if (!b) return res.status(404).json({ error: 'Produto não encontrado no Bling' });
 
     // Monta payload: copia produto inteiro do Bling, sobrepõe só o que veio na requisição
-    const BLING_READONLY = ['id', 'dataCriacao', 'dataAlteracao', 'imagemURL', 'depositos', 'variacoes', 'estrutura'];
+    const BLING_READONLY = ['id', 'dataCriacao', 'dataAlteracao', 'imagemURL', 'imagens', 'depositos', 'variacoes', 'estrutura', 'categorias', 'anexos'];
     const payload: any = { ...b };
     for (const f of BLING_READONLY) delete payload[f];
 
