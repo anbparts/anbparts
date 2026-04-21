@@ -58,16 +58,19 @@ export default function EtiquetaCartelaModal({ motoId, motoLabel, onClose, onSav
   async function carregarExistentes() {
     setLoadingExistentes(true);
     try {
-      const resp = await fetch(`${API}/pecas?motoId=${motoId}&limit=500&disponivel=`, { credentials: 'include' });
+      // Busca todas as peças da moto (com e sem estoque) usando per=500
+      const resp = await fetch(`${API}/pecas?motoId=${motoId}&per=500&page=1`, { credentials: 'include' });
       const data = await resp.json();
       const pecas: any[] = data.data || [];
 
       const novasPosicoes = DETRAN_TIPOS.map(() => ({ status: '' as const, skuId: '', skuDescricao: '', skuDisponivel: null }));
+      let prefixoEncontrado = '';
 
       // Preenche a partir das etiquetas existentes
       for (const peca of pecas) {
         if (!peca.detranEtiqueta) continue;
         const etiq = String(peca.detranEtiqueta).trim();
+        if (etiq.length < 4) continue;
         // Extrai os últimos 3 dígitos para determinar a posição
         const posStr = etiq.slice(-3);
         const posNum = parseInt(posStr, 10);
@@ -79,13 +82,16 @@ export default function EtiquetaCartelaModal({ motoId, motoLabel, onClose, onSav
             skuDescricao: peca.descricao || '',
             skuDisponivel: peca.disponivel,
           };
-          // Infere o prefixo da cartela se ainda não definido
-          if (!cartelaId && etiq.length > 3) {
-            setCartelaId(etiq.slice(0, -3));
+          // Infere o prefixo da cartela pelo primeiro encontrado
+          if (!prefixoEncontrado && etiq.length > 3) {
+            prefixoEncontrado = etiq.slice(0, -3);
           }
         }
       }
 
+      if (prefixoEncontrado) {
+        setCartelaId(prefixoEncontrado);
+      }
       setPosicoes(novasPosicoes);
     } catch (e) {
       console.error('Erro ao carregar existentes:', e);
@@ -124,7 +130,7 @@ export default function EtiquetaCartelaModal({ motoId, motoLabel, onClose, onSav
   async function buscarPecas(texto: string) {
     setBuscandoPecas(true);
     try {
-      const params = new URLSearchParams({ motoId: String(motoId), limit: '100' });
+      const params = new URLSearchParams({ motoId: String(motoId), per: '100', page: '1' });
       if (texto.trim()) params.set('search', texto.trim());
       const resp = await fetch(`${API}/pecas?${params}`, { credentials: 'include' });
       const data = await resp.json();
