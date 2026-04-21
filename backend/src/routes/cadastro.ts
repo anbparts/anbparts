@@ -913,39 +913,29 @@ cadastroRouter.post('/sync-bling-peca', async (req, res, next) => {
     const b = blingAtual?.data;
     if (!b) return res.status(404).json({ error: 'Produto não encontrado no Bling' });
 
-    // Monta payload usando os dados atuais do Bling como base
-    // e sobrepõe apenas os campos que vieram na requisição
-    const payload: any = {
-      // Preserva todos os campos do Bling
-      nome: descricao != null ? String(descricao) : b.nome,
-      codigo: b.codigo,
-      unidade: 'UN',                          // sempre fixo
-      ncm: '8714.10.00',                      // sempre fixo
-      tipo: b.tipo || 'P',
-      formato: b.formato || 'S',
-      tipoProducao: b.tipoProducao || 'T',
-      situacao: b.situacao || 'A',
-      preco: precoML != null ? Number(precoML) : Number(b.preco || 0),
-      condicao: b.condicao ?? 0,
-      marca: b.marca || '',
-      pesoLiquido: pesoLiquido != null ? Number(pesoLiquido) : Number(b.pesoLiquido || 0),
-      pesoBruto: pesoLiquido != null ? Number(pesoLiquido) : Number(b.pesoBruto || 0),
-      volumes: b.volumes || 1,
-      descricaoCurta: b.descricaoCurta || '',
-      // Dimensões — sobrepõe só os que vieram
-      dimensoes: {
+    // Monta payload: copia produto inteiro do Bling, sobrepõe só o que veio na requisição
+    const BLING_READONLY = ['id', 'dataCriacao', 'dataAlteracao', 'imagemURL', 'depositos', 'variacoes', 'estrutura'];
+    const payload: any = { ...b };
+    for (const f of BLING_READONLY) delete payload[f];
+
+    // Sobrepõe só os campos que vieram na requisição
+    if (descricao != null) payload.nome = String(descricao);
+    if (precoML != null) payload.preco = Number(precoML);
+    if (pesoLiquido != null) { payload.pesoLiquido = Number(pesoLiquido); payload.pesoBruto = Number(pesoLiquido); }
+    if (largura != null || altura != null || profundidade != null) {
+      payload.dimensoes = {
         largura: largura != null ? Number(largura) : Number(b.dimensoes?.largura || 0),
         altura: altura != null ? Number(altura) : Number(b.dimensoes?.altura || 0),
         profundidade: profundidade != null ? Number(profundidade) : Number(b.dimensoes?.profundidade || 0),
         unidadeMedida: b.dimensoes?.unidadeMedida || 2,
-      },
-      // Estoque — só sobrepõe localização
-      estoque: {
-        minimo: Number(b.estoque?.minimo || 0),
-        maximo: Number(b.estoque?.maximo || 0),
-        localizacao: localizacao != null ? String(localizacao || '') : String(b.estoque?.localizacao || ''),
-      },
-    };
+      };
+    }
+    if (localizacao != null) {
+      payload.estoque = {
+        ...b.estoque,
+        localizacao: String(localizacao || ''),
+      };
+    }
 
     // Campos customizados — merge com os existentes no Bling, sobrepõe só os que vieram
     const ccExistentes: any[] = Array.isArray(b.camposCustomizados) ? b.camposCustomizados : [];

@@ -1,7 +1,7 @@
 /**
  * Sincroniza APENAS a etiqueta Detran no Bling.
- * Estratégia: lê o produto completo do Bling, troca só o campo customizado Detran,
- * e devolve o payload exatamente como veio — sem perder nenhum campo.
+ * Estratégia: GET produto completo → modifica SÓ camposCustomizados[Detran] → PUT de volta.
+ * Nenhum outro campo é alterado.
  */
 import { prisma } from './prisma';
 import { blingReq } from '../routes/bling';
@@ -32,13 +32,18 @@ export async function buildDetranEtiquetaConcatForBaseSku(baseSku: string): Prom
     .join(' / ');
 }
 
+// Campos que o Bling rejeita no PUT (somente leitura na API)
+const BLING_READONLY_FIELDS = [
+  'id', 'dataCriacao', 'dataAlteracao', 'imagemURL',
+  'depositos', 'variacoes', 'estrutura',
+];
+
 export async function syncDetranEtiquetaBling(idPeca: string): Promise<{ ok: boolean; error?: string }> {
   try {
     const baseSku = String(idPeca).toUpperCase().replace(/-\d+$/, '');
 
     // 1. Resolve o blingProdutoId
     let blingProdutoId: string | null = null;
-
     const cadastro = await prisma.cadastroPeca.findFirst({
       where: { idPeca: { equals: baseSku, mode: 'insensitive' } },
       select: { blingProdutoId: true },
@@ -58,7 +63,7 @@ export async function syncDetranEtiquetaBling(idPeca: string): Promise<{ ok: boo
       return { ok: false, error: `Produto não encontrado no Bling para SKU: ${baseSku}` };
     }
 
-    // 2. Busca produto COMPLETO do Bling
+    // 2. GET produto COMPLETO do Bling — preserva tudo
     const blingAtual = await blingReq(`/produtos/${blingProdutoId}`);
     const b = blingAtual?.data;
     if (!b) return { ok: false, error: 'Produto não encontrado no Bling' };
@@ -66,33 +71,21 @@ export async function syncDetranEtiquetaBling(idPeca: string): Promise<{ ok: boo
     // 3. Calcula a nova etiqueta concatenada
     const etiquetasConcat = await buildDetranEtiquetaConcatForBaseSku(baseSku);
 
-    // 4. Atualiza APENAS o campo customizado Detran (ID 5979929)
-    //    Preserva todos os outros campos customizados existentes
+    // 4. Atualiza SOMENTE o campo customizado Detran (ID 5979929)
     const ccExistentes: any[] = Array.isArray(b.camposCustomizados) ? b.camposCustomizados : [];
     const ccMap = new Map(ccExistentes.map((c: any) => [Number(c.idCampoCustomizado), c.valor]));
     ccMap.set(5979929, etiquetasConcat);
 
-    // 5. Monta payload espelhando EXATAMENTE o que veio do Bling
-    //    Só sobrescreve camposCustomizados — todo o resto vem do b
-    const payload: any = {
-      ...b, // copia tudo: nome, codigo, ncm, unidade, tipoProducao, etc
-      camposCustomizados: Array.from(ccMap.entries()).map(([id, valor]) => ({ idCampoCustomizado: id, valor })),
-    };
+    // 5. Copia o produto exatamente como está, remove só campos read-only do Bling
+    const payload: any = { ...b };
+    for (const field of BLING_READONLY_FIELDS) {
+      delete payload[field];
+    }
 
-    // Remove campos que o Bling não aceita no PUT (campos somente-leitura)
-    delete payload.id;
-    delete payload.situacoes;
-    delete payload.dataCriacao;
-    delete payload.dataAlteracao;
-    delete payload.imagemURL;
-    delete payload.imagens;
-    delete payload.depositos;
-    delete payload.variacoes;
-    delete payload.categorias;
-    delete payload.anexos;
-    delete payload.estrutura;
+    // 6. Substitui apenas camposCustomizados
+    payload.camposCustomizados = Array.from(ccMap.entries()).map(([id, valor]) => ({ idCampoCustomizado: id, valor }));
 
-    // 6. Faz PUT no Bling
+    // 7. PUT no Bling
     await blingReq(`/produtos/${blingProdutoId}`, {
       method: 'PUT',
       body: JSON.stringify(payload),
