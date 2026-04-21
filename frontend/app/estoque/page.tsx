@@ -1641,11 +1641,12 @@ export default function EstoquePage() {
 
   // Colunas visíveis — salvo no localStorage por usuário
   const COL_STORAGE_KEY = `estoque_colunas_v1_${user?.username || 'default'}`;
-  const COL_ALL = ['motoId','idPeca','moto','descricao','cadastro','precoML','valorLiq','valorFrete','valorTaxas','dataVenda','blingPedidoNum','detranEtiqueta','detranStatus','status'] as const;
+  const COL_ALL = ['motoId','idPeca','moto','descricao','localizacao','cadastro','precoML','valorLiq','valorFrete','valorTaxas','dataVenda','blingPedidoNum','detranEtiqueta','detranStatus','status'] as const;
   type ColKey = typeof COL_ALL[number];
   const COL_DEFAULT: ColKey[] = ['motoId','idPeca','moto','descricao','cadastro','precoML','valorLiq','valorFrete','valorTaxas','dataVenda','blingPedidoNum','detranStatus','status'];
   const COL_LABELS: Record<ColKey, string> = {
     motoId: 'ID Moto', idPeca: 'ID Peça', moto: 'Moto', descricao: 'Descrição',
+    localizacao: 'Localização',
     cadastro: 'Cadastro', precoML: 'Preço ML', valorLiq: 'Vl. Liq.',
     valorFrete: 'Frete', valorTaxas: 'Taxas', dataVenda: 'Venda',
     blingPedidoNum: 'Pedido', detranEtiqueta: 'Etiqueta Detran',
@@ -2271,6 +2272,7 @@ export default function EstoquePage() {
     { label: 'ID Peca', sort: 'idPeca', width: 88, colKey: 'idPeca' },
     { label: 'Moto', sort: 'moto', width: isTabletLandscape ? 124 : 138, colKey: 'moto' },
     { label: 'Descricao', sort: 'descricao', width: isTabletLandscape ? '18%' : '21%', colKey: 'descricao' },
+    { label: 'Local', sort: 'localizacao', width: 90, colKey: 'localizacao' },
     { label: isTabletLandscape ? 'Cad.' : 'Cadastro', sort: 'cadastro', width: isTabletLandscape ? 68 : 72, colKey: 'cadastro' },
     { label: 'Preco ML', sort: 'precoML', width: 90, colKey: 'precoML' },
     { label: 'Vl. Liq.', sort: 'valorLiq', width: 86, colKey: 'valorLiq' },
@@ -2335,7 +2337,7 @@ export default function EstoquePage() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-800)' }}>Colunas visíveis</div>
               <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={() => { const all = COL_ALL.filter(k => k !== 'detranEtiqueta') as ColKey[]; setColsVisiveis(all); try { localStorage.setItem(COL_STORAGE_KEY, JSON.stringify(all)); } catch {} }}
+                <button onClick={() => { const all = COL_ALL.filter(k => k !== 'detranEtiqueta' && k !== 'localizacao') as ColKey[]; setColsVisiveis(all); try { localStorage.setItem(COL_STORAGE_KEY, JSON.stringify(all)); } catch {} }}
                   style={{ fontSize: 11, color: 'var(--blue-500)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px' }}>
                   Selecionar todas
                 </button>
@@ -2350,7 +2352,7 @@ export default function EstoquePage() {
                 <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', border: `1px solid ${colsVisiveis.includes(key) ? 'var(--blue-500)' : 'var(--border)'}`, borderRadius: 6, cursor: 'pointer', background: colsVisiveis.includes(key) ? '#eff6ff' : 'var(--white)', fontSize: 12, color: colsVisiveis.includes(key) ? 'var(--blue-500)' : 'var(--gray-600)', userSelect: 'none' }}>
                   <input type="checkbox" checked={colsVisiveis.includes(key)} onChange={() => toggleCol(key)} style={{ width: 13, height: 13, cursor: 'pointer' }} />
                   {COL_LABELS[key]}
-                  {key === 'detranEtiqueta' && <span style={{ fontSize: 10, background: '#fef9c3', color: '#92400e', padding: '1px 4px', borderRadius: 3 }}>off por padrão</span>}
+                  {(key === 'detranEtiqueta' || key === 'localizacao') && <span style={{ fontSize: 10, background: '#fef9c3', color: '#92400e', padding: '1px 4px', borderRadius: 3 }}>off por padrão</span>}
                 </label>
               ))}
             </div>
@@ -2769,6 +2771,7 @@ export default function EstoquePage() {
                               </div>
                             ) : null}
                           </td>}
+                          {colsVisiveis.includes('localizacao') && <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11, color: 'var(--ink-muted)', whiteSpace: 'nowrap' }}>{p.localizacao || '-'}</td>}
                           {colsVisiveis.includes('cadastro') && <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11, color: 'var(--ink-muted)', whiteSpace: 'nowrap' }}>{formatCompactDate(p.cadastro)}</td>}
                           {colsVisiveis.includes('precoML') && <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11.5, whiteSpace: 'nowrap' }}>{fmt(Number(p.precoML))}</td>}
                           {colsVisiveis.includes('valorLiq') && <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11.5, color: 'var(--ink-muted)', whiteSpace: 'nowrap' }}>{fmt(Number(p.valorLiq))}</td>}
