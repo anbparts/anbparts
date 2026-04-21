@@ -1182,7 +1182,7 @@ export default function MotosPage() {
           motoId={etiquetaMoto.id}
           motoLabel={`${etiquetaMoto.marca} ${etiquetaMoto.modelo} ${etiquetaMoto.ano || ''}`.trim()}
           onClose={() => setEtiquetaMoto(null)}
-          onSaved={() => setEtiquetaMoto(null)}
+          onSaved={() => { setEtiquetaMoto(null); load(); }}
         />
       )}
     </>
