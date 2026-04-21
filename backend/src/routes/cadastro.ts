@@ -919,8 +919,11 @@ cadastroRouter.post('/sync-bling-peca', async (req, res, next) => {
       // Preserva todos os campos do Bling
       nome: descricao != null ? String(descricao) : b.nome,
       codigo: b.codigo,
+      unidade: 'UN',                          // sempre fixo
+      ncm: '8714.10.00',                      // sempre fixo
       tipo: b.tipo || 'P',
       formato: b.formato || 'S',
+      tipoProducao: b.tipoProducao || 'T',
       situacao: b.situacao || 'A',
       preco: precoML != null ? Number(precoML) : Number(b.preco || 0),
       condicao: b.condicao ?? 0,
