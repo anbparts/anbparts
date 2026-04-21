@@ -918,6 +918,11 @@ cadastroRouter.post('/sync-bling-peca', async (req, res, next) => {
     const payload: any = { ...b };
     for (const f of BLING_READONLY) delete payload[f];
 
+    // Campos SEMPRE fixos — independente do que estiver no Bling
+    payload.unidade = 'UN';
+    payload.tipoProducao = 'T';
+    payload.tributacao = { ...(b.tributacao || {}), ncm: '87141000', cest: '01.076.00' };
+
     // Sobrepõe só os campos que vieram na requisição
     if (descricao != null) payload.nome = String(descricao);
     if (precoML != null) payload.preco = Number(precoML);

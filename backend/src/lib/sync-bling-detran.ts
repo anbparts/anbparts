@@ -82,6 +82,11 @@ export async function syncDetranEtiquetaBling(idPeca: string): Promise<{ ok: boo
       delete payload[field];
     }
 
+    // Campos SEMPRE fixos — independente do que estiver no Bling
+    payload.unidade = 'UN';
+    payload.tipoProducao = 'T';
+    payload.tributacao = { ...(b.tributacao || {}), ncm: '87141000', cest: '01.076.00' };
+
     // 6. Substitui apenas camposCustomizados
     payload.camposCustomizados = Array.from(ccMap.entries()).map(([id, valor]) => ({ idCampoCustomizado: id, valor }));
 
