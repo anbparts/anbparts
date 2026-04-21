@@ -445,14 +445,22 @@ motosRouter.post('/:id/detran-cartela', async (req, res, next) => {
     if (!Array.isArray(posicoes)) return res.status(400).json({ error: 'posicoes obrigatorio' });
 
     const resultados: any[] = [];
-    const skusSyncados = new Set<string>(); // evita sync duplo para mesmo SKU base
 
+    // 1. Agrupa etiquetas por SKU — mesmo SKU pode aparecer em múltiplas posições
+    const etiquetasPorSku: Record<string, string[]> = {};
+    for (const pos of posicoes) {
+      const { idPeca, etiqueta } = pos;
+      if (!idPeca) continue;
+      const sku = String(idPeca).toUpperCase();
+      if (!etiquetasPorSku[sku]) etiquetasPorSku[sku] = [];
+      if (etiqueta) etiquetasPorSku[sku].push(etiqueta);
+    }
+
+    // 2. Salva cada posição no histórico MotoDetranPosicao
     for (const pos of posicoes) {
       const { posicao, tipo, status, idPeca, etiqueta } = pos;
       if (!posicao || !tipo) continue;
 
-      // 1. Salva/atualiza em MotoDetranPosicao (sempre — incluindo Inexistente sem SKU)
-      // Se etiqueta é null e idPeca existe = remoção → limpa idPeca e etiqueta na tabela
       const ehRemocao = idPeca && !etiqueta;
       await prisma.motoDetranPosicao.upsert({
         where: { motoId_posicao: { motoId, posicao: Number(posicao) } },
@@ -460,37 +468,55 @@ motosRouter.post('/:id/detran-cartela', async (req, res, next) => {
           motoId, posicao: Number(posicao), tipo,
           status: status || null,
           idPeca: ehRemocao ? null : (idPeca || null),
-          etiqueta: etiqueta || null
+          etiqueta: etiqueta || null,
         },
         update: {
           tipo, status: status || null,
           idPeca: ehRemocao ? null : (idPeca || null),
-          etiqueta: etiqueta || null
+          etiqueta: etiqueta || null,
+        },
+      });
+    }
+
+    // 3. Atualiza Peca e Bling agrupando etiquetas por SKU
+    const skusSyncados = new Set<string>();
+
+    for (const pos of posicoes) {
+      const { posicao, status, idPeca, etiqueta } = pos;
+      if (!idPeca) continue;
+
+      const sku = String(idPeca).toUpperCase();
+      const baseSku = sku.replace(/-\d+$/, '');
+
+      // Só processa uma vez por SKU
+      if (skusSyncados.has(sku)) continue;
+      skusSyncados.add(sku);
+
+      const ehRemocao = !etiqueta;
+      // Concatena todas as etiquetas desse SKU nesta cartela
+      const etiquetasConcat = etiquetasPorSku[sku]?.join(' / ') || null;
+
+      // Atualiza tabela Peca com as etiquetas concatenadas
+      await prisma.peca.updateMany({
+        where: { idPeca: sku },
+        data: {
+          detranEtiqueta: ehRemocao ? null : etiquetasConcat,
+          detranStatus: ehRemocao ? null : (status || null),
         },
       });
 
-      if (idPeca) {
-        // 2a. Atualiza detranEtiqueta e detranStatus na tabela Peca
-        await prisma.peca.updateMany({
-          where: { idPeca: String(idPeca).toUpperCase() },
-          data: {
-            detranEtiqueta: etiqueta || null,
-            detranStatus: ehRemocao ? null : (status || null),
-          },
-        });
+      // Sync Bling (uma vez por SKU base)
+      if (!skusSyncados.has(baseSku + '_bling')) {
+        skusSyncados.add(baseSku + '_bling');
+        const blingResult = await syncDetranEtiquetaBling(idPeca);
+        resultados.push({ posicao, idPeca, ok: true, blingSync: blingResult.ok, blingError: blingResult.error });
+      }
+    }
 
-        // 2b. Sync Bling (uma vez por SKU base)
-        const baseSku = String(idPeca).toUpperCase().replace(/-\d+$/, '');
-        if (!skusSyncados.has(baseSku)) {
-          skusSyncados.add(baseSku);
-          const blingResult = await syncDetranEtiquetaBling(idPeca);
-          resultados.push({ posicao, idPeca, ok: true, blingSync: blingResult.ok, blingError: blingResult.error });
-        } else {
-          resultados.push({ posicao, idPeca, ok: true, blingSync: true, note: 'SKU base já sincronizado' });
-        }
-      } else {
-        // Sem SKU (Inexistente) — só salva local, nada no Bling
-        resultados.push({ posicao, ok: true, semSku: true });
+    // Posições sem SKU (Inexistente)
+    for (const pos of posicoes) {
+      if (!pos.idPeca) {
+        resultados.push({ posicao: pos.posicao, ok: true, semSku: true });
       }
     }
 
