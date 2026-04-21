@@ -791,3 +791,37 @@ pecasRouter.delete('/:id', async (req, res, next) => {
     res.json({ ok: true });
   } catch (e) { next(e); }
 });
+
+// POST /pecas/bulk-detran-cartela
+// Atualiza detranEtiqueta + detranStatus de um lote de peças (cartela Detran)
+// Body: { itens: [{idPeca, detranEtiqueta, detranStatus}] }
+pecasRouter.post('/bulk-detran-cartela', async (req, res, next) => {
+  try {
+    const { itens } = req.body || {};
+    if (!Array.isArray(itens) || !itens.length) {
+      return res.status(400).json({ error: 'itens obrigatorio' });
+    }
+
+    const resultados: any[] = [];
+    for (const item of itens) {
+      const { idPeca, detranEtiqueta, detranStatus } = item;
+      if (!idPeca) continue;
+      try {
+        const peca = await prisma.peca.findUnique({ where: { idPeca: String(idPeca).toUpperCase() } });
+        if (!peca) { resultados.push({ idPeca, ok: false, error: 'Nao encontrada' }); continue; }
+        await prisma.peca.update({
+          where: { id: peca.id },
+          data: {
+            detranEtiqueta: detranEtiqueta || null,
+            detranStatus: detranStatus || null,
+          },
+        });
+        resultados.push({ idPeca, ok: true });
+      } catch (e: any) {
+        resultados.push({ idPeca, ok: false, error: e.message });
+      }
+    }
+
+    res.json({ ok: true, resultados, total: resultados.length, erros: resultados.filter(r => !r.ok).length });
+  } catch (e) { next(e); }
+});

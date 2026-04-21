@@ -1,5 +1,6 @@
 'use client';
 import { Fragment, useCallback, useEffect, useState } from 'react';
+import EtiquetaCartelaModal from './EtiquetaCartelaModal';
 import { api } from '@/lib/api';
 import { API_BASE } from '@/lib/api-base';
 import { useAuth } from '@/lib/auth';
@@ -1636,6 +1637,7 @@ export default function EstoquePage() {
   const [caixaFilterOpen, setCaixaFilterOpen] = useState(false);
   const [caixaFilterSearch, setCaixaFilterSearch] = useState('');
   const [colSelectorOpen, setColSelectorOpen] = useState(false);
+  const [etiquetaCartelaOpen, setEtiquetaCartelaOpen] = useState(false);
 
   // Colunas visíveis — salvo no localStorage por usuário
   const COL_STORAGE_KEY = `estoque_colunas_v1_${user?.username || 'default'}`;
@@ -2301,6 +2303,15 @@ export default function EstoquePage() {
           >
             Impressao Caixa
           </button>
+          {filters.motoId && (
+            <button
+              type="button"
+              onClick={() => setEtiquetaCartelaOpen(true)}
+              style={{ ...cs.btn, background: '#1d4ed8', color: '#fff', borderColor: '#1d4ed8', padding: '7px 14px', fontSize: 13, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}
+            >
+              🏷 Etiqueta
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setColSelectorOpen(v => !v)}
@@ -2845,6 +2856,14 @@ export default function EstoquePage() {
       <VendaModal open={vendaModal} peca={vendaPeca} onClose={() => setVendaModal(false)} onConfirm={handleVenda} />
       <DetranEtiquetaModal open={Boolean(detranPeca)} peca={detranPeca} onClose={() => setDetranPeca(null)} />
       <PecaDetalheModal open={Boolean(detalhePeca)} peca={detalhePeca} onClose={() => setDetalhePeca(null)} onSaved={() => { setDetalhePeca(null); load(); }} />
+      {etiquetaCartelaOpen && filters.motoId && (
+        <EtiquetaCartelaModal
+          motoId={Number(filters.motoId)}
+          motoLabel={motos.find(m => String(m.id) === String(filters.motoId)) ? `${motos.find(m => String(m.id) === String(filters.motoId))?.marca} ${motos.find(m => String(m.id) === String(filters.motoId))?.modelo}` : `Moto #${filters.motoId}`}
+          onClose={() => setEtiquetaCartelaOpen(false)}
+          onSaved={() => { setEtiquetaCartelaOpen(false); load(); }}
+        />
+      )}
       <PecaActionsModal
         open={Boolean(actionPeca)}
         peca={actionPeca}

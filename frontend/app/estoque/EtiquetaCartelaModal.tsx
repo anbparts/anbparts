@@ -1,0 +1,382 @@
+'use client';
+import { useEffect, useRef, useState } from 'react';
+import { API_BASE } from '@/lib/api-base';
+
+const API = API_BASE;
+
+const DETRAN_TIPOS = [
+  'Balança', 'Banco', 'Bengala direita', 'Bengala esquerda', 'Bloco do motor',
+  'Cabeçote', 'Carburador', 'Carenagem direita', 'Carenagem esquerda',
+  'Carenagem frontal', 'Carenagem traseira', 'Estribo', 'Farol',
+  'Guidão / semi-guidão', 'Lanterna', 'Mesa', 'Módulo de injeção/CDI',
+  'Motor de arranque', 'Painel', 'Para-lama dianteiro', 'Para-lama traseiro',
+  'Pedaleira direita', 'Pedaleira esquerda', 'Retrovisor direito',
+  'Retrovisor esquerdo', 'Roda dianteira', 'Roda traseira', 'Tanque',
+  'Cardã', 'Cavalete lateral', 'Corpo de injeção', 'Diferencial',
+  'Escapamento', 'Radiador',
+];
+
+const STATUS_OPTS = ['', 'Inexistente', 'Sucata', 'Reutilizavel'] as const;
+const STATUS_COLORS: Record<string, { bg: string; color: string; border: string }> = {
+  Inexistente:  { bg: '#fef2f2', color: '#dc2626', border: '#fecaca' },
+  Sucata:       { bg: '#fff7ed', color: '#c2410c', border: '#fed7aa' },
+  Reutilizavel: { bg: '#f0fdf4', color: '#16a34a', border: '#86efac' },
+};
+
+type PosicaoState = {
+  status: '' | 'Inexistente' | 'Sucata' | 'Reutilizavel';
+  skuId: string; // idPeca
+  skuDescricao: string;
+  skuDisponivel: boolean | null;
+};
+
+type Props = {
+  motoId: number;
+  motoLabel: string;
+  onClose: () => void;
+  onSaved: () => void;
+};
+
+export default function EtiquetaCartelaModal({ motoId, motoLabel, onClose, onSaved }: Props) {
+  const [cartelaId, setCartelaId] = useState('');
+  const [posicoes, setPosicoes] = useState<PosicaoState[]>(
+    DETRAN_TIPOS.map(() => ({ status: '', skuId: '', skuDescricao: '', skuDisponivel: null }))
+  );
+  const [saving, setSaving] = useState(false);
+  const [loadingExistentes, setLoadingExistentes] = useState(false);
+  const [buscaAberta, setBuscaAberta] = useState<number | null>(null);
+  const [buscaTexto, setBuscaTexto] = useState('');
+  const [buscaResultados, setBuscaResultados] = useState<any[]>([]);
+  const [buscandoPecas, setBuscandoPecas] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  // Carrega etiquetas existentes da moto ao abrir
+  useEffect(() => {
+    carregarExistentes();
+  }, []);
+
+  async function carregarExistentes() {
+    setLoadingExistentes(true);
+    try {
+      const resp = await fetch(`${API}/pecas?motoId=${motoId}&limit=500&disponivel=`, { credentials: 'include' });
+      const data = await resp.json();
+      const pecas: any[] = data.data || [];
+
+      const novasPosicoes = DETRAN_TIPOS.map(() => ({ status: '' as const, skuId: '', skuDescricao: '', skuDisponivel: null }));
+
+      // Preenche a partir das etiquetas existentes
+      for (const peca of pecas) {
+        if (!peca.detranEtiqueta) continue;
+        const etiq = String(peca.detranEtiqueta).trim();
+        // Extrai os últimos 3 dígitos para determinar a posição
+        const posStr = etiq.slice(-3);
+        const posNum = parseInt(posStr, 10);
+        if (posNum >= 1 && posNum <= 34) {
+          const idx = posNum - 1;
+          novasPosicoes[idx] = {
+            status: (peca.detranStatus || '') as any,
+            skuId: peca.idPeca,
+            skuDescricao: peca.descricao || '',
+            skuDisponivel: peca.disponivel,
+          };
+          // Infere o prefixo da cartela se ainda não definido
+          if (!cartelaId && etiq.length > 3) {
+            setCartelaId(etiq.slice(0, -3));
+          }
+        }
+      }
+
+      setPosicoes(novasPosicoes);
+    } catch (e) {
+      console.error('Erro ao carregar existentes:', e);
+    }
+    setLoadingExistentes(false);
+  }
+
+  // Quando cartela ID muda, atualiza o prefixo das etiquetas
+  function handleCartelaChange(val: string) {
+    setCartelaId(val.toUpperCase());
+  }
+
+  function gerarEtiqueta(posicao: number): string {
+    if (!cartelaId) return '';
+    return `${cartelaId}${String(posicao).padStart(3, '0')}`;
+  }
+
+  // Busca peças da moto
+  useEffect(() => {
+    if (buscaAberta === null) return;
+    const timer = setTimeout(async () => {
+      if (!buscaTexto.trim() && buscaTexto.length === 0) {
+        // Carrega todas as peças da moto
+        await buscarPecas('');
+      }
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [buscaAberta]);
+
+  useEffect(() => {
+    if (buscaAberta === null) return;
+    const timer = setTimeout(() => buscarPecas(buscaTexto), 300);
+    return () => clearTimeout(timer);
+  }, [buscaTexto]);
+
+  async function buscarPecas(texto: string) {
+    setBuscandoPecas(true);
+    try {
+      const params = new URLSearchParams({ motoId: String(motoId), limit: '100' });
+      if (texto.trim()) params.set('search', texto.trim());
+      const resp = await fetch(`${API}/pecas?${params}`, { credentials: 'include' });
+      const data = await resp.json();
+      setBuscaResultados(data.data || []);
+    } catch { setBuscaResultados([]); }
+    setBuscandoPecas(false);
+  }
+
+  function abrirBusca(idx: number) {
+    setBuscaAberta(idx);
+    setBuscaTexto('');
+    setBuscaResultados([]);
+    setTimeout(() => searchRef.current?.focus(), 50);
+  }
+
+  function selecionarSku(idx: number, peca: any) {
+    setPosicoes(prev => prev.map((p, i) => i === idx ? {
+      ...p,
+      skuId: peca.idPeca,
+      skuDescricao: peca.descricao || '',
+      skuDisponivel: peca.disponivel,
+    } : p));
+    setBuscaAberta(null);
+  }
+
+  function setStatus(idx: number, status: PosicaoState['status']) {
+    setPosicoes(prev => prev.map((p, i) => i === idx ? { ...p, status } : p));
+  }
+
+  function limparPosicao(idx: number) {
+    setPosicoes(prev => prev.map((p, i) => i === idx ? { status: '', skuId: '', skuDescricao: '', skuDisponivel: null } : p));
+  }
+
+  async function salvar() {
+    setSaving(true);
+    try {
+      // Monta os itens para salvar (só os que têm SKU vinculado ou status definido)
+      const itens = posicoes
+        .map((p, idx) => ({
+          idPeca: p.skuId || null,
+          detranEtiqueta: p.skuId ? gerarEtiqueta(idx + 1) : null,
+          detranStatus: p.status || null,
+        }))
+        .filter(item => item.idPeca);
+
+      if (!itens.length) {
+        alert('Nenhuma peça vinculada para salvar.');
+        setSaving(false);
+        return;
+      }
+
+      const resp = await fetch(`${API}/pecas/bulk-detran-cartela`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ itens }),
+      });
+      const data = await resp.json();
+      if (!data.ok) throw new Error(data.error || 'Erro ao salvar');
+
+      const erros = data.erros || 0;
+      if (erros > 0) alert(`Salvo com ${erros} erro(s). ${data.total - erros} atualizado(s).`);
+      else alert(`✓ ${data.total} peça(s) atualizadas com sucesso!`);
+
+      onSaved();
+      onClose();
+    } catch (e: any) {
+      alert(`Erro ao salvar: ${e.message}`);
+    }
+    setSaving(false);
+  }
+
+  const preenchidas = posicoes.filter(p => p.skuId).length;
+  const comStatus = posicoes.filter(p => p.status).length;
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.5)', zIndex: 400, display: 'flex', alignItems: 'stretch', justifyContent: 'flex-end' }}>
+      <div style={{ background: 'var(--white)', width: '100%', maxWidth: 900, display: 'flex', flexDirection: 'column', boxShadow: '-8px 0 32px rgba(0,0,0,.12)', overflow: 'hidden' }}>
+
+        {/* Header */}
+        <div style={{ padding: '18px 22px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexShrink: 0 }}>
+          <div>
+            <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--gray-800)' }}>Cartela de Etiquetas Detran</div>
+            <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>{motoLabel} · {preenchidas} de 34 posições vinculadas · {comStatus} com status</div>
+          </div>
+          <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', fontSize: 16, flexShrink: 0 }}>×</button>
+        </div>
+
+        {/* Cartela ID */}
+        <div style={{ padding: '14px 22px', borderBottom: '1px solid var(--border)', background: '#f8fafc', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ flex: 1, maxWidth: 380 }}>
+              <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 6, display: 'block' }}>
+                ID da Cartela (prefixo)
+              </label>
+              <input
+                style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 11px', fontSize: 13, fontFamily: 'Geist Mono, monospace', outline: 'none', letterSpacing: '.04em' }}
+                value={cartelaId}
+                onChange={e => handleCartelaChange(e.target.value)}
+                placeholder="Ex: SP22102017701"
+              />
+            </div>
+            {cartelaId && (
+              <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 18 }}>
+                Ex: <span style={{ fontFamily: 'Geist Mono, monospace', color: 'var(--gray-800)', fontWeight: 600 }}>{cartelaId}001</span> até <span style={{ fontFamily: 'Geist Mono, monospace', color: 'var(--gray-800)', fontWeight: 600 }}>{cartelaId}034</span>
+              </div>
+            )}
+            {loadingExistentes && <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 18 }}>Carregando dados existentes...</div>}
+          </div>
+        </div>
+
+        {/* Tabela das 34 posições */}
+        <div style={{ flex: 1, overflowY: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead style={{ position: 'sticky', top: 0, background: 'var(--gray-50)', zIndex: 10 }}>
+              <tr>
+                <th style={{ padding: '8px 10px', textAlign: 'center', width: 40, fontSize: 11, color: 'var(--gray-500)', borderBottom: '1px solid var(--border)', fontWeight: 600 }}>#</th>
+                <th style={{ padding: '8px 10px', textAlign: 'left', fontSize: 11, color: 'var(--gray-500)', borderBottom: '1px solid var(--border)', fontWeight: 600 }}>TIPO DE PEÇA</th>
+                <th style={{ padding: '8px 10px', textAlign: 'left', fontSize: 11, color: 'var(--gray-500)', borderBottom: '1px solid var(--border)', fontWeight: 600 }}>ETIQUETA</th>
+                <th style={{ padding: '8px 10px', textAlign: 'left', fontSize: 11, color: 'var(--gray-500)', borderBottom: '1px solid var(--border)', fontWeight: 600 }}>STATUS</th>
+                <th style={{ padding: '8px 10px', textAlign: 'left', fontSize: 11, color: 'var(--gray-500)', borderBottom: '1px solid var(--border)', fontWeight: 600 }}>SKU VINCULADO</th>
+                <th style={{ padding: '8px 4px', width: 60, borderBottom: '1px solid var(--border)' }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {DETRAN_TIPOS.map((tipo, idx) => {
+                const pos = posicoes[idx];
+                const etiqueta = gerarEtiqueta(idx + 1);
+                const statusCor = pos.status ? STATUS_COLORS[pos.status] : null;
+                const isOpen = buscaAberta === idx;
+
+                return (
+                  <tr key={idx} style={{ borderBottom: '1px solid var(--gray-100)', background: pos.skuId ? '#fafffe' : 'var(--white)' }}>
+                    {/* Posição */}
+                    <td style={{ padding: '8px 10px', textAlign: 'center', fontFamily: 'Geist Mono, monospace', fontSize: 12, color: 'var(--gray-400)', fontWeight: 600 }}>
+                      {String(idx + 1).padStart(2, '0')}
+                    </td>
+
+                    {/* Tipo */}
+                    <td style={{ padding: '8px 10px', fontWeight: 500, color: 'var(--gray-800)', whiteSpace: 'nowrap' }}>
+                      {tipo}
+                    </td>
+
+                    {/* Etiqueta gerada */}
+                    <td style={{ padding: '8px 10px', fontFamily: 'Geist Mono, monospace', fontSize: 11, color: etiqueta ? 'var(--gray-600)' : 'var(--gray-300)' }}>
+                      {etiqueta || '—'}
+                    </td>
+
+                    {/* Status */}
+                    <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        {STATUS_OPTS.slice(1).map(opt => (
+                          <button key={opt} onClick={() => setStatus(idx, pos.status === opt ? '' : opt as any)}
+                            style={{
+                              padding: '3px 8px', borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                              border: `1px solid ${pos.status === opt ? STATUS_COLORS[opt].border : 'var(--border)'}`,
+                              background: pos.status === opt ? STATUS_COLORS[opt].bg : 'var(--white)',
+                              color: pos.status === opt ? STATUS_COLORS[opt].color : 'var(--gray-500)',
+                            }}>
+                            {opt}
+                          </button>
+                        ))}
+                      </div>
+                    </td>
+
+                    {/* SKU */}
+                    <td style={{ padding: '6px 8px', minWidth: 200 }}>
+                      {isOpen ? (
+                        <div style={{ position: 'relative' }}>
+                          <input
+                            ref={searchRef}
+                            autoFocus
+                            style={{ width: '100%', border: '1px solid var(--blue-500)', borderRadius: 6, padding: '5px 9px', fontSize: 12, outline: 'none' }}
+                            placeholder="Buscar por descrição..."
+                            value={buscaTexto}
+                            onChange={e => setBuscaTexto(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Escape') setBuscaAberta(null); }}
+                          />
+                          {/* Dropdown resultados */}
+                          <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,.12)', zIndex: 50, maxHeight: 220, overflowY: 'auto' }}>
+                            {buscandoPecas ? (
+                              <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--gray-400)' }}>Buscando...</div>
+                            ) : buscaResultados.length === 0 ? (
+                              <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--gray-400)' }}>Nenhuma peça encontrada</div>
+                            ) : buscaResultados.map((peca: any) => (
+                              <div key={peca.id} onClick={() => selecionarSku(idx, peca)}
+                                style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid var(--gray-100)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}
+                                onMouseEnter={e => (e.currentTarget.style.background = '#f0f9ff')}
+                                onMouseLeave={e => (e.currentTarget.style.background = 'var(--white)')}>
+                                <div>
+                                  <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11, fontWeight: 600, color: 'var(--blue-500)' }}>{peca.idPeca}</div>
+                                  <div style={{ fontSize: 11, color: 'var(--gray-600)', marginTop: 1 }}>{peca.descricao}</div>
+                                </div>
+                                <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 6px', borderRadius: 4, background: peca.disponivel ? '#f0fdf4' : '#fef2f2', color: peca.disponivel ? '#16a34a' : '#dc2626', flexShrink: 0 }}>
+                                  {peca.disponivel ? 'Estoque' : 'Vendida'}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : pos.skuId ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }} onClick={() => abrirBusca(idx)}>
+                          <div style={{ cursor: 'pointer' }}>
+                            <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11, fontWeight: 600, color: 'var(--blue-500)' }}>{pos.skuId}</div>
+                            <div style={{ fontSize: 11, color: 'var(--gray-500)', marginTop: 1, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pos.skuDescricao}</div>
+                          </div>
+                          <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: pos.skuDisponivel ? '#f0fdf4' : '#fef2f2', color: pos.skuDisponivel ? '#16a34a' : '#dc2626', flexShrink: 0 }}>
+                            {pos.skuDisponivel ? 'Est.' : 'Vend.'}
+                          </span>
+                        </div>
+                      ) : (
+                        <button onClick={() => abrirBusca(idx)}
+                          style={{ background: 'none', border: '1px dashed var(--border)', borderRadius: 6, padding: '4px 10px', fontSize: 11, color: 'var(--gray-400)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                          🔍 Vincular SKU
+                        </button>
+                      )}
+                    </td>
+
+                    {/* Limpar */}
+                    <td style={{ padding: '6px 4px', textAlign: 'center' }}>
+                      {(pos.skuId || pos.status) && (
+                        <button onClick={() => limparPosicao(idx)}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--gray-300)', fontSize: 14, padding: 4 }}
+                          title="Limpar posição">
+                          ×
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding: '14px 22px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, background: 'var(--white)' }}>
+          <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>
+            {preenchidas} SKU(s) vinculados · {comStatus} com status definido
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={onClose}
+              style={{ padding: '8px 18px', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', border: '1px solid var(--border)', background: 'var(--white)', color: 'var(--gray-600)', fontFamily: 'Inter, sans-serif' }}>
+              Cancelar
+            </button>
+            <button onClick={salvar} disabled={saving || !preenchidas}
+              style={{ padding: '8px 22px', borderRadius: 7, fontSize: 13, fontWeight: 600, cursor: saving || !preenchidas ? 'not-allowed' : 'pointer', border: 'none', background: '#1d4ed8', color: '#fff', fontFamily: 'Inter, sans-serif', opacity: saving || !preenchidas ? 0.6 : 1 }}>
+              {saving ? 'Salvando...' : `Salvar ${preenchidas} peça(s)`}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

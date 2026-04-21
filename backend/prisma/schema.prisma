@@ -37,6 +37,7 @@ model Peca {
   descricao   String
   localizacao String?
   detranEtiqueta String?
+  detranStatus   String?  // 'Inexistente' | 'Sucata' | 'Reutilizavel'
   mercadoLivreItemId String?
   mercadoLivreLink String?
   detranBaixada  Boolean  @default(false)
