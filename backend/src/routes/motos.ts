@@ -85,56 +85,109 @@ function normalizeDetranEtiqueta(value: unknown) {
 // GET /motos
 motosRouter.get('/', async (req, res, next) => {
   try {
-    const motos = await prisma.moto.findMany({
-      include: {
-        pecas: {
-          select: {
-            id: true,
-            disponivel: true,
-            emPrejuizo: true,
-            precoML: true,
-            valorLiq: true,
-            detranEtiqueta: true,
-            detranBaixada: true,
-          }
-        }
-      },
-      orderBy: { id: 'asc' }
-    });
+    const [motos, totalRelacionadasRows, disponiveisRows, vendidasRows, detranRows] = await Promise.all([
+      prisma.moto.findMany({
+        orderBy: { id: 'asc' }
+      }),
+      prisma.peca.groupBy({
+        by: ['motoId'],
+        _count: { _all: true },
+      }),
+      prisma.peca.groupBy({
+        by: ['motoId'],
+        where: {
+          disponivel: true,
+          emPrejuizo: false,
+        },
+        _count: { _all: true },
+        _sum: {
+          precoML: true,
+          valorLiq: true,
+        },
+      }),
+      prisma.peca.groupBy({
+        by: ['motoId'],
+        where: {
+          disponivel: false,
+          emPrejuizo: false,
+        },
+        _count: { _all: true },
+        _sum: {
+          precoML: true,
+          valorLiq: true,
+        },
+      }),
+      prisma.peca.findMany({
+        where: {
+          detranEtiqueta: { not: null },
+        },
+        select: {
+          motoId: true,
+          detranEtiqueta: true,
+          detranBaixada: true,
+        },
+      }),
+    ]);
+
+    const totalRelacionadasByMoto = new Map<number, number>();
+    for (const row of totalRelacionadasRows) {
+      totalRelacionadasByMoto.set(row.motoId, row._count._all);
+    }
+
+    const disponiveisByMoto = new Map<number, { qtd: number; precoML: number; valorLiq: number }>();
+    for (const row of disponiveisRows) {
+      disponiveisByMoto.set(row.motoId, {
+        qtd: row._count._all,
+        precoML: Number(row._sum.precoML || 0),
+        valorLiq: Number(row._sum.valorLiq || 0),
+      });
+    }
+
+    const vendidasByMoto = new Map<number, { qtd: number; precoML: number; valorLiq: number }>();
+    for (const row of vendidasRows) {
+      vendidasByMoto.set(row.motoId, {
+        qtd: row._count._all,
+        precoML: Number(row._sum.precoML || 0),
+        valorLiq: Number(row._sum.valorLiq || 0),
+      });
+    }
+
+    const detranByMoto = new Map<number, { total: number; ativas: number; baixadas: number }>();
+    for (const row of detranRows) {
+      const etiquetas = String(row.detranEtiqueta || '').trim();
+      if (!normalizeDetranEtiqueta(etiquetas)) continue;
+
+      const qtdEtiquetas = etiquetas.split('/').map((item) => item.trim()).filter(Boolean).length || 1;
+      const current = detranByMoto.get(row.motoId) || { total: 0, ativas: 0, baixadas: 0 };
+
+      current.total += qtdEtiquetas;
+      if (row.detranBaixada) current.baixadas += qtdEtiquetas;
+      else current.ativas += qtdEtiquetas;
+
+      detranByMoto.set(row.motoId, current);
+    }
 
     const result = motos.map(m => {
-      const disponiveis = m.pecas.filter(p => p.disponivel && !p.emPrejuizo);
-      const vendidas    = m.pecas.filter(p => !p.disponivel && !p.emPrejuizo);
+      const disponiveis = disponiveisByMoto.get(m.id) || { qtd: 0, precoML: 0, valorLiq: 0 };
+      const vendidas = vendidasByMoto.get(m.id) || { qtd: 0, precoML: 0, valorLiq: 0 };
+      const detran = detranByMoto.get(m.id) || { total: 0, ativas: 0, baixadas: 0 };
 
       // Receita = Preço ML das vendidas (valor bruto)
-      const receita = vendidas.reduce((s, p) => s + Number(p.precoML), 0);
+      const receita = vendidas.precoML;
 
       // Valor estoque = Preço ML das disponíveis
-      const valorEst = disponiveis.reduce((s, p) => s + Number(p.precoML), 0);
+      const valorEst = disponiveis.precoML;
 
       // Lucro previsto = igual ao Excel:
       // (Valor Líq. vendidas + Valor Líq. em estoque) - Preço Compra
       // Valor Líquido = já descontado taxa ML + frete
-      const vlVendidas  = vendidas.reduce((s, p) => s + Number(p.valorLiq), 0);
-      const vlEstoque   = disponiveis.reduce((s, p) => s + Number(p.valorLiq), 0);
+      const vlVendidas  = vendidas.valorLiq;
+      const vlEstoque   = disponiveis.valorLiq;
       const lucro       = (vlVendidas + vlEstoque) - Number(m.precoCompra);
       // Detran: conta etiquetas reais (split por '/') e inclui peças em prejuízo
-      const detranPecas = m.pecas.filter((p) => normalizeDetranEtiqueta(p.detranEtiqueta));
-      const detranCount = detranPecas.reduce((total, p) => {
-        const etiq = String(p.detranEtiqueta || '').trim();
-        const qtd = etiq ? etiq.split('/').map(e => e.trim()).filter(Boolean).length : 0;
-        return total + (qtd || 1);
-      }, 0);
-      const detranAtivas = detranPecas.filter((p) => !p.detranBaixada).reduce((total, p) => {
-        const etiq = String(p.detranEtiqueta || '').trim();
-        const qtd = etiq ? etiq.split('/').map(e => e.trim()).filter(Boolean).length : 0;
-        return total + (qtd || 1);
-      }, 0);
-      const detranBaixadas = detranPecas.filter((p) => p.detranBaixada).reduce((total, p) => {
-        const etiq = String(p.detranEtiqueta || '').trim();
-        const qtd = etiq ? etiq.split('/').map(e => e.trim()).filter(Boolean).length : 0;
-        return total + (qtd || 1);
-      }, 0);
+      const detranCount = detran.total;
+      const detranAtivas = detran.ativas;
+      const detranBaixadas = detran.baixadas;
 
       // % recuperada = quanto do investimento já voltou (valor líq. vendidas / preço compra)
       const pctRecuperada = Number(m.precoCompra) > 0
@@ -144,22 +197,21 @@ motosRouter.get('/', async (req, res, next) => {
       return {
         ...m,
         precoCompra:    Number(m.precoCompra),
-        qtdDisp:        disponiveis.length,
-        qtdVendidas:    vendidas.length,
+        qtdDisp:        disponiveis.qtd,
+        qtdVendidas:    vendidas.qtd,
         receitaTotal:   receita,
         valorEstoque:   valorEst,
         vlVendidas,
         vlEstoque,
         lucro,
         pctRecuperada,
-        qtdRelacionadas: m.pecas.length,
+        qtdRelacionadas: totalRelacionadasByMoto.get(m.id) || 0,
         detranCount,
         detranAtivas,
         detranBaixadas,
         temDetran: detranCount > 0,
         anexosCount: countMotoAnexos((m as any).anexos),
         temAnexos: countMotoAnexos((m as any).anexos) > 0,
-        pecas: undefined,
       };
     });
 
