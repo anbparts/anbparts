@@ -31,6 +31,17 @@ function normalizeSearchText(value: unknown) {
     .trim();
 }
 
+function countDetranLabels(value: unknown) {
+  const text = String(value ?? '').trim();
+  if (!text) return 0;
+
+  return text
+    .split('/')
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .length;
+}
+
 async function fileToDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -264,9 +275,14 @@ function DetranModal({ open, moto, loading, data, updatingId, onToggleStatus, on
   if (!open) return null;
 
   const itens = Array.isArray(data?.itens) ? data.itens : [];
-  const total = itens.length;
-  const ativas = itens.filter((item: any) => item.detranStatus !== 'baixada').length;
-  const baixadas = total - ativas;
+  const totalSkus = itens.length;
+  const totalEtiquetas = itens.reduce((sum: number, item: any) => sum + countDetranLabels(item.detranEtiqueta), 0);
+  const etiquetasAtivas = itens
+    .filter((item: any) => item.detranStatus !== 'baixada')
+    .reduce((sum: number, item: any) => sum + countDetranLabels(item.detranEtiqueta), 0);
+  const etiquetasBaixadas = itens
+    .filter((item: any) => item.detranStatus === 'baixada')
+    .reduce((sum: number, item: any) => sum + countDetranLabels(item.detranEtiqueta), 0);
   const modalIsPhone = viewportMode === 'phone';
   const modalIsTabletPortrait = viewportMode === 'tablet-portrait';
   const modalIsTabletLandscape = viewportMode === 'tablet-landscape';
@@ -328,14 +344,17 @@ function DetranModal({ open, moto, loading, data, updatingId, onToggleStatus, on
         </div>
         <div style={{ padding: modalIsPhone ? 14 : 24, overflowY: 'auto', maxHeight: modalIsPhone ? 'calc(100dvh - 76px)' : 'calc(90vh - 78px)' }}>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+            <span style={{ background: 'var(--gray-50)', color: 'var(--ink-soft)', border: '1px solid var(--border)', padding: '5px 10px', borderRadius: 999, fontSize: 12, fontWeight: 700 }}>
+              SKUs: {totalSkus}
+            </span>
             <span style={{ background: '#ecfdf3', color: 'var(--green)', border: '1px solid #86efac', padding: '5px 10px', borderRadius: 999, fontSize: 12, fontWeight: 700 }}>
-              Ativas: {ativas}
+              Etiquetas ativas: {etiquetasAtivas}
             </span>
             <span style={{ background: '#fef2f2', color: 'var(--red)', border: '1px solid #fca5a5', padding: '5px 10px', borderRadius: 999, fontSize: 12, fontWeight: 700 }}>
-              Baixadas: {baixadas}
+              Etiquetas baixadas: {etiquetasBaixadas}
             </span>
             <span style={{ background: 'var(--gray-50)', color: 'var(--ink-soft)', border: '1px solid var(--border)', padding: '5px 10px', borderRadius: 999, fontSize: 12, fontWeight: 700 }}>
-              Total: {total}
+              Total etiquetas: {totalEtiquetas}
             </span>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: useCardList ? '1fr' : 'minmax(0, 1fr) auto', gap: 10, marginBottom: 16, alignItems: 'center' }}>
@@ -366,7 +385,7 @@ function DetranModal({ open, moto, loading, data, updatingId, onToggleStatus, on
               </select>
             ) : (
               <div style={{ fontSize: 12, color: 'var(--ink-muted)', textAlign: 'right' }}>
-                Exibindo {sortedItens.length} de {total}
+                Exibindo {sortedItens.length} SKUs de {totalSkus}
               </div>
             )}
           </div>
