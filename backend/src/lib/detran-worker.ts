@@ -151,6 +151,21 @@ function detectErrorText(text: string) {
   );
 }
 
+function isManageUrl(url: string) {
+  const normalized = normalizeText(url).toLowerCase();
+  return normalized.includes('manage.mas.sp.gov.br') || normalized.includes('/maximo/');
+}
+
+function isManageBody(text: string) {
+  const normalized = normalizeSearchText(text);
+  return (
+    normalized.includes('centro de controle')
+    || normalized.includes('aplicativos favoritos')
+    || normalized.includes('quadro de avisos')
+    || normalized.includes('manage')
+  );
+}
+
 async function ensureDir(dirPath: string) {
   await fs.mkdir(dirPath, { recursive: true });
 }
@@ -529,6 +544,21 @@ async function clickManage(page: Page) {
   await manageLocator.click();
 }
 
+async function waitForManageReady(page: Page, timeoutMs: number) {
+  const startedAt = Date.now();
+
+  while ((Date.now() - startedAt) < timeoutMs) {
+    const url = page.url();
+    const text = await bodyText(page);
+    if (isManageUrl(url) || isManageBody(text)) {
+      return true;
+    }
+    await sleep(750);
+  }
+
+  return false;
+}
+
 async function waitForOtpScreen(page: Page) {
   const otpLocator = await firstVisible(page, [
     () => page.getByText(/Inserir c[oó]digo/i),
@@ -709,16 +739,43 @@ async function performManageSelection(
   });
   await sleep(PAGE_WAIT_AFTER_ACTION_MS);
 
-  if (!page.url().includes('manage.mas.sp.gov.br')) {
-    await clickManage(page);
+  let manageReady = await waitForManageReady(page, 5_000);
+
+  if (!manageReady) {
+    try {
+      await clickManage(page);
+      await sleep(PAGE_WAIT_AFTER_ACTION_MS);
+    } catch {
+      await page.goto(MANAGE_URL, { waitUntil: 'domcontentloaded' });
+      await sleep(PAGE_WAIT_AFTER_ACTION_MS);
+    }
+    manageReady = await waitForManageReady(page, 10_000);
+  }
+
+  if (!manageReady && !isManageUrl(page.url())) {
+    await page.goto(MANAGE_URL, { waitUntil: 'domcontentloaded' });
     await sleep(PAGE_WAIT_AFTER_ACTION_MS);
+    manageReady = await waitForManageReady(page, 12_000);
   }
 
   await maybeCaptureSnapshot(execucao.id, page, config, artifacts, runtime, '03-manage-entry');
+
+  const currentUrl = page.url();
+  const currentTitle = await page.title().catch(() => '');
+  const currentBody = await bodyText(page);
+
+  if (!manageReady && !isManageUrl(currentUrl) && !isManageBody(currentBody)) {
+    throw new Error('O Manage nao abriu de verdade; o portal permaneceu fora da shell do Maximo.');
+  }
+
   await updateEtapa(execucao, 'selecionar_manage', 'success', {
-    message: 'Tela do Manage aberta ou solicitada com sucesso.',
-    url: page.url(),
-    title: await page.title().catch(() => ''),
+    message: 'Tela do Manage aberta com sucesso.',
+    url: currentUrl,
+    title: currentTitle,
+    data: {
+      manageUrl: currentUrl,
+      manageDetected: true,
+    },
     finishedAt: new Date(),
   });
 }
