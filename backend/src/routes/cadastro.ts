@@ -9,6 +9,9 @@ const BLING_DETRAN_CAMPO_ID = 5979929;
 const BLING_MARCA_CAMPO_ID = 2821430;
 const BLING_URL_REF_CAMPO_ID = 3066410;
 const BLING_CATEGORIA_ID = 10703871;
+const BLING_CONDICAO_NAO_ESPECIFICADO = 0;
+const BLING_CONDICAO_NOVO = 1;
+const BLING_CONDICAO_USADO = 2;
 
 function buildCadastroBlingErrorResponse(error: any) {
   const message = String(error?.message || 'Falha ao criar produto no Bling.');
@@ -195,7 +198,7 @@ function buildBlingProdutoPayloadFromCurrent(
     formato: produtoAtual.formato || 'S',
     situacao: produtoAtual.situacao || 'A',
     preco: Number(produtoAtual.preco || 0),
-    condicao: produtoAtual.condicao ?? 0,
+    condicao: produtoAtual.condicao ?? BLING_CONDICAO_NAO_ESPECIFICADO,
     marca: produtoAtual.marca || '',
     pesoLiquido: overrides?.pesoLiquido != null ? Number(overrides.pesoLiquido) : Number(produtoAtual.pesoLiquido || 0),
     pesoBruto: overrides?.pesoLiquido != null ? Number(overrides.pesoLiquido) : Number(produtoAtual.pesoBruto || 0),
@@ -293,7 +296,7 @@ async function buildBlingPayload(cadastro: any, isUpdate: boolean) {
     formato: 'S',
     tipoProducao: 'T',
     situacao,
-    condicao: cadastro.condicao === 'novo' ? 1 : 2, // 1=Novo, 2=Usado (0=Não especificado)
+    condicao: cadastro.condicao === 'novo' ? BLING_CONDICAO_NOVO : BLING_CONDICAO_USADO, // 1=Novo, 2=Usado (0=Não especificado)
     descricaoCurta: (cadastro.descricaoPeca || '').replace(/\r\n/g, '<br>').replace(/\n/g, '<br>'),
     marca: toTitleCase(cadastro.moto?.marca || ''),
     volumes: 1,
@@ -1131,6 +1134,7 @@ cadastroRouter.post('/atualizar-bling-lote', async (req, res, next) => {
         // Campos sempre fixos
         payload.unidade = 'UN';
         payload.tipoProducao = 'T';
+        payload.condicao = BLING_CONDICAO_USADO;
         payload.tributacao = { ...(b.tributacao || {}), ncm: '87141000', cest: '01.076.00' };
 
         // Campos do ANB — só sobrepõe se tiver valor
