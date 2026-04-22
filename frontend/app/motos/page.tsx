@@ -23,6 +23,14 @@ function fmtDateTime(value?: string | null) {
   return date.toLocaleString('pt-BR');
 }
 
+function normalizeSearchText(value: unknown) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
 async function fileToDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -242,15 +250,69 @@ function Modal({ open, title, onClose, onSave, moto, viewportMode = 'desktop' }:
 }
 
 function DetranModal({ open, moto, loading, data, updatingId, onToggleStatus, onClose, viewportMode = 'desktop' }: any) {
+  const [search, setSearch] = useState('');
+  const [sortBy, setSortBy] = useState<'idPeca' | 'descricao' | 'detranEtiqueta' | 'detranStatus'>('idPeca');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+
+  useEffect(() => {
+    if (!open) return;
+    setSearch('');
+    setSortBy('idPeca');
+    setSortDir('asc');
+  }, [open, moto?.id]);
+
   if (!open) return null;
 
-  const total = Array.isArray(data?.itens) ? data.itens.length : 0;
-  const ativas = Array.isArray(data?.itens) ? data.itens.filter((item: any) => item.detranStatus !== 'baixada').length : 0;
+  const itens = Array.isArray(data?.itens) ? data.itens : [];
+  const total = itens.length;
+  const ativas = itens.filter((item: any) => item.detranStatus !== 'baixada').length;
   const baixadas = total - ativas;
   const modalIsPhone = viewportMode === 'phone';
   const modalIsTabletPortrait = viewportMode === 'tablet-portrait';
   const modalIsTabletLandscape = viewportMode === 'tablet-landscape';
   const useCardList = modalIsPhone || modalIsTabletPortrait;
+  const normalizedSearch = normalizeSearchText(search);
+
+  const filteredItens = normalizedSearch
+    ? itens.filter((item: any) => {
+        const haystack = [
+          item.idPeca,
+          item.descricao,
+          item.detranEtiqueta,
+        ].map(normalizeSearchText).join(' ');
+        return haystack.includes(normalizedSearch);
+      })
+    : itens;
+
+  const sortedItens = [...filteredItens].sort((left: any, right: any) => {
+    const direction = sortDir === 'asc' ? 1 : -1;
+
+    if (sortBy === 'detranStatus') {
+      const leftValue = left.detranBaixada ? 1 : 0;
+      const rightValue = right.detranBaixada ? 1 : 0;
+      if (leftValue !== rightValue) return (leftValue - rightValue) * direction;
+      return String(left.idPeca || '').localeCompare(String(right.idPeca || ''), 'pt-BR', { sensitivity: 'base', numeric: true }) * direction;
+    }
+
+    const leftValue = String(left?.[sortBy] || '');
+    const rightValue = String(right?.[sortBy] || '');
+    return leftValue.localeCompare(rightValue, 'pt-BR', { sensitivity: 'base', numeric: true }) * direction;
+  });
+
+  function toggleSort(column: 'idPeca' | 'descricao' | 'detranEtiqueta' | 'detranStatus') {
+    if (sortBy === column) {
+      setSortDir((current) => (current === 'asc' ? 'desc' : 'asc'));
+      return;
+    }
+
+    setSortBy(column);
+    setSortDir('asc');
+  }
+
+  function sortIndicator(column: 'idPeca' | 'descricao' | 'detranEtiqueta' | 'detranStatus') {
+    if (sortBy !== column) return ' ';
+    return sortDir === 'asc' ? '^' : 'v';
+  }
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 220, display: 'flex', alignItems: modalIsPhone ? 'stretch' : 'center', justifyContent: 'center', padding: modalIsPhone ? 0 : modalIsTabletLandscape ? 16 : 24, backdropFilter: 'blur(2px)' }}>
@@ -276,13 +338,47 @@ function DetranModal({ open, moto, loading, data, updatingId, onToggleStatus, on
               Total: {total}
             </span>
           </div>
+          <div style={{ display: 'grid', gridTemplateColumns: useCardList ? '1fr' : 'minmax(0, 1fr) auto', gap: 10, marginBottom: 16, alignItems: 'center' }}>
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Filtrar por ID, descricao ou etiqueta DETRAN..."
+              style={{ ...cs.input, width: '100%' }}
+            />
+            {useCardList ? (
+              <select
+                value={`${sortBy}:${sortDir}`}
+                onChange={(e) => {
+                  const [nextSortBy, nextSortDir] = String(e.target.value).split(':');
+                  setSortBy(nextSortBy as 'idPeca' | 'descricao' | 'detranEtiqueta' | 'detranStatus');
+                  setSortDir(nextSortDir === 'desc' ? 'desc' : 'asc');
+                }}
+                style={{ ...cs.input, width: '100%' }}
+              >
+                <option value="idPeca:asc">ID da peca (A-Z)</option>
+                <option value="idPeca:desc">ID da peca (Z-A)</option>
+                <option value="descricao:asc">Descricao (A-Z)</option>
+                <option value="descricao:desc">Descricao (Z-A)</option>
+                <option value="detranEtiqueta:asc">Etiqueta DETRAN (A-Z)</option>
+                <option value="detranEtiqueta:desc">Etiqueta DETRAN (Z-A)</option>
+                <option value="detranStatus:asc">Status (ativas primeiro)</option>
+                <option value="detranStatus:desc">Status (baixadas primeiro)</option>
+              </select>
+            ) : (
+              <div style={{ fontSize: 12, color: 'var(--ink-muted)', textAlign: 'right' }}>
+                Exibindo {sortedItens.length} de {total}
+              </div>
+            )}
+          </div>
           {loading ? (
             <div style={{ fontSize: 13, color: 'var(--ink-muted)' }}>Carregando etiquetas...</div>
-          ) : !data?.itens?.length ? (
+          ) : !itens.length ? (
             <div style={{ fontSize: 13, color: 'var(--ink-muted)' }}>Nenhuma etiqueta DETRAN encontrada para essa moto.</div>
+          ) : !sortedItens.length ? (
+            <div style={{ fontSize: 13, color: 'var(--ink-muted)' }}>Nenhuma etiqueta encontrada com esse filtro.</div>
           ) : useCardList ? (
             <div style={{ display: 'grid', gap: 12 }}>
-              {data.itens.map((item: any) => (
+              {sortedItens.map((item: any) => (
                 <div key={item.id} style={{ border: '1px solid var(--border)', borderRadius: 14, padding: modalIsPhone ? 14 : 16, background: 'var(--white)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 10 }}>
                     <div>
@@ -339,13 +435,35 @@ function DetranModal({ open, moto, loading, data, updatingId, onToggleStatus, on
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
                   <tr>
-                    {['ID Peca', 'Descricao', 'Numero da etiqueta', 'Status', 'Acao'].map((head) => (
-                      <th key={head} style={cs.th}>{head}</th>
-                    ))}
+                    <th style={cs.th}>
+                      <button type="button" onClick={() => toggleSort('idPeca')} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', padding: 0, cursor: 'pointer', font: 'inherit', color: 'inherit' }}>
+                        <span>ID Peca</span>
+                        <span style={{ fontSize: 11, minWidth: 10 }}>{sortIndicator('idPeca')}</span>
+                      </button>
+                    </th>
+                    <th style={cs.th}>
+                      <button type="button" onClick={() => toggleSort('descricao')} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', padding: 0, cursor: 'pointer', font: 'inherit', color: 'inherit' }}>
+                        <span>Descricao</span>
+                        <span style={{ fontSize: 11, minWidth: 10 }}>{sortIndicator('descricao')}</span>
+                      </button>
+                    </th>
+                    <th style={cs.th}>
+                      <button type="button" onClick={() => toggleSort('detranEtiqueta')} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', padding: 0, cursor: 'pointer', font: 'inherit', color: 'inherit' }}>
+                        <span>Numero da etiqueta</span>
+                        <span style={{ fontSize: 11, minWidth: 10 }}>{sortIndicator('detranEtiqueta')}</span>
+                      </button>
+                    </th>
+                    <th style={cs.th}>
+                      <button type="button" onClick={() => toggleSort('detranStatus')} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', padding: 0, cursor: 'pointer', font: 'inherit', color: 'inherit' }}>
+                        <span>Status</span>
+                        <span style={{ fontSize: 11, minWidth: 10 }}>{sortIndicator('detranStatus')}</span>
+                      </button>
+                    </th>
+                    <th style={cs.th}>Acao</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {data.itens.map((item: any) => (
+                  {sortedItens.map((item: any) => (
                     <tr key={item.id}>
                       <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12.5 }}>{item.idPeca}</td>
                       <td style={cs.td}>{item.descricao}</td>
