@@ -2432,7 +2432,7 @@ export default function EstoquePage() {
     { label: 'Taxas', sort: 'valorTaxas', width: 78, colKey: 'valorTaxas' },
     { label: 'Venda', sort: 'dataVenda', width: 70, colKey: 'dataVenda' },
     { label: 'Pedido', sort: 'blingPedidoNum', width: 72, colKey: 'blingPedidoNum' },
-    { label: 'Et. Detran', sort: null, width: 90, colKey: 'detranEtiqueta' },
+    { label: 'Et. Detran', sort: 'detranEtiqueta', width: 90, colKey: 'detranEtiqueta' },
     { label: 'Detran', sort: null, width: 58, colKey: 'detranStatus' },
     { label: 'Status', sort: 'disponivel', width: 94, colKey: 'status' },
     { label: '', sort: null, width: 42, colKey: 'actions' as any },

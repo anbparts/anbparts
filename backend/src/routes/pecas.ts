@@ -410,6 +410,7 @@ pecasRouter.get('/', async (req, res, next) => {
       valorTaxas: { valorTaxas: normalizedOrderDir },
       dataVenda: { dataVenda: normalizedOrderDir },
       blingPedidoNum: { blingPedidoNum: normalizedOrderDir },
+      detranEtiqueta: { detranEtiqueta: normalizedOrderDir },
       disponivel: { disponivel: normalizedOrderDir },
       moto: [
         { moto: { marca: normalizedOrderDir } },
