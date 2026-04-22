@@ -87,6 +87,23 @@ motosRouter.get('/', async (req, res, next) => {
   try {
     const [motos, totalRelacionadasRows, disponiveisRows, vendidasRows, detranRows] = await Promise.all([
       prisma.moto.findMany({
+        select: {
+          id: true,
+          marca: true,
+          modelo: true,
+          ano: true,
+          cor: true,
+          placa: true,
+          chassi: true,
+          renavam: true,
+          dataCompra: true,
+          precoCompra: true,
+          origemCompra: true,
+          observacoes: true,
+          descricaoModelo: true,
+          etiquetaSkuLabel: true,
+          anexos: true,
+        },
         orderBy: { id: 'asc' }
       }),
       prisma.peca.groupBy({
@@ -171,6 +188,7 @@ motosRouter.get('/', async (req, res, next) => {
       const disponiveis = disponiveisByMoto.get(m.id) || { qtd: 0, precoML: 0, valorLiq: 0 };
       const vendidas = vendidasByMoto.get(m.id) || { qtd: 0, precoML: 0, valorLiq: 0 };
       const detran = detranByMoto.get(m.id) || { total: 0, ativas: 0, baixadas: 0 };
+      const anexosCount = countMotoAnexos((m as any).anexos);
 
       // Receita = Preço ML das vendidas (valor bruto)
       const receita = vendidas.precoML;
@@ -195,8 +213,20 @@ motosRouter.get('/', async (req, res, next) => {
         : 0;
 
       return {
-        ...m,
+        id:             m.id,
+        marca:          m.marca,
+        modelo:         m.modelo,
+        ano:            m.ano,
+        cor:            m.cor,
+        placa:          m.placa,
+        chassi:         m.chassi,
+        renavam:        m.renavam,
+        dataCompra:     m.dataCompra,
         precoCompra:    Number(m.precoCompra),
+        origemCompra:   m.origemCompra,
+        observacoes:    m.observacoes,
+        descricaoModelo: m.descricaoModelo,
+        etiquetaSkuLabel: m.etiquetaSkuLabel,
         qtdDisp:        disponiveis.qtd,
         qtdVendidas:    vendidas.qtd,
         receitaTotal:   receita,
@@ -210,8 +240,8 @@ motosRouter.get('/', async (req, res, next) => {
         detranAtivas,
         detranBaixadas,
         temDetran: detranCount > 0,
-        anexosCount: countMotoAnexos((m as any).anexos),
-        temAnexos: countMotoAnexos((m as any).anexos) > 0,
+        anexosCount,
+        temAnexos: anexosCount > 0,
       };
     });
 
