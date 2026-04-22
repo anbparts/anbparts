@@ -1,5 +1,5 @@
 'use client';
-import { Fragment, useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import EtiquetaCartelaModal from './EtiquetaCartelaModal';
 import { api } from '@/lib/api';
 import { API_BASE } from '@/lib/api-base';
@@ -107,6 +107,70 @@ type CaixaFilterOption = {
   totalPecas: number;
   totalSkus?: number;
 };
+
+const COL_ALL = ['motoId','idPeca','moto','descricao','localizacao','cadastro','precoML','valorLiq','valorFrete','valorTaxas','dataVenda','blingPedidoNum','detranEtiqueta','detranStatus','status'] as const;
+type ColKey = typeof COL_ALL[number];
+const COL_DEFAULT: ColKey[] = ['motoId','idPeca','moto','descricao','cadastro','precoML','valorLiq','valorFrete','valorTaxas','dataVenda','blingPedidoNum','detranStatus','status'];
+const COL_LABELS: Record<ColKey, string> = {
+  motoId: 'ID Moto',
+  idPeca: 'ID Peca',
+  moto: 'Moto',
+  descricao: 'Descricao',
+  localizacao: 'Localizacao',
+  cadastro: 'Cadastro',
+  precoML: 'Preco ML',
+  valorLiq: 'Vl. Liq.',
+  valorFrete: 'Frete',
+  valorTaxas: 'Taxas',
+  dataVenda: 'Venda',
+  blingPedidoNum: 'Pedido',
+  detranEtiqueta: 'Etiqueta Detran',
+  detranStatus: 'Detran',
+  status: 'Status',
+};
+
+function sanitizeStoredColumns(value: unknown): ColKey[] {
+  if (!Array.isArray(value)) return [...COL_DEFAULT];
+
+  const unique = Array.from(new Set(
+    value.filter((item): item is ColKey => COL_ALL.includes(item as ColKey)),
+  ));
+
+  return unique.length ? unique : [...COL_DEFAULT];
+}
+
+function getColumnStorageKey(username?: string | null) {
+  const normalized = String(username || 'default').trim().toLowerCase() || 'default';
+  return `estoque_colunas_v2_${normalized}`;
+}
+
+function readStoredColumns(storageKey: string): ColKey[] {
+  if (typeof window === 'undefined') return [...COL_DEFAULT];
+
+  try {
+    const saved = window.localStorage.getItem(storageKey);
+    if (!saved) return [...COL_DEFAULT];
+    return sanitizeStoredColumns(JSON.parse(saved));
+  } catch {
+    return [...COL_DEFAULT];
+  }
+}
+
+function areColumnsEqual(left: readonly ColKey[], right: readonly ColKey[]) {
+  if (left.length !== right.length) return false;
+  return left.every((value, index) => value === right[index]);
+}
+
+function useDebouncedValue<T>(value: T, delay = 250) {
+  const [debounced, setDebounced] = useState(value);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => setDebounced(value), delay);
+    return () => window.clearTimeout(timeoutId);
+  }, [value, delay]);
+
+  return debounced;
+}
 
 const cs: any = {
   topbar: { height: 'var(--topbar-h)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 28px', background: 'var(--white)', borderBottom: '1px solid var(--border)', position: 'sticky' as const, top: 0, zIndex: 50 },
@@ -866,7 +930,7 @@ function PecaDetalheModal({ open, peca, onClose, onSaved }: any) {
       if (!blingData.ok) console.warn('[sync-bling] Aviso:', blingData.error);
 
       // Atualiza TODAS as variações do mesmo SKU base no ANB
-      const pecasResp = await fetch(`${API}/pecas?search=${encodeURIComponent(baseSku)}&per=50`, { credentials: 'include' });
+      const pecasResp = await fetch(`${API}/pecas?sku=${encodeURIComponent(baseSku)}&per=50`, { credentials: 'include' });
       const pecasData = await pecasResp.json();
       const todasVariacoes: any[] = (pecasData?.data || []).filter((p: any) =>
         p.idPeca === baseSku || p.idPeca.startsWith(`${baseSku}-`)
@@ -1605,12 +1669,14 @@ function VendaModal({ open, peca, onClose, onConfirm }: any) {
 
 export default function EstoquePage() {
   const { user } = useAuth();
+  const colStorageKey = getColumnStorageKey(user?.username);
   const [data, setData] = useState<any>({ total: 0, totalDisp: 0, totalVend: 0, data: [] });
   const [exportando, setExportando] = useState(false);
   const [motos, setMotos] = useState<any[]>([]);
   const [prefixosMoto, setPrefixosMoto] = useState<Array<{ prefixo: string; motoId: number }>>([]);
   const [caixaOptions, setCaixaOptions] = useState<CaixaFilterOption[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingCaixas, setLoadingCaixas] = useState(true);
   const [viewportMode, setViewportMode] = useState<EstoqueViewportMode>('desktop');
   const [modal, setModal] = useState(false);
   const [editPeca, setEditPeca] = useState<any>(null);
@@ -1639,38 +1705,9 @@ export default function EstoquePage() {
   const [colSelectorOpen, setColSelectorOpen] = useState(false);
   const [etiquetaCartelaOpen, setEtiquetaCartelaOpen] = useState(false);
 
-  // Colunas visíveis — salvo no localStorage por usuário
-  const COL_STORAGE_KEY = `estoque_colunas_v1_${user?.username || 'default'}`;
-  const COL_ALL = ['motoId','idPeca','moto','descricao','localizacao','cadastro','precoML','valorLiq','valorFrete','valorTaxas','dataVenda','blingPedidoNum','detranEtiqueta','detranStatus','status'] as const;
-  type ColKey = typeof COL_ALL[number];
-  const COL_DEFAULT: ColKey[] = ['motoId','idPeca','moto','descricao','cadastro','precoML','valorLiq','valorFrete','valorTaxas','dataVenda','blingPedidoNum','detranStatus','status'];
-  const COL_LABELS: Record<ColKey, string> = {
-    motoId: 'ID Moto', idPeca: 'ID Peça', moto: 'Moto', descricao: 'Descrição',
-    localizacao: 'Localização',
-    cadastro: 'Cadastro', precoML: 'Preço ML', valorLiq: 'Vl. Liq.',
-    valorFrete: 'Frete', valorTaxas: 'Taxas', dataVenda: 'Venda',
-    blingPedidoNum: 'Pedido', detranEtiqueta: 'Etiqueta Detran',
-    detranStatus: 'Detran', status: 'Status',
-  };
-
-  const [colsVisiveis, setColsVisiveis] = useState<ColKey[]>(() => {
-    try {
-      const saved = localStorage.getItem(COL_STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved) as ColKey[];
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {}
-    return COL_DEFAULT;
-  });
-
-  function toggleCol(key: ColKey) {
-    setColsVisiveis(prev => {
-      const next = prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key];
-      try { localStorage.setItem(COL_STORAGE_KEY, JSON.stringify(next)); } catch {}
-      return next;
-    });
-  }
+  const pecasRequestIdRef = useRef(0);
+  const [savedColsVisiveis, setSavedColsVisiveis] = useState<ColKey[]>(COL_DEFAULT);
+  const [colsVisiveis, setColsVisiveis] = useState<ColKey[]>(COL_DEFAULT);
   const [filters, setFilters] = useState({
     motoId: '',
     marca: '',
@@ -1679,7 +1716,9 @@ export default function EstoquePage() {
     localizacao: '',
     caixas: [] as string[],
     detranEtiqueta: '',
+    detranEtiquetaTexto: '',
     dimensoes: '',
+    sku: '',
     search: '',
     numeroPeca: '',
     dataVendaFrom: '',
@@ -1689,8 +1728,44 @@ export default function EstoquePage() {
     orderBy: 'cadastro',
     orderDir: 'desc' as 'asc' | 'desc',
   });
+  const debouncedSku = useDebouncedValue(filters.sku);
+  const debouncedSearch = useDebouncedValue(filters.search);
+  const debouncedNumeroPeca = useDebouncedValue(filters.numeroPeca);
+  const debouncedDetranEtiquetaTexto = useDebouncedValue(filters.detranEtiquetaTexto);
+  const layoutDirty = !areColumnsEqual(colsVisiveis, savedColsVisiveis);
 
-  function buildPecaListParams(overrides?: Partial<{ page: number; per: number }>) {
+  useEffect(() => {
+    const storedColumns = readStoredColumns(colStorageKey);
+    setColsVisiveis(storedColumns);
+    setSavedColsVisiveis(storedColumns);
+  }, [colStorageKey]);
+
+  function toggleCol(key: ColKey) {
+    setColsVisiveis((current) => (
+      current.includes(key)
+        ? current.filter((columnKey) => columnKey !== key)
+        : [...current, key]
+    ));
+  }
+
+  function applyColumnPreset(nextColumns: ColKey[]) {
+    setColsVisiveis(sanitizeStoredColumns(nextColumns));
+  }
+
+  function saveColumnLayout() {
+    try {
+      window.localStorage.setItem(colStorageKey, JSON.stringify(colsVisiveis));
+      setSavedColsVisiveis(colsVisiveis);
+    } catch {
+      alert('Nao foi possivel salvar o layout de colunas deste usuario.');
+    }
+  }
+
+  function restoreSavedColumnLayout() {
+    setColsVisiveis(savedColsVisiveis);
+  }
+
+  const buildPecaListParams = useCallback((overrides?: Partial<{ page: number; per: number }>) => {
     const params: any = {
       page: overrides?.page ?? filters.page,
       per: overrides?.per ?? filters.perPage,
@@ -1704,37 +1779,92 @@ export default function EstoquePage() {
     if (filters.localizacao !== '') params.localizacao = filters.localizacao;
     if (filters.caixas.length) params.caixas = filters.caixas;
     if (filters.detranEtiqueta !== '') params.detranEtiqueta = filters.detranEtiqueta;
+    if (debouncedDetranEtiquetaTexto) params.detranEtiquetaTexto = debouncedDetranEtiquetaTexto;
     if (filters.dimensoes !== '') params.dimensoes = filters.dimensoes;
-    if (filters.search) params.search = filters.search;
-    if (filters.numeroPeca) params.numeroPeca = filters.numeroPeca;
+    if (debouncedSku) params.sku = debouncedSku;
+    if (debouncedSearch) params.search = debouncedSearch;
+    if (debouncedNumeroPeca) params.numeroPeca = debouncedNumeroPeca;
     if (filters.dataVendaFrom) params.dataVendaFrom = filters.dataVendaFrom;
     if (filters.dataVendaTo) params.dataVendaTo = filters.dataVendaTo;
 
     return params;
-  }
+  }, [
+    filters.page,
+    filters.perPage,
+    filters.orderBy,
+    filters.orderDir,
+    filters.motoId,
+    filters.marca,
+    filters.disponivel,
+    filters.mercadoLivreLink,
+    filters.localizacao,
+    filters.caixas,
+    filters.detranEtiqueta,
+    filters.dimensoes,
+    filters.dataVendaFrom,
+    filters.dataVendaTo,
+    debouncedSku,
+    debouncedSearch,
+    debouncedNumeroPeca,
+    debouncedDetranEtiquetaTexto,
+  ]);
+
+  const loadPecas = useCallback(async () => {
+    const requestId = ++pecasRequestIdRef.current;
+    setLoading(true);
+
+    try {
+      const response = await api.pecas.list(buildPecaListParams());
+      if (requestId !== pecasRequestIdRef.current) return;
+      setData(response);
+    } finally {
+      if (requestId === pecasRequestIdRef.current) {
+        setLoading(false);
+      }
+    }
+  }, [buildPecaListParams]);
+
+  const loadCaixas = useCallback(async () => {
+    setLoadingCaixas(true);
+    try {
+      const caixasData = await api.pecas.caixas();
+      setCaixaOptions(Array.isArray(caixasData?.data) ? caixasData.data : []);
+    } finally {
+      setLoadingCaixas(false);
+    }
+  }, []);
+
+  const loadBaseData = useCallback(async () => {
+    const [motosData, prefixosData] = await Promise.all([
+      api.motos.list(),
+      fetch('/api/bling/prefixos', { credentials: 'include' })
+        .then(async (response) => {
+          if (!response.ok) return [];
+          return response.json();
+        })
+        .catch(() => []),
+    ]);
+
+    setMotos(Array.isArray(motosData) ? motosData : []);
+    if (Array.isArray(prefixosData)) {
+      setPrefixosMoto(prefixosData.map((item: any) => ({
+        prefixo: String(item?.prefixo || ''),
+        motoId: Number(item?.motoId),
+      })));
+    }
+  }, []);
 
   const load = useCallback(async () => {
-    setLoading(true);
-    const params = buildPecaListParams();
-
-    const [d, m, caixasData] = await Promise.all([api.pecas.list(params), api.motos.list(), api.pecas.caixas()]);
-    setData(d);
-    setMotos(m);
-    // Carregar prefixos SKU apenas uma vez se ainda não carregados
-    if (!prefixosMoto.length) {
-      try {
-        const prefRes = await fetch('/api/bling/prefixos', { credentials: 'include' });
-        const prefData = await prefRes.json();
-        if (Array.isArray(prefData)) setPrefixosMoto(prefData.map((p: any) => ({ prefixo: String(p.prefixo || ''), motoId: Number(p.motoId) })));
-      } catch { /* ignora */ }
-    }
-    setCaixaOptions(Array.isArray(caixasData?.data) ? caixasData.data : []);
-    setLoading(false);
-  }, [filters]);
+    await Promise.all([loadPecas(), loadCaixas()]);
+  }, [loadPecas, loadCaixas]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    void loadPecas();
+  }, [loadPecas]);
+
+  useEffect(() => {
+    void Promise.all([loadBaseData(), loadCaixas()]);
+  }, [loadBaseData, loadCaixas]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -1836,7 +1966,7 @@ export default function EstoquePage() {
         // Se o preço mudou, replica para todas as variações em estoque (disponivel=true) no ANB
         if (precoMudou) {
           try {
-            const pecasResp = await fetch(`${API}/pecas?search=${encodeURIComponent(baseSku)}&per=50`, { credentials: 'include' });
+            const pecasResp = await fetch(`${API}/pecas?sku=${encodeURIComponent(baseSku)}&per=50`, { credentials: 'include' });
             const pecasData = await pecasResp.json();
             const todasVariacoes: any[] = (pecasData?.data || []).filter((p: any) =>
               p.id !== editPeca.id &&
@@ -2013,7 +2143,24 @@ export default function EstoquePage() {
   function clearFilters() {
     setCaixaFilterSearch('');
     setCaixaFilterOpen(false);
-    setFilters({ ...filters, motoId: '', marca: '', disponivel: '', mercadoLivreLink: '', localizacao: '', caixas: [], detranEtiqueta: '', dimensoes: '', search: '', numeroPeca: '', dataVendaFrom: '', dataVendaTo: '', page: 1 });
+    setFilters({
+      ...filters,
+      motoId: '',
+      marca: '',
+      disponivel: '',
+      mercadoLivreLink: '',
+      localizacao: '',
+      caixas: [],
+      detranEtiqueta: '',
+      detranEtiquetaTexto: '',
+      dimensoes: '',
+      sku: '',
+      search: '',
+      numeroPeca: '',
+      dataVendaFrom: '',
+      dataVendaTo: '',
+      page: 1,
+    });
   }
 
   function clearSelection() {
@@ -2030,7 +2177,22 @@ export default function EstoquePage() {
     setCopySkuDetran('');
   }
 
-  const hasActiveFilters = Boolean(filters.motoId || filters.marca || filters.disponivel !== '' || filters.mercadoLivreLink !== '' || filters.localizacao !== '' || filters.caixas.length || filters.detranEtiqueta !== '' || filters.dimensoes !== '' || filters.search || filters.numeroPeca || filters.dataVendaFrom || filters.dataVendaTo);
+  const hasActiveFilters = Boolean(
+    filters.motoId ||
+    filters.marca ||
+    filters.disponivel !== '' ||
+    filters.mercadoLivreLink !== '' ||
+    filters.localizacao !== '' ||
+    filters.caixas.length ||
+    filters.detranEtiqueta !== '' ||
+    filters.detranEtiquetaTexto ||
+    filters.dimensoes !== '' ||
+    filters.sku ||
+    filters.search ||
+    filters.numeroPeca ||
+    filters.dataVendaFrom ||
+    filters.dataVendaTo
+  );
   async function exportarExcel() {
     setExportando(true);
     try {
@@ -2120,18 +2282,8 @@ export default function EstoquePage() {
       .map((m: any) => String(m?.marca || '').trim())
       .filter(Boolean),
   )).sort((a, b) => a.localeCompare(b, 'pt-BR', { sensitivity: 'base' }));
-  const displayedPecas = filters.caixas.length
-    ? (data.data || [])
-        .map((peca: any, index: number) => ({ peca, index }))
-        .sort((a: any, b: any) => {
-          const caixaA = displayCaixaLabel(a.peca?.localizacao);
-          const caixaB = displayCaixaLabel(b.peca?.localizacao);
-          const compareCaixa = caixaA.localeCompare(caixaB, 'pt-BR', { numeric: true, sensitivity: 'base' });
-          if (compareCaixa !== 0) return compareCaixa;
-          return a.index - b.index;
-        })
-        .map((entry: any) => entry.peca)
-    : (data.data || []);
+  const shouldGroupByCaixa = filters.caixas.length > 0 && filters.orderBy === 'localizacao';
+  const displayedPecas = data.data || [];
   const selectedPecas = selectedPecaIds
     .map((id) => selectedPecasById[id] || displayedPecas.find((peca: any) => peca.id === id))
     .filter((peca: any) => Boolean(peca) && !isPrejuizoPeca(peca));
@@ -2334,16 +2486,30 @@ export default function EstoquePage() {
         {/* Seletor de colunas */}
         {colSelectorOpen && (
           <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 18px', marginBottom: 16 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-800)' }}>Colunas visíveis</div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={() => { const all = COL_ALL.filter(k => k !== 'detranEtiqueta' && k !== 'localizacao') as ColKey[]; setColsVisiveis(all); try { localStorage.setItem(COL_STORAGE_KEY, JSON.stringify(all)); } catch {} }}
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button onClick={() => applyColumnPreset(COL_ALL.filter((key) => key !== 'detranEtiqueta' && key !== 'localizacao') as ColKey[])}
                   style={{ fontSize: 11, color: 'var(--blue-500)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px' }}>
                   Selecionar todas
                 </button>
-                <button onClick={() => { const min: ColKey[] = ['idPeca','moto','descricao','status']; setColsVisiveis(min); try { localStorage.setItem(COL_STORAGE_KEY, JSON.stringify(min)); } catch {} }}
+                <button onClick={() => applyColumnPreset(['idPeca', 'moto', 'descricao', 'status'])}
                   style={{ fontSize: 11, color: 'var(--gray-400)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px' }}>
                   Mínimo
+                </button>
+                <button
+                  onClick={restoreSavedColumnLayout}
+                  disabled={!layoutDirty}
+                  style={{ ...cs.btn, padding: '5px 10px', fontSize: 12, background: 'var(--white)', color: layoutDirty ? 'var(--ink-soft)' : 'var(--ink-muted)', borderColor: 'var(--border)', opacity: layoutDirty ? 1 : 0.65 }}
+                >
+                  Reverter
+                </button>
+                <button
+                  onClick={saveColumnLayout}
+                  disabled={!layoutDirty}
+                  style={{ ...cs.btn, padding: '5px 10px', fontSize: 12, background: layoutDirty ? 'var(--blue-500)' : 'var(--gray-100)', color: layoutDirty ? '#fff' : 'var(--ink-muted)', borderColor: layoutDirty ? 'var(--blue-500)' : 'var(--border)', opacity: layoutDirty ? 1 : 0.7 }}
+                >
+                  Salvar layout
                 </button>
               </div>
             </div>
@@ -2401,7 +2567,7 @@ export default function EstoquePage() {
               <div style={{ gridColumn: caixaFilterGridColumn }}>
                 <CaixaMultiSelectFilter
                   open={caixaFilterOpen}
-                  loading={loading && caixaOptions.length === 0}
+                  loading={loadingCaixas}
                   options={caixaOptions}
                   selected={filters.caixas}
                   search={caixaFilterSearch}
@@ -2427,8 +2593,20 @@ export default function EstoquePage() {
                 <option value="sem">Sem dimensoes</option>
               </select>
               <input
+                style={{ ...cs.sel, width: '100%', paddingLeft: 11, fontFamily: 'Geist Mono, monospace' }}
+                placeholder="SKU..."
+                value={filters.sku}
+                onChange={(e) => setFilters({ ...filters, sku: e.target.value.toUpperCase(), page: 1 })}
+              />
+              <input
+                style={{ ...cs.sel, width: '100%', paddingLeft: 11, fontFamily: 'Geist Mono, monospace' }}
+                placeholder="Etiqueta Detran..."
+                value={filters.detranEtiquetaTexto}
+                onChange={(e) => setFilters({ ...filters, detranEtiquetaTexto: e.target.value.toUpperCase(), page: 1 })}
+              />
+              <input
                 style={{ ...cs.sel, width: '100%', paddingLeft: 11, gridColumn: isPhone ? 'span 1' : 'span 2' }}
-                placeholder="ID, descricao ou pedido..."
+                placeholder="Descricao ou pedido..."
                 value={filters.search}
                 onChange={(e) => setFilters({ ...filters, search: e.target.value, page: 1 })}
               />
@@ -2573,7 +2751,7 @@ export default function EstoquePage() {
                 const bloqueadaPrejuizo = isPrejuizoPeca(p);
                 const caixaAtual = displayCaixaLabel(p.localizacao);
                 const caixaAnterior = index > 0 ? displayCaixaLabel(displayedPecas[index - 1]?.localizacao) : null;
-                const showCaixaSeparator = filters.caixas.length > 0 && caixaAtual !== caixaAnterior;
+                const showCaixaSeparator = shouldGroupByCaixa && caixaAtual !== caixaAnterior;
 
                 return (
                   <Fragment key={p.id}>
@@ -2720,19 +2898,19 @@ export default function EstoquePage() {
                 </thead>
                 <tbody>
                   {loading ? (
-                    <tr><td colSpan={15} style={{ ...cs.td, textAlign: 'center', color: 'var(--ink-muted)', borderBottom: 'none' }}>Carregando...</td></tr>
+                    <tr><td colSpan={tableHeaders.length} style={{ ...cs.td, textAlign: 'center', color: 'var(--ink-muted)', borderBottom: 'none' }}>Carregando...</td></tr>
                   ) : displayedPecas.length === 0 ? (
-                    <tr><td colSpan={15} style={{ ...cs.td, textAlign: 'center', color: 'var(--ink-muted)', padding: '40px 20px', borderBottom: 'none' }}>Nenhuma peca encontrada</td></tr>
+                    <tr><td colSpan={tableHeaders.length} style={{ ...cs.td, textAlign: 'center', color: 'var(--ink-muted)', padding: '40px 20px', borderBottom: 'none' }}>Nenhuma peca encontrada</td></tr>
                   ) : displayedPecas.map((p: any, index: number) => {
                     const caixaAtual = displayCaixaLabel(p.localizacao);
                     const caixaAnterior = index > 0 ? displayCaixaLabel(displayedPecas[index - 1]?.localizacao) : null;
-                    const showCaixaSeparator = filters.caixas.length > 0 && caixaAtual !== caixaAnterior;
+                    const showCaixaSeparator = shouldGroupByCaixa && caixaAtual !== caixaAnterior;
 
                     return (
                       <Fragment key={p.id}>
                         {showCaixaSeparator ? (
                           <tr>
-                            <td colSpan={15} style={{ padding: '10px 12px', borderBottom: '1px solid rgba(37,99,235,.16)', background: '#f8fbff' }}>
+                            <td colSpan={tableHeaders.length} style={{ padding: '10px 12px', borderBottom: '1px solid rgba(37,99,235,.16)', background: '#f8fbff' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                                 <span style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--blue-500)' }}>
                                   Caixa {caixaAtual}
@@ -2752,12 +2930,12 @@ export default function EstoquePage() {
                               style={{ width: 14, height: 14, cursor: isPrejuizoPeca(p) ? 'not-allowed' : 'pointer' }}
                             />
                           </td>
-                          <td style={{ ...cs.td, padding: denseTablePadding }}><span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11.5, color: 'var(--ink-muted)' }}>#{p.motoId}</span></td>
-                          <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11.5, whiteSpace: 'nowrap' }}>
+                          {colsVisiveis.includes('motoId') && <td style={{ ...cs.td, padding: denseTablePadding }}><span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11.5, color: 'var(--ink-muted)' }}>#{p.motoId}</span></td>}
+                          {colsVisiveis.includes('idPeca') && <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11.5, whiteSpace: 'nowrap' }}>
                             <button onClick={() => setDetalhePeca(p)} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'Geist Mono, monospace', fontSize: 11.5, fontWeight: 600, color: isPrejuizoPeca(p) ? '#b91c1c' : 'var(--blue-500)' }} title="Ver detalhes da peça">
                               {p.idPeca}
                             </button>
-                          </td>
+                          </td>}
                           {colsVisiveis.includes('moto') && <td style={{ ...cs.td, padding: denseTablePadding, color: 'var(--ink-muted)', fontSize: 11.5, lineHeight: 1.35 }}>
                             <div style={{ display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden' }}>
                               {[p.moto?.marca, p.moto?.modelo].filter(Boolean).join(' ')}
@@ -2832,7 +3010,7 @@ export default function EstoquePage() {
       <PecaModal open={modal} onClose={() => { setModal(false); setEditPeca(null); }} onSave={handleSavePeca} onCancelSale={handleCancelSale} onMarkPrejuizo={handleMarkPrejuizo} peca={editPeca} motos={motos} viewportMode={viewportMode} />
       <ImpressaoCaixaModal
         open={impressaoCaixaOpen}
-        loading={loading && caixaOptions.length === 0}
+        loading={loadingCaixas}
         printing={imprimindoCaixas}
         options={caixaOptions}
         selected={caixasSelecionadasImpressao}

@@ -266,11 +266,13 @@ pecasRouter.get('/', async (req, res, next) => {
       mercadoLivreLink,
       localizacao,
       caixas,
+      sku,
       search,
       numeroPeca,
       dataVendaFrom,
       dataVendaTo,
       detranEtiqueta,
+      detranEtiquetaTexto,
       dimensoes,
       page = '1',
       per = '20',
@@ -278,6 +280,8 @@ pecasRouter.get('/', async (req, res, next) => {
       orderDir = 'desc',
     } = req.query as any;
     const searchText = String(search || '').trim();
+    const skuText = normalizeIdPeca(String(sku || ''));
+    const detranEtiquetaText = String(detranEtiquetaTexto || '').trim().toUpperCase();
     const where: any = searchText ? {} : { emPrejuizo: false };
     const andConditions: any[] = [];
     if (motoId) where.motoId = Number(motoId);
@@ -347,6 +351,10 @@ pecasRouter.get('/', async (req, res, next) => {
     if (detranEtiqueta === 'sem') {
       andConditions.push({ OR: [{ detranEtiqueta: null }, { detranEtiqueta: '' }] });
     }
+    if (detranEtiquetaText) {
+      andConditions.push({ detranEtiqueta: { startsWith: detranEtiquetaText } });
+      delete where.emPrejuizo;
+    }
     // Filtro dimensoes (largura, altura e profundidade todas preenchidas e > 0)
     if (dimensoes === 'com') {
       andConditions.push({ largura: { not: null, gt: 0 } });
@@ -361,6 +369,9 @@ pecasRouter.get('/', async (req, res, next) => {
           { profundidade: null }, { profundidade: 0 },
         ],
       });
+    }
+    if (skuText) {
+      andConditions.push({ idPeca: { startsWith: skuText } });
     }
     if (searchText) {
       andConditions.push({
@@ -391,6 +402,7 @@ pecasRouter.get('/', async (req, res, next) => {
       motoId: { motoId: normalizedOrderDir },
       idPeca: { idPeca: normalizedOrderDir },
       descricao: { descricao: normalizedOrderDir },
+      localizacao: { localizacao: normalizedOrderDir },
       cadastro: { cadastro: normalizedOrderDir },
       precoML: { precoML: normalizedOrderDir },
       valorLiq: { valorLiq: normalizedOrderDir },

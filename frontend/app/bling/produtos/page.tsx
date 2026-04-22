@@ -573,7 +573,7 @@ export default function BlingProdutosPage() {
           // 2. Atualiza no ANB (SKU base + todas variações -2, -3...)
           if (sku) {
             const baseSku = sku.replace(/-\d+$/, '');
-            const pecaResp = await fetch(`${API}/pecas?search=${encodeURIComponent(baseSku)}&per=50`, { credentials: 'include' });
+            const pecaResp = await fetch(`${API}/pecas?sku=${encodeURIComponent(baseSku)}&per=50`, { credentials: 'include' });
             const pecaData = await pecaResp.json();
             const pecas: any[] = (pecaData?.data || []).filter((p: any) =>
               p.idPeca === baseSku || p.idPeca.startsWith(`${baseSku}-`)
