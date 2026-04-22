@@ -25,8 +25,8 @@ export default function DetranExecucoesPage() {
   useEffect(() => {
     let active = true;
 
-    async function load() {
-      setLoading(true);
+    async function load(isBackground = false) {
+      if (!isBackground) setLoading(true);
       setError('');
       try {
         const response = await api.detran.execucoes({
@@ -44,9 +44,14 @@ export default function DetranExecucoesPage() {
       }
     }
 
-    load();
+    void load();
+    const timer = window.setInterval(() => {
+      void load(true);
+    }, 8000);
+
     return () => {
       active = false;
+      window.clearInterval(timer);
     };
   }, [status, search]);
 

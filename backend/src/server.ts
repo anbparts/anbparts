@@ -16,6 +16,7 @@ import { nuvemshopRouter } from './routes/nuvemshop';
 import { cadastroRouter } from './routes/cadastro';
 import { etiquetasRouter } from './routes/etiquetas';
 import { detranRouter } from './routes/detran';
+import { startDetranExecutionWorker } from './lib/detran-worker';
 import { authMiddleware } from './middlewares/auth';
 import { errorMiddleware } from './middlewares/error';
 
@@ -77,5 +78,6 @@ app.listen(port, () => {
   startBlingAuditoriaScheduler();
   startFinanceiroSchedulers();
   startMercadoLivreScheduler();
+  startDetranExecutionWorker();
   console.log(`ANB Backend rodando na porta ${port}`);
 });

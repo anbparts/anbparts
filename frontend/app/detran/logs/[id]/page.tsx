@@ -34,19 +34,20 @@ export default function DetranLogDetailPage() {
   useEffect(() => {
     let active = true;
 
-    async function load() {
+    async function load(isBackground = false) {
       if (!Number.isInteger(id) || id <= 0) {
         setError('Log invalido.');
         setLoading(false);
         return;
       }
 
-      setLoading(true);
+      if (!isBackground) setLoading(true);
       setError('');
       try {
         const response = await api.detran.execucao(id);
         if (!active) return;
-        setItem(response.execucao || null);
+        const execucao = response.execucao || null;
+        setItem(execucao);
       } catch (err: any) {
         if (!active) return;
         setError(err.message || 'Nao foi possivel carregar o log tecnico.');
@@ -55,9 +56,14 @@ export default function DetranLogDetailPage() {
       }
     }
 
-    load();
+    void load();
+    const timer = window.setInterval(() => {
+      void load(true);
+    }, 5000);
+
     return () => {
       active = false;
+      window.clearInterval(timer);
     };
   }, [id]);
 

@@ -1,7 +1,7 @@
 [build]
 builder = "NIXPACKS"
-buildCommand = "npm install && npx prisma generate && npm run build"
+buildCommand = "PLAYWRIGHT_BROWSERS_PATH=0 npm install && PLAYWRIGHT_BROWSERS_PATH=0 npx playwright install --with-deps chromium && npx prisma generate && npm run build"
 
 [deploy]
-startCommand = "npx prisma migrate deploy && npm run start"
+startCommand = "PLAYWRIGHT_BROWSERS_PATH=0 npx prisma migrate deploy && npm run start"
 restartPolicyType = "ON_FAILURE"
