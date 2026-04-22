@@ -1034,3 +1034,148 @@ cadastroRouter.put('/motos/:motoId/descricao-modelo', async (req, res, next) => 
     res.json({ ok: true });
   } catch (e) { next(e); }
 });
+
+// POST /cadastro/atualizar-bling-lote
+// Atualiza o Bling com todos os dados do ANB para uma lista de SKUs
+// Body: { skus: string[] }
+cadastroRouter.post('/atualizar-bling-lote', async (req, res, next) => {
+  try {
+    const { skus } = req.body || {};
+    if (!Array.isArray(skus) || !skus.length) {
+      return res.status(400).json({ error: 'skus obrigatorio' });
+    }
+
+    const resultados: any[] = [];
+
+    for (const skuRaw of skus) {
+      const baseSku = getBaseSku(skuRaw);
+      if (!baseSku) continue;
+
+      try {
+        // 1. Busca todas as variações do SKU base no ANB
+        const pecas = await prisma.peca.findMany({
+          where: {
+            OR: [
+              { idPeca: { equals: baseSku, mode: 'insensitive' } },
+              { idPeca: { startsWith: `${baseSku}-` } },
+            ],
+          },
+          select: {
+            idPeca: true,
+            descricao: true,
+            precoML: true,
+            valorFrete: true,
+            valorTaxas: true,
+            pesoLiquido: true,
+            pesoBruto: true,
+            largura: true,
+            altura: true,
+            profundidade: true,
+            localizacao: true,
+            detranEtiqueta: true,
+            numeroPeca: true,
+            blingProdutoId: true,
+          },
+        });
+
+        if (!pecas.length) {
+          resultados.push({ sku: baseSku, ok: false, error: 'SKU não encontrado no ANB' });
+          continue;
+        }
+
+        // Usa a primeira variação como referência para campos compartilhados
+        const peca = pecas[0];
+
+        // Concatena etiquetas detran de todas as variações
+        const detranConcat = pecas
+          .map(p => (p.detranEtiqueta || '').trim())
+          .filter(Boolean)
+          .join(' / ') || null;
+
+        // Numeropeca da primeira variação com valor
+        const numeroPecaVal = pecas.find(p => p.numeroPeca)?.numeroPeca || null;
+
+        // 2. Busca blingProdutoId
+        let blingProdutoId: string | null = peca.blingProdutoId || null;
+        if (!blingProdutoId) {
+          const cadastro = await prisma.cadastroPeca.findFirst({
+            where: { idPeca: { equals: baseSku, mode: 'insensitive' } },
+            select: { blingProdutoId: true },
+          });
+          if (cadastro?.blingProdutoId) blingProdutoId = cadastro.blingProdutoId;
+        }
+        if (!blingProdutoId) {
+          // Tenta buscar direto no Bling
+          try {
+            const blingSearch = await blingReq(`/produtos?criterio=2&tipo=P&codigo=${encodeURIComponent(baseSku)}&pagina=1&limite=5`);
+            const found = (blingSearch?.data || []).find((p: any) => String(p.codigo || '').toUpperCase() === baseSku);
+            if (found) blingProdutoId = String(found.id);
+          } catch {}
+        }
+
+        if (!blingProdutoId) {
+          resultados.push({ sku: baseSku, ok: false, error: 'Produto não encontrado no Bling' });
+          continue;
+        }
+
+        // 3. GET produto completo do Bling para não perder nada
+        const blingAtual = await blingReq(`/produtos/${blingProdutoId}`);
+        const b = blingAtual?.data;
+        if (!b) {
+          resultados.push({ sku: baseSku, ok: false, error: 'Produto não retornado pelo Bling' });
+          continue;
+        }
+
+        // 4. Monta payload com todos os dados do ANB
+        const BLING_READONLY = ['id', 'dataCriacao', 'dataAlteracao', 'imagemURL', 'imagens', 'depositos', 'variacoes', 'estrutura', 'categorias', 'anexos'];
+        const payload: any = { ...b };
+        for (const f of BLING_READONLY) delete payload[f];
+
+        // Campos sempre fixos
+        payload.unidade = 'UN';
+        payload.tipoProducao = 'T';
+        payload.tributacao = { ...(b.tributacao || {}), ncm: '87141000', cest: '01.076.00' };
+
+        // Campos do ANB — só sobrepõe se tiver valor
+        payload.nome = peca.descricao || b.nome;
+        payload.preco = Number(peca.precoML || b.preco || 0);
+        payload.pesoLiquido = peca.pesoLiquido != null ? Number(peca.pesoLiquido) : Number(b.pesoLiquido || 0);
+        payload.pesoBruto = peca.pesoBruto != null ? Number(peca.pesoBruto) : Number(b.pesoBruto || 0);
+        payload.dimensoes = {
+          largura: peca.largura != null ? Number(peca.largura) : Number(b.dimensoes?.largura || 0),
+          altura: peca.altura != null ? Number(peca.altura) : Number(b.dimensoes?.altura || 0),
+          profundidade: peca.profundidade != null ? Number(peca.profundidade) : Number(b.dimensoes?.profundidade || 0),
+          unidadeMedida: b.dimensoes?.unidadeMedida || 2,
+        };
+        payload.estoque = {
+          ...(b.estoque || {}),
+          localizacao: peca.localizacao || b.estoque?.localizacao || '',
+        };
+
+        // Campos customizados — merge preservando existentes
+        const ccExistentes: any[] = Array.isArray(b.camposCustomizados) ? b.camposCustomizados : [];
+        const ccMap = new Map(ccExistentes.map((c: any) => [Number(c.idCampoCustomizado), c.valor]));
+        if (detranConcat !== null) ccMap.set(5979929, detranConcat);
+        if (numeroPecaVal !== null) ccMap.set(2821431, numeroPecaVal);
+        payload.camposCustomizados = Array.from(ccMap.entries()).map(([id, valor]) => ({ idCampoCustomizado: id, valor }));
+
+        // 5. PUT no Bling
+        await blingReq(`/produtos/${blingProdutoId}`, {
+          method: 'PUT',
+          body: JSON.stringify(payload),
+        });
+
+        resultados.push({ sku: baseSku, ok: true, blingProdutoId });
+      } catch (e: any) {
+        resultados.push({ sku: baseSku, ok: false, error: e?.message });
+      }
+
+      // Pausa entre SKUs para não exceder rate limit do Bling
+      await new Promise(r => setTimeout(r, 300));
+    }
+
+    const ok = resultados.filter(r => r.ok).length;
+    const erros = resultados.filter(r => !r.ok).length;
+    res.json({ ok: true, total: resultados.length, atualizados: ok, erros, resultados });
+  } catch (e) { next(e); }
+});

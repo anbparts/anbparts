@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { API_BASE } from '@/lib/api-base';
 import { api } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
 
 const API = API_BASE;
 
@@ -225,8 +226,14 @@ function toCsvNumber(value: any) {
 }
 
 export default function BlingProdutosPage() {
+  const { user } = useAuth();
+  const isBruno = String(user?.username || '').trim().toLowerCase() === 'bruno';
   const [motos, setMotos] = useState<any[]>([]);
   const [connected, setConnected] = useState<boolean | null>(null);
+  const [modalAtualizarBling, setModalAtualizarBling] = useState(false);
+  const [atualizarSkusInput, setAtualizarSkusInput] = useState('');
+  const [atualizandoBling, setAtualizandoBling] = useState(false);
+  const [resultadoAtualizar, setResultadoAtualizar] = useState<any>(null);
   const [buscando, setBuscando] = useState(false);
   const [itens, setItens] = useState<Item[]>([]);
   const [buscou, setBuscou] = useState(false);
@@ -807,6 +814,20 @@ export default function BlingProdutosPage() {
             <strong>Atualizar Link ML:</strong> Atualização do link ML para o SKU no Sistema ANB<br />
             <strong>Atualizar Localização:</strong> Atualização em massa da Localização do Sistema ANB e Bling dos SKU's informados
           </div>
+          {isBruno && (
+            <div style={{ marginBottom: 16, padding: '14px 16px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#1d4ed8', marginBottom: 4 }}>🔄 Atualizar Bling</div>
+              <div style={{ fontSize: 12, color: '#3b82f6', marginBottom: 10 }}>
+                Atualiza todos os dados do ANB no Bling: nome, preço, dimensões, peso, localização, etiqueta Detran e número da peça.
+              </div>
+              <button
+                onClick={() => { setModalAtualizarBling(true); setAtualizarSkusInput(''); setResultadoAtualizar(null); }}
+                style={{ ...s.btn, background: '#1d4ed8', color: '#fff' }}
+              >
+                🔄 Atualizar Bling
+              </button>
+            </div>
+          )}
           <div style={{ background: '#f8fafc', border: '1px solid #dbe3ef', borderRadius: 10, padding: '14px 16px', marginBottom: 14 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
               <div>
@@ -1394,6 +1415,74 @@ export default function BlingProdutosPage() {
               <button onClick={atualizarLocalizacao} disabled={atualizandoLoc || !locPara.trim()}
                 style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', border: '1px solid transparent', background: '#7c3aed', color: '#fff', opacity: (atualizandoLoc || !locPara.trim()) ? 0.7 : 1, fontFamily: 'Inter, sans-serif' }}>
                 {atualizandoLoc ? 'Atualizando...' : '✓ Atualizar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Atualizar Bling */}
+      {modalAtualizarBling && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.5)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }}>
+          <div style={{ background: 'var(--white)', borderRadius: 14, width: '100%', maxWidth: 600, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 12px 40px rgba(0,0,0,.15)', overflow: 'hidden' }}>
+            <div style={{ padding: '18px 22px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 700 }}>🔄 Atualizar Bling</div>
+                <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>Atualiza todos os dados do ANB no Bling para os SKUs informados</div>
+              </div>
+              <button onClick={() => setModalAtualizarBling(false)} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', fontSize: 16 }}>×</button>
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', padding: '16px 22px' }}>
+              <div style={{ fontSize: 12, color: 'var(--gray-500)', marginBottom: 8, fontWeight: 600 }}>SKUs (um por linha)</div>
+              <textarea
+                style={{ width: '100%', minHeight: 180, border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', fontSize: 12, fontFamily: 'Geist Mono, monospace', outline: 'none', resize: 'vertical', boxSizing: 'border-box' }}
+                placeholder={'BM02_0007\nBM02_0144\nHD01_0153'}
+                value={atualizarSkusInput}
+                onChange={e => setAtualizarSkusInput(e.target.value)}
+                disabled={atualizandoBling}
+              />
+              <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 6 }}>
+                Campos atualizados: nome, preço ML, peso, dimensões, localização, etiqueta Detran, número da peça · unidade=UN · NCM=87141000
+              </div>
+
+              {resultadoAtualizar && (
+                <div style={{ marginTop: 14, padding: '12px 14px', background: resultadoAtualizar.erros > 0 ? '#fff7ed' : '#f0fdf4', border: `1px solid ${resultadoAtualizar.erros > 0 ? '#fed7aa' : '#86efac'}`, borderRadius: 8 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: resultadoAtualizar.erros > 0 ? '#c2410c' : '#16a34a', marginBottom: 8 }}>
+                    ✓ {resultadoAtualizar.atualizados} atualizado(s) · {resultadoAtualizar.erros} erro(s)
+                  </div>
+                  {resultadoAtualizar.resultados?.filter((r: any) => !r.ok).map((r: any) => (
+                    <div key={r.sku} style={{ fontSize: 11, color: '#dc2626', fontFamily: 'Geist Mono, monospace' }}>✗ {r.sku}: {r.error}</div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div style={{ padding: '14px 22px', borderTop: '1px solid var(--border)', display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={() => setModalAtualizarBling(false)} style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)' }}>Fechar</button>
+              <button
+                disabled={atualizandoBling || !atualizarSkusInput.trim()}
+                onClick={async () => {
+                  const skus = atualizarSkusInput.split('\n').map(s => s.trim()).filter(Boolean);
+                  if (!skus.length) return;
+                  setAtualizandoBling(true);
+                  setResultadoAtualizar(null);
+                  try {
+                    const resp = await fetch(`${API}/cadastro/atualizar-bling-lote`, {
+                      method: 'POST', credentials: 'include',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ skus }),
+                    });
+                    const data = await resp.json();
+                    setResultadoAtualizar(data);
+                  } catch (e: any) {
+                    alert(`Erro: ${e.message}`);
+                  }
+                  setAtualizandoBling(false);
+                }}
+                style={{ ...s.btn, background: '#1d4ed8', color: '#fff', opacity: atualizandoBling || !atualizarSkusInput.trim() ? 0.6 : 1 }}
+              >
+                {atualizandoBling ? `⏳ Atualizando...` : `🔄 Atualizar ${atualizarSkusInput.split('\n').filter(s => s.trim()).length || ''} SKU(s)`}
               </button>
             </div>
           </div>
