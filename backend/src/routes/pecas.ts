@@ -431,6 +431,9 @@ pecasRouter.get('/', async (req, res, next) => {
     const normalizedOrderBy = String(orderBy || 'cadastro');
     const prismaOrderBy = orderByMap[normalizedOrderBy] || orderByMap.cadastro;
 
+    const etiquetasWhere: any = { ...where };
+    delete etiquetasWhere.emPrejuizo;
+
     const [total, pecas, totalDisp, totalVend, etiquetas] = await Promise.all([
       prisma.peca.count({ where }),
       prisma.peca.findMany({
@@ -443,7 +446,7 @@ pecasRouter.get('/', async (req, res, next) => {
       prisma.peca.count({ where: { ...where, disponivel: true } }),
       prisma.peca.count({ where: { ...where, disponivel: false, dataVenda: { not: null } } }),
       prisma.peca.findMany({
-        where,
+        where: etiquetasWhere,
         select: {
           detranEtiqueta: true,
         },
