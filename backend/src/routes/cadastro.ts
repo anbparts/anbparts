@@ -1071,10 +1071,9 @@ cadastroRouter.post('/atualizar-bling-lote', async (req, res, next) => {
             largura: true,
             altura: true,
             profundidade: true,
-            localizacao: true,
-            detranEtiqueta: true,
-            numeroPeca: true,
-            blingProdutoId: true,
+           localizacao: true,
+           detranEtiqueta: true,
+           numeroPeca: true,
           },
         });
 
@@ -1096,14 +1095,12 @@ cadastroRouter.post('/atualizar-bling-lote', async (req, res, next) => {
         const numeroPecaVal = pecas.find(p => p.numeroPeca)?.numeroPeca || null;
 
         // 2. Busca blingProdutoId
-        let blingProdutoId: string | null = peca.blingProdutoId || null;
-        if (!blingProdutoId) {
-          const cadastro = await prisma.cadastroPeca.findFirst({
-            where: { idPeca: { equals: baseSku, mode: 'insensitive' } },
-            select: { blingProdutoId: true },
-          });
-          if (cadastro?.blingProdutoId) blingProdutoId = cadastro.blingProdutoId;
-        }
+        let blingProdutoId: string | null = null;
+        const cadastro = await prisma.cadastroPeca.findFirst({
+          where: { idPeca: { equals: baseSku, mode: 'insensitive' } },
+          select: { blingProdutoId: true },
+        });
+        if (cadastro?.blingProdutoId) blingProdutoId = cadastro.blingProdutoId;
         if (!blingProdutoId) {
           // Tenta buscar direto no Bling
           try {
