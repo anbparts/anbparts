@@ -151,6 +151,11 @@ function detectErrorText(text: string) {
   );
 }
 
+function isAuthUrl(url: string) {
+  const normalized = normalizeText(url).toLowerCase();
+  return normalized.includes('auth.mas.sp.gov.br/login');
+}
+
 function isManageUrl(url: string) {
   const normalized = normalizeText(url).toLowerCase();
   return normalized.includes('manage.mas.sp.gov.br') || normalized.includes('/maximo/');
@@ -710,9 +715,40 @@ async function performLogin(
     await sleep(PAGE_WAIT_AFTER_ACTION_MS);
   }
 
+  let retriedLogin = false;
+  if ((!cpfField || !passwordField) && isAuthUrl(page.url())) {
+    await sleep(4_000);
+
+    const cpfFieldRetry = await firstVisible(page, [
+      () => page.getByLabel(/cpf|usuario|usu[aÃ¡]rio/i),
+      () => page.getByPlaceholder(/cpf|usuario|usu[aÃ¡]rio/i),
+      () => page.locator('input[type="text"]'),
+    ]);
+
+    const passwordFieldRetry = await firstVisible(page, [
+      () => page.getByLabel(/senha/i),
+      () => page.getByPlaceholder(/senha/i),
+      () => page.locator('input[type="password"]'),
+    ]);
+
+    if (cpfFieldRetry && passwordFieldRetry) {
+      retriedLogin = true;
+      await cpfFieldRetry.fill(normalizeText(config.sisdevCpf));
+      await passwordFieldRetry.fill(normalizeText(config.sisdevPassword));
+      await maybeCaptureSnapshot(execucao.id, page, config, artifacts, runtime, '01-auth-form-retry');
+      await clickByText(page, /entrar|login|avancar|continuar/i);
+      await sleep(PAGE_WAIT_AFTER_ACTION_MS);
+    } else {
+      await maybeCaptureSnapshot(execucao.id, page, config, artifacts, runtime, '01-auth-no-form');
+      throw new Error('A tela de autenticacao ficou no auth MAS sem mostrar o formulario de login.');
+    }
+  }
+
   await maybeCaptureSnapshot(execucao.id, page, config, artifacts, runtime, '02-auth-after-login');
   await updateEtapa(execucao, 'login_auth_mas', 'success', {
     message: cpfField && passwordField
+      ? 'Credenciais enviadas para o auth MAS.'
+      : retriedLogin
       ? 'Credenciais enviadas para o auth MAS.'
       : 'Sessao reaproveitada; formulario de login nao apareceu.',
     url: page.url(),
