@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import { isDetranAllowedUser, type DetranAuthUser } from '@/lib/detran-access';
 
 type NavItem = {
   href: string;
@@ -11,6 +12,7 @@ type NavItem = {
 
 type NavGroup = {
   section: string;
+  requiresBruno?: boolean;
   items: NavItem[];
 };
 
@@ -62,6 +64,17 @@ export const NAV: NavGroup[] = [
     ],
   },
   {
+    section: 'Detran',
+    requiresBruno: true,
+    items: [
+      { href: '/detran', icon: 'shield', label: 'Painel Detran' },
+      { href: '/detran/peca-avulsa', icon: 'tag', label: 'Peca Avulsa (POC)' },
+      { href: '/detran/execucoes', icon: 'playbook', label: 'Execucoes' },
+      { href: '/detran/logs', icon: 'terminal', label: 'Logs' },
+      { href: '/detran/configuracoes', icon: 'key-round', label: 'Config. Detran' },
+    ],
+  },
+  {
     section: 'Configuracoes',
     items: [
       { href: '/bling', icon: 'plug', label: 'Conf. Conexao Bling' },
@@ -79,10 +92,11 @@ function isNavActive(path: string, href: string) {
   return path === href || path.startsWith(`${href}/`);
 }
 
-function getActiveHref(path: string) {
+function getActiveHref(path: string, authUser?: DetranAuthUser) {
   let bestMatch = '/';
 
   for (const group of NAV) {
+    if (group.requiresBruno && !isDetranAllowedUser(authUser)) continue;
     for (const item of group.items) {
       if (!isNavActive(path, item.href)) continue;
       if (item.href.length > bestMatch.length) {
@@ -94,10 +108,11 @@ function getActiveHref(path: string) {
   return bestMatch;
 }
 
-export function getNavLabel(path: string) {
-  const activeHref = getActiveHref(path);
+export function getNavLabel(path: string, authUser?: DetranAuthUser) {
+  const activeHref = getActiveHref(path, authUser);
 
   for (const group of NAV) {
+    if (group.requiresBruno && !isDetranAllowedUser(authUser)) continue;
     for (const item of group.items) {
       if (item.href === activeHref) {
         return item.label;
@@ -148,6 +163,11 @@ function SidebarIcon({ name, active, size = 16 }: { name: string; active: boolea
     cloud: <svg {...common}><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10Z" /></svg>,
     settings: <svg {...common}><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.54V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.54 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.54-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.54-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06A2 2 0 1 1 7.06 3.4l.06.06a1.7 1.7 0 0 0 1.87.34H9a1.7 1.7 0 0 0 1-1.54V2a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.54h.01a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V8c0 .68.4 1.3 1.03 1.58.16.07.33.1.51.1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1.32Z" /></svg>,
     sparkles: <svg {...common}><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z" /><path d="M5 3v4" /><path d="M3 5h4" /><path d="M19 17v4" /><path d="M17 19h4" /></svg>,
+    shield: <svg {...common}><path d="M12 3 5 6v6c0 5 3.4 8.5 7 9 3.6-.5 7-4 7-9V6l-7-3Z" /><path d="m9.5 12 1.8 1.8L15 10" /></svg>,
+    tag: <svg {...common}><path d="M20 10 12 18 4 10V4h6l10 10Z" /><path d="M7 7h.01" /></svg>,
+    playbook: <svg {...common}><path d="M5 4h10a3 3 0 0 1 3 3v13H8a3 3 0 0 0-3 3V4Z" /><path d="M8 8h7" /><path d="M8 12h7" /><path d="M8 16h4" /></svg>,
+    terminal: <svg {...common}><path d="m4 17 6-5-6-5" /><path d="M12 19h8" /></svg>,
+    'key-round': <svg {...common}><circle cx="8" cy="15" r="4" /><path d="M12 15h8" /><path d="M16 11v8" /></svg>,
   };
 
   return icons[name] || <span style={{ width: 16, height: 16 }} />;
@@ -180,6 +200,7 @@ function ControlIcon({ name }: { name: 'menu' | 'close' | 'collapse' | 'expand' 
 type SidebarProps = {
   onLogout?: () => void;
   user?: string;
+  authUser?: DetranAuthUser;
   mode?: SidebarMode;
   open?: boolean;
   onClose?: () => void;
@@ -189,6 +210,7 @@ type SidebarProps = {
 export function Sidebar({
   onLogout,
   user,
+  authUser,
   mode = 'desktop',
   open = true,
   onClose,
@@ -196,7 +218,8 @@ export function Sidebar({
 }: SidebarProps) {
   const path = usePathname();
   const router = useRouter();
-  const activeHref = getActiveHref(path);
+  const activeHref = getActiveHref(path, authUser);
+  const visibleNav = NAV.filter((group) => !group.requiresBruno || isDetranAllowedUser(authUser));
   const isDrawer = mode === 'phone' || mode === 'tablet-portrait';
   const isTabletLandscape = mode === 'tablet-landscape';
   const isDesktop = mode === 'desktop';
@@ -370,7 +393,7 @@ export function Sidebar({
             overscrollBehavior: 'contain',
           }}
         >
-          {NAV.map((group, groupIndex) => (
+          {visibleNav.map((group, groupIndex) => (
             <div key={group.section}>
               {expanded ? (
                 <div

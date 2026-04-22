@@ -145,6 +145,23 @@ export const api = {
     get: () => req<any>('/empresa'),
     save: (data: any) => req<any>('/empresa', { method: 'POST', body: JSON.stringify(data) }),
   },
+  detran: {
+    dashboard: () => req<any>('/detran/dashboard'),
+    getConfig: () => req<any>('/detran/config'),
+    saveConfig: (data: any) => req<any>('/detran/config', { method: 'POST', body: JSON.stringify(data) }),
+    execucoes: (params?: Record<string, any>) => req<any>(`/detran/execucoes${buildQueryString(params)}`),
+    execucao: (id: number) => req<any>(`/detran/execucoes/${id}`),
+    createExecucao: (data: any) => req<any>('/detran/execucoes', { method: 'POST', body: JSON.stringify(data) }),
+    updateEtapa: (id: number, step: string, data: any) => req<any>(`/detran/execucoes/${id}/etapas/${encodeURIComponent(step)}`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+    finalizarExecucao: (id: number, data: any) => req<any>(`/detran/execucoes/${id}/finalizar`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+    deleteExecucao: (id: number) => req<any>(`/detran/execucoes/${id}`, { method: 'DELETE' }),
+  },
   mercadoLivre: {
     getConfig: () => req<any>('/mercado-livre/config'),
     saveConfig: (data: any) => req<any>('/mercado-livre/config', { method: 'POST', body: JSON.stringify(data) }),

@@ -174,13 +174,14 @@ export function AuthWrapper({ children }: { children: React.ReactNode }) {
     ? (sidebarOpen ? DESKTOP_SIDEBAR_WIDTH : TABLET_RAIL_WIDTH)
     : 0;
   const headerVisible = !isDesktop;
-  const currentLabel = getNavLabel(pathname || '/');
+  const currentLabel = getNavLabel(pathname || '/', user);
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--gray-50)' }}>
       <Sidebar
         onLogout={() => { void logout(); }}
         user={user?.displayName || user?.username || ''}
+        authUser={user}
         mode={sidebarMode}
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
