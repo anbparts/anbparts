@@ -77,6 +77,17 @@ function normalizeIdPeca(value: string) {
   return String(value || '').trim().toUpperCase();
 }
 
+function countDetranEtiquetas(value: unknown) {
+  const text = String(value || '').trim();
+  if (!text) return 0;
+
+  return text
+    .split('/')
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .length;
+}
+
 function extractSequenceForPrefix(idPeca: string, prefixo: string) {
   const normalizedId = normalizeIdPeca(idPeca);
   const normalizedPrefix = normalizeIdPeca(prefixo);
@@ -352,7 +363,7 @@ pecasRouter.get('/', async (req, res, next) => {
       andConditions.push({ OR: [{ detranEtiqueta: null }, { detranEtiqueta: '' }] });
     }
     if (detranEtiquetaText) {
-      andConditions.push({ detranEtiqueta: { startsWith: detranEtiquetaText } });
+      andConditions.push({ detranEtiqueta: { contains: detranEtiquetaText } });
       delete where.emPrejuizo;
     }
     // Filtro dimensoes (largura, altura e profundidade todas preenchidas e > 0)
@@ -420,7 +431,7 @@ pecasRouter.get('/', async (req, res, next) => {
     const normalizedOrderBy = String(orderBy || 'cadastro');
     const prismaOrderBy = orderByMap[normalizedOrderBy] || orderByMap.cadastro;
 
-    const [total, pecas, totalDisp, totalVend] = await Promise.all([
+    const [total, pecas, totalDisp, totalVend, etiquetas] = await Promise.all([
       prisma.peca.count({ where }),
       prisma.peca.findMany({
         where,
@@ -431,9 +442,17 @@ pecasRouter.get('/', async (req, res, next) => {
       }),
       prisma.peca.count({ where: { ...where, disponivel: true } }),
       prisma.peca.count({ where: { ...where, disponivel: false, dataVenda: { not: null } } }),
+      prisma.peca.findMany({
+        where,
+        select: {
+          detranEtiqueta: true,
+        },
+      }),
     ]);
 
-    res.json({ total, totalDisp, totalVend, page: Number(page), per: Number(per), data: pecas });
+    const totalEtiquetas = etiquetas.reduce((sum, item) => sum + countDetranEtiquetas(item.detranEtiqueta), 0);
+
+    res.json({ total, totalDisp, totalVend, totalEtiquetas, page: Number(page), per: Number(per), data: pecas });
   } catch (e) { next(e); }
 });
 

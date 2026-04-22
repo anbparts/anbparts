@@ -1670,7 +1670,7 @@ function VendaModal({ open, peca, onClose, onConfirm }: any) {
 export default function EstoquePage() {
   const { user } = useAuth();
   const colStorageKey = getColumnStorageKey(user?.username);
-  const [data, setData] = useState<any>({ total: 0, totalDisp: 0, totalVend: 0, data: [] });
+  const [data, setData] = useState<any>({ total: 0, totalDisp: 0, totalVend: 0, totalEtiquetas: 0, data: [] });
   const [exportando, setExportando] = useState(false);
   const [motos, setMotos] = useState<any[]>([]);
   const [prefixosMoto, setPrefixosMoto] = useState<Array<{ prefixo: string; motoId: number }>>([]);
@@ -2268,7 +2268,11 @@ export default function EstoquePage() {
     ? 'repeat(4, minmax(0, 1fr))'
     : 'repeat(6, minmax(0, 1fr))';
   const caixaFilterGridColumn = isPhone ? 'span 1' : 'span 2';
-  const summaryGridColumns = isPhone ? 'repeat(2, minmax(0, 1fr))' : 'repeat(3, minmax(0, 1fr))';
+  const summaryGridColumns = isPhone
+    ? 'repeat(2, minmax(0, 1fr))'
+    : isTabletPortrait
+    ? 'repeat(2, minmax(0, 1fr))'
+    : 'repeat(4, minmax(0, 1fr))';
   const denseTablePadding = isTabletLandscape ? '9px 8px' : '10px 10px';
   const denseTableHeaderPadding = isTabletLandscape ? '9px 8px' : '10px 10px';
   const tableMinWidth = isTabletLandscape ? 1240 : undefined;
@@ -2276,6 +2280,7 @@ export default function EstoquePage() {
     { l: 'Total', v: data.total, c: 'var(--ink)' },
     { l: 'Em estoque', v: data.totalDisp, c: 'var(--sage)' },
     { l: 'Vendidas', v: data.totalVend, c: 'var(--amber)' },
+    { l: 'Total etiquetas', v: data.totalEtiquetas, c: 'var(--blue-500)' },
   ];
   const marcaOptions = Array.from(new Set(
     motos
