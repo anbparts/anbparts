@@ -553,6 +553,34 @@ async function clickFirstVisible(page: Page, candidates: Array<() => Locator>) {
 }
 
 async function clickManage(page: Page) {
+  const manageCard = await firstVisible(page, [
+    () => page.locator('div,section,article').filter({ has: page.getByText(/^Manage$/i) }),
+    () => page.getByText(/^Manage$/i).locator('xpath=ancestor::*[self::div or self::section or self::article][1]'),
+  ]);
+
+  if (manageCard) {
+    try {
+      await manageCard.hover();
+      await sleep(800);
+    } catch {
+      // noop
+    }
+
+    const manageStartLocator = await firstVisible(page, [
+      () => manageCard.getByRole('button', { name: /iniciar/i }),
+      () => manageCard.getByRole('link', { name: /iniciar/i }),
+      () => manageCard.getByText(/iniciar/i),
+      () => page.getByRole('button', { name: /iniciar/i }),
+      () => page.getByRole('link', { name: /iniciar/i }),
+      () => page.getByText(/iniciar/i),
+    ]);
+
+    if (manageStartLocator) {
+      await manageStartLocator.click();
+      return;
+    }
+  }
+
   const manageLocator = await firstVisible(page, [
     () => page.getByRole('link', { name: /manage/i }),
     () => page.getByRole('button', { name: /manage/i }),
