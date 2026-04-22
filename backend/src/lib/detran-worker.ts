@@ -171,6 +171,16 @@ function isManageBody(text: string) {
   );
 }
 
+function isOtpBody(text: string) {
+  const normalized = normalizeSearchText(text);
+  return (
+    normalized.includes('inserir codigo')
+    || normalized.includes('codigo de verificacao')
+    || normalized.includes('enviamos uma mensagem para o seu e-mail')
+    || normalized.includes('reenviar codigo')
+  );
+}
+
 async function ensureDir(dirPath: string) {
   await fs.mkdir(dirPath, { recursive: true });
 }
@@ -534,6 +544,14 @@ async function clickByText(page: Page, label: RegExp) {
   await locator.click();
 }
 
+async function clickFirstVisible(page: Page, candidates: Array<() => Locator>) {
+  const locator = await firstVisible(page, candidates);
+  if (!locator) {
+    throw new Error('Acao solicitada nao foi encontrada na tela.');
+  }
+  await locator.click();
+}
+
 async function clickManage(page: Page) {
   const manageLocator = await firstVisible(page, [
     () => page.getByRole('link', { name: /manage/i }),
@@ -549,13 +567,42 @@ async function clickManage(page: Page) {
   await manageLocator.click();
 }
 
+async function submitAuthLogin(page: Page, passwordField: Locator) {
+  try {
+    await clickFirstVisible(page, [
+      () => page.locator('button[type="submit"]'),
+      () => page.getByRole('button', { name: /entrar|login|avancar|continuar/i }),
+      () => page.getByText(/entrar|login|avancar|continuar/i),
+    ]);
+  } catch {
+    await passwordField.press('Enter');
+  }
+}
+
+async function waitForPostLoginState(page: Page, timeoutMs: number) {
+  const startedAt = Date.now();
+
+  while ((Date.now() - startedAt) < timeoutMs) {
+    const text = await bodyText(page);
+    const url = page.url();
+
+    if (isOtpBody(text)) return 'otp';
+    if (isManageUrl(url) || isManageBody(text)) return 'manage';
+    if (!isAuthUrl(url)) return 'redirected';
+
+    await sleep(750);
+  }
+
+  return 'stuck_on_auth';
+}
+
 async function waitForManageReady(page: Page, timeoutMs: number) {
   const startedAt = Date.now();
 
   while ((Date.now() - startedAt) < timeoutMs) {
     const url = page.url();
     const text = await bodyText(page);
-    if (isManageUrl(url) || isManageBody(text)) {
+    if (isManageUrl(url) || isManageBody(text) || isOtpBody(text)) {
       return true;
     }
     await sleep(750);
@@ -711,7 +758,12 @@ async function performLogin(
     await cpfField.fill(normalizeText(config.sisdevCpf));
     await passwordField.fill(normalizeText(config.sisdevPassword));
     await maybeCaptureSnapshot(execucao.id, page, config, artifacts, runtime, '01-auth-form');
-    await clickByText(page, /entrar|login|avancar|continuar/i);
+    await submitAuthLogin(page, passwordField);
+    const postLoginState = await waitForPostLoginState(page, 20_000);
+    if (postLoginState === 'stuck_on_auth') {
+      await maybeCaptureSnapshot(execucao.id, page, config, artifacts, runtime, '02-auth-stuck');
+      throw new Error('As credenciais foram enviadas, mas o auth MAS nao saiu da tela de autenticacao.');
+    }
     await sleep(PAGE_WAIT_AFTER_ACTION_MS);
   }
 
@@ -800,17 +852,20 @@ async function performManageSelection(
   const currentTitle = await page.title().catch(() => '');
   const currentBody = await bodyText(page);
 
-  if (!manageReady && !isManageUrl(currentUrl) && !isManageBody(currentBody)) {
+  if (!manageReady && !isManageUrl(currentUrl) && !isManageBody(currentBody) && !isOtpBody(currentBody)) {
     throw new Error('O Manage nao abriu de verdade; o portal permaneceu fora da shell do Maximo.');
   }
 
   await updateEtapa(execucao, 'selecionar_manage', 'success', {
-    message: 'Tela do Manage aberta com sucesso.',
+    message: isOtpBody(currentBody)
+      ? 'Fluxo do Manage abriu e ja redirecionou para a tela de OTP.'
+      : 'Tela do Manage aberta com sucesso.',
     url: currentUrl,
     title: currentTitle,
     data: {
       manageUrl: currentUrl,
       manageDetected: true,
+      otpDetected: isOtpBody(currentBody),
     },
     finishedAt: new Date(),
   });
