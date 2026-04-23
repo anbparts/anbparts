@@ -208,11 +208,11 @@ function isOtpBody(text: string) {
 type PortalState = 'auth' | 'home' | 'otp' | 'manage_shell' | 'other';
 
 async function detectPortalState(page: Page): Promise<PortalState> {
-  const url = page.url();
   const text = await bodyText(page);
 
   if (isOtpBody(text)) return 'otp';
-  if (isManageUrl(url) || isManageBody(text)) return 'manage_shell';
+  if (isManageBody(text)) return 'manage_shell';
+  const url = page.url();
   if (isHomeUrl(url) || isHomeBody(text)) return 'home';
   if (isAuthUrl(url)) return 'auth';
   return 'other';
@@ -1187,12 +1187,12 @@ async function performManageSelection(
     page = nextPage;
   }
   await sleep(PAGE_WAIT_AFTER_ACTION_MS);
-  const manageState = await waitForPortalState(page, ['otp', 'manage_shell'], 20_000);
+  const manageState = await waitForPortalState(page, ['otp', 'manage_shell'], 45_000);
   await maybeCaptureSnapshot(execucao.id, page, config, artifacts, runtime, '04-manage-after-start');
   const currentUrl = page.url();
   const currentTitle = await page.title().catch(() => '');
   const currentBody = await bodyText(page);
-  if (!manageState && !isManageUrl(currentUrl) && !isManageBody(currentBody) && !isOtpBody(currentBody)) {
+  if (!manageState && !isManageBody(currentBody) && !isOtpBody(currentBody)) {
     throw new Error('O clique em Iniciar no Manage nao disparou a tela do codigo nem abriu o app.');
   }
   await updateEtapa(execucao, 'selecionar_manage', 'success', {
@@ -1817,7 +1817,7 @@ async function runExecucao(execucaoId: number) {
   const { files: artifacts, runtime } = await ensureArtifacts(execucao.runId);
   await setExecucaoSummary(execucao.id, {
     startedByWorkerAt: new Date().toISOString(),
-    workerVersion: 'detran-worker-v9',
+    workerVersion: 'detran-worker-v10',
   });
 
   if (!buildReadyForExecution(config)) {
@@ -1906,7 +1906,7 @@ async function runExecucao(execucaoId: number) {
       pageTitle,
       artifacts: buildArtifactsPatch(runtime, artifacts),
       summary: {
-        workerVersion: 'detran-worker-v9',
+        workerVersion: 'detran-worker-v10',
         failedAt: new Date().toISOString(),
         flow: execucao.flow,
       },
