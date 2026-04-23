@@ -156,9 +156,23 @@ function isAuthUrl(url: string) {
   return normalized.includes('auth.mas.sp.gov.br/login');
 }
 
+function isHomeUrl(url: string) {
+  const normalized = normalizeText(url).toLowerCase();
+  return normalized.includes('home.mas.sp.gov.br');
+}
+
 function isManageUrl(url: string) {
   const normalized = normalizeText(url).toLowerCase();
   return normalized.includes('manage.mas.sp.gov.br') || normalized.includes('/maximo/');
+}
+
+function isHomeBody(text: string) {
+  const normalized = normalizeSearchText(text);
+  return (
+    normalized.includes('navegador do suite')
+    || normalized.includes('seus aplicativos')
+    || (normalized.includes('manage') && normalized.includes('mais aplicativos'))
+  );
 }
 
 function isManageBody(text: string) {
@@ -179,6 +193,37 @@ function isOtpBody(text: string) {
     || normalized.includes('enviamos uma mensagem para o seu e-mail')
     || normalized.includes('reenviar codigo')
   );
+}
+
+type PortalState = 'auth' | 'home' | 'otp' | 'manage_shell' | 'other';
+
+async function detectPortalState(page: Page): Promise<PortalState> {
+  const url = page.url();
+  const text = await bodyText(page);
+
+  if (isOtpBody(text)) return 'otp';
+  if (isManageUrl(url) || isManageBody(text)) return 'manage_shell';
+  if (isHomeUrl(url) || isHomeBody(text)) return 'home';
+  if (isAuthUrl(url)) return 'auth';
+  return 'other';
+}
+
+async function waitForPortalState(
+  page: Page,
+  accepted: PortalState[],
+  timeoutMs: number,
+) {
+  const startedAt = Date.now();
+
+  while ((Date.now() - startedAt) < timeoutMs) {
+    const state = await detectPortalState(page);
+    if (accepted.includes(state)) {
+      return state;
+    }
+    await sleep(750);
+  }
+
+  return null;
 }
 
 async function ensureDir(dirPath: string) {
@@ -552,6 +597,20 @@ async function clickFirstVisible(page: Page, candidates: Array<() => Locator>) {
   await locator.click();
 }
 
+async function clickAndFollowPage(page: Page, locator: Locator) {
+  const context = page.context();
+  const popupPromise = context.waitForEvent('page', { timeout: 6_000 }).catch(() => null);
+  await locator.click();
+  const popup = await popupPromise;
+
+  if (popup) {
+    await popup.waitForLoadState('domcontentloaded').catch(() => undefined);
+    return popup;
+  }
+
+  return page;
+}
+
 async function clickManage(page: Page) {
   const manageCard = await firstVisible(page, [
     () => page.locator('div,section,article').filter({ has: page.getByText(/^Manage$/i) }),
@@ -576,23 +635,11 @@ async function clickManage(page: Page) {
     ]);
 
     if (manageStartLocator) {
-      await manageStartLocator.click();
-      return;
+      return clickAndFollowPage(page, manageStartLocator);
     }
   }
 
-  const manageLocator = await firstVisible(page, [
-    () => page.getByRole('link', { name: /manage/i }),
-    () => page.getByRole('button', { name: /manage/i }),
-    () => page.getByText(/^Manage$/i),
-  ]);
-
-  if (!manageLocator) {
-    await page.goto(MANAGE_URL, { waitUntil: 'domcontentloaded' });
-    return;
-  }
-
-  await manageLocator.click();
+  throw new Error('O card do Manage apareceu, mas o link Iniciar nao ficou disponivel para clique.');
 }
 
 async function submitAuthLogin(page: Page, passwordField: Locator) {
@@ -608,35 +655,12 @@ async function submitAuthLogin(page: Page, passwordField: Locator) {
 }
 
 async function waitForPostLoginState(page: Page, timeoutMs: number) {
-  const startedAt = Date.now();
-
-  while ((Date.now() - startedAt) < timeoutMs) {
-    const text = await bodyText(page);
-    const url = page.url();
-
-    if (isOtpBody(text)) return 'otp';
-    if (isManageUrl(url) || isManageBody(text)) return 'manage';
-    if (!isAuthUrl(url)) return 'redirected';
-
-    await sleep(750);
-  }
-
-  return 'stuck_on_auth';
+  return waitForPortalState(page, ['home', 'otp', 'manage_shell'], timeoutMs);
 }
 
 async function waitForManageReady(page: Page, timeoutMs: number) {
-  const startedAt = Date.now();
-
-  while ((Date.now() - startedAt) < timeoutMs) {
-    const url = page.url();
-    const text = await bodyText(page);
-    if (isManageUrl(url) || isManageBody(text) || isOtpBody(text)) {
-      return true;
-    }
-    await sleep(750);
-  }
-
-  return false;
+  const state = await waitForPortalState(page, ['otp', 'manage_shell'], timeoutMs);
+  return state === 'otp' || state === 'manage_shell';
 }
 
 async function waitForOtpScreen(page: Page) {
@@ -762,77 +786,76 @@ async function performLogin(
   runtime: RuntimeArtifacts,
 ) {
   await updateEtapa(execucao, 'login_auth_mas', 'running', {
-    message: 'Abrindo auth MAS e validando sessao atual.',
+    message: 'Abrindo a home do MAS e validando a autenticacao.',
     url: page.url(),
     title: await page.title().catch(() => ''),
   });
-
-  await page.goto(AUTH_URL, { waitUntil: 'domcontentloaded' });
+  await page.goto(HOME_URL, { waitUntil: 'domcontentloaded' }).catch(async () => {
+    await page.goto(AUTH_URL, { waitUntil: 'domcontentloaded' });
+  });
   await sleep(PAGE_WAIT_AFTER_ACTION_MS);
-
-  const cpfField = await firstVisible(page, [
-    () => page.getByLabel(/cpf|usuario|usu[aá]rio/i),
-    () => page.getByPlaceholder(/cpf|usuario|usu[aá]rio/i),
-    () => page.locator('input[type="text"]'),
-  ]);
-
-  const passwordField = await firstVisible(page, [
-    () => page.getByLabel(/senha/i),
-    () => page.getByPlaceholder(/senha/i),
-    () => page.locator('input[type="password"]'),
-  ]);
-
+  const locateLoginFields = async () => ({
+    cpfField: await firstVisible(page, [
+      () => page.getByLabel(/cpf|usuario|usu.rio/i),
+      () => page.getByPlaceholder(/cpf|usuario|usu.rio/i),
+      () => page.locator('input[type="text"]'),
+    ]),
+    passwordField: await firstVisible(page, [
+      () => page.getByLabel(/senha/i),
+      () => page.getByPlaceholder(/senha/i),
+      () => page.locator('input[type="password"]'),
+    ]),
+  });
+  let portalState = await detectPortalState(page);
+  let submittedCredentials = false;
+  let { cpfField, passwordField } = await locateLoginFields();
+  if ((!cpfField || !passwordField) && portalState === 'auth') {
+    await sleep(4_000);
+    ({ cpfField, passwordField } = await locateLoginFields());
+  }
   if (cpfField && passwordField) {
     await cpfField.fill(normalizeText(config.sisdevCpf));
     await passwordField.fill(normalizeText(config.sisdevPassword));
     await maybeCaptureSnapshot(execucao.id, page, config, artifacts, runtime, '01-auth-form');
     await submitAuthLogin(page, passwordField);
+    submittedCredentials = true;
     const postLoginState = await waitForPostLoginState(page, 20_000);
-    if (postLoginState === 'stuck_on_auth') {
+    if (!postLoginState) {
       await maybeCaptureSnapshot(execucao.id, page, config, artifacts, runtime, '02-auth-stuck');
-      throw new Error('As credenciais foram enviadas, mas o auth MAS nao saiu da tela de autenticacao.');
+      throw new Error('As credenciais foram enviadas, mas o portal nao voltou para a home do MAS nem avancou para o OTP.');
     }
+    portalState = postLoginState;
     await sleep(PAGE_WAIT_AFTER_ACTION_MS);
+  } else {
+    portalState = await detectPortalState(page);
   }
-
-  let retriedLogin = false;
-  if ((!cpfField || !passwordField) && isAuthUrl(page.url())) {
-    await sleep(4_000);
-
-    const cpfFieldRetry = await firstVisible(page, [
-      () => page.getByLabel(/cpf|usuario|usu[aÃ¡]rio/i),
-      () => page.getByPlaceholder(/cpf|usuario|usu[aÃ¡]rio/i),
-      () => page.locator('input[type="text"]'),
-    ]);
-
-    const passwordFieldRetry = await firstVisible(page, [
-      () => page.getByLabel(/senha/i),
-      () => page.getByPlaceholder(/senha/i),
-      () => page.locator('input[type="password"]'),
-    ]);
-
-    if (cpfFieldRetry && passwordFieldRetry) {
-      retriedLogin = true;
-      await cpfFieldRetry.fill(normalizeText(config.sisdevCpf));
-      await passwordFieldRetry.fill(normalizeText(config.sisdevPassword));
-      await maybeCaptureSnapshot(execucao.id, page, config, artifacts, runtime, '01-auth-form-retry');
-      await clickByText(page, /entrar|login|avancar|continuar/i);
-      await sleep(PAGE_WAIT_AFTER_ACTION_MS);
-    } else {
-      await maybeCaptureSnapshot(execucao.id, page, config, artifacts, runtime, '01-auth-no-form');
-      throw new Error('A tela de autenticacao ficou no auth MAS sem mostrar o formulario de login.');
-    }
+  if (!submittedCredentials && portalState === 'auth') {
+    await maybeCaptureSnapshot(execucao.id, page, config, artifacts, runtime, '01-auth-no-form');
+    throw new Error('A tela de autenticacao ficou no auth MAS sem mostrar o formulario nem liberar a home do MAS.');
   }
-
+  if (!['home', 'otp', 'manage_shell'].includes(portalState)) {
+    await maybeCaptureSnapshot(execucao.id, page, config, artifacts, runtime, '02-auth-unknown-state');
+    throw new Error('Depois do login, o portal nao exibiu a home do MAS, o OTP nem a shell do Manage.');
+  }
   await maybeCaptureSnapshot(execucao.id, page, config, artifacts, runtime, '02-auth-after-login');
   await updateEtapa(execucao, 'login_auth_mas', 'success', {
-    message: cpfField && passwordField
-      ? 'Credenciais enviadas para o auth MAS.'
-      : retriedLogin
-      ? 'Credenciais enviadas para o auth MAS.'
-      : 'Sessao reaproveitada; formulario de login nao apareceu.',
+    message: submittedCredentials
+      ? portalState === 'home'
+        ? 'Credenciais enviadas e a home do MAS carregou com os aplicativos.'
+        : portalState === 'otp'
+        ? 'Credenciais enviadas e o portal avancou direto para a tela de OTP.'
+        : 'Credenciais enviadas e a shell do Manage abriu sem novo OTP.'
+      : portalState === 'home'
+      ? 'Sessao valida reaproveitada na home do MAS.'
+      : portalState === 'otp'
+      ? 'Sessao reaproveitada e o portal abriu direto na tela de OTP.'
+      : 'Sessao reaproveitada com shell do Manage ja acessivel.',
     url: page.url(),
     title: await page.title().catch(() => ''),
+    data: {
+      portalState,
+      submittedCredentials,
+    },
     finishedAt: new Date(),
   });
 }
@@ -843,60 +866,86 @@ async function performManageSelection(
   config: DetranConfigRecord,
   artifacts: ArtifactBundle,
   runtime: RuntimeArtifacts,
-) {
+) : Promise<Page> {
   await updateEtapa(execucao, 'selecionar_manage', 'running', {
-    message: 'Tentando entrar no app Manage.',
+    message: 'Localizando o card Manage e clicando em Iniciar.',
     url: page.url(),
     title: await page.title().catch(() => ''),
   });
-
-  await page.goto(HOME_URL, { waitUntil: 'domcontentloaded' }).catch(async () => {
-    await page.goto(MANAGE_URL, { waitUntil: 'domcontentloaded' });
-  });
-  await sleep(PAGE_WAIT_AFTER_ACTION_MS);
-
-  let manageReady = await waitForManageReady(page, 5_000);
-
-  if (!manageReady) {
-    try {
-      await clickManage(page);
-      await sleep(PAGE_WAIT_AFTER_ACTION_MS);
-    } catch {
-      await page.goto(MANAGE_URL, { waitUntil: 'domcontentloaded' });
-      await sleep(PAGE_WAIT_AFTER_ACTION_MS);
-    }
-    manageReady = await waitForManageReady(page, 10_000);
+  let portalState = await detectPortalState(page);
+  if (portalState === 'otp' || portalState === 'manage_shell') {
+    await maybeCaptureSnapshot(execucao.id, page, config, artifacts, runtime, '03-manage-already-progressed');
+    await updateEtapa(execucao, 'selecionar_manage', 'success', {
+      message: portalState === 'otp'
+        ? 'O fluxo do Manage ja estava na tela de OTP antes do clique em Iniciar.'
+        : 'O fluxo do Manage ja estava aberto antes do clique em Iniciar.',
+      url: page.url(),
+      title: await page.title().catch(() => ''),
+      data: {
+        portalState,
+        clickedIniciar: false,
+      },
+      finishedAt: new Date(),
+    });
+    return page;
   }
-
-  if (!manageReady && !isManageUrl(page.url())) {
-    await page.goto(MANAGE_URL, { waitUntil: 'domcontentloaded' });
+  if (portalState !== 'home') {
+    await page.goto(HOME_URL, { waitUntil: 'domcontentloaded' });
     await sleep(PAGE_WAIT_AFTER_ACTION_MS);
-    manageReady = await waitForManageReady(page, 12_000);
+    portalState = await detectPortalState(page);
   }
-
-  await maybeCaptureSnapshot(execucao.id, page, config, artifacts, runtime, '03-manage-entry');
-
+  if (portalState !== 'home') {
+    const waitedHomeState = await waitForPortalState(page, ['home', 'otp', 'manage_shell'], 15_000);
+    portalState = waitedHomeState ?? await detectPortalState(page);
+  }
+  if (portalState === 'otp' || portalState === 'manage_shell') {
+    await maybeCaptureSnapshot(execucao.id, page, config, artifacts, runtime, '03-manage-auto-progressed');
+    await updateEtapa(execucao, 'selecionar_manage', 'success', {
+      message: portalState === 'otp'
+        ? 'O portal pulou para o OTP antes de clicar manualmente no Iniciar.'
+        : 'A shell do Manage abriu antes de clicar no Iniciar.',
+      url: page.url(),
+      title: await page.title().catch(() => ''),
+      data: {
+        portalState,
+        clickedIniciar: false,
+      },
+      finishedAt: new Date(),
+    });
+    return page;
+  }
+  if (portalState !== 'home') {
+    throw new Error('Depois do login, a home do MAS nao exibiu o card Manage para clicar em Iniciar.');
+  }
+  await maybeCaptureSnapshot(execucao.id, page, config, artifacts, runtime, '03-home-before-manage');
+  const nextPage = await clickManage(page);
+  if (nextPage !== page) {
+    page = nextPage;
+  }
+  await sleep(PAGE_WAIT_AFTER_ACTION_MS);
+  const manageState = await waitForPortalState(page, ['otp', 'manage_shell'], 20_000);
+  await maybeCaptureSnapshot(execucao.id, page, config, artifacts, runtime, '04-manage-after-start');
   const currentUrl = page.url();
   const currentTitle = await page.title().catch(() => '');
   const currentBody = await bodyText(page);
-
-  if (!manageReady && !isManageUrl(currentUrl) && !isManageBody(currentBody) && !isOtpBody(currentBody)) {
-    throw new Error('O Manage nao abriu de verdade; o portal permaneceu fora da shell do Maximo.');
+  if (!manageState && !isManageUrl(currentUrl) && !isManageBody(currentBody) && !isOtpBody(currentBody)) {
+    throw new Error('O clique em Iniciar no Manage nao disparou a tela do codigo nem abriu o app.');
   }
-
   await updateEtapa(execucao, 'selecionar_manage', 'success', {
     message: isOtpBody(currentBody)
-      ? 'Fluxo do Manage abriu e ja redirecionou para a tela de OTP.'
-      : 'Tela do Manage aberta com sucesso.',
+      ? 'Iniciar do Manage clicado com sucesso; a tela de OTP apareceu.'
+      : 'Iniciar do Manage clicado com sucesso; a shell do Manage abriu.',
     url: currentUrl,
     title: currentTitle,
     data: {
       manageUrl: currentUrl,
-      manageDetected: true,
+      clickedIniciar: true,
+      portalState: manageState ?? 'other',
       otpDetected: isOtpBody(currentBody),
     },
     finishedAt: new Date(),
   });
+  return page;
 }
 
 async function performOtp(
@@ -907,26 +956,32 @@ async function performOtp(
   runtime: RuntimeArtifacts,
 ) {
   await updateEtapa(execucao, 'otp_email', 'running', {
-    message: 'Verificando se o portal solicitou codigo de seguranca.',
+    message: 'Aguardando a tela do codigo e a chegada do OTP por email.',
     url: page.url(),
     title: await page.title().catch(() => ''),
   });
-
   await sleep(PAGE_WAIT_AFTER_ACTION_MS);
-  const otpVisible = await waitForOtpScreen(page);
-
+  let portalState = await detectPortalState(page);
+  let otpVisible = portalState === 'otp';
   if (!otpVisible) {
-    await updateEtapa(execucao, 'otp_email', 'skipped', {
-      message: 'Sessao reaproveitada sem solicitar novo codigo OTP.',
-      url: page.url(),
-      title: await page.title().catch(() => ''),
-      finishedAt: new Date(),
-    });
-    return;
+    otpVisible = await waitForOtpScreen(page);
+    if (otpVisible) {
+      portalState = 'otp';
+    }
   }
-
+  if (!otpVisible) {
+    if (portalState === 'manage_shell') {
+      await updateEtapa(execucao, 'otp_email', 'skipped', {
+        message: 'O Manage abriu sem solicitar novo codigo OTP nesta sessao.',
+        url: page.url(),
+        title: await page.title().catch(() => ''),
+        finishedAt: new Date(),
+      });
+      return;
+    }
+    throw new Error('Depois de clicar em Iniciar no Manage, a tela para inserir o codigo nao apareceu.');
+  }
   await maybeCaptureSnapshot(execucao.id, page, config, artifacts, runtime, '04-otp-screen');
-
   const otpInfo = await waitForOtpCode(config, new Date(execucao.createdAt), async (message) => {
     await updateEtapa(execucao, 'otp_email', 'running', {
       message,
@@ -937,27 +992,25 @@ async function performOtp(
       },
     });
   });
-
   const otpField = await firstVisible(page, [
-    () => page.getByLabel(/codigo|c[oó]digo/i),
+    () => page.getByLabel(/codigo|c.digo/i),
     () => page.locator('input[type="text"]'),
     () => page.locator('input'),
   ]);
-
   if (!otpField) {
     throw new Error('Campo do codigo OTP nao foi encontrado na tela.');
   }
-
   await otpField.fill(otpInfo.code);
   await maybeCaptureSnapshot(execucao.id, page, config, artifacts, runtime, '05-otp-filled');
   await clickByText(page, /entrar|confirmar|continuar/i);
   await sleep(PAGE_WAIT_AFTER_ACTION_MS);
-
+  const afterOtpState = await waitForPortalState(page, ['manage_shell'], 20_000);
   await updateEtapa(execucao, 'otp_email', 'success', {
     message: `Codigo OTP obtido por Gmail e enviado ao portal. Email: ${otpInfo.subject || 'sem assunto'}.`,
     url: page.url(),
     title: await page.title().catch(() => ''),
     data: {
+      portalStateAfterOtp: afterOtpState ?? 'other',
       otpEmailSubject: otpInfo.subject,
       otpEmailFrom: otpInfo.from,
       otpEmailReceivedAt: otpInfo.receivedAt,
@@ -1421,7 +1474,7 @@ async function runExecucao(execucaoId: number) {
   const { files: artifacts, runtime } = await ensureArtifacts(execucao.runId);
   await setExecucaoSummary(execucao.id, {
     startedByWorkerAt: new Date().toISOString(),
-    workerVersion: 'detran-worker-v1',
+    workerVersion: 'detran-worker-v2',
   });
 
   if (!buildReadyForExecution(config)) {
@@ -1465,7 +1518,7 @@ async function runExecucao(execucaoId: number) {
     });
 
     await performLogin(page, execucao, readyConfig, artifacts, runtime);
-    await performManageSelection(page, execucao, readyConfig, artifacts, runtime);
+    page = await performManageSelection(page, execucao, readyConfig, artifacts, runtime);
     await performOtp(page, execucao, readyConfig, artifacts, runtime);
 
     if (readyConfig.reuseSession) {
@@ -1510,7 +1563,7 @@ async function runExecucao(execucaoId: number) {
       pageTitle,
       artifacts: buildArtifactsPatch(runtime, artifacts),
       summary: {
-        workerVersion: 'detran-worker-v1',
+        workerVersion: 'detran-worker-v2',
         failedAt: new Date().toISOString(),
         flow: execucao.flow,
       },
