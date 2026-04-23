@@ -185,6 +185,15 @@ function isManageBody(text: string) {
   );
 }
 
+function isConcurrentSessionText(text: string) {
+  const normalized = normalizeSearchText(text);
+  return (
+    normalized.includes('usuario ja esta conectado')
+    || normalized.includes('sessao anterior')
+    || (normalized.includes('entrar') && normalized.includes('cancelar') && normalized.includes('sessao'))
+  );
+}
+
 function isOtpBody(text: string) {
   const normalized = normalizeSearchText(text);
   return (
@@ -192,9 +201,7 @@ function isOtpBody(text: string) {
     || normalized.includes('codigo de verificacao')
     || normalized.includes('enviamos uma mensagem para o seu e-mail')
     || normalized.includes('reenviar codigo')
-    || normalized.includes('o usuario ja esta conectado')
-    || normalized.includes('manten a sessao atual')
-    || normalized.includes('mantem a sessao atual')
+    || isConcurrentSessionText(text)
   );
 }
 
@@ -895,6 +902,33 @@ async function waitForOtpScreen(page: Page) {
   return false;
 }
 
+async function findOtpField(page: Page) {
+  return firstVisible(page, [
+    () => page.getByLabel(/codigo|c[oó]digo/i),
+    () => page.locator('input[type="text"]'),
+    () => page.locator('input').first(),
+  ]);
+}
+
+async function clickEntrarOnMasDialog(page: Page) {
+  const entrar = await firstVisible(page, [
+    () => page.getByRole('button', { name: /^Entrar$/i }),
+    () => page.locator('button').filter({ hasText: /^Entrar$/i }),
+    () => page.getByRole('link', { name: /^Entrar$/i }),
+    () => page.locator('a').filter({ hasText: /^Entrar$/i }),
+    () => page.getByText(/^Entrar$/i),
+  ]);
+
+  if (!entrar) {
+    throw new Error('Botao Entrar da modal do MAS nao foi encontrado.');
+  }
+
+  await entrar.scrollIntoViewIfNeeded().catch(() => undefined);
+  await entrar.click({ force: true });
+  await sleep(PAGE_WAIT_AFTER_ACTION_MS);
+  await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => undefined);
+}
+
 async function readMessageBody(gmailPayload: any): Promise<string> {
   const tryDecode = (data: string | undefined | null) => {
     const raw = normalizeText(data);
@@ -1214,7 +1248,31 @@ async function performOtp(
     }
     throw new Error('Depois de clicar em Iniciar no Manage, a tela para inserir o codigo nao apareceu.');
   }
+
   await maybeCaptureSnapshot(execucao.id, page, config, artifacts, runtime, '04-otp-screen');
+  const currentText = await bodyText(page);
+  const otpField = await findOtpField(page);
+
+  if (!otpField && isConcurrentSessionText(currentText)) {
+    await clickEntrarOnMasDialog(page);
+    const afterSessionState = await waitForPortalState(page, ['manage_shell'], 20_000);
+    await updateEtapa(execucao, 'otp_email', 'success', {
+      message: 'Aviso de usuario ja conectado encontrado; cliquei em Entrar para manter a sessao atual.',
+      url: page.url(),
+      title: await page.title().catch(() => ''),
+      data: {
+        concurrentSessionResolved: true,
+        portalStateAfterEntrar: afterSessionState ?? 'other',
+      },
+      finishedAt: new Date(),
+    });
+    return;
+  }
+
+  if (!otpField) {
+    throw new Error('Campo do codigo OTP nao foi encontrado na tela.');
+  }
+
   const otpInfo = await waitForOtpCode(config, new Date(execucao.createdAt), async (message) => {
     await updateEtapa(execucao, 'otp_email', 'running', {
       message,
@@ -1225,18 +1283,10 @@ async function performOtp(
       },
     });
   });
-  const otpField = await firstVisible(page, [
-    () => page.getByLabel(/codigo|c.digo/i),
-    () => page.locator('input[type="text"]'),
-    () => page.locator('input'),
-  ]);
-  if (!otpField) {
-    throw new Error('Campo do codigo OTP nao foi encontrado na tela.');
-  }
+
   await otpField.fill(otpInfo.code);
   await maybeCaptureSnapshot(execucao.id, page, config, artifacts, runtime, '05-otp-filled');
-  await clickByText(page, /entrar|confirmar|continuar/i);
-  await sleep(PAGE_WAIT_AFTER_ACTION_MS);
+  await clickEntrarOnMasDialog(page);
   const afterOtpState = await waitForPortalState(page, ['manage_shell'], 20_000);
   await updateEtapa(execucao, 'otp_email', 'success', {
     message: `Codigo OTP obtido por Gmail e enviado ao portal. Email: ${otpInfo.subject || 'sem assunto'}.`,
@@ -1767,7 +1817,7 @@ async function runExecucao(execucaoId: number) {
   const { files: artifacts, runtime } = await ensureArtifacts(execucao.runId);
   await setExecucaoSummary(execucao.id, {
     startedByWorkerAt: new Date().toISOString(),
-    workerVersion: 'detran-worker-v8',
+    workerVersion: 'detran-worker-v9',
   });
 
   if (!buildReadyForExecution(config)) {
@@ -1856,7 +1906,7 @@ async function runExecucao(execucaoId: number) {
       pageTitle,
       artifacts: buildArtifactsPatch(runtime, artifacts),
       summary: {
-        workerVersion: 'detran-worker-v8',
+        workerVersion: 'detran-worker-v9',
         failedAt: new Date().toISOString(),
         flow: execucao.flow,
       },
