@@ -116,6 +116,12 @@ function buildOtpRegex(source: string) {
   }
 }
 
+function resolveOtpEmailSearchStart(execucao: DetranExecucaoRecord) {
+  const manageStep = execucao.etapas.find((item) => item.step === 'selecionar_manage');
+  const reference = manageStep?.finishedAt || manageStep?.startedAt || execucao.startedAt || new Date();
+  return new Date(reference);
+}
+
 function buildReadyForExecution(config: DetranConfigRow) {
   if (!config) return false;
   return Boolean(
@@ -1391,11 +1397,14 @@ async function performOtp(
   artifacts: ArtifactBundle,
   runtime: RuntimeArtifacts,
 ) {
-  const otpRequestedAt = new Date();
+  const otpEmailSearchStart = resolveOtpEmailSearchStart(execucao);
   await updateEtapa(execucao, 'otp_email', 'running', {
     message: 'Aguardando a tela do codigo e a chegada do OTP por email.',
     url: page.url(),
     title: await page.title().catch(() => ''),
+    data: {
+      otpEmailSearchStart: otpEmailSearchStart.toISOString(),
+    },
   });
 
   await sleep(PAGE_WAIT_AFTER_ACTION_MS);
@@ -1445,7 +1454,7 @@ async function performOtp(
     throw new Error('Campo do codigo OTP nao foi encontrado na tela.');
   }
 
-  const otpInfo = await waitForOtpCode(config, otpRequestedAt, async (message) => {
+  const otpInfo = await waitForOtpCode(config, otpEmailSearchStart, async (message) => {
     await updateEtapa(execucao, 'otp_email', 'running', {
       message: `${message} Aguardando por ate ${Math.round(OTP_WAIT_TIMEOUT_MS / 60_000)} minutos.`,
       url: page.url(),
@@ -1453,6 +1462,7 @@ async function performOtp(
       data: {
         polling: true,
         otpScreenDetected: true,
+        otpEmailSearchStart: otpEmailSearchStart.toISOString(),
       },
     });
   });
@@ -1990,7 +2000,7 @@ async function runExecucao(execucaoId: number) {
   const { files: artifacts, runtime } = await ensureArtifacts(execucao.runId);
   await setExecucaoSummary(execucao.id, {
     startedByWorkerAt: new Date().toISOString(),
-    workerVersion: 'detran-worker-v15',
+    workerVersion: 'detran-worker-v16',
   });
 
   if (!buildReadyForExecution(config)) {
@@ -2079,7 +2089,7 @@ async function runExecucao(execucaoId: number) {
       pageTitle,
       artifacts: buildArtifactsPatch(runtime, artifacts),
       summary: {
-        workerVersion: 'detran-worker-v15',
+        workerVersion: 'detran-worker-v16',
         failedAt: new Date().toISOString(),
         flow: execucao.flow,
       },
