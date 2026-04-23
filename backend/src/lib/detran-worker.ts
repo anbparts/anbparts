@@ -610,6 +610,20 @@ async function clickAndFollowPage(page: Page, locator: Locator) {
   return page;
 }
 
+async function clickPointAndFollowPage(page: Page, x: number, y: number) {
+  const context = page.context();
+  const popupPromise = context.waitForEvent('page', { timeout: 6_000 }).catch(() => null);
+  await page.mouse.click(x, y);
+  const popup = await popupPromise;
+
+  if (popup) {
+    await popup.waitForLoadState('domcontentloaded').catch(() => undefined);
+    return popup;
+  }
+
+  return page;
+}
+
 async function isLoginFormVisible(page: Page) {
   const passwordField = await firstVisible(page, [
     () => page.getByPlaceholder(/insira sua senha/i),
@@ -644,6 +658,37 @@ async function findManageStartLocator(page: Page, scope?: Locator) {
   ]);
 }
 
+type BrowserBox = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  depth?: number;
+};
+
+async function getManageCardBoxes(manageTitle: Locator): Promise<BrowserBox[]> {
+  return manageTitle.evaluate((element: any) => {
+    const boxes: BrowserBox[] = [];
+    let current = element;
+    let depth = 0;
+
+    while (current && depth < 12) {
+      const rect = current.getBoundingClientRect();
+      boxes.push({
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
+        depth,
+      });
+      current = current.parentElement;
+      depth += 1;
+    }
+
+    return boxes;
+  }).catch(() => []);
+}
+
 async function clickManage(page: Page) {
   const manageTitle = await firstVisible(page, [
     () => page.getByRole('heading', { name: /^Manage$/i }),
@@ -654,8 +699,27 @@ async function clickManage(page: Page) {
     throw new Error('O card do Manage nao foi encontrado na home do MAS.');
   }
 
+  const titleBox = await manageTitle.boundingBox().catch(() => null);
+  const candidateBoxes = (await getManageCardBoxes(manageTitle))
+    .filter((box) => {
+      const titleCenterX = titleBox ? titleBox.x + titleBox.width / 2 : box.x + 1;
+      const titleCenterY = titleBox ? titleBox.y + titleBox.height / 2 : box.y + 1;
+      const containsTitle = titleCenterX >= box.x
+        && titleCenterX <= box.x + box.width
+        && titleCenterY >= box.y
+        && titleCenterY <= box.y + box.height;
+
+      return containsTitle
+        && box.width >= 240
+        && box.height >= 120
+        && box.width <= 900
+        && box.height <= 520;
+    })
+    .sort((left, right) => (right.width * right.height) - (left.width * left.height));
+
+  const cardBox = candidateBoxes[0] || titleBox;
   const hoverTargets: Locator[] = [manageTitle];
-  for (let depth = 1; depth <= 8; depth += 1) {
+  for (let depth = 1; depth <= 10; depth += 1) {
     hoverTargets.push(manageTitle.locator(`xpath=ancestor::*[self::div or self::section or self::article][${depth}]`));
   }
 
@@ -675,6 +739,35 @@ async function clickManage(page: Page) {
     }
   }
 
+  if (cardBox) {
+    const startPoints = [
+      {
+        x: cardBox.x + Math.min(90, Math.max(55, cardBox.width * 0.16)),
+        y: cardBox.y + cardBox.height - Math.min(75, Math.max(45, cardBox.height * 0.28)),
+      },
+      {
+        x: cardBox.x + Math.min(105, Math.max(65, cardBox.width * 0.2)),
+        y: cardBox.y + cardBox.height - Math.min(55, Math.max(35, cardBox.height * 0.2)),
+      },
+      {
+        x: titleBox ? titleBox.x + 35 : cardBox.x + 70,
+        y: titleBox ? titleBox.y + 120 : cardBox.y + cardBox.height - 70,
+      },
+    ];
+
+    for (const point of startPoints) {
+      await page.mouse.move(cardBox.x + cardBox.width / 2, cardBox.y + cardBox.height / 2);
+      await sleep(500);
+      const beforeUrl = page.url();
+      const nextPage = await clickPointAndFollowPage(page, point.x, point.y);
+      await sleep(PAGE_WAIT_AFTER_ACTION_MS);
+      const state = await detectPortalState(nextPage);
+      if (state === 'otp' || state === 'manage_shell' || nextPage.url() !== beforeUrl) {
+        return nextPage;
+      }
+    }
+  }
+
   const hiddenStart = page.locator('a,button,[role="link"],[role="button"]').filter({ hasText: /iniciar/i }).first();
   if (await hiddenStart.count().catch(() => 0)) {
     await hiddenStart.evaluate((element) => {
@@ -686,7 +779,7 @@ async function clickManage(page: Page) {
     return page;
   }
 
-  throw new Error('O card do Manage apareceu, mas o link Iniciar nao ficou disponivel para clique.');
+  throw new Error(`O card do Manage apareceu, mas o link Iniciar nao ficou disponivel para clique. Card detectado: ${JSON.stringify(cardBox || null)}`);
 }
 
 async function submitAuthLogin(page: Page, passwordField: Locator) {
@@ -1590,7 +1683,7 @@ async function runExecucao(execucaoId: number) {
   const { files: artifacts, runtime } = await ensureArtifacts(execucao.runId);
   await setExecucaoSummary(execucao.id, {
     startedByWorkerAt: new Date().toISOString(),
-    workerVersion: 'detran-worker-v5',
+    workerVersion: 'detran-worker-v6',
   });
 
   if (!buildReadyForExecution(config)) {
@@ -1679,7 +1772,7 @@ async function runExecucao(execucaoId: number) {
       pageTitle,
       artifacts: buildArtifactsPatch(runtime, artifacts),
       summary: {
-        workerVersion: 'detran-worker-v5',
+        workerVersion: 'detran-worker-v6',
         failedAt: new Date().toISOString(),
         flow: execucao.flow,
       },
