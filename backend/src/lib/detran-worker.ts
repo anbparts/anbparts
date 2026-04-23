@@ -58,6 +58,20 @@ type RuntimeArtifacts = {
   storageState: string | null;
 };
 
+type OtpPollDiagnostics = {
+  pollCount: number;
+  polledAt: string;
+  elapsedSeconds: number;
+  notBefore: string;
+  gmailQuery: string;
+  listedMessages: number;
+  inspectedMessages: number;
+  ignored: Record<string, number>;
+  latestMessage?: Record<string, unknown>;
+  acceptedMessage?: Record<string, unknown>;
+  regexSource: string;
+};
+
 function normalizeText(value: unknown) {
   return String(value ?? '').trim();
 }
@@ -1130,7 +1144,11 @@ async function readMessageBody(gmailPayload: any): Promise<string> {
   return walkParts(gmailPayload);
 }
 
-async function waitForOtpCode(config: DetranConfigRecord, notBefore: Date, onPoll?: (message: string) => Promise<void>) {
+async function waitForOtpCode(
+  config: DetranConfigRecord,
+  notBefore: Date,
+  onPoll?: (message: string, diagnostics?: OtpPollDiagnostics) => Promise<void>,
+) {
   const oauth2Client = new google.auth.OAuth2(
     normalizeText(config.gmailClientId),
     normalizeText(config.gmailClientSecret),
@@ -1148,18 +1166,42 @@ async function waitForOtpCode(config: DetranConfigRecord, notBefore: Date, onPol
   const otpRegex = buildOtpRegex(normalizeText(config.otpRegex));
   const remetente = normalizeSearchText(config.otpRemetente);
   const assunto = normalizeSearchText(config.otpAssunto);
-  let lastSeenMessageId = '';
+  const gmailQuery = `from:${normalizeText(config.otpRemetente)}`;
+  let pollCount = 0;
 
   while ((Date.now() - startedAt) < OTP_WAIT_TIMEOUT_MS) {
+    pollCount += 1;
+    const diagnostics: OtpPollDiagnostics = {
+      pollCount,
+      polledAt: new Date().toISOString(),
+      elapsedSeconds: Math.floor((Date.now() - startedAt) / 1000),
+      notBefore: notBefore.toISOString(),
+      gmailQuery,
+      listedMessages: 0,
+      inspectedMessages: 0,
+      ignored: {
+        missingId: 0,
+        tooOld: 0,
+        fromMismatch: 0,
+        subjectMismatch: 0,
+        regexMiss: 0,
+      },
+      regexSource: normalizeText(config.otpRegex),
+    };
+
     const list = await gmail.users.messages.list({
       userId: 'me',
       maxResults: 10,
-      q: `from:${normalizeText(config.otpRemetente)}`,
+      q: gmailQuery,
     });
 
     const messages = list.data.messages || [];
+    diagnostics.listedMessages = messages.length;
     for (const message of messages) {
-      if (!message.id || message.id === lastSeenMessageId) continue;
+      if (!message.id) {
+        diagnostics.ignored.missingId += 1;
+        continue;
+      }
 
       const details = await gmail.users.messages.get({
         userId: 'me',
@@ -1167,40 +1209,66 @@ async function waitForOtpCode(config: DetranConfigRecord, notBefore: Date, onPol
         format: 'full',
       });
 
+      diagnostics.inspectedMessages += 1;
       const internalDate = Number(details.data.internalDate || 0);
       const sentAt = Number.isFinite(internalDate) ? new Date(internalDate) : null;
-      if (sentAt && sentAt.getTime() < notBefore.getTime() - 60_000) {
+      const headers = details.data.payload?.headers || [];
+      const fromHeader = headers.find((item: any) => normalizeText(item?.name).toLowerCase() === 'from')?.value || '';
+      const subjectHeader = headers.find((item: any) => normalizeText(item?.name).toLowerCase() === 'subject')?.value || '';
+      const from = normalizeSearchText(fromHeader);
+      const subject = normalizeSearchText(subjectHeader);
+      const messageSummary = {
+        id: message.id,
+        receivedAt: sentAt?.toISOString() || '',
+        from: fromHeader,
+        subject: subjectHeader,
+        snippet: normalizeText(details.data.snippet).slice(0, 180),
+      };
+
+      diagnostics.latestMessage = diagnostics.latestMessage || messageSummary;
+
+      if (sentAt && sentAt.getTime() < notBefore.getTime()) {
+        diagnostics.ignored.tooOld += 1;
         continue;
       }
 
-      const headers = details.data.payload?.headers || [];
-      const from = normalizeSearchText(headers.find((item: any) => normalizeText(item?.name).toLowerCase() === 'from')?.value);
-      const subject = normalizeSearchText(headers.find((item: any) => normalizeText(item?.name).toLowerCase() === 'subject')?.value);
-
-      if (remetente && !from.includes(remetente)) continue;
-      if (assunto && !subject.includes(assunto)) continue;
+      if (remetente && !from.includes(remetente)) {
+        diagnostics.ignored.fromMismatch += 1;
+        continue;
+      }
+      if (assunto && !subject.includes(assunto)) {
+        diagnostics.ignored.subjectMismatch += 1;
+        continue;
+      }
 
       const content = await readMessageBody(details.data.payload);
       const match = otpRegex.exec(content);
-      lastSeenMessageId = message.id;
 
       if (!match?.[1]) {
-        if (onPoll) await onPoll('Email do OTP encontrado, mas o regex nao localizou o codigo ainda.');
+        diagnostics.ignored.regexMiss += 1;
+        diagnostics.acceptedMessage = messageSummary;
+        if (onPoll) await onPoll('Email do OTP encontrado, mas o regex nao localizou o codigo ainda.', diagnostics);
         continue;
       }
+
+      diagnostics.acceptedMessage = {
+        ...messageSummary,
+        codeLength: match[1].length,
+      };
+      if (onPoll) await onPoll('Codigo OTP localizado no Gmail; preenchendo no portal.', diagnostics);
 
       return {
         code: match[1],
         messageId: message.id,
-        subject: headers.find((item: any) => normalizeText(item?.name).toLowerCase() === 'subject')?.value || '',
-        from: headers.find((item: any) => normalizeText(item?.name).toLowerCase() === 'from')?.value || '',
+        subject: subjectHeader,
+        from: fromHeader,
         receivedAt: sentAt?.toISOString() || '',
         snippet: normalizeText(details.data.snippet),
       };
     }
 
     if (onPoll) {
-      await onPoll('Aguardando email com o codigo do SISDEV...');
+      await onPoll('Aguardando email com o codigo do SISDEV...', diagnostics);
     }
     await sleep(OTP_POLL_INTERVAL_MS);
   }
@@ -1454,7 +1522,7 @@ async function performOtp(
     throw new Error('Campo do codigo OTP nao foi encontrado na tela.');
   }
 
-  const otpInfo = await waitForOtpCode(config, otpEmailSearchStart, async (message) => {
+  const otpInfo = await waitForOtpCode(config, otpEmailSearchStart, async (message, diagnostics) => {
     await updateEtapa(execucao, 'otp_email', 'running', {
       message: `${message} Aguardando por ate ${Math.round(OTP_WAIT_TIMEOUT_MS / 60_000)} minutos.`,
       url: page.url(),
@@ -1463,6 +1531,7 @@ async function performOtp(
         polling: true,
         otpScreenDetected: true,
         otpEmailSearchStart: otpEmailSearchStart.toISOString(),
+        gmailDiagnostics: diagnostics || null,
       },
     });
   });
@@ -2000,7 +2069,7 @@ async function runExecucao(execucaoId: number) {
   const { files: artifacts, runtime } = await ensureArtifacts(execucao.runId);
   await setExecucaoSummary(execucao.id, {
     startedByWorkerAt: new Date().toISOString(),
-    workerVersion: 'detran-worker-v16',
+    workerVersion: 'detran-worker-v17',
   });
 
   if (!buildReadyForExecution(config)) {
@@ -2089,7 +2158,7 @@ async function runExecucao(execucaoId: number) {
       pageTitle,
       artifacts: buildArtifactsPatch(runtime, artifacts),
       summary: {
-        workerVersion: 'detran-worker-v16',
+        workerVersion: 'detran-worker-v17',
         failedAt: new Date().toISOString(),
         flow: execucao.flow,
       },
