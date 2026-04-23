@@ -11,6 +11,8 @@ const DETRAN_POLL_INTERVAL_MS = 15_000;
 const DETRAN_BOOT_DELAY_MS = 5_000;
 const OTP_POLL_INTERVAL_MS = 5_000;
 const OTP_WAIT_TIMEOUT_MS = 90_000;
+const OTP_SCREEN_WAIT_TIMEOUT_MS = 120_000;
+const OTP_SCREEN_SNAPSHOT_INTERVAL_MS = 15_000;
 const PAGE_WAIT_AFTER_ACTION_MS = 2_000;
 const PROXIMO_WAIT_TIMEOUT_MS = 15_000;
 const DETRAN_ARTIFACTS_ROOT = path.resolve(process.cwd(), 'runtime', 'detran-runs');
@@ -910,6 +912,90 @@ async function findOtpField(page: Page) {
   ]);
 }
 
+async function findOtpFieldForScreen(page: Page, screenText: string) {
+  const candidates: Array<() => Locator> = [
+    () => page.getByLabel(/codigo|c[oÃ³]digo/i),
+    () => page.locator('input[aria-label*="codigo" i]'),
+  ];
+
+  if (isOtpBody(screenText)) {
+    candidates.push(
+      () => page.locator('input[type="text"]'),
+      () => page.locator('input:not([type="hidden"])').first(),
+    );
+  }
+
+  return firstVisible(page, candidates);
+}
+
+async function waitForOtpScreenOrManageShell(
+  page: Page,
+  execucao: DetranExecucaoRecord,
+  config: DetranConfigRecord,
+  artifacts: ArtifactBundle,
+  runtime: RuntimeArtifacts,
+) {
+  const startedAt = Date.now();
+  let nextSnapshotAt = startedAt;
+  let manageShellSeenAt = 0;
+  let lastText = '';
+  let lastOtpField: Locator | null = null;
+
+  while ((Date.now() - startedAt) < OTP_SCREEN_WAIT_TIMEOUT_MS) {
+    const elapsedSeconds = Math.floor((Date.now() - startedAt) / 1000);
+    const currentText = await bodyText(page);
+    const otpField = await findOtpFieldForScreen(page, currentText);
+    const otpVisible = Boolean(otpField) || isOtpBody(currentText);
+    const manageVisible = isManageBody(currentText);
+
+    lastText = currentText;
+    lastOtpField = otpField;
+
+    if (otpVisible) {
+      return {
+        state: 'otp' as const,
+        text: currentText,
+        otpField,
+      };
+    }
+
+    if (manageVisible) {
+      manageShellSeenAt ||= Date.now();
+      if ((Date.now() - manageShellSeenAt) >= 12_000) {
+        return {
+          state: 'manage_shell' as const,
+          text: currentText,
+          otpField: null,
+        };
+      }
+    } else {
+      manageShellSeenAt = 0;
+    }
+
+    if (Date.now() >= nextSnapshotAt) {
+      await updateEtapa(execucao, 'otp_email', 'running', {
+        message: `Aguardando a tela do codigo ou a liberacao da sessao no Manage... ${elapsedSeconds}s.`,
+        url: page.url(),
+        title: await page.title().catch(() => ''),
+        data: {
+          elapsedSeconds,
+          manageShellSeen: Boolean(manageShellSeenAt),
+        },
+      });
+      await maybeCaptureSnapshot(execucao.id, page, config, artifacts, runtime, `04-otp-wait-${elapsedSeconds}s`);
+      nextSnapshotAt = Date.now() + OTP_SCREEN_SNAPSHOT_INTERVAL_MS;
+    }
+
+    await sleep(1_000);
+  }
+
+  return {
+    state: 'timeout' as const,
+    text: lastText,
+    otpField: lastOtpField,
+  };
+}
+
 async function clickEntrarOnMasDialog(page: Page) {
   const entrar = await firstVisible(page, [
     () => page.getByRole('button', { name: /^Entrar$/i }),
@@ -1232,40 +1318,31 @@ async function performOtp(
   });
 
   await sleep(PAGE_WAIT_AFTER_ACTION_MS);
-  let currentText = await bodyText(page);
-  let otpField = await findOtpField(page);
-  let otpVisible = Boolean(otpField) || isOtpBody(currentText);
+  const otpScreenResult = await waitForOtpScreenOrManageShell(page, execucao, config, artifacts, runtime);
+  let currentText = otpScreenResult.text;
+  let otpField = otpScreenResult.otpField;
 
-  if (!otpVisible) {
-    const waitStartedAt = Date.now();
-    while ((Date.now() - waitStartedAt) < 45_000) {
-      await sleep(1_000);
-      currentText = await bodyText(page);
-      otpField = await findOtpField(page);
-      otpVisible = Boolean(otpField) || isOtpBody(currentText);
-
-      if (otpVisible) break;
-      if (isManageBody(currentText)) break;
-    }
+  if (otpScreenResult.state === 'manage_shell') {
+    await updateEtapa(execucao, 'otp_email', 'skipped', {
+      message: 'A shell do Manage carregou sem exibir modal de OTP depois da espera estabilizada.',
+      url: page.url(),
+      title: await page.title().catch(() => ''),
+      finishedAt: new Date(),
+    });
+    return;
   }
 
-  if (!otpVisible) {
+  if (otpScreenResult.state !== 'otp') {
     currentText = await bodyText(page);
-    if (isManageBody(currentText)) {
-      await updateEtapa(execucao, 'otp_email', 'skipped', {
-        message: 'A shell do Manage carregou sem exibir modal de OTP depois da espera.',
-        url: page.url(),
-        title: await page.title().catch(() => ''),
-        finishedAt: new Date(),
-      });
-      return;
+    otpField = await findOtpFieldForScreen(page, currentText);
+    if (!otpField && !isOtpBody(currentText)) {
+      throw new Error('Depois de clicar em Iniciar no Manage, a tela para inserir o codigo nao apareceu dentro do tempo limite.');
     }
-    throw new Error('Depois de clicar em Iniciar no Manage, a tela para inserir o codigo nao apareceu.');
   }
 
   await maybeCaptureSnapshot(execucao.id, page, config, artifacts, runtime, '04-otp-screen');
   currentText = await bodyText(page);
-  otpField = otpField || await findOtpField(page);
+  otpField = otpField || await findOtpFieldForScreen(page, currentText);
 
   if (!otpField && isConcurrentSessionText(currentText)) {
     await clickEntrarOnMasDialog(page);
@@ -1831,7 +1908,7 @@ async function runExecucao(execucaoId: number) {
   const { files: artifacts, runtime } = await ensureArtifacts(execucao.runId);
   await setExecucaoSummary(execucao.id, {
     startedByWorkerAt: new Date().toISOString(),
-    workerVersion: 'detran-worker-v12',
+    workerVersion: 'detran-worker-v13',
   });
 
   if (!buildReadyForExecution(config)) {
@@ -1920,7 +1997,7 @@ async function runExecucao(execucaoId: number) {
       pageTitle,
       artifacts: buildArtifactsPatch(runtime, artifacts),
       summary: {
-        workerVersion: 'detran-worker-v12',
+        workerVersion: 'detran-worker-v13',
         failedAt: new Date().toISOString(),
         flow: execucao.flow,
       },
