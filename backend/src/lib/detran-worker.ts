@@ -645,13 +645,45 @@ async function clickManage(page: Page) {
 async function submitAuthLogin(page: Page, passwordField: Locator) {
   try {
     await clickFirstVisible(page, [
+      () => page.getByRole('button', { name: /^Efetuar login$/i }),
+      () => page.getByText(/^Efetuar login$/i),
       () => page.locator('button[type="submit"]'),
-      () => page.getByRole('button', { name: /entrar|login|avancar|continuar/i }),
+      () => page.getByRole('button', { name: /efetuar login|entrar|login|avancar|continuar/i }),
       () => page.getByText(/entrar|login|avancar|continuar/i),
     ]);
   } catch {
     await passwordField.press('Enter');
   }
+
+  await page.waitForLoadState('networkidle', { timeout: 8_000 }).catch(() => undefined);
+}
+
+async function readAuthFeedback(page: Page) {
+  const notification = await firstVisible(page, [
+    () => page.locator('[role="alert"]'),
+    () => page.locator('[class*="notification"]'),
+    () => page.locator('[class*="toast"]'),
+    () => page.locator('[class*="inline-notification"]'),
+  ]);
+
+  if (notification) {
+    const text = normalizeText(await notification.innerText().catch(() => ''));
+    if (text) return text;
+  }
+
+  const text = normalizeText(await bodyText(page));
+  const normalized = normalizeSearchText(text);
+  if (
+    normalized.includes('inval')
+    || normalized.includes('erro')
+    || normalized.includes('senha')
+    || normalized.includes('usuario')
+    || normalized.includes('usuário')
+  ) {
+    return text.slice(0, 500);
+  }
+
+  return '';
 }
 
 async function waitForPostLoginState(page: Page, timeoutMs: number) {
@@ -796,11 +828,15 @@ async function performLogin(
   await sleep(PAGE_WAIT_AFTER_ACTION_MS);
   const locateLoginFields = async () => ({
     cpfField: await firstVisible(page, [
+      () => page.getByPlaceholder(/insira seu nome do usu.rio/i),
+      () => page.getByLabel(/^nome do usu.rio$/i),
       () => page.getByLabel(/cpf|usuario|usu.rio/i),
       () => page.getByPlaceholder(/cpf|usuario|usu.rio/i),
       () => page.locator('input[type="text"]'),
     ]),
     passwordField: await firstVisible(page, [
+      () => page.getByPlaceholder(/insira sua senha/i),
+      () => page.getByLabel(/^senha$/i),
       () => page.getByLabel(/senha/i),
       () => page.getByPlaceholder(/senha/i),
       () => page.locator('input[type="password"]'),
@@ -819,10 +855,13 @@ async function performLogin(
     await maybeCaptureSnapshot(execucao.id, page, config, artifacts, runtime, '01-auth-form');
     await submitAuthLogin(page, passwordField);
     submittedCredentials = true;
-    const postLoginState = await waitForPostLoginState(page, 20_000);
+    const postLoginState = await waitForPostLoginState(page, 45_000);
     if (!postLoginState) {
       await maybeCaptureSnapshot(execucao.id, page, config, artifacts, runtime, '02-auth-stuck');
-      throw new Error('As credenciais foram enviadas, mas o portal nao voltou para a home do MAS nem avancou para o OTP.');
+      const feedback = await readAuthFeedback(page);
+      throw new Error(feedback
+        ? `As credenciais foram enviadas, mas o portal nao voltou para a home do MAS nem avancou para o OTP. Retorno visivel: ${feedback}`
+        : 'As credenciais foram enviadas, mas o portal nao voltou para a home do MAS nem avancou para o OTP.');
     }
     portalState = postLoginState;
     await sleep(PAGE_WAIT_AFTER_ACTION_MS);
