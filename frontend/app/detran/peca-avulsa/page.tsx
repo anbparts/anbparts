@@ -6,13 +6,13 @@ import { api } from '@/lib/api';
 import { detranShell as ds } from '@/lib/detran-ui';
 
 const EMPTY_FORM = {
-  placa: '',
-  renavam: '',
+  placa: 'FIF1F35',
+  renavam: '00586622632',
   chassi: '',
-  tipoPeca: '',
-  notaFiscalEntrada: '',
+  tipoPeca: 'Banco',
+  notaFiscalEntrada: '000015',
   modoEtiqueta: 'direta',
-  etiquetaInformada: '',
+  etiquetaInformada: 'SP52302000265011',
   cartelaNumero: '',
   observacoes: '',
 };

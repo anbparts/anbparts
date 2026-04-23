@@ -1187,24 +1187,29 @@ async function performManageSelection(
     page = nextPage;
   }
   await sleep(PAGE_WAIT_AFTER_ACTION_MS);
-  const manageState = await waitForPortalState(page, ['otp', 'manage_shell'], 45_000);
   await maybeCaptureSnapshot(execucao.id, page, config, artifacts, runtime, '04-manage-after-start');
   const currentUrl = page.url();
   const currentTitle = await page.title().catch(() => '');
   const currentBody = await bodyText(page);
-  if (!manageState && !isManageBody(currentBody) && !isOtpBody(currentBody)) {
+  const manageState = await detectPortalState(page);
+
+  if (!isManageUrl(currentUrl) && !isManageBody(currentBody) && !isOtpBody(currentBody)) {
     throw new Error('O clique em Iniciar no Manage nao disparou a tela do codigo nem abriu o app.');
   }
+
   await updateEtapa(execucao, 'selecionar_manage', 'success', {
     message: isOtpBody(currentBody)
       ? 'Iniciar do Manage clicado com sucesso; a tela de OTP apareceu.'
-      : 'Iniciar do Manage clicado com sucesso; a shell do Manage abriu.',
+      : isManageBody(currentBody)
+      ? 'Iniciar do Manage clicado com sucesso; a shell do Manage abriu.'
+      : 'Iniciar do Manage clicado com sucesso; aguardando validacao de OTP/sessao.',
     url: currentUrl,
     title: currentTitle,
     data: {
       manageUrl: currentUrl,
       clickedIniciar: true,
-      portalState: manageState ?? 'other',
+      portalState: manageState,
+      manageUrlDetected: isManageUrl(currentUrl),
       otpDetected: isOtpBody(currentBody),
     },
     finishedAt: new Date(),
@@ -1817,7 +1822,7 @@ async function runExecucao(execucaoId: number) {
   const { files: artifacts, runtime } = await ensureArtifacts(execucao.runId);
   await setExecucaoSummary(execucao.id, {
     startedByWorkerAt: new Date().toISOString(),
-    workerVersion: 'detran-worker-v10',
+    workerVersion: 'detran-worker-v11',
   });
 
   if (!buildReadyForExecution(config)) {
@@ -1906,7 +1911,7 @@ async function runExecucao(execucaoId: number) {
       pageTitle,
       artifacts: buildArtifactsPatch(runtime, artifacts),
       summary: {
-        workerVersion: 'detran-worker-v10',
+        workerVersion: 'detran-worker-v11',
         failedAt: new Date().toISOString(),
         flow: execucao.flow,
       },
