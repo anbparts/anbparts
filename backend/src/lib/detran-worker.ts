@@ -634,32 +634,56 @@ async function fillPortalField(locator: Locator, value: string) {
   }).catch(() => undefined);
 }
 
+async function findManageStartLocator(page: Page, scope?: Locator) {
+  return firstVisible(page, [
+    () => (scope || page).getByRole('link', { name: /iniciar/i }),
+    () => (scope || page).getByRole('button', { name: /iniciar/i }),
+    () => (scope || page).locator('a').filter({ hasText: /iniciar/i }),
+    () => (scope || page).locator('button').filter({ hasText: /iniciar/i }),
+    () => (scope || page).getByText(/iniciar/i),
+  ]);
+}
+
 async function clickManage(page: Page) {
-  const manageCard = await firstVisible(page, [
-    () => page.locator('div,section,article').filter({ has: page.getByText(/^Manage$/i) }),
-    () => page.getByText(/^Manage$/i).locator('xpath=ancestor::*[self::div or self::section or self::article][1]'),
+  const manageTitle = await firstVisible(page, [
+    () => page.getByRole('heading', { name: /^Manage$/i }),
+    () => page.getByText(/^Manage$/i),
   ]);
 
-  if (manageCard) {
+  if (!manageTitle) {
+    throw new Error('O card do Manage nao foi encontrado na home do MAS.');
+  }
+
+  const hoverTargets: Locator[] = [manageTitle];
+  for (let depth = 1; depth <= 8; depth += 1) {
+    hoverTargets.push(manageTitle.locator(`xpath=ancestor::*[self::div or self::section or self::article][${depth}]`));
+  }
+
+  for (const hoverTarget of hoverTargets) {
     try {
-      await manageCard.hover();
-      await sleep(800);
+      await hoverTarget.scrollIntoViewIfNeeded({ timeout: 1_000 }).catch(() => undefined);
+      await hoverTarget.hover({ force: true, timeout: 2_000 });
+      await sleep(1_000);
     } catch {
-      // noop
+      continue;
     }
 
-    const manageStartLocator = await firstVisible(page, [
-      () => manageCard.getByRole('button', { name: /iniciar/i }),
-      () => manageCard.getByRole('link', { name: /iniciar/i }),
-      () => manageCard.getByText(/iniciar/i),
-      () => page.getByRole('button', { name: /iniciar/i }),
-      () => page.getByRole('link', { name: /iniciar/i }),
-      () => page.getByText(/iniciar/i),
-    ]);
-
+    const manageStartLocator = await findManageStartLocator(page, hoverTarget)
+      || await findManageStartLocator(page);
     if (manageStartLocator) {
       return clickAndFollowPage(page, manageStartLocator);
     }
+  }
+
+  const hiddenStart = page.locator('a,button,[role="link"],[role="button"]').filter({ hasText: /iniciar/i }).first();
+  if (await hiddenStart.count().catch(() => 0)) {
+    await hiddenStart.evaluate((element) => {
+      (element as any).click();
+    }).catch(async () => {
+      await hiddenStart.click({ force: true, timeout: 3_000 });
+    });
+    await sleep(PAGE_WAIT_AFTER_ACTION_MS);
+    return page;
   }
 
   throw new Error('O card do Manage apareceu, mas o link Iniciar nao ficou disponivel para clique.');
@@ -1566,7 +1590,7 @@ async function runExecucao(execucaoId: number) {
   const { files: artifacts, runtime } = await ensureArtifacts(execucao.runId);
   await setExecucaoSummary(execucao.id, {
     startedByWorkerAt: new Date().toISOString(),
-    workerVersion: 'detran-worker-v4',
+    workerVersion: 'detran-worker-v5',
   });
 
   if (!buildReadyForExecution(config)) {
@@ -1655,7 +1679,7 @@ async function runExecucao(execucaoId: number) {
       pageTitle,
       artifacts: buildArtifactsPatch(runtime, artifacts),
       summary: {
-        workerVersion: 'detran-worker-v4',
+        workerVersion: 'detran-worker-v5',
         failedAt: new Date().toISOString(),
         flow: execucao.flow,
       },
