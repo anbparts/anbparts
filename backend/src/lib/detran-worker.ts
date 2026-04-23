@@ -1224,25 +1224,34 @@ async function performOtp(
   artifacts: ArtifactBundle,
   runtime: RuntimeArtifacts,
 ) {
+  const otpRequestedAt = new Date();
   await updateEtapa(execucao, 'otp_email', 'running', {
     message: 'Aguardando a tela do codigo e a chegada do OTP por email.',
     url: page.url(),
     title: await page.title().catch(() => ''),
   });
+
   await sleep(PAGE_WAIT_AFTER_ACTION_MS);
-  let portalState = await detectPortalState(page);
-  let otpVisible = portalState === 'otp';
+  let currentText = await bodyText(page);
+  let otpField = await findOtpField(page);
+  let otpVisible = Boolean(otpField) || isOtpBody(currentText);
 
   if (!otpVisible) {
-    otpVisible = await waitForOtpScreen(page);
-    if (otpVisible) {
-      portalState = 'otp';
+    const waitStartedAt = Date.now();
+    while ((Date.now() - waitStartedAt) < 45_000) {
+      await sleep(1_000);
+      currentText = await bodyText(page);
+      otpField = await findOtpField(page);
+      otpVisible = Boolean(otpField) || isOtpBody(currentText);
+
+      if (otpVisible) break;
+      if (isManageBody(currentText)) break;
     }
   }
 
   if (!otpVisible) {
-    portalState = await detectPortalState(page);
-    if (portalState === 'manage_shell') {
+    currentText = await bodyText(page);
+    if (isManageBody(currentText)) {
       await updateEtapa(execucao, 'otp_email', 'skipped', {
         message: 'A shell do Manage carregou sem exibir modal de OTP depois da espera.',
         url: page.url(),
@@ -1255,8 +1264,8 @@ async function performOtp(
   }
 
   await maybeCaptureSnapshot(execucao.id, page, config, artifacts, runtime, '04-otp-screen');
-  const currentText = await bodyText(page);
-  const otpField = await findOtpField(page);
+  currentText = await bodyText(page);
+  otpField = otpField || await findOtpField(page);
 
   if (!otpField && isConcurrentSessionText(currentText)) {
     await clickEntrarOnMasDialog(page);
@@ -1278,7 +1287,7 @@ async function performOtp(
     throw new Error('Campo do codigo OTP nao foi encontrado na tela.');
   }
 
-  const otpInfo = await waitForOtpCode(config, new Date(execucao.createdAt), async (message) => {
+  const otpInfo = await waitForOtpCode(config, otpRequestedAt, async (message) => {
     await updateEtapa(execucao, 'otp_email', 'running', {
       message,
       url: page.url(),
@@ -1822,7 +1831,7 @@ async function runExecucao(execucaoId: number) {
   const { files: artifacts, runtime } = await ensureArtifacts(execucao.runId);
   await setExecucaoSummary(execucao.id, {
     startedByWorkerAt: new Date().toISOString(),
-    workerVersion: 'detran-worker-v11',
+    workerVersion: 'detran-worker-v12',
   });
 
   if (!buildReadyForExecution(config)) {
@@ -1911,7 +1920,7 @@ async function runExecucao(execucaoId: number) {
       pageTitle,
       artifacts: buildArtifactsPatch(runtime, artifacts),
       summary: {
-        workerVersion: 'detran-worker-v11',
+        workerVersion: 'detran-worker-v12',
         failedAt: new Date().toISOString(),
         flow: execucao.flow,
       },
