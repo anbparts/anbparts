@@ -2,7 +2,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { Prisma } from '@prisma/client';
 import { google } from 'googleapis';
-import { chromium, type Browser, type BrowserContext, type Locator, type Page } from 'playwright';
+import { chromium, type Browser, type BrowserContext, type Frame, type Locator, type Page } from 'playwright';
 import { prisma } from './prisma';
 
 const DETRAN_CONFIG_SLUG = 'default';
@@ -210,7 +210,7 @@ function isOtpBody(text: string) {
 type PortalState = 'auth' | 'home' | 'otp' | 'manage_shell' | 'other';
 
 async function detectPortalState(page: Page): Promise<PortalState> {
-  const text = await bodyText(page);
+  const text = await bodyTextIncludingFrames(page);
 
   if (isOtpBody(text)) return 'otp';
   if (isManageBody(text)) return 'manage_shell';
@@ -552,6 +552,30 @@ async function bodyText(page: Page) {
   } catch {
     return '';
   }
+}
+
+function pageSearchRoots(page: Page): Array<Page | Frame> {
+  const mainFrame = page.mainFrame();
+  return [
+    page,
+    ...page.frames().filter((frame) => frame !== mainFrame),
+  ];
+}
+
+async function bodyTextIncludingFrames(page: Page) {
+  const chunks = [await bodyText(page)];
+
+  for (const frame of page.frames()) {
+    if (frame === page.mainFrame()) continue;
+    try {
+      const text = normalizeText(await frame.locator('body').innerText({ timeout: 1_500 }));
+      if (text) chunks.push(text);
+    } catch {
+      // Alguns iframes externos podem bloquear leitura; seguimos com os demais.
+    }
+  }
+
+  return normalizeText(chunks.filter(Boolean).join('\n'));
 }
 
 async function firstVisible(page: Page, candidates: Array<() => Locator>) {
@@ -928,29 +952,56 @@ async function findOtpFieldForScreen(page: Page, screenText: string) {
   return firstVisible(page, candidates);
 }
 
+async function findOtpFieldAcrossFrames(page: Page, screenText: string) {
+  const roots = pageSearchRoots(page);
+  const candidates: Array<() => Locator> = [];
+
+  for (const root of roots) {
+    candidates.push(
+      () => root.getByLabel(/codigo|c[oÃ³]digo/i),
+      () => root.locator('input[aria-label*="codigo" i]'),
+      () => root.locator('input[name*="codigo" i]'),
+      () => root.locator('input[id*="codigo" i]'),
+    );
+  }
+
+  if (isOtpBody(screenText)) {
+    for (const root of roots) {
+      candidates.push(
+        () => root.locator('input[type="text"]'),
+        () => root.locator('input:not([type="hidden"])').first(),
+      );
+    }
+  }
+
+  return firstVisible(page, candidates);
+}
+
 async function findVisibleOtpLikeInput(page: Page) {
   const viewport = page.viewportSize();
-  const inputs = page.locator('input:not([type="hidden"]), textarea');
-  const count = Math.min(await inputs.count().catch(() => 0), 25);
+  for (const root of pageSearchRoots(page)) {
+    const inputs = root.locator('input:not([type="hidden"]), textarea');
+    const count = Math.min(await inputs.count().catch(() => 0), 25);
 
-  for (let index = 0; index < count; index += 1) {
-    const input = inputs.nth(index);
-    const visible = await input.isVisible({ timeout: 250 }).catch(() => false);
-    if (!visible) continue;
+    for (let index = 0; index < count; index += 1) {
+      const input = inputs.nth(index);
+      const visible = await input.isVisible({ timeout: 250 }).catch(() => false);
+      if (!visible) continue;
 
-    const box = await input.boundingBox().catch(() => null);
-    if (!box) continue;
+      const box = await input.boundingBox().catch(() => null);
+      if (!box) continue;
 
-    const centered = viewport
-      ? box.x >= viewport.width * 0.25
-        && box.x <= viewport.width * 0.82
-        && box.y >= viewport.height * 0.18
-        && box.y <= viewport.height * 0.86
-      : true;
-    const otpSized = box.width >= 35 && box.width <= 240 && box.height >= 12 && box.height <= 70;
+      const centered = viewport
+        ? box.x >= viewport.width * 0.25
+          && box.x <= viewport.width * 0.82
+          && box.y >= viewport.height * 0.18
+          && box.y <= viewport.height * 0.86
+        : true;
+      const otpSized = box.width >= 35 && box.width <= 240 && box.height >= 12 && box.height <= 70;
 
-    if (centered && otpSized) {
-      return input;
+      if (centered && otpSized) {
+        return input;
+      }
     }
   }
 
@@ -972,8 +1023,8 @@ async function waitForOtpScreenOrManageShell(
 
   while ((Date.now() - startedAt) < OTP_SCREEN_WAIT_TIMEOUT_MS) {
     const elapsedSeconds = Math.floor((Date.now() - startedAt) / 1000);
-    const currentText = await bodyText(page);
-    const otpField = await findOtpFieldForScreen(page, currentText)
+    const currentText = await bodyTextIncludingFrames(page);
+    const otpField = await findOtpFieldAcrossFrames(page, currentText)
       || await findVisibleOtpLikeInput(page);
     const otpVisible = Boolean(otpField) || isOtpBody(currentText);
     const manageVisible = isManageBody(currentText);
@@ -1363,17 +1414,16 @@ async function performOtp(
   }
 
   if (otpScreenResult.state !== 'otp') {
-    currentText = await bodyText(page);
-    otpField = await findOtpFieldForScreen(page, currentText);
-    otpField = otpField || await findVisibleOtpLikeInput(page);
+    currentText = await bodyTextIncludingFrames(page);
+    otpField = await findOtpFieldAcrossFrames(page, currentText) || await findVisibleOtpLikeInput(page);
     if (!otpField && !isOtpBody(currentText)) {
       throw new Error('Depois de clicar em Iniciar no Manage, a tela para inserir o codigo nao apareceu dentro do tempo limite.');
     }
   }
 
   await maybeCaptureSnapshot(execucao.id, page, config, artifacts, runtime, '04-otp-screen');
-  currentText = await bodyText(page);
-  otpField = otpField || await findOtpFieldForScreen(page, currentText) || await findVisibleOtpLikeInput(page);
+  currentText = await bodyTextIncludingFrames(page);
+  otpField = otpField || await findOtpFieldAcrossFrames(page, currentText) || await findVisibleOtpLikeInput(page);
 
   if (!otpField && isConcurrentSessionText(currentText)) {
     await clickEntrarOnMasDialog(page);
@@ -1940,7 +1990,7 @@ async function runExecucao(execucaoId: number) {
   const { files: artifacts, runtime } = await ensureArtifacts(execucao.runId);
   await setExecucaoSummary(execucao.id, {
     startedByWorkerAt: new Date().toISOString(),
-    workerVersion: 'detran-worker-v14',
+    workerVersion: 'detran-worker-v15',
   });
 
   if (!buildReadyForExecution(config)) {
@@ -2029,7 +2079,7 @@ async function runExecucao(execucaoId: number) {
       pageTitle,
       artifacts: buildArtifactsPatch(runtime, artifacts),
       summary: {
-        workerVersion: 'detran-worker-v14',
+        workerVersion: 'detran-worker-v15',
         failedAt: new Date().toISOString(),
         flow: execucao.flow,
       },
