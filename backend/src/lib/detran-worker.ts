@@ -275,6 +275,14 @@ function extractAuthorizationError(text: string) {
   return '';
 }
 
+function maskOtpCode(value: string) {
+  const normalized = normalizeText(value);
+  if (!normalized) return '';
+  if (normalized.length <= 2) return '*'.repeat(normalized.length);
+  if (normalized.length <= 4) return `${normalized.slice(0, 1)}${'*'.repeat(Math.max(1, normalized.length - 1))}`;
+  return `${normalized.slice(0, 2)}${'*'.repeat(Math.max(1, normalized.length - 4))}${normalized.slice(-2)}`;
+}
+
 function isAuthUrl(url: string) {
   const normalized = normalizeText(url).toLowerCase();
   return normalized.includes('auth.mas.sp.gov.br/login');
@@ -1249,6 +1257,96 @@ async function clickOkOnSystemDialog(page: Page) {
   return true;
 }
 
+async function readLocatorValue(locator: Locator) {
+  try {
+    const value = await locator.inputValue({ timeout: 1_500 });
+    return normalizeText(value);
+  } catch {
+    return normalizeText(await locator.evaluate((element: any) => {
+      if (element && typeof element.value === 'string') return element.value;
+      if (element && typeof element.textContent === 'string') return element.textContent;
+      return '';
+    }).catch(() => ''));
+  }
+}
+
+async function dispatchOtpFieldEvents(locator: Locator) {
+  await locator.evaluate((element: any) => {
+    element.focus?.();
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+    element.dispatchEvent(new Event('change', { bubbles: true }));
+    element.dispatchEvent(new Event('blur', { bubbles: true }));
+  }).catch(() => undefined);
+}
+
+async function writeOtpToPortalField(
+  page: Page,
+  otpField: Locator,
+  code: string,
+) {
+  const normalizedCode = normalizeText(code).toUpperCase();
+  if (!normalizedCode) {
+    throw new Error('Codigo OTP vazio ao tentar preencher o portal.');
+  }
+
+  await otpField.scrollIntoViewIfNeeded().catch(() => undefined);
+  await otpField.click({ timeout: 3_000 }).catch(async () => {
+    await otpField.click({ force: true, timeout: 3_000 }).catch(() => undefined);
+  });
+  await otpField.focus().catch(() => undefined);
+  await sleep(250);
+
+  await otpField.fill('').catch(() => undefined);
+  await page.keyboard.press('Control+A').catch(() => undefined);
+  await page.keyboard.press('Delete').catch(() => undefined);
+  await page.keyboard.press('Backspace').catch(() => undefined);
+  await sleep(150);
+
+  const clearedValue = await readLocatorValue(otpField);
+
+  await otpField.type(normalizedCode, { delay: 180 }).catch(async () => {
+    for (const char of normalizedCode.split('')) {
+      await page.keyboard.type(char, { delay: 180 }).catch(() => undefined);
+      await sleep(60);
+    }
+  });
+
+  await dispatchOtpFieldEvents(otpField);
+  await sleep(300);
+
+  let typedValue = await readLocatorValue(otpField);
+
+  if (normalizeText(typedValue).toUpperCase() !== normalizedCode) {
+    await otpField.fill(normalizedCode).catch(() => undefined);
+    await dispatchOtpFieldEvents(otpField);
+    await sleep(250);
+    typedValue = await readLocatorValue(otpField);
+  }
+
+  if (normalizeText(typedValue).toUpperCase() !== normalizedCode) {
+    await otpField.evaluate((element: any, value: string) => {
+      if ('value' in element) {
+        element.value = value;
+      } else {
+        element.textContent = value;
+      }
+      element.focus?.();
+      element.dispatchEvent(new Event('input', { bubbles: true }));
+      element.dispatchEvent(new Event('change', { bubbles: true }));
+      element.dispatchEvent(new Event('blur', { bubbles: true }));
+    }, normalizedCode).catch(() => undefined);
+    await sleep(250);
+    typedValue = await readLocatorValue(otpField);
+  }
+
+  return {
+    clearedValue,
+    typedValue: normalizeText(typedValue).toUpperCase(),
+    expectedValue: normalizedCode,
+    success: normalizeText(typedValue).toUpperCase() === normalizedCode,
+  };
+}
+
 async function launchDetranContext(
   readyConfig: DetranConfigRecord,
   runtimeProfile: DetranWorkerRuntime,
@@ -1722,8 +1820,75 @@ async function performOtp(
     });
   });
 
-  await otpField.fill(otpInfo.code);
+  await updateEtapa(execucao, 'otp_email', 'running', {
+    message: `Codigo OTP encontrado; preparando digitacao no portal (${maskOtpCode(otpInfo.code)}).`,
+    url: page.url(),
+    title: await page.title().catch(() => ''),
+    data: {
+      otpScreenDetected: true,
+      otpEmailSearchStart: otpEmailSearchStart.toISOString(),
+      otpEmailSubject: otpInfo.subject,
+      otpEmailFrom: otpInfo.from,
+      otpEmailReceivedAt: otpInfo.receivedAt,
+      otpMask: maskOtpCode(otpInfo.code),
+      phase: 'before_typing',
+    },
+  });
+
+  const typingResult = await writeOtpToPortalField(page, otpField, otpInfo.code);
+
+  await updateEtapa(execucao, 'otp_email', 'running', {
+    message: typingResult.success
+      ? `Codigo OTP digitado e confirmado no campo (${maskOtpCode(otpInfo.code)}).`
+      : `Falha ao confirmar o codigo digitado no campo (${maskOtpCode(otpInfo.code)}).`,
+    url: page.url(),
+    title: await page.title().catch(() => ''),
+    data: {
+      otpScreenDetected: true,
+      otpEmailSearchStart: otpEmailSearchStart.toISOString(),
+      otpEmailSubject: otpInfo.subject,
+      otpEmailFrom: otpInfo.from,
+      otpEmailReceivedAt: otpInfo.receivedAt,
+      otpMask: maskOtpCode(otpInfo.code),
+      phase: 'after_typing',
+      otpFieldWrite: {
+        success: typingResult.success,
+        expectedLength: typingResult.expectedValue.length,
+        typedLength: typingResult.typedValue.length,
+        clearedValueMask: maskOtpCode(typingResult.clearedValue),
+        typedValueMask: maskOtpCode(typingResult.typedValue),
+      },
+    },
+  });
+
+  if (!typingResult.success) {
+    await maybeCaptureSnapshot(execucao.id, page, config, artifacts, runtime, '05-otp-typing-failed');
+    throw new Error(`Codigo OTP foi encontrado no Gmail, mas nao permaneceu digitado no campo do portal. Valor lido apos digitacao: ${maskOtpCode(typingResult.typedValue)}.`);
+  }
+
   await maybeCaptureSnapshot(execucao.id, page, config, artifacts, runtime, '05-otp-filled');
+
+  await updateEtapa(execucao, 'otp_email', 'running', {
+    message: `Codigo OTP confirmado no campo; clicando em Entrar (${maskOtpCode(otpInfo.code)}).`,
+    url: page.url(),
+    title: await page.title().catch(() => ''),
+    data: {
+      otpScreenDetected: true,
+      otpEmailSearchStart: otpEmailSearchStart.toISOString(),
+      otpEmailSubject: otpInfo.subject,
+      otpEmailFrom: otpInfo.from,
+      otpEmailReceivedAt: otpInfo.receivedAt,
+      otpMask: maskOtpCode(otpInfo.code),
+      phase: 'before_submit',
+      otpFieldWrite: {
+        success: typingResult.success,
+        expectedLength: typingResult.expectedValue.length,
+        typedLength: typingResult.typedValue.length,
+        typedValueMask: maskOtpCode(typingResult.typedValue),
+      },
+    },
+  });
+
   await clickEntrarOnMasDialog(page);
   const afterOtpState = await waitForPortalState(page, ['manage_shell'], 20_000);
   await updateEtapa(execucao, 'otp_email', 'success', {
@@ -1736,6 +1901,13 @@ async function performOtp(
       otpEmailFrom: otpInfo.from,
       otpEmailReceivedAt: otpInfo.receivedAt,
       otpSnippet: otpInfo.snippet,
+      otpMask: maskOtpCode(otpInfo.code),
+      otpFieldWrite: {
+        success: typingResult.success,
+        expectedLength: typingResult.expectedValue.length,
+        typedLength: typingResult.typedValue.length,
+        typedValueMask: maskOtpCode(typingResult.typedValue),
+      },
     },
     finishedAt: new Date(),
   });
@@ -2279,7 +2451,7 @@ async function runExecucao(execucaoId: number) {
   const { files: artifacts, runtime } = await ensureArtifacts(execucao.runId);
   await setExecucaoSummary(execucao.id, {
     startedByWorkerAt: new Date().toISOString(),
-    workerVersion: 'detran-worker-v27',
+    workerVersion: 'detran-worker-v28',
   });
 
   if (!buildReadyForExecution(config)) {
@@ -2373,7 +2545,7 @@ async function runExecucao(execucaoId: number) {
       pageTitle,
       artifacts: buildArtifactsPatch(runtime, artifacts),
       summary: {
-        workerVersion: 'detran-worker-v27',
+        workerVersion: 'detran-worker-v28',
         workerEnvironment: runtimeProfile.environmentLabel,
         workerExecutionMode: runtimeProfile.localMode ? 'local_browser' : 'server_browser',
         failedAt: new Date().toISOString(),
