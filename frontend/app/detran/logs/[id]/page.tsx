@@ -21,6 +21,8 @@ export default function DetranLogDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [isPhone, setIsPhone] = useState(false);
+  const [selectedScreenshotIndex, setSelectedScreenshotIndex] = useState(0);
+  const [followLatestScreenshot, setFollowLatestScreenshot] = useState(true);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -69,6 +71,28 @@ export default function DetranLogDetailPage() {
 
   const statusMeta = useMemo(() => getDetranStatusMeta(item?.status), [item?.status]);
   const etapas = Array.isArray(item?.etapas) ? item.etapas : [];
+  const artifacts = item?.artifacts && typeof item.artifacts === 'object' ? item.artifacts : {};
+  const screenshots = Array.isArray(artifacts.screenshots) ? artifacts.screenshots : [];
+  const htmlSnapshots = Array.isArray(artifacts.htmlSnapshots) ? artifacts.htmlSnapshots : [];
+  const screenshotCount = screenshots.length;
+  const htmlSnapshotCount = htmlSnapshots.length;
+  const safeScreenshotIndex = screenshotCount > 0 ? Math.min(selectedScreenshotIndex, screenshotCount - 1) : 0;
+  const artifactCacheKey = encodeURIComponent(`${item?.updatedAt || item?.finishedAt || item?.createdAt || ''}-${screenshotCount}-${safeScreenshotIndex}`);
+  const liveScreenshotUrl = screenshotCount > 0
+    ? `${api.detran.artifactUrl(id, 'screenshots', safeScreenshotIndex)}?v=${artifactCacheKey}`
+    : '';
+
+  useEffect(() => {
+    if (screenshotCount <= 0) {
+      setSelectedScreenshotIndex(0);
+      return;
+    }
+
+    setSelectedScreenshotIndex((current) => {
+      if (followLatestScreenshot) return screenshotCount - 1;
+      return Math.min(Math.max(current, 0), screenshotCount - 1);
+    });
+  }, [followLatestScreenshot, screenshotCount]);
 
   return (
     <>
@@ -169,6 +193,96 @@ export default function DetranLogDetailPage() {
               </div>
 
               <div style={{ display: 'grid', gap: 18 }}>
+                <div style={ds.card}>
+                  <div style={ds.sectionHead}>
+                    <div style={ds.sectionTitle}>Visual ao vivo</div>
+                    <div style={ds.sectionSub}>Ultima imagem capturada pelo worker para acompanharmos o que ele esta vendo</div>
+                  </div>
+                  <div style={{ padding: 18, display: 'grid', gap: 12 }}>
+                    {screenshotCount > 0 ? (
+                      <>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                          <div style={{ fontSize: 12, color: 'var(--ink-muted)' }}>
+                            Screenshot {safeScreenshotIndex + 1} de {screenshotCount}. Atualiza a cada 5s.
+                          </div>
+                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setFollowLatestScreenshot(false);
+                                setSelectedScreenshotIndex((current) => Math.max(0, current - 1));
+                              }}
+                              disabled={safeScreenshotIndex <= 0}
+                              style={{ ...ds.btn, opacity: safeScreenshotIndex <= 0 ? 0.45 : 1 }}
+                            >
+                              Anterior
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setFollowLatestScreenshot(false);
+                                setSelectedScreenshotIndex((current) => Math.min(screenshotCount - 1, current + 1));
+                              }}
+                              disabled={safeScreenshotIndex >= screenshotCount - 1}
+                              style={{ ...ds.btn, opacity: safeScreenshotIndex >= screenshotCount - 1 ? 0.45 : 1 }}
+                            >
+                              Proximo
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setFollowLatestScreenshot(true);
+                                setSelectedScreenshotIndex(screenshotCount - 1);
+                              }}
+                              style={{ ...ds.btn, background: followLatestScreenshot ? 'var(--ink)' : '#fff', color: followLatestScreenshot ? '#fff' : 'var(--ink)' }}
+                            >
+                              Ultimo
+                            </button>
+                          </div>
+                        </div>
+                        <div style={{ border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden', background: '#f8fafc' }}>
+                          <img
+                            src={liveScreenshotUrl}
+                            alt={`Screenshot ${safeScreenshotIndex + 1} da execucao Detran`}
+                            style={{ display: 'block', width: '100%', maxHeight: isPhone ? 360 : 520, objectFit: 'contain' }}
+                          />
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          {htmlSnapshotCount > 0 ? (
+                            <a
+                              href={api.detran.artifactUrl(id, 'htmlSnapshots', htmlSnapshotCount - 1)}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={ds.btn}
+                            >
+                              Ver HTML mais recente
+                            </a>
+                          ) : null}
+                          {artifacts.finalShot ? (
+                            <a href={api.detran.artifactUrl(id, 'finalShot')} target="_blank" rel="noreferrer" style={ds.btn}>
+                              Ver print final
+                            </a>
+                          ) : null}
+                          {artifacts.networkTrace ? (
+                            <a href={api.detran.artifactUrl(id, 'networkTrace')} target="_blank" rel="noreferrer" style={ds.btn}>
+                              Ver rede
+                            </a>
+                          ) : null}
+                          {artifacts.consoleLog ? (
+                            <a href={api.detran.artifactUrl(id, 'consoleLog')} target="_blank" rel="noreferrer" style={ds.btn}>
+                              Ver console
+                            </a>
+                          ) : null}
+                        </div>
+                      </>
+                    ) : (
+                      <div style={{ color: 'var(--ink-muted)', fontSize: 13, lineHeight: 1.7 }}>
+                        Ainda nao ha screenshot capturado nesta execucao. Assim que o worker salvar a primeira evidencia, ela aparece aqui automaticamente.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
                 <div style={ds.card}>
                   <div style={ds.sectionHead}>
                     <div style={ds.sectionTitle}>Entrada da execucao</div>

@@ -1,5 +1,7 @@
 import { randomUUID } from 'crypto';
 import { Router } from 'express';
+import fs from 'fs/promises';
+import path from 'path';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma';
 
@@ -239,6 +241,56 @@ function normalizeJsonField(value: unknown) {
   return value === null ? undefined : (value as Record<string, any> | undefined);
 }
 
+function normalizeJsonRecord(value: unknown): Record<string, any> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, any>) : {};
+}
+
+function resolveArtifactPath(artifacts: Record<string, any>, kind: string, index?: number) {
+  const arrayArtifactKinds = new Set(['screenshots', 'htmlSnapshots']);
+  const singleArtifactKinds = new Set([
+    'finalHtml',
+    'finalShot',
+    'beforeNextHtml',
+    'beforeNextShot',
+    'afterNextHtml',
+    'afterNextShot',
+    'networkTrace',
+    'consoleLog',
+    'pageErrors',
+    'storageState',
+  ]);
+
+  if (arrayArtifactKinds.has(kind)) {
+    const files = Array.isArray(artifacts[kind]) ? artifacts[kind] : [];
+    if (index === undefined || index < 0 || index >= files.length) return null;
+    return typeof files[index] === 'string' ? files[index] : null;
+  }
+
+  if (singleArtifactKinds.has(kind)) {
+    return typeof artifacts[kind] === 'string' ? artifacts[kind] : null;
+  }
+
+  return null;
+}
+
+function isPathInsideRunDir(filePath: string, runDir: string) {
+  const resolvedFile = path.resolve(filePath);
+  const resolvedRunDir = path.resolve(runDir);
+  const fileForCompare = process.platform === 'win32' ? resolvedFile.toLowerCase() : resolvedFile;
+  const runDirForCompare = process.platform === 'win32' ? resolvedRunDir.toLowerCase() : resolvedRunDir;
+
+  return fileForCompare === runDirForCompare || fileForCompare.startsWith(`${runDirForCompare}${path.sep}`);
+}
+
+function artifactContentType(filePath: string) {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === '.png') return 'image/png';
+  if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
+  if (ext === '.json' || ext === '.jsonl') return 'text/plain; charset=utf-8';
+  if (ext === '.html' || ext === '.htm') return 'text/plain; charset=utf-8';
+  return 'application/octet-stream';
+}
+
 function resolveExecucaoStatusFromEtapa(currentStatus: string, etapaStatus: string) {
   const current = normalizeText(currentStatus).toLowerCase();
   const next = normalizeText(etapaStatus).toLowerCase();
@@ -405,6 +457,45 @@ detranRouter.get('/execucoes/:id', async (req, res, next) => {
 
     res.json({ ok: true, execucao });
   } catch (error) {
+    next(error);
+  }
+});
+
+detranRouter.get('/execucoes/:id/artifacts/:kind/:index?', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const index = req.params.index !== undefined ? Number(req.params.index) : undefined;
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ error: 'Execucao invalida.' });
+    }
+    if (index !== undefined && (!Number.isInteger(index) || index < 0)) {
+      return res.status(400).json({ error: 'Indice de artefato invalido.' });
+    }
+
+    const execucao = await prisma.detranExecucao.findUnique({
+      where: { id },
+      select: { artifacts: true },
+    });
+
+    if (!execucao) {
+      return res.status(404).json({ error: 'Execucao nao encontrada.' });
+    }
+
+    const artifacts = normalizeJsonRecord(execucao.artifacts);
+    const runDir = typeof artifacts.runDir === 'string' ? artifacts.runDir : '';
+    const artifactPath = resolveArtifactPath(artifacts, normalizeText(req.params.kind), index);
+
+    if (!runDir || !artifactPath || !isPathInsideRunDir(artifactPath, runDir)) {
+      return res.status(404).json({ error: 'Artefato nao encontrado para esta execucao.' });
+    }
+
+    await fs.access(artifactPath);
+    res.setHeader('Content-Type', artifactContentType(artifactPath));
+    return res.sendFile(path.resolve(artifactPath));
+  } catch (error: any) {
+    if (error?.code === 'ENOENT') {
+      return res.status(404).json({ error: 'Arquivo de artefato nao encontrado no servidor.' });
+    }
     next(error);
   }
 });

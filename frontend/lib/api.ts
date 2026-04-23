@@ -151,6 +151,7 @@ export const api = {
     saveConfig: (data: any) => req<any>('/detran/config', { method: 'POST', body: JSON.stringify(data) }),
     execucoes: (params?: Record<string, any>) => req<any>(`/detran/execucoes${buildQueryString(params)}`),
     execucao: (id: number) => req<any>(`/detran/execucoes/${id}`),
+    artifactUrl: (id: number, kind: string, index?: number) => `${BASE}/detran/execucoes/${id}/artifacts/${encodeURIComponent(kind)}${index !== undefined ? `/${index}` : ''}`,
     createExecucao: (data: any) => req<any>('/detran/execucoes', { method: 'POST', body: JSON.stringify(data) }),
     updateEtapa: (id: number, step: string, data: any) => req<any>(`/detran/execucoes/${id}/etapas/${encodeURIComponent(step)}`, {
       method: 'POST',
