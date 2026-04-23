@@ -1143,20 +1143,31 @@ async function waitForOtpScreenOrManageShell(
 }
 
 async function clickEntrarOnMasDialog(page: Page) {
-  const entrar = await firstVisible(page, [
-    () => page.getByRole('button', { name: /^Entrar$/i }),
-    () => page.locator('button').filter({ hasText: /^Entrar$/i }),
-    () => page.getByRole('link', { name: /^Entrar$/i }),
-    () => page.locator('a').filter({ hasText: /^Entrar$/i }),
-    () => page.getByText(/^Entrar$/i),
-  ]);
-
-  if (!entrar) {
-    throw new Error('Botao Entrar da modal do MAS nao foi encontrado.');
+  const candidates: Array<() => Locator> = [];
+  for (const root of pageSearchRoots(page)) {
+    candidates.push(
+      () => root.getByRole('button', { name: /^Entrar$/i }),
+      () => root.locator('button').filter({ hasText: /^Entrar$/i }),
+      () => root.getByRole('link', { name: /^Entrar$/i }),
+      () => root.locator('a').filter({ hasText: /^Entrar$/i }),
+      () => root.getByText(/^Entrar$/i),
+      () => root.locator('[role="button"]').filter({ hasText: /^Entrar$/i }),
+    );
   }
 
-  await entrar.scrollIntoViewIfNeeded().catch(() => undefined);
-  await entrar.click({ force: true });
+  const entrar = await firstVisible(page, candidates);
+
+  if (entrar) {
+    await entrar.scrollIntoViewIfNeeded().catch(() => undefined);
+    await entrar.click({ force: true });
+  } else {
+    const viewport = page.viewportSize();
+    if (!viewport) {
+      throw new Error('Botao Entrar da modal do MAS nao foi encontrado.');
+    }
+    await page.mouse.click(viewport.width * 0.69, viewport.height * 0.62);
+  }
+
   await sleep(PAGE_WAIT_AFTER_ACTION_MS);
   await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => undefined);
 }
@@ -2118,7 +2129,7 @@ async function runExecucao(execucaoId: number) {
   const { files: artifacts, runtime } = await ensureArtifacts(execucao.runId);
   await setExecucaoSummary(execucao.id, {
     startedByWorkerAt: new Date().toISOString(),
-    workerVersion: 'detran-worker-v18',
+    workerVersion: 'detran-worker-v19',
   });
 
   if (!buildReadyForExecution(config)) {
@@ -2207,7 +2218,7 @@ async function runExecucao(execucaoId: number) {
       pageTitle,
       artifacts: buildArtifactsPatch(runtime, artifacts),
       summary: {
-        workerVersion: 'detran-worker-v18',
+        workerVersion: 'detran-worker-v19',
         failedAt: new Date().toISOString(),
         flow: execucao.flow,
       },
