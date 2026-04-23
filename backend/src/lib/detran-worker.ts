@@ -19,6 +19,7 @@ const DETRAN_SESSION_FILE = path.join(DETRAN_SESSION_ROOT, 'storage-state.json')
 const AUTH_URL = 'https://auth.mas.sp.gov.br/login/#/form';
 const HOME_URL = 'https://masprd.home.mas.sp.gov.br';
 const MANAGE_URL = 'https://masprd.manage.mas.sp.gov.br/maximo/oslc/graphite/manage-shell/index.html#/main';
+const CENTRO_CONTROLE_URL = 'https://masprd.manage.mas.sp.gov.br/maximo/oslc/graphite/manage-shell/index.html?event=loadapp&value=ms_toe01#/main';
 
 const workerState = {
   started: false,
@@ -191,6 +192,9 @@ function isOtpBody(text: string) {
     || normalized.includes('codigo de verificacao')
     || normalized.includes('enviamos uma mensagem para o seu e-mail')
     || normalized.includes('reenviar codigo')
+    || normalized.includes('o usuario ja esta conectado')
+    || normalized.includes('manten a sessao atual')
+    || normalized.includes('mantem a sessao atual')
   );
 }
 
@@ -866,12 +870,29 @@ async function waitForManageReady(page: Page, timeoutMs: number) {
 }
 
 async function waitForOtpScreen(page: Page) {
-  const otpLocator = await firstVisible(page, [
-    () => page.getByText(/Inserir c[oó]digo/i),
-    () => page.getByText(/Codigo/i),
-  ]);
+  const startedAt = Date.now();
 
-  return otpLocator !== null;
+  while ((Date.now() - startedAt) < 45_000) {
+    const text = await bodyText(page);
+    if (isOtpBody(text)) {
+      return true;
+    }
+
+    const otpLocator = await firstVisible(page, [
+      () => page.getByText(/Inserir c[oó]digo/i),
+      () => page.getByText(/Código/i),
+      () => page.getByText(/Codigo/i),
+      () => page.getByLabel(/codigo|c[oó]digo/i),
+    ]);
+
+    if (otpLocator) {
+      return true;
+    }
+
+    await sleep(750);
+  }
+
+  return false;
 }
 
 async function readMessageBody(gmailPayload: any): Promise<string> {
@@ -1172,16 +1193,19 @@ async function performOtp(
   await sleep(PAGE_WAIT_AFTER_ACTION_MS);
   let portalState = await detectPortalState(page);
   let otpVisible = portalState === 'otp';
+
   if (!otpVisible) {
     otpVisible = await waitForOtpScreen(page);
     if (otpVisible) {
       portalState = 'otp';
     }
   }
+
   if (!otpVisible) {
+    portalState = await detectPortalState(page);
     if (portalState === 'manage_shell') {
       await updateEtapa(execucao, 'otp_email', 'skipped', {
-        message: 'O Manage abriu sem solicitar novo codigo OTP nesta sessao.',
+        message: 'A shell do Manage carregou sem exibir modal de OTP depois da espera.',
         url: page.url(),
         title: await page.title().catch(() => ''),
         finishedAt: new Date(),
@@ -1242,10 +1266,70 @@ async function performCentroControle(
     title: await page.title().catch(() => ''),
   });
 
-  const alreadyThere = normalizeSearchText(await bodyText(page)).includes('centro de controle');
+  await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => undefined);
+  let currentText = await bodyText(page);
+  let alreadyThere = normalizeSearchText(currentText).includes('centro de controle');
+
   if (!alreadyThere) {
-    await clickByText(page, /centro de controle/i);
+    await maybeCaptureSnapshot(execucao.id, page, config, artifacts, runtime, '06-before-centro-controle');
+
+    const centroLocator = await firstVisible(page, [
+      () => page.getByRole('link', { name: /centro de controle/i }),
+      () => page.getByRole('button', { name: /centro de controle/i }),
+      () => page.locator('a').filter({ hasText: /centro de controle/i }),
+      () => page.locator('button').filter({ hasText: /centro de controle/i }),
+      () => page.getByText(/centro de controle/i),
+    ]);
+
+    if (centroLocator) {
+      await centroLocator.scrollIntoViewIfNeeded().catch(() => undefined);
+      await centroLocator.click({ force: true });
+      await sleep(PAGE_WAIT_AFTER_ACTION_MS);
+    }
+
+    currentText = await bodyText(page);
+    alreadyThere = normalizeSearchText(currentText).includes('centro de controle');
+  }
+
+  if (!alreadyThere) {
+    const searchBox = await firstVisible(page, [
+      () => page.getByPlaceholder(/localizar item de navega/i),
+      () => page.getByPlaceholder(/search|pesquisar|localizar/i),
+      () => page.locator('input[type="search"]'),
+      () => page.locator('input[type="text"]').first(),
+    ]);
+
+    if (searchBox) {
+      await searchBox.fill('Centro de Controle');
+      await searchBox.press('Enter').catch(() => undefined);
+      await sleep(PAGE_WAIT_AFTER_ACTION_MS);
+
+      const searchResult = await firstVisible(page, [
+        () => page.getByRole('link', { name: /centro de controle/i }),
+        () => page.getByRole('button', { name: /centro de controle/i }),
+        () => page.getByText(/centro de controle/i),
+      ]);
+
+      if (searchResult) {
+        await searchResult.click({ force: true });
+        await sleep(PAGE_WAIT_AFTER_ACTION_MS);
+      }
+    }
+
+    currentText = await bodyText(page);
+    alreadyThere = normalizeSearchText(currentText).includes('centro de controle');
+  }
+
+  if (!alreadyThere) {
+    await page.goto(CENTRO_CONTROLE_URL, { waitUntil: 'domcontentloaded' });
     await sleep(PAGE_WAIT_AFTER_ACTION_MS);
+    await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => undefined);
+    currentText = await bodyText(page);
+    alreadyThere = normalizeSearchText(currentText).includes('centro de controle');
+  }
+
+  if (!alreadyThere) {
+    throw new Error('Acao nao encontrada para /centro de controle/i.');
   }
 
   await maybeCaptureSnapshot(execucao.id, page, config, artifacts, runtime, '06-centro-controle');
@@ -1683,7 +1767,7 @@ async function runExecucao(execucaoId: number) {
   const { files: artifacts, runtime } = await ensureArtifacts(execucao.runId);
   await setExecucaoSummary(execucao.id, {
     startedByWorkerAt: new Date().toISOString(),
-    workerVersion: 'detran-worker-v6',
+    workerVersion: 'detran-worker-v8',
   });
 
   if (!buildReadyForExecution(config)) {
@@ -1772,7 +1856,7 @@ async function runExecucao(execucaoId: number) {
       pageTitle,
       artifacts: buildArtifactsPatch(runtime, artifacts),
       summary: {
-        workerVersion: 'detran-worker-v6',
+        workerVersion: 'detran-worker-v8',
         failedAt: new Date().toISOString(),
         flow: execucao.flow,
       },
