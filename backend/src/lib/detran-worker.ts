@@ -611,6 +611,30 @@ async function clickAndFollowPage(page: Page, locator: Locator) {
   return page;
 }
 
+async function isLoginFormVisible(page: Page) {
+  const passwordField = await firstVisible(page, [
+    () => page.getByPlaceholder(/insira sua senha/i),
+    () => page.getByLabel(/^senha$/i),
+    () => page.locator('input[type="password"]'),
+  ]);
+  const loginButton = await firstVisible(page, [
+    () => page.getByRole('button', { name: /^Efetuar login$/i }),
+    () => page.locator('button').filter({ hasText: /efetuar login/i }),
+  ]);
+
+  return Boolean(passwordField && loginButton);
+}
+
+async function fillPortalField(locator: Locator, value: string) {
+  await locator.click({ force: true }).catch(() => undefined);
+  await locator.fill('');
+  await locator.fill(value);
+  await locator.evaluate((element) => {
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+    element.dispatchEvent(new Event('change', { bubbles: true }));
+  }).catch(() => undefined);
+}
+
 async function clickManage(page: Page) {
   const manageCard = await firstVisible(page, [
     () => page.locator('div,section,article').filter({ has: page.getByText(/^Manage$/i) }),
@@ -643,22 +667,52 @@ async function clickManage(page: Page) {
 }
 
 async function submitAuthLogin(page: Page, passwordField: Locator) {
-  try {
-    await clickFirstVisible(page, [
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const loginButton = await firstVisible(page, [
       () => page.getByRole('button', { name: /^Efetuar login$/i }),
-      () => page.getByText(/^Efetuar login$/i),
+      () => page.locator('button').filter({ hasText: /efetuar login/i }),
       () => page.locator('button[type="submit"]'),
       () => page.getByRole('button', { name: /efetuar login|entrar|login|avancar|continuar/i }),
-      () => page.getByText(/entrar|login|avancar|continuar/i),
+      () => page.getByText(/^Efetuar login$/i),
     ]);
-  } catch {
-    await passwordField.press('Enter');
-  }
 
-  await page.waitForLoadState('networkidle', { timeout: 8_000 }).catch(() => undefined);
+    if (loginButton) {
+      await loginButton.scrollIntoViewIfNeeded().catch(() => undefined);
+      await loginButton.click({ force: attempt > 0, timeout: 6_000 }).catch(async () => {
+        await passwordField.press('Enter');
+      });
+    } else {
+      await passwordField.press('Enter');
+    }
+
+    await page.waitForLoadState('networkidle', { timeout: 8_000 }).catch(() => undefined);
+    await sleep(1_500);
+
+    const state = await detectPortalState(page);
+    if (state !== 'auth') {
+      return;
+    }
+
+    if (!await isLoginFormVisible(page)) {
+      return;
+    }
+
+    if (attempt === 0) {
+      await passwordField.press('Enter').catch(() => undefined);
+      await page.waitForLoadState('networkidle', { timeout: 8_000 }).catch(() => undefined);
+      await sleep(1_500);
+      if (await detectPortalState(page) !== 'auth') {
+        return;
+      }
+    }
+  }
 }
 
 async function readAuthFeedback(page: Page) {
+  if (await isLoginFormVisible(page)) {
+    return 'Formulario de login continua visivel apos clicar em Efetuar login.';
+  }
+
   const notification = await firstVisible(page, [
     () => page.locator('[role="alert"]'),
     () => page.locator('[class*="notification"]'),
@@ -850,8 +904,8 @@ async function performLogin(
     ({ cpfField, passwordField } = await locateLoginFields());
   }
   if (cpfField && passwordField) {
-    await cpfField.fill(normalizeText(config.sisdevCpf));
-    await passwordField.fill(normalizeText(config.sisdevPassword));
+    await fillPortalField(cpfField, normalizeText(config.sisdevCpf));
+    await fillPortalField(passwordField, normalizeText(config.sisdevPassword));
     await maybeCaptureSnapshot(execucao.id, page, config, artifacts, runtime, '01-auth-form');
     await submitAuthLogin(page, passwordField);
     submittedCredentials = true;
@@ -1513,7 +1567,7 @@ async function runExecucao(execucaoId: number) {
   const { files: artifacts, runtime } = await ensureArtifacts(execucao.runId);
   await setExecucaoSummary(execucao.id, {
     startedByWorkerAt: new Date().toISOString(),
-    workerVersion: 'detran-worker-v2',
+    workerVersion: 'detran-worker-v3',
   });
 
   if (!buildReadyForExecution(config)) {
@@ -1602,7 +1656,7 @@ async function runExecucao(execucaoId: number) {
       pageTitle,
       artifacts: buildArtifactsPatch(runtime, artifacts),
       summary: {
-        workerVersion: 'detran-worker-v2',
+        workerVersion: 'detran-worker-v3',
         failedAt: new Date().toISOString(),
         flow: execucao.flow,
       },
