@@ -241,7 +241,7 @@ export default function DetranConfiguracoesPage() {
                   <div style={{ display: 'grid', gap: 10, alignContent: 'start' }}>
                     {[
                       ['reuseSession', 'Reaproveitar sessao do portal quando existir'],
-                      ['runHeadless', 'Executar navegador em modo headless por padrao'],
+                      ['runHeadless', 'Executar navegador em modo headless por padrao (no worker local o recomendado e manter visual)'],
                       ['screenshotEachStep', 'Capturar screenshot em cada etapa'],
                       ['htmlAfterProximo', 'Salvar HTML logo apos o Proximo'],
                       ['captureNetworkTrace', 'Guardar trace/requisicoes de rede'],
@@ -274,6 +274,31 @@ export default function DetranConfiguracoesPage() {
                     <strong style={{ color: item.ok ? 'var(--green)' : 'var(--ink-muted)' }}>{item.ok ? 'Configurado' : 'Pendente'}</strong>
                   </div>
                 ))}
+              </div>
+            </div>
+
+            <div style={ds.card}>
+              <div style={ds.sectionHead}>
+                <div style={ds.sectionTitle}>Execucao local recomendada</div>
+                <div style={ds.sectionSub}>Deixar o ANB como fila e log, e mover o navegador real do Detran para a sua maquina</div>
+              </div>
+              <div style={{ padding: 18, display: 'grid', gap: 10 }}>
+                {[
+                  'No Railway do backend principal, defina DETRAN_WORKER_ENABLED=false para o worker remoto parar de disputar a fila.',
+                  'Na sua maquina, mantenha backend/.env apontando para o DATABASE_URL de producao do ANB.',
+                  'Rode npm install dentro da pasta backend local.',
+                  'Depois rode o comando local do worker Detran; ele vai usar Edge real por padrao e salvar a sessao em runtime/detran-local-profile.',
+                ].map((item) => (
+                  <div key={item} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', fontSize: 13 }}>
+                    {item}
+                  </div>
+                ))}
+                <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px', background: 'var(--gray-50)' }}>
+                  <div style={{ ...ds.label, marginBottom: 8 }}>Comando rapido no Windows</div>
+                  <div style={{ fontFamily: 'monospace', fontSize: 12, whiteSpace: 'pre-wrap', color: 'var(--ink)' }}>
+                    {`cd backend\nscripts\\start-detran-local-worker.cmd`}
+                  </div>
+                </div>
               </div>
             </div>
 

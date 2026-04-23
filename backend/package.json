@@ -9,7 +9,8 @@
     "db:migrate": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
-    "auth:hash": "tsx scripts/generate-auth-hash.ts"
+    "auth:hash": "tsx scripts/generate-auth-hash.ts",
+    "detran:worker:local": "tsx scripts/detran-local-worker.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.10.0",

@@ -18,6 +18,7 @@ const PROXIMO_WAIT_TIMEOUT_MS = 15_000;
 const DETRAN_ARTIFACTS_ROOT = path.resolve(process.cwd(), 'runtime', 'detran-runs');
 const DETRAN_SESSION_ROOT = path.resolve(process.cwd(), 'runtime', 'detran-session');
 const DETRAN_SESSION_FILE = path.join(DETRAN_SESSION_ROOT, 'storage-state.json');
+const DETRAN_LOCAL_PROFILE_ROOT = path.resolve(process.cwd(), 'runtime', 'detran-local-profile');
 const AUTH_URL = 'https://auth.mas.sp.gov.br/login/#/form';
 const HOME_URL = 'https://masprd.home.mas.sp.gov.br';
 const MANAGE_URL = 'https://masprd.manage.mas.sp.gov.br/maximo/oslc/graphite/manage-shell/index.html#/main';
@@ -72,6 +73,16 @@ type OtpPollDiagnostics = {
   regexSource: string;
 };
 
+type DetranWorkerRuntime = {
+  workerEnabled: boolean;
+  localMode: boolean;
+  headless: boolean;
+  browserChannel: string | null;
+  browserExecutablePath: string | null;
+  browserUserDataDir: string | null;
+  environmentLabel: 'local' | 'railway';
+};
+
 function normalizeText(value: unknown) {
   return String(value ?? '').trim();
 }
@@ -79,6 +90,35 @@ function normalizeText(value: unknown) {
 function normalizeNullableText(value: unknown) {
   const text = normalizeText(value);
   return text || null;
+}
+
+function readEnvFlag(name: string, fallback: boolean) {
+  const normalized = normalizeSearchText(process.env[name]);
+  if (!normalized) return fallback;
+  if (['1', 'true', 'yes', 'sim', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'nao', 'off'].includes(normalized)) return false;
+  return fallback;
+}
+
+function resolveDetranWorkerRuntime(config?: Pick<DetranConfigRecord, 'runHeadless'> | null): DetranWorkerRuntime {
+  const localMode = readEnvFlag('DETRAN_LOCAL_MODE', false);
+  const browserExecutablePath = normalizeNullableText(process.env.DETRAN_BROWSER_EXECUTABLE_PATH);
+  const browserChannel = browserExecutablePath
+    ? null
+    : (normalizeNullableText(process.env.DETRAN_BROWSER_CHANNEL) || (localMode && process.platform === 'win32' ? 'msedge' : null));
+  const browserUserDataDir = localMode
+    ? path.resolve(normalizeText(process.env.DETRAN_BROWSER_USER_DATA_DIR) || DETRAN_LOCAL_PROFILE_ROOT)
+    : null;
+
+  return {
+    workerEnabled: readEnvFlag('DETRAN_WORKER_ENABLED', true),
+    localMode,
+    headless: readEnvFlag('DETRAN_BROWSER_HEADLESS', localMode ? false : Boolean(config?.runHeadless)),
+    browserChannel,
+    browserExecutablePath,
+    browserUserDataDir,
+    environmentLabel: process.env.RAILWAY_ENVIRONMENT ? 'railway' : 'local',
+  };
 }
 
 function normalizeJsonRecord(value: unknown) {
@@ -216,7 +256,23 @@ function detectErrorText(text: string) {
     || normalized.includes('invalido')
     || normalized.includes('obrigatorio')
     || normalized.includes('falhou')
+    || normalized.includes('nao possui autorizacao')
+    || normalized.includes('sem autorizacao')
   );
+}
+
+function extractAuthorizationError(text: string) {
+  const raw = normalizeText(text);
+  const normalized = normalizeSearchText(raw);
+  if (
+    normalized.includes('nao possui autorizacao')
+    || normalized.includes('voce nao possui autorizacao para o aplicativo')
+    || normalized.includes('nao possui autorizacao para o aplicativo')
+    || normalized.includes('sem autorizacao')
+  ) {
+    return raw.slice(0, 800);
+  }
+  return '';
 }
 
 function isAuthUrl(url: string) {
@@ -1172,6 +1228,76 @@ async function clickEntrarOnMasDialog(page: Page) {
   await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => undefined);
 }
 
+async function clickOkOnSystemDialog(page: Page) {
+  const candidates: Array<() => Locator> = [];
+  for (const root of pageSearchRoots(page)) {
+    candidates.push(
+      () => root.getByRole('button', { name: /^OK$/i }),
+      () => root.locator('button').filter({ hasText: /^OK$/i }),
+      () => root.getByRole('link', { name: /^OK$/i }),
+      () => root.locator('a').filter({ hasText: /^OK$/i }),
+      () => root.getByText(/^OK$/i),
+    );
+  }
+
+  const okButton = await firstVisible(page, candidates);
+  if (!okButton) return false;
+
+  await okButton.scrollIntoViewIfNeeded().catch(() => undefined);
+  await okButton.click({ force: true }).catch(() => undefined);
+  await sleep(PAGE_WAIT_AFTER_ACTION_MS);
+  return true;
+}
+
+async function launchDetranContext(
+  readyConfig: DetranConfigRecord,
+  runtimeProfile: DetranWorkerRuntime,
+) {
+  if (runtimeProfile.localMode) {
+    const userDataDir = runtimeProfile.browserUserDataDir || DETRAN_LOCAL_PROFILE_ROOT;
+    await ensureDir(userDataDir);
+
+    const context = await chromium.launchPersistentContext(userDataDir, {
+      headless: runtimeProfile.headless,
+      executablePath: runtimeProfile.browserExecutablePath || undefined,
+      channel: runtimeProfile.browserExecutablePath ? undefined : (runtimeProfile.browserChannel || undefined),
+      ignoreHTTPSErrors: true,
+      viewport: null,
+      args: [
+        '--disable-dev-shm-usage',
+        '--start-maximized',
+      ],
+    });
+
+    return {
+      browser: null as Browser | null,
+      context,
+      page: context.pages()[0] || await context.newPage(),
+      sessionArtifact: userDataDir,
+    };
+  }
+
+  const browser = await chromium.launch({
+    headless: runtimeProfile.headless,
+    executablePath: runtimeProfile.browserExecutablePath || undefined,
+    channel: runtimeProfile.browserExecutablePath ? undefined : (runtimeProfile.browserChannel || undefined),
+    args: ['--disable-dev-shm-usage'],
+  });
+
+  const context = await browser.newContext({
+    ignoreHTTPSErrors: true,
+    viewport: { width: 1440, height: 960 },
+    storageState: readyConfig.reuseSession && await fileExists(DETRAN_SESSION_FILE) ? DETRAN_SESSION_FILE : undefined,
+  });
+
+  return {
+    browser,
+    context,
+    page: await context.newPage(),
+    sessionArtifact: readyConfig.reuseSession ? DETRAN_SESSION_FILE : null,
+  };
+}
+
 async function readMessageBody(gmailPayload: any): Promise<string> {
   const tryDecode = (data: string | undefined | null) => {
     const raw = normalizeText(data);
@@ -1629,7 +1755,13 @@ async function performCentroControle(
   });
 
   await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => undefined);
-  let currentText = await bodyText(page);
+  let currentText = await bodyTextIncludingFrames(page);
+  let authorizationError = extractAuthorizationError(currentText);
+  if (authorizationError) {
+    await maybeCaptureSnapshot(execucao.id, page, config, artifacts, runtime, '06-autorizacao-negada');
+    await clickOkOnSystemDialog(page).catch(() => undefined);
+    throw new Error(`Detran retornou erro de autorizacao: ${authorizationError}`);
+  }
   let alreadyThere = normalizeSearchText(currentText).includes('centro de controle');
 
   if (!alreadyThere) {
@@ -1649,7 +1781,13 @@ async function performCentroControle(
       await sleep(PAGE_WAIT_AFTER_ACTION_MS);
     }
 
-    currentText = await bodyText(page);
+    currentText = await bodyTextIncludingFrames(page);
+    authorizationError = extractAuthorizationError(currentText);
+    if (authorizationError) {
+      await maybeCaptureSnapshot(execucao.id, page, config, artifacts, runtime, '06-autorizacao-negada');
+      await clickOkOnSystemDialog(page).catch(() => undefined);
+      throw new Error(`Detran retornou erro de autorizacao: ${authorizationError}`);
+    }
     alreadyThere = normalizeSearchText(currentText).includes('centro de controle');
   }
 
@@ -1678,7 +1816,13 @@ async function performCentroControle(
       }
     }
 
-    currentText = await bodyText(page);
+    currentText = await bodyTextIncludingFrames(page);
+    authorizationError = extractAuthorizationError(currentText);
+    if (authorizationError) {
+      await maybeCaptureSnapshot(execucao.id, page, config, artifacts, runtime, '06-autorizacao-negada');
+      await clickOkOnSystemDialog(page).catch(() => undefined);
+      throw new Error(`Detran retornou erro de autorizacao: ${authorizationError}`);
+    }
     alreadyThere = normalizeSearchText(currentText).includes('centro de controle');
   }
 
@@ -1686,7 +1830,13 @@ async function performCentroControle(
     await page.goto(CENTRO_CONTROLE_URL, { waitUntil: 'domcontentloaded' });
     await sleep(PAGE_WAIT_AFTER_ACTION_MS);
     await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => undefined);
-    currentText = await bodyText(page);
+    currentText = await bodyTextIncludingFrames(page);
+    authorizationError = extractAuthorizationError(currentText);
+    if (authorizationError) {
+      await maybeCaptureSnapshot(execucao.id, page, config, artifacts, runtime, '06-autorizacao-negada');
+      await clickOkOnSystemDialog(page).catch(() => undefined);
+      throw new Error(`Detran retornou erro de autorizacao: ${authorizationError}`);
+    }
     alreadyThere = normalizeSearchText(currentText).includes('centro de controle');
   }
 
@@ -2129,7 +2279,7 @@ async function runExecucao(execucaoId: number) {
   const { files: artifacts, runtime } = await ensureArtifacts(execucao.runId);
   await setExecucaoSummary(execucao.id, {
     startedByWorkerAt: new Date().toISOString(),
-    workerVersion: 'detran-worker-v19',
+    workerVersion: 'detran-worker-v27',
   });
 
   if (!buildReadyForExecution(config)) {
@@ -2144,23 +2294,17 @@ async function runExecucao(execucaoId: number) {
     return;
   }
   const readyConfig = config as DetranConfigRecord;
+  const runtimeProfile = resolveDetranWorkerRuntime(readyConfig);
 
   let browser: Browser | null = null;
   let context: BrowserContext | null = null;
   let page: Page | null = null;
 
   try {
-    browser = await chromium.launch({
-      headless: !!readyConfig.runHeadless,
-      args: ['--disable-dev-shm-usage'],
-    });
-
-    context = await browser.newContext({
-      ignoreHTTPSErrors: true,
-      viewport: { width: 1440, height: 960 },
-      storageState: readyConfig.reuseSession && await fileExists(DETRAN_SESSION_FILE) ? DETRAN_SESSION_FILE : undefined,
-    });
-    page = await context.newPage();
+    const launched = await launchDetranContext(readyConfig, runtimeProfile);
+    browser = launched.browser;
+    context = launched.context;
+    page = launched.page;
     page.setDefaultTimeout(Math.max(30_000, Number(readyConfig.timeoutMs || 120_000)));
     page.setDefaultNavigationTimeout(Math.max(30_000, Number(readyConfig.timeoutMs || 120_000)));
 
@@ -2170,16 +2314,27 @@ async function runExecucao(execucaoId: number) {
       networkTrace: runtime.networkTrace,
       consoleLog: runtime.consoleLog,
       pageErrors: runtime.pageErrors,
+      storageState: launched.sessionArtifact,
+    });
+    await setExecucaoSummary(execucao.id, {
+      workerEnvironment: runtimeProfile.environmentLabel,
+      workerExecutionMode: runtimeProfile.localMode ? 'local_browser' : 'server_browser',
+      browserChannel: runtimeProfile.browserChannel || '',
+      browserExecutablePathConfigured: Boolean(runtimeProfile.browserExecutablePath),
+      browserUserDataDir: runtimeProfile.browserUserDataDir || '',
+      effectiveHeadless: runtimeProfile.headless,
     });
 
     await performLogin(page, execucao, readyConfig, artifacts, runtime);
     page = await performManageSelection(page, execucao, readyConfig, artifacts, runtime);
     await performOtp(page, execucao, readyConfig, artifacts, runtime);
 
-    if (readyConfig.reuseSession) {
+    if (readyConfig.reuseSession && !runtimeProfile.localMode) {
       await ensureDir(DETRAN_SESSION_ROOT);
       await context.storageState({ path: DETRAN_SESSION_FILE });
       runtime.storageState = DETRAN_SESSION_FILE;
+    } else if (runtimeProfile.localMode) {
+      runtime.storageState = launched.sessionArtifact || runtimeProfile.browserUserDataDir || null;
     }
 
     if (execucao.flow === 'autenticacao_poc') {
@@ -2218,7 +2373,9 @@ async function runExecucao(execucaoId: number) {
       pageTitle,
       artifacts: buildArtifactsPatch(runtime, artifacts),
       summary: {
-        workerVersion: 'detran-worker-v19',
+        workerVersion: 'detran-worker-v27',
+        workerEnvironment: runtimeProfile.environmentLabel,
+        workerExecutionMode: runtimeProfile.localMode ? 'local_browser' : 'server_browser',
         failedAt: new Date().toISOString(),
         flow: execucao.flow,
       },
@@ -2253,6 +2410,19 @@ async function tickDetranWorker() {
 
   if (!next) return;
 
+  const claimed = await prisma.detranExecucao.updateMany({
+    where: {
+      id: next.id,
+      status: 'pendente',
+    },
+    data: {
+      status: 'executando',
+      updatedAt: new Date(),
+    },
+  });
+
+  if (!claimed.count) return;
+
   workerState.running = true;
   workerState.currentRunId = next.runId;
 
@@ -2267,8 +2437,16 @@ async function tickDetranWorker() {
 }
 
 export function startDetranExecutionWorker() {
+  const runtimeProfile = resolveDetranWorkerRuntime();
+  if (!runtimeProfile.workerEnabled) {
+    console.log('[Detran] worker desabilitado neste ambiente via DETRAN_WORKER_ENABLED=false');
+    return;
+  }
+
   if (workerState.started) return;
   workerState.started = true;
+
+  console.log(`[Detran] worker iniciado em modo ${runtimeProfile.localMode ? 'local_browser' : 'server_browser'} (${runtimeProfile.environmentLabel})`);
 
   const run = () => {
     void tickDetranWorker();
