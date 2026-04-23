@@ -130,6 +130,51 @@ function buildOtpRegex(source: string) {
   }
 }
 
+function extractOtpCode(content: string, configuredRegex: RegExp) {
+  const rawContent = normalizeText(content);
+  const textContent = rawContent
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/\s+/g, ' ');
+
+  const configuredMatch = configuredRegex.exec(textContent);
+  if (configuredMatch?.[1] || configuredMatch?.[0]) {
+    return {
+      code: normalizeText(configuredMatch[1] || configuredMatch[0]).toUpperCase(),
+      strategy: 'configured_regex',
+    };
+  }
+
+  const contextualPatterns = [
+    /\b([A-Z0-9]{6})\b\s+(?:e|\u00e9)\s+seu\s+c(?:o|\u00f3)digo\s+de\s+verifica(?:c|\u00e7)(?:a|\u00e3)o/i,
+    /\b([A-Z0-9]{6})\b[\s\S]{0,120}SISDEV/i,
+  ];
+
+  for (const pattern of contextualPatterns) {
+    const match = pattern.exec(textContent);
+    if (match?.[1]) {
+      return {
+        code: normalizeText(match[1]).toUpperCase(),
+        strategy: 'fallback_contextual',
+      };
+    }
+  }
+
+  const tokens = textContent.match(/\b[A-Z0-9]{6}\b/gi) || [];
+  const likelyToken = tokens.find((token) => /\d/.test(token));
+  if (likelyToken) {
+    return {
+      code: normalizeText(likelyToken).toUpperCase(),
+      strategy: 'fallback_six_chars_with_digit',
+    };
+  }
+
+  return {
+    code: '',
+    strategy: 'not_found',
+  };
+}
+
 function resolveOtpEmailSearchStart(execucao: DetranExecucaoRecord) {
   const manageStep = execucao.etapas.find((item) => item.step === 'selecionar_manage');
   const reference = manageStep?.finishedAt || manageStep?.startedAt || execucao.startedAt || new Date();
@@ -1241,24 +1286,28 @@ async function waitForOtpCode(
         continue;
       }
 
-      const content = await readMessageBody(details.data.payload);
-      const match = otpRegex.exec(content);
+      const content = `${await readMessageBody(details.data.payload)}\n${normalizeText(details.data.snippet)}`;
+      const extraction = extractOtpCode(content, otpRegex);
 
-      if (!match?.[1]) {
+      if (!extraction.code) {
         diagnostics.ignored.regexMiss += 1;
-        diagnostics.acceptedMessage = messageSummary;
+        diagnostics.acceptedMessage = {
+          ...messageSummary,
+          extractionStrategy: extraction.strategy,
+        };
         if (onPoll) await onPoll('Email do OTP encontrado, mas o regex nao localizou o codigo ainda.', diagnostics);
         continue;
       }
 
       diagnostics.acceptedMessage = {
         ...messageSummary,
-        codeLength: match[1].length,
+        codeLength: extraction.code.length,
+        extractionStrategy: extraction.strategy,
       };
       if (onPoll) await onPoll('Codigo OTP localizado no Gmail; preenchendo no portal.', diagnostics);
 
       return {
-        code: match[1],
+        code: extraction.code,
         messageId: message.id,
         subject: subjectHeader,
         from: fromHeader,
@@ -2069,7 +2118,7 @@ async function runExecucao(execucaoId: number) {
   const { files: artifacts, runtime } = await ensureArtifacts(execucao.runId);
   await setExecucaoSummary(execucao.id, {
     startedByWorkerAt: new Date().toISOString(),
-    workerVersion: 'detran-worker-v17',
+    workerVersion: 'detran-worker-v18',
   });
 
   if (!buildReadyForExecution(config)) {
@@ -2158,7 +2207,7 @@ async function runExecucao(execucaoId: number) {
       pageTitle,
       artifacts: buildArtifactsPatch(runtime, artifacts),
       summary: {
-        workerVersion: 'detran-worker-v17',
+        workerVersion: 'detran-worker-v18',
         failedAt: new Date().toISOString(),
         flow: execucao.flow,
       },
