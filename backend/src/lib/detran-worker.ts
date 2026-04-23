@@ -10,8 +10,8 @@ const DETRAN_TIMEZONE = 'America/Sao_Paulo';
 const DETRAN_POLL_INTERVAL_MS = 15_000;
 const DETRAN_BOOT_DELAY_MS = 5_000;
 const OTP_POLL_INTERVAL_MS = 5_000;
-const OTP_WAIT_TIMEOUT_MS = 90_000;
-const OTP_SCREEN_WAIT_TIMEOUT_MS = 120_000;
+const OTP_WAIT_TIMEOUT_MS = 10 * 60_000;
+const OTP_SCREEN_WAIT_TIMEOUT_MS = 180_000;
 const OTP_SCREEN_SNAPSHOT_INTERVAL_MS = 15_000;
 const PAGE_WAIT_AFTER_ACTION_MS = 2_000;
 const PROXIMO_WAIT_TIMEOUT_MS = 15_000;
@@ -928,6 +928,35 @@ async function findOtpFieldForScreen(page: Page, screenText: string) {
   return firstVisible(page, candidates);
 }
 
+async function findVisibleOtpLikeInput(page: Page) {
+  const viewport = page.viewportSize();
+  const inputs = page.locator('input:not([type="hidden"]), textarea');
+  const count = Math.min(await inputs.count().catch(() => 0), 25);
+
+  for (let index = 0; index < count; index += 1) {
+    const input = inputs.nth(index);
+    const visible = await input.isVisible({ timeout: 250 }).catch(() => false);
+    if (!visible) continue;
+
+    const box = await input.boundingBox().catch(() => null);
+    if (!box) continue;
+
+    const centered = viewport
+      ? box.x >= viewport.width * 0.25
+        && box.x <= viewport.width * 0.82
+        && box.y >= viewport.height * 0.18
+        && box.y <= viewport.height * 0.86
+      : true;
+    const otpSized = box.width >= 35 && box.width <= 240 && box.height >= 12 && box.height <= 70;
+
+    if (centered && otpSized) {
+      return input;
+    }
+  }
+
+  return null;
+}
+
 async function waitForOtpScreenOrManageShell(
   page: Page,
   execucao: DetranExecucaoRecord,
@@ -944,7 +973,8 @@ async function waitForOtpScreenOrManageShell(
   while ((Date.now() - startedAt) < OTP_SCREEN_WAIT_TIMEOUT_MS) {
     const elapsedSeconds = Math.floor((Date.now() - startedAt) / 1000);
     const currentText = await bodyText(page);
-    const otpField = await findOtpFieldForScreen(page, currentText);
+    const otpField = await findOtpFieldForScreen(page, currentText)
+      || await findVisibleOtpLikeInput(page);
     const otpVisible = Boolean(otpField) || isOtpBody(currentText);
     const manageVisible = isManageBody(currentText);
 
@@ -1335,6 +1365,7 @@ async function performOtp(
   if (otpScreenResult.state !== 'otp') {
     currentText = await bodyText(page);
     otpField = await findOtpFieldForScreen(page, currentText);
+    otpField = otpField || await findVisibleOtpLikeInput(page);
     if (!otpField && !isOtpBody(currentText)) {
       throw new Error('Depois de clicar em Iniciar no Manage, a tela para inserir o codigo nao apareceu dentro do tempo limite.');
     }
@@ -1342,7 +1373,7 @@ async function performOtp(
 
   await maybeCaptureSnapshot(execucao.id, page, config, artifacts, runtime, '04-otp-screen');
   currentText = await bodyText(page);
-  otpField = otpField || await findOtpFieldForScreen(page, currentText);
+  otpField = otpField || await findOtpFieldForScreen(page, currentText) || await findVisibleOtpLikeInput(page);
 
   if (!otpField && isConcurrentSessionText(currentText)) {
     await clickEntrarOnMasDialog(page);
@@ -1366,11 +1397,12 @@ async function performOtp(
 
   const otpInfo = await waitForOtpCode(config, otpRequestedAt, async (message) => {
     await updateEtapa(execucao, 'otp_email', 'running', {
-      message,
+      message: `${message} Aguardando por ate ${Math.round(OTP_WAIT_TIMEOUT_MS / 60_000)} minutos.`,
       url: page.url(),
       title: await page.title().catch(() => ''),
       data: {
         polling: true,
+        otpScreenDetected: true,
       },
     });
   });
@@ -1908,7 +1940,7 @@ async function runExecucao(execucaoId: number) {
   const { files: artifacts, runtime } = await ensureArtifacts(execucao.runId);
   await setExecucaoSummary(execucao.id, {
     startedByWorkerAt: new Date().toISOString(),
-    workerVersion: 'detran-worker-v13',
+    workerVersion: 'detran-worker-v14',
   });
 
   if (!buildReadyForExecution(config)) {
@@ -1997,7 +2029,7 @@ async function runExecucao(execucaoId: number) {
       pageTitle,
       artifacts: buildArtifactsPatch(runtime, artifacts),
       summary: {
-        workerVersion: 'detran-worker-v13',
+        workerVersion: 'detran-worker-v14',
         failedAt: new Date().toISOString(),
         flow: execucao.flow,
       },
