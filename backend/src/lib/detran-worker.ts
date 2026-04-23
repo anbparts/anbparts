@@ -163,7 +163,7 @@ function isHomeUrl(url: string) {
 
 function isManageUrl(url: string) {
   const normalized = normalizeText(url).toLowerCase();
-  return normalized.includes('manage.mas.sp.gov.br') || normalized.includes('/maximo/');
+  return normalized.includes('manage.mas.sp.gov.br') || normalized.includes('/maximo/oslc/graphite/manage-shell');
 }
 
 function isHomeBody(text: string) {
@@ -181,7 +181,6 @@ function isManageBody(text: string) {
     normalized.includes('centro de controle')
     || normalized.includes('aplicativos favoritos')
     || normalized.includes('quadro de avisos')
-    || normalized.includes('manage')
   );
 }
 
@@ -1567,7 +1566,7 @@ async function runExecucao(execucaoId: number) {
   const { files: artifacts, runtime } = await ensureArtifacts(execucao.runId);
   await setExecucaoSummary(execucao.id, {
     startedByWorkerAt: new Date().toISOString(),
-    workerVersion: 'detran-worker-v3',
+    workerVersion: 'detran-worker-v4',
   });
 
   if (!buildReadyForExecution(config)) {
@@ -1656,7 +1655,7 @@ async function runExecucao(execucaoId: number) {
       pageTitle,
       artifacts: buildArtifactsPatch(runtime, artifacts),
       summary: {
-        workerVersion: 'detran-worker-v3',
+        workerVersion: 'detran-worker-v4',
         failedAt: new Date().toISOString(),
         flow: execucao.flow,
       },
