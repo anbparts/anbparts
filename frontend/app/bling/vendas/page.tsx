@@ -106,6 +106,13 @@ type SeparacaoRelatorio = {
   geradoEm: string;
 };
 
+type SeparacaoManualPedido = {
+  pedidoId: number;
+  pedidoNum: string;
+  dataVenda: string;
+  quantidadeItens: number;
+};
+
 function calcularLiq(precoML: number, frete: number, taxaPct: number) {
   const taxaValor = parseFloat((precoML * taxaPct / 100).toFixed(2));
   const valorLiq = parseFloat((precoML - frete - taxaValor).toFixed(2));
@@ -405,11 +412,18 @@ export default function VendasBlingPage() {
   const [dataFim, setDataFim] = useState(() => defaultDateRange().dataFim);
   const [buscando, setBuscando] = useState(false);
   const [carregandoSeparacao, setCarregandoSeparacao] = useState(false);
+  const [carregandoPedidosManuais, setCarregandoPedidosManuais] = useState(false);
   const [gerandoPdf, setGerandoPdf] = useState(false);
   const [itens, setItens] = useState<Item[]>([]);
   const [buscou, setBuscou] = useState(false);
   const [buscouSeparacao, setBuscouSeparacao] = useState(false);
   const [relatorioSeparacao, setRelatorioSeparacao] = useState<SeparacaoRelatorio | null>(null);
+  const [relatorioSeparacaoModo, setRelatorioSeparacaoModo] = useState<'automatico' | 'manual'>('automatico');
+  const [manualAberto, setManualAberto] = useState(false);
+  const [pedidosManuais, setPedidosManuais] = useState<SeparacaoManualPedido[]>([]);
+  const [pedidosManuaisSelecionados, setPedidosManuaisSelecionados] = useState<number[]>([]);
+  const [filtroPedidoManual, setFiltroPedidoManual] = useState('');
+  const [erroPedidosManuais, setErroPedidosManuais] = useState('');
   const [defaults, setDefaults] = useState<Defaults>({ fretePadrao: 29.9, taxaPadraoPct: 17 });
 
   useEffect(() => {
@@ -478,11 +492,13 @@ export default function VendasBlingPage() {
       }
 
       setRelatorioSeparacao(data);
+      setRelatorioSeparacaoModo('automatico');
+      setBuscouSeparacao(true);
     } catch (e: any) {
       alert(`Erro: ${e.message}`);
+    } finally {
+      setCarregandoSeparacao(false);
     }
-    setBuscouSeparacao(true);
-    setCarregandoSeparacao(false);
   }
 
   async function gerarPdfSeparacao() {
@@ -494,6 +510,96 @@ export default function VendasBlingPage() {
       alert(e?.message || 'Nao foi possivel gerar o PDF agora.');
     }
     setGerandoPdf(false);
+  }
+
+  async function carregarPedidosManuais(force = false) {
+    if (!force && pedidosManuais.length > 0) return;
+
+    setCarregandoPedidosManuais(true);
+    setErroPedidosManuais('');
+    try {
+      const response = await fetch(`${API}/bling/relatorio-separacao-manual/pedidos`);
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        setErroPedidosManuais(data.error || 'Nao foi possivel carregar os pedidos importados do ANB.');
+        return;
+      }
+
+      setPedidosManuais(data.pedidos || []);
+    } catch (e: any) {
+      setErroPedidosManuais(e?.message || 'Nao foi possivel carregar os pedidos importados do ANB.');
+    } finally {
+      setCarregandoPedidosManuais(false);
+    }
+  }
+
+  async function toggleRelatorioManual() {
+    const nextOpen = !manualAberto;
+    setManualAberto(nextOpen);
+    if (nextOpen) {
+      await carregarPedidosManuais();
+    }
+  }
+
+  function togglePedidoManual(pedidoId: number) {
+    setPedidosManuaisSelecionados((prev) =>
+      prev.includes(pedidoId)
+        ? prev.filter((currentId) => currentId !== pedidoId)
+        : [...prev, pedidoId],
+    );
+  }
+
+  function selecionarPedidosManuais(pedidoIds: number[]) {
+    setPedidosManuaisSelecionados(Array.from(new Set(pedidoIds)));
+  }
+
+  async function buscarRelatorioSeparacaoManual() {
+    if (!pedidosManuaisSelecionados.length) {
+      alert('Selecione ao menos um pedido para gerar o relatorio manual.');
+      return;
+    }
+
+    setCarregandoSeparacao(true);
+    setBuscouSeparacao(false);
+    setRelatorioSeparacao(null);
+    try {
+      const response = await fetch(`${API}/bling/relatorio-separacao-manual`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pedidoIds: pedidosManuaisSelecionados }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        alert(data.error || 'Erro ao carregar relatorio manual de separacao');
+        return;
+      }
+
+      setRelatorioSeparacao(data);
+      setRelatorioSeparacaoModo('manual');
+      setBuscouSeparacao(true);
+    } catch (e: any) {
+      alert(`Erro: ${e.message}`);
+    } finally {
+      setCarregandoSeparacao(false);
+    }
+  }
+
+  function updateSeparacaoPedido(
+    pedidoId: number,
+    field: 'transportador' | 'observacoesInternas',
+    value: string,
+  ) {
+    setRelatorioSeparacao((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        pedidos: prev.pedidos.map((pedido) => (
+          pedido.pedidoId === pedidoId
+            ? { ...pedido, [field]: value }
+            : pedido
+        )),
+      };
+    });
   }
 
   function updateItem(idx: number, field: string, value: any) {
@@ -578,6 +684,24 @@ export default function VendasBlingPage() {
   const cancelJaAplicados = itens.filter((item) => item.tipo === 'CANCELAMENTO' && item.baixaVinculada && item.jaEstornada && !item._cancelamentoAprovado);
   const cancelSemBaixa = itens.filter((item) => item.tipo === 'CANCELAMENTO' && !item.baixaVinculada);
   const cancelNaoAchados = itens.filter((item) => item.tipo === 'CANCELAMENTO' && item.baixaVinculada && !item.encontrada);
+  const filtroPedidoManualNormalizado = filtroPedidoManual.trim().toLowerCase();
+  const pedidosManuaisFiltrados = pedidosManuais.filter((pedido) => {
+    if (!filtroPedidoManualNormalizado) return true;
+    return [
+      String(pedido.pedidoNum || ''),
+      String(pedido.pedidoId || ''),
+      fmtDate(pedido.dataVenda || ''),
+    ].some((value) => value.toLowerCase().includes(filtroPedidoManualNormalizado));
+  });
+  const pedidosManuaisSelecionadosSet = new Set(pedidosManuaisSelecionados);
+  const todosPedidosManuaisVisiveisSelecionados = pedidosManuaisFiltrados.length > 0
+    && pedidosManuaisFiltrados.every((pedido) => pedidosManuaisSelecionadosSet.has(pedido.pedidoId));
+  const tituloRelatorioSeparacao = relatorioSeparacaoModo === 'manual'
+    ? 'Relatorio de Separacao - Manual'
+    : 'Relatorio de Separacao';
+  const mensagemVaziaSeparacao = relatorioSeparacaoModo === 'manual'
+    ? 'Nenhum pedido selecionado gerou itens para separacao.'
+    : 'Nenhum pedido em aberto foi encontrado nesse periodo.';
 
   return (
     <>
@@ -619,19 +743,153 @@ export default function VendasBlingPage() {
             >
               {carregandoSeparacao ? 'Carregando relatorio...' : 'Relatorio de Separacao'}
             </button>
+            <button
+              type="button"
+              style={{ ...s.btn, background: manualAberto ? '#0f172a' : 'var(--white)', color: manualAberto ? '#fff' : 'var(--gray-800)', borderColor: '#cbd5e1', opacity: (carregandoPedidosManuais || carregandoSeparacao) ? 0.7 : 1 }}
+              onClick={toggleRelatorioManual}
+              disabled={carregandoPedidosManuais || carregandoSeparacao}
+            >
+              {carregandoPedidosManuais ? 'Carregando pedidos...' : 'Relatorio de Separacao - Manual'}
+            </button>
           </div>
           <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 8 }}>
             A busca agora traz pedidos concluidos e cancelados. Frete padrao atual: {fmtMoney(defaults.fretePadrao)} · Taxa padrao: {fmtPercent(defaults.taxaPadraoPct)}
           </div>
         </div>
 
+        {manualAberto && (
+          <div style={{ ...s.card, borderColor: '#dbeafe', background: '#f8fbff' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: 14 }}>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--gray-800)' }}>Relatorio de Separacao - Manual</div>
+                <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 4 }}>
+                  Selecione pedidos ja importados e salvos no ANB para montar a separacao manual.
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={() => carregarPedidosManuais(true)}
+                  disabled={carregandoPedidosManuais}
+                  style={{ ...s.btn, background: 'var(--white)', color: 'var(--gray-800)', border: '1px solid #cbd5e1', opacity: carregandoPedidosManuais ? 0.6 : 1 }}
+                >
+                  {carregandoPedidosManuais ? 'Atualizando...' : 'Atualizar lista'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => selecionarPedidosManuais(
+                    todosPedidosManuaisVisiveisSelecionados
+                      ? pedidosManuaisSelecionados.filter((pedidoId) => !pedidosManuaisFiltrados.some((pedido) => pedido.pedidoId === pedidoId))
+                      : Array.from(new Set([
+                        ...pedidosManuaisSelecionados,
+                        ...pedidosManuaisFiltrados.map((pedido) => pedido.pedidoId),
+                      ])),
+                  )}
+                  disabled={!pedidosManuaisFiltrados.length}
+                  style={{ ...s.btn, background: 'var(--white)', color: 'var(--gray-800)', border: '1px solid #cbd5e1', opacity: !pedidosManuaisFiltrados.length ? 0.5 : 1 }}
+                >
+                  {todosPedidosManuaisVisiveisSelecionados ? 'Limpar exibidos' : 'Selecionar exibidos'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPedidosManuaisSelecionados([])}
+                  disabled={!pedidosManuaisSelecionados.length}
+                  style={{ ...s.btn, background: 'var(--white)', color: 'var(--gray-800)', border: '1px solid #cbd5e1', opacity: !pedidosManuaisSelecionados.length ? 0.5 : 1 }}
+                >
+                  Limpar selecao
+                </button>
+                <button
+                  type="button"
+                  onClick={buscarRelatorioSeparacaoManual}
+                  disabled={!pedidosManuaisSelecionados.length || carregandoSeparacao}
+                  style={{ ...s.btn, background: '#0f172a', color: '#fff', opacity: (!pedidosManuaisSelecionados.length || carregandoSeparacao) ? 0.5 : 1 }}
+                >
+                  {carregandoSeparacao ? 'Montando relatorio...' : `Gerar manual (${pedidosManuaisSelecionados.length})`}
+                </button>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
+              <input
+                style={{ ...s.input, maxWidth: 320 }}
+                value={filtroPedidoManual}
+                onChange={(e) => setFiltroPedidoManual(e.target.value)}
+                placeholder="Buscar por pedido, ID ou data..."
+              />
+              <div style={{ fontSize: 12, color: 'var(--gray-500)' }}>
+                Exibindo {pedidosManuaisFiltrados.length} de {pedidosManuais.length} pedidos · {pedidosManuaisSelecionados.length} selecionado(s)
+              </div>
+            </div>
+
+            {erroPedidosManuais && (
+              <div style={{ marginBottom: 12, background: '#fff7f7', color: '#b91c1c', border: '1px solid #fecaca', borderRadius: 10, padding: '10px 12px', fontSize: 12.5 }}>
+                {erroPedidosManuais}
+              </div>
+            )}
+
+            <div style={{ border: '1px solid #dbeafe', borderRadius: 12, overflow: 'hidden', background: 'var(--white)' }}>
+              {carregandoPedidosManuais ? (
+                <div style={{ padding: '18px 16px', fontSize: 13, color: 'var(--gray-500)' }}>
+                  Carregando pedidos importados do ANB...
+                </div>
+              ) : !pedidosManuaisFiltrados.length ? (
+                <div style={{ padding: '18px 16px', fontSize: 13, color: 'var(--gray-500)' }}>
+                  Nenhum pedido importado encontrado para a selecao manual.
+                </div>
+              ) : (
+                <div style={{ maxHeight: 360, overflowY: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                    <thead style={{ background: 'var(--gray-50)', position: 'sticky', top: 0, zIndex: 1 }}>
+                      <tr>
+                        {[
+                          { label: '', width: 48 },
+                          { label: 'Pedido', width: '22%' },
+                          { label: 'ID Bling', width: '18%' },
+                          { label: 'Data da venda', width: '18%' },
+                          { label: 'Itens salvos no ANB', width: '20%' },
+                        ].map((header, index) => (
+                          <th
+                            key={`${header.label}-${index}`}
+                            style={{ padding: '8px 10px', width: header.width as any, textAlign: index === 0 ? 'center' : 'left', fontFamily: 'JetBrains Mono, monospace', fontSize: 9.5, letterSpacing: '.7px', textTransform: 'uppercase', color: 'var(--gray-400)', fontWeight: 500, borderBottom: '1px solid var(--border)' }}
+                          >
+                            {header.label || '#'}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pedidosManuaisFiltrados.map((pedido) => {
+                        const checked = pedidosManuaisSelecionadosSet.has(pedido.pedidoId);
+                        return (
+                          <tr key={pedido.pedidoId} style={{ borderTop: '1px solid var(--gray-100)', background: checked ? '#eff6ff' : 'var(--white)' }}>
+                            <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                              <input type="checkbox" checked={checked} onChange={() => togglePedidoManual(pedido.pedidoId)} />
+                            </td>
+                            <td style={{ padding: '8px 10px', fontWeight: 700, color: 'var(--blue-500)' }}>#{pedido.pedidoNum}</td>
+                            <td style={{ padding: '8px 10px', fontFamily: 'JetBrains Mono, monospace', color: 'var(--gray-700)' }}>{pedido.pedidoId}</td>
+                            <td style={{ padding: '8px 10px', color: 'var(--gray-700)' }}>{fmtDate(pedido.dataVenda)}</td>
+                            <td style={{ padding: '8px 10px', color: 'var(--gray-800)' }}>{pedido.quantidadeItens}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {relatorioSeparacao && (
           <div style={{ ...s.card, borderColor: '#bfdbfe', background: '#f8fbff' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: 14 }}>
               <div>
-                <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--gray-800)' }}>Relatorio de Separacao</div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--gray-800)' }}>{tituloRelatorioSeparacao}</div>
                 <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 4 }}>
                   Data da separacao: {fmtIsoDate(relatorioSeparacao.geradoEm || '')}
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 2 }}>
+                  Voce pode editar transportador e observacao interna antes de gerar o PDF.
                 </div>
               </div>
               <button
@@ -659,7 +917,7 @@ export default function VendasBlingPage() {
 
             {relatorioSeparacao.pedidos.length === 0 ? (
               <div style={{ background: 'var(--white)', border: '1px dashed #bfdbfe', borderRadius: 10, padding: '18px 16px', fontSize: 13, color: 'var(--gray-500)' }}>
-                Nenhum pedido em aberto foi encontrado nesse periodo.
+                {mensagemVaziaSeparacao}
               </div>
             ) : (
               <div style={{ display: 'grid', gap: 12 }}>
@@ -682,16 +940,25 @@ export default function VendasBlingPage() {
                           <div style={{ fontSize: 11.5, color: 'var(--gray-500)', marginTop: 5 }}>
                             Data da venda: {fmtDate(pedido.dataVenda)}
                           </div>
-                          <div style={{ fontSize: 11.5, color: 'var(--gray-500)', marginTop: 2 }}>
-                            Transportador: {pedido.transportador || 'Nao informado'}
+                          <div style={{ marginTop: 8 }}>
+                            <label style={{ ...s.label, marginBottom: 6 }}>Transportador</label>
+                            <input
+                              style={{ ...s.input, padding: '8px 10px' }}
+                              value={pedido.transportador || ''}
+                              onChange={(e) => updateSeparacaoPedido(pedido.pedidoId, 'transportador', e.target.value)}
+                              placeholder="Nao informado"
+                            />
                           </div>
                         </div>
 
                         <div style={{ flex: '1 1 520px', minWidth: 320, border: '1px solid #dbeafe', background: '#f8fbff', borderRadius: 10, padding: '8px 10px' }}>
                           <div style={{ fontSize: 10, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '.7px', marginBottom: 5 }}>Obs. interna</div>
-                          <div style={{ fontSize: 12, color: 'var(--gray-800)', lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>
-                            {String(pedido.observacoesInternas || '').trim() || '-'}
-                          </div>
+                          <textarea
+                            style={{ ...s.input, minHeight: 86, resize: 'vertical', lineHeight: 1.45 }}
+                            value={pedido.observacoesInternas || ''}
+                            onChange={(e) => updateSeparacaoPedido(pedido.pedidoId, 'observacoesInternas', e.target.value)}
+                            placeholder="-"
+                          />
                         </div>
                       </div>
                     </div>

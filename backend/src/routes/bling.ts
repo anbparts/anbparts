@@ -5370,213 +5370,359 @@ blingRouter.post('/ajustar-frete-pedido', async (req, res, next) => {
   }
 });
 
+type SeparacaoPedidoRaw = {
+  pedidoId: number;
+  pedidoNum: string;
+  dataVenda: string;
+  statusLabel: string;
+  nomeCliente: string | null;
+  transportador: string | null;
+  enderecoEntrega: string | null;
+  observacoesInternas: string | null;
+  itens: Array<{
+    lineKey: string;
+    produtoId: number | null;
+    skuBling: string;
+    idBling: string;
+    baseSku: string;
+    descricao: string;
+    quantidade: number;
+  }>;
+};
+
+async function buildRelatorioSeparacaoFromPedidoIds(
+  pedidoIds: number[],
+  options: {
+    onlyOpen?: boolean;
+    pedidosMetaById?: Map<number, any>;
+    sortDirection?: 'asc' | 'desc';
+    filtros: {
+      dataInicio: string;
+      dataFim: string;
+      status: string;
+    };
+  },
+) {
+  const pedidoIdsUnicos = Array.from(new Set(
+    pedidoIds
+      .map((pedidoId) => Number(pedidoId || 0))
+      .filter(Boolean),
+  ));
+  const pedidosRaw: SeparacaoPedidoRaw[] = [];
+  const codigosSeparacao = new Set<string>();
+
+  for (const pedidoId of pedidoIdsUnicos) {
+    await sleep(120);
+
+    const detalhe = await blingReq(`/pedidos/vendas/${pedidoId}`) as any;
+    const pedido = detalhe?.data || {};
+    const pedidoMeta = options.pedidosMetaById?.get(pedidoId) || null;
+    const situacaoDetalhe = classifyOrderSituation(pedido);
+    const situacao = options.onlyOpen
+      ? resolveSituacaoPedidoAberto(pedidoMeta?.situacao, situacaoDetalhe)
+      : (situacaoDetalhe || pedidoMeta?.situacao || null);
+
+    if (options.onlyOpen && !isSituacaoEmAberto(situacao)) continue;
+
+    const statusLabel = situacao?.label || pedidoMeta?.situacao?.label || situacaoDetalhe?.label || 'Sem situacao';
+    const pedidoNum = String(pedido?.numero || pedidoId || '').trim();
+    const dataVenda = String(pedido?.data || '').split('T')[0] || '';
+    const nomeCliente = String(pedido?.contato?.nome || '').trim() || null;
+    const transportador = resolvePedidoTransportadorNome(pedido);
+    const enderecoEntrega = resolvePedidoEnderecoEntregaLinha(pedido);
+    const observacoesInternas = String(pedido?.observacoesInternas || '').trim() || null;
+
+    const itens = (pedido?.itens || [])
+      .map((item: any, lineIndex: number) => {
+        const skuBling = String(item?.produto?.codigo || item?.codigo || item?.sku || '').trim().toUpperCase();
+        const idBling = item?.produto?.id ? `BL${String(item.produto.id).padStart(8, '0')}` : '';
+        const baseSku = getBaseSku(skuBling || idBling);
+
+        if (baseSku) codigosSeparacao.add(baseSku);
+
+        return {
+          lineKey: `${pedidoId}-${lineIndex}-${baseSku || skuBling || idBling || 'item'}`,
+          produtoId: item?.produto?.id ? Number(item.produto.id) : null,
+          skuBling,
+          idBling,
+          baseSku,
+          descricao: String(item?.produto?.nome || item?.descricao || '').trim(),
+          quantidade: Math.max(1, Math.round(toNumber(item?.quantidade, 1))),
+        };
+      })
+      .filter((item: any) => item.baseSku || item.skuBling || item.idBling);
+
+    if (!itens.length) continue;
+
+    pedidosRaw.push({
+      pedidoId,
+      pedidoNum,
+      dataVenda,
+      statusLabel,
+      nomeCliente,
+      transportador,
+      enderecoEntrega,
+      observacoesInternas,
+      itens,
+    });
+  }
+
+  const codigos = Array.from(codigosSeparacao);
+  const todasPecas = codigos.length ? await listPecasForComparacaoByCodes(codigos) : [];
+  const produtosByCode = codigos.length ? await findBlingProductsByCodes(codigos) : new Map<string, any>();
+  const productDetailCache = new Map<number, any | null>();
+  const reservedVendaPecaIds = new Set<number>();
+  const sortFactor = options.sortDirection === 'desc' ? -1 : 1;
+
+  const pedidosOrdenados = [...pedidosRaw].sort((a, b) => {
+    const dateDiff = new Date(a.dataVenda || 0).getTime() - new Date(b.dataVenda || 0).getTime();
+    if (dateDiff) return dateDiff * sortFactor;
+    return String(a.pedidoNum || '').localeCompare(String(b.pedidoNum || ''), 'pt-BR', { numeric: true, sensitivity: 'base' }) * sortFactor;
+  });
+
+  const totaisGerais = {
+    totalPedidos: 0,
+    totalItens: 0,
+    totalLinhas: 0,
+    totalEtiquetasDetran: 0,
+    totalLocalizacoesDivergentes: 0,
+  };
+
+  const pedidos = [];
+
+  for (const pedidoRaw of pedidosOrdenados) {
+    const itens = [];
+
+    for (const item of pedidoRaw.itens) {
+      const codigosItem = [item.skuBling, item.idBling].filter(Boolean);
+      const produtoResumo = item.baseSku ? (produtosByCode.get(item.baseSku) || null) : null;
+      const produtoIdResolved = item.produtoId || Number(produtoResumo?.id || 0) || null;
+      let produtoDetalhe = null;
+
+      if (produtoIdResolved) {
+        if (!productDetailCache.has(produtoIdResolved)) {
+          productDetailCache.set(produtoIdResolved, await fetchBlingProductDetailById(produtoIdResolved));
+        }
+        produtoDetalhe = productDetailCache.get(produtoIdResolved) || null;
+      }
+
+      const pecaReferencia = findSkuReferencePeca(todasPecas, item.skuBling, item.idBling);
+      const localizacaoBling = normalizeLocation(resolveBlingLocation(produtoResumo, produtoDetalhe).location);
+      const pecasVinculadasSku = findLinkedPecasByPedido(
+        todasPecas,
+        pedidoRaw.pedidoId,
+        pedidoRaw.pedidoNum,
+        item.skuBling,
+        item.idBling,
+        reservedVendaPecaIds,
+      ).filter((peca) => !peca.emPrejuizo);
+      const pecasVinculadasSelecionadas = pecasVinculadasSku.slice(0, item.quantidade);
+      pecasVinculadasSelecionadas.forEach((peca) => reservedVendaPecaIds.add(peca.id));
+
+      const quantidadeRestante = Math.max(0, item.quantidade - pecasVinculadasSelecionadas.length);
+      const pecasDisponiveisSku = todasPecas
+        .filter((peca) =>
+          peca.disponivel
+          && !peca.emPrejuizo
+          && !reservedVendaPecaIds.has(peca.id)
+          && codigosItem.some((codigo) => matchesSku(peca.idPeca, codigo)),
+        )
+        .sort((a, b) => a.id - b.id);
+      const locationMatchesBling = (peca: any) => {
+        const location = normalizeLocation(peca.localizacao);
+        return !!localizacaoBling && !!location && normalizeText(location) === normalizeText(localizacaoBling);
+      };
+      const pecasOrdenadasParaSeparacao = localizacaoBling
+        ? [
+          ...pecasDisponiveisSku.filter((peca) => locationMatchesBling(peca)),
+          ...pecasDisponiveisSku.filter((peca) => !locationMatchesBling(peca)),
+        ]
+        : pecasDisponiveisSku;
+      const pecasDisponiveisSelecionadas = pecasOrdenadasParaSeparacao.slice(0, quantidadeRestante);
+      pecasDisponiveisSelecionadas.forEach((peca) => reservedVendaPecaIds.add(peca.id));
+      const pecasSelecionadas = [...pecasVinculadasSelecionadas, ...pecasDisponiveisSelecionadas];
+      const etiquetasDetranDisponiveis = Array.from(new Set(
+        [...pecasVinculadasSku, ...pecasDisponiveisSku]
+          .map((peca) => normalizeDetranEtiqueta(peca.detranEtiqueta))
+          .filter((etiqueta): etiqueta is string => Boolean(etiqueta)),
+      ));
+      const localizacoesAnb = Array.from(new Set(
+        pecasSelecionadas
+          .map((peca) => normalizeLocation(peca.localizacao))
+          .filter((location): location is string => Boolean(location)),
+      ));
+      const localizacaoAnb = localizacoesAnb.join(' / ') || null;
+      const localizacaoConfere = (!localizacaoBling && localizacoesAnb.length === 0)
+        || (
+          !!localizacaoBling
+          && localizacoesAnb.length > 0
+          && localizacoesAnb.every((location) => normalizeText(location) === normalizeText(localizacaoBling))
+        );
+      const detranRelatorio = etiquetasDetranDisponiveis.length > 1
+        ? 'ENVIAR FOTO DA ETIQUETA DETRAN'
+        : (etiquetasDetranDisponiveis[0] || '');
+
+      if (detranRelatorio) totaisGerais.totalEtiquetasDetran += 1;
+      if (!localizacaoConfere) totaisGerais.totalLocalizacoesDivergentes += 1;
+
+      itens.push({
+        lineKey: item.lineKey,
+        skuBase: item.baseSku || getBaseSku(pecaReferencia?.idPeca || item.skuBling || item.idBling),
+        skuBling: item.skuBling || null,
+        skuSistema: pecasSelecionadas.map((peca) => peca.idPeca).join(' / ') || pecaReferencia?.idPeca || item.skuBling || item.idBling || '',
+        quantidade: item.quantidade,
+        descricao: item.descricao || pecaReferencia?.descricao || '',
+        idsPecaAnb: pecasSelecionadas.map((peca) => peca.idPeca),
+        localizacaoBling,
+        localizacaoAnb,
+        localizacaoConfere,
+        detranRelatorio,
+        etiquetasDetranDisponiveis,
+      });
+
+      totaisGerais.totalItens += item.quantidade;
+      totaisGerais.totalLinhas += 1;
+    }
+
+    pedidos.push({
+      pedidoId: pedidoRaw.pedidoId,
+      pedidoNum: pedidoRaw.pedidoNum,
+      dataVenda: pedidoRaw.dataVenda,
+      statusLabel: pedidoRaw.statusLabel,
+      nomeCliente: pedidoRaw.nomeCliente,
+      transportador: pedidoRaw.transportador,
+      enderecoEntrega: pedidoRaw.enderecoEntrega,
+      observacoesInternas: pedidoRaw.observacoesInternas,
+      quantidadeItens: itens.reduce((sum, item) => sum + Number(item.quantidade || 0), 0),
+      itens,
+    });
+  }
+
+  totaisGerais.totalPedidos = pedidos.length;
+
+  return {
+    ok: true,
+    filtros: options.filtros,
+    totaisGerais,
+    pedidos,
+    geradoEm: new Date().toISOString(),
+  };
+}
+
+blingRouter.get('/relatorio-separacao-manual/pedidos', async (req, res, next) => {
+  try {
+    const pecas = await prisma.peca.findMany({
+      where: {
+        blingPedidoId: { not: null },
+        blingPedidoNum: { not: null },
+        dataVenda: { not: null },
+        disponivel: false,
+      },
+      select: {
+        id: true,
+        blingPedidoId: true,
+        blingPedidoNum: true,
+        dataVenda: true,
+      },
+      orderBy: [
+        { dataVenda: 'desc' },
+        { blingPedidoNum: 'desc' },
+        { id: 'desc' },
+      ],
+    });
+
+    const pedidosMap = new Map<string, {
+      pedidoId: number;
+      pedidoNum: string;
+      dataVenda: string;
+      quantidadeItens: number;
+    }>();
+
+    for (const peca of pecas) {
+      const pedidoId = Number(String(peca.blingPedidoId || '').trim());
+      const pedidoNum = String(peca.blingPedidoNum || '').trim();
+      if (!pedidoId || !pedidoNum) continue;
+
+      const dataVenda = peca.dataVenda ? new Date(peca.dataVenda).toISOString().split('T')[0] : '';
+      const key = `${pedidoId}::${pedidoNum}`;
+
+      if (!pedidosMap.has(key)) {
+        pedidosMap.set(key, {
+          pedidoId,
+          pedidoNum,
+          dataVenda,
+          quantidadeItens: 1,
+        });
+        continue;
+      }
+
+      const current = pedidosMap.get(key)!;
+      current.quantidadeItens += 1;
+      if (!current.dataVenda && dataVenda) current.dataVenda = dataVenda;
+    }
+
+    const pedidos = Array.from(pedidosMap.values()).sort((a, b) => {
+      const dateDiff = new Date(b.dataVenda || 0).getTime() - new Date(a.dataVenda || 0).getTime();
+      if (dateDiff) return dateDiff;
+      return String(b.pedidoNum || '').localeCompare(String(a.pedidoNum || ''), 'pt-BR', { numeric: true, sensitivity: 'base' });
+    });
+
+    res.json({
+      ok: true,
+      total: pedidos.length,
+      pedidos,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+blingRouter.post('/relatorio-separacao-manual', async (req, res, next) => {
+  try {
+    const pedidoIds = Array.isArray(req.body?.pedidoIds)
+      ? req.body.pedidoIds.map((pedidoId: any) => Number(pedidoId || 0)).filter(Boolean)
+      : [];
+
+    if (!pedidoIds.length) {
+      return res.status(400).json({ ok: false, error: 'Selecione ao menos um pedido para o relatorio manual.' });
+    }
+
+    const relatorio = await buildRelatorioSeparacaoFromPedidoIds(pedidoIds, {
+      onlyOpen: false,
+      sortDirection: 'desc',
+      filtros: {
+        dataInicio: '',
+        dataFim: '',
+        status: 'Manual',
+      },
+    });
+
+    res.json(relatorio);
+  } catch (e) {
+    next(e);
+  }
+});
+
 blingRouter.get('/relatorio-separacao', async (req, res, next) => {
   try {
     const dataInicio = String(req.query?.dataInicio || '').trim();
     const dataFim = String(req.query?.dataFim || '').trim();
-
     const pedidosMeta = await listPedidos(dataInicio, dataFim);
-    const pedidosAbertosRaw: any[] = [];
-    const codigosSeparacao = new Set<string>();
+    const pedidosMetaById = new Map(pedidosMeta.map((pedido) => [Number(pedido.id), pedido]));
+    const pedidoIds = pedidosMeta.map((pedido) => Number(pedido.id)).filter(Boolean);
 
-    for (const pedidoMeta of pedidosMeta) {
-      await sleep(120);
-
-      const detalhe = await blingReq(`/pedidos/vendas/${pedidoMeta.id}`) as any;
-      const pedido = detalhe?.data || {};
-      const situacao = resolveSituacaoPedidoAberto(
-        pedidoMeta.situacao,
-        classifyOrderSituation(pedido),
-      );
-      if (!isSituacaoEmAberto(situacao)) continue;
-      const statusLabel = situacao?.label || pedidoMeta.situacao?.label || 'Em Aberto';
-
-      const pedidoId = Number(pedido?.id || pedidoMeta.id || 0);
-      const pedidoNum = String(pedido?.numero || pedidoId || pedidoMeta.id || '').trim();
-      const dataVenda = String(pedido?.data || '').split('T')[0] || '';
-      const nomeCliente = String(pedido?.contato?.nome || '').trim() || null;
-      const transportador = resolvePedidoTransportadorNome(pedido);
-      const enderecoEntrega = resolvePedidoEnderecoEntregaLinha(pedido);
-      const observacoesInternas = String(pedido?.observacoesInternas || '').trim() || null;
-
-      const itens = (pedido?.itens || [])
-        .map((item: any, lineIndex: number) => {
-          const skuBling = String(item?.produto?.codigo || item?.codigo || item?.sku || '').trim().toUpperCase();
-          const idBling = item?.produto?.id ? `BL${String(item.produto.id).padStart(8, '0')}` : '';
-          const baseSku = getBaseSku(skuBling || idBling);
-
-          if (baseSku) codigosSeparacao.add(baseSku);
-
-          return {
-            lineKey: `${pedidoId}-${lineIndex}-${baseSku || skuBling || idBling || 'item'}`,
-            produtoId: item?.produto?.id ? Number(item.produto.id) : null,
-            skuBling,
-            idBling,
-            baseSku,
-            descricao: String(item?.produto?.nome || item?.descricao || '').trim(),
-            quantidade: Math.max(1, Math.round(toNumber(item?.quantidade, 1))),
-          };
-        })
-        .filter((item: any) => item.baseSku || item.skuBling || item.idBling);
-
-      if (!itens.length) continue;
-
-      pedidosAbertosRaw.push({
-        pedidoId,
-        pedidoNum,
-        dataVenda,
-        statusLabel,
-        nomeCliente,
-        transportador,
-        enderecoEntrega,
-        observacoesInternas,
-        itens,
-      });
-    }
-
-    const codigos = Array.from(codigosSeparacao);
-    const todasPecas = codigos.length ? await listPecasForComparacaoByCodes(codigos) : [];
-    const produtosByCode = codigos.length ? await findBlingProductsByCodes(codigos) : new Map<string, any>();
-    const productDetailCache = new Map<number, any | null>();
-    const reservedVendaPecaIds = new Set<number>();
-
-    const pedidosOrdenados = pedidosAbertosRaw.sort((a, b) => {
-      const dateDiff = new Date(a.dataVenda || 0).getTime() - new Date(b.dataVenda || 0).getTime();
-      if (dateDiff) return dateDiff;
-      return String(a.pedidoNum || '').localeCompare(String(b.pedidoNum || ''), 'pt-BR', { numeric: true, sensitivity: 'base' });
-    });
-
-    const totaisGerais = {
-      totalPedidos: 0,
-      totalItens: 0,
-      totalLinhas: 0,
-      totalEtiquetasDetran: 0,
-      totalLocalizacoesDivergentes: 0,
-    };
-
-    const pedidos = [];
-
-    for (const pedidoRaw of pedidosOrdenados) {
-      const itens = [];
-
-      for (const item of pedidoRaw.itens) {
-        const codigosItem = [item.skuBling, item.idBling].filter(Boolean);
-        const produtoResumo = item.baseSku ? (produtosByCode.get(item.baseSku) || null) : null;
-        const produtoIdResolved = item.produtoId || Number(produtoResumo?.id || 0) || null;
-        let produtoDetalhe = null;
-
-        if (produtoIdResolved) {
-          if (!productDetailCache.has(produtoIdResolved)) {
-            productDetailCache.set(produtoIdResolved, await fetchBlingProductDetailById(produtoIdResolved));
-          }
-          produtoDetalhe = productDetailCache.get(produtoIdResolved) || null;
-        }
-
-        const pecaReferencia = findSkuReferencePeca(todasPecas, item.skuBling, item.idBling);
-        const localizacaoBling = normalizeLocation(resolveBlingLocation(produtoResumo, produtoDetalhe).location);
-        const pecasVinculadasSku = findLinkedPecasByPedido(
-          todasPecas,
-          pedidoRaw.pedidoId,
-          pedidoRaw.pedidoNum,
-          item.skuBling,
-          item.idBling,
-          reservedVendaPecaIds,
-        ).filter((peca) => !peca.emPrejuizo);
-        const pecasVinculadasSelecionadas = pecasVinculadasSku.slice(0, item.quantidade);
-        pecasVinculadasSelecionadas.forEach((peca) => reservedVendaPecaIds.add(peca.id));
-
-        const quantidadeRestante = Math.max(0, item.quantidade - pecasVinculadasSelecionadas.length);
-        const pecasDisponiveisSku = todasPecas
-          .filter((peca) =>
-            peca.disponivel
-            && !peca.emPrejuizo
-            && !reservedVendaPecaIds.has(peca.id)
-            && codigosItem.some((codigo) => matchesSku(peca.idPeca, codigo)),
-          )
-          .sort((a, b) => a.id - b.id);
-        const locationMatchesBling = (peca: any) => {
-          const location = normalizeLocation(peca.localizacao);
-          return !!localizacaoBling && !!location && normalizeText(location) === normalizeText(localizacaoBling);
-        };
-        const pecasOrdenadasParaSeparacao = localizacaoBling
-          ? [
-            ...pecasDisponiveisSku.filter((peca) => locationMatchesBling(peca)),
-            ...pecasDisponiveisSku.filter((peca) => !locationMatchesBling(peca)),
-          ]
-          : pecasDisponiveisSku;
-        const pecasDisponiveisSelecionadas = pecasOrdenadasParaSeparacao.slice(0, quantidadeRestante);
-        pecasDisponiveisSelecionadas.forEach((peca) => reservedVendaPecaIds.add(peca.id));
-        const pecasSelecionadas = [...pecasVinculadasSelecionadas, ...pecasDisponiveisSelecionadas];
-        const etiquetasDetranDisponiveis = Array.from(new Set(
-          [...pecasVinculadasSku, ...pecasDisponiveisSku]
-            .map((peca) => normalizeDetranEtiqueta(peca.detranEtiqueta))
-            .filter((etiqueta): etiqueta is string => Boolean(etiqueta)),
-        ));
-        const localizacoesAnb = Array.from(new Set(
-          pecasSelecionadas
-            .map((peca) => normalizeLocation(peca.localizacao))
-            .filter((location): location is string => Boolean(location)),
-        ));
-        const localizacaoAnb = localizacoesAnb.join(' / ') || null;
-        const localizacaoConfere = (!localizacaoBling && localizacoesAnb.length === 0)
-          || (
-            !!localizacaoBling
-            && localizacoesAnb.length > 0
-            && localizacoesAnb.every((location) => normalizeText(location) === normalizeText(localizacaoBling))
-          );
-        const detranRelatorio = etiquetasDetranDisponiveis.length > 1
-          ? 'ENVIAR FOTO DA ETIQUETA DETRAN'
-          : (etiquetasDetranDisponiveis[0] || '');
-
-        if (detranRelatorio) totaisGerais.totalEtiquetasDetran += 1;
-        if (!localizacaoConfere) totaisGerais.totalLocalizacoesDivergentes += 1;
-
-        itens.push({
-          lineKey: item.lineKey,
-          skuBase: item.baseSku || getBaseSku(pecaReferencia?.idPeca || item.skuBling || item.idBling),
-          skuBling: item.skuBling || null,
-          skuSistema: pecasSelecionadas.map((peca) => peca.idPeca).join(' / ') || pecaReferencia?.idPeca || item.skuBling || item.idBling || '',
-          quantidade: item.quantidade,
-          descricao: item.descricao || pecaReferencia?.descricao || '',
-          idsPecaAnb: pecasSelecionadas.map((peca) => peca.idPeca),
-          localizacaoBling,
-          localizacaoAnb,
-          localizacaoConfere,
-          detranRelatorio,
-          etiquetasDetranDisponiveis,
-        });
-
-        totaisGerais.totalItens += item.quantidade;
-        totaisGerais.totalLinhas += 1;
-      }
-
-      pedidos.push({
-        pedidoId: pedidoRaw.pedidoId,
-        pedidoNum: pedidoRaw.pedidoNum,
-        dataVenda: pedidoRaw.dataVenda,
-        statusLabel: pedidoRaw.statusLabel,
-        nomeCliente: pedidoRaw.nomeCliente,
-        transportador: pedidoRaw.transportador,
-        enderecoEntrega: pedidoRaw.enderecoEntrega,
-        observacoesInternas: pedidoRaw.observacoesInternas,
-        quantidadeItens: itens.reduce((sum, item) => sum + Number(item.quantidade || 0), 0),
-        itens,
-      });
-    }
-
-    totaisGerais.totalPedidos = pedidos.length;
-
-    res.json({
-      ok: true,
+    const relatorio = await buildRelatorioSeparacaoFromPedidoIds(pedidoIds, {
+      onlyOpen: true,
+      pedidosMetaById,
+      sortDirection: 'asc',
       filtros: {
         dataInicio,
         dataFim,
         status: 'Em Aberto',
       },
-      totaisGerais,
-      pedidos,
-      geradoEm: new Date().toISOString(),
     });
+
+    res.json(relatorio);
   } catch (e) {
     next(e);
   }

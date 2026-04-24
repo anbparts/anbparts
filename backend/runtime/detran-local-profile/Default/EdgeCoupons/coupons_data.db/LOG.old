@@ -1,0 +1,5 @@
+2026/04/23-16:15:08.546 199bc8 Creating DB C:\Users\Bruno\anbparts\backend\runtime\detran-local-profile\Default\EdgeCoupons/coupons_data.db since it was missing.
+2026/04/23-16:15:08.602 199bc8 Reusing MANIFEST C:\Users\Bruno\anbparts\backend\runtime\detran-local-profile\Default\EdgeCoupons/coupons_data.db/MANIFEST-000001
+2026/04/23-16:15:08.757 199a28 Level-0 table #5: started
+2026/04/23-16:15:08.759 199a28 Level-0 table #5: 682121 bytes OK
+2026/04/23-16:15:08.760 199a28 Delete type=0 #3

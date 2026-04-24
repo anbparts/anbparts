@@ -1,0 +1,6 @@
+2026/04/23-16:41:15.727 19e124 Reusing MANIFEST C:\Users\Bruno\anbparts\backend\runtime\detran-local-profile\Default\EdgeCoupons/coupons_data.db/MANIFEST-000001
+2026/04/23-16:41:15.727 19e124 Recovering log #4
+2026/04/23-16:41:15.727 19e124 Reusing old log C:\Users\Bruno\anbparts\backend\runtime\detran-local-profile\Default\EdgeCoupons/coupons_data.db/000004.log 
+2026/04/23-16:41:15.742 19e2b8 Level-0 table #8: started
+2026/04/23-16:41:15.746 19e2b8 Level-0 table #8: 682224 bytes OK
+2026/04/23-16:41:15.748 19e2b8 Delete type=0 #4
