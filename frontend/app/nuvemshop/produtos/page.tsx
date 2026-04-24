@@ -37,6 +37,13 @@ type FotoPendente = { foto: FotoQueueItem; idx: number };
 
 const MAX_UPLOAD_BATCH_BYTES = 18 * 1024 * 1024;
 
+function normalizarSkuLista(value: string) {
+  return value
+    .split('\n')
+    .map((sku) => sku.trim().replace(/^"+|"+$/g, '').trim())
+    .filter(Boolean);
+}
+
 function montarPayloadFotos(produtoId: number | null, itens: FotoPendente[]) {
   return {
     produtoId,
@@ -140,7 +147,7 @@ export default function NuvemshopProdutosPage() {
     try {
       const body: any = {};
       if (modo === 'moto' && motoId) body.motoId = Number(motoId);
-      if (modo === 'skus') body.skus = skusInput.split('\n').map(s => s.trim()).filter(Boolean);
+      if (modo === 'skus') body.skus = normalizarSkuLista(skusInput);
       const resp = await fetch(`${API}/nuvemshop/buscar-produtos`, {
         method: 'POST', credentials: 'include',
         headers: { 'Content-Type': 'application/json' },

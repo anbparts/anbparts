@@ -113,6 +113,10 @@ function resolverMotoIdPorPrefixo(sku: string, prefixos: any[]): number | null {
   return null;
 }
 
+function normalizarSkuBusca(value: string) {
+  return String(value || '').trim().replace(/^"+|"+$/g, '').trim().toUpperCase();
+}
+
 // ─── GET /nuvemshop/categorias ────────────────────────────────────────────────
 
 nuvemshopRouter.get('/categorias', async (_req, res, next) => {
@@ -142,7 +146,7 @@ nuvemshopRouter.post('/buscar-produtos', async (req, res, next) => {
     const where: any = { disponivel: true };
     if (motoId) where.motoId = Number(motoId);
     if (skusInput && Array.isArray(skusInput) && skusInput.length) {
-      where.idPeca = { in: skusInput.map((s: string) => s.trim().toUpperCase()) };
+      where.idPeca = { in: skusInput.map((s: string) => normalizarSkuBusca(s)).filter(Boolean) };
     }
 
     const pecas = await prisma.peca.findMany({
