@@ -598,6 +598,7 @@ export default function NuvemshopProdutosPage() {
                     const pendentes = fotosQueue.filter(f => f.status === 'aguardando');
                     if (!pendentes.length) return;
                     setEnviandoFotos(true);
+                    let houveErroNoEnvio = false;
 
                     const pendentesComIndice = fotosQueue
                       .map((foto, idx) => ({ foto, idx }))
@@ -642,6 +643,10 @@ export default function NuvemshopProdutosPage() {
                           };
                         }));
 
+                        if ((data.resultados || []).some((r: any) => !r.ok)) {
+                          houveErroNoEnvio = true;
+                        }
+
                         const enviadasComSucesso = (data.resultados || []).filter((r: any) => r.ok).length;
                         if (enviadasComSucesso) {
                           setProdutos(prev => prev.map(p => (
@@ -657,8 +662,13 @@ export default function NuvemshopProdutosPage() {
                           ? { ...f, status: 'erro', erro: e.message }
                           : f
                       )));
+                      houveErroNoEnvio = true;
                     } finally {
                       setEnviandoFotos(false);
+                      if (!houveErroNoEnvio) {
+                        setModalFoto(null);
+                        setFotosQueue([]);
+                      }
                     }
                   }}
                   style={{ ...s.btn, background: '#7c3aed', color: '#fff', opacity: (enviandoFotos || fotosQueue.filter(f => f.status === 'aguardando').length === 0) ? 0.6 : 1 }}>
