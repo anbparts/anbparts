@@ -832,8 +832,8 @@ type BrowserBox = {
   depth?: number;
 };
 
-async function getManageCardBoxes(manageTitle: Locator): Promise<BrowserBox[]> {
-  return manageTitle.evaluate((element: any) => {
+async function getAncestorBoxes(locator: Locator): Promise<BrowserBox[]> {
+  return locator.evaluate((element: any) => {
     const boxes: BrowserBox[] = [];
     let current = element;
     let depth = 0;
@@ -853,6 +853,10 @@ async function getManageCardBoxes(manageTitle: Locator): Promise<BrowserBox[]> {
 
     return boxes;
   }).catch(() => []);
+}
+
+async function getManageCardBoxes(manageTitle: Locator): Promise<BrowserBox[]> {
+  return getAncestorBoxes(manageTitle);
 }
 
 async function clickManage(page: Page) {
@@ -1081,7 +1085,75 @@ async function findOtpFieldForScreen(page: Page, screenText: string) {
   return firstVisible(page, candidates);
 }
 
+async function findOtpFieldInsideModal(page: Page) {
+  const viewport = page.viewportSize();
+
+  for (const root of pageSearchRoots(page)) {
+    const modalMarker = await firstVisible(page, [
+      () => root.getByText(/Inserir c[oÃ³]digo/i),
+      () => root.getByText(/Enviamos uma mensagem para o seu e-mail/i),
+    ]);
+
+    if (!modalMarker) continue;
+
+    const markerBox = await modalMarker.boundingBox().catch(() => null);
+    const candidateBoxes = (await getAncestorBoxes(modalMarker))
+      .filter((box) => {
+        const markerCenterX = markerBox ? markerBox.x + markerBox.width / 2 : box.x + 1;
+        const markerCenterY = markerBox ? markerBox.y + markerBox.height / 2 : box.y + 1;
+        const containsMarker = markerCenterX >= box.x
+          && markerCenterX <= box.x + box.width
+          && markerCenterY >= box.y
+          && markerCenterY <= box.y + box.height;
+        const centeredEnough = viewport
+          ? box.x >= viewport.width * 0.2
+            && box.x + box.width <= viewport.width * 0.9
+            && box.y >= viewport.height * 0.18
+            && box.y + box.height <= viewport.height * 0.94
+          : true;
+
+        return containsMarker
+          && centeredEnough
+          && box.width >= 260
+          && box.width <= 900
+          && box.height >= 220
+          && box.height <= 900;
+      })
+      .sort((left, right) => (left.width * left.height) - (right.width * right.height));
+
+    const modalBox = candidateBoxes[0];
+    if (!modalBox) continue;
+
+    const inputs = root.locator('input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]), textarea');
+    const count = Math.min(await inputs.count().catch(() => 0), 20);
+
+    for (let index = 0; index < count; index += 1) {
+      const input = inputs.nth(index);
+      const visible = await input.isVisible({ timeout: 250 }).catch(() => false);
+      if (!visible) continue;
+
+      const box = await input.boundingBox().catch(() => null);
+      if (!box) continue;
+
+      const insideModal = box.x >= modalBox.x - 6
+        && box.x + box.width <= modalBox.x + modalBox.width + 6
+        && box.y >= modalBox.y - 6
+        && box.y + box.height <= modalBox.y + modalBox.height + 6;
+      const otpSized = box.width >= 40 && box.width <= 280 && box.height >= 12 && box.height <= 80;
+
+      if (insideModal && otpSized) {
+        return input;
+      }
+    }
+  }
+
+  return null;
+}
+
 async function findOtpFieldAcrossFrames(page: Page, screenText: string) {
+  const modalField = await findOtpFieldInsideModal(page);
+  if (modalField) return modalField;
+
   const roots = pageSearchRoots(page);
   const candidates: Array<() => Locator> = [];
 
@@ -1107,6 +1179,9 @@ async function findOtpFieldAcrossFrames(page: Page, screenText: string) {
 }
 
 async function findVisibleOtpLikeInput(page: Page) {
+  const modalField = await findOtpFieldInsideModal(page);
+  if (modalField) return modalField;
+
   const viewport = page.viewportSize();
   for (const root of pageSearchRoots(page)) {
     const inputs = root.locator('input:not([type="hidden"]), textarea');
@@ -1280,7 +1355,6 @@ async function dispatchOtpFieldEvents(locator: Locator) {
 }
 
 async function writeOtpToPortalField(
-  page: Page,
   otpField: Locator,
   code: string,
 ) {
@@ -1297,19 +1371,14 @@ async function writeOtpToPortalField(
   await sleep(250);
 
   await otpField.fill('').catch(() => undefined);
-  await page.keyboard.press('Control+A').catch(() => undefined);
-  await page.keyboard.press('Delete').catch(() => undefined);
-  await page.keyboard.press('Backspace').catch(() => undefined);
+  await otpField.press('Control+A').catch(() => undefined);
+  await otpField.press('Delete').catch(() => undefined);
+  await otpField.press('Backspace').catch(() => undefined);
   await sleep(150);
 
   const clearedValue = await readLocatorValue(otpField);
 
-  await otpField.type(normalizedCode, { delay: 180 }).catch(async () => {
-    for (const char of normalizedCode.split('')) {
-      await page.keyboard.type(char, { delay: 180 }).catch(() => undefined);
-      await sleep(60);
-    }
-  });
+  await otpField.type(normalizedCode, { delay: 180 }).catch(() => undefined);
 
   await dispatchOtpFieldEvents(otpField);
   await sleep(300);
@@ -1835,7 +1904,7 @@ async function performOtp(
     },
   });
 
-  const typingResult = await writeOtpToPortalField(page, otpField, otpInfo.code);
+  const typingResult = await writeOtpToPortalField(otpField, otpInfo.code);
 
   await updateEtapa(execucao, 'otp_email', 'running', {
     message: typingResult.success
@@ -2451,7 +2520,7 @@ async function runExecucao(execucaoId: number) {
   const { files: artifacts, runtime } = await ensureArtifacts(execucao.runId);
   await setExecucaoSummary(execucao.id, {
     startedByWorkerAt: new Date().toISOString(),
-    workerVersion: 'detran-worker-v28',
+    workerVersion: 'detran-worker-v29',
   });
 
   if (!buildReadyForExecution(config)) {
@@ -2545,7 +2614,7 @@ async function runExecucao(execucaoId: number) {
       pageTitle,
       artifacts: buildArtifactsPatch(runtime, artifacts),
       summary: {
-        workerVersion: 'detran-worker-v28',
+        workerVersion: 'detran-worker-v29',
         workerEnvironment: runtimeProfile.environmentLabel,
         workerExecutionMode: runtimeProfile.localMode ? 'local_browser' : 'server_browser',
         failedAt: new Date().toISOString(),
