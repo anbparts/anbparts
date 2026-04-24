@@ -417,22 +417,11 @@ nuvemshopRouter.post('/upload-imagens', async (req, res, next) => {
     if (!Array.isArray(imagens) || !imagens.length) return res.status(400).json({ ok: false, error: 'imagens obrigatorio' });
 
     const resultados: any[] = new Array(imagens.length);
-    const imagensExistentes = await nuvemReq<Array<{ id: number | string; position?: number | string | null }>>(
-      `/products/${produtoId}/images?per_page=250&fields=id,position`
-    );
-    let proximaPosicao =
-      (Array.isArray(imagensExistentes)
-        ? imagensExistentes.reduce((max, img) => {
-            const posicao = Number(img?.position || 0);
-            return Number.isFinite(posicao) && posicao > max ? posicao : max;
-          }, 0)
-        : 0) + 1;
 
     for (let indice = 0; indice < imagens.length; indice++) {
       const img = imagens[indice];
       try {
-        // Mantem a ordem do ANB ao fixar a posicao explicitamente na Nuvemshop.
-        const posicao = proximaPosicao;
+        // Mantem a ordem do ANB enviando as fotos em sequencia, uma a uma.
         const base64 = String(img.base64 || '').replace(/^data:[^;]+;base64,/, '');
         const data = await nuvemReq<{ id: number | string; src?: string | null; position?: number | string | null }>(
           `/products/${produtoId}/images`,
@@ -441,7 +430,6 @@ nuvemshopRouter.post('/upload-imagens', async (req, res, next) => {
             body: JSON.stringify({
               attachment: base64,
               filename: img.filename || 'foto.jpg',
-              position: posicao,
             }),
           }
         );
@@ -451,9 +439,8 @@ nuvemshopRouter.post('/upload-imagens', async (req, res, next) => {
           ok: true,
           id: data.id,
           src: data.src,
-          position: data.position ?? posicao,
+          position: data.position ?? null,
         };
-        proximaPosicao++;
       } catch (e: any) {
         resultados[indice] = {
           queueIndex: img.queueIndex ?? indice,
