@@ -94,7 +94,12 @@ export default function EtiquetaCartelaModal({ motoId, motoLabel, onClose, onSav
   async function carregarExistentes() {
     setLoadingExistentes(true);
     try {
-      const novasPosicoes = DETRAN_TIPOS.map(() => ({ status: '' as const, skuId: '', skuDescricao: '', skuDisponivel: null }));
+      const novasPosicoes: PosicaoState[] = DETRAN_TIPOS.map(() => ({
+        status: '',
+        skuId: '',
+        skuDescricao: '',
+        skuDisponivel: null,
+      }));
       let prefixoEncontrado = '';
       setSkusRemovidos({});
 
