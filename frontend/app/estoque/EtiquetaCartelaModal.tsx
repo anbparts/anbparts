@@ -23,6 +23,41 @@ const STATUS_COLORS: Record<string, { bg: string; color: string; border: string 
   Reutilizavel: { bg: '#f0fdf4', color: '#16a34a', border: '#86efac' },
 };
 
+function normalizeDetranEtiquetaValue(value: unknown) {
+  const text = String(value ?? '')
+    .replace(/\s+/g, '')
+    .trim()
+    .toUpperCase();
+  return text || '';
+}
+
+function splitDetranEtiquetas(value: unknown) {
+  return String(value ?? '')
+    .split('/')
+    .map((item) => normalizeDetranEtiquetaValue(item))
+    .filter(Boolean);
+}
+
+function parseEtiquetaPosicao(value: unknown) {
+  const etiqueta = normalizeDetranEtiquetaValue(value);
+  const match = etiqueta.match(/^(.*?)(\d{3})$/);
+  if (!match) return null;
+
+  const posicao = Number(match[2]);
+  if (!Number.isInteger(posicao) || posicao < 1 || posicao > 34) return null;
+
+  return {
+    etiqueta,
+    prefixo: match[1] || '',
+    posicao,
+  };
+}
+
+function normalizeStatusValue(value: unknown): PosicaoState['status'] {
+  if (value === 'Inexistente' || value === 'Sucata' || value === 'Reutilizavel') return value;
+  return '';
+}
+
 type PosicaoState = {
   status: '' | 'Inexistente' | 'Sucata' | 'Reutilizavel';
   skuId: string; // idPeca
@@ -61,6 +96,7 @@ export default function EtiquetaCartelaModal({ motoId, motoLabel, onClose, onSav
     try {
       const novasPosicoes = DETRAN_TIPOS.map(() => ({ status: '' as const, skuId: '', skuDescricao: '', skuDisponivel: null }));
       let prefixoEncontrado = '';
+      setSkusRemovidos({});
 
       // 1. Carrega da tabela MotoDetranPosicao (histórico completo incluindo Inexistente)
       const respCartela = await fetch(`${API}/motos/${motoId}/detran-cartela`, { credentials: 'include' });
@@ -71,11 +107,12 @@ export default function EtiquetaCartelaModal({ motoId, motoLabel, onClose, onSav
         for (const pos of posicoesSalvas) {
           const idx = pos.posicao - 1;
           if (idx < 0 || idx >= 34) continue;
-          if (pos.etiqueta && !prefixoEncontrado) {
-            prefixoEncontrado = pos.etiqueta.slice(0, -3);
+          const etiquetaInfo = parseEtiquetaPosicao(pos.etiqueta);
+          if (etiquetaInfo && !prefixoEncontrado) {
+            prefixoEncontrado = etiquetaInfo.prefixo;
           }
           novasPosicoes[idx] = {
-            status: (pos.status || '') as any,
+            status: normalizeStatusValue(pos.status),
             skuId: pos.idPeca || '',
             skuDescricao: '', // vamos buscar abaixo
             skuDisponivel: null,
@@ -103,22 +140,28 @@ export default function EtiquetaCartelaModal({ motoId, motoLabel, onClose, onSav
       }
 
       // Fallback: se não tem histórico, tenta inferir pelo detranEtiqueta das peças
-      if (posicoesSalvas.length === 0) {
-        for (const peca of pecas) {
-          if (!peca.detranEtiqueta) continue;
-          const etiq = String(peca.detranEtiqueta).trim();
-          if (etiq.length < 4) continue;
-          const posNum = parseInt(etiq.slice(-3), 10);
-          if (posNum >= 1 && posNum <= 34) {
-            const idx = posNum - 1;
-            novasPosicoes[idx] = {
-              status: (peca.detranStatus || '') as any,
-              skuId: peca.idPeca,
-              skuDescricao: peca.descricao || '',
-              skuDisponivel: peca.disponivel,
-            };
-            if (!prefixoEncontrado) prefixoEncontrado = etiq.slice(0, -3);
-          }
+      for (const peca of pecas) {
+        const etiquetas = splitDetranEtiquetas(peca.detranEtiqueta);
+        if (!etiquetas.length) continue;
+
+        for (const etiquetaAtual of etiquetas) {
+          const etiquetaInfo = parseEtiquetaPosicao(etiquetaAtual);
+          if (!etiquetaInfo) continue;
+
+          const idx = etiquetaInfo.posicao - 1;
+          const atual = novasPosicoes[idx];
+
+          if (atual.skuId && atual.skuId !== peca.idPeca) continue;
+          if (!atual.skuId && atual.status) continue;
+
+          novasPosicoes[idx] = {
+            status: atual.status || normalizeStatusValue(peca.detranStatus),
+            skuId: atual.skuId || peca.idPeca,
+            skuDescricao: atual.skuDescricao || peca.descricao || '',
+            skuDisponivel: atual.skuDisponivel ?? peca.disponivel,
+          };
+
+          if (!prefixoEncontrado) prefixoEncontrado = etiquetaInfo.prefixo;
         }
       }
 
