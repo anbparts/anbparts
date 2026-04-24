@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { ChartPanel, DonutChart, HeatmapChart, HorizontalBarChart, ViewModeSwitch, type ViewMode } from '@/components/finance/Charts';
 import { api } from '@/lib/api';
 const SOCIOS = ['Bruno', 'Nelson', 'Alex'];
+const DESPESA_CATEGORIAS = ['Insumo', 'Servicos', 'Taxas', 'Aluguel', 'Sistemas', 'Imposto', 'Moto', 'Outros'];
 const SOCIO_COLORS: Record<string, string> = {
   Bruno: '#2563eb',
   Nelson: '#16a34a',
@@ -158,6 +159,9 @@ export default function InvestimentosPage() {
   const [modo, setModo] = useState<ViewMode>('grafico');
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState({ data: today(), socio: 'Bruno', tipo: 'Moto', moto: '', valor: '' });
+  const [showReplicarDespesaModal, setShowReplicarDespesaModal] = useState(false);
+  const [replicarDespesa, setReplicarDespesa] = useState<{ categoria: string; observacao: string } | null>(null);
+  const [replicarDespesaForm, setReplicarDespesaForm] = useState({ categoria: '', observacao: '' });
 
   const inputStyle: any = {
     background: 'var(--white)',
@@ -225,6 +229,31 @@ export default function InvestimentosPage() {
   const motosMap = new Map<number, string>(
     motos.map((moto) => [Number(moto.id), `ID ${moto.id} - ${moto.marca} ${moto.modelo}`]),
   );
+
+  function investimentoTituloParaDespesa(formValue = form) {
+    const label = String(resolveAporteLabel(formValue.moto, formValue.tipo, motosMap) || '').trim();
+    return label || `Aporte ${normalizeTipo(formValue.tipo)}`;
+  }
+
+  function abrirReplicarDespesa() {
+    setReplicarDespesaForm({
+      categoria: replicarDespesa?.categoria || '',
+      observacao: replicarDespesa?.observacao || '',
+    });
+    setShowReplicarDespesaModal(true);
+  }
+
+  function salvarReplicarDespesa() {
+    if (!String(replicarDespesaForm.categoria || '').trim()) {
+      alert('Selecione a categoria da despesa.');
+      return;
+    }
+    setReplicarDespesa({
+      categoria: replicarDespesaForm.categoria,
+      observacao: replicarDespesaForm.observacao,
+    });
+    setShowReplicarDespesaModal(false);
+  }
 
   const anos = Array.from(new Set(
     rows.map((item) => new Date(item.data).getFullYear()).filter((ano) => Number.isFinite(ano)),
@@ -340,6 +369,9 @@ export default function InvestimentosPage() {
 
   function resetFormState() {
     setForm({ data: today(), socio: 'Bruno', tipo: 'Moto', moto: '', valor: '' });
+    setReplicarDespesa(null);
+    setReplicarDespesaForm({ categoria: '', observacao: '' });
+    setShowReplicarDespesaModal(false);
     setEditingId(null);
     setShowForm(false);
   }
@@ -354,6 +386,13 @@ export default function InvestimentosPage() {
         tipo: form.tipo,
         moto: form.moto || null,
         valor: Number(form.valor),
+        replicarDespesa: !editingId && replicarDespesa ? {
+          data: form.data,
+          detalhes: investimentoTituloParaDespesa(form),
+          categoria: replicarDespesa.categoria,
+          valor: Number(form.valor),
+          observacao: replicarDespesa.observacao || null,
+        } : null,
       };
 
       if (editingId) {
@@ -398,6 +437,9 @@ export default function InvestimentosPage() {
   function editar(item: any) {
     const tipoAtual = TIPOS_APORTE.includes(item.tipo) ? item.tipo : 'Operacional';
     setEditingId(Number(item.id));
+    setReplicarDespesa(null);
+    setReplicarDespesaForm({ categoria: '', observacao: '' });
+    setShowReplicarDespesaModal(false);
     setForm({
       data: toInputDate(item.data),
       socio: item.socio || 'Bruno',
@@ -479,6 +521,56 @@ export default function InvestimentosPage() {
                 <input style={inputStyle} type="number" step="0.01" placeholder="0,00" value={form.valor} onChange={(e) => setForm((value) => ({ ...value, valor: e.target.value }))} />
               </div>
             </div>
+            {!editingId && (
+              <div style={{ marginTop: 14, border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px', background: '#fafcff' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: isPhone ? 'stretch' : 'center', flexDirection: isPhone ? 'column' : 'row', gap: 10 }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Replicar Despesa</div>
+                    <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 4 }}>
+                      Opcional. Ao salvar o investimento, o ANB tambem cria uma despesa paga com a mesma data de lancamento e quitacao.
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      onClick={abrirReplicarDespesa}
+                      style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', color: 'var(--ink)', fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                    >
+                      {replicarDespesa ? 'Editar despesa replicada' : 'Replicar Despesa'}
+                    </button>
+                    {replicarDespesa && (
+                      <button
+                        type="button"
+                        onClick={() => setReplicarDespesa(null)}
+                        style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #fecaca', background: '#fff1f2', color: '#b91c1c', fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                      >
+                        Remover
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {replicarDespesa && (
+                  <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(4, minmax(0, 1fr))', gap: 10 }}>
+                    <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', background: 'var(--white)' }}>
+                      <div style={{ fontSize: 10.5, fontFamily: 'Geist Mono, monospace', letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--ink-muted)', marginBottom: 6 }}>Titulo</div>
+                      <div style={{ fontSize: 13, color: 'var(--ink)' }}>{investimentoTituloParaDespesa(form)}</div>
+                    </div>
+                    <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', background: 'var(--white)' }}>
+                      <div style={{ fontSize: 10.5, fontFamily: 'Geist Mono, monospace', letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--ink-muted)', marginBottom: 6 }}>Categoria</div>
+                      <div style={{ fontSize: 13, color: 'var(--ink)' }}>{replicarDespesa.categoria}</div>
+                    </div>
+                    <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', background: 'var(--white)' }}>
+                      <div style={{ fontSize: 10.5, fontFamily: 'Geist Mono, monospace', letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--ink-muted)', marginBottom: 6 }}>Data / Quitacao</div>
+                      <div style={{ fontSize: 13, color: 'var(--ink)' }}>{new Date(`${form.data}T00:00:00`).toLocaleDateString('pt-BR')}</div>
+                    </div>
+                    <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', background: 'var(--white)' }}>
+                      <div style={{ fontSize: 10.5, fontFamily: 'Geist Mono, monospace', letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--ink-muted)', marginBottom: 6 }}>Valor</div>
+                      <div style={{ fontSize: 13, color: 'var(--ink)' }}>{form.valor ? fmt(Number(form.valor)) : 'R$ 0,00'}</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
             <div style={{ display: 'flex', flexDirection: isPhone ? 'column' : 'row', justifyContent: 'flex-end', gap: 10, marginTop: 14 }}>
               <button
                 onClick={salvar}
@@ -629,6 +721,64 @@ export default function InvestimentosPage() {
           </div>
         )}
       </div>
+      {showReplicarDespesaModal && !editingId && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, .46)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 18, zIndex: 200 }}>
+          <div style={{ width: '100%', maxWidth: 620, background: 'var(--white)', borderRadius: 14, border: '1px solid var(--border)', boxShadow: '0 22px 50px rgba(15, 23, 42, .18)', overflow: 'hidden' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 22px', borderBottom: '1px solid var(--border)' }}>
+              <div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--ink)' }}>Replicar Despesa</div>
+                <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 4 }}>O investimento sera salvo junto com uma despesa paga na mesma data.</div>
+              </div>
+              <button type="button" onClick={() => setShowReplicarDespesaModal(false)} style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, width: 34, height: 34, cursor: 'pointer', color: 'var(--gray-700)' }}>X</button>
+            </div>
+            <div style={{ padding: 22, display: 'grid', gap: 14 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--ink-muted)', marginBottom: 6 }}>Data da despesa</label>
+                  <input style={{ ...inputStyle, background: '#f8fafc' }} value={form.data} readOnly />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--ink-muted)', marginBottom: 6 }}>Valor</label>
+                  <input style={{ ...inputStyle, background: '#f8fafc' }} value={form.valor ? fmt(Number(form.valor)) : ''} readOnly />
+                </div>
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--ink-muted)', marginBottom: 6 }}>Titulo / detalhes</label>
+                <input style={{ ...inputStyle, background: '#f8fafc' }} value={investimentoTituloParaDespesa(form)} readOnly />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--ink-muted)', marginBottom: 6 }}>Categoria da despesa *</label>
+                <select
+                  style={{ ...inputStyle, cursor: 'pointer' }}
+                  value={replicarDespesaForm.categoria}
+                  onChange={(e) => setReplicarDespesaForm((value) => ({ ...value, categoria: e.target.value }))}
+                >
+                  <option value="">Selecione</option>
+                  {DESPESA_CATEGORIAS.map((categoria) => <option key={categoria} value={categoria}>{categoria}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--ink-muted)', marginBottom: 6 }}>Observacao (opcional)</label>
+                <textarea
+                  style={{ ...inputStyle, minHeight: 96, resize: 'vertical' }}
+                  value={replicarDespesaForm.observacao}
+                  onChange={(e) => setReplicarDespesaForm((value) => ({ ...value, observacao: e.target.value }))}
+                  placeholder="Se quiser, registre um complemento sobre a despesa replicada."
+                />
+              </div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '0 22px 22px', flexWrap: 'wrap' }}>
+              <div style={{ fontSize: 12, color: 'var(--ink-muted)' }}>
+                A despesa sera criada como paga, com a mesma data de lancamento e quitacao do investimento.
+              </div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button type="button" onClick={() => setShowReplicarDespesaModal(false)} style={{ padding: '10px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', color: 'var(--gray-700)', fontWeight: 600, cursor: 'pointer' }}>Cancelar</button>
+                <button type="button" onClick={salvarReplicarDespesa} style={{ padding: '10px 14px', borderRadius: 8, border: '1px solid transparent', background: 'var(--blue-500)', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>Salvar despesa replicada</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

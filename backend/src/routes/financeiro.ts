@@ -44,6 +44,18 @@ const investimentoSchema = z.object({
   valor: z.number().min(0),
 });
 
+const investimentoReplicarDespesaSchema = z.object({
+  data: z.string().min(1),
+  detalhes: z.string().trim().min(1),
+  categoria: z.string().trim().min(1),
+  valor: z.number().min(0),
+  observacao: z.string().optional().nullable(),
+});
+
+const investimentoCreateSchema = investimentoSchema.extend({
+  replicarDespesa: investimentoReplicarDespesaSchema.optional().nullable(),
+});
+
 const attachmentSchema = z.object({
   name: z.string().trim().min(1),
   dataUrl: z.string().trim().min(1),
@@ -641,21 +653,55 @@ financeiroRouter.get('/investimentos', async (_req, res, next) => {
 
 financeiroRouter.post('/investimentos', async (req, res, next) => {
   try {
-    const parsed = investimentoSchema.parse({
+    const parsed = investimentoCreateSchema.parse({
       ...req.body,
       tipo: normalizeInvestimentoTipo(req.body?.tipo),
     });
 
-    const row = await prisma.investimento.create({
-      data: {
-        data: new Date(parsed.data),
-        socio: parsed.socio,
-        tipo: parsed.tipo,
-        moto: normalizeText(parsed.moto),
-        valor: parsed.valor,
-      },
+    const dataInvestimento = parseDateOnlyInput(parsed.data);
+    const despesaReplicada = parsed.replicarDespesa
+      ? {
+          data: parseDateOnlyInput(parsed.replicarDespesa.data),
+          detalhes: parsed.replicarDespesa.detalhes,
+          categoria: parsed.replicarDespesa.categoria || 'Outros',
+          valor: parsed.replicarDespesa.valor,
+          observacao: normalizeText(parsed.replicarDespesa.observacao),
+        }
+      : null;
+
+    const result = await prisma.$transaction(async (tx) => {
+      const investimento = await tx.investimento.create({
+        data: {
+          data: dataInvestimento,
+          socio: parsed.socio,
+          tipo: parsed.tipo,
+          moto: normalizeText(parsed.moto),
+          valor: parsed.valor,
+        },
+      });
+
+      const despesa = despesaReplicada
+        ? await tx.despesa.create({
+            data: {
+              data: despesaReplicada.data,
+              detalhes: despesaReplicada.detalhes,
+              categoria: despesaReplicada.categoria,
+              valor: despesaReplicada.valor,
+              statusPagamento: 'pago',
+              dataPagamento: despesaReplicada.data,
+              observacao: despesaReplicada.observacao,
+            },
+          })
+        : null;
+
+      return { investimento, despesa };
     });
-    res.json({ ...row, valor: toNumber(row.valor) });
+
+    res.json({
+      ...result.investimento,
+      valor: toNumber(result.investimento.valor),
+      despesaReplicada: result.despesa ? mapDespesaRow(result.despesa) : null,
+    });
   } catch (e) {
     next(e);
   }
