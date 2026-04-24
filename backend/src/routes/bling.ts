@@ -386,7 +386,7 @@ function normalizePrintableText(value: any) {
   return text || null;
 }
 
-function extractFirstNamedText(value: any): string | null {
+function extractTransportadorText(value: any): string | null {
   if (value === null || value === undefined) return null;
 
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
@@ -397,24 +397,25 @@ function extractFirstNamedText(value: any): string | null {
 
   if (Array.isArray(value)) {
     for (const item of value) {
-      const found = extractFirstNamedText(item);
+      const found = extractTransportadorText(item);
       if (found) return found;
     }
     return null;
   }
 
   if (typeof value === 'object') {
-    const preferredKeys = ['nome', 'razaoSocial', 'fantasia', 'descricao', 'nomeTransportador'];
+    const preferredKeys = ['nomeTransportador', 'razaoSocial', 'fantasia', 'descricao', 'nome'];
+    const nestedKeys = ['transportador', 'transportadora'];
 
     for (const key of preferredKeys) {
       if (!(key in value)) continue;
-      const found = extractFirstNamedText(value[key]);
+      const found = extractTransportadorText(value[key]);
       if (found) return found;
     }
 
-    for (const [key, nested] of Object.entries(value)) {
-      if (/frete|valor|cpf|cnpj|id|codigo|numero|documento/i.test(key)) continue;
-      const found = extractFirstNamedText(nested);
+    for (const key of nestedKeys) {
+      if (!(key in value)) continue;
+      const found = extractTransportadorText((value as any)[key]);
       if (found) return found;
     }
   }
@@ -423,17 +424,22 @@ function extractFirstNamedText(value: any): string | null {
 }
 
 function resolvePedidoTransportadorNome(pedido: any) {
+  const nomeCliente = normalizeText(normalizePrintableText(pedido?.contato?.nome) || '');
   const blocks = [
     pedido?.transportador,
     pedido?.transportadora,
     pedido?.transporte?.transportador,
     pedido?.transporte?.transportadora,
-    pedido?.transporte,
+    pedido?.transporte?.nomeTransportador,
+    pedido?.transporte?.razaoSocial,
+    pedido?.transporte?.fantasia,
   ];
 
   for (const block of blocks) {
-    const nome = extractFirstNamedText(block);
-    if (nome) return nome;
+    const nome = extractTransportadorText(block);
+    if (!nome) continue;
+    if (nomeCliente && normalizeText(nome) === nomeCliente) continue;
+    return nome;
   }
 
   return null;
