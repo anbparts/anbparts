@@ -191,6 +191,10 @@ export const api = {
       const qs = params ? '?' + new URLSearchParams(params).toString() : '';
       return req<any>(`/bling/relatorio-vendas${qs}`);
     },
+    atualizarFotoCapa: (data: any) => req<any>('/bling/atualizar-foto-capa', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
   },
   import: {
     motos: (data: any[]) => req<any>('/import/motos', { method: 'POST', body: JSON.stringify(data) }),

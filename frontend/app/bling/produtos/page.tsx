@@ -91,6 +91,41 @@ type TraceComparacaoResponse = {
   warnings?: string[];
 };
 
+type FotoCapaAtualizada = {
+  sku: string;
+  produtoId: number;
+  fotoCapaNome: string;
+  pecasAtualizadas: number;
+};
+
+type FotoCapaSemImagem = {
+  sku: string;
+  produtoId: number | null;
+};
+
+type FotoCapaSemPecaLocal = {
+  sku: string;
+};
+
+type FotoCapaErro = {
+  sku: string;
+  error: string;
+};
+
+type FotoCapaResultado = {
+  ok?: boolean;
+  totalProcessados: number;
+  totalAtualizados: number;
+  totalSemImagem: number;
+  totalSemPecaLocal: number;
+  totalErros: number;
+  totalPecasAtualizadas?: number;
+  atualizados: FotoCapaAtualizada[];
+  semImagem: FotoCapaSemImagem[];
+  semPecaLocal: FotoCapaSemPecaLocal[];
+  erros: FotoCapaErro[];
+};
+
 type CsvLinha = {
   id?: string;
   codigo: string;
@@ -256,6 +291,9 @@ export default function BlingProdutosPage() {
   const [locPara, setLocPara] = useState('');
   const [atualizandoLoc, setAtualizandoLoc] = useState(false);
   const [linkMlProgresso, setLinkMlProgresso] = useState<{ loteAtual: number; totalLotes: number; totalAtualizadas: number } | null>(null);
+  const [atualizandoFotoCapa, setAtualizandoFotoCapa] = useState(false);
+  const [fotoCapaProgresso, setFotoCapaProgresso] = useState<{ loteAtual: number; totalLotes: number; totalProcessados: number; totalSkus: number; totalAtualizados: number } | null>(null);
+  const [resultadoFotoCapa, setResultadoFotoCapa] = useState<FotoCapaResultado | null>(null);
   const [consultaManualTamanhoLote, setConsultaManualTamanhoLote] = useState('100');
   const [consultaManualPausaMs, setConsultaManualPausaMs] = useState('400');
   const [salvandoConsultaManual, setSalvandoConsultaManual] = useState(false);
@@ -665,6 +703,113 @@ export default function BlingProdutosPage() {
     setMotoComparacaoIds([]);
   }
 
+  async function atualizarFotoCapa() {
+    if (!listaComparacao.trim() && !motoComparacaoIds.length) {
+      alert('Informe uma lista de IDs de peca / SKU ou selecione ao menos uma moto para atualizar a foto capa');
+      return;
+    }
+
+    setAtualizandoFotoCapa(true);
+    setFotoCapaProgresso(null);
+    setResultadoFotoCapa(null);
+
+    try {
+      let skus: string[] = [];
+      if (motoComparacaoIds.length) {
+        const vistos = new Set<string>();
+        for (const motoId of motoComparacaoIds) {
+          const res = await fetch(`${API}/bling/skus-da-moto?motoId=${motoId}`, { credentials: 'include' });
+          const resData = await res.json();
+          for (const sku of (resData?.skus || [])) {
+            if (!vistos.has(sku)) { vistos.add(sku); skus.push(sku); }
+          }
+        }
+      } else {
+        const vistos = new Set<string>();
+        for (const linha of listaComparacao.split('\n')) {
+          const base = linha.replace(/-\d+$/, '').trim().toUpperCase();
+          if (base && !vistos.has(base)) { vistos.add(base); skus.push(base); }
+        }
+      }
+
+      if (!skus.length) {
+        alert('Nenhum SKU encontrado para atualizar a foto capa');
+        setAtualizandoFotoCapa(false);
+        return;
+      }
+
+      const tamanhoLoteConfigurado = Math.max(1, Math.min(Number(consultaManualTamanhoLote) || 20, skus.length));
+      const pausaMsConfigurada = Math.max(0, Number(consultaManualPausaMs) || 0);
+      const lotes: string[][] = [];
+      for (let i = 0; i < skus.length; i += tamanhoLoteConfigurado) {
+        lotes.push(skus.slice(i, i + tamanhoLoteConfigurado));
+      }
+
+      let acumulado: FotoCapaResultado = {
+        ok: true,
+        totalProcessados: 0,
+        totalAtualizados: 0,
+        totalSemImagem: 0,
+        totalSemPecaLocal: 0,
+        totalErros: 0,
+        totalPecasAtualizadas: 0,
+        atualizados: [],
+        semImagem: [],
+        semPecaLocal: [],
+        erros: [],
+      };
+
+      for (let i = 0; i < lotes.length; i++) {
+        setFotoCapaProgresso({
+          loteAtual: i + 1,
+          totalLotes: lotes.length,
+          totalProcessados: acumulado.totalProcessados,
+          totalSkus: skus.length,
+          totalAtualizados: acumulado.totalAtualizados,
+        });
+
+        const data = await api.bling.atualizarFotoCapa({
+          skus: lotes[i],
+          tamanhoLote: tamanhoLoteConfigurado,
+          pausaMs: pausaMsConfigurada,
+        });
+
+        if (!data?.ok) {
+          alert(data?.error || `Erro no lote ${i + 1}`);
+          break;
+        }
+
+        acumulado = {
+          ok: true,
+          totalProcessados: acumulado.totalProcessados + Number(data.totalProcessados || 0),
+          totalAtualizados: acumulado.totalAtualizados + Number(data.totalAtualizados || 0),
+          totalSemImagem: acumulado.totalSemImagem + Number(data.totalSemImagem || 0),
+          totalSemPecaLocal: acumulado.totalSemPecaLocal + Number(data.totalSemPecaLocal || 0),
+          totalErros: acumulado.totalErros + Number(data.totalErros || 0),
+          totalPecasAtualizadas: Number(acumulado.totalPecasAtualizadas || 0) + Number(data.totalPecasAtualizadas || 0),
+          atualizados: [...acumulado.atualizados, ...(Array.isArray(data.atualizados) ? data.atualizados : [])],
+          semImagem: [...acumulado.semImagem, ...(Array.isArray(data.semImagem) ? data.semImagem : [])],
+          semPecaLocal: [...acumulado.semPecaLocal, ...(Array.isArray(data.semPecaLocal) ? data.semPecaLocal : [])],
+          erros: [...acumulado.erros, ...(Array.isArray(data.erros) ? data.erros : [])],
+        };
+
+        setResultadoFotoCapa({ ...acumulado });
+        setFotoCapaProgresso({
+          loteAtual: i + 1,
+          totalLotes: lotes.length,
+          totalProcessados: acumulado.totalProcessados,
+          totalSkus: skus.length,
+          totalAtualizados: acumulado.totalAtualizados,
+        });
+      }
+    } catch (e: any) {
+      alert(`Erro: ${e.message}`);
+    }
+
+    setAtualizandoFotoCapa(false);
+    setFotoCapaProgresso(null);
+  }
+
   async function compararCsv() {
     if (!csvLinhas.length) {
       alert('Selecione um CSV valido do Bling antes de comparar');
@@ -926,6 +1071,16 @@ export default function BlingProdutosPage() {
             >
               📦 Atualizar Localização
             </button>
+            {isBruno && (
+              <button
+                style={{ ...s.btn, background: '#0f766e', color: '#fff', opacity: (comparando || atualizandoLinkMl || atualizandoFotoCapa || !connected || (!listaComparacao.trim() && !motoComparacaoIds.length)) ? 0.6 : 1 }}
+                onClick={atualizarFotoCapa}
+                disabled={comparando || atualizandoLinkMl || atualizandoFotoCapa || !connected || (!listaComparacao.trim() && !motoComparacaoIds.length)}
+                title={(!listaComparacao.trim() && !motoComparacaoIds.length) ? 'Informe SKUs na lista ou selecione ao menos uma moto' : 'Atualizar foto capa local a partir da imagem principal do Bling'}
+              >
+                {atualizandoFotoCapa ? 'Atualizando capa...' : '🖼️ Atualizar Foto Capa'}
+              </button>
+            )}
             <span style={{ fontSize: 12, color: 'var(--gray-400)' }}>
               Use essa revisao para encontrar divergencias de estoque entre a base do ANB e o saldo atual do Bling, incluindo alertas de anuncio do Mercado Livre fora do status ativo.
             </span>
@@ -960,7 +1115,111 @@ export default function BlingProdutosPage() {
               </div>
             </div>
           )}
+          {fotoCapaProgresso && (
+            <div style={{ marginTop: 12, background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-700)' }}>
+                  Atualizando Foto Capa â€” Lote {fotoCapaProgresso.loteAtual} de {fotoCapaProgresso.totalLotes} â€” {fotoCapaProgresso.totalProcessados} de {fotoCapaProgresso.totalSkus} SKUs processados â€” {fotoCapaProgresso.totalAtualizados} capa(s) atualizada(s)
+                </span>
+                <span style={{ fontSize: 11, color: 'var(--gray-400)' }}>
+                  {Math.round((fotoCapaProgresso.loteAtual / fotoCapaProgresso.totalLotes) * 100)}%
+                </span>
+              </div>
+              <div style={{ height: 6, background: 'var(--border)', borderRadius: 4, overflow: 'hidden' }}>
+                <div style={{ height: '100%', background: '#0f766e', borderRadius: 4, width: `${Math.round((fotoCapaProgresso.loteAtual / fotoCapaProgresso.totalLotes) * 100)}%`, transition: 'width 0.3s ease' }} />
+              </div>
+            </div>
+          )}
         </div>
+
+        {resultadoFotoCapa && (
+          <div style={s.card}>
+            <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 14 }}>Resultado - Atualizar Foto Capa</div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12, marginBottom: 18 }}>
+              {[
+                { label: 'Processados', value: resultadoFotoCapa.totalProcessados, color: 'var(--gray-700)' },
+                { label: 'Capa atualizada', value: resultadoFotoCapa.totalAtualizados, color: 'var(--green)' },
+                { label: 'Sem imagem', value: resultadoFotoCapa.totalSemImagem, color: 'var(--amber)' },
+                { label: 'Sem peça local', value: resultadoFotoCapa.totalSemPecaLocal, color: 'var(--blue-500)' },
+                { label: 'Erros', value: resultadoFotoCapa.totalErros, color: 'var(--red)' },
+              ].map((item) => (
+                <div key={`foto-capa-${item.label}`} style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 9, padding: '14px 16px' }}>
+                  <div style={{ fontSize: 11, fontFamily: 'JetBrains Mono, monospace', color: 'var(--gray-400)', letterSpacing: '.6px', textTransform: 'uppercase', marginBottom: 6 }}>{item.label}</div>
+                  <div style={{ fontSize: 22, fontWeight: 700, color: item.color }}>{item.value}</div>
+                </div>
+              ))}
+            </div>
+
+            {typeof resultadoFotoCapa.totalPecasAtualizadas === 'number' && (
+              <div style={{ fontSize: 12, color: 'var(--gray-400)', marginBottom: 16 }}>
+                Peças locais atualizadas: {resultadoFotoCapa.totalPecasAtualizadas}
+              </div>
+            )}
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12 }}>
+              <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 10, padding: '14px 16px' }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--green)', marginBottom: 8 }}>Capas atualizadas</div>
+                {resultadoFotoCapa.atualizados.length ? (
+                  <div style={{ display: 'grid', gap: 6 }}>
+                    {resultadoFotoCapa.atualizados.map((item) => (
+                      <div key={`foto-capa-ok-${item.sku}`} style={{ fontSize: 12, color: 'var(--gray-700)' }}>
+                        <span style={{ fontFamily: 'JetBrains Mono, monospace' }}>{item.sku}</span> - {item.fotoCapaNome} ({item.pecasAtualizadas} peça(s))
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>Nenhum SKU atualizado.</div>
+                )}
+              </div>
+
+              <div style={{ background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 10, padding: '14px 16px' }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#b45309', marginBottom: 8 }}>Sem imagem no Bling</div>
+                {resultadoFotoCapa.semImagem.length ? (
+                  <div style={{ display: 'grid', gap: 6 }}>
+                    {resultadoFotoCapa.semImagem.map((item) => (
+                      <div key={`foto-capa-sem-imagem-${item.sku}`} style={{ fontSize: 12, color: 'var(--gray-700)' }}>
+                        <span style={{ fontFamily: 'JetBrains Mono, monospace' }}>{item.sku}</span>{item.produtoId ? ` - ID ${item.produtoId}` : ''}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>Todos os SKUs processados tinham imagem.</div>
+                )}
+              </div>
+
+              <div style={{ background: '#eff6ff', border: '1px solid #93c5fd', borderRadius: 10, padding: '14px 16px' }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--blue-500)', marginBottom: 8 }}>Sem peça local no ANB</div>
+                {resultadoFotoCapa.semPecaLocal.length ? (
+                  <div style={{ display: 'grid', gap: 6 }}>
+                    {resultadoFotoCapa.semPecaLocal.map((item) => (
+                      <div key={`foto-capa-sem-peca-${item.sku}`} style={{ fontSize: 12, color: 'var(--gray-700)', fontFamily: 'JetBrains Mono, monospace' }}>
+                        {item.sku}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>Todos os SKUs processados tinham peça local.</div>
+                )}
+              </div>
+
+              <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: '14px 16px' }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--red)', marginBottom: 8 }}>Erros</div>
+                {resultadoFotoCapa.erros.length ? (
+                  <div style={{ display: 'grid', gap: 6 }}>
+                    {resultadoFotoCapa.erros.map((item, index) => (
+                      <div key={`foto-capa-erro-${item.sku}-${index}`} style={{ fontSize: 12, color: 'var(--gray-700)' }}>
+                        <span style={{ fontFamily: 'JetBrains Mono, monospace' }}>{item.sku}</span> - {item.error}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>Nenhum erro no processamento.</div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {exibirCompararCSV && (
         <div style={s.card}>

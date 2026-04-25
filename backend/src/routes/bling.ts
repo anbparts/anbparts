@@ -696,6 +696,10 @@ function getBaseSku(value: any) {
     .replace(/-\d+$/, '');
 }
 
+function isBrunoAuthUser(req: any) {
+  return String(req?.authUser?.username || '').trim().toLowerCase() === 'bruno';
+}
+
 function normalizeLocation(value: any) {
   const text = String(value ?? '')
     .replace(/\s+/g, ' ')
@@ -1444,6 +1448,94 @@ async function fetchBlingProductDetailById(id: number) {
     value: detail,
   });
   return detail;
+}
+
+function resolveBlingCoverImageUrl(detail: any) {
+  const internas = Array.isArray(detail?.midia?.imagens?.internas) ? detail.midia.imagens.internas : [];
+  const externas = Array.isArray(detail?.midia?.imagens?.externas) ? detail.midia.imagens.externas : [];
+
+  for (const imagem of internas) {
+    const link = typeof imagem === 'string'
+      ? String(imagem || '').trim()
+      : String(imagem?.link || '').trim();
+    if (link) return link;
+  }
+
+  for (const imagem of externas) {
+    const link = typeof imagem === 'string'
+      ? String(imagem || '').trim()
+      : String(imagem?.link || '').trim();
+    if (link) return link;
+  }
+
+  const imagemUrl = String(detail?.imagemURL || '').trim();
+  return imagemUrl || null;
+}
+
+function inferImageExtensionFromContentType(contentType: string | null | undefined) {
+  const normalized = String(contentType || '').split(';')[0].trim().toLowerCase();
+
+  if (normalized === 'image/jpeg' || normalized === 'image/jpg') return 'jpg';
+  if (normalized === 'image/png') return 'png';
+  if (normalized === 'image/webp') return 'webp';
+  if (normalized === 'image/gif') return 'gif';
+  if (normalized === 'image/bmp') return 'bmp';
+  if (normalized === 'image/svg+xml') return 'svg';
+  if (normalized === 'image/avif') return 'avif';
+
+  return null;
+}
+
+function inferImageExtensionFromUrl(rawUrl: string) {
+  try {
+    const parsed = new URL(rawUrl);
+    const path = parsed.pathname || '';
+    const match = path.match(/\.([a-z0-9]+)$/i);
+    const ext = match ? match[1].toLowerCase() : '';
+
+    if (['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'svg', 'avif'].includes(ext)) {
+      return ext === 'jpeg' ? 'jpg' : ext;
+    }
+  } catch {}
+
+  return null;
+}
+
+function inferImageMimeType(extension: string) {
+  switch (extension) {
+    case 'png':
+      return 'image/png';
+    case 'webp':
+      return 'image/webp';
+    case 'gif':
+      return 'image/gif';
+    case 'bmp':
+      return 'image/bmp';
+    case 'svg':
+      return 'image/svg+xml';
+    case 'avif':
+      return 'image/avif';
+    default:
+      return 'image/jpeg';
+  }
+}
+
+async function downloadImageAsDataUrl(imageUrl: string) {
+  const response = await fetch(imageUrl);
+  if (!response.ok) {
+    throw new Error(`Falha ao baixar imagem (${response.status})`);
+  }
+
+  const contentType = String(response.headers.get('content-type') || '').trim();
+  const extension = inferImageExtensionFromContentType(contentType) || inferImageExtensionFromUrl(imageUrl) || 'jpg';
+  const mimeType = inferImageMimeType(extension);
+  const bytes = Buffer.from(await response.arrayBuffer());
+
+  return {
+    extension,
+    mimeType,
+    dataUrl: `data:${mimeType};base64,${bytes.toString('base64')}`,
+  };
 }
 
 function getRuntimeBatchOptions(options?: { batchSize?: number; pauseMs?: number }) {
@@ -4691,6 +4783,127 @@ blingRouter.post('/atualizar-link-ml-skus', async (req, res, next) => {
     });
 
     res.json({ ok: true, totalPecas: pecas.length, totalItensMl: itemIds.length, totalAtualizadas, totalSemPermalink });
+  } catch (e) {
+    next(e);
+  }
+});
+
+blingRouter.post('/atualizar-foto-capa', async (req, res, next) => {
+  try {
+    if (!isBrunoAuthUser(req)) {
+      return res.status(403).json({ error: 'Acesso restrito ao usuario Bruno' });
+    }
+
+    const skus = parseSkuList(req.body?.skus || req.body?.texto || req.body?.codigos);
+    if (!skus.length) {
+      return res.status(400).json({ error: 'Informe ao menos um SKU' });
+    }
+
+    const tamanhoLote = Math.max(1, Math.min(100, Math.round(toNumber(req.body?.tamanhoLote, 20) || 20)));
+    const pausaMs = Math.max(0, Math.min(10000, Math.round(toNumber(req.body?.pausaMs, 0) || 0)));
+
+    const atualizados: Array<{ sku: string; produtoId: number; fotoCapaNome: string; pecasAtualizadas: number }> = [];
+    const semImagem: Array<{ sku: string; produtoId: number | null }> = [];
+    const semPecaLocal: Array<{ sku: string }> = [];
+    const erros: Array<{ sku: string; error: string }> = [];
+    let totalPecasAtualizadas = 0;
+
+    await processInBatches(skus, tamanhoLote, pausaMs, async (batch) => {
+      const produtosByCode = await findBlingProductsByCodes(batch);
+      const productIds = Array.from(new Set(
+        Array.from(produtosByCode.values())
+          .map((produto: any) => Number(produto?.id || 0))
+          .filter(Boolean),
+      ));
+      const detalhesById = productIds.length
+        ? await findBlingProductDetailsByIds(productIds, { batchSize: Math.min(tamanhoLote, productIds.length), pauseMs: 0 })
+        : new Map<number, any>();
+
+      const whereOr = batch.flatMap((sku) => [
+        { idPeca: sku },
+        { idPeca: { startsWith: `${sku}-` } },
+      ]);
+      const pecasLocais = whereOr.length
+        ? await prisma.peca.findMany({
+            where: { OR: whereOr },
+            select: { id: true, idPeca: true },
+          })
+        : [];
+      const pecasBySku = new Map<string, Array<{ id: number; idPeca: string }>>();
+      for (const peca of pecasLocais) {
+        const baseSku = getBaseSku(peca.idPeca);
+        const current = pecasBySku.get(baseSku) || [];
+        current.push({ id: Number(peca.id), idPeca: String(peca.idPeca) });
+        pecasBySku.set(baseSku, current);
+      }
+
+      await mapWithConcurrency(batch, 3, async (sku) => {
+        const pecasDoSku = pecasBySku.get(sku) || [];
+        if (!pecasDoSku.length) {
+          semPecaLocal.push({ sku });
+          return null;
+        }
+
+        const produto = produtosByCode.get(sku);
+        if (!produto) {
+          erros.push({ sku, error: 'Produto nao encontrado no Bling' });
+          return null;
+        }
+
+        const produtoId = Number(produto?.id || 0) || null;
+        const detalhe = produtoId ? (detalhesById.get(produtoId) || null) : null;
+        const imageUrl = resolveBlingCoverImageUrl(detalhe) || resolveBlingCoverImageUrl(produto);
+        if (!detalhe && !imageUrl) {
+          erros.push({ sku, error: 'Detalhe do produto nao retornado pelo Bling' });
+          return null;
+        }
+        if (!imageUrl) {
+          semImagem.push({ sku, produtoId });
+          return null;
+        }
+
+        try {
+          const downloaded = await downloadImageAsDataUrl(imageUrl);
+          const fotoCapaNome = `${sku}_Capa.${downloaded.extension}`;
+          const updated = await prisma.peca.updateMany({
+            where: { id: { in: pecasDoSku.map((peca) => peca.id) } },
+            data: {
+              fotoCapaNome,
+              fotoCapaArquivo: downloaded.dataUrl,
+            },
+          });
+
+          totalPecasAtualizadas += Number(updated.count || 0);
+          atualizados.push({
+            sku,
+            produtoId: Number(produtoId),
+            fotoCapaNome,
+            pecasAtualizadas: Number(updated.count || 0),
+          });
+        } catch (error: any) {
+          erros.push({
+            sku,
+            error: error?.message || 'Falha ao atualizar a foto capa',
+          });
+        }
+
+        return null;
+      });
+    });
+
+    res.json({
+      ok: true,
+      totalProcessados: skus.length,
+      totalAtualizados: atualizados.length,
+      totalSemImagem: semImagem.length,
+      totalSemPecaLocal: semPecaLocal.length,
+      totalErros: erros.length,
+      totalPecasAtualizadas,
+      atualizados,
+      semImagem,
+      semPecaLocal,
+      erros,
+    });
   } catch (e) {
     next(e);
   }
