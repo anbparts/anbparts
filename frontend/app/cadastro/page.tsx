@@ -160,6 +160,8 @@ export default function CadastroPage() {
   const [eliminandoLinhaId, setEliminandoLinhaId] = useState<number | null>(null);
   const [uploadingFotoCapa, setUploadingFotoCapa] = useState(false);
   const [fotoPreviewOpen, setFotoPreviewOpen] = useState(false);
+  const [finalizarFotoCapa, setFinalizarFotoCapa] = useState('');
+  const [finalizarFotoCapaNome, setFinalizarFotoCapaNome] = useState('');
   const fotoInputRef = useRef<HTMLInputElement | null>(null);
   const isBruno = String(user?.username || '').trim().toLowerCase() === 'bruno';
 
@@ -280,11 +282,8 @@ export default function CadastroPage() {
         reader.readAsDataURL(file);
       });
 
-      setForm((prev: any) => ({
-        ...prev,
-        fotoCapa: dataUrl,
-        fotoCapaNome: file.name,
-      }));
+      setFinalizarFotoCapa(dataUrl);
+      setFinalizarFotoCapaNome(file.name);
     } catch (e: any) {
       alert(e.message || 'Erro ao importar foto capa');
     }
@@ -315,8 +314,6 @@ export default function CadastroPage() {
         localizacao: form.localizacao || null, estoque: Number(form.estoque) || 1,
         categoriaMLId: form.categoriaMLId || null, categoriaMLNome: form.categoriaMLNome || null,
         urlRef: form.urlRef || null,
-        fotoCapa: form.fotoCapa || null,
-        fotoCapaNome: form.fotoCapaNome || null,
       };
       const url = editItem ? `${API}/cadastro/${editItem.id}` : `${API}/cadastro`;
       const method = editItem ? 'PUT' : 'POST';
@@ -391,6 +388,9 @@ Deseja forçar a exclusão mesmo assim?`);
   async function abrirFinalizar(item: CadastroPeca) {
     if (!item.blingProdutoId) return alert('Produto não foi enviado ao Bling ainda. Salve o pré-cadastro primeiro.');
     setItemFinalizar(item); setPreviewBling(null); setPreviewDiff({});
+    setFinalizarFotoCapa(item.fotoCapa || '');
+    setFinalizarFotoCapaNome(item.fotoCapaNome || '');
+    setFotoPreviewOpen(false);
     setModalFinalizar(true); setLoadingPreview(true);
     try {
       const resp = await fetch(`${API}/cadastro/${item.id}/finalizar`, {
@@ -411,7 +411,13 @@ Deseja forçar a exclusão mesmo assim?`);
     try {
       const resp = await fetch(`${API}/cadastro/${itemFinalizar.id}/finalizar`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-        body: JSON.stringify({ confirmar: true, frete: previewFrete, taxaPct: previewTaxa }),
+        body: JSON.stringify({
+          confirmar: true,
+          frete: previewFrete,
+          taxaPct: previewTaxa,
+          fotoCapa: finalizarFotoCapa || null,
+          fotoCapaNome: finalizarFotoCapaNome || null,
+        }),
       });
       const d = await resp.json();
       if (!d.ok) throw new Error(d.error || 'Erro');
@@ -436,7 +442,7 @@ Deseja forçar a exclusão mesmo assim?`);
   const valorLiq = previewBling ? parseFloat((previewBling.precoML - previewFrete - valorTaxas).toFixed(2)) : 0;
   const motoSelecionada = motos.find((m) => String(m.id) === String(form.motoId));
   const formOk = camposOk(form);
-  const fotoCapaDisplayName = form.fotoCapaNome || (form.fotoCapa ? 'foto-capa.jpg' : '');
+  const fotoCapaDisplayName = finalizarFotoCapaNome || (finalizarFotoCapa ? 'foto-capa.jpg' : '');
 
   return (
     <>
@@ -663,7 +669,7 @@ Deseja forçar a exclusão mesmo assim?`);
                   <label style={s.label}>URL de Referência</label>
                   <input style={s.input} value={form.urlRef || ''} onChange={(e) => setForm((p: any) => ({ ...p, urlRef: e.target.value }))} placeholder="Ex: www.site.com.br/produto" />
                 </div>
-                <div style={{ background: '#f8fafc', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
+                <div style={{ background: '#f8fafc', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', display: 'none' }}>
                   <input
                     ref={fotoInputRef}
                     type="file"
@@ -766,7 +772,7 @@ Deseja forçar a exclusão mesmo assim?`);
           </div>
         </div>
       )}
-      {modal && fotoPreviewOpen && form.fotoCapa && (
+      {modalFinalizar && fotoPreviewOpen && finalizarFotoCapa && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 205, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
           <div style={{ background: 'var(--white)', borderRadius: 14, width: '100%', maxWidth: 960, maxHeight: '90vh', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.24)' }}>
             <div style={{ padding: '16px 18px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
@@ -777,7 +783,7 @@ Deseja forçar a exclusão mesmo assim?`);
               <button onClick={() => setFotoPreviewOpen(false)} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', fontSize: 16, flexShrink: 0 }}>×</button>
             </div>
             <div style={{ padding: 16, background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', maxHeight: 'calc(90vh - 70px)', overflow: 'auto' }}>
-              <img src={form.fotoCapa} alt={`Foto capa ${form.idPeca || 'pre-cadastro'}`} style={{ maxWidth: '100%', maxHeight: 'calc(90vh - 120px)', objectFit: 'contain', borderRadius: 12, boxShadow: '0 8px 24px rgba(15,23,42,.08)' }} />
+              <img src={finalizarFotoCapa} alt={`Foto capa ${itemFinalizar?.idPeca || 'cadastro'}`} style={{ maxWidth: '100%', maxHeight: 'calc(90vh - 120px)', objectFit: 'contain', borderRadius: 12, boxShadow: '0 8px 24px rgba(15,23,42,.08)' }} />
             </div>
           </div>
         </div>
@@ -785,18 +791,18 @@ Deseja forçar a exclusão mesmo assim?`);
       {/* MODAL FINALIZAR */}
       {modalFinalizar && itemFinalizar && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-          <div style={{ background: 'var(--white)', borderRadius: 14, width: '100%', maxWidth: 560, boxShadow: '0 20px 60px rgba(0,0,0,0.2)', maxHeight: '90vh', overflowY: 'auto' }}>
+          <div style={{ background: 'var(--white)', borderRadius: 14, width: '100%', maxWidth: 680, boxShadow: '0 20px 60px rgba(0,0,0,0.2)', maxHeight: '90vh', overflowY: 'auto' }}>
             <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
                 <div style={{ fontSize: 16, fontWeight: 600 }}>Lançar no Estoque</div>
                 <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>{itemFinalizar.idPeca} — {itemFinalizar.descricao}</div>
               </div>
-              <button onClick={() => setModalFinalizar(false)} style={{ border: 'none', background: 'transparent', fontSize: 20, cursor: 'pointer', color: 'var(--gray-400)' }}>×</button>
+              <button onClick={() => { setModalFinalizar(false); setFotoPreviewOpen(false); }} style={{ border: 'none', background: 'transparent', fontSize: 20, cursor: 'pointer', color: 'var(--gray-400)' }}>×</button>
             </div>
             <div style={{ padding: '20px 24px' }}>
               {loadingPreview ? <div style={{ textAlign: 'center', padding: 32, color: 'var(--gray-400)' }}>Buscando dados do Bling...</div> : previewBling ? (
                 <div style={{ display: 'grid', gap: 14 }}>
-                  {[
+                  <div style={{ display: 'none' }}>{[
                     { key: 'descricao', label: 'Título', val: previewBling.descricao },
                     { key: 'precoVenda', label: 'Preço ML', val: `R$ ${Number(previewBling.precoML).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` },
                     { key: 'peso', label: 'Peso (kg)', val: previewBling.peso },
@@ -812,7 +818,87 @@ Deseja forçar a exclusão mesmo assim?`);
                       <div style={{ fontSize: 13, fontWeight: 500 }}>{String(val ?? '—')}</div>
                       {key && previewDiff[key] && <div style={{ fontSize: 11, color: '#dc2626', marginTop: 2 }}>↑ Ajustado (era {String(previewDiff[key].anb ?? '')} no ANB)</div>}
                     </div>
-                  ))}
+                  ))}</div>
+
+                  <div>
+                    <div style={{ fontSize: 11, color: 'var(--gray-500)', textTransform: 'uppercase' as const, letterSpacing: '0.04em', marginBottom: 3 }}>Titulo</div>
+                    <div style={{ fontSize: 13, fontWeight: 500 }}>{String(previewBling.descricao ?? '-')}</div>
+                    {previewDiff.descricao && <div style={{ fontSize: 11, color: '#dc2626', marginTop: 2 }}>Ajustado (era {String(previewDiff.descricao.anb ?? '')} no ANB)</div>}
+                  </div>
+
+                  <div>
+                    <div style={{ fontSize: 11, color: 'var(--gray-500)', textTransform: 'uppercase' as const, letterSpacing: '0.04em', marginBottom: 3 }}>Preco ML</div>
+                    <div style={{ fontSize: 13, fontWeight: 500 }}>{`R$ ${Number(previewBling.precoML).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}</div>
+                    {previewDiff.precoVenda && <div style={{ fontSize: 11, color: '#dc2626', marginTop: 2 }}>Ajustado (era {String(previewDiff.precoVenda.anb ?? '')} no ANB)</div>}
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr 1fr' : 'repeat(4, minmax(0, 1fr))', gap: 10 }}>
+                    {[
+                      { key: 'peso', label: 'Peso (kg)', val: previewBling.peso },
+                      { key: 'largura', label: 'Largura (cm)', val: previewBling.largura },
+                      { key: 'altura', label: 'Altura (cm)', val: previewBling.altura },
+                      { key: 'profundidade', label: 'Profundidade (cm)', val: previewBling.profundidade },
+                    ].map(({ key, label, val }) => (
+                      <div key={key} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', background: '#fcfdff' }}>
+                        <div style={{ fontSize: 11, color: 'var(--gray-500)', textTransform: 'uppercase' as const, letterSpacing: '0.04em', marginBottom: 3 }}>{label}</div>
+                        <div style={{ fontSize: 13, fontWeight: 600 }}>{String(val ?? '-')}</div>
+                        {previewDiff[key] && <div style={{ fontSize: 11, color: '#dc2626', marginTop: 3 }}>Ajustado (era {String(previewDiff[key].anb ?? '')})</div>}
+                      </div>
+                    ))}
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'minmax(0, 1.4fr) minmax(140px, .6fr)', gap: 10 }}>
+                    <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', background: '#fcfdff' }}>
+                      <div style={{ fontSize: 11, color: 'var(--gray-500)', textTransform: 'uppercase' as const, letterSpacing: '0.04em', marginBottom: 3 }}>Localizacao</div>
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>{String(previewBling.localizacao ?? '-')}</div>
+                    </div>
+                    <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', background: '#fcfdff' }}>
+                      <div style={{ fontSize: 11, color: 'var(--gray-500)', textTransform: 'uppercase' as const, letterSpacing: '0.04em', marginBottom: 3 }}>Estoque</div>
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>{String(previewBling.estoque ?? '-')}</div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div style={{ fontSize: 11, color: 'var(--gray-500)', textTransform: 'uppercase' as const, letterSpacing: '0.04em', marginBottom: 3 }}>Etiquetas Detran</div>
+                    <div style={{ fontSize: 13, fontWeight: 500 }}>{String(previewBling.detranEtiqueta || '-')}</div>
+                  </div>
+
+                  <div style={{ background: '#f8fafc', border: '1px solid var(--border)', borderRadius: 8, padding: '12px 14px' }}>
+                    <input
+                      ref={fotoInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleFotoCapaChange}
+                      style={{ display: 'none' }}
+                    />
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontSize: 11, color: 'var(--gray-500)', textTransform: 'uppercase' as const, letterSpacing: '0.04em', marginBottom: 4 }}>Foto Capa</div>
+                        {finalizarFotoCapa ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => setFotoPreviewOpen(true)}
+                              style={{ border: 'none', background: 'transparent', padding: 0, cursor: 'pointer', color: '#2563eb', fontSize: 12.5, fontWeight: 600, textDecoration: 'underline', textAlign: 'left' as const, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}
+                            >
+                              {fotoCapaDisplayName}
+                            </button>
+                            <div style={{ marginTop: 6, fontSize: 11, color: 'var(--gray-500)' }}>Essa foto sera gravada na peca ao confirmar o lancamento no estoque.</div>
+                          </>
+                        ) : (
+                          <div style={{ fontSize: 12.5, color: 'var(--gray-400)' }}>Nenhuma foto importada</div>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => fotoInputRef.current?.click()}
+                        disabled={uploadingFotoCapa}
+                        style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', opacity: uploadingFotoCapa ? 0.7 : 1 }}
+                      >
+                        {uploadingFotoCapa ? 'Importando...' : (finalizarFotoCapa ? 'Trocar Foto Capa' : 'Importar Foto Capa')}
+                      </button>
+                    </div>
+                  </div>
 
                   <hr style={{ border: 'none', borderTop: '1px solid var(--border)' }} />
 
@@ -867,7 +953,7 @@ Deseja forçar a exclusão mesmo assim?`);
               ) : null}
             </div>
             <div style={{ padding: '16px 24px', borderTop: '1px solid var(--border)', display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-              <button onClick={() => setModalFinalizar(false)} style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)' }}>Cancelar</button>
+              <button onClick={() => { setModalFinalizar(false); setFotoPreviewOpen(false); }} style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)' }}>Cancelar</button>
               <button onClick={confirmarFinalizar} disabled={confirmando || !previewBling || loadingPreview}
                 style={{ ...s.btn, background: 'var(--green)', color: '#fff', opacity: (confirmando || !previewBling || loadingPreview) ? 0.7 : 1 }}>
                 {confirmando ? 'Lançando...' : '✓ Confirmar e Lançar no Estoque'}
