@@ -1455,16 +1455,30 @@ function resolveBlingCoverImageUrl(detail: any) {
   const externas = Array.isArray(detail?.midia?.imagens?.externas) ? detail.midia.imagens.externas : [];
 
   for (const imagem of internas) {
-    const link = typeof imagem === 'string'
-      ? String(imagem || '').trim()
-      : String(imagem?.link || '').trim();
+    if (typeof imagem === 'string') {
+      const link = String(imagem || '').trim();
+      if (link) return link;
+      continue;
+    }
+
+    const thumbLink = String(imagem?.linkMiniatura || '').trim();
+    if (thumbLink) return thumbLink;
+
+    const link = String(imagem?.link || '').trim();
     if (link) return link;
   }
 
   for (const imagem of externas) {
-    const link = typeof imagem === 'string'
-      ? String(imagem || '').trim()
-      : String(imagem?.link || '').trim();
+    if (typeof imagem === 'string') {
+      const link = String(imagem || '').trim();
+      if (link) return link;
+      continue;
+    }
+
+    const thumbLink = String(imagem?.linkMiniatura || '').trim();
+    if (thumbLink) return thumbLink;
+
+    const link = String(imagem?.link || '').trim();
     if (link) return link;
   }
 
