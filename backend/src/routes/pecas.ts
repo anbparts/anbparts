@@ -58,6 +58,28 @@ const bulkDeletePecasSchema = z.object({
   ids: z.array(z.number().int().positive()).min(1),
 });
 
+const fotoCapaPayloadSchema = z.object({
+  fotoCapaNome: z.string().trim().min(1).nullable().optional(),
+  fotoCapaArquivo: z.string().trim().min(1).nullable().optional(),
+}).superRefine((value, ctx) => {
+  const hasNome = Boolean(value.fotoCapaNome);
+  const hasArquivo = Boolean(value.fotoCapaArquivo);
+
+  if (hasNome !== hasArquivo) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Informe nome e arquivo da foto capa juntos.',
+    });
+  }
+
+  if (hasArquivo && !String(value.fotoCapaArquivo).startsWith('data:image/')) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Arquivo da foto capa invalido.',
+    });
+  }
+});
+
 function isBrunoAuthUser(req: any) {
   return String(req?.authUser?.username || '').trim().toLowerCase() === 'bruno';
 }
@@ -608,6 +630,40 @@ pecasRouter.put('/:id', async (req, res, next) => {
       }
     });
     res.json(peca);
+  } catch (e) { next(e); }
+});
+
+// PATCH /pecas/:id/foto-capa
+pecasRouter.patch('/:id/foto-capa', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ error: 'Peca invalida' });
+    }
+
+    const payload = fotoCapaPayloadSchema.parse(req.body || {});
+    const pecaAtual = await prisma.peca.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+
+    if (!pecaAtual) {
+      return res.status(404).json({ error: 'Peca nao encontrada' });
+    }
+
+    const peca = await prisma.peca.update({
+      where: { id },
+      data: {
+        fotoCapaNome: payload.fotoCapaNome || null,
+        fotoCapaArquivo: payload.fotoCapaArquivo || null,
+      },
+    });
+
+    res.json({
+      id: peca.id,
+      fotoCapaNome: peca.fotoCapaNome,
+      fotoCapaArquivo: peca.fotoCapaArquivo,
+    });
   } catch (e) { next(e); }
 });
 

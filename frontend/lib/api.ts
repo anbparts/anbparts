@@ -63,6 +63,7 @@ export const api = {
     sugerirId: (motoId: number) => req<any>(`/pecas/sugestao-id?motoId=${motoId}`),
     create: (data: any)     => req<any>('/pecas', { method: 'POST', body: JSON.stringify(data) }),
     update: (id: number, data: any) => req<any>(`/pecas/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    uploadFotoCapa: (id: number, data: any) => req<any>(`/pecas/${id}/foto-capa`, { method: 'PATCH', body: JSON.stringify(data) }),
     vender: (id: number, data: any) => req<any>(`/pecas/${id}/vender`, { method: 'PATCH', body: JSON.stringify(data) }),
     marcarPrejuizo: (id: number, data: any) => req<any>(`/pecas/${id}/prejuizo`, { method: 'PATCH', body: JSON.stringify(data) }),
     cancelarVenda: (id: number) => req<any>(`/pecas/${id}/cancelar-venda`, { method: 'PATCH' }),

@@ -857,21 +857,33 @@ function PecaDetalheModal({ open, peca, onClose, onSaved }: any) {
   const [editando, setEditando] = useState(false);
   const [form, setForm] = useState<any>({});
   const [saving, setSaving] = useState(false);
+  const [uploadingFotoCapa, setUploadingFotoCapa] = useState(false);
+  const [fotoCapaNome, setFotoCapaNome] = useState('');
+  const [fotoCapaArquivo, setFotoCapaArquivo] = useState('');
+  const [fotoPreviewOpen, setFotoPreviewOpen] = useState(false);
+  const fotoInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
-    if (peca) setForm({
-      largura: peca.largura != null ? String(peca.largura) : '',
-      altura: peca.altura != null ? String(peca.altura) : '',
-      profundidade: peca.profundidade != null ? String(peca.profundidade) : '',
-      pesoLiquido: peca.pesoLiquido != null ? String(peca.pesoLiquido) : '',
-      localizacao: peca.localizacao || '',
-      detranEtiqueta: peca.detranEtiqueta || '',
-      numeroPeca: peca.numeroPeca || '',
-    });
+    if (peca) {
+      setForm({
+        largura: peca.largura != null ? String(peca.largura) : '',
+        altura: peca.altura != null ? String(peca.altura) : '',
+        profundidade: peca.profundidade != null ? String(peca.profundidade) : '',
+        pesoLiquido: peca.pesoLiquido != null ? String(peca.pesoLiquido) : '',
+        localizacao: peca.localizacao || '',
+        detranEtiqueta: peca.detranEtiqueta || '',
+        numeroPeca: peca.numeroPeca || '',
+      });
+      setFotoCapaNome(peca.fotoCapaNome || '');
+      setFotoCapaArquivo(peca.fotoCapaArquivo || '');
+    }
     setEditando(false);
+    setFotoPreviewOpen(false);
   }, [peca]);
 
   if (!open || !peca) return null;
+
+  const fotoCapaDisplayName = fotoCapaNome || (fotoCapaArquivo ? 'foto-capa.jpg' : '');
 
   async function salvarDimensoes() {
     setSaving(true);
@@ -959,6 +971,38 @@ function PecaDetalheModal({ open, peca, onClose, onSaved }: any) {
     setSaving(false);
   }
 
+  async function handleFotoCapaChange(event: any) {
+    const file = event.target?.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    try {
+      setUploadingFotoCapa(true);
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          if (typeof reader.result === 'string') resolve(reader.result);
+          else reject(new Error('Arquivo invalido'));
+        };
+        reader.onerror = () => reject(new Error('Nao foi possivel ler a imagem'));
+        reader.readAsDataURL(file);
+      });
+
+      const updated = await api.pecas.uploadFotoCapa(peca.id, {
+        fotoCapaNome: file.name,
+        fotoCapaArquivo: dataUrl,
+      });
+
+      setFotoCapaNome(updated?.fotoCapaNome || file.name);
+      setFotoCapaArquivo(updated?.fotoCapaArquivo || dataUrl);
+      onSaved?.();
+    } catch (e: any) {
+      alert(`Erro ao importar foto capa: ${e.message || e}`);
+    } finally {
+      setUploadingFotoCapa(false);
+    }
+  }
+
   function Field({ label, value, mono = false }: { label: string; value?: any; mono?: boolean }) {
     const display = value != null && value !== '' ? String(value) : '—';
     return (
@@ -993,6 +1037,61 @@ function PecaDetalheModal({ open, peca, onClose, onSaved }: any) {
               <Field label="Localização"       value={peca.localizacao} />
               <div style={{ gridColumn: '1 / -1' }}><Field label="Número de Peça" value={peca.numeroPeca} mono /></div>
               <div style={{ gridColumn: '1 / -1' }}><Field label="Etiqueta Detran" value={peca.detranEtiqueta} mono /></div>
+              <div style={{ gridColumn: '1 / -1', background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px' }}>
+                <input
+                  ref={fotoInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFotoCapaChange}
+                  style={{ display: 'none' }}
+                />
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', marginBottom: 4 }}>Foto Capa</div>
+                    {fotoCapaArquivo ? (
+                      <>
+                        <button
+                          onClick={() => setFotoPreviewOpen(true)}
+                          style={{
+                            border: 'none',
+                            background: 'transparent',
+                            padding: 0,
+                            cursor: 'pointer',
+                            color: 'var(--blue-500)',
+                            fontSize: 13.5,
+                            fontWeight: 600,
+                            textDecoration: 'underline',
+                            textAlign: 'left' as const,
+                            maxWidth: '100%',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap' as const,
+                          }}
+                          title="Visualizar foto capa"
+                        >
+                          {fotoCapaDisplayName}
+                        </button>
+                        <div style={{ marginTop: 6, fontSize: 11.5, color: 'var(--ink-muted)' }}>Clique no nome do arquivo para visualizar a imagem aqui no sistema.</div>
+                      </>
+                    ) : (
+                      <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--gray-300)' }}>Nenhuma foto importada</div>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => fotoInputRef.current?.click()}
+                    disabled={uploadingFotoCapa}
+                    style={{
+                      ...cs.btn,
+                      background: 'var(--white)',
+                      color: 'var(--ink-soft)',
+                      borderColor: 'var(--border-strong)',
+                      opacity: uploadingFotoCapa ? 0.7 : 1,
+                    }}
+                  >
+                    {uploadingFotoCapa ? 'Importando...' : (fotoCapaArquivo ? 'Trocar Foto Capa' : 'Importar Foto Capa')}
+                  </button>
+                </div>
+              </div>
             </div>
             <div style={{ padding: '0 22px 20px', display: 'flex', justifyContent: 'space-between' }}>
               <button onClick={() => {
@@ -1050,6 +1149,27 @@ function PecaDetalheModal({ open, peca, onClose, onSaved }: any) {
           </>
         )}
       </div>
+
+      {fotoPreviewOpen && fotoCapaArquivo ? (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.55)', zIndex: 236, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 16, width: '100%', maxWidth: 960, maxHeight: '90vh', overflow: 'hidden', boxShadow: '0 12px 32px rgba(0,0,0,.16)' }}>
+            <div style={{ padding: '16px 18px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontFamily: 'Fraunces, serif', fontSize: 17, fontWeight: 600 }}>Foto Capa</div>
+                <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fotoCapaDisplayName}</div>
+              </div>
+              <button onClick={() => setFotoPreviewOpen(false)} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', flexShrink: 0 }}>X</button>
+            </div>
+            <div style={{ padding: 16, background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', maxHeight: 'calc(90vh - 72px)', overflow: 'auto' }}>
+              <img
+                src={fotoCapaArquivo}
+                alt={`Foto capa ${peca.idPeca}`}
+                style={{ maxWidth: '100%', maxHeight: 'calc(90vh - 120px)', objectFit: 'contain', borderRadius: 12, boxShadow: '0 8px 24px rgba(15,23,42,.08)' }}
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -3041,7 +3161,7 @@ export default function EstoquePage() {
       />
       <VendaModal open={vendaModal} peca={vendaPeca} onClose={() => setVendaModal(false)} onConfirm={handleVenda} />
       <DetranEtiquetaModal open={Boolean(detranPeca)} peca={detranPeca} onClose={() => setDetranPeca(null)} />
-      <PecaDetalheModal open={Boolean(detalhePeca)} peca={detalhePeca} onClose={() => setDetalhePeca(null)} onSaved={() => { setDetalhePeca(null); load(); }} />
+      <PecaDetalheModal open={Boolean(detalhePeca)} peca={detalhePeca} onClose={() => setDetalhePeca(null)} onSaved={() => { load(); }} />
       {etiquetaCartelaOpen && filters.motoId && (
         <EtiquetaCartelaModal
           motoId={Number(filters.motoId)}
