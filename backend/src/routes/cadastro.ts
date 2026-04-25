@@ -371,9 +371,10 @@ cadastroRouter.get('/', async (req, res, next) => {
     }
     if (motoId) where.motoId = Number(motoId);
     if (search) {
+      const normalizedSearch = String(search).trim();
       where.OR = [
-        { idPeca: { contains: search, mode: 'insensitive' } },
-        { descricao: { contains: search, mode: 'insensitive' } },
+        { idPeca: { startsWith: normalizedSearch, mode: 'insensitive' } },
+        { descricao: { contains: normalizedSearch, mode: 'insensitive' } },
       ];
     }
     if (semDimensoes === 'true') {
@@ -386,7 +387,7 @@ cadastroRouter.get('/', async (req, res, next) => {
       prisma.cadastroPeca.count({ where }),
       prisma.cadastroPeca.findMany({
         where,
-        include: { moto: { select: { id: true, marca: true, modelo: true, ano: true, descricaoModelo: true } } },
+        include: { moto: { select: { id: true, marca: true, modelo: true, ano: true } } },
         orderBy: { createdAt: 'desc' },
         skip,
         take: Number(per),
@@ -394,6 +395,46 @@ cadastroRouter.get('/', async (req, res, next) => {
     ]);
 
     res.json({ total, data });
+  } catch (e) { next(e); }
+});
+
+// GET /cadastro/opcoes - dados leves para a tela de cadastro
+cadastroRouter.get('/opcoes', async (_req, res, next) => {
+  try {
+    const [motos, caixasRows] = await Promise.all([
+      prisma.moto.findMany({
+        select: {
+          id: true,
+          marca: true,
+          modelo: true,
+          ano: true,
+        },
+        orderBy: { id: 'asc' },
+      }),
+      prisma.peca.findMany({
+        where: {
+          disponivel: true,
+          emPrejuizo: false,
+          localizacao: { not: null },
+        },
+        select: {
+          localizacao: true,
+        },
+        orderBy: {
+          localizacao: 'asc',
+        },
+      }),
+    ]);
+
+    const caixas = Array.from(
+      new Set(
+        caixasRows
+          .map((item) => String(item.localizacao || '').trim())
+          .filter(Boolean),
+      ),
+    );
+
+    res.json({ motos, caixas });
   } catch (e) { next(e); }
 });
 

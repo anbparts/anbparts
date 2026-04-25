@@ -109,6 +109,9 @@ model CadastroPeca {
   updatedAt        DateTime @updatedAt
 
   moto             Moto     @relation(fields: [motoId], references: [id])
+
+  @@index([status, createdAt])
+  @@index([motoId, status, createdAt])
 }
 
 model Despesa {

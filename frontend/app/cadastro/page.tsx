@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { API_BASE } from '@/lib/api-base';
-import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { formatEtiquetaMotoLabel, printSkuLabels } from '@/lib/estoque-label-print';
 
@@ -111,6 +110,7 @@ export default function CadastroPage() {
   const [loading, setLoading] = useState(true);
   const [somentePendentes, setSomentePendentes] = useState(true);
   const [filters, setFilters] = useState({ motoId: '', search: '', semDimensoes: '' });
+  const [searchInput, setSearchInput] = useState('');
   const [viewportMode, setViewportMode] = useState<'phone' | 'tablet-portrait' | 'tablet-landscape' | 'desktop'>('desktop');
 
   useEffect(() => {
@@ -165,9 +165,25 @@ export default function CadastroPage() {
   const fotoInputRef = useRef<HTMLInputElement | null>(null);
   const isBruno = String(user?.username || '').trim().toLowerCase() === 'bruno';
 
-  useEffect(() => { loadAll(); }, [filters, somentePendentes]);
+  useEffect(() => { loadSupportData(); }, []);
+  useEffect(() => { loadCadastros(); }, [filters, somentePendentes]);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setFilters((prev) => (prev.search === searchInput ? prev : { ...prev, search: searchInput }));
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
 
-  async function loadAll() {
+  async function loadSupportData() {
+    try {
+      const resp = await fetch(`${API}/cadastro/opcoes`, { credentials: 'include' });
+      const d = await resp.json();
+      setMotos(Array.isArray(d?.motos) ? d.motos : []);
+      setCaixas(Array.isArray(d?.caixas) ? d.caixas : []);
+    } catch { }
+  }
+
+  async function loadCadastros() {
     setLoading(true);
     try {
       const params = new URLSearchParams();
@@ -176,14 +192,8 @@ export default function CadastroPage() {
       if (filters.search) params.set('search', filters.search);
       if (filters.semDimensoes) params.set('semDimensoes', filters.semDimensoes);
       params.set('per', '200');
-      const [d, m, cx] = await Promise.all([
-        fetch(`${API}/cadastro?${params}`, { credentials: 'include' }).then(r => r.json()),
-        api.motos.list(),
-        api.pecas.caixas(),
-      ]);
+      const d = await fetch(`${API}/cadastro?${params}`, { credentials: 'include' }).then(r => r.json());
       setData(d);
-      setMotos(m);
-      setCaixas((cx || []).map((c: any) => c.caixa).filter(Boolean));
     } catch { }
     setLoading(false);
   }
@@ -322,7 +332,7 @@ export default function CadastroPage() {
       if (!resp.ok) throw new Error(d.error || 'Erro ao salvar');
       if (d._blingErro) alert(`Salvo no ANB, mas erro no Bling:\n${d._blingErro}`);
       setModal(false);
-      await loadAll();
+      await loadCadastros();
     } catch (e: any) { alert(e.message || 'Erro ao salvar'); }
     setSaving(false);
   }
@@ -353,7 +363,7 @@ Deseja forçar a exclusão mesmo assim?`);
         throw new Error(d.error || 'Erro ao excluir');
       }
       setModal(false);
-      await loadAll();
+      await loadCadastros();
     } catch (e: any) { alert(e.message); }
     setExcluindo(false);
   }
@@ -378,7 +388,7 @@ Deseja forçar a exclusão mesmo assim?`);
         setModal(false);
         setEditItem(null);
       }
-      await loadAll();
+      await loadCadastros();
     } catch (e: any) {
       alert(e.message || 'Erro ao eliminar linha');
     }
@@ -422,7 +432,7 @@ Deseja forçar a exclusão mesmo assim?`);
       const d = await resp.json();
       if (!d.ok) throw new Error(d.error || 'Erro');
       alert(`✓ ${d.pecasCriadas?.length || 0} peça(s) lançada(s) no estoque!`);
-      setModalFinalizar(false); await loadAll();
+      setModalFinalizar(false); await loadCadastros();
     } catch (e: any) { alert(e.message); }
     setConfirmando(false);
   }
@@ -461,12 +471,12 @@ Deseja forçar a exclusão mesmo assim?`);
               style={{ ...s.btn, fontSize: 12, background: somentePendentes ? 'var(--gray-800)' : 'var(--white)', color: somentePendentes ? '#fff' : 'var(--gray-600)', border: '1px solid var(--border)', width: isPhone ? '100%' : undefined }}
               onClick={() => setSomentePendentes(!somentePendentes)}
             >{somentePendentes ? '📋 Só Pendentes' : '📋 Todos'}</button>
-            <select style={{ ...s.input, width: isPhone ? '100%' : 200 }} value={filters.motoId} onChange={(e) => setFilters({ ...filters, motoId: e.target.value })}>
+            <select style={{ ...s.input, width: isPhone ? '100%' : 200 }} value={filters.motoId} onChange={(e) => setFilters((prev) => ({ ...prev, motoId: e.target.value }))}>
               <option value="">Todas as motos</option>
               {motos.map((m) => <option key={m.id} value={m.id}>ID {m.id} - {m.marca} {m.modelo}</option>)}
             </select>
-            <input style={{ ...s.input, width: isPhone ? '100%' : 200 }} placeholder="Buscar ID ou descrição..." value={filters.search} onChange={(e) => setFilters({ ...filters, search: e.target.value })} />
-            <button style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', fontSize: 12, width: isPhone ? '100%' : undefined }} onClick={() => setFilters({ motoId: '', search: '', semDimensoes: '' })}>Limpar</button>
+            <input style={{ ...s.input, width: isPhone ? '100%' : 200 }} placeholder="Buscar ID ou descrição..." value={searchInput} onChange={(e) => setSearchInput(e.target.value)} />
+            <button style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', fontSize: 12, width: isPhone ? '100%' : undefined }} onClick={() => { setSearchInput(''); setFilters({ motoId: '', search: '', semDimensoes: '' }); }}>Limpar</button>
           </div>
         </div>
 
