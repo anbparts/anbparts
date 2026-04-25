@@ -738,8 +738,8 @@ export default function BlingProdutosPage() {
         return;
       }
 
-      const tamanhoLoteConfigurado = Math.max(1, Math.min(Number(consultaManualTamanhoLote) || 20, skus.length));
-      const pausaMsConfigurada = Math.max(0, Number(consultaManualPausaMs) || 0);
+        const tamanhoLoteConfigurado = Math.max(1, Math.min(Number(consultaManualTamanhoLote) || 5, 5, skus.length));
+        const pausaMsConfigurada = Math.max(300, Number(consultaManualPausaMs) || 300);
       const lotes: string[][] = [];
       for (let i = 0; i < skus.length; i += tamanhoLoteConfigurado) {
         lotes.push(skus.slice(i, i + tamanhoLoteConfigurado));

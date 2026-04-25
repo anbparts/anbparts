@@ -4871,8 +4871,8 @@ blingRouter.post('/atualizar-foto-capa', async (req, res, next) => {
       return res.status(400).json({ error: 'Informe ao menos um SKU' });
     }
 
-    const tamanhoLote = Math.max(1, Math.min(100, Math.round(toNumber(req.body?.tamanhoLote, 20) || 20)));
-    const pausaMs = Math.max(0, Math.min(10000, Math.round(toNumber(req.body?.pausaMs, 0) || 0)));
+      const tamanhoLote = Math.max(1, Math.min(5, Math.round(toNumber(req.body?.tamanhoLote, 5) || 5)));
+      const pausaMs = Math.max(250, Math.min(10000, Math.round(toNumber(req.body?.pausaMs, 300) || 300)));
 
     const atualizados: Array<{ sku: string; produtoId: number; fotoCapaNome: string; pecasAtualizadas: number }> = [];
     const semImagem: Array<{ sku: string; produtoId: number | null }> = [];
@@ -4887,9 +4887,9 @@ blingRouter.post('/atualizar-foto-capa', async (req, res, next) => {
           .map((produto: any) => Number(produto?.id || 0))
           .filter(Boolean),
       ));
-      const detalhesById = productIds.length
-        ? await findBlingProductDetailsByIds(productIds, { batchSize: Math.min(tamanhoLote, productIds.length), pauseMs: 0 })
-        : new Map<number, any>();
+        const detalhesById = productIds.length
+          ? await findBlingProductDetailsByIds(productIds, { batchSize: Math.min(3, productIds.length), pauseMs: 120 })
+          : new Map<number, any>();
 
       const whereOr = batch.flatMap((sku) => [
         { idPeca: sku },
