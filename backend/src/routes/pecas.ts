@@ -305,6 +305,7 @@ pecasRouter.get('/', async (req, res, next) => {
       dataVendaFrom,
       dataVendaTo,
       detranEtiqueta,
+      imagem,
       detranEtiquetaTexto,
       dimensoes,
       page = '1',
@@ -383,6 +384,18 @@ pecasRouter.get('/', async (req, res, next) => {
     }
     if (detranEtiqueta === 'sem') {
       andConditions.push({ OR: [{ detranEtiqueta: null }, { detranEtiqueta: '' }] });
+    }
+    if (imagem === 'com') {
+      andConditions.push({ fotoCapaArquivo: { not: null } });
+      andConditions.push({ NOT: { fotoCapaArquivo: '' } });
+    }
+    if (imagem === 'sem') {
+      andConditions.push({
+        OR: [
+          { fotoCapaArquivo: null },
+          { fotoCapaArquivo: '' },
+        ],
+      });
     }
     if (detranEtiquetaText) {
       andConditions.push({ detranEtiqueta: { contains: detranEtiquetaText } });

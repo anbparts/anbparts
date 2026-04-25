@@ -1836,6 +1836,7 @@ export default function EstoquePage() {
     localizacao: '',
     caixas: [] as string[],
     detranEtiqueta: '',
+    imagem: '',
     detranEtiquetaTexto: '',
     dimensoes: '',
     sku: '',
@@ -1899,6 +1900,7 @@ export default function EstoquePage() {
     if (filters.localizacao !== '') params.localizacao = filters.localizacao;
     if (filters.caixas.length) params.caixas = filters.caixas;
     if (filters.detranEtiqueta !== '') params.detranEtiqueta = filters.detranEtiqueta;
+    if (filters.imagem !== '') params.imagem = filters.imagem;
     if (debouncedDetranEtiquetaTexto) params.detranEtiquetaTexto = debouncedDetranEtiquetaTexto;
     if (filters.dimensoes !== '') params.dimensoes = filters.dimensoes;
     if (debouncedSku) params.sku = debouncedSku;
@@ -1920,6 +1922,7 @@ export default function EstoquePage() {
     filters.localizacao,
     filters.caixas,
     filters.detranEtiqueta,
+    filters.imagem,
     filters.dimensoes,
     filters.dataVendaFrom,
     filters.dataVendaTo,
@@ -2272,6 +2275,7 @@ export default function EstoquePage() {
       localizacao: '',
       caixas: [],
       detranEtiqueta: '',
+      imagem: '',
       detranEtiquetaTexto: '',
       dimensoes: '',
       sku: '',
@@ -2305,6 +2309,7 @@ export default function EstoquePage() {
     filters.localizacao !== '' ||
     filters.caixas.length ||
     filters.detranEtiqueta !== '' ||
+    filters.imagem !== '' ||
     filters.detranEtiquetaTexto ||
     filters.dimensoes !== '' ||
     filters.sku ||
@@ -2711,6 +2716,11 @@ export default function EstoquePage() {
                 <option value="">Etiqueta Detran</option>
                 <option value="com">Com etiqueta</option>
                 <option value="sem">Sem etiqueta</option>
+              </select>
+              <select style={{ ...cs.sel, width: '100%' }} value={filters.imagem} onChange={(e) => setFilters({ ...filters, imagem: e.target.value, page: 1 })}>
+                <option value="">Imagem</option>
+                <option value="com">Com Foto</option>
+                <option value="sem">Sem Foto</option>
               </select>
               <select style={{ ...cs.sel, width: '100%' }} value={filters.dimensoes} onChange={(e) => setFilters({ ...filters, dimensoes: e.target.value, page: 1 })}>
                 <option value="">Dimensoes</option>
