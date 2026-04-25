@@ -1461,11 +1461,11 @@ function resolveBlingCoverImageUrl(detail: any) {
       continue;
     }
 
-    const thumbLink = String(imagem?.linkMiniatura || '').trim();
-    if (thumbLink) return thumbLink;
-
     const link = String(imagem?.link || '').trim();
     if (link) return link;
+
+    const thumbLink = String(imagem?.linkMiniatura || '').trim();
+    if (thumbLink) return thumbLink;
   }
 
   for (const imagem of externas) {
@@ -1475,11 +1475,11 @@ function resolveBlingCoverImageUrl(detail: any) {
       continue;
     }
 
-    const thumbLink = String(imagem?.linkMiniatura || '').trim();
-    if (thumbLink) return thumbLink;
-
     const link = String(imagem?.link || '').trim();
     if (link) return link;
+
+    const thumbLink = String(imagem?.linkMiniatura || '').trim();
+    if (thumbLink) return thumbLink;
   }
 
   const imagemUrl = String(detail?.imagemURL || '').trim();
@@ -1534,6 +1534,10 @@ function inferImageMimeType(extension: string) {
   }
 }
 
+const BLING_FOTO_CAPA_PREFERRED_BYTES = 280 * 1024;
+const BLING_FOTO_CAPA_HARD_MAX_BYTES = 380 * 1024;
+const BLING_FOTO_CAPA_RAW_FALLBACK_BYTES = 180 * 1024;
+
 async function downloadImageAsDataUrl(imageUrl: string) {
   const response = await fetch(imageUrl);
   if (!response.ok) {
@@ -1541,15 +1545,69 @@ async function downloadImageAsDataUrl(imageUrl: string) {
   }
 
   const contentType = String(response.headers.get('content-type') || '').trim();
-  const extension = inferImageExtensionFromContentType(contentType) || inferImageExtensionFromUrl(imageUrl) || 'jpg';
-  const mimeType = inferImageMimeType(extension);
   const bytes = Buffer.from(await response.arrayBuffer());
+  const fallbackExtension = inferImageExtensionFromContentType(contentType) || inferImageExtensionFromUrl(imageUrl) || 'jpg';
+  const fallbackMimeType = inferImageMimeType(fallbackExtension);
 
-  return {
-    extension,
-    mimeType,
-    dataUrl: `data:${mimeType};base64,${bytes.toString('base64')}`,
-  };
+  try {
+    const jimpModule: any = await import('jimp');
+    const Jimp = jimpModule?.Jimp || jimpModule?.default?.Jimp || jimpModule?.default || jimpModule;
+
+    if (Jimp?.read || Jimp?.fromBuffer) {
+      const attempts = [
+        { max: 1600, quality: 82 },
+        { max: 1400, quality: 78 },
+        { max: 1280, quality: 74 },
+        { max: 1100, quality: 70 },
+        { max: 950, quality: 66 },
+      ];
+      let bestOutput: Buffer | null = null;
+
+      for (let index = 0; index < attempts.length; index += 1) {
+        const attempt = attempts[index];
+        const image = Jimp.fromBuffer ? await Jimp.fromBuffer(bytes) : await Jimp.read(bytes);
+        const width = Number(image?.bitmap?.width || 0);
+        const height = Number(image?.bitmap?.height || 0);
+
+        if (width > height && width > attempt.max) {
+          image.resize({ w: attempt.max });
+        } else if (height >= width && height > attempt.max) {
+          image.resize({ h: attempt.max });
+        }
+
+        const output = await image.getBuffer('image/jpeg', { quality: attempt.quality });
+        bestOutput = output;
+
+        if (output.length <= BLING_FOTO_CAPA_PREFERRED_BYTES) {
+          return {
+            extension: 'jpg',
+            mimeType: 'image/jpeg',
+            dataUrl: `data:image/jpeg;base64,${Buffer.from(output).toString('base64')}`,
+          };
+        }
+      }
+
+      if (bestOutput && bestOutput.length <= BLING_FOTO_CAPA_HARD_MAX_BYTES) {
+        return {
+          extension: 'jpg',
+          mimeType: 'image/jpeg',
+          dataUrl: `data:image/jpeg;base64,${Buffer.from(bestOutput).toString('base64')}`,
+        };
+      }
+    }
+
+    throw new Error('Nao foi possivel compactar a foto capa do Bling');
+  } catch (error: any) {
+    if (bytes.length <= BLING_FOTO_CAPA_RAW_FALLBACK_BYTES) {
+      return {
+        extension: fallbackExtension,
+        mimeType: fallbackMimeType,
+        dataUrl: `data:${fallbackMimeType};base64,${bytes.toString('base64')}`,
+      };
+    }
+
+    throw new Error(error?.message || 'Falha ao preparar foto capa do Bling');
+  }
 }
 
 function getRuntimeBatchOptions(options?: { batchSize?: number; pauseMs?: number }) {
@@ -4851,7 +4909,7 @@ blingRouter.post('/atualizar-foto-capa', async (req, res, next) => {
         pecasBySku.set(baseSku, current);
       }
 
-      await mapWithConcurrency(batch, 3, async (sku) => {
+      await mapWithConcurrency(batch, 1, async (sku) => {
         const pecasDoSku = pecasBySku.get(sku) || [];
         if (!pecasDoSku.length) {
           semPecaLocal.push({ sku });
