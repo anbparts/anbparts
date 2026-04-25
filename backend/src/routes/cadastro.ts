@@ -428,7 +428,7 @@ cadastroRouter.get('/proximo-id/:motoId', async (req, res, next) => {
 // POST /cadastro - criar pré-cadastro e enviar ao Bling
 cadastroRouter.post('/', async (req, res, next) => {
   try {
-    const { motoId, idPeca, descricao, descricaoPeca, precoVenda, condicao, peso, largura, altura, profundidade, numeroPeca, detranEtiqueta, localizacao, estoque, categoriaMLId, categoriaMLNome, urlRef } = req.body;
+    const { motoId, idPeca, descricao, descricaoPeca, precoVenda, condicao, peso, largura, altura, profundidade, numeroPeca, detranEtiqueta, localizacao, estoque, categoriaMLId, categoriaMLNome, urlRef, fotoCapa, fotoCapaNome } = req.body;
 
     if (!motoId || !idPeca || !descricao) return res.status(400).json({ error: 'motoId, idPeca e descricao sao obrigatorios' });
     const detranValidationMessage = getDetranEtiquetasValidationMessage(detranEtiqueta, estoque);
@@ -455,6 +455,8 @@ cadastroRouter.post('/', async (req, res, next) => {
         estoque: Number(estoque) || 1,
         categoriaMLId: categoriaMLId || null,
         categoriaMLNome: categoriaMLNome || null,
+        fotoCapa: fotoCapa || null,
+        fotoCapaNome: fotoCapaNome || null,
         urlRef: urlRef ? String(urlRef).trim() : null,
         status: 'pre_cadastro',
       },
@@ -695,7 +697,7 @@ cadastroRouter.put('/:id', async (req, res, next) => {
     if (!atual) return res.status(404).json({ error: 'Não encontrado' });
     if (atual.status === 'cadastrado') return res.status(400).json({ error: 'Cadastro já finalizado — não é possível editar' });
 
-    const { descricao, descricaoPeca, precoVenda, condicao, peso, largura, altura, profundidade, numeroPeca, detranEtiqueta, localizacao, estoque, categoriaMLId, categoriaMLNome, urlRef } = req.body;
+    const { descricao, descricaoPeca, precoVenda, condicao, peso, largura, altura, profundidade, numeroPeca, detranEtiqueta, localizacao, estoque, categoriaMLId, categoriaMLNome, urlRef, fotoCapa, fotoCapaNome } = req.body;
     const estoqueEfetivo = estoque !== undefined ? Number(estoque) : Number(atual.estoque);
     const detranEtiquetaEfetiva = detranEtiqueta !== undefined ? detranEtiqueta : atual.detranEtiqueta;
     const detranValidationMessage = getDetranEtiquetasValidationMessage(detranEtiquetaEfetiva, estoqueEfetivo);
@@ -715,6 +717,8 @@ cadastroRouter.put('/:id', async (req, res, next) => {
     if (estoque !== undefined) data.estoque = Number(estoque);
     if (categoriaMLId !== undefined) data.categoriaMLId = categoriaMLId || null;
     if (categoriaMLNome !== undefined) data.categoriaMLNome = categoriaMLNome || null;
+    if (fotoCapa !== undefined) data.fotoCapa = fotoCapa || null;
+    if (fotoCapaNome !== undefined) data.fotoCapaNome = fotoCapaNome || null;
     if (urlRef !== undefined) data.urlRef = urlRef || null;
 
     const record = await prisma.cadastroPeca.update({
@@ -836,6 +840,15 @@ cadastroRouter.post('/:id/finalizar', async (req, res, next) => {
             cadastro: new Date(),
           },
         });
+        if (cadastro.fotoCapa || cadastro.fotoCapaNome) {
+          await prisma.peca.update({
+            where: { id: peca.id },
+            data: {
+              fotoCapaNome: cadastro.fotoCapaNome || null,
+              fotoCapaArquivo: cadastro.fotoCapa || null,
+            },
+          });
+        }
         pecasCriadas.push(peca);
       }
 

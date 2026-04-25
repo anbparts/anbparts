@@ -25,7 +25,7 @@ type CadastroPeca = {
   peso?: number; largura?: number; altura?: number; profundidade?: number;
   numeroPeca?: string; detranEtiqueta?: string; localizacao?: string;
   estoque: number; categoriaMLId?: string; categoriaMLNome?: string;
-  urlRef?: string; status: string; blingProdutoId?: string;
+  urlRef?: string; fotoCapa?: string; fotoCapaNome?: string; status: string; blingProdutoId?: string;
   moto: { id: number; marca: string; modelo: string; ano?: number; descricaoModelo?: string };
 };
 
@@ -33,7 +33,7 @@ const EMPTY_FORM = {
   motoId: '', idPeca: '', descricao: '', descricaoPeca: '', precoVenda: '',
   condicao: 'usado', peso: '', largura: '', altura: '', profundidade: '',
   numeroPeca: '', detranEtiqueta: '', localizacao: '', estoque: '1',
-  categoriaMLId: '', categoriaMLNome: '', urlRef: '',
+  categoriaMLId: '', categoriaMLNome: '', urlRef: '', fotoCapa: '', fotoCapaNome: '',
 };
 
 function camposOk(form: any) {
@@ -158,6 +158,9 @@ export default function CadastroPage() {
   const [etiquetas, setEtiquetas] = useState<string[]>(['']); // array de etiquetas detran
   const [imprimindoItemId, setImprimindoItemId] = useState<number | null>(null);
   const [eliminandoLinhaId, setEliminandoLinhaId] = useState<number | null>(null);
+  const [uploadingFotoCapa, setUploadingFotoCapa] = useState(false);
+  const [fotoPreviewOpen, setFotoPreviewOpen] = useState(false);
+  const fotoInputRef = useRef<HTMLInputElement | null>(null);
   const isBruno = String(user?.username || '').trim().toLowerCase() === 'bruno';
 
   useEffect(() => { loadAll(); }, [filters, somentePendentes]);
@@ -188,7 +191,7 @@ export default function CadastroPage() {
     const motoOrdenada = [...motos].sort((a, b) => b.id - a.id);
     const motoId = motoOrdenada[0]?.id ? String(motoOrdenada[0].id) : '';
     const form0 = { ...EMPTY_FORM, motoId };
-    setForm(form0); setEditItem(null); setCategorias([]); setEtiquetas(['']);
+    setForm(form0); setEditItem(null); setCategorias([]); setEtiquetas(['']); setFotoPreviewOpen(false);
     if (motoId) await carregarProximoId(motoId, form0);
     setModal(true);
   }
@@ -207,14 +210,14 @@ export default function CadastroPage() {
       numeroPeca: item.numeroPeca || '', detranEtiqueta: item.detranEtiqueta || '',
       localizacao: item.localizacao || '', estoque: String(item.estoque),
       categoriaMLId: item.categoriaMLId || '', categoriaMLNome: item.categoriaMLNome || '',
-      urlRef: item.urlRef || '',
+      urlRef: item.urlRef || '', fotoCapa: item.fotoCapa || '', fotoCapaNome: item.fotoCapaNome || '',
     });
     // Carregar etiquetas do campo concatenado (SP001 / SP002 / SP003)
     const etiquetasCarregadas = item.detranEtiqueta
       ? item.detranEtiqueta.split('/').map((e: string) => e.trim()).filter(Boolean)
       : [''];
     setEtiquetas(etiquetasCarregadas.length > 0 ? etiquetasCarregadas : ['']);
-    setCategorias([]); setModal(true);
+    setCategorias([]); setFotoPreviewOpen(false); setModal(true);
   }
 
   async function carregarProximoId(motoId: string, formAtual?: any) {
@@ -260,6 +263,34 @@ export default function CadastroPage() {
     if (el) setForm((p: any) => ({ ...p, descricaoPeca: el.innerHTML }));
   }
 
+  async function handleFotoCapaChange(event: any) {
+    const file = event.target?.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    try {
+      setUploadingFotoCapa(true);
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          if (typeof reader.result === 'string') resolve(reader.result);
+          else reject(new Error('Arquivo invalido'));
+        };
+        reader.onerror = () => reject(new Error('Nao foi possivel ler a imagem'));
+        reader.readAsDataURL(file);
+      });
+
+      setForm((prev: any) => ({
+        ...prev,
+        fotoCapa: dataUrl,
+        fotoCapaNome: file.name,
+      }));
+    } catch (e: any) {
+      alert(e.message || 'Erro ao importar foto capa');
+    }
+    setUploadingFotoCapa(false);
+  }
+
   async function salvar() {
     if (!form.motoId || !form.idPeca || !form.descricao) return alert('Moto, ID da Peça e Descrição são obrigatórios');
     const detranResumo = getDetranEtiquetasResumo(etiquetas, form.estoque);
@@ -284,6 +315,8 @@ export default function CadastroPage() {
         localizacao: form.localizacao || null, estoque: Number(form.estoque) || 1,
         categoriaMLId: form.categoriaMLId || null, categoriaMLNome: form.categoriaMLNome || null,
         urlRef: form.urlRef || null,
+        fotoCapa: form.fotoCapa || null,
+        fotoCapaNome: form.fotoCapaNome || null,
       };
       const url = editItem ? `${API}/cadastro/${editItem.id}` : `${API}/cadastro`;
       const method = editItem ? 'PUT' : 'POST';
@@ -403,6 +436,7 @@ Deseja forçar a exclusão mesmo assim?`);
   const valorLiq = previewBling ? parseFloat((previewBling.precoML - previewFrete - valorTaxas).toFixed(2)) : 0;
   const motoSelecionada = motos.find((m) => String(m.id) === String(form.motoId));
   const formOk = camposOk(form);
+  const fotoCapaDisplayName = form.fotoCapaNome || (form.fotoCapa ? 'foto-capa.jpg' : '');
 
   return (
     <>
@@ -629,6 +663,62 @@ Deseja forçar a exclusão mesmo assim?`);
                   <label style={s.label}>URL de Referência</label>
                   <input style={s.input} value={form.urlRef || ''} onChange={(e) => setForm((p: any) => ({ ...p, urlRef: e.target.value }))} placeholder="Ex: www.site.com.br/produto" />
                 </div>
+                <div style={{ background: '#f8fafc', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
+                  <input
+                    ref={fotoInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleFotoCapaChange}
+                    style={{ display: 'none' }}
+                  />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <label style={{ ...s.label, marginBottom: 4 }}>Foto Capa</label>
+                      {form.fotoCapa ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setFotoPreviewOpen(true)}
+                            style={{
+                              border: 'none',
+                              background: 'transparent',
+                              padding: 0,
+                              cursor: 'pointer',
+                              color: '#2563eb',
+                              fontSize: 12.5,
+                              fontWeight: 600,
+                              textDecoration: 'underline',
+                              textAlign: 'left' as const,
+                              maxWidth: '100%',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap' as const,
+                            }}
+                          >
+                            {fotoCapaDisplayName}
+                          </button>
+                          <div style={{ marginTop: 6, fontSize: 11, color: 'var(--gray-500)' }}>A imagem salva aqui segue junto quando a peça for lançada no estoque.</div>
+                        </>
+                      ) : (
+                        <div style={{ fontSize: 12.5, color: 'var(--gray-400)' }}>Nenhuma foto importada</div>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => fotoInputRef.current?.click()}
+                      disabled={uploadingFotoCapa}
+                      style={{
+                        ...s.btn,
+                        background: 'var(--white)',
+                        border: '1px solid var(--border)',
+                        color: 'var(--gray-600)',
+                        opacity: uploadingFotoCapa ? 0.7 : 1,
+                      }}
+                    >
+                      {uploadingFotoCapa ? 'Importando...' : (form.fotoCapa ? 'Trocar Foto Capa' : 'Importar Foto Capa')}
+                    </button>
+                  </div>
+                </div>
               </div>
 
               {/* COLUNA DIREITA — checklist + descrição */}
@@ -672,6 +762,22 @@ Deseja forçar a exclusão mesmo assim?`);
               <button onClick={salvar} disabled={saving} style={{ ...s.btn, background: 'var(--gray-800)', color: '#fff', opacity: saving ? 0.7 : 1, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>
                 {saving ? 'Enviando...' : editItem ? '🔄 Atualizar Produto Bling' : '🚀 Criar Produto Bling'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {modal && fotoPreviewOpen && form.fotoCapa && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 205, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <div style={{ background: 'var(--white)', borderRadius: 14, width: '100%', maxWidth: 960, maxHeight: '90vh', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.24)' }}>
+            <div style={{ padding: '16px 18px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 16, fontWeight: 600 }}>Foto Capa</div>
+                <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fotoCapaDisplayName}</div>
+              </div>
+              <button onClick={() => setFotoPreviewOpen(false)} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', fontSize: 16, flexShrink: 0 }}>×</button>
+            </div>
+            <div style={{ padding: 16, background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', maxHeight: 'calc(90vh - 70px)', overflow: 'auto' }}>
+              <img src={form.fotoCapa} alt={`Foto capa ${form.idPeca || 'pre-cadastro'}`} style={{ maxWidth: '100%', maxHeight: 'calc(90vh - 120px)', objectFit: 'contain', borderRadius: 12, boxShadow: '0 8px 24px rgba(15,23,42,.08)' }} />
             </div>
           </div>
         </div>
