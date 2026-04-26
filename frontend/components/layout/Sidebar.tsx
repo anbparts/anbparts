@@ -71,7 +71,6 @@ export const NAV: NavGroup[] = [
       { href: '/detran/peca-avulsa', icon: 'tag', label: 'Peca Avulsa (POC)' },
       { href: '/detran/execucoes', icon: 'playbook', label: 'Execucoes' },
       { href: '/detran/logs', icon: 'terminal', label: 'Logs' },
-      { href: '/detran/configuracoes', icon: 'key-round', label: 'Config. Detran' },
     ],
   },
   {
@@ -83,7 +82,7 @@ export const NAV: NavGroup[] = [
       { href: '/conf-gerais', icon: 'settings', label: 'Conf. Gerais' },
       { href: '/config-ml', icon: 'store', label: 'Config. ML' },
       { href: '/conf-nuvemshop', icon: 'cloud', label: 'Conf. Nuvemshop' },
-      { href: '/conf-google-drive', icon: 'folder', label: 'Conf. Google Drive' },
+      { href: '/conf-gmail', icon: 'mail', label: 'Config. Gmail' },
     ],
   },
 ];
@@ -163,6 +162,7 @@ function SidebarIcon({ name, active, size = 16 }: { name: string; active: boolea
     store: <svg {...common}><path d="M4 10h16v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V10Z" /><path d="M3 10 5 4h14l2 6" /><path d="M9 14h6" /></svg>,
     cloud: <svg {...common}><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10Z" /></svg>,
     folder: <svg {...common}><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></svg>,
+    mail: <svg {...common}><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>,
     settings: <svg {...common}><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.54V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.54 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.54-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.54-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06A2 2 0 1 1 7.06 3.4l.06.06a1.7 1.7 0 0 0 1.87.34H9a1.7 1.7 0 0 0 1-1.54V2a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.54h.01a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V8c0 .68.4 1.3 1.03 1.58.16.07.33.1.51.1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1.32Z" /></svg>,
     sparkles: <svg {...common}><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z" /><path d="M5 3v4" /><path d="M3 5h4" /><path d="M19 17v4" /><path d="M17 19h4" /></svg>,
     shield: <svg {...common}><path d="M12 3 5 6v6c0 5 3.4 8.5 7 9 3.6-.5 7-4 7-9V6l-7-3Z" /><path d="m9.5 12 1.8 1.8L15 10" /></svg>,
