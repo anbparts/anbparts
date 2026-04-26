@@ -40,11 +40,11 @@ async function getValidToken(cfg: any): Promise<string | null> {
   } catch { return null; }
 }
 
-async function driveGet(token: string, path: string) {
+async function driveGet(token: string, path: string): Promise<any> {
   const resp = await fetch(`${GOOGLE_DRIVE_URL}${path}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  return resp.json();
+  return resp.json() as Promise<any>;
 }
 
 // GET /google-drive/config

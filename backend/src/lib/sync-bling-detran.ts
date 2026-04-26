@@ -23,11 +23,11 @@ export async function buildDetranEtiquetaConcatForBaseSku(baseSku: string): Prom
     select: { idPeca: true, detranEtiqueta: true },
   });
   return pecas
-    .sort((a, b) => {
+    .sort((a: any, b: any) => {
       const d = getSkuVariantOrder(a.idPeca) - getSkuVariantOrder(b.idPeca);
       return d !== 0 ? d : String(a.idPeca).localeCompare(String(b.idPeca), 'pt-BR', { numeric: true, sensitivity: 'base' });
     })
-    .map(p => (p.detranEtiqueta || '').trim())
+    .map((p: any) => (p.detranEtiqueta || '').trim())
     .filter(Boolean)
     .join(' / ');
 }
