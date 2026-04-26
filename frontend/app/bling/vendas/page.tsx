@@ -410,20 +410,20 @@ async function baixarSeparacaoPdf(relatorio: SeparacaoRelatorio) {
   doc.save(filename);
 
   // Coleta IDs únicos das peças com foto para baixar separadamente
-  const pecaIdsParaFoto = new Map<number, string>(); // id -> skuSistema
+  const pecaIdsParaFoto: Array<{ pecaId: number; skuKey: string }> = [];
   const skusVistos = new Set<string>();
   for (const pedido of relatorio.pedidos) {
     for (const item of pedido.itens) {
       const skuKey = item.skuBase || item.skuSistema;
       if (item.pecaIdParaFoto && skuKey && !skusVistos.has(skuKey)) {
         skusVistos.add(skuKey);
-        pecaIdsParaFoto.set(item.pecaIdParaFoto, skuKey);
+        pecaIdsParaFoto.push({ pecaId: item.pecaIdParaFoto, skuKey });
       }
     }
   }
 
   // Busca e baixa cada foto individualmente
-  for (const [pecaId, skuKey] of pecaIdsParaFoto) {
+  for (const { pecaId, skuKey } of pecaIdsParaFoto) {
     try {
       await new Promise<void>(resolve => setTimeout(resolve, 100));
       const resp = await fetch(`${API_BASE}/pecas/${pecaId}/foto-capa`, { credentials: 'include' });
