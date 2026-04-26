@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { API_BASE } from '@/lib/api-base';
 import { useAuth } from '@/lib/auth';
 import { formatEtiquetaMotoLabel, printSkuLabels } from '@/lib/estoque-label-print';
+import { compressFotoCapaFile } from '@/lib/image-compression';
 
 const API = API_BASE;
 
@@ -282,18 +283,10 @@ export default function CadastroPage() {
 
     try {
       setUploadingFotoCapa(true);
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          if (typeof reader.result === 'string') resolve(reader.result);
-          else reject(new Error('Arquivo invalido'));
-        };
-        reader.onerror = () => reject(new Error('Nao foi possivel ler a imagem'));
-        reader.readAsDataURL(file);
-      });
+      const image = await compressFotoCapaFile(file);
 
-      setFinalizarFotoCapa(dataUrl);
-      setFinalizarFotoCapaNome(file.name);
+      setFinalizarFotoCapa(image.dataUrl);
+      setFinalizarFotoCapaNome(image.fileName);
     } catch (e: any) {
       alert(e.message || 'Erro ao importar foto capa');
     }

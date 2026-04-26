@@ -5,6 +5,7 @@ import { api } from '@/lib/api';
 import { API_BASE } from '@/lib/api-base';
 import { useAuth } from '@/lib/auth';
 import { formatEtiquetaMotoLabel, printCaixaLabels, printSkuLabels } from '@/lib/estoque-label-print';
+import { compressFotoCapaFile } from '@/lib/image-compression';
 
 function fmt(v: number) {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -978,23 +979,15 @@ function PecaDetalheModal({ open, peca, onClose, onSaved }: any) {
 
     try {
       setUploadingFotoCapa(true);
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          if (typeof reader.result === 'string') resolve(reader.result);
-          else reject(new Error('Arquivo invalido'));
-        };
-        reader.onerror = () => reject(new Error('Nao foi possivel ler a imagem'));
-        reader.readAsDataURL(file);
-      });
+      const image = await compressFotoCapaFile(file);
 
       const updated = await api.pecas.uploadFotoCapa(peca.id, {
-        fotoCapaNome: file.name,
-        fotoCapaArquivo: dataUrl,
+        fotoCapaNome: image.fileName,
+        fotoCapaArquivo: image.dataUrl,
       });
 
-      setFotoCapaNome(updated?.fotoCapaNome || file.name);
-      setFotoCapaArquivo(updated?.fotoCapaArquivo || dataUrl);
+      setFotoCapaNome(updated?.fotoCapaNome || image.fileName);
+      setFotoCapaArquivo(updated?.fotoCapaArquivo || image.dataUrl);
       onSaved?.();
     } catch (e: any) {
       alert(`Erro ao importar foto capa: ${e.message || e}`);

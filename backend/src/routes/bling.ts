@@ -15,6 +15,7 @@ import {
   sendResendEmail,
 } from '../lib/email';
 import { sendDetranBaixaEmailIfNeeded } from '../lib/detran-alert';
+import { downloadImageAsDataUrl } from '../lib/image';
 import { getMercadoLivreItemPermalink } from '../lib/mercado-livre';
 import { getNuvemshopStatusBySkus, NuvemshopAnuncioStatus } from '../lib/nuvemshop';
 
@@ -1484,130 +1485,6 @@ function resolveBlingCoverImageUrl(detail: any) {
 
   const imagemUrl = String(detail?.imagemURL || '').trim();
   return imagemUrl || null;
-}
-
-function inferImageExtensionFromContentType(contentType: string | null | undefined) {
-  const normalized = String(contentType || '').split(';')[0].trim().toLowerCase();
-
-  if (normalized === 'image/jpeg' || normalized === 'image/jpg') return 'jpg';
-  if (normalized === 'image/png') return 'png';
-  if (normalized === 'image/webp') return 'webp';
-  if (normalized === 'image/gif') return 'gif';
-  if (normalized === 'image/bmp') return 'bmp';
-  if (normalized === 'image/svg+xml') return 'svg';
-  if (normalized === 'image/avif') return 'avif';
-
-  return null;
-}
-
-function inferImageExtensionFromUrl(rawUrl: string) {
-  try {
-    const parsed = new URL(rawUrl);
-    const path = parsed.pathname || '';
-    const match = path.match(/\.([a-z0-9]+)$/i);
-    const ext = match ? match[1].toLowerCase() : '';
-
-    if (['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'svg', 'avif'].includes(ext)) {
-      return ext === 'jpeg' ? 'jpg' : ext;
-    }
-  } catch {}
-
-  return null;
-}
-
-function inferImageMimeType(extension: string) {
-  switch (extension) {
-    case 'png':
-      return 'image/png';
-    case 'webp':
-      return 'image/webp';
-    case 'gif':
-      return 'image/gif';
-    case 'bmp':
-      return 'image/bmp';
-    case 'svg':
-      return 'image/svg+xml';
-    case 'avif':
-      return 'image/avif';
-    default:
-      return 'image/jpeg';
-  }
-}
-
-const BLING_FOTO_CAPA_PREFERRED_BYTES = 280 * 1024;
-const BLING_FOTO_CAPA_HARD_MAX_BYTES = 380 * 1024;
-const BLING_FOTO_CAPA_RAW_FALLBACK_BYTES = 180 * 1024;
-
-async function downloadImageAsDataUrl(imageUrl: string) {
-  const response = await fetch(imageUrl);
-  if (!response.ok) {
-    throw new Error(`Falha ao baixar imagem (${response.status})`);
-  }
-
-  const contentType = String(response.headers.get('content-type') || '').trim();
-  const bytes = Buffer.from(await response.arrayBuffer());
-  const fallbackExtension = inferImageExtensionFromContentType(contentType) || inferImageExtensionFromUrl(imageUrl) || 'jpg';
-  const fallbackMimeType = inferImageMimeType(fallbackExtension);
-
-  try {
-    const jimpModule: any = await import('jimp');
-    const Jimp = jimpModule?.Jimp || jimpModule?.default?.Jimp || jimpModule?.default || jimpModule;
-
-    if (Jimp?.read || Jimp?.fromBuffer) {
-      const attempts = [
-        { max: 1600, quality: 82 },
-        { max: 1400, quality: 78 },
-        { max: 1280, quality: 74 },
-        { max: 1100, quality: 70 },
-        { max: 950, quality: 66 },
-      ];
-      let bestOutput: Buffer | null = null;
-
-      for (let index = 0; index < attempts.length; index += 1) {
-        const attempt = attempts[index];
-        const image = Jimp.fromBuffer ? await Jimp.fromBuffer(bytes) : await Jimp.read(bytes);
-        const width = Number(image?.bitmap?.width || 0);
-        const height = Number(image?.bitmap?.height || 0);
-
-        if (width > height && width > attempt.max) {
-          image.resize({ w: attempt.max });
-        } else if (height >= width && height > attempt.max) {
-          image.resize({ h: attempt.max });
-        }
-
-        const output = await image.getBuffer('image/jpeg', { quality: attempt.quality });
-        bestOutput = output;
-
-        if (output.length <= BLING_FOTO_CAPA_PREFERRED_BYTES) {
-          return {
-            extension: 'jpg',
-            mimeType: 'image/jpeg',
-            dataUrl: `data:image/jpeg;base64,${Buffer.from(output).toString('base64')}`,
-          };
-        }
-      }
-
-      if (bestOutput && bestOutput.length <= BLING_FOTO_CAPA_HARD_MAX_BYTES) {
-        return {
-          extension: 'jpg',
-          mimeType: 'image/jpeg',
-          dataUrl: `data:image/jpeg;base64,${Buffer.from(bestOutput).toString('base64')}`,
-        };
-      }
-    }
-
-    throw new Error('Nao foi possivel compactar a foto capa do Bling');
-  } catch (error: any) {
-    if (bytes.length <= BLING_FOTO_CAPA_RAW_FALLBACK_BYTES) {
-      return {
-        extension: fallbackExtension,
-        mimeType: fallbackMimeType,
-        dataUrl: `data:${fallbackMimeType};base64,${bytes.toString('base64')}`,
-      };
-    }
-
-    throw new Error(error?.message || 'Falha ao preparar foto capa do Bling');
-  }
 }
 
 function getRuntimeBatchOptions(options?: { batchSize?: number; pauseMs?: number }) {

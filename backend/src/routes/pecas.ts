@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { sendDetranBaixaEmailIfNeeded } from '../lib/detran-alert';
+import { compressDataUrlImage, normalizeImageFileName } from '../lib/image';
 import { z } from 'zod';
 
 export const pecasRouter = Router();
@@ -664,11 +665,20 @@ pecasRouter.patch('/:id/foto-capa', async (req, res, next) => {
       return res.status(404).json({ error: 'Peca nao encontrada' });
     }
 
+    let fotoCapaNome = payload.fotoCapaNome || null;
+    let fotoCapaArquivo = payload.fotoCapaArquivo || null;
+
+    if (fotoCapaArquivo) {
+      const preparedImage = await compressDataUrlImage(fotoCapaArquivo);
+      fotoCapaArquivo = preparedImage.dataUrl;
+      fotoCapaNome = normalizeImageFileName(fotoCapaNome, preparedImage.extension);
+    }
+
     const peca = await prisma.peca.update({
       where: { id },
       data: {
-        fotoCapaNome: payload.fotoCapaNome || null,
-        fotoCapaArquivo: payload.fotoCapaArquivo || null,
+        fotoCapaNome,
+        fotoCapaArquivo,
       },
     });
 

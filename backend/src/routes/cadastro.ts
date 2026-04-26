@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
+import { compressDataUrlImage, normalizeImageFileName } from '../lib/image';
 import { blingReq } from './bling';
 
 export const cadastroRouter = Router();
@@ -815,8 +816,8 @@ cadastroRouter.post('/:id/finalizar', async (req, res, next) => {
     const taxaPct = req.body.taxaPct != null ? Number(req.body.taxaPct) : taxaPadraoPct;
     const valorTaxas = parseFloat((precoML * taxaPct / 100).toFixed(2));
     const valorLiq = parseFloat((precoML - frete - valorTaxas).toFixed(2));
-    const fotoCapaArquivo = req.body?.fotoCapa ? String(req.body.fotoCapa) : null;
-    const fotoCapaNome = req.body?.fotoCapaNome ? String(req.body.fotoCapaNome).trim() : null;
+    const fotoCapaArquivoRaw = req.body?.fotoCapa ? String(req.body.fotoCapa) : null;
+    const fotoCapaNomeRaw = req.body?.fotoCapaNome ? String(req.body.fotoCapaNome).trim() : null;
 
     // Monta diff entre Bling e ANB
     const diff: Record<string, { bling: any; anb: any }> = {};
@@ -832,6 +833,15 @@ cadastroRouter.post('/:id/finalizar', async (req, res, next) => {
     if (bProf && Number(bProf) !== Number(cadastro.profundidade || 0)) diff.profundidade = { bling: bProf, anb: cadastro.profundidade };
 
     if (req.body.confirmar) {
+      let fotoCapaArquivo: string | null = null;
+      let fotoCapaNome: string | null = null;
+
+      if (fotoCapaArquivoRaw) {
+        const preparedImage = await compressDataUrlImage(fotoCapaArquivoRaw);
+        fotoCapaArquivo = preparedImage.dataUrl;
+        fotoCapaNome = normalizeImageFileName(fotoCapaNomeRaw, preparedImage.extension);
+      }
+
       // Lança peças no estoque com sufixos
       const qtd = Number(b.estoque?.saldoVirtualTotal || cadastro.estoque || 1);
       const ids = gerarIdsPeca(cadastro.idPeca, qtd);
