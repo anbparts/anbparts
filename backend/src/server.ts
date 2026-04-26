@@ -13,6 +13,7 @@ import { configuracoesGeraisRouter } from './routes/configuracoes-gerais';
 import { empresaRouter } from './routes/empresa';
 import { mercadoLivreRouter, startMercadoLivreScheduler } from './routes/mercado-livre';
 import { nuvemshopRouter } from './routes/nuvemshop';
+import { googleDriveRouter } from './routes/google-drive';
 import { cadastroRouter } from './routes/cadastro';
 import { etiquetasRouter } from './routes/etiquetas';
 import { detranRouter } from './routes/detran';
@@ -67,6 +68,8 @@ app.use('/inventario', inventarioRouter);
 app.use('/configuracoes-gerais', configuracoesGeraisRouter);
 app.use('/empresa', empresaRouter);
 app.use('/nuvemshop', nuvemshopRouter);
+app.use('/google-drive', googleDriveRouter);
+app.use('/google', googleDriveRouter); // para o callback OAuth
 app.use('/cadastro', cadastroRouter);
 app.use('/etiquetas', etiquetasRouter);
 app.use('/detran', detranRouter);

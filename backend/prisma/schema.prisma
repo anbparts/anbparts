@@ -109,9 +109,6 @@ model CadastroPeca {
   updatedAt        DateTime @updatedAt
 
   moto             Moto     @relation(fields: [motoId], references: [id])
-
-  @@index([status, createdAt])
-  @@index([motoId, status, createdAt])
 }
 
 model Despesa {
@@ -250,6 +247,13 @@ model ConfiguracaoGeral {
   nuvemshopClientSecret     String   @default("")
   nuvemshopAccessToken      String   @default("")
   nuvemshopStoreId          String   @default("")
+  googleDriveClientId       String   @default("")
+  googleDriveClientSecret   String   @default("")
+  googleDriveAccessToken    String   @default("")
+  googleDriveRefreshToken   String   @default("")
+  googleDriveTokenExpiry    DateTime?
+  googleDriveRootFolderId   String   @default("") // ID da pasta raiz das motos
+  googleDriveMotoDirs       Json     @default("{}") // { motoId: "folderId da pasta da moto" }
   createdAt                 DateTime @default(now())
   updatedAt                 DateTime @updatedAt
 }

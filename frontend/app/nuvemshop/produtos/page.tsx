@@ -129,6 +129,7 @@ export default function NuvemshopProdutosPage() {
   const [modalFoto, setModalFoto] = useState<Produto | null>(null);
   const [fotosQueue, setFotosQueue] = useState<FotoQueueItem[]>([]);
   const [enviandoFotos, setEnviandoFotos] = useState(false);
+  const [importandoDrive, setImportandoDrive] = useState(false);
 
   useEffect(() => {
     api.motos.list().then(setMotos).catch(() => {});
@@ -523,30 +524,69 @@ export default function NuvemshopProdutosPage() {
                 style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', fontSize: 16 }}>×</button>
             </div>
 
-            {/* Drop zone */}
-            <div style={{ padding: '16px 22px', flexShrink: 0 }}>
-              <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '2px dashed var(--border)', borderRadius: 10, padding: 24, cursor: 'pointer', background: '#fafafa', gap: 8 }}>
-                <div style={{ fontSize: 32 }}>📁</div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-700)' }}>Clique para selecionar fotos</div>
-                <div style={{ fontSize: 11, color: 'var(--gray-400)' }}>JPG, PNG, WEBP · Várias de uma vez</div>
-                <input type="file" multiple accept="image/*" style={{ display: 'none' }}
-                  onChange={async (e) => {
-                    const files = Array.from(e.target.files || []);
-                    const novas = await Promise.all(files.map(file => new Promise<any>(resolve => {
-                      const reader = new FileReader();
-                      reader.onload = (ev) => resolve({
-                        file,
-                        preview: ev.target?.result as string,
-                        base64: (ev.target?.result as string).split(',')[1],
-                        status: 'aguardando',
+            {/* Drop zone + Drive button */}
+            <div style={{ padding: '16px 22px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <label style={{ flex: 1, display: 'flex', flexDirection: 'column' as const, alignItems: 'center', justifyContent: 'center', border: '2px dashed var(--border)', borderRadius: 10, padding: 16, cursor: 'pointer', background: '#fafafa', gap: 4 }}>
+                  <div style={{ fontSize: 24 }}>📁</div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-700)' }}>Selecionar do computador</div>
+                  <input type="file" multiple accept="image/*" style={{ display: 'none' }}
+                    onChange={async (e) => {
+                      const files = Array.from(e.target.files || []);
+                      const novas = await Promise.all(files.map(file => new Promise<any>(resolve => {
+                        const reader = new FileReader();
+                        reader.onload = (ev) => resolve({ file, preview: ev.target?.result as string, base64: (ev.target?.result as string).split(',')[1], status: 'aguardando' });
+                        reader.readAsDataURL(file);
+                      })));
+                      setFotosQueue(prev => [...prev, ...novas]);
+                      e.target.value = '';
+                    }}
+                  />
+                </label>
+                <button
+                  onClick={async () => {
+                    if (!modalFotoAtual?.produtoId) return;
+                    // Busca motoId da peça
+                    const motoId = modalFotoAtual.moto ? null : null; // será resolvido pelo backend via SKU
+                    const skuParts = modalFotoAtual.sku.split('_');
+                    const motoPrefix = skuParts[0]; // ex: YM01
+                    // Busca nas peças para achar motoId
+                    try {
+                      setImportandoDrive(true);
+                      const pecaResp = await fetch(`${API}/pecas?search=${encodeURIComponent(modalFotoAtual.sku)}&per=1`, { credentials: 'include' });
+                      const pecaData = await pecaResp.json();
+                      const motoIdResolved = pecaData.data?.[0]?.motoId;
+                      const resp = await fetch(`${API}/google-drive/buscar-fotos-sku`, {
+                        method: 'POST', credentials: 'include',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ motoId: motoIdResolved, sku: modalFotoAtual.sku }),
                       });
-                      reader.readAsDataURL(file);
-                    })));
-                    setFotosQueue(prev => [...prev, ...novas]);
-                    e.target.value = '';
+                      const data = await resp.json();
+                      if (!data.ok) { alert(data.error || 'Erro ao buscar no Drive'); setImportandoDrive(false); return; }
+                      if (!data.fotos?.length) { alert(`Nenhuma foto encontrada na pasta do SKU ${modalFotoAtual.sku}`); setImportandoDrive(false); return; }
+                      // Baixa cada foto e adiciona à fila
+                      for (const foto of data.fotos) {
+                        const dlResp = await fetch(`${API}/google-drive/download-foto`, {
+                          method: 'POST', credentials: 'include',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ fileId: foto.id, mimeType: foto.mimeType }),
+                        });
+                        const dlData = await dlResp.json();
+                        if (dlData.ok) {
+                          setFotosQueue(prev => [...prev, { file: { name: foto.nome } as File, preview: dlData.dataUrl, base64: dlData.base64, status: 'aguardando' }]);
+                        }
+                      }
+                    } catch (e: any) { alert(`Erro: ${e.message}`); }
+                    setImportandoDrive(false);
                   }}
-                />
-              </label>
+                  disabled={importandoDrive}
+                  style={{ display: 'flex', flexDirection: 'column' as const, alignItems: 'center', justifyContent: 'center', border: '2px dashed #c4b5fd', borderRadius: 10, padding: 16, cursor: 'pointer', background: '#faf5ff', gap: 4, minWidth: 160 }}
+                >
+                  <div style={{ fontSize: 24 }}>{importandoDrive ? '⏳' : '📂'}</div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: '#7c3aed' }}>{importandoDrive ? 'Buscando...' : 'Importar do Drive'}</div>
+                  <div style={{ fontSize: 10, color: '#a78bfa' }}>Busca pasta do SKU</div>
+                </button>
+              </div>
             </div>
 
             {/* Preview grid */}
@@ -598,7 +638,6 @@ export default function NuvemshopProdutosPage() {
                     const pendentes = fotosQueue.filter(f => f.status === 'aguardando');
                     if (!pendentes.length) return;
                     setEnviandoFotos(true);
-                    let houveErroNoEnvio = false;
 
                     const pendentesComIndice = fotosQueue
                       .map((foto, idx) => ({ foto, idx }))
@@ -643,10 +682,6 @@ export default function NuvemshopProdutosPage() {
                           };
                         }));
 
-                        if ((data.resultados || []).some((r: any) => !r.ok)) {
-                          houveErroNoEnvio = true;
-                        }
-
                         const enviadasComSucesso = (data.resultados || []).filter((r: any) => r.ok).length;
                         if (enviadasComSucesso) {
                           setProdutos(prev => prev.map(p => (
@@ -662,13 +697,8 @@ export default function NuvemshopProdutosPage() {
                           ? { ...f, status: 'erro', erro: e.message }
                           : f
                       )));
-                      houveErroNoEnvio = true;
                     } finally {
                       setEnviandoFotos(false);
-                      if (!houveErroNoEnvio) {
-                        setModalFoto(null);
-                        setFotosQueue([]);
-                      }
                     }
                   }}
                   style={{ ...s.btn, background: '#7c3aed', color: '#fff', opacity: (enviandoFotos || fotosQueue.filter(f => f.status === 'aguardando').length === 0) ? 0.6 : 1 }}>
