@@ -1,5 +1,5 @@
-const FOTO_CAPA_PREFERRED_BYTES = 280 * 1024;
-const FOTO_CAPA_HARD_MAX_BYTES = 380 * 1024;
+const FOTO_CAPA_PREFERRED_BYTES = 150 * 1024;
+const FOTO_CAPA_HARD_MAX_BYTES = 220 * 1024;
 
 function readFileAsDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
@@ -68,11 +68,12 @@ export async function compressFotoCapaFile(file: File) {
   try {
     const image = await loadImage(originalDataUrl);
     const attempts = [
-      { max: 1600, quality: 0.82 },
       { max: 1400, quality: 0.78 },
-      { max: 1280, quality: 0.74 },
-      { max: 1100, quality: 0.7 },
-      { max: 950, quality: 0.66 },
+      { max: 1200, quality: 0.72 },
+      { max: 1000, quality: 0.66 },
+      { max: 850,  quality: 0.60 },
+      { max: 700,  quality: 0.54 },
+      { max: 600,  quality: 0.48 },
     ];
     let bestBlob: Blob | null = null;
 

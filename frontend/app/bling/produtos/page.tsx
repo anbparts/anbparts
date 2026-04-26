@@ -971,6 +971,17 @@ export default function BlingProdutosPage() {
               >
                 🔄 Atualizar Bling
               </button>
+              <button
+                onClick={async () => {
+                  if (!confirm('Recomprimir todas as fotos capa acima de 150KB no banco? Pode demorar alguns minutos.')) return;
+                  const resp = await fetch(`${API}/pecas/recomprimir-fotos-capa`, { method: 'POST', credentials: 'include' });
+                  const data = await resp.json();
+                  alert(data.mensagem || JSON.stringify(data));
+                }}
+                style={{ ...s.btn, background: '#6d28d9', color: '#fff' }}
+              >
+                🗜️ Recomprimir Fotos Banco
+              </button>
             </div>
           )}
           <div style={{ background: '#f8fafc', border: '1px solid #dbe3ef', borderRadius: 10, padding: '14px 16px', marginBottom: 14 }}>

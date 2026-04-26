@@ -7,9 +7,9 @@ export type PreparedImageDataUrl = {
   compressed: boolean;
 };
 
-const FOTO_CAPA_PREFERRED_BYTES = 280 * 1024;
-const FOTO_CAPA_HARD_MAX_BYTES = 380 * 1024;
-const FOTO_CAPA_RAW_FALLBACK_BYTES = 180 * 1024;
+const FOTO_CAPA_PREFERRED_BYTES = 150 * 1024;
+const FOTO_CAPA_HARD_MAX_BYTES = 220 * 1024;
+const FOTO_CAPA_RAW_FALLBACK_BYTES = 120 * 1024;
 
 function inferImageExtensionFromContentType(contentType: string | null | undefined) {
   const normalized = String(contentType || '').split(';')[0].trim().toLowerCase();
@@ -87,11 +87,12 @@ async function compressImageBuffer(bytes: Buffer) {
   }
 
   const attempts = [
-    { max: 1600, quality: 82 },
     { max: 1400, quality: 78 },
-    { max: 1280, quality: 74 },
-    { max: 1100, quality: 70 },
-    { max: 950, quality: 66 },
+    { max: 1200, quality: 72 },
+    { max: 1000, quality: 66 },
+    { max: 850,  quality: 60 },
+    { max: 700,  quality: 54 },
+    { max: 600,  quality: 48 },
   ];
   let bestOutput: Buffer | null = null;
 

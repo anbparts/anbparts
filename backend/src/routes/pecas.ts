@@ -941,3 +941,65 @@ pecasRouter.post('/bulk-detran-cartela', async (req, res, next) => {
     res.json({ ok: true, resultados, total: resultados.length, erros: resultados.filter(r => !r.ok).length });
   } catch (e) { next(e); }
 });
+
+// POST /pecas/recomprimir-fotos-capa
+// Recomprime todas as fotoCapaArquivo existentes no banco com as novas configurações
+// Só processa as acima de 150KB (meta atual)
+pecasRouter.post('/recomprimir-fotos-capa', async (req, res, next) => {
+  try {
+    const ALVO_BYTES = 150 * 1024;
+
+    // Busca todas as peças com foto capa
+    const pecas = await prisma.peca.findMany({
+      where: {
+        fotoCapaArquivo: { not: null },
+        NOT: { fotoCapaArquivo: '' },
+      },
+      select: { id: true, fotoCapaNome: true, fotoCapaArquivo: true },
+    });
+
+    // Filtra apenas as que estão acima do alvo
+    const candidatas = pecas.filter(p => {
+      const base64 = String(p.fotoCapaArquivo || '').split(',')[1] || '';
+      const bytes = Math.round(base64.length * 0.75);
+      return bytes > ALVO_BYTES;
+    });
+
+    let atualizadas = 0;
+    let erros = 0;
+    let ignoradas = 0;
+
+    for (const peca of candidatas) {
+      try {
+        const prepared = await compressDataUrlImage(String(peca.fotoCapaArquivo));
+        const base64After = prepared.dataUrl.split(',')[1] || '';
+        const bytesAfter = Math.round(base64After.length * 0.75);
+
+        // Só salva se houve redução
+        if (bytesAfter < Math.round((String(peca.fotoCapaArquivo || '').split(',')[1] || '').length * 0.75)) {
+          await prisma.peca.update({
+            where: { id: peca.id },
+            data: {
+              fotoCapaArquivo: prepared.dataUrl,
+              fotoCapaNome: normalizeImageFileName(peca.fotoCapaNome, prepared.extension),
+            },
+          });
+          atualizadas++;
+        } else {
+          ignoradas++;
+        }
+      } catch {
+        erros++;
+      }
+    }
+
+    res.json({
+      ok: true,
+      total: candidatas.length,
+      atualizadas,
+      ignoradas,
+      erros,
+      mensagem: `${atualizadas} foto(s) recomprimida(s) de ${candidatas.length} candidatas`,
+    });
+  } catch (e) { next(e); }
+});
