@@ -5748,8 +5748,7 @@ async function buildRelatorioSeparacaoFromPedidoIds(
         localizacaoConfere,
         detranRelatorio,
         etiquetasDetranDisponiveis,
-        fotoCapaArquivo: pecasSelecionadas[0]?.fotoCapaArquivo || pecaReferencia?.fotoCapaArquivo || null,
-        fotoCapaNome: pecasSelecionadas[0]?.fotoCapaNome || pecaReferencia?.fotoCapaNome || null,
+        pecaIdParaFoto: pecasSelecionadas[0]?.id || pecaReferencia?.id || null,
       });
 
       totaisGerais.totalItens += item.quantidade;

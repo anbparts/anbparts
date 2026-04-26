@@ -73,6 +73,7 @@ type SeparacaoItem = {
   localizacaoConfere: boolean;
   detranRelatorio: string;
   etiquetasDetranDisponiveis: string[];
+  pecaIdParaFoto?: number | null;
   fotoCapaArquivo?: string | null;
   fotoCapaNome?: string | null;
 };
@@ -408,31 +409,34 @@ async function baixarSeparacaoPdf(relatorio: SeparacaoRelatorio) {
 
   doc.save(filename);
 
-  // Download automático das fotos capa dos itens do relatório
-  const fotosParaBaixar: { dataUrl: string; nome: string }[] = [];
-  const skusComFoto = new Set<string>();
+  // Coleta IDs únicos das peças com foto para baixar separadamente
+  const pecaIdsParaFoto = new Map<number, string>(); // id -> skuSistema
+  const skusVistos = new Set<string>();
   for (const pedido of relatorio.pedidos) {
     for (const item of pedido.itens) {
       const skuKey = item.skuBase || item.skuSistema;
-      if (item.fotoCapaArquivo && skuKey && !skusComFoto.has(skuKey)) {
-        skusComFoto.add(skuKey);
-        fotosParaBaixar.push({
-          dataUrl: item.fotoCapaArquivo,
-          nome: item.fotoCapaNome || `${skuKey}_Capa.jpg`,
-        });
+      if (item.pecaIdParaFoto && skuKey && !skusVistos.has(skuKey)) {
+        skusVistos.add(skuKey);
+        pecaIdsParaFoto.set(item.pecaIdParaFoto, skuKey);
       }
     }
   }
 
-  // Baixa cada foto com pequena pausa para não bloquear o browser
-  for (const foto of fotosParaBaixar) {
-    await new Promise<void>(resolve => setTimeout(resolve, 150));
-    const link = document.createElement('a');
-    link.href = foto.dataUrl;
-    link.download = foto.nome;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  // Busca e baixa cada foto individualmente
+  for (const [pecaId, skuKey] of pecaIdsParaFoto) {
+    try {
+      await new Promise<void>(resolve => setTimeout(resolve, 100));
+      const resp = await fetch(`${API_BASE}/pecas/${pecaId}/foto-capa`, { credentials: 'include' });
+      if (!resp.ok) continue;
+      const data = await resp.json();
+      if (!data.fotoCapaArquivo) continue;
+      const link = document.createElement('a');
+      link.href = data.fotoCapaArquivo;
+      link.download = data.fotoCapaNome || `${skuKey}_Capa.jpg`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch {}
   }
 }
 

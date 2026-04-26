@@ -1003,3 +1003,17 @@ pecasRouter.post('/recomprimir-fotos-capa', async (req, res, next) => {
     });
   } catch (e) { next(e); }
 });
+
+// GET /pecas/:id/foto-capa — retorna apenas a foto capa de uma peça
+pecasRouter.get('/:id/foto-capa', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'ID invalido' });
+    const peca = await prisma.peca.findUnique({
+      where: { id },
+      select: { id: true, idPeca: true, fotoCapaArquivo: true, fotoCapaNome: true },
+    });
+    if (!peca) return res.status(404).json({ error: 'Peca nao encontrada' });
+    res.json({ id: peca.id, idPeca: peca.idPeca, fotoCapaArquivo: peca.fotoCapaArquivo || null, fotoCapaNome: peca.fotoCapaNome || null });
+  } catch (e) { next(e); }
+});
