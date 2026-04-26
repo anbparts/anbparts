@@ -2911,7 +2911,7 @@ export default function EstoquePage() {
                           />
                           <div style={{ minWidth: 0 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                              <button onClick={() => setDetalhePeca(p)} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'Geist Mono, monospace', fontSize: 12.5, fontWeight: 600, color: 'var(--blue-500)' }} title="Ver detalhes">{p.idPeca}</button>
+                              <button onClick={(e) => { if (e.ctrlKey || e.metaKey) { navigator.clipboard.writeText(p.idPeca); return; } setDetalhePeca(p); }} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'Geist Mono, monospace', fontSize: 12.5, fontWeight: 600, color: 'var(--blue-500)' }} title="Ver detalhes · Ctrl+Clique para copiar ID">{p.idPeca}</button>
                               <span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11, color: 'var(--ink-muted)' }}>ID #{p.motoId}</span>
                               {bloqueadaPrejuizo ? <PrejuizoBadge /> : null}
                             </div>
@@ -3060,7 +3060,7 @@ export default function EstoquePage() {
                           </td>
                           {colsVisiveis.includes('motoId') && <td style={{ ...cs.td, padding: denseTablePadding }}><span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11.5, color: 'var(--ink-muted)' }}>#{p.motoId}</span></td>}
                           {colsVisiveis.includes('idPeca') && <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11.5, whiteSpace: 'nowrap' }}>
-                            <button onClick={() => setDetalhePeca(p)} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'Geist Mono, monospace', fontSize: 11.5, fontWeight: 600, color: isPrejuizoPeca(p) ? '#b91c1c' : 'var(--blue-500)' }} title="Ver detalhes da peça">
+                            <button onClick={(e) => { if (e.ctrlKey || e.metaKey) { navigator.clipboard.writeText(p.idPeca); return; } setDetalhePeca(p); }} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'Geist Mono, monospace', fontSize: 11.5, fontWeight: 600, color: isPrejuizoPeca(p) ? '#b91c1c' : 'var(--blue-500)' }} title="Ver detalhes da peça · Ctrl+Clique para copiar ID">
                               {p.idPeca}
                             </button>
                           </td>}
