@@ -201,8 +201,8 @@ function PrejuizoReasonModal({ open, peca, saving, onClose, onConfirm }: any) {
   if (!open || !peca) return null;
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 240, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }}>
-      <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 16, width: '100%', maxWidth: 420, boxShadow: '0 12px 32px rgba(0,0,0,.10)' }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 240, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 16, width: '100%', maxWidth: 420, boxShadow: '0 12px 32px rgba(0,0,0,.10)' }}>
         <div style={{ padding: '20px 22px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <div style={{ fontFamily: 'Fraunces, serif', fontSize: 18, fontWeight: 600 }}>Marcar prejuízo</div>
@@ -412,8 +412,8 @@ function CopySkuModal({
   }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 242, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }}>
-      <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 16, width: '100%', maxWidth: 860, maxHeight: '92vh', overflowY: 'auto', boxShadow: '0 12px 32px rgba(0,0,0,.10)' }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 242, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 16, width: '100%', maxWidth: 860, maxHeight: '92vh', overflowY: 'auto', boxShadow: '0 12px 32px rgba(0,0,0,.10)' }}>
         <div style={{ padding: '20px 22px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
           <div>
             <div style={{ fontFamily: 'Fraunces, serif', fontSize: 18, fontWeight: 600 }}>Copiar SKU</div>
@@ -829,8 +829,8 @@ function DetranEtiquetaModal({ open, peca, onClose }: any) {
   if (!open || !peca) return null;
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 235, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }}>
-      <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 16, width: '100%', maxWidth: 380, boxShadow: '0 12px 32px rgba(0,0,0,.10)' }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 235, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 16, width: '100%', maxWidth: 380, boxShadow: '0 12px 32px rgba(0,0,0,.10)' }}>
         <div style={{ padding: '20px 22px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <div style={{ fontFamily: 'Fraunces, serif', fontSize: 18, fontWeight: 600 }}>Etiqueta DETRAN</div>
@@ -1009,8 +1009,8 @@ function PecaDetalheModal({ open, peca, onClose, onSaved }: any) {
   const inp: any = { width: '100%', background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px', fontSize: 13, outline: 'none', boxSizing: 'border-box' as const };
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 235, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }}>
-      <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 16, width: '100%', maxWidth: 520, boxShadow: '0 12px 32px rgba(0,0,0,.10)' }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 235, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 16, width: '100%', maxWidth: 520, boxShadow: '0 12px 32px rgba(0,0,0,.10)' }}>
         <div style={{ padding: '20px 22px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <div style={{ fontFamily: 'Fraunces, serif', fontSize: 18, fontWeight: 600 }}>Detalhes da Peça</div>
@@ -1144,7 +1144,7 @@ function PecaDetalheModal({ open, peca, onClose, onSaved }: any) {
       </div>
 
       {fotoPreviewOpen && fotoCapaArquivo ? (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.55)', zIndex: 236, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.55)', zIndex: 236, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }} onClick={() => setFotoPreviewOpen(false)}>
           <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 16, width: '100%', maxWidth: 960, maxHeight: '90vh', overflow: 'hidden', boxShadow: '0 12px 32px rgba(0,0,0,.16)' }}>
             <div style={{ padding: '16px 18px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
               <div style={{ minWidth: 0 }}>
@@ -1172,8 +1172,8 @@ function PecaActionsModal({ open, peca, onClose, onEdit, onSell, onDelete }: any
   const bloqueadaPrejuizo = isPrejuizoPeca(peca);
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 230, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }}>
-      <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 16, width: '100%', maxWidth: 360, boxShadow: '0 12px 32px rgba(0,0,0,.10)' }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 230, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 16, width: '100%', maxWidth: 360, boxShadow: '0 12px 32px rgba(0,0,0,.10)' }}>
         <div style={{ padding: '20px 22px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <div style={{ fontFamily: 'Fraunces, serif', fontSize: 18, fontWeight: 600 }}>Acoes da peca</div>
@@ -1412,7 +1412,7 @@ function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, peca, 
   const modalFinancialColumns = modalIsPhone ? '1fr' : '1fr 1fr';
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 200, display: 'flex', alignItems: modalIsPhone ? 'stretch' : 'center', justifyContent: 'center', padding: modalShellPadding, backdropFilter: 'blur(2px)' }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 200, display: 'flex', alignItems: modalIsPhone ? 'stretch' : 'center', justifyContent: 'center', padding: modalShellPadding, backdropFilter: 'blur(2px)' }} onClick={onClose}>
       <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: modalIsPhone ? 0 : 16, width: '100%', maxWidth: modalIsTabletLandscape ? 1040 : 540, maxHeight: modalIsPhone ? '100dvh' : modalIsTabletLandscape ? 'calc(100dvh - 32px)' : '92vh', minHeight: modalIsPhone ? '100dvh' : undefined, overflowY: 'auto', boxShadow: '0 12px 32px rgba(0,0,0,.10)' }}>
         <div style={{ padding: modalHeaderPadding, borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
           <div>
@@ -1729,8 +1729,8 @@ function VendaModal({ open, peca, onClose, onConfirm }: any) {
   }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }}>
-      <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 16, width: '100%', maxWidth: 520, boxShadow: '0 12px 32px rgba(0,0,0,.10)' }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 16, width: '100%', maxWidth: 520, boxShadow: '0 12px 32px rgba(0,0,0,.10)' }}>
         <div style={{ padding: '22px 24px 16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between' }}>
           <div>
             <div style={{ fontFamily: 'Fraunces, serif', fontSize: 18, fontWeight: 600 }}>Registrar venda</div>
