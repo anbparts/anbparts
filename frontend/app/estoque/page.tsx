@@ -981,12 +981,15 @@ function PecaDetalheModal({ open, peca, onClose, onSaved }: any) {
       setUploadingFotoCapa(true);
       const image = await compressFotoCapaFile(file);
 
+      // Nomeia o arquivo no padrão SKU_Capa.jpg
+      const skuNome = `${String(peca.idPeca || 'foto').toUpperCase()}_Capa.jpg`;
+
       const updated = await api.pecas.uploadFotoCapa(peca.id, {
-        fotoCapaNome: image.fileName,
+        fotoCapaNome: skuNome,
         fotoCapaArquivo: image.dataUrl,
       });
 
-      setFotoCapaNome(updated?.fotoCapaNome || image.fileName);
+      setFotoCapaNome(updated?.fotoCapaNome || skuNome);
       setFotoCapaArquivo(updated?.fotoCapaArquivo || image.dataUrl);
       onSaved?.();
     } catch (e: any) {
