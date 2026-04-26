@@ -2411,6 +2411,8 @@ async function listPecasForComparacaoByCodes(codigos: string[]) {
       altura: true,
       profundidade: true,
       numeroPeca: true,
+      fotoCapaArquivo: true,
+      fotoCapaNome: true,
       prejuizo: { select: { motivo: true } },
       moto: { select: { marca: true, modelo: true } },
     },
@@ -5746,6 +5748,8 @@ async function buildRelatorioSeparacaoFromPedidoIds(
         localizacaoConfere,
         detranRelatorio,
         etiquetasDetranDisponiveis,
+        fotoCapaArquivo: pecasSelecionadas[0]?.fotoCapaArquivo || pecaReferencia?.fotoCapaArquivo || null,
+        fotoCapaNome: pecasSelecionadas[0]?.fotoCapaNome || pecaReferencia?.fotoCapaNome || null,
       });
 
       totaisGerais.totalItens += item.quantidade;

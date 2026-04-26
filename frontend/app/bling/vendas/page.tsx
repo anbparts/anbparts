@@ -73,6 +73,8 @@ type SeparacaoItem = {
   localizacaoConfere: boolean;
   detranRelatorio: string;
   etiquetasDetranDisponiveis: string[];
+  fotoCapaArquivo?: string | null;
+  fotoCapaNome?: string | null;
 };
 
 type SeparacaoPedido = {
@@ -405,6 +407,33 @@ async function baixarSeparacaoPdf(relatorio: SeparacaoRelatorio) {
   });
 
   doc.save(filename);
+
+  // Download automático das fotos capa dos itens do relatório
+  const fotosParaBaixar: { dataUrl: string; nome: string }[] = [];
+  const skusComFoto = new Set<string>();
+  for (const pedido of relatorio.pedidos) {
+    for (const item of pedido.itens) {
+      const skuKey = item.skuBase || item.skuSistema;
+      if (item.fotoCapaArquivo && skuKey && !skusComFoto.has(skuKey)) {
+        skusComFoto.add(skuKey);
+        fotosParaBaixar.push({
+          dataUrl: item.fotoCapaArquivo,
+          nome: item.fotoCapaNome || `${skuKey}_Capa.jpg`,
+        });
+      }
+    }
+  }
+
+  // Baixa cada foto com pequena pausa para não bloquear o browser
+  for (const foto of fotosParaBaixar) {
+    await new Promise<void>(resolve => setTimeout(resolve, 150));
+    const link = document.createElement('a');
+    link.href = foto.dataUrl;
+    link.download = foto.nome;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
 }
 
 export default function VendasBlingPage() {
