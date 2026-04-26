@@ -55,6 +55,10 @@ app.use(express.json({ limit: '25mb' }));
 
 app.get('/health', (_, res) => res.json({ ok: true, ts: new Date() }));
 app.use('/auth', authRouter);
+
+// Google OAuth callback precisa ser público (sem auth) — Google redireciona sem sessão ANB
+app.get('/google/callback', googleDriveRouter);
+
 app.use(authMiddleware);
 
 app.use('/motos', motosRouter);
@@ -69,7 +73,6 @@ app.use('/configuracoes-gerais', configuracoesGeraisRouter);
 app.use('/empresa', empresaRouter);
 app.use('/nuvemshop', nuvemshopRouter);
 app.use('/google-drive', googleDriveRouter);
-app.use('/google', googleDriveRouter); // para o callback OAuth
 app.use('/cadastro', cadastroRouter);
 app.use('/etiquetas', etiquetasRouter);
 app.use('/detran', detranRouter);
