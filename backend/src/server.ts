@@ -56,8 +56,8 @@ app.use(express.json({ limit: '25mb' }));
 app.get('/health', (_, res) => res.json({ ok: true, ts: new Date() }));
 app.use('/auth', authRouter);
 
-// Google OAuth callback precisa ser público (sem auth) — Google redireciona sem sessão ANB
-app.get('/google/callback', googleDriveRouter);
+// Google OAuth callback — público (sem auth), Google redireciona sem sessão ANB
+app.use('/google', googleDriveRouter);
 
 app.use(authMiddleware);
 

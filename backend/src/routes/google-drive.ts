@@ -7,9 +7,20 @@ const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const GOOGLE_DRIVE_URL = 'https://www.googleapis.com/drive/v3';
 
 async function getConfig() {
+  // Credenciais OAuth ficam na DetranConfig (gmailClientId, gmailClientSecret, gmailRefreshToken)
+  // Configurações do Drive (rootFolderId, motoDirs, accessToken) ficam na ConfiguracaoGeral
   let cfg = await prisma.configuracaoGeral.findFirst();
   if (!cfg) cfg = await prisma.configuracaoGeral.create({ data: {} });
-  return cfg;
+
+  const detranCfg = await prisma.detranConfig.findFirst();
+
+  return {
+    ...cfg,
+    // Sobrepõe com as credenciais OAuth do DetranConfig
+    googleDriveClientId: detranCfg?.gmailClientId || cfg.googleDriveClientId || '',
+    googleDriveClientSecret: detranCfg?.gmailClientSecret || cfg.googleDriveClientSecret || '',
+    googleDriveRefreshToken: detranCfg?.gmailRefreshToken || cfg.googleDriveRefreshToken || '',
+  };
 }
 
 async function getValidToken(cfg: any): Promise<string | null> {
