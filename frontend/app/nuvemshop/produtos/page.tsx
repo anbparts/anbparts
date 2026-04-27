@@ -627,7 +627,7 @@ export default function NuvemshopProdutosPage() {
                       ));
                     }
                     setImportandoDrive(false);
-                    if (enviadas === total) setTimeout(() => { setModalFoto(null); setFotosQueue([]); setDriveStatus([]); }, 1200);
+                    if (enviadas > 0 || fotosParaEnviar.length === 0) setTimeout(() => { setModalFoto(null); setFotosQueue([]); setDriveStatus([]); }, 1200);
                   }}
                   disabled={importandoDrive || driveContador === null || driveContador === 0}
                   style={{ display: 'flex', flexDirection: 'column' as const, alignItems: 'center', justifyContent: 'center', border: '2px dashed #c4b5fd', borderRadius: 10, padding: 16, cursor: driveContador ? 'pointer' : 'default', background: '#faf5ff', gap: 4, minWidth: 160, opacity: driveContador === 0 ? 0.5 : 1 }}
