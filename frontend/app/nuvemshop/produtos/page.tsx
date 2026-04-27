@@ -396,7 +396,7 @@ export default function NuvemshopProdutosPage() {
             )}
 
             {/* Botão Atualizar Imagens Drive — só aparece quando ≤10 SKUs e há selecionados com fotos no Drive */}
-            {modoComDrive && selecionados.size > 0 && Array.from(selecionados).some(sku => (driveContagens[sku] || 0) > 0) && (
+            {modoComDrive && (driveLoopStatus !== null || (selecionados.size > 0 && Array.from(selecionados).some(sku => (driveContagens[sku] || 0) > 0))) && (
               <div style={{ ...s.card, background: '#faf5ff', border: '1px solid #c4b5fd', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 700, color: '#5b21b6' }}>
@@ -460,11 +460,12 @@ export default function NuvemshopProdutosPage() {
                       } catch {}
                     }
                     setAtualizandoDrive(false);
-                    setDriveLoopStatus(null);
+                    // Mantém status visível por 3 segundos após finalizar
+                    setTimeout(() => { setDriveLoopStatus(null); }, 3000);
                     setSelecionados(new Set());
                   }}
                   style={{ ...s.btn, background: '#7c3aed', color: '#fff', opacity: atualizandoDrive ? 0.6 : 1, whiteSpace: 'nowrap' as const }}>
-                  {atualizandoDrive && driveLoopStatus ? `⏳ Material ${driveLoopStatus.materialAtual}/${driveLoopStatus.totalMateriais} · Foto ${driveLoopStatus.fotoAtual}/${driveLoopStatus.totalFotos}` : atualizandoDrive ? '⏳ Iniciando...' : '📂 Atualizar Imagens Drive'}
+                  {atualizandoDrive && driveLoopStatus ? `⏳ Material ${driveLoopStatus.materialAtual}/${driveLoopStatus.totalMateriais} · Foto ${driveLoopStatus.fotoAtual}/${driveLoopStatus.totalFotos}` : atualizandoDrive ? '⏳ Iniciando...' : driveLoopStatus ? `✓ Concluído — Material ${driveLoopStatus.materialAtual}/${driveLoopStatus.totalMateriais}` : '📂 Atualizar Imagens Drive'}
                 </button>
               </div>
             )}
