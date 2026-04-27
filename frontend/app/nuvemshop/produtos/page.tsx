@@ -132,6 +132,7 @@ export default function NuvemshopProdutosPage() {
   const [importandoDrive, setImportandoDrive] = useState(false);
   const [drivePreview, setDrivePreview] = useState<{ fotos: any[]; pasta: string } | null>(null);
   const [driveContador, setDriveContador] = useState<number | null>(null);
+  const [driveStatus, setDriveStatus] = useState<{ nome: string; status: 'aguardando' | 'enviando' | 'ok' | 'erro' }[]>([]);
 
   // Quando o modal abre, busca automaticamente o total de fotos no Drive
   useEffect(() => {
@@ -577,35 +578,47 @@ export default function NuvemshopProdutosPage() {
                   onClick={async () => {
                     if (!drivePreview?.fotos?.length || !modalFotoAtual?.produtoId) return;
                     setImportandoDrive(true);
-                    try {
-                      // Pipe server-side: Drive → Nuvemshop sem passar pelo browser
-                      const resp = await fetch(`${API}/nuvemshop/upload-imagens-drive`, {
-                        method: 'POST', credentials: 'include',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          produtoId: modalFotoAtual.produtoId,
-                          fileIds: drivePreview.fotos.map(f => ({ id: f.id, nome: f.nome, mimeType: f.mimeType })),
-                        }),
-                      });
-                      const data = await resp.json();
-                      if (!data.ok) { alert(data.error || 'Erro ao enviar fotos'); setImportandoDrive(false); return; }
-                      // Atualiza contador local
-                      if (data.enviadas) {
-                        setProdutos(prev => prev.map(p =>
-                          p.sku === modalFotoAtual.sku ? { ...p, imagens: p.imagens + data.enviadas } : p
-                        ));
+                    const total = drivePreview.fotos.length;
+                    const statusInicial = drivePreview.fotos.map(f => ({ nome: f.nome, status: 'aguardando' as 'aguardando' | 'enviando' | 'ok' | 'erro' }));
+                    setDriveStatus(statusInicial);
+
+                    let enviadas = 0;
+                    // Processa uma por vez para mostrar progresso
+                    for (let i = 0; i < drivePreview.fotos.length; i++) {
+                      const foto = drivePreview.fotos[i];
+                      setDriveStatus(prev => prev.map((s, idx) => idx === i ? { ...s, status: 'enviando' } : s));
+                      try {
+                        const resp = await fetch(`${API}/nuvemshop/upload-imagens-drive`, {
+                          method: 'POST', credentials: 'include',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            produtoId: modalFotoAtual.produtoId,
+                            fileIds: [{ id: foto.id, nome: foto.nome, mimeType: foto.mimeType }],
+                          }),
+                        });
+                        const data = await resp.json();
+                        const ok = data.ok && data.enviadas > 0;
+                        if (ok) enviadas++;
+                        setDriveStatus(prev => prev.map((s, idx) => idx === i ? { ...s, status: ok ? 'ok' : 'erro' } : s));
+                      } catch {
+                        setDriveStatus(prev => prev.map((s, idx) => idx === i ? { ...s, status: 'erro' } : s));
                       }
-                      // Fecha modal
-                      setTimeout(() => { setModalFoto(null); setFotosQueue([]); }, 800);
-                    } catch (e: any) { alert(`Erro: ${e.message}`); }
+                    }
+
+                    if (enviadas > 0) {
+                      setProdutos(prev => prev.map(p =>
+                        p.sku === modalFotoAtual.sku ? { ...p, imagens: p.imagens + enviadas } : p
+                      ));
+                    }
                     setImportandoDrive(false);
+                    if (enviadas === total) setTimeout(() => { setModalFoto(null); setFotosQueue([]); setDriveStatus([]); }, 1200);
                   }}
                   disabled={importandoDrive || driveContador === null || driveContador === 0}
                   style={{ display: 'flex', flexDirection: 'column' as const, alignItems: 'center', justifyContent: 'center', border: '2px dashed #c4b5fd', borderRadius: 10, padding: 16, cursor: driveContador ? 'pointer' : 'default', background: '#faf5ff', gap: 4, minWidth: 160, opacity: driveContador === 0 ? 0.5 : 1 }}
                 >
                   <div style={{ fontSize: 24 }}>{importandoDrive ? '⏳' : driveContador === null ? '⏳' : '📂'}</div>
                   <div style={{ fontSize: 12, fontWeight: 600, color: '#7c3aed' }}>
-                    {importandoDrive ? 'Enviando...' : driveContador === null ? 'Buscando no Drive...' : driveContador === 0 ? 'Sem fotos no Drive' : `Importar do Drive`}
+                    {importandoDrive ? `Enviando ${driveStatus.filter(s => s.status === 'ok').length}/${driveStatus.length}...` : driveContador === null ? 'Buscando no Drive...' : driveContador === 0 ? 'Sem fotos no Drive' : 'Importar do Drive'}
                   </div>
                   <div style={{ fontSize: 11, color: '#7c3aed', fontWeight: 700 }}>
                     {driveContador !== null && driveContador > 0 ? `${driveContador} foto(s) encontrada(s)` : ''}
@@ -614,6 +627,33 @@ export default function NuvemshopProdutosPage() {
               </div>
 
             </div>
+
+            {/* Painel de status Drive */}
+            {driveStatus.length > 0 && (
+              <div style={{ margin: '0 22px 14px', border: '1px solid #c4b5fd', borderRadius: 10, overflow: 'hidden' }}>
+                <div style={{ padding: '8px 12px', background: '#f5f3ff', borderBottom: '1px solid #c4b5fd', fontSize: 12, fontWeight: 700, color: '#5b21b6' }}>
+                  📂 Enviando do Drive → Nuvemshop
+                  <span style={{ marginLeft: 10, fontWeight: 400, color: '#7c3aed' }}>
+                    {driveStatus.filter(s => s.status === 'ok').length}/{driveStatus.length} concluídas
+                  </span>
+                </div>
+                <div style={{ maxHeight: 180, overflowY: 'auto' }}>
+                  {driveStatus.map((item, idx) => (
+                    <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 12px', borderBottom: idx < driveStatus.length - 1 ? '1px solid #ede9fe' : 'none', background: item.status === 'enviando' ? '#faf5ff' : 'var(--white)' }}>
+                      <span style={{ fontSize: 14, width: 20, textAlign: 'center' }}>
+                        {item.status === 'aguardando' ? '○' : item.status === 'enviando' ? '⏳' : item.status === 'ok' ? '✓' : '✗'}
+                      </span>
+                      <span style={{ fontSize: 12, color: item.status === 'ok' ? '#16a34a' : item.status === 'erro' ? '#dc2626' : item.status === 'enviando' ? '#7c3aed' : 'var(--gray-400)', flex: 1, fontFamily: 'Geist Mono, monospace' }}>
+                        {item.nome}
+                      </span>
+                      <span style={{ fontSize: 11, color: item.status === 'ok' ? '#16a34a' : item.status === 'erro' ? '#dc2626' : 'var(--gray-400)' }}>
+                        {item.status === 'ok' ? 'Enviada' : item.status === 'erro' ? 'Erro' : item.status === 'enviando' ? 'Enviando...' : 'Aguardando'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Preview grid */}
             {fotosQueue.length > 0 && (
