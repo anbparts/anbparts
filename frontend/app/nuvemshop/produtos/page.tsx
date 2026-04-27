@@ -580,6 +580,13 @@ export default function NuvemshopProdutosPage() {
                     } catch (e: any) { alert(`Erro: ${e.message}`); }
                     setImportandoDrive(false);
                   }}
+                  disabled={importandoDrive}
+                  style={{ display: 'flex', flexDirection: 'column' as const, alignItems: 'center', justifyContent: 'center', border: '2px dashed #c4b5fd', borderRadius: 10, padding: 16, cursor: 'pointer', background: '#faf5ff', gap: 4, minWidth: 160 }}
+                >
+                  <div style={{ fontSize: 24 }}>{importandoDrive ? '⏳' : '📂'}</div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: '#7c3aed' }}>{importandoDrive ? 'Buscando...' : 'Importar do Drive'}</div>
+                  <div style={{ fontSize: 10, color: '#a78bfa' }}>Busca pasta do SKU</div>
+                </button>
                 <button
                   onClick={async () => {
                     if (!modalFotoAtual?.produtoId) return;
