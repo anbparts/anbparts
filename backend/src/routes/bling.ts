@@ -44,8 +44,8 @@ blingRouter.post('/debug-raw', async (req, res, next) => {
   } catch (e: any) { res.status(400).json({ error: e?.message }); }
 });
 
-const BLING_API = 'https://www.bling.com.br/Api/v3';
-const BLING_OAUTH = 'https://www.bling.com.br/Api/v3/oauth/token';
+const BLING_API = 'https://api.bling.com.br/Api/v3';
+const BLING_OAUTH = 'https://api.bling.com.br/Api/v3/oauth/token';
 const DEFAULT_FRETE_PADRAO = 29.9;
 const DEFAULT_TAXA_PADRAO_PCT = 17;
 const AUDITORIA_DEFAULT_HORARIO = '03:00';
@@ -4487,7 +4487,7 @@ blingRouter.get('/auth-url', async (_req, res, next) => {
     const redirect = process.env.BLING_REDIRECT_URI
       || `${process.env.BACKEND_URL || 'http://localhost:3333'}/bling/callback`;
 
-    const url = `https://www.bling.com.br/Api/v3/oauth/authorize?response_type=code&client_id=${cfg.clientId}&state=anbparts&redirect_uri=${encodeURIComponent(redirect)}`;
+    const url = `https://api.bling.com.br/Api/v3/oauth/authorize?response_type=code&client_id=${cfg.clientId}&state=anbparts&redirect_uri=${encodeURIComponent(redirect)}`;
     res.json({ url });
   } catch (e) {
     next(e);
