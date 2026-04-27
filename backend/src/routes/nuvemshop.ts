@@ -502,7 +502,7 @@ nuvemshopRouter.post('/upload-imagens-drive', async (req, res, next) => {
     if (!accessToken) return res.status(401).json({ ok: false, error: `Falha ao obter token Google: ${tokenData.error || 'desconhecido'}` });
 
     // Calcula próxima posição na Nuvemshop
-    const imagensExistentes = await nuvemReq<any[]>(`/products/${produtoId}/images?per_page=250&fields=id,position`);
+    const imagensExistentes = await nuvemReq<any[]>(`/products/${produtoId}/images?per_page=200&fields=id,position`);
     let proximaPosicao = (Array.isArray(imagensExistentes)
       ? imagensExistentes.reduce((max: number, img: any) => {
           const p = Number(img?.position || 0);
