@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { API_BASE } from '@/lib/api-base';
 import { api } from '@/lib/api';
 
@@ -137,14 +137,16 @@ export default function NuvemshopProdutosPage() {
   // Contagens do Drive por SKU — só busca quando ≤10 produtos encontrados
   const [driveContagens, setDriveContagens] = useState<Record<string, number | null>>({});
   const [atualizandoDrive, setAtualizandoDrive] = useState(false);
+  const [driveLoopStatus, setDriveLoopStatus] = useState<{ materialAtual: number; totalMateriais: number; fotoAtual: number; totalFotos: number } | null>(null);
+  const driveCache = useRef<Record<string, any[]>>({});
 
   const produtosEncontrados = produtos.filter(p => p.encontradoNuvemshop);
   const modoComDrive = produtosEncontrados.length <= 10;
 
   useEffect(() => {
     if (!modoComDrive || !produtosEncontrados.length) { setDriveContagens({}); return; }
-    setDriveContagens({});
-    const candidatos = produtosEncontrados.filter(p => p.imagens <= 2);
+    // Só busca produtos com ≤2 imagens na Nuvemshop E que ainda não têm contagem
+    const candidatos = produtosEncontrados.filter(p => p.imagens <= 2 && !(p.sku in driveContagens));
     if (!candidatos.length) return;
     (async () => {
       for (const p of candidatos) {
@@ -159,7 +161,9 @@ export default function NuvemshopProdutosPage() {
             body: JSON.stringify({ motoId, sku: p.sku }),
           });
           const data = await resp.json();
-          setDriveContagens(prev => ({ ...prev, [p.sku]: data.ok ? (data.fotos?.length || 0) : 0 }));
+          const count = data.ok ? (data.fotos?.length || 0) : 0;
+          if (data.ok && data.fotos?.length) driveCache.current[p.sku] = data.fotos;
+          setDriveContagens(prev => ({ ...prev, [p.sku]: count }));
         } catch { setDriveContagens(prev => ({ ...prev, [p.sku]: 0 })); }
       }
     })();
@@ -407,43 +411,60 @@ export default function NuvemshopProdutosPage() {
                   onClick={async () => {
                     const skusComDrive = Array.from(selecionados).filter(sku => (driveContagens[sku] || 0) > 0);
                     setAtualizandoDrive(true);
-                    for (const sku of skusComDrive) {
+                    setDriveLoopStatus({ materialAtual: 0, totalMateriais: skusComDrive.length, fotoAtual: 0, totalFotos: 0 });
+                    for (let mi = 0; mi < skusComDrive.length; mi++) {
+                      const sku = skusComDrive[mi];
                       const produto = produtos.find(p => p.sku === sku);
                       if (!produto?.produtoId) continue;
                       try {
-                        const pecaResp = await fetch(`${API}/pecas?search=${encodeURIComponent(sku)}&per=1`, { credentials: 'include' });
-                        const pecaData = await pecaResp.json();
-                        const motoId = pecaData.data?.[0]?.motoId;
-                        if (!motoId) continue;
-                        const driveResp = await fetch(`${API}/google-drive/buscar-fotos-sku`, {
-                          method: 'POST', credentials: 'include',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ motoId, sku }),
-                        });
-                        const driveData = await driveResp.json();
-                        if (!driveData.ok || !driveData.fotos?.length) continue;
+                        // Usa contagem já carregada do Drive — não vai buscar novamente
+                        const fotosCache = driveCache.current[sku];
+                        let fotos: any[] = fotosCache || [];
+                        if (!fotos.length) {
+                          const pecaResp = await fetch(`${API}/pecas?search=${encodeURIComponent(sku)}&per=1`, { credentials: 'include' });
+                          const pecaData = await pecaResp.json();
+                          const motoId = pecaData.data?.[0]?.motoId;
+                          if (!motoId) continue;
+                          const driveResp = await fetch(`${API}/google-drive/buscar-fotos-sku`, {
+                            method: 'POST', credentials: 'include',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ motoId, sku }),
+                          });
+                          const driveData = await driveResp.json();
+                          if (!driveData.ok || !driveData.fotos?.length) continue;
+                          fotos = driveData.fotos;
+                        }
                         // Pula capa se já tem imagens
-                        const fotos = produto.imagens > 0 ? driveData.fotos.slice(1) : driveData.fotos;
-                        if (!fotos.length) continue;
-                        const uploadResp = await fetch(`${API}/nuvemshop/upload-imagens-drive`, {
-                          method: 'POST', credentials: 'include',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({
-                            produtoId: produto.produtoId,
-                            fileIds: fotos.map((f: any) => ({ id: f.id, nome: f.nome, mimeType: f.mimeType })),
-                          }),
-                        });
-                        const uploadData = await uploadResp.json();
-                        if (uploadData.enviadas) {
-                          setProdutos(prev => prev.map(p => p.sku === sku ? { ...p, imagens: p.imagens + uploadData.enviadas } : p));
+                        const fotosParaEnviar = produto.imagens > 0 ? fotos.slice(1) : fotos;
+                        if (!fotosParaEnviar.length) continue;
+                        setDriveLoopStatus({ materialAtual: mi + 1, totalMateriais: skusComDrive.length, fotoAtual: 0, totalFotos: fotosParaEnviar.length });
+                        for (let fi = 0; fi < fotosParaEnviar.length; fi++) {
+                          const foto = fotosParaEnviar[fi];
+                          setDriveLoopStatus(prev => ({ ...prev, fotoAtual: fi + 1 }));
+                          const uploadResp = await fetch(`${API}/nuvemshop/upload-imagens-drive`, {
+                            method: 'POST', credentials: 'include',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ produtoId: produto.produtoId, fileIds: [{ id: foto.id, nome: foto.nome, mimeType: foto.mimeType }] }),
+                          });
+                          const uploadData = await uploadResp.json();
+                          if (uploadData.enviadas) {
+                            setProdutos(prev => prev.map(p => {
+                              if (p.sku !== sku) return p;
+                              const novoTotal = p.imagens + uploadData.enviadas;
+                              // Se passou de 2, remove da contagem do Drive (não precisa mais)
+                              if (novoTotal > 2) setDriveContagens(c => ({ ...c, [sku]: null }));
+                              return { ...p, imagens: novoTotal };
+                            }));
+                          }
                         }
                       } catch {}
                     }
                     setAtualizandoDrive(false);
+                    setDriveLoopStatus(null);
                     setSelecionados(new Set());
                   }}
                   style={{ ...s.btn, background: '#7c3aed', color: '#fff', opacity: atualizandoDrive ? 0.6 : 1, whiteSpace: 'nowrap' as const }}>
-                  {atualizandoDrive ? '⏳ Atualizando...' : '📂 Atualizar Imagens Drive'}
+                  {atualizandoDrive && driveLoopStatus ? `⏳ Material ${driveLoopStatus.materialAtual}/${driveLoopStatus.totalMateriais} · Foto ${driveLoopStatus.fotoAtual}/${driveLoopStatus.totalFotos}` : atualizandoDrive ? '⏳ Iniciando...' : '📂 Atualizar Imagens Drive'}
                 </button>
               </div>
             )}
