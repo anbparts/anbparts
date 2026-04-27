@@ -130,6 +130,7 @@ export default function NuvemshopProdutosPage() {
   const [fotosQueue, setFotosQueue] = useState<FotoQueueItem[]>([]);
   const [enviandoFotos, setEnviandoFotos] = useState(false);
   const [importandoDrive, setImportandoDrive] = useState(false);
+  const [drivePreview, setDrivePreview] = useState<{ fotos: any[]; pasta: string } | null>(null);
 
   useEffect(() => {
     api.motos.list().then(setMotos).catch(() => {});
@@ -579,6 +580,29 @@ export default function NuvemshopProdutosPage() {
                     } catch (e: any) { alert(`Erro: ${e.message}`); }
                     setImportandoDrive(false);
                   }}
+                <button
+                  onClick={async () => {
+                    if (!modalFotoAtual?.produtoId) return;
+                    // Passo 1: só busca a lista sem baixar
+                    try {
+                      setImportandoDrive(true);
+                      setDrivePreview(null);
+                      const pecaResp = await fetch(`${API}/pecas?search=${encodeURIComponent(modalFotoAtual.sku)}&per=1`, { credentials: 'include' });
+                      const pecaData = await pecaResp.json();
+                      const motoIdResolved = pecaData.data?.[0]?.motoId;
+                      const resp = await fetch(`${API}/google-drive/buscar-fotos-sku`, {
+                        method: 'POST', credentials: 'include',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ motoId: motoIdResolved, sku: modalFotoAtual.sku }),
+                      });
+                      const data = await resp.json();
+                      if (!data.ok) { alert(data.error || 'Erro ao buscar no Drive'); setImportandoDrive(false); return; }
+                      if (!data.fotos?.length) { alert(`Nenhuma foto encontrada na pasta do SKU ${modalFotoAtual.sku}`); setImportandoDrive(false); return; }
+                      // Apenas mostra o preview — não baixa ainda
+                      setDrivePreview({ fotos: data.fotos, pasta: data.pasta });
+                    } catch (e: any) { alert(`Erro: ${e.message}`); }
+                    setImportandoDrive(false);
+                  }}
                   disabled={importandoDrive}
                   style={{ display: 'flex', flexDirection: 'column' as const, alignItems: 'center', justifyContent: 'center', border: '2px dashed #c4b5fd', borderRadius: 10, padding: 16, cursor: 'pointer', background: '#faf5ff', gap: 4, minWidth: 160 }}
                 >
@@ -587,6 +611,47 @@ export default function NuvemshopProdutosPage() {
                   <div style={{ fontSize: 10, color: '#a78bfa' }}>Busca pasta do SKU</div>
                 </button>
               </div>
+
+              {/* Preview Drive — mostra total antes de baixar */}
+              {drivePreview && (
+                <div style={{ margin: '0 22px 14px', padding: '12px 14px', background: '#f5f3ff', border: '1px solid #c4b5fd', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#5b21b6' }}>📂 {drivePreview.pasta}</div>
+                    <div style={{ fontSize: 12, color: '#7c3aed', marginTop: 2 }}>
+                      {drivePreview.fotos.length} foto(s) encontrada(s) · 1ª é a capa
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={() => setDrivePreview(null)}
+                      style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid #c4b5fd', background: 'var(--white)', fontSize: 12, cursor: 'pointer', color: '#7c3aed' }}>
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={async () => {
+                        const fotos = drivePreview.fotos;
+                        setDrivePreview(null);
+                        setImportandoDrive(true);
+                        try {
+                          for (const foto of fotos) {
+                            const dlResp = await fetch(`${API}/google-drive/download-foto`, {
+                              method: 'POST', credentials: 'include',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ fileId: foto.id, mimeType: foto.mimeType }),
+                            });
+                            const dlData = await dlResp.json();
+                            if (dlData.ok) {
+                              setFotosQueue(prev => [...prev, { file: { name: foto.nome } as File, preview: dlData.dataUrl, base64: dlData.base64, status: 'aguardando' }]);
+                            }
+                          }
+                        } catch (e: any) { alert(`Erro ao baixar: ${e.message}`); }
+                        setImportandoDrive(false);
+                      }}
+                      style={{ padding: '6px 14px', borderRadius: 6, border: 'none', background: '#7c3aed', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: '#fff' }}>
+                      ⬇ Baixar {drivePreview.fotos.length} foto(s)
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Preview grid */}
@@ -699,6 +764,15 @@ export default function NuvemshopProdutosPage() {
                       )));
                     } finally {
                       setEnviandoFotos(false);
+                      // Fecha modal automaticamente se todas as fotos foram enviadas com sucesso
+                      setFotosQueue(prev => {
+                        const todasOk = prev.length > 0 && prev.every(f => f.status === 'ok' || f.status === 'erro');
+                        const algumOk = prev.some(f => f.status === 'ok');
+                        if (todasOk && algumOk) {
+                          setTimeout(() => { setModalFoto(null); setFotosQueue([]); }, 1200);
+                        }
+                        return prev;
+                      });
                     }
                   }}
                   style={{ ...s.btn, background: '#7c3aed', color: '#fff', opacity: (enviandoFotos || fotosQueue.filter(f => f.status === 'aguardando').length === 0) ? 0.6 : 1 }}>
