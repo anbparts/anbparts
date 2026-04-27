@@ -575,20 +575,28 @@ export default function NuvemshopProdutosPage() {
                 </label>
                 <button
                   onClick={async () => {
-                    if (!drivePreview?.fotos?.length) return;
+                    if (!drivePreview?.fotos?.length || !modalFotoAtual?.produtoId) return;
                     setImportandoDrive(true);
                     try {
-                      for (const foto of drivePreview.fotos) {
-                        const dlResp = await fetch(`${API}/google-drive/download-foto`, {
-                          method: 'POST', credentials: 'include',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ fileId: foto.id, mimeType: foto.mimeType }),
-                        });
-                        const dlData = await dlResp.json();
-                        if (dlData.ok) {
-                          setFotosQueue(prev => [...prev, { file: { name: foto.nome } as File, preview: dlData.dataUrl, base64: dlData.base64, status: 'aguardando' }]);
-                        }
+                      // Pipe server-side: Drive → Nuvemshop sem passar pelo browser
+                      const resp = await fetch(`${API}/nuvemshop/upload-imagens-drive`, {
+                        method: 'POST', credentials: 'include',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          produtoId: modalFotoAtual.produtoId,
+                          fileIds: drivePreview.fotos.map(f => ({ id: f.id, nome: f.nome, mimeType: f.mimeType })),
+                        }),
+                      });
+                      const data = await resp.json();
+                      if (!data.ok) { alert(data.error || 'Erro ao enviar fotos'); setImportandoDrive(false); return; }
+                      // Atualiza contador local
+                      if (data.enviadas) {
+                        setProdutos(prev => prev.map(p =>
+                          p.sku === modalFotoAtual.sku ? { ...p, imagens: p.imagens + data.enviadas } : p
+                        ));
                       }
+                      // Fecha modal
+                      setTimeout(() => { setModalFoto(null); setFotosQueue([]); }, 800);
                     } catch (e: any) { alert(`Erro: ${e.message}`); }
                     setImportandoDrive(false);
                   }}
@@ -597,7 +605,7 @@ export default function NuvemshopProdutosPage() {
                 >
                   <div style={{ fontSize: 24 }}>{importandoDrive ? '⏳' : driveContador === null ? '⏳' : '📂'}</div>
                   <div style={{ fontSize: 12, fontWeight: 600, color: '#7c3aed' }}>
-                    {importandoDrive ? 'Baixando...' : driveContador === null ? 'Buscando no Drive...' : driveContador === 0 ? 'Sem fotos no Drive' : `Importar do Drive`}
+                    {importandoDrive ? 'Enviando...' : driveContador === null ? 'Buscando no Drive...' : driveContador === 0 ? 'Sem fotos no Drive' : `Importar do Drive`}
                   </div>
                   <div style={{ fontSize: 11, color: '#7c3aed', fontWeight: 700 }}>
                     {driveContador !== null && driveContador > 0 ? `${driveContador} foto(s) encontrada(s)` : ''}

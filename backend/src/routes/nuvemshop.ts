@@ -417,11 +417,22 @@ nuvemshopRouter.post('/upload-imagens', async (req, res, next) => {
     if (!Array.isArray(imagens) || !imagens.length) return res.status(400).json({ ok: false, error: 'imagens obrigatorio' });
 
     const resultados: any[] = new Array(imagens.length);
+    const imagensExistentes = await nuvemReq<Array<{ id: number | string; position?: number | string | null }>>(
+      `/products/${produtoId}/images?per_page=250&fields=id,position`
+    );
+    let proximaPosicao =
+      (Array.isArray(imagensExistentes)
+        ? imagensExistentes.reduce((max, img) => {
+            const posicao = Number(img?.position || 0);
+            return Number.isFinite(posicao) && posicao > max ? posicao : max;
+          }, 0)
+        : 0) + 1;
 
     for (let indice = 0; indice < imagens.length; indice++) {
       const img = imagens[indice];
       try {
-        // Mantem a ordem do ANB enviando as fotos em sequencia, uma a uma.
+        // Mantem a ordem do ANB ao fixar a posicao explicitamente na Nuvemshop.
+        const posicao = proximaPosicao;
         const base64 = String(img.base64 || '').replace(/^data:[^;]+;base64,/, '');
         const data = await nuvemReq<{ id: number | string; src?: string | null; position?: number | string | null }>(
           `/products/${produtoId}/images`,
@@ -430,6 +441,7 @@ nuvemshopRouter.post('/upload-imagens', async (req, res, next) => {
             body: JSON.stringify({
               attachment: base64,
               filename: img.filename || 'foto.jpg',
+              position: posicao,
             }),
           }
         );
@@ -439,8 +451,9 @@ nuvemshopRouter.post('/upload-imagens', async (req, res, next) => {
           ok: true,
           id: data.id,
           src: data.src,
-          position: data.position ?? null,
+          position: data.position ?? posicao,
         };
+        proximaPosicao++;
       } catch (e: any) {
         resultados[indice] = {
           queueIndex: img.queueIndex ?? indice,
@@ -453,5 +466,80 @@ nuvemshopRouter.post('/upload-imagens', async (req, res, next) => {
 
     const erros = resultados.filter(r => !r.ok);
     res.json({ ok: true, enviadas: resultados.filter(r => r.ok).length, erros: erros.length, resultados });
+  } catch (e) { next(e); }
+});
+
+// ─── POST /nuvemshop/upload-imagens-drive ─────────────────────────────────────
+// Pipe direto: Drive → Nuvemshop sem passar pelo browser
+// Body: { produtoId, sku, motoId, fileIds: [{id, nome, mimeType}] }
+nuvemshopRouter.post('/upload-imagens-drive', async (req, res, next) => {
+  try {
+    const { produtoId, fileIds } = req.body || {};
+    if (!produtoId) return res.status(400).json({ ok: false, error: 'produtoId obrigatorio' });
+    if (!Array.isArray(fileIds) || !fileIds.length) return res.status(400).json({ ok: false, error: 'fileIds obrigatorio' });
+
+    // Busca credenciais OAuth do DetranConfig
+    const { prisma } = await import('../lib/prisma');
+    const detranCfg = await prisma.detranConfig.findFirst();
+    const cfgGeral = await prisma.configuracaoGeral.findFirst();
+    const clientId = detranCfg?.gmailClientId || '';
+    const clientSecret = detranCfg?.gmailClientSecret || '';
+    const refreshToken = detranCfg?.gmailRefreshToken || '';
+
+    if (!refreshToken) return res.status(401).json({ ok: false, error: 'Google Drive não configurado' });
+
+    // Obtém access token
+    const tokenResp = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken, grant_type: 'refresh_token' }),
+    });
+    const tokenData = await tokenResp.json() as any;
+    const accessToken = tokenData.access_token;
+    if (!accessToken) return res.status(401).json({ ok: false, error: 'Falha ao obter token Google' });
+
+    // Calcula próxima posição na Nuvemshop
+    const imagensExistentes = await nuvemReq<any[]>(`/products/${produtoId}/images?per_page=250&fields=id,position`);
+    let proximaPosicao = (Array.isArray(imagensExistentes)
+      ? imagensExistentes.reduce((max: number, img: any) => {
+          const p = Number(img?.position || 0);
+          return Number.isFinite(p) && p > max ? p : max;
+        }, 0)
+      : 0) + 1;
+
+    const resultados: any[] = [];
+
+    for (const arquivo of fileIds) {
+      try {
+        // 1. Baixa do Drive direto no backend
+        const driveResp = await fetch(`https://www.googleapis.com/drive/v3/files/${arquivo.id}?alt=media`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (!driveResp.ok) {
+          resultados.push({ id: arquivo.id, nome: arquivo.nome, ok: false, error: `Drive: ${driveResp.status}` });
+          continue;
+        }
+        const buffer = await driveResp.arrayBuffer();
+        const base64 = Buffer.from(buffer).toString('base64');
+
+        // 2. Envia direto para Nuvemshop
+        const data = await nuvemReq<any>(`/products/${produtoId}/images`, {
+          method: 'POST',
+          body: JSON.stringify({
+            attachment: base64,
+            filename: arquivo.nome || 'foto.jpg',
+            position: proximaPosicao,
+          }),
+        });
+
+        resultados.push({ id: arquivo.id, nome: arquivo.nome, ok: true, nuvemId: data.id, position: proximaPosicao });
+        proximaPosicao++;
+      } catch (e: any) {
+        resultados.push({ id: arquivo.id, nome: arquivo.nome, ok: false, error: e.message });
+      }
+    }
+
+    const enviadas = resultados.filter(r => r.ok).length;
+    res.json({ ok: true, enviadas, erros: resultados.filter(r => !r.ok).length, resultados });
   } catch (e) { next(e); }
 });
