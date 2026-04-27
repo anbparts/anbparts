@@ -132,7 +132,7 @@ export default function NuvemshopProdutosPage() {
   const [importandoDrive, setImportandoDrive] = useState(false);
   const [drivePreview, setDrivePreview] = useState<{ fotos: any[]; pasta: string } | null>(null);
   const [driveContador, setDriveContador] = useState<number | null>(null);
-  const [driveStatus, setDriveStatus] = useState<{ nome: string; status: 'aguardando' | 'enviando' | 'ok' | 'erro'; erro?: string }[]>([]);
+  const [driveStatus, setDriveStatus] = useState<{ nome: string; status: 'aguardando' | 'enviando' | 'ok' | 'erro' | 'pulada'; erro?: string }[]>([]);
 
   // Quando o modal abre, busca automaticamente o total de fotos no Drive
   useEffect(() => {
