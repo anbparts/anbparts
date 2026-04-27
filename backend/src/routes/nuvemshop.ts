@@ -471,32 +471,35 @@ nuvemshopRouter.post('/upload-imagens', async (req, res, next) => {
 
 // ─── POST /nuvemshop/upload-imagens-drive ─────────────────────────────────────
 // Pipe direto: Drive → Nuvemshop sem passar pelo browser
-// Body: { produtoId, sku, motoId, fileIds: [{id, nome, mimeType}] }
+// Body: { produtoId, fileIds: [{id, nome, mimeType}] }
 nuvemshopRouter.post('/upload-imagens-drive', async (req, res, next) => {
   try {
     const { produtoId, fileIds } = req.body || {};
     if (!produtoId) return res.status(400).json({ ok: false, error: 'produtoId obrigatorio' });
     if (!Array.isArray(fileIds) || !fileIds.length) return res.status(400).json({ ok: false, error: 'fileIds obrigatorio' });
 
-    // Busca credenciais OAuth do DetranConfig
-    const { prisma } = await import('../lib/prisma');
+    // Busca credenciais OAuth do DetranConfig (mesmo padrão de google-drive.ts)
     const detranCfg = await prisma.detranConfig.findFirst();
-    const cfgGeral = await prisma.configuracaoGeral.findFirst();
     const clientId = detranCfg?.gmailClientId || '';
     const clientSecret = detranCfg?.gmailClientSecret || '';
     const refreshToken = detranCfg?.gmailRefreshToken || '';
 
-    if (!refreshToken) return res.status(401).json({ ok: false, error: 'Google Drive não configurado' });
+    if (!refreshToken) return res.status(401).json({ ok: false, error: 'Google Drive não configurado — configure em Config. Gmail' });
 
     // Obtém access token
     const tokenResp = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken, grant_type: 'refresh_token' }),
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        refresh_token: refreshToken,
+        grant_type: 'refresh_token',
+      }),
     });
     const tokenData = await tokenResp.json() as any;
     const accessToken = tokenData.access_token;
-    if (!accessToken) return res.status(401).json({ ok: false, error: 'Falha ao obter token Google' });
+    if (!accessToken) return res.status(401).json({ ok: false, error: `Falha ao obter token Google: ${tokenData.error || 'desconhecido'}` });
 
     // Calcula próxima posição na Nuvemshop
     const imagensExistentes = await nuvemReq<any[]>(`/products/${produtoId}/images?per_page=250&fields=id,position`);
@@ -516,13 +519,14 @@ nuvemshopRouter.post('/upload-imagens-drive', async (req, res, next) => {
           headers: { Authorization: `Bearer ${accessToken}` },
         });
         if (!driveResp.ok) {
-          resultados.push({ id: arquivo.id, nome: arquivo.nome, ok: false, error: `Drive: ${driveResp.status}` });
+          const errTxt = await driveResp.text();
+          resultados.push({ id: arquivo.id, nome: arquivo.nome, ok: false, error: `Drive ${driveResp.status}: ${errTxt.slice(0, 100)}` });
           continue;
         }
         const buffer = await driveResp.arrayBuffer();
         const base64 = Buffer.from(buffer).toString('base64');
 
-        // 2. Envia direto para Nuvemshop
+        // 2. Envia para Nuvemshop
         const data = await nuvemReq<any>(`/products/${produtoId}/images`, {
           method: 'POST',
           body: JSON.stringify({
