@@ -392,11 +392,11 @@ export default function NuvemshopProdutosPage() {
             )}
 
             {/* Botão Atualizar Imagens Drive — só aparece quando ≤10 SKUs e há selecionados com fotos no Drive */}
-            {modoComDrive && selecionados.size > 0 && [...selecionados].some(sku => (driveContagens[sku] || 0) > 0) && (
+            {modoComDrive && selecionados.size > 0 && Array.from(selecionados).some(sku => (driveContagens[sku] || 0) > 0) && (
               <div style={{ ...s.card, background: '#faf5ff', border: '1px solid #c4b5fd', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 700, color: '#5b21b6' }}>
-                    📂 {[...selecionados].filter(sku => (driveContagens[sku] || 0) > 0).length} produto(s) selecionado(s) com fotos no Drive
+                    📂 {Array.from(selecionados).filter(sku => (driveContagens[sku] || 0) > 0).length} produto(s) selecionado(s) com fotos no Drive
                   </div>
                   <div style={{ fontSize: 12, color: '#7c3aed', marginTop: 2 }}>
                     Serão enviadas via Drive → Nuvemshop. Capa será pulada se já houver imagens.
@@ -405,7 +405,7 @@ export default function NuvemshopProdutosPage() {
                 <button
                   disabled={atualizandoDrive}
                   onClick={async () => {
-                    const skusComDrive = [...selecionados].filter(sku => (driveContagens[sku] || 0) > 0);
+                    const skusComDrive = Array.from(selecionados).filter(sku => (driveContagens[sku] || 0) > 0);
                     setAtualizandoDrive(true);
                     for (const sku of skusComDrive) {
                       const produto = produtos.find(p => p.sku === sku);
