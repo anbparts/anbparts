@@ -579,14 +579,29 @@ export default function NuvemshopProdutosPage() {
                     if (!drivePreview?.fotos?.length || !modalFotoAtual?.produtoId) return;
                     setImportandoDrive(true);
                     const total = drivePreview.fotos.length;
-                    const statusInicial = drivePreview.fotos.map(f => ({ nome: f.nome, status: 'aguardando' as 'aguardando' | 'enviando' | 'ok' | 'erro' }));
-                    setDriveStatus(statusInicial);
+                    const fotosParaStatus = modalFotoAtual.imagens > 0
+                      ? drivePreview.fotos.map((f, i) => ({ nome: f.nome, status: i === 0 ? 'pulada' as any : 'aguardando' as const }))
+                      : drivePreview.fotos.map(f => ({ nome: f.nome, status: 'aguardando' as const }));
+                    setDriveStatus(fotosParaStatus);
+
+                    // Se já tem fotos na Nuvemshop, pula a capa (primeira da lista)
+                    const fotosParaEnviar = modalFotoAtual.imagens > 0
+                      ? drivePreview.fotos.slice(1)
+                      : drivePreview.fotos;
+
+                    if (!fotosParaEnviar.length) {
+                      alert('Apenas a foto capa foi encontrada e o produto já possui imagens — nada a enviar.');
+                      setImportandoDrive(false);
+                      setDriveStatus([]);
+                      return;
+                    }
 
                     let enviadas = 0;
                     // Processa uma por vez para mostrar progresso
-                    for (let i = 0; i < drivePreview.fotos.length; i++) {
-                      const foto = drivePreview.fotos[i];
-                      setDriveStatus(prev => prev.map((s, idx) => idx === i ? { ...s, status: 'enviando' } : s));
+                    for (let i = 0; i < fotosParaEnviar.length; i++) {
+                      const foto = fotosParaEnviar[i];
+                      const offset = modalFotoAtual.imagens > 0 ? 1 : 0;
+                      setDriveStatus(prev => prev.map((s, idx) => idx === i + offset ? { ...s, status: 'enviando' } : s));
                       try {
                         const resp = await fetch(`${API}/nuvemshop/upload-imagens-drive`, {
                           method: 'POST', credentials: 'include',
@@ -599,9 +614,10 @@ export default function NuvemshopProdutosPage() {
                         const data = await resp.json();
                         const ok = data.ok && data.enviadas > 0;
                         if (ok) enviadas++;
-                        setDriveStatus(prev => prev.map((s, idx) => idx === i ? { ...s, status: ok ? 'ok' : 'erro', erro: ok ? undefined : (data.resultados?.[0]?.error || data.error || 'Erro desconhecido') } : s));
+                        setDriveStatus(prev => prev.map((s, idx) => idx === i + offset ? { ...s, status: ok ? 'ok' : 'erro', erro: ok ? undefined : (data.resultados?.[0]?.error || data.error || 'Erro desconhecido') } : s));
                       } catch (e: any) {
-                        setDriveStatus(prev => prev.map((s, idx) => idx === i ? { ...s, status: 'erro', erro: e.message } : s));
+                        const offset2 = modalFotoAtual.imagens > 0 ? 1 : 0;
+                        setDriveStatus(prev => prev.map((s, idx) => idx === i + offset2 ? { ...s, status: 'erro', erro: e.message } : s));
                       }
                     }
 
@@ -641,13 +657,13 @@ export default function NuvemshopProdutosPage() {
                   {driveStatus.map((item, idx) => (
                     <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 12px', borderBottom: idx < driveStatus.length - 1 ? '1px solid #ede9fe' : 'none', background: item.status === 'enviando' ? '#faf5ff' : 'var(--white)' }}>
                       <span style={{ fontSize: 14, width: 20, textAlign: 'center' }}>
-                        {item.status === 'aguardando' ? '○' : item.status === 'enviando' ? '⏳' : item.status === 'ok' ? '✓' : '✗'}
+                        {item.status === 'aguardando' ? '○' : item.status === 'enviando' ? '⏳' : item.status === 'ok' ? '✓' : item.status === 'pulada' ? '⏭' : '✗'}
                       </span>
-                      <span style={{ fontSize: 12, color: item.status === 'ok' ? '#16a34a' : item.status === 'erro' ? '#dc2626' : item.status === 'enviando' ? '#7c3aed' : 'var(--gray-400)', flex: 1, fontFamily: 'Geist Mono, monospace' }}>
+                      <span style={{ fontSize: 12, color: item.status === 'ok' ? '#16a34a' : item.status === 'erro' ? '#dc2626' : item.status === 'enviando' ? '#7c3aed' : item.status === 'pulada' ? '#92400e' : 'var(--gray-400)', flex: 1, fontFamily: 'Geist Mono, monospace' }}>
                         {item.nome}
                       </span>
-                      <span style={{ fontSize: 11, color: item.status === 'ok' ? '#16a34a' : item.status === 'erro' ? '#dc2626' : 'var(--gray-400)', flex: 1, textAlign: 'right' }}>
-                        {item.status === 'ok' ? 'Enviada' : item.status === 'erro' ? (item.erro || 'Erro') : item.status === 'enviando' ? 'Enviando...' : 'Aguardando'}
+                      <span style={{ fontSize: 11, color: item.status === 'ok' ? '#16a34a' : item.status === 'erro' ? '#dc2626' : item.status === 'pulada' ? '#92400e' : 'var(--gray-400)', flex: 1, textAlign: 'right' }}>
+                        {item.status === 'ok' ? 'Enviada' : item.status === 'erro' ? (item.erro || 'Erro') : item.status === 'enviando' ? 'Enviando...' : item.status === 'pulada' ? 'Capa já existe' : 'Aguardando'}
                       </span>
                     </div>
                   ))}
