@@ -117,6 +117,31 @@ export default function NuvemshopProdutosPage() {
   const [modo, setModo] = useState<'moto' | 'skus'>('moto');
   const [buscando, setBuscando] = useState(false);
   const [produtos, setProdutos] = useState<Produto[]>([]);
+  const [sortKey, setSortKey] = useState<string>('drive');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+
+  function toggleSort(key: string) {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortKey(key); setSortDir('asc'); }
+  }
+
+  const produtosOrdenados = [...produtos].sort((a, b) => {
+    let va: any, vb: any;
+    if (sortKey === 'drive') {
+      va = driveContagens[a.sku] ?? 999;
+      vb = driveContagens[b.sku] ?? 999;
+    } else if (sortKey === 'sku') { va = a.sku; vb = b.sku; }
+    else if (sortKey === 'titulo') { va = a.titulo || ''; vb = b.titulo || ''; }
+    else if (sortKey === 'moto') { va = a.moto || ''; vb = b.moto || ''; }
+    else if (sortKey === 'imagens') { va = a.imagens; vb = b.imagens; }
+    else if (sortKey === 'categorias') { va = a.semCategoria ? 1 : 0; vb = b.semCategoria ? 1 : 0; }
+    else if (sortKey === 'tags') { va = a.semTags ? 1 : 0; vb = b.semTags ? 1 : 0; }
+    else if (sortKey === 'status') { va = a.encontradoNuvemshop ? 0 : 1; vb = b.encontradoNuvemshop ? 0 : 1; }
+    else { va = 0; vb = 0; }
+    if (va < vb) return sortDir === 'asc' ? -1 : 1;
+    if (va > vb) return sortDir === 'asc' ? 1 : -1;
+    return 0;
+  });
   const [buscou, setBuscou] = useState(false);
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [sugerindo, setSugerindo] = useState(false);
@@ -482,11 +507,27 @@ export default function NuvemshopProdutosPage() {
                           else setSelecionados(new Set());
                         }} />
                       </th>
-                      {['SKU', 'Título', 'Moto', 'Imagens', ...(modoComDrive ? ['Drive'] : []), 'Categorias', 'Tags', 'Status', ''].map(h => <th key={h} style={s.th}>{h}</th>)}
+                      {[
+                        { label: 'SKU', key: 'sku' },
+                        { label: 'Título', key: 'titulo' },
+                        { label: 'Moto', key: 'moto' },
+                        { label: 'Imagens', key: 'imagens' },
+                        ...(modoComDrive ? [{ label: 'Drive', key: 'drive' }] : []),
+                        { label: 'Categorias', key: 'categorias' },
+                        { label: 'Tags', key: 'tags' },
+                        { label: 'Status', key: 'status' },
+                        { label: '', key: '' },
+                      ].map(({ label, key }) => (
+                        <th key={key || 'acoes'} style={{ ...s.th, cursor: key ? 'pointer' : 'default', userSelect: 'none', whiteSpace: 'nowrap' as const }}
+                          onClick={() => key && toggleSort(key)}>
+                          {label}
+                          {key && sortKey === key ? (sortDir === 'asc' ? ' ↑' : ' ↓') : key ? ' ·' : ''}
+                        </th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {produtos.map(p => {
+                    {produtosOrdenados.map(p => {
                       const sug = editandoSugestao[p.sku];
                       const temSugestao = !!sug;
                       const rowBg = !p.encontradoNuvemshop ? '#fffbeb' : temSugestao ? '#f5f3ff' : 'var(--white)';
