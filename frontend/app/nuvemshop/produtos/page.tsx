@@ -134,6 +134,37 @@ export default function NuvemshopProdutosPage() {
   const [driveContador, setDriveContador] = useState<number | null>(null);
   const [driveStatus, setDriveStatus] = useState<{ nome: string; status: 'aguardando' | 'enviando' | 'ok' | 'erro' | 'pulada'; erro?: string }[]>([]);
 
+  // Contagens do Drive por SKU — só busca quando ≤10 produtos encontrados
+  const [driveContagens, setDriveContagens] = useState<Record<string, number | null>>({});
+  const [atualizandoDrive, setAtualizandoDrive] = useState(false);
+
+  const produtosEncontrados = produtos.filter(p => p.encontradoNuvemshop);
+  const modoComDrive = produtosEncontrados.length <= 10;
+
+  useEffect(() => {
+    if (!modoComDrive || !produtosEncontrados.length) { setDriveContagens({}); return; }
+    setDriveContagens({});
+    const candidatos = produtosEncontrados.filter(p => p.imagens <= 2);
+    if (!candidatos.length) return;
+    (async () => {
+      for (const p of candidatos) {
+        try {
+          const pecaResp = await fetch(`${API}/pecas?search=${encodeURIComponent(p.sku)}&per=1`, { credentials: 'include' });
+          const pecaData = await pecaResp.json();
+          const motoId = pecaData.data?.[0]?.motoId;
+          if (!motoId) { setDriveContagens(prev => ({ ...prev, [p.sku]: 0 })); continue; }
+          const resp = await fetch(`${API}/google-drive/buscar-fotos-sku`, {
+            method: 'POST', credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ motoId, sku: p.sku }),
+          });
+          const data = await resp.json();
+          setDriveContagens(prev => ({ ...prev, [p.sku]: data.ok ? (data.fotos?.length || 0) : 0 }));
+        } catch { setDriveContagens(prev => ({ ...prev, [p.sku]: 0 })); }
+      }
+    })();
+  }, [produtos]);
+
   // Quando o modal abre, busca automaticamente o total de fotos no Drive
   useEffect(() => {
     if (!modalFoto) { setDrivePreview(null); setDriveContador(null); return; }
@@ -360,6 +391,63 @@ export default function NuvemshopProdutosPage() {
               </div>
             )}
 
+            {/* Botão Atualizar Imagens Drive — só aparece quando ≤10 SKUs e há selecionados com fotos no Drive */}
+            {modoComDrive && selecionados.size > 0 && [...selecionados].some(sku => (driveContagens[sku] || 0) > 0) && (
+              <div style={{ ...s.card, background: '#faf5ff', border: '1px solid #c4b5fd', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#5b21b6' }}>
+                    📂 {[...selecionados].filter(sku => (driveContagens[sku] || 0) > 0).length} produto(s) selecionado(s) com fotos no Drive
+                  </div>
+                  <div style={{ fontSize: 12, color: '#7c3aed', marginTop: 2 }}>
+                    Serão enviadas via Drive → Nuvemshop. Capa será pulada se já houver imagens.
+                  </div>
+                </div>
+                <button
+                  disabled={atualizandoDrive}
+                  onClick={async () => {
+                    const skusComDrive = [...selecionados].filter(sku => (driveContagens[sku] || 0) > 0);
+                    setAtualizandoDrive(true);
+                    for (const sku of skusComDrive) {
+                      const produto = produtos.find(p => p.sku === sku);
+                      if (!produto?.produtoId) continue;
+                      try {
+                        const pecaResp = await fetch(`${API}/pecas?search=${encodeURIComponent(sku)}&per=1`, { credentials: 'include' });
+                        const pecaData = await pecaResp.json();
+                        const motoId = pecaData.data?.[0]?.motoId;
+                        if (!motoId) continue;
+                        const driveResp = await fetch(`${API}/google-drive/buscar-fotos-sku`, {
+                          method: 'POST', credentials: 'include',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ motoId, sku }),
+                        });
+                        const driveData = await driveResp.json();
+                        if (!driveData.ok || !driveData.fotos?.length) continue;
+                        // Pula capa se já tem imagens
+                        const fotos = produto.imagens > 0 ? driveData.fotos.slice(1) : driveData.fotos;
+                        if (!fotos.length) continue;
+                        const uploadResp = await fetch(`${API}/nuvemshop/upload-imagens-drive`, {
+                          method: 'POST', credentials: 'include',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            produtoId: produto.produtoId,
+                            fileIds: fotos.map((f: any) => ({ id: f.id, nome: f.nome, mimeType: f.mimeType })),
+                          }),
+                        });
+                        const uploadData = await uploadResp.json();
+                        if (uploadData.enviadas) {
+                          setProdutos(prev => prev.map(p => p.sku === sku ? { ...p, imagens: p.imagens + uploadData.enviadas } : p));
+                        }
+                      } catch {}
+                    }
+                    setAtualizandoDrive(false);
+                    setSelecionados(new Set());
+                  }}
+                  style={{ ...s.btn, background: '#7c3aed', color: '#fff', opacity: atualizandoDrive ? 0.6 : 1, whiteSpace: 'nowrap' as const }}>
+                  {atualizandoDrive ? '⏳ Atualizando...' : '📂 Atualizar Imagens Drive'}
+                </button>
+              </div>
+            )}
+
             {/* Tabela */}
             <div style={{ ...s.card, padding: 0, overflow: 'hidden' }}>
               <div style={{ overflowX: 'auto' }}>
@@ -372,7 +460,7 @@ export default function NuvemshopProdutosPage() {
                           else setSelecionados(new Set());
                         }} />
                       </th>
-                      {['SKU', 'Título', 'Moto', 'Imagens', 'Categorias', 'Tags', 'Status', ''].map(h => <th key={h} style={s.th}>{h}</th>)}
+                      {['SKU', 'Título', 'Moto', 'Imagens', ...(modoComDrive ? ['Drive'] : []), 'Categorias', 'Tags', 'Status', ''].map(h => <th key={h} style={s.th}>{h}</th>)}
                     </tr>
                   </thead>
                   <tbody>
@@ -402,6 +490,17 @@ export default function NuvemshopProdutosPage() {
                           </button>
                             ) : '-'}
                           </td>
+                          {modoComDrive && (
+                            <td style={{ ...s.td, textAlign: 'center' }}>
+                              {p.imagens <= 2 && p.encontradoNuvemshop ? (
+                                driveContagens[p.sku] === undefined
+                                  ? <span style={{ fontSize: 11, color: 'var(--gray-300)' }}>⏳</span>
+                                  : driveContagens[p.sku] === 0
+                                    ? <span style={{ fontSize: 11, color: 'var(--gray-300)' }}>—</span>
+                                    : <span style={{ fontSize: 12, fontWeight: 700, color: '#7c3aed' }}>📂 {driveContagens[p.sku]}</span>
+                              ) : <span style={{ fontSize: 11, color: 'var(--gray-200)' }}>—</span>}
+                            </td>
+                          )}
                           <td style={s.td}>
                             {temSugestao ? (
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
