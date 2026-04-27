@@ -418,7 +418,7 @@ nuvemshopRouter.post('/upload-imagens', async (req, res, next) => {
 
     const resultados: any[] = new Array(imagens.length);
     const imagensExistentes = await nuvemReq<Array<{ id: number | string; position?: number | string | null }>>(
-      `/products/${produtoId}/images?per_page=250&fields=id,position`
+      `/products/${produtoId}/images?per_page=200&fields=id,position`
     );
     let proximaPosicao =
       (Array.isArray(imagensExistentes)
