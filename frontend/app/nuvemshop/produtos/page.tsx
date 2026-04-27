@@ -132,7 +132,7 @@ export default function NuvemshopProdutosPage() {
   const [importandoDrive, setImportandoDrive] = useState(false);
   const [drivePreview, setDrivePreview] = useState<{ fotos: any[]; pasta: string } | null>(null);
   const [driveContador, setDriveContador] = useState<number | null>(null);
-  const [driveStatus, setDriveStatus] = useState<{ nome: string; status: 'aguardando' | 'enviando' | 'ok' | 'erro' }[]>([]);
+  const [driveStatus, setDriveStatus] = useState<{ nome: string; status: 'aguardando' | 'enviando' | 'ok' | 'erro'; erro?: string }[]>([]);
 
   // Quando o modal abre, busca automaticamente o total de fotos no Drive
   useEffect(() => {
@@ -599,9 +599,9 @@ export default function NuvemshopProdutosPage() {
                         const data = await resp.json();
                         const ok = data.ok && data.enviadas > 0;
                         if (ok) enviadas++;
-                        setDriveStatus(prev => prev.map((s, idx) => idx === i ? { ...s, status: ok ? 'ok' : 'erro' } : s));
-                      } catch {
-                        setDriveStatus(prev => prev.map((s, idx) => idx === i ? { ...s, status: 'erro' } : s));
+                        setDriveStatus(prev => prev.map((s, idx) => idx === i ? { ...s, status: ok ? 'ok' : 'erro', erro: ok ? undefined : (data.resultados?.[0]?.error || data.error || 'Erro desconhecido') } : s));
+                      } catch (e: any) {
+                        setDriveStatus(prev => prev.map((s, idx) => idx === i ? { ...s, status: 'erro', erro: e.message } : s));
                       }
                     }
 
@@ -646,8 +646,8 @@ export default function NuvemshopProdutosPage() {
                       <span style={{ fontSize: 12, color: item.status === 'ok' ? '#16a34a' : item.status === 'erro' ? '#dc2626' : item.status === 'enviando' ? '#7c3aed' : 'var(--gray-400)', flex: 1, fontFamily: 'Geist Mono, monospace' }}>
                         {item.nome}
                       </span>
-                      <span style={{ fontSize: 11, color: item.status === 'ok' ? '#16a34a' : item.status === 'erro' ? '#dc2626' : 'var(--gray-400)' }}>
-                        {item.status === 'ok' ? 'Enviada' : item.status === 'erro' ? 'Erro' : item.status === 'enviando' ? 'Enviando...' : 'Aguardando'}
+                      <span style={{ fontSize: 11, color: item.status === 'ok' ? '#16a34a' : item.status === 'erro' ? '#dc2626' : 'var(--gray-400)', flex: 1, textAlign: 'right' }}>
+                        {item.status === 'ok' ? 'Enviada' : item.status === 'erro' ? (item.erro || 'Erro') : item.status === 'enviando' ? 'Enviando...' : 'Aguardando'}
                       </span>
                     </div>
                   ))}
