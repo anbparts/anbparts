@@ -440,7 +440,7 @@ export default function NuvemshopProdutosPage() {
                         setDriveLoopStatus({ materialAtual: mi + 1, totalMateriais: skusComDrive.length, fotoAtual: 0, totalFotos: fotosParaEnviar.length });
                         for (let fi = 0; fi < fotosParaEnviar.length; fi++) {
                           const foto = fotosParaEnviar[fi];
-                          setDriveLoopStatus(prev => ({ ...prev, fotoAtual: fi + 1 }));
+                          setDriveLoopStatus(prev => prev ? { ...prev, fotoAtual: fi + 1 } : null);
                           const uploadResp = await fetch(`${API}/nuvemshop/upload-imagens-drive`, {
                             method: 'POST', credentials: 'include',
                             headers: { 'Content-Type': 'application/json' },
