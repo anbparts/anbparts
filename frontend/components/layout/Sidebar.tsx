@@ -71,6 +71,7 @@ export const NAV: NavGroup[] = [
       { href: '/detran/peca-avulsa', icon: 'tag', label: 'Peca Avulsa (POC)' },
       { href: '/detran/execucoes', icon: 'playbook', label: 'Execucoes' },
       { href: '/detran/logs', icon: 'terminal', label: 'Logs' },
+      { href: '/etiquetas-detran', icon: 'tag', label: 'Etiquetas Detran' },
     ],
   },
   {

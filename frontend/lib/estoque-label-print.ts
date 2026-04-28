@@ -21,11 +21,6 @@ function normalizeFilterText(value: unknown) {
 }
 
 export function formatEtiquetaMotoLabel(peca: any) {
-  // Se a moto tiver uma abreviação definida, usa ela diretamente
-  if (peca?.moto?.etiquetaSkuLabel) {
-    return String(peca.moto.etiquetaSkuLabel).trim().toUpperCase();
-  }
-
   const marca = String(peca?.moto?.marca || '').trim();
   const modelo = String(peca?.moto?.modelo || '').trim();
   const motoCompleta = [marca, modelo].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
