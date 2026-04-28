@@ -14,6 +14,7 @@ import { empresaRouter } from './routes/empresa';
 import { mercadoLivreRouter, startMercadoLivreScheduler } from './routes/mercado-livre';
 import { nuvemshopRouter } from './routes/nuvemshop';
 import { etiquetasDetranRouter } from './routes/etiquetas-detran';
+import { googleDriveRouter } from './routes/google-drive';
 import { cadastroRouter } from './routes/cadastro';
 import { etiquetasRouter } from './routes/etiquetas';
 import { detranRouter } from './routes/detran';

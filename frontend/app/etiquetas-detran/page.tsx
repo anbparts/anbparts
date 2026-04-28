@@ -81,8 +81,6 @@ export default function EtiquetasDetranPage() {
     setConfirmando(null);
   }
 
-  const tiposPeca = [...new Set(linhas.map(l => l.tipoPeca))].sort();
-
   return (
     <>
       {/* Topbar */}
