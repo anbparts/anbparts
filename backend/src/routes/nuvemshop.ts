@@ -297,9 +297,12 @@ nuvemshopRouter.post('/sugerir-ia', async (req, res, next) => {
 
     const anthropicModel = 'claude-sonnet-4-6';
 
-    const listaProdutos = produtos.map((p: any) =>
-      `SKU: ${p.sku} | Titulo: ${p.titulo} | Moto: ${p.moto?.marca || ''} ${p.moto?.modelo || ''} ${p.moto?.ano || ''}`
-    ).join('\n');
+    const listaProdutos = produtos.map((p: any) => {
+      // Remove aspas e caracteres que podem quebrar o JSON da resposta
+      const titulo = String(p.titulo || '').replace(/["""'']/g, '').replace(/[\\]/g, '');
+      const moto = `${p.moto?.marca || ''} ${p.moto?.modelo || ''} ${p.moto?.ano || ''}`.trim().replace(/["""''\\]/g, '');
+      return `SKU: ${p.sku} | Titulo: ${titulo} | Moto: ${moto}`;
+    }).join('\n');
 
     const prompt = `Voce e um especialista em e-commerce de pecas de moto usadas. Analise cada produto e sugira categorias e tags.
 
@@ -380,8 +383,18 @@ Responda APENAS com JSON valido, sem texto antes ou depois, sem markdown:
     let parsed: any;
     try {
       parsed = JSON.parse(jsonStr);
-    } catch (parseErr: any) {
-      return res.status(500).json({ ok: false, error: `Erro ao parsear JSON: ${parseErr.message}` });
+    } catch {
+      // Tenta reparar: remove vírgulas finais antes de } ou ]
+      try {
+        const repaired = jsonStr
+          .replace(/,\s*}/g, '}')
+          .replace(/,\s*]/g, ']');
+        parsed = JSON.parse(repaired);
+      } catch (parseErr: any) {
+        // Loga para diagnóstico
+        console.error('[sugerir-ia] JSON inválido:', jsonStr.slice(0, 500));
+        return res.status(500).json({ ok: false, error: `Erro ao parsear JSON: ${parseErr.message}` });
+      }
     }
 
     res.json({ ok: true, sugestoes: parsed.sugestoes || [], modelo: anthropicModel });
