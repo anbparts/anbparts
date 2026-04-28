@@ -357,14 +357,29 @@ Responda APENAS com JSON valido, sem texto antes ou depois, sem markdown:
     }
 
     const start = text.indexOf('{');
-    const end = text.lastIndexOf('}');
-    if (start === -1 || end === -1) {
+    if (start === -1) {
       return res.status(500).json({ ok: false, error: `IA nao retornou JSON: ${text.slice(0, 200)}` });
     }
 
+    // Encontra o fechamento correto do JSON contando chaves abertas/fechadas
+    let depth = 0;
+    let end = -1;
+    for (let i = start; i < text.length; i++) {
+      if (text[i] === '{') depth++;
+      else if (text[i] === '}') { depth--; if (depth === 0) { end = i; break; } }
+    }
+
+    if (end === -1) {
+      return res.status(500).json({ ok: false, error: `JSON incompleto na resposta da IA` });
+    }
+
+    // Tenta também remover markdown code fences se presentes
+    let jsonStr = text.slice(start, end + 1);
+    jsonStr = jsonStr.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+
     let parsed: any;
     try {
-      parsed = JSON.parse(text.slice(start, end + 1));
+      parsed = JSON.parse(jsonStr);
     } catch (parseErr: any) {
       return res.status(500).json({ ok: false, error: `Erro ao parsear JSON: ${parseErr.message}` });
     }
