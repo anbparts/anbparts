@@ -143,10 +143,13 @@ nuvemshopRouter.post('/buscar-produtos', async (req, res, next) => {
     const { motoId, skus: skusInput } = req.body || {};
 
     // 1. Obtém SKUs do ANB com estoque
+    // Quando SKUs específicos são informados, busca pelo SKU base E todas as variações (-2, -3...)
     const where: any = { disponivel: true };
     if (motoId) where.motoId = Number(motoId);
     if (skusInput && Array.isArray(skusInput) && skusInput.length) {
-      where.idPeca = { in: skusInput.map((s: string) => normalizarSkuBusca(s)).filter(Boolean) };
+      const bases = skusInput.map((s: string) => normalizarSkuBusca(s).replace(/-\d+$/, ''));
+      // Busca qualquer peça cujo idPeca começa com um dos SKUs base informados
+      where.OR = bases.map(base => ({ idPeca: { startsWith: base } }));
     }
 
     const pecas = await prisma.peca.findMany({
