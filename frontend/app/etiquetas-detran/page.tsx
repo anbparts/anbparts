@@ -16,10 +16,8 @@ const s: any = {
 };
 
 const STATUS_COLORS: Record<string, { bg: string; color: string }> = {
-  'Reutilizavel': { bg: '#f0fdf4', color: '#16a34a' },
-  'Sucata':       { bg: '#fef9c3', color: '#92400e' },
-  'Inexistente':  { bg: '#f1f5f9', color: '#64748b' },
-  'Baixada':      { bg: '#f1f5f9', color: '#94a3b8' },
+  'Ativa':        { bg: '#ecfdf3', color: '#16a34a' },
+  'Baixada':      { bg: '#fef2f2', color: '#dc2626' },
   '—':            { bg: '#f1f5f9', color: '#94a3b8' },
 };
 
@@ -76,7 +74,7 @@ export default function EtiquetasDetranPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ etiqueta: linha.etiqueta }),
       });
-      setPendencias(prev => prev.filter(p => !(p.pecaId === linha.pecaId && p.etiqueta === linha.etiqueta)));
+      setPendencias(prev => prev.filter(p => p.pecaId !== linha.pecaId));
     } catch {}
     setConfirmando(null);
   }
@@ -143,9 +141,7 @@ export default function EtiquetasDetranPage() {
               <select style={{ ...s.select, width: '100%' }} value={filtros.status}
                 onChange={e => setFiltros(f => ({ ...f, status: e.target.value }))}>
                 <option value="">Todos</option>
-                <option value="Reutilizavel">Reutilizável</option>
-                <option value="Sucata">Sucata</option>
-                <option value="Inexistente">Inexistente</option>
+                <option value="Ativa">Ativa</option>
                 <option value="Baixada">Baixada</option>
               </select>
             </div>
