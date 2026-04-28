@@ -320,7 +320,7 @@ Responda APENAS com um objeto JSON valido, sem texto antes ou depois, sem markdo
 
 IMPORTANTE: tags devem ser strings simples sem aspas internas ou caracteres especiais.`;
 
-    const tracePayload = { prompt: prompt.slice(0, 2000), resposta: '' }; // trace para diagnóstico
+    const tracePayload = { prompt: prompt.slice(0, 5000), resposta: '' }; // trace para diagnóstico
 
     etapa = 'mensagem';
     const controller = new AbortController();
@@ -358,7 +358,7 @@ IMPORTANTE: tags devem ser strings simples sem aspas internas ou caracteres espe
 
     const data = await response.json() as any;
     const rawText = (data.content?.[0]?.text || '').trim();
-    tracePayload.resposta = rawText.slice(0, 3000);
+    tracePayload.resposta = rawText.slice(0, 10000);
     const text = rawText;
 
     if (!rawText) {
@@ -368,41 +368,42 @@ IMPORTANTE: tags devem ser strings simples sem aspas internas ou caracteres espe
 
     const start = text.indexOf('{');
     if (start === -1) {
+      console.error('[sugerir-ia] sem JSON na resposta — trace:', JSON.stringify(tracePayload));
       return res.status(500).json({ ok: false, error: `IA nao retornou JSON: ${text.slice(0, 200)}` });
     }
 
-    // Encontra o fechamento correto do JSON contando chaves abertas/fechadas
-    let depth = 0;
-    let end = -1;
-    for (let i = start; i < text.length; i++) {
-      if (text[i] === '{') depth++;
-      else if (text[i] === '}') { depth--; if (depth === 0) { end = i; break; } }
+    // Remove markdown fences se presentes
+    const cleanText = text.slice(start).replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+
+    // Tenta múltiplas estratégias de extração + repair
+    const tentativas: string[] = [];
+
+    // 1. Texto limpo do início até o último }
+    const lastClose = cleanText.lastIndexOf('}');
+    if (lastClose !== -1) tentativas.push(cleanText.slice(0, lastClose + 1));
+
+    // 2. Repair do padrão específico }}]} → }]}
+    tentativas.push(cleanText.replace(/\}\}\]\}/g, '}]}').replace(/,\s*}/g, '}').replace(/,\s*]/g, ']'));
+
+    // 3. Remove um } antes do fechamento ]}
+    tentativas.push(cleanText.replace(/\}(\s*\]\s*\})$/, '$1'));
+
+    // 4. Brace counting (encontra primeiro JSON completo)
+    let depth = 0, bcEnd = -1;
+    for (let i = 0; i < cleanText.length; i++) {
+      if (cleanText[i] === '{') depth++;
+      else if (cleanText[i] === '}') { depth--; if (depth === 0) { bcEnd = i; break; } }
+    }
+    if (bcEnd !== -1) tentativas.push(cleanText.slice(0, bcEnd + 1));
+
+    let parsed: any = null;
+    for (const candidato of tentativas) {
+      try { parsed = JSON.parse(candidato); break; } catch {}
     }
 
-    if (end === -1) {
-      return res.status(500).json({ ok: false, error: `JSON incompleto na resposta da IA` });
-    }
-
-    // Tenta também remover markdown code fences se presentes
-    let jsonStr = text.slice(start, end + 1);
-    jsonStr = jsonStr.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
-
-    let parsed: any;
-    try {
-      parsed = JSON.parse(jsonStr);
-    } catch {
-      // Repair: padrão visto nos logs — modelo fecha com }}]} em vez de }]}
-      // Substitui todas as ocorrências de chave dupla antes de ] no fim do array de sugestoes
-      const repaired = jsonStr
-        .replace(/\}\}\]\}/g, '}]}')   // }}]} → }]}
-        .replace(/,\s*}/g, '}')         // vírgulas finais antes de }
-        .replace(/,\s*]/g, ']');        // vírgulas finais antes de ]
-      try {
-        parsed = JSON.parse(repaired);
-      } catch (parseErr: any) {
-        console.error('[sugerir-ia] JSON inválido — trace:', JSON.stringify(tracePayload));
-        return res.status(500).json({ ok: false, error: `Erro ao parsear JSON: ${parseErr.message}` });
-      }
+    if (!parsed) {
+      console.error('[sugerir-ia] JSON inválido — trace:', JSON.stringify(tracePayload));
+      return res.status(500).json({ ok: false, error: 'Não foi possível parsear a resposta da IA' });
     }
 
     res.json({ ok: true, sugestoes: parsed.sugestoes || [], modelo: anthropicModel });
