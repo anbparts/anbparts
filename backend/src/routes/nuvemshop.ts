@@ -318,6 +318,8 @@ Regras das categorias: escolha categoria pai E subcategoria mais especifica. Pod
 Responda APENAS com JSON valido, sem texto antes ou depois, sem markdown:
 {"sugestoes":[{"sku":"SKU_AQUI","categorias":[{"id":1,"nome":"Nome"}],"tags":["tag1","tag2"]}]}`;
 
+    const tracePayload = { prompt: prompt.slice(0, 2000), resposta: '' }; // trace para diagnóstico
+
     etapa = 'mensagem';
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 55000); // 55s antes do Railway matar
@@ -354,8 +356,10 @@ Responda APENAS com JSON valido, sem texto antes ou depois, sem markdown:
 
     const data = await response.json() as any;
     const text = (data.content?.[0]?.text || '').trim();
+    tracePayload.resposta = text.slice(0, 3000); // captura para diagnóstico
 
     if (!text) {
+      console.error('[sugerir-ia] trace:', JSON.stringify(tracePayload));
       return res.status(500).json({ ok: false, error: 'Resposta vazia da IA' });
     }
 
@@ -391,8 +395,8 @@ Responda APENAS com JSON valido, sem texto antes ou depois, sem markdown:
           .replace(/,\s*]/g, ']');
         parsed = JSON.parse(repaired);
       } catch (parseErr: any) {
-        // Loga para diagnóstico
-        console.error('[sugerir-ia] JSON inválido:', jsonStr.slice(0, 500));
+        // Loga trace completo para diagnóstico
+        console.error('[sugerir-ia] JSON inválido — trace:', JSON.stringify(tracePayload));
         return res.status(500).json({ ok: false, error: `Erro ao parsear JSON: ${parseErr.message}` });
       }
     }
