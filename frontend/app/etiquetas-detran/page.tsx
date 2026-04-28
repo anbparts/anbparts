@@ -144,7 +144,7 @@ function SortableTh({ column, sort, onSort }: { column: { key: string; label: st
 export default function EtiquetasDetranPage() {
   const [linhas, setLinhas] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const [filtros, setFiltros] = useState({ sku: '', descricao: '', tipoEtiqueta: '', tipoPeca: '', etiqueta: '', status: '' });
+  const [filtros, setFiltros] = useState({ sku: '', descricao: '', tipoEtiqueta: '', tipoPeca: '', etiqueta: '', status: '', qtdeEtiquetasSku: '' });
   const [modalPendencias, setModalPendencias] = useState(false);
   const [pendencias, setPendencias] = useState<any[]>([]);
   const [loadingPendencias, setLoadingPendencias] = useState(false);
@@ -174,6 +174,7 @@ export default function EtiquetasDetranPage() {
       if (filtros.tipoPeca) params.set('tipoPeca', filtros.tipoPeca);
       if (filtros.etiqueta) params.set('etiqueta', filtros.etiqueta);
       if (filtros.status) params.set('status', filtros.status);
+      if (filtros.qtdeEtiquetasSku) params.set('qtdeEtiquetasSku', filtros.qtdeEtiquetasSku);
       const resp = await fetch(`${API}/etiquetas-detran?${params}`, { credentials: 'include' });
       const data = await resp.json();
       setLinhas(data.linhas || []);
@@ -270,6 +271,15 @@ export default function EtiquetasDetranPage() {
                 <option value="">Todos</option>
                 <option value="Ativa">Ativa</option>
                 <option value="Baixada">Baixada</option>
+              </select>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--gray-500)', marginBottom: 4 }}>Qtde Etiquetas SKU</div>
+              <select style={{ ...s.select, width: '100%' }} value={filtros.qtdeEtiquetasSku}
+                onChange={e => setFiltros(f => ({ ...f, qtdeEtiquetasSku: e.target.value }))}>
+                <option value="">Todos</option>
+                <option value="unica">Etiqueta Única</option>
+                <option value="multiplas">Múltiplas Etiquetas</option>
               </select>
             </div>
             <button style={{ ...s.btn, height: 32, background: 'var(--ink)', color: '#fff' }} onClick={buscar} disabled={loading}>

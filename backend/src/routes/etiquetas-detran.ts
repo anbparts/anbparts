@@ -199,7 +199,7 @@ async function loadBlingVendaInfo(ref: BlingVendaRef) {
 // GET /etiquetas-detran
 etiquetasDetranRouter.get('/', async (req, res, next) => {
   try {
-    const { sku, descricao, tipoEtiqueta, tipoPeca, etiqueta, status } = req.query as any;
+    const { sku, descricao, tipoEtiqueta, tipoPeca, etiqueta, status, qtdeEtiquetasSku } = req.query as any;
     const detranBaixadaFilter = parseDetranStatusFilter(status);
 
     const pecas = await prisma.peca.findMany({
@@ -242,6 +242,10 @@ etiquetasDetranRouter.get('/', async (req, res, next) => {
     const linhas: any[] = [];
     for (const peca of pecas) {
       const etiquetas = splitEtiquetas(peca.detranEtiqueta);
+      const quantidadeEtiquetasSku = etiquetas.length;
+      if (qtdeEtiquetasSku === 'unica' && quantidadeEtiquetasSku !== 1) continue;
+      if (qtdeEtiquetasSku === 'multiplas' && quantidadeEtiquetasSku <= 1) continue;
+
       for (const etq of etiquetas) {
         const cartelaTipo = cartelaMap.get(`${peca.motoId}|${peca.idPeca}|${etq}`);
         const tipoEtq = cartelaTipo ? 'Cartela' : 'Avulsa';
@@ -258,6 +262,7 @@ etiquetasDetranRouter.get('/', async (req, res, next) => {
           tipoEtiqueta: tipoEtq,
           tipoPeca: tipoPecaVal,
           etiqueta: etq,
+          qtdeEtiquetasSku: quantidadeEtiquetasSku,
           status: getDetranStatusLabel(peca.detranBaixada),
           detranStatus: peca.detranStatus || null,
           detranBaixada: peca.detranBaixada,
