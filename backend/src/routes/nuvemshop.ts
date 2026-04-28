@@ -164,14 +164,23 @@ nuvemshopRouter.post('/buscar-produtos', async (req, res, next) => {
       return res.json({ ok: true, produtos: [] });
     }
 
-    // 2. Para cada SKU, busca o produto na Nuvemshop
-    const resultados: any[] = [];
+    // 2. Agrupa por SKU base (HD03_0110-2 → HD03_0110) e deduplica
+    // Para a Nuvemshop só importa o produto base, não a variação do ANB
+    const skuBaseMap = new Map<string, typeof pecas[0]>();
     for (const peca of pecas) {
-      const sku = peca.idPeca;
+      const base = peca.idPeca.replace(/-\d+$/, '');
+      if (!skuBaseMap.has(base)) skuBaseMap.set(base, { ...peca, idPeca: base });
+    }
+    const pecasAgrupadas = Array.from(skuBaseMap.values());
+
+    // 3. Para cada SKU base, busca o produto na Nuvemshop
+    const resultados: any[] = [];
+    for (const peca of pecasAgrupadas) {
+      const sku = peca.idPeca; // já é o SKU base
       try {
-        // Busca produto pelo SKU na Nuvemshop
+        // Busca produto pelo SKU base na Nuvemshop
         const produtos = await nuvemReq(`/products?q=${encodeURIComponent(sku)}&per_page=5`) as any[];
-        // Encontra o produto cujo variant tem o SKU exato
+        // Match: variant com SKU igual ao base (ex: HD03_0110)
         let produtoEncontrado: any = null;
         for (const p of produtos) {
           const variants: any[] = p.variants || [];
