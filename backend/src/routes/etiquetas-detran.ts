@@ -17,6 +17,20 @@ function splitEtiquetas(value: unknown) {
     .filter(Boolean);
 }
 
+function normalizeFilterText(value: unknown) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+}
+
+function textIncludes(value: unknown, filter: unknown) {
+  const normalizedFilter = normalizeFilterText(filter);
+  if (!normalizedFilter) return true;
+  return normalizeFilterText(value).includes(normalizedFilter);
+}
+
 function getDetranStatusLabel(detranBaixada: boolean) {
   return detranBaixada ? 'Baixada' : 'Ativa';
 }
@@ -233,9 +247,9 @@ etiquetasDetranRouter.get('/', async (req, res, next) => {
         const tipoEtq = cartelaTipo ? 'Cartela' : 'Avulsa';
         const tipoPecaVal = cartelaTipo || 'Avulsa';
 
-        if (tipoEtiqueta && tipoEtq !== tipoEtiqueta) continue;
-        if (tipoPeca && tipoPecaVal.toLowerCase() !== String(tipoPeca).toLowerCase()) continue;
-        if (etiqueta && !etq.includes(String(etiqueta).toUpperCase())) continue;
+        if (!textIncludes(tipoEtq, tipoEtiqueta)) continue;
+        if (!textIncludes(tipoPecaVal, tipoPeca)) continue;
+        if (!textIncludes(etq, etiqueta)) continue;
 
         linhas.push({
           pecaId: peca.id,
