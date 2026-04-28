@@ -325,14 +325,16 @@ export default function EtiquetasDetranPage() {
 
       {modalPendencias && (
         <div onClick={() => setModalPendencias(false)}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.55)', zIndex: 320, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }}>
           <div onClick={e => e.stopPropagation()}
-            style={{ background: 'var(--white)', borderRadius: 14, width: '100%', maxWidth: 1240, maxHeight: '88vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 12px 40px rgba(0,0,0,0.15)' }}>
-            <div style={{ padding: '18px 24px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-              <div>
-                <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--gray-800)' }}>Pendencias de Baixa</div>
-                <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>
-                  {loadingPendencias ? 'Buscando dados no Bling...' : `${pendencias.length} etiqueta(s) pendente(s) de baixa`}
+            style={{ background: 'var(--white)', borderRadius: 12, width: 'min(1380px, calc(100vw - 48px))', maxHeight: '88vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 70px rgba(2, 6, 23, 0.28)', border: '1px solid rgba(226,232,240,0.95)' }}>
+            <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, background: 'var(--white)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0 }}>
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--gray-800)' }}>Pendencias de Baixa</div>
+                  <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>
+                    {loadingPendencias ? 'Buscando dados no Bling...' : `${pendencias.length} etiqueta(s) pendente(s) de baixa`}
+                  </div>
                 </div>
               </div>
               <button onClick={() => setModalPendencias(false)}
@@ -341,7 +343,7 @@ export default function EtiquetasDetranPage() {
               </button>
             </div>
 
-            <div style={{ overflow: 'auto', flex: 1 }}>
+            <div style={{ overflow: 'auto', flex: 1, background: 'var(--white)' }}>
               {loadingPendencias ? (
                 <div style={{ textAlign: 'center', padding: 60, color: 'var(--gray-400)' }}>
                   Buscando NF e dados do cliente no Bling...
@@ -351,7 +353,7 @@ export default function EtiquetasDetranPage() {
                   Nenhuma pendencia de baixa encontrada
                 </div>
               ) : (
-                <table style={{ width: '100%', minWidth: 1160, borderCollapse: 'collapse' }}>
+                <table style={{ width: '100%', minWidth: 1280, borderCollapse: 'collapse', tableLayout: 'fixed' }}>
                   <thead>
                     <tr>
                       {PENDENCIAS_COLUMNS.map((column) => (
@@ -366,8 +368,8 @@ export default function EtiquetasDetranPage() {
                       const stColors = STATUS_COLORS[linha.status] || STATUS_COLORS['-'];
                       return (
                         <tr key={key} style={{ background: i % 2 === 0 ? 'var(--white)' : 'var(--gray-50)' }}>
-                          <td style={{ ...s.td, fontFamily: 'Geist Mono, monospace', fontWeight: 600, whiteSpace: 'nowrap' }}>{linha.sku}</td>
-                          <td style={{ ...s.td, maxWidth: 240, fontSize: 12 }}>{linha.descricao || '-'}</td>
+                          <td style={{ ...s.td, width: 96, fontFamily: 'Geist Mono, monospace', fontWeight: 700, whiteSpace: 'nowrap' }}>{linha.sku}</td>
+                          <td style={{ ...s.td, width: 230, fontSize: 12, lineHeight: 1.25 }}>{linha.descricao || '-'}</td>
                           <td style={{ ...s.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, whiteSpace: 'nowrap' }}>{linha.etiqueta}</td>
                           <td style={s.td}>
                             <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 5, background: stColors.bg, color: stColors.color }}>
@@ -376,10 +378,10 @@ export default function EtiquetasDetranPage() {
                           </td>
                           <td style={{ ...s.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, whiteSpace: 'nowrap' }}>{linha.blingPedidoNum || '-'}</td>
                           <td style={{ ...s.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, whiteSpace: 'nowrap' }}>{linha.nfNumero || '-'}</td>
-                          <td style={{ ...s.td, fontSize: 12, minWidth: 170 }}>{linha.clienteNome || '-'}</td>
-                          <td style={{ ...s.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, whiteSpace: 'nowrap', minWidth: 130 }}>{formatCpfCnpj(linha.clienteDoc)}</td>
+                          <td style={{ ...s.td, width: 220, fontSize: 12, lineHeight: 1.25 }}>{linha.clienteNome || '-'}</td>
+                          <td style={{ ...s.td, width: 150, fontFamily: 'Geist Mono, monospace', fontSize: 12, whiteSpace: 'nowrap' }}>{formatCpfCnpj(linha.clienteDoc)}</td>
                           <td style={{ ...s.td, fontSize: 12, whiteSpace: 'nowrap' }}>{formatDate(linha.dataVenda)}</td>
-                          <td style={{ ...s.td, whiteSpace: 'nowrap' }}>
+                          <td style={{ ...s.td, width: 142, whiteSpace: 'nowrap' }}>
                             <button
                               onClick={() => confirmarBaixa(linha)}
                               disabled={confirmando === key}
