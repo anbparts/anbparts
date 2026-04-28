@@ -119,6 +119,7 @@ export default function NuvemshopProdutosPage() {
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [sortKey, setSortKey] = useState<string>('drive');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [driveContagens, setDriveContagens] = useState<Record<string, number | null>>({});
 
   function toggleSort(key: string) {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -160,7 +161,6 @@ export default function NuvemshopProdutosPage() {
   const [driveStatus, setDriveStatus] = useState<{ nome: string; status: 'aguardando' | 'enviando' | 'ok' | 'erro' | 'pulada'; erro?: string }[]>([]);
 
   // Contagens do Drive por SKU — só busca quando ≤10 produtos encontrados
-  const [driveContagens, setDriveContagens] = useState<Record<string, number | null>>({});
   const [atualizandoDrive, setAtualizandoDrive] = useState(false);
   const [driveLoopStatus, setDriveLoopStatus] = useState<{ materialAtual: number; totalMateriais: number; fotoAtual: number; totalFotos: number } | null>(null);
   const driveCache = useRef<Record<string, any[]>>({});
