@@ -312,11 +312,13 @@ ${listaCategoriasTexto}
 PRODUTOS:
 ${listaProdutos}
 
-Regras das tags: inclua partes do nome do produto, marca da moto, modelo, ano, prefixo do SKU e termos tecnicos.
+Regras das tags: inclua partes do nome do produto, marca da moto, modelo, ano, prefixo do SKU e termos tecnicos. Use apenas letras, numeros, espacos e hifens nas tags. NAO use aspas, virgulas ou caracteres especiais.
 Regras das categorias: escolha categoria pai E subcategoria mais especifica. Pode sugerir ambas.
 
-Responda APENAS com JSON valido, sem texto antes ou depois, sem markdown:
-{"sugestoes":[{"sku":"SKU_AQUI","categorias":[{"id":1,"nome":"Nome"}],"tags":["tag1","tag2"]}]}`;
+Responda APENAS com um objeto JSON valido, sem texto antes ou depois, sem markdown, sem comentarios:
+{"sugestoes":[{"sku":"SKU_AQUI","categorias":[{"id":123,"nome":"Nome"}],"tags":["tag1","tag2"]}]}
+
+IMPORTANTE: tags devem ser strings simples sem aspas internas ou caracteres especiais.`;
 
     const tracePayload = { prompt: prompt.slice(0, 2000), resposta: '' }; // trace para diagnóstico
 
@@ -355,10 +357,11 @@ Responda APENAS com JSON valido, sem texto antes ou depois, sem markdown:
     }
 
     const data = await response.json() as any;
-    const text = (data.content?.[0]?.text || '').trim();
-    tracePayload.resposta = text.slice(0, 3000); // captura para diagnóstico
+    const rawText = (data.content?.[0]?.text || '').trim();
+    tracePayload.resposta = rawText.slice(0, 3000);
+    const text = rawText;
 
-    if (!text) {
+    if (!rawText) {
       console.error('[sugerir-ia] trace:', JSON.stringify(tracePayload));
       return res.status(500).json({ ok: false, error: 'Resposta vazia da IA' });
     }
@@ -388,14 +391,15 @@ Responda APENAS com JSON valido, sem texto antes ou depois, sem markdown:
     try {
       parsed = JSON.parse(jsonStr);
     } catch {
-      // Tenta reparar: remove vírgulas finais antes de } ou ]
+      // Repair: padrão visto nos logs — modelo fecha com }}]} em vez de }]}
+      // Substitui todas as ocorrências de chave dupla antes de ] no fim do array de sugestoes
+      const repaired = jsonStr
+        .replace(/\}\}\]\}/g, '}]}')   // }}]} → }]}
+        .replace(/,\s*}/g, '}')         // vírgulas finais antes de }
+        .replace(/,\s*]/g, ']');        // vírgulas finais antes de ]
       try {
-        const repaired = jsonStr
-          .replace(/,\s*}/g, '}')
-          .replace(/,\s*]/g, ']');
         parsed = JSON.parse(repaired);
       } catch (parseErr: any) {
-        // Loga trace completo para diagnóstico
         console.error('[sugerir-ia] JSON inválido — trace:', JSON.stringify(tracePayload));
         return res.status(500).json({ ok: false, error: `Erro ao parsear JSON: ${parseErr.message}` });
       }
