@@ -365,6 +365,10 @@ detranRouter.post('/config', async (req, res, next) => {
   try {
     const payload = detranConfigSchema.parse(req.body || {});
     const current = await getConfigRecord();
+    const shouldResetGoogleDriveAccessToken =
+      payload.gmailClientId !== undefined
+      || Boolean(normalizeText(payload.gmailClientSecret))
+      || Boolean(normalizeText(payload.gmailRefreshToken));
 
     const updated = await prisma.detranConfig.update({
       where: { slug: DEFAULT_CONFIG_SLUG },
@@ -391,6 +395,12 @@ detranRouter.post('/config', async (req, res, next) => {
         notes: payload.notes !== undefined ? normalizeNullableText(payload.notes) : current.notes,
       },
     });
+
+    if (shouldResetGoogleDriveAccessToken) {
+      await prisma.configuracaoGeral.updateMany({
+        data: { googleDriveAccessToken: '', googleDriveTokenExpiry: null },
+      });
+    }
 
     res.json({ ok: true, config: serializeConfig(updated) });
   } catch (error) {

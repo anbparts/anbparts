@@ -23,46 +23,98 @@ async function getConfig() {
   };
 }
 
-async function getValidToken(cfg: any): Promise<string | null> {
-  const now = new Date();
-  const expiry = cfg.googleDriveTokenExpiry ? new Date(cfg.googleDriveTokenExpiry) : null;
-  if (cfg.googleDriveAccessToken && expiry && expiry.getTime() - now.getTime() > 5 * 60 * 1000) {
-    return cfg.googleDriveAccessToken;
-  }
-  if (!cfg.googleDriveRefreshToken) return null;
-  try {
-    const resp = await fetch(GOOGLE_TOKEN_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id: cfg.googleDriveClientId,
-        client_secret: cfg.googleDriveClientSecret,
-        refresh_token: cfg.googleDriveRefreshToken,
-        grant_type: 'refresh_token',
-      }),
-    });
-    const data = await resp.json() as any;
-    if (!data.access_token) return null;
-    const newExpiry = new Date(Date.now() + (data.expires_in || 3600) * 1000);
-    await prisma.configuracaoGeral.updateMany({
-      data: { googleDriveAccessToken: data.access_token, googleDriveTokenExpiry: newExpiry },
-    });
-    return data.access_token;
-  } catch { return null; }
+function createGoogleDriveError(message: string, status = 500) {
+  const error = new Error(message) as Error & { status?: number };
+  error.status = status;
+  return error;
 }
 
-async function driveGet(token: string, path: string): Promise<any> {
-  const resp = await fetch(`${GOOGLE_DRIVE_URL}${path}`, {
+async function clearCachedGoogleDriveToken() {
+  await prisma.configuracaoGeral.updateMany({
+    data: { googleDriveAccessToken: '', googleDriveTokenExpiry: null },
+  });
+}
+
+function getGoogleApiErrorMessage(payload: any, fallback: string) {
+  return String(
+    payload?.error_description
+    || payload?.error?.message
+    || payload?.error
+    || fallback,
+  ).trim();
+}
+
+async function getValidToken(cfg: any, options?: { forceRefresh?: boolean }): Promise<string | null> {
+  const now = new Date();
+  const expiry = cfg.googleDriveTokenExpiry ? new Date(cfg.googleDriveTokenExpiry) : null;
+  if (!options?.forceRefresh && cfg.googleDriveAccessToken && expiry && expiry.getTime() - now.getTime() > 5 * 60 * 1000) {
+    return cfg.googleDriveAccessToken;
+  }
+
+  if (!cfg.googleDriveRefreshToken) return null;
+
+  const resp = await fetch(GOOGLE_TOKEN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: cfg.googleDriveClientId,
+      client_secret: cfg.googleDriveClientSecret,
+      refresh_token: cfg.googleDriveRefreshToken,
+      grant_type: 'refresh_token',
+    }),
+  });
+  const data = await resp.json().catch(() => ({})) as any;
+  if (!resp.ok || !data.access_token) {
+    await clearCachedGoogleDriveToken();
+    throw createGoogleDriveError(
+      getGoogleApiErrorMessage(data, 'Nao foi possivel renovar o acesso ao Google Drive. Reconecte o Google.'),
+      401,
+    );
+  }
+
+  const newExpiry = new Date(Date.now() + (data.expires_in || 3600) * 1000);
+  await prisma.configuracaoGeral.updateMany({
+    data: { googleDriveAccessToken: data.access_token, googleDriveTokenExpiry: newExpiry },
+  });
+  return data.access_token;
+}
+
+async function driveFetch(cfg: any, path: string) {
+  const execute = (token: string) => fetch(`${GOOGLE_DRIVE_URL}${path}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  return resp.json() as Promise<any>;
+
+  let token = await getValidToken(cfg);
+  if (!token) throw createGoogleDriveError('Google Drive nao conectado', 401);
+
+  let resp = await execute(token);
+  if ((resp.status === 401 || resp.status === 403) && cfg.googleDriveRefreshToken) {
+    await clearCachedGoogleDriveToken();
+    token = await getValidToken({
+      ...cfg,
+      googleDriveAccessToken: '',
+      googleDriveTokenExpiry: null,
+    }, { forceRefresh: true });
+    if (token) resp = await execute(token);
+  }
+
+  return resp;
+}
+
+async function driveGet(cfg: any, path: string): Promise<any> {
+  const resp = await driveFetch(cfg, path);
+  const data = await resp.json().catch(() => ({})) as any;
+  if (!resp.ok) {
+    throw createGoogleDriveError(getGoogleApiErrorMessage(data, `Google Drive ${resp.status}`), resp.status);
+  }
+  return data;
 }
 
 // GET /google-drive/config
 googleDriveRouter.get('/config', async (_req, res, next) => {
   try {
     const cfg = await getConfig();
-    const token = await getValidToken(cfg);
+    const token = await getValidToken(cfg).catch(() => null);
     res.json({
       ok: true,
       clientId: cfg.googleDriveClientId || '',
@@ -82,6 +134,10 @@ googleDriveRouter.post('/config', async (req, res, next) => {
     if (clientSecret !== undefined) data.googleDriveClientSecret = String(clientSecret).trim();
     if (rootFolderId !== undefined) data.googleDriveRootFolderId = String(rootFolderId).trim();
     if (motoDirs !== undefined) data.googleDriveMotoDirs = motoDirs;
+    if (clientId !== undefined || clientSecret !== undefined) {
+      data.googleDriveAccessToken = '';
+      data.googleDriveTokenExpiry = null;
+    }
     await prisma.configuracaoGeral.updateMany({ data });
     res.json({ ok: true });
   } catch (e) { next(e); }
@@ -149,18 +205,16 @@ googleDriveRouter.get('/callback', async (req, res, next) => {
 googleDriveRouter.get('/listar-pastas-moto', async (_req, res, next) => {
   try {
     const cfg = await getConfig();
-    const token = await getValidToken(cfg);
-    if (!token) return res.status(401).json({ error: 'Google Drive não conectado' });
     const rootId = cfg.googleDriveRootFolderId;
     if (!rootId) return res.status(400).json({ error: 'ID da pasta raiz não configurado' });
 
     // Lista todas as subpastas dentro do root (marcas) e dentro delas (motos)
-    const marcasResp = await driveGet(token, `/files?q='${rootId}'+in+parents+and+mimeType='application/vnd.google-apps.folder'&fields=files(id,name)&pageSize=50&orderBy=name`);
+    const marcasResp = await driveGet(cfg, `/files?q='${rootId}'+in+parents+and+mimeType='application/vnd.google-apps.folder'&fields=files(id,name)&pageSize=50&orderBy=name`);
     const marcas: any[] = marcasResp.files || [];
 
     const todasPastas: any[] = [];
     for (const marca of marcas) {
-      const motosResp = await driveGet(token, `/files?q='${marca.id}'+in+parents+and+mimeType='application/vnd.google-apps.folder'&fields=files(id,name)&pageSize=100&orderBy=name`);
+      const motosResp = await driveGet(cfg, `/files?q='${marca.id}'+in+parents+and+mimeType='application/vnd.google-apps.folder'&fields=files(id,name)&pageSize=100&orderBy=name`);
       const motos: any[] = (motosResp.files || []).map((m: any) => ({
         id: m.id,
         nome: m.name,
@@ -181,8 +235,6 @@ googleDriveRouter.post('/buscar-fotos-sku', async (req, res, next) => {
     if (!sku) return res.status(400).json({ error: 'sku obrigatorio' });
 
     const cfg = await getConfig();
-    const token = await getValidToken(cfg);
-    if (!token) return res.status(401).json({ error: 'Google Drive não conectado' });
 
     const motoDirs = (cfg.googleDriveMotoDirs as any) || {};
     const motoPastaId = motoId ? motoDirs[String(motoId)] : null;
@@ -191,7 +243,7 @@ googleDriveRouter.post('/buscar-fotos-sku', async (req, res, next) => {
     const skuBase = String(sku).toUpperCase().replace(/-\d+$/, '');
 
     // Busca subpasta da moto cujo nome começa com o SKU
-    const pastasResp = await driveGet(token, `/files?q='${motoPastaId}'+in+parents+and+mimeType='application/vnd.google-apps.folder'+and+name+contains+'${skuBase}'&fields=files(id,name)&pageSize=10`);
+    const pastasResp = await driveGet(cfg, `/files?q='${motoPastaId}'+in+parents+and+mimeType='application/vnd.google-apps.folder'+and+name+contains+'${skuBase}'&fields=files(id,name)&pageSize=10`);
     const pastas: any[] = pastasResp.files || [];
     const pasta = pastas.find((p: any) => String(p.name).toUpperCase().startsWith(skuBase));
 
@@ -200,7 +252,7 @@ googleDriveRouter.post('/buscar-fotos-sku', async (req, res, next) => {
     }
 
     // Lista imagens dentro da pasta
-    const fotosResp = await driveGet(token, `/files?q='${pasta.id}'+in+parents+and+mimeType+contains+'image/'&fields=files(id,name,mimeType,size)&orderBy=name&pageSize=50`);
+    const fotosResp = await driveGet(cfg, `/files?q='${pasta.id}'+in+parents+and+mimeType+contains+'image/'&fields=files(id,name,mimeType,size)&orderBy=name&pageSize=50`);
     let fotos: any[] = (fotosResp.files || []).map((f: any) => ({
       id: f.id, nome: f.name, mimeType: f.mimeType, size: f.size,
     }));
@@ -223,11 +275,7 @@ googleDriveRouter.post('/download-foto', async (req, res, next) => {
     const { fileId, mimeType } = req.body || {};
     if (!fileId) return res.status(400).json({ error: 'fileId obrigatorio' });
     const cfg = await getConfig();
-    const token = await getValidToken(cfg);
-    if (!token) return res.status(401).json({ error: 'Google Drive não conectado' });
-    const resp = await fetch(`${GOOGLE_DRIVE_URL}/files/${fileId}?alt=media`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const resp = await driveFetch(cfg, `/files/${fileId}?alt=media`);
     if (!resp.ok) return res.status(500).json({ error: `Erro ao baixar: ${resp.status}` });
     const buffer = await resp.arrayBuffer();
     const base64 = Buffer.from(buffer).toString('base64');
