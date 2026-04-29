@@ -248,10 +248,7 @@ googleDriveRouter.get('/config', async (_req, res, next) => {
   try {
     const cfg = await getConfig();
     let connectionError = '';
-    const connected = await driveGet(cfg, '/about?fields=user').then(async () => {
-      if (cfg.googleDriveRootFolderId) await getDriveFolder(cfg, cfg.googleDriveRootFolderId);
-      return true;
-    }).catch((error: any) => {
+    const connected = await driveGet(cfg, '/about?fields=user').then(() => true).catch((error: any) => {
       connectionError = error?.message || 'Falha ao validar conexao com Google Drive';
       return false;
     });
@@ -343,12 +340,12 @@ googleDriveRouter.get('/listar-pastas-moto', async (_req, res, next) => {
     const rootId = cfg.googleDriveRootFolderId;
     if (!rootId) return res.status(400).json({ error: 'ID da pasta raiz nao configurado' });
 
-    const rootFolder = await getDriveFolder(cfg, rootId);
-    if (rootFolder.mimeType !== 'application/vnd.google-apps.folder') {
-      return res.status(400).json({ error: 'O ID configurado nao aponta para uma pasta do Google Drive.' });
+    let pastasDiretas: any[] = [];
+    try {
+      pastasDiretas = await listDriveFoldersInParent(cfg, rootId);
+    } catch {
+      pastasDiretas = [];
     }
-
-    const pastasDiretas = await listDriveFoldersInParent(cfg, rootId);
     const pastasPorId = new Map<string, any>();
 
     for (const pasta of pastasDiretas) {
@@ -370,6 +367,24 @@ googleDriveRouter.get('/listar-pastas-moto', async (_req, res, next) => {
       }
     }
 
+    const motoDirs = (cfg.googleDriveMotoDirs as any) || {};
+    for (const [motoId, folderIdValue] of Object.entries(motoDirs)) {
+      const folderId = normalizeText(folderIdValue);
+      if (!folderId || pastasPorId.has(folderId)) continue;
+
+      let nome = `Moto ID ${motoId}`;
+      try {
+        const folder = await getDriveFolder(cfg, folderId);
+        nome = normalizeText(folder?.name) || nome;
+      } catch {}
+
+      pastasPorId.set(folderId, {
+        id: folderId,
+        nome,
+        marca: 'Configurado',
+      });
+    }
+
     const todasPastas = Array.from(pastasPorId.values()).sort((a, b) => (
       `${a.marca}/${a.nome}`.localeCompare(`${b.marca}/${b.nome}`, 'pt-BR', {
         numeric: true,
@@ -382,7 +397,7 @@ googleDriveRouter.get('/listar-pastas-moto', async (_req, res, next) => {
       pastas: todasPastas,
       diagnostico: {
         rootFolderId: rootId,
-        rootFolderName: rootFolder.name,
+        rootFolderName: 'Pasta raiz configurada',
         pastasDiretas: pastasDiretas.length,
         totalPastas: todasPastas.length,
       },

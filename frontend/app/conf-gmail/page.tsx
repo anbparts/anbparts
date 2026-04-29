@@ -219,8 +219,11 @@ export default function ConfGmailPage() {
                 <div style={s.sectionTitle}>📁 Configuração Acesso Fotos Drive</div>
                 <div style={s.sectionSub}>Pasta raiz e mapeamento de diretórios por moto para importação de fotos na Nuvemshop</div>
               </div>
-              <span style={{ fontSize: 12, padding: '3px 10px', borderRadius: 6, background: driveConnected ? '#f0fdf4' : '#fef9c3', color: driveConnected ? '#16a34a' : '#92400e', border: `1px solid ${driveConnected ? '#86efac' : '#fde68a'}` }}>
+              <span style={{ display: 'none' }}>
                 {driveConnected ? '✓ Token disponível' : '⚠ Reconectar necessário'}
+              </span>
+              <span style={{ fontSize: 12, padding: '3px 10px', borderRadius: 6, background: driveConnected ? '#f0fdf4' : '#fef9c3', color: driveConnected ? '#16a34a' : '#92400e', border: `1px solid ${driveConnected ? '#86efac' : '#fde68a'}` }}>
+                {driveConnected ? 'Token validado' : 'Token pendente'}
               </span>
             </div>
           </div>
