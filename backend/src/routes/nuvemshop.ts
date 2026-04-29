@@ -132,6 +132,27 @@ async function listarImagensProdutoNuvemshop(produtoId: number | string) {
   return Array.isArray(imagens) ? imagens : [];
 }
 
+function aguardar(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+function maiorPosicaoImagem(imagens: NuvemshopImagemResumo[]) {
+  return imagens.reduce((max, img) => {
+    const posicao = Number(img?.position || 0);
+    return Number.isFinite(posicao) && posicao > max ? posicao : max;
+  }, 0);
+}
+
+async function listarImagensAteCrescer(produtoId: number | string, totalAnterior: number) {
+  let imagensDepois: NuvemshopImagemResumo[] = [];
+  for (let tentativa = 0; tentativa < 4; tentativa++) {
+    imagensDepois = await listarImagensProdutoNuvemshop(produtoId);
+    if (imagensDepois.length > totalAnterior) break;
+    if (tentativa < 3) await aguardar(700);
+  }
+  return imagensDepois;
+}
+
 nuvemshopRouter.get('/categorias', async (_req, res, next) => {
   try {
     // Busca todas as categorias paginando
@@ -497,14 +518,9 @@ nuvemshopRouter.post('/upload-imagens', async (req, res, next) => {
     if (!Array.isArray(imagens) || !imagens.length) return res.status(400).json({ ok: false, error: 'imagens obrigatorio' });
 
     const resultados: any[] = new Array(imagens.length);
-    const imagensExistentes = await listarImagensProdutoNuvemshop(produtoId);
-    let proximaPosicao =
-      (Array.isArray(imagensExistentes)
-        ? imagensExistentes.reduce((max, img) => {
-            const posicao = Number(img?.position || 0);
-            return Number.isFinite(posicao) && posicao > max ? posicao : max;
-          }, 0)
-        : 0) + 1;
+    let imagensConhecidas = await listarImagensProdutoNuvemshop(produtoId);
+    let totalImagensConhecido = imagensConhecidas.length;
+    let proximaPosicao = maiorPosicaoImagem(imagensConhecidas) + 1;
 
     for (let indice = 0; indice < imagens.length; indice++) {
       const img = imagens[indice];
@@ -531,8 +547,32 @@ nuvemshopRouter.post('/upload-imagens', async (req, res, next) => {
           src: data.src,
           position: data.position ?? posicao,
         };
+        totalImagensConhecido++;
+        imagensConhecidas = [
+          ...imagensConhecidas,
+          { id: data.id, src: data.src || null, position: data.position ?? posicao },
+        ];
         proximaPosicao++;
       } catch (e: any) {
+        const imagensDepoisErro = await listarImagensAteCrescer(produtoId, totalImagensConhecido);
+        if (imagensDepoisErro.length > totalImagensConhecido) {
+          const ordenadas = [...imagensDepoisErro].sort((a, b) => Number(a.position || 0) - Number(b.position || 0));
+          const imagemConfirmada = ordenadas[ordenadas.length - 1];
+          imagensConhecidas = imagensDepoisErro;
+          totalImagensConhecido = imagensDepoisErro.length;
+          proximaPosicao = maiorPosicaoImagem(imagensDepoisErro) + 1;
+          resultados[indice] = {
+            queueIndex: img.queueIndex ?? indice,
+            filename: img.filename,
+            ok: true,
+            reconciliada: true,
+            id: imagemConfirmada?.id,
+            src: imagemConfirmada?.src || null,
+            position: imagemConfirmada?.position ?? null,
+          };
+          continue;
+        }
+
         resultados[indice] = {
           queueIndex: img.queueIndex ?? indice,
           filename: img.filename,
@@ -548,7 +588,7 @@ nuvemshopRouter.post('/upload-imagens', async (req, res, next) => {
       ok: true,
       enviadas,
       erros: erros.length,
-      totalImagens: imagensExistentes.length + enviadas,
+      totalImagens: totalImagensConhecido,
       resultados,
     });
   } catch (e) { next(e); }
