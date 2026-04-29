@@ -139,15 +139,6 @@ export default function ConfGmailPage() {
     setLoadingPastas(false);
   }
 
-  async function reconectar() {
-    try {
-      const resp = await fetch(`${API}/google-drive/auth-url`, { credentials: 'include' });
-      const data = await resp.json();
-      if (data.url) window.location.href = data.url;
-      else alert(data.error || 'Erro ao gerar URL');
-    } catch (e: any) { alert(String(e)); }
-  }
-
   const driveConnected = Boolean(driveMeta?.connected);
 
   return (
@@ -245,11 +236,11 @@ export default function ConfGmailPage() {
 
             {/* Reconectar para incluir escopo Drive */}
             {!driveConnected && (
-              <div style={{ background: '#fef9c3', border: '1px solid #fde68a', borderRadius: 8, padding: '12px 14px', marginBottom: 16, fontSize: 13 }}>
+              <div style={{ display: 'none' }}>
                 <strong>Reconecte o Google</strong> para gerar um novo token com o escopo <code>drive.readonly</code> incluído.
-                <button style={{ ...s.btn, background: '#1d4ed8', color: '#fff', marginLeft: 12, padding: '5px 14px' }} onClick={reconectar}>
+                <span style={{ display: 'none' }}>
                   🔑 Reconectar com Google
-                </button>
+                </span>
               </div>
             )}
 
