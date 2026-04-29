@@ -82,9 +82,12 @@ export default function ConfGmailPage() {
       });
       setGmailClientSecret('');
       setGmailRefreshToken('');
+      setPastasDrive([]);
       await load();
       await carregarDriveConfig();
+      setFeedback('OK - Configuracoes Gmail salvas!');
       setFeedback('✓ Configurações Gmail salvas!');
+      setFeedback('OK - Configuracoes Gmail salvas!');
     } catch (e: any) { setFeedback(`Erro: ${e.message}`); }
     setSaving(false);
   }
@@ -103,7 +106,9 @@ export default function ConfGmailPage() {
         throw new Error(data.error || `Erro ao salvar Drive (${resp.status})`);
       }
       await carregarDriveConfig();
+      setFeedback('OK - Configuracoes Drive salvas!');
       setFeedback('✓ Configurações Drive salvas!');
+      setFeedback('OK - Configuracoes Drive salvas!');
     } catch (e: any) { setFeedback(`Erro: ${e.message}`); }
     setSaving(false);
   }
@@ -118,7 +123,14 @@ export default function ConfGmailPage() {
 
       const pastas = data.pastas || [];
       setPastasDrive(pastas);
-      setFeedback(pastas.length ? `âœ“ ${pastas.length} pasta(s) carregada(s) do Drive.` : 'Nenhuma pasta encontrada na pasta raiz configurada.');
+      if (pastas.length) {
+        setFeedback(`âœ“ ${pastas.length} pasta(s) carregada(s) do Drive.`);
+        setFeedback(`OK - ${pastas.length} pasta(s) carregada(s) do Drive.`);
+      } else {
+        const diag = data.diagnostico;
+        const raiz = diag?.rootFolderName ? ` "${diag.rootFolderName}"` : '';
+        setFeedback(`Nenhuma subpasta encontrada na pasta raiz${raiz}. Verifique se o token atual tem acesso ao conteúdo dessa pasta.`);
+      }
       await carregarDriveConfig();
     } catch (e: any) {
       setPastasDrive([]);

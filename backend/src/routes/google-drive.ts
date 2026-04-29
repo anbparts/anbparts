@@ -24,14 +24,19 @@ async function getConfig() {
   const detranCfg = await prisma.detranConfig.findFirst();
   const driveRefreshToken = normalizeText(cfg.googleDriveRefreshToken);
   const gmailRefreshToken = normalizeText(detranCfg?.gmailRefreshToken);
+  const preferredRefreshToken = gmailRefreshToken || driveRefreshToken;
+  const fallbackRefreshToken = gmailRefreshToken && driveRefreshToken && gmailRefreshToken !== driveRefreshToken ? driveRefreshToken : '';
+  const refreshTokenChanged = Boolean(gmailRefreshToken && driveRefreshToken && gmailRefreshToken !== driveRefreshToken);
 
   return {
     ...cfg,
     // Sobrepõe com as credenciais OAuth do DetranConfig
     googleDriveClientId: detranCfg?.gmailClientId || cfg.googleDriveClientId || '',
     googleDriveClientSecret: detranCfg?.gmailClientSecret || cfg.googleDriveClientSecret || '',
-    googleDriveRefreshToken: driveRefreshToken || gmailRefreshToken,
-    googleDriveFallbackRefreshToken: driveRefreshToken && gmailRefreshToken && driveRefreshToken !== gmailRefreshToken ? gmailRefreshToken : '',
+    googleDriveAccessToken: refreshTokenChanged ? '' : cfg.googleDriveAccessToken,
+    googleDriveTokenExpiry: refreshTokenChanged ? null : cfg.googleDriveTokenExpiry,
+    googleDriveRefreshToken: preferredRefreshToken,
+    googleDriveFallbackRefreshToken: fallbackRefreshToken,
   };
 }
 
@@ -54,6 +59,21 @@ function getGoogleApiErrorMessage(payload: any, fallback: string) {
     || payload?.error
     || fallback,
   ).trim();
+}
+
+function escapeDriveQueryValue(value: any) {
+  return normalizeText(value)
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'");
+}
+
+function buildDrivePath(path: string, params: Record<string, string>, options?: { includeListParams?: boolean }) {
+  const searchParams = new URLSearchParams({
+    supportsAllDrives: 'true',
+    ...params,
+  });
+  if (options?.includeListParams) searchParams.set('includeItemsFromAllDrives', 'true');
+  return `${path}?${searchParams.toString()}`;
 }
 
 async function getValidToken(cfg: any, options?: { forceRefresh?: boolean }): Promise<string | null> {
@@ -168,12 +188,70 @@ async function driveGet(cfg: any, path: string): Promise<any> {
   return data;
 }
 
+async function listDriveFiles(cfg: any, q: string, fields: string, extraParams: Record<string, string> = {}) {
+  const files: any[] = [];
+  let pageToken = '';
+
+  do {
+    const params: Record<string, string> = {
+      q,
+      fields: `nextPageToken,${fields}`,
+      pageSize: extraParams.pageSize || '100',
+      orderBy: extraParams.orderBy || 'name',
+      ...extraParams,
+    };
+    if (pageToken) params.pageToken = pageToken;
+
+    const data = await driveGet(cfg, buildDrivePath('/files', params, { includeListParams: true }));
+    files.push(...(Array.isArray(data.files) ? data.files : []));
+    pageToken = normalizeText(data.nextPageToken);
+  } while (pageToken);
+
+  return files;
+}
+
+async function getDriveFolder(cfg: any, folderId: string) {
+  return driveGet(cfg, buildDrivePath(`/files/${encodeURIComponent(folderId)}`, {
+    fields: 'id,name,mimeType',
+  }));
+}
+
+async function listDriveFoldersInParent(cfg: any, parentId: string, pageSize = '100') {
+  return listDriveFiles(
+    cfg,
+    `'${escapeDriveQueryValue(parentId)}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+    'files(id,name)',
+    { pageSize, orderBy: 'name' },
+  );
+}
+
+async function listDriveSkuFolders(cfg: any, parentId: string, skuBase: string) {
+  return listDriveFiles(
+    cfg,
+    `'${escapeDriveQueryValue(parentId)}' in parents and mimeType = 'application/vnd.google-apps.folder' and name contains '${escapeDriveQueryValue(skuBase)}' and trashed = false`,
+    'files(id,name)',
+    { pageSize: '100', orderBy: 'name' },
+  );
+}
+
+async function listDriveImagesInParent(cfg: any, parentId: string) {
+  return listDriveFiles(
+    cfg,
+    `'${escapeDriveQueryValue(parentId)}' in parents and mimeType contains 'image/' and trashed = false`,
+    'files(id,name,mimeType,size)',
+    { pageSize: '100', orderBy: 'name' },
+  );
+}
+
 // GET /google-drive/config
 googleDriveRouter.get('/config', async (_req, res, next) => {
   try {
     const cfg = await getConfig();
     let connectionError = '';
-    const connected = await driveGet(cfg, '/about?fields=user').then(() => true).catch((error: any) => {
+    const connected = await driveGet(cfg, '/about?fields=user').then(async () => {
+      if (cfg.googleDriveRootFolderId) await getDriveFolder(cfg, cfg.googleDriveRootFolderId);
+      return true;
+    }).catch((error: any) => {
       connectionError = error?.message || 'Falha ao validar conexao com Google Drive';
       return false;
     });
@@ -258,8 +336,63 @@ googleDriveRouter.get('/callback', async (req, res, next) => {
 });
 
 // GET /google-drive/listar-pastas-moto
-// Lista subpastas do rootFolderId para mapear motos
+// Lista pastas diretas do root e tambem subpastas em um nivel abaixo.
 googleDriveRouter.get('/listar-pastas-moto', async (_req, res, next) => {
+  try {
+    const cfg = await getConfig();
+    const rootId = cfg.googleDriveRootFolderId;
+    if (!rootId) return res.status(400).json({ error: 'ID da pasta raiz nao configurado' });
+
+    const rootFolder = await getDriveFolder(cfg, rootId);
+    if (rootFolder.mimeType !== 'application/vnd.google-apps.folder') {
+      return res.status(400).json({ error: 'O ID configurado nao aponta para uma pasta do Google Drive.' });
+    }
+
+    const pastasDiretas = await listDriveFoldersInParent(cfg, rootId);
+    const pastasPorId = new Map<string, any>();
+
+    for (const pasta of pastasDiretas) {
+      pastasPorId.set(pasta.id, {
+        id: pasta.id,
+        nome: pasta.name,
+        marca: 'Pasta raiz',
+      });
+    }
+
+    for (const pastaDireta of pastasDiretas) {
+      const subpastas = await listDriveFoldersInParent(cfg, pastaDireta.id);
+      for (const subpasta of subpastas) {
+        pastasPorId.set(subpasta.id, {
+          id: subpasta.id,
+          nome: subpasta.name,
+          marca: pastaDireta.name,
+        });
+      }
+    }
+
+    const todasPastas = Array.from(pastasPorId.values()).sort((a, b) => (
+      `${a.marca}/${a.nome}`.localeCompare(`${b.marca}/${b.nome}`, 'pt-BR', {
+        numeric: true,
+        sensitivity: 'base',
+      })
+    ));
+
+    res.json({
+      ok: true,
+      pastas: todasPastas,
+      diagnostico: {
+        rootFolderId: rootId,
+        rootFolderName: rootFolder.name,
+        pastasDiretas: pastasDiretas.length,
+        totalPastas: todasPastas.length,
+      },
+    });
+  } catch (e) { next(e); }
+});
+
+// GET /google-drive/listar-pastas-moto-legacy
+// Lista subpastas do rootFolderId para mapear motos
+googleDriveRouter.get('/listar-pastas-moto-legacy', async (_req, res, next) => {
   try {
     const cfg = await getConfig();
     const rootId = cfg.googleDriveRootFolderId;
@@ -300,8 +433,7 @@ googleDriveRouter.post('/buscar-fotos-sku', async (req, res, next) => {
     const skuBase = String(sku).toUpperCase().replace(/-\d+$/, '');
 
     // Busca subpasta da moto cujo nome começa com o SKU
-    const pastasResp = await driveGet(cfg, `/files?q='${motoPastaId}'+in+parents+and+mimeType='application/vnd.google-apps.folder'+and+name+contains+'${skuBase}'&fields=files(id,name)&pageSize=10`);
-    const pastas: any[] = pastasResp.files || [];
+    const pastas: any[] = await listDriveSkuFolders(cfg, motoPastaId, skuBase);
     const pasta = pastas.find((p: any) => String(p.name).toUpperCase().startsWith(skuBase));
 
     if (!pasta) {
@@ -309,8 +441,7 @@ googleDriveRouter.post('/buscar-fotos-sku', async (req, res, next) => {
     }
 
     // Lista imagens dentro da pasta
-    const fotosResp = await driveGet(cfg, `/files?q='${pasta.id}'+in+parents+and+mimeType+contains+'image/'&fields=files(id,name,mimeType,size)&orderBy=name&pageSize=50`);
-    let fotos: any[] = (fotosResp.files || []).map((f: any) => ({
+    let fotos: any[] = (await listDriveImagesInParent(cfg, pasta.id)).map((f: any) => ({
       id: f.id, nome: f.name, mimeType: f.mimeType, size: f.size,
     }));
 
@@ -332,7 +463,7 @@ googleDriveRouter.post('/download-foto', async (req, res, next) => {
     const { fileId, mimeType } = req.body || {};
     if (!fileId) return res.status(400).json({ error: 'fileId obrigatorio' });
     const cfg = await getConfig();
-    const resp = await driveFetch(cfg, `/files/${fileId}?alt=media`);
+    const resp = await driveFetch(cfg, buildDrivePath(`/files/${encodeURIComponent(fileId)}`, { alt: 'media' }));
     if (!resp.ok) {
       const data = await resp.json().catch(() => ({})) as any;
       return res.status(resp.status).json({ error: getGoogleApiErrorMessage(data, `Erro ao baixar: ${resp.status}`) });
