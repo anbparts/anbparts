@@ -15,28 +15,24 @@ function normalizeText(value: any) {
   return String(value || '').trim();
 }
 
+// Credenciais OAuth ficam na DetranConfig (gmailClientId, gmailClientSecret, gmailRefreshToken)
+// Configurações do Drive (rootFolderId, motoDirs, accessToken cache) ficam na ConfiguracaoGeral
 async function getConfig() {
-  // Credenciais OAuth ficam na DetranConfig (gmailClientId, gmailClientSecret, gmailRefreshToken)
-  // Configurações do Drive (rootFolderId, motoDirs, accessToken) ficam na ConfiguracaoGeral
   let cfg = await prisma.configuracaoGeral.findFirst();
   if (!cfg) cfg = await prisma.configuracaoGeral.create({ data: {} });
 
   const detranCfg = await prisma.detranConfig.findFirst();
-  const driveRefreshToken = normalizeText(cfg.googleDriveRefreshToken);
-  const gmailRefreshToken = normalizeText(detranCfg?.gmailRefreshToken);
-  const preferredRefreshToken = gmailRefreshToken || driveRefreshToken;
-  const fallbackRefreshToken = gmailRefreshToken && driveRefreshToken && gmailRefreshToken !== driveRefreshToken ? driveRefreshToken : '';
-  const refreshTokenChanged = Boolean(gmailRefreshToken && driveRefreshToken && gmailRefreshToken !== driveRefreshToken);
+
+  // Usa credenciais do DetranConfig como fonte principal (mesmas do Gmail)
+  const clientId = detranCfg?.gmailClientId || cfg.googleDriveClientId || '';
+  const clientSecret = detranCfg?.gmailClientSecret || cfg.googleDriveClientSecret || '';
+  const refreshToken = detranCfg?.gmailRefreshToken || cfg.googleDriveRefreshToken || '';
 
   return {
     ...cfg,
-    // Sobrepõe com as credenciais OAuth do DetranConfig
-    googleDriveClientId: detranCfg?.gmailClientId || cfg.googleDriveClientId || '',
-    googleDriveClientSecret: detranCfg?.gmailClientSecret || cfg.googleDriveClientSecret || '',
-    googleDriveAccessToken: refreshTokenChanged ? '' : cfg.googleDriveAccessToken,
-    googleDriveTokenExpiry: refreshTokenChanged ? null : cfg.googleDriveTokenExpiry,
-    googleDriveRefreshToken: preferredRefreshToken,
-    googleDriveFallbackRefreshToken: fallbackRefreshToken,
+    googleDriveClientId: clientId,
+    googleDriveClientSecret: clientSecret,
+    googleDriveRefreshToken: refreshToken,
   };
 }
 
@@ -79,50 +75,44 @@ function buildDrivePath(path: string, params: Record<string, string>, options?: 
 async function getValidToken(cfg: any, options?: { forceRefresh?: boolean }): Promise<string | null> {
   const now = new Date();
   const expiry = cfg.googleDriveTokenExpiry ? new Date(cfg.googleDriveTokenExpiry) : null;
+
+  // Usa token em cache se ainda válido por mais de 5 minutos
   if (!options?.forceRefresh && cfg.googleDriveAccessToken && expiry && expiry.getTime() - now.getTime() > 5 * 60 * 1000) {
     return cfg.googleDriveAccessToken;
   }
 
-  const refreshTokens = [
-    normalizeText(cfg.googleDriveRefreshToken),
-    normalizeText(cfg.googleDriveFallbackRefreshToken),
-  ].filter((token, index, array) => token && array.indexOf(token) === index);
-  if (!refreshTokens.length) return null;
+  const refreshToken = normalizeText(cfg.googleDriveRefreshToken);
+  if (!refreshToken) return null;
 
-  let lastError: any = null;
-  for (const refreshToken of refreshTokens) {
-    const resp = await fetch(GOOGLE_TOKEN_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id: cfg.googleDriveClientId,
-        client_secret: cfg.googleDriveClientSecret,
-        refresh_token: refreshToken,
-        grant_type: 'refresh_token',
-      }),
-    });
-    const data = await resp.json().catch(() => ({})) as any;
-    if (!resp.ok || !data.access_token) {
-      lastError = data;
-      continue;
-    }
+  const resp = await fetch(GOOGLE_TOKEN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: cfg.googleDriveClientId,
+      client_secret: cfg.googleDriveClientSecret,
+      refresh_token: refreshToken,
+      grant_type: 'refresh_token',
+    }),
+  });
 
-    const newExpiry = new Date(Date.now() + (data.expires_in || 3600) * 1000);
-    await prisma.configuracaoGeral.updateMany({
-      data: {
-        googleDriveAccessToken: data.access_token,
-        googleDriveRefreshToken: normalizeText(data.refresh_token) || refreshToken,
-        googleDriveTokenExpiry: newExpiry,
-      },
-    });
-    return data.access_token;
+  const data = await resp.json().catch(() => ({})) as any;
+
+  if (!resp.ok || !data.access_token) {
+    await clearCachedGoogleDriveToken();
+    const errMsg = getGoogleApiErrorMessage(data, 'Não foi possível renovar o acesso ao Google Drive. Verifique o Refresh Token na Config. Gmail.');
+    throw createGoogleDriveError(errMsg, 401);
   }
 
-  await clearCachedGoogleDriveToken();
-  throw createGoogleDriveError(
-    getGoogleApiErrorMessage(lastError, 'Nao foi possivel renovar o acesso ao Google Drive. Reconecte o Google.'),
-    401,
-  );
+  const newExpiry = new Date(Date.now() + (data.expires_in || 3600) * 1000);
+  await prisma.configuracaoGeral.updateMany({
+    data: {
+      googleDriveAccessToken: data.access_token,
+      googleDriveRefreshToken: normalizeText(data.refresh_token) || refreshToken,
+      googleDriveTokenExpiry: newExpiry,
+    },
+  });
+
+  return data.access_token;
 }
 
 async function saveGoogleDriveOAuthTokens(data: any, cfg: any, expiry: Date) {
@@ -159,20 +149,14 @@ async function driveFetch(cfg: any, path: string) {
   });
 
   let token = await getValidToken(cfg);
-  if (!token) throw createGoogleDriveError('Google Drive nao conectado', 401);
+  if (!token) throw createGoogleDriveError('Google Drive não conectado. Configure o Refresh Token na Config. Gmail.', 401);
 
   let resp = await execute(token);
-  if ((resp.status === 401 || resp.status === 403) && cfg.googleDriveRefreshToken) {
+
+  // Token expirado durante a requisição — força renovação e tenta novamente
+  if (resp.status === 401 || resp.status === 403) {
     await clearCachedGoogleDriveToken();
-    const fallbackRefreshToken = normalizeText(cfg.googleDriveFallbackRefreshToken);
-    const primaryRefreshToken = normalizeText(cfg.googleDriveRefreshToken);
-    token = await getValidToken({
-      ...cfg,
-      googleDriveRefreshToken: fallbackRefreshToken || primaryRefreshToken,
-      googleDriveFallbackRefreshToken: fallbackRefreshToken ? primaryRefreshToken : '',
-      googleDriveAccessToken: '',
-      googleDriveTokenExpiry: null,
-    }, { forceRefresh: true });
+    token = await getValidToken({ ...cfg, googleDriveAccessToken: '', googleDriveTokenExpiry: null }, { forceRefresh: true });
     if (token) resp = await execute(token);
   }
 
@@ -249,7 +233,7 @@ googleDriveRouter.get('/config', async (_req, res, next) => {
     const cfg = await getConfig();
     let connectionError = '';
     const connected = await driveGet(cfg, '/about?fields=user').then(() => true).catch((error: any) => {
-      connectionError = error?.message || 'Falha ao validar conexao com Google Drive';
+      connectionError = error?.message || 'Falha ao validar conexão com Google Drive';
       return false;
     });
     res.json({
@@ -302,7 +286,7 @@ googleDriveRouter.get('/auth-url', async (_req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// GET /google/callback — OAuth callback
+// GET /google/callback — OAuth callback (público — sem authMiddleware)
 googleDriveRouter.get('/callback', async (req, res, next) => {
   try {
     const code = String(req.query.code || '');
@@ -333,102 +317,68 @@ googleDriveRouter.get('/callback', async (req, res, next) => {
 });
 
 // GET /google-drive/listar-pastas-moto
-// Lista pastas diretas do root e tambem subpastas em um nivel abaixo.
+// Estrutura esperada: rootFolder → Marcas (BMW, HONDA...) → Pastas das motos (02-BM01-F800 GS...)
+// Retorna apenas as pastas das motos (2º nível), agrupadas por marca
 googleDriveRouter.get('/listar-pastas-moto', async (_req, res, next) => {
   try {
     const cfg = await getConfig();
-    const rootId = cfg.googleDriveRootFolderId;
-    if (!rootId) return res.status(400).json({ error: 'ID da pasta raiz nao configurado' });
+    const rootId = normalizeText(cfg.googleDriveRootFolderId);
+    if (!rootId) return res.status(400).json({ error: 'ID da pasta raiz não configurado. Salve o ID na seção "Configuração Acesso Fotos Drive".' });
 
-    let pastasDiretas: any[] = [];
-    try {
-      pastasDiretas = await listDriveFoldersInParent(cfg, rootId);
-    } catch {
-      pastasDiretas = [];
-    }
-    const pastasPorId = new Map<string, any>();
+    // 1. Lista marcas (BMW, HONDA, YAMAHA...) dentro do root
+    const marcas = await listDriveFoldersInParent(cfg, rootId);
 
-    for (const pasta of pastasDiretas) {
-      pastasPorId.set(pasta.id, {
-        id: pasta.id,
-        nome: pasta.name,
-        marca: 'Pasta raiz',
+    if (!marcas.length) {
+      return res.json({
+        ok: true,
+        pastas: [],
+        diagnostico: {
+          rootFolderId: rootId,
+          aviso: 'Nenhuma subpasta encontrada na pasta raiz. Verifique o ID e se o token tem acesso à pasta.',
+        },
       });
     }
 
-    for (const pastaDireta of pastasDiretas) {
-      const subpastas = await listDriveFoldersInParent(cfg, pastaDireta.id);
-      for (const subpasta of subpastas) {
-        pastasPorId.set(subpasta.id, {
-          id: subpasta.id,
-          nome: subpasta.name,
-          marca: pastaDireta.name,
+    // 2. Para cada marca, lista as pastas de moto (2º nível) — estas são mapeadas às motos
+    const todasPastas: any[] = [];
+    for (const marca of marcas) {
+      const motoPastas = await listDriveFoldersInParent(cfg, marca.id);
+      for (const pasta of motoPastas) {
+        todasPastas.push({
+          id: pasta.id,
+          nome: pasta.name,
+          marca: marca.name,
         });
       }
     }
 
+    // Inclui pastas já configuradas mas não encontradas na varredura (IDs salvos de antes)
     const motoDirs = (cfg.googleDriveMotoDirs as any) || {};
+    const idsEncontrados = new Set(todasPastas.map((p: any) => p.id));
     for (const [motoId, folderIdValue] of Object.entries(motoDirs)) {
       const folderId = normalizeText(folderIdValue);
-      if (!folderId || pastasPorId.has(folderId)) continue;
-
+      if (!folderId || idsEncontrados.has(folderId)) continue;
       let nome = `Moto ID ${motoId}`;
       try {
         const folder = await getDriveFolder(cfg, folderId);
         nome = normalizeText(folder?.name) || nome;
       } catch {}
-
-      pastasPorId.set(folderId, {
-        id: folderId,
-        nome,
-        marca: 'Configurado',
-      });
+      todasPastas.push({ id: folderId, nome, marca: 'Configurado anteriormente' });
     }
 
-    const todasPastas = Array.from(pastasPorId.values()).sort((a, b) => (
-      `${a.marca}/${a.nome}`.localeCompare(`${b.marca}/${b.nome}`, 'pt-BR', {
-        numeric: true,
-        sensitivity: 'base',
-      })
-    ));
+    todasPastas.sort((a, b) =>
+      `${a.marca}/${a.nome}`.localeCompare(`${b.marca}/${b.nome}`, 'pt-BR', { numeric: true, sensitivity: 'base' })
+    );
 
     res.json({
       ok: true,
       pastas: todasPastas,
       diagnostico: {
         rootFolderId: rootId,
-        rootFolderName: 'Pasta raiz configurada',
-        pastasDiretas: pastasDiretas.length,
+        marcasEncontradas: marcas.length,
         totalPastas: todasPastas.length,
       },
     });
-  } catch (e) { next(e); }
-});
-
-// GET /google-drive/listar-pastas-moto-legacy
-// Lista subpastas do rootFolderId para mapear motos
-googleDriveRouter.get('/listar-pastas-moto-legacy', async (_req, res, next) => {
-  try {
-    const cfg = await getConfig();
-    const rootId = cfg.googleDriveRootFolderId;
-    if (!rootId) return res.status(400).json({ error: 'ID da pasta raiz não configurado' });
-
-    // Lista todas as subpastas dentro do root (marcas) e dentro delas (motos)
-    const marcasResp = await driveGet(cfg, `/files?q='${rootId}'+in+parents+and+mimeType='application/vnd.google-apps.folder'&fields=files(id,name)&pageSize=50&orderBy=name`);
-    const marcas: any[] = marcasResp.files || [];
-
-    const todasPastas: any[] = [];
-    for (const marca of marcas) {
-      const motosResp = await driveGet(cfg, `/files?q='${marca.id}'+in+parents+and+mimeType='application/vnd.google-apps.folder'&fields=files(id,name)&pageSize=100&orderBy=name`);
-      const motos: any[] = (motosResp.files || []).map((m: any) => ({
-        id: m.id,
-        nome: m.name,
-        marca: marca.name,
-      }));
-      todasPastas.push(...motos);
-    }
-
-    res.json({ ok: true, pastas: todasPastas });
   } catch (e) { next(e); }
 });
 
@@ -440,7 +390,6 @@ googleDriveRouter.post('/buscar-fotos-sku', async (req, res, next) => {
     if (!sku) return res.status(400).json({ error: 'sku obrigatorio' });
 
     const cfg = await getConfig();
-
     const motoDirs = (cfg.googleDriveMotoDirs as any) || {};
     const motoPastaId = motoId ? motoDirs[String(motoId)] : null;
     if (!motoPastaId) return res.status(400).json({ error: `Pasta não configurada para moto ID ${motoId}` });
@@ -460,7 +409,7 @@ googleDriveRouter.post('/buscar-fotos-sku', async (req, res, next) => {
       id: f.id, nome: f.name, mimeType: f.mimeType, size: f.size,
     }));
 
-    // Ordena: capa primeiro (qualquer variação: SKU_CAPA, CAPA, SKU_Capa, etc.)
+    // Ordena: capa primeiro
     fotos.sort((a, b) => {
       const aCapa = a.nome.toLowerCase().includes('capa') ? 0 : 1;
       const bCapa = b.nome.toLowerCase().includes('capa') ? 0 : 1;
