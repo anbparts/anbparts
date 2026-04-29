@@ -1724,6 +1724,87 @@ async function fetchMercadoLivreQuestionsPage(sellerId: string, offset = 0) {
   return mercadoLivreReq(`/questions/search?${params.toString()}`);
 }
 
+async function fetchMercadoLivreItemQuestionsPage(itemId: string, offset = 0) {
+  const params = new URLSearchParams({
+    item: itemId,
+    api_version: '4',
+    limit: String(MERCADO_LIVRE_QUESTIONS_PAGE_LIMIT),
+    offset: String(Math.max(0, offset)),
+  });
+
+  return mercadoLivreReq(`/questions/search?${params.toString()}`);
+}
+
+function normalizeMercadoLivreItemIdForQuestions(value: any) {
+  const itemId = normalizeText(value).toUpperCase();
+  if (!/^ML[A-Z]{1,3}\d+$/.test(itemId)) return '';
+  return itemId;
+}
+
+function buildMercadoLivreQuestionHistoryRow(question: any) {
+  const answer = question?.answer || {};
+  const dataPergunta = extractQuestionDate(question?.date_created || question?.created_at);
+  const respondidaEm = extractQuestionDate(answer?.date_created || answer?.created_at);
+  const nomeCliente = normalizeText(
+    question?.from?.nickname
+    || question?.from?.name
+    || [question?.from?.first_name, question?.from?.last_name].filter(Boolean).join(' '),
+  );
+
+  return {
+    questionId: normalizeText(question?.id),
+    itemId: normalizeText(question?.item_id || question?.itemId),
+    status: extractQuestionStatus(question),
+    texto: normalizeText(question?.text),
+    dataPergunta: dataPergunta ? dataPergunta.toISOString() : null,
+    clienteId: normalizeText(question?.from?.id) || null,
+    nomeCliente: nomeCliente || null,
+    respostaTexto: normalizeText(answer?.text || answer?.message) || null,
+    respostaStatus: normalizeText(answer?.status) || null,
+    respondidaEm: respondidaEm ? respondidaEm.toISOString() : null,
+  };
+}
+
+async function loadMercadoLivreQuestionHistory(itemIdInput: any) {
+  const itemId = normalizeMercadoLivreItemIdForQuestions(itemIdInput);
+  if (!itemId) throw new Error('Anuncio Mercado Livre invalido.');
+
+  const item = await getMercadoLivreItem(itemId);
+  const perguntas: any[] = [];
+  let offset = 0;
+  let total = 0;
+
+  while (true) {
+    const payload = await fetchMercadoLivreItemQuestionsPage(itemId, offset);
+    const questions = extractArray(payload);
+    total = Math.max(Number(payload?.total || payload?.paging?.total) || 0, total);
+    if (!questions.length) break;
+
+    perguntas.push(...questions.map(buildMercadoLivreQuestionHistoryRow));
+    offset += questions.length;
+
+    if ((total > 0 && offset >= total) || questions.length < MERCADO_LIVRE_QUESTIONS_PAGE_LIMIT) {
+      break;
+    }
+  }
+
+  perguntas.sort((a, b) => {
+    const aDate = a.dataPergunta ? new Date(a.dataPergunta).getTime() : 0;
+    const bDate = b.dataPergunta ? new Date(b.dataPergunta).getTime() : 0;
+    if (aDate !== bDate) return bDate - aDate;
+    return String(b.questionId).localeCompare(String(a.questionId), 'pt-BR', { numeric: true });
+  });
+
+  return {
+    ok: true,
+    itemId,
+    tituloAnuncio: normalizeText(item?.title) || null,
+    linkAnuncio: normalizeText(item?.permalink) || null,
+    total: perguntas.length,
+    perguntas,
+  };
+}
+
 async function resolveQuestionContext(question: any) {
   const itemId = normalizeText(question?.item_id || question?.itemId);
   const fromId = normalizeText(question?.from?.id);
@@ -2636,6 +2717,15 @@ mercadoLivreRouter.post('/perguntas/sync', async (_req, res, next) => {
     const result = await syncMercadoLivrePerguntas({ sendEmail: true });
     await saveConfiguracaoGeral({ mercadoLivrePerguntasUltimaLeituraEm: new Date() });
     res.json(result);
+  } catch (e) {
+    next(e);
+  }
+});
+
+mercadoLivreRouter.get('/perguntas/anuncios/:itemId/historico', async (req, res, next) => {
+  try {
+    const historico = await loadMercadoLivreQuestionHistory(req.params.itemId);
+    res.json(historico);
   } catch (e) {
     next(e);
   }

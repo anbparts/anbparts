@@ -48,6 +48,24 @@ function formatDateTime(value: string | null | undefined) {
   });
 }
 
+function questionStatusLabel(status: string | null | undefined) {
+  const normalized = String(status || '').toUpperCase();
+  if (normalized === 'ANSWERED') return 'Respondida';
+  if (normalized === 'UNANSWERED') return 'Sem resposta';
+  if (normalized === 'DISMISSED') return 'Excluida';
+  if (normalized === 'CLOSED') return 'Fechada';
+  if (normalized === 'UNDER_REVIEW') return 'Em analise';
+  return normalized || '-';
+}
+
+function questionStatusStyle(status: string | null | undefined) {
+  const normalized = String(status || '').toUpperCase();
+  if (normalized === 'ANSWERED') return { bg: '#ecfdf3', color: '#15803d', border: '#bbf7d0' };
+  if (normalized === 'UNANSWERED') return { bg: '#fffbeb', color: '#b45309', border: '#fde68a' };
+  if (normalized === 'DISMISSED') return { bg: '#fef2f2', color: '#b91c1c', border: '#fecaca' };
+  return { bg: '#f8fafc', color: '#475569', border: '#e2e8f0' };
+}
+
 function useLayoutMode() {
   const [mode, setMode] = useState<LayoutMode>('desktop');
 
@@ -129,6 +147,10 @@ export default function MercadoLivrePerguntasPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [perguntas, setPerguntas] = useState<any[]>([]);
   const [respostas, setRespostas] = useState<Record<string, string>>({});
+  const [historicoAberto, setHistoricoAberto] = useState(false);
+  const [historicoLoading, setHistoricoLoading] = useState(false);
+  const [historicoError, setHistoricoError] = useState('');
+  const [historico, setHistorico] = useState<any | null>(null);
 
   const shellOffset = isDesktop ? 0 : 64;
   const pagePadding = isPhone ? 14 : isTabletPortrait ? 18 : isTabletLandscape ? 22 : 28;
@@ -212,6 +234,40 @@ export default function MercadoLivrePerguntasPage() {
     } finally {
       setDeletingId(null);
     }
+  }
+
+  async function abrirHistoricoPergunta(pergunta: any) {
+    const itemId = String(pergunta?.itemId || '').trim();
+    if (!itemId) {
+      alert('Essa pergunta nao possui Item ML para consultar o historico.');
+      return;
+    }
+
+    setHistoricoAberto(true);
+    setHistoricoError('');
+    setHistorico({
+      itemId,
+      tituloAnuncio: pergunta?.tituloAnuncio || pergunta?.descricao || '',
+      linkAnuncio: pergunta?.linkAnuncio || '',
+      perguntas: [],
+      total: 0,
+    });
+    setHistoricoLoading(true);
+
+    try {
+      const data = await api.mercadoLivre.historicoPerguntasAnuncio(itemId);
+      setHistorico(data);
+    } catch (error: any) {
+      setHistoricoError(error.message || 'Erro ao carregar historico de perguntas');
+    } finally {
+      setHistoricoLoading(false);
+    }
+  }
+
+  function fecharHistoricoPergunta() {
+    setHistoricoAberto(false);
+    setHistoricoLoading(false);
+    setHistoricoError('');
   }
 
   if (loading) {
@@ -570,7 +626,16 @@ export default function MercadoLivrePerguntasPage() {
                             marginTop: 8,
                           }}
                         >
-                          <div style={{ minWidth: 0 }}>
+                          <div
+                            style={{
+                              minWidth: 0,
+                              display: 'flex',
+                              flexDirection: isPhone ? 'column' : 'row',
+                              alignItems: isPhone ? 'flex-start' : 'center',
+                              gap: isPhone ? 8 : 14,
+                              flexWrap: 'wrap',
+                            }}
+                          >
                             {pergunta.linkAnuncio ? (
                               <a
                                 href={pergunta.linkAnuncio}
@@ -588,6 +653,27 @@ export default function MercadoLivrePerguntasPage() {
                               >
                                 Abrir anuncio no Mercado Livre
                               </a>
+                            ) : null}
+                            {pergunta.itemId ? (
+                              <button
+                                type="button"
+                                onClick={() => abrirHistoricoPergunta(pergunta)}
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 6,
+                                  padding: 0,
+                                  border: 'none',
+                                  background: 'transparent',
+                                  fontSize: 13,
+                                  fontFamily: 'Inter, sans-serif',
+                                  color: 'var(--blue-500)',
+                                  textDecoration: 'none',
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                Histórico Pergunta
+                              </button>
                             ) : null}
                           </div>
 
@@ -638,6 +724,185 @@ export default function MercadoLivrePerguntasPage() {
           )}
         </div>
       </div>
+
+      {historicoAberto ? (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 1200,
+            background: 'rgba(15, 23, 42, 0.52)',
+            display: 'flex',
+            alignItems: isPhone ? 'stretch' : 'center',
+            justifyContent: 'center',
+            padding: isPhone ? 0 : 24,
+          }}
+          onClick={fecharHistoricoPergunta}
+        >
+          <div
+            style={{
+              width: isPhone ? '100%' : 'min(940px, calc(100vw - 48px))',
+              maxHeight: isPhone ? '100vh' : '86vh',
+              background: 'var(--white)',
+              borderRadius: isPhone ? 0 : 16,
+              border: isPhone ? 'none' : '1px solid var(--border)',
+              boxShadow: '0 24px 70px rgba(15, 23, 42, 0.28)',
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div
+              style={{
+                padding: isPhone ? '16px 16px 14px' : '18px 22px',
+                borderBottom: '1px solid var(--border)',
+                display: 'flex',
+                alignItems: 'flex-start',
+                justifyContent: 'space-between',
+                gap: 16,
+              }}
+            >
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: isPhone ? 18 : 20, fontWeight: 700, color: 'var(--gray-800)', lineHeight: 1.2 }}>
+                  Histórico Pergunta
+                </div>
+                <div style={{ marginTop: 5, fontSize: 12.5, color: 'var(--gray-500)', lineHeight: 1.5, overflowWrap: 'anywhere' }}>
+                  {historico?.itemId || '-'}{historico?.tituloAnuncio ? ` - ${historico.tituloAnuncio}` : ''}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={fecharHistoricoPergunta}
+                style={{
+                  ...s.btnBase,
+                  minHeight: 34,
+                  padding: '7px 12px',
+                  background: '#f8fafc',
+                  borderColor: '#dbe3ef',
+                  color: 'var(--gray-700)',
+                  flexShrink: 0,
+                }}
+              >
+                Fechar
+              </button>
+            </div>
+
+            <div style={{ padding: isPhone ? 14 : 18, overflowY: 'auto' }}>
+              {historicoLoading ? (
+                <div style={{ padding: 18, color: 'var(--gray-500)', fontSize: 13 }}>
+                  Carregando histórico...
+                </div>
+              ) : historicoError ? (
+                <div
+                  style={{
+                    background: '#fef2f2',
+                    border: '1px solid #fecaca',
+                    borderRadius: 12,
+                    padding: 14,
+                    color: '#b91c1c',
+                    fontSize: 13,
+                    lineHeight: 1.6,
+                  }}
+                >
+                  {historicoError}
+                </div>
+              ) : !(historico?.perguntas || []).length ? (
+                <div
+                  style={{
+                    background: '#f8fafc',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: 12,
+                    padding: 16,
+                    color: 'var(--gray-500)',
+                    fontSize: 13,
+                  }}
+                >
+                  Nenhuma pergunta encontrada para este anuncio.
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gap: 10 }}>
+                  <div style={{ fontSize: 12.5, color: 'var(--gray-500)', marginBottom: 2 }}>
+                    {(historico?.perguntas || []).length} pergunta(s), da mais recente para a mais antiga.
+                  </div>
+                  {(historico?.perguntas || []).map((item: any) => {
+                    const statusStyle = questionStatusStyle(item.status);
+                    return (
+                      <div
+                        key={item.questionId}
+                        style={{
+                          border: '1px solid #e2e8f0',
+                          borderRadius: 12,
+                          background: '#fff',
+                          overflow: 'hidden',
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: 'flex',
+                            flexDirection: isPhone ? 'column' : 'row',
+                            justifyContent: 'space-between',
+                            gap: 8,
+                            padding: '10px 12px',
+                            background: '#f8fafc',
+                            borderBottom: '1px solid #e2e8f0',
+                          }}
+                        >
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: 11, fontFamily: 'JetBrains Mono, monospace', color: 'var(--gray-400)', marginBottom: 4 }}>
+                              Pergunta #{item.questionId || '-'}
+                            </div>
+                            <div style={{ fontSize: 12.5, color: 'var(--gray-600)' }}>
+                              {formatDateTime(item.dataPergunta)}{item.nomeCliente ? ` - ${item.nomeCliente}` : item.clienteId ? ` - Cliente ${item.clienteId}` : ''}
+                            </div>
+                          </div>
+                          <span
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              alignSelf: isPhone ? 'flex-start' : 'center',
+                              padding: '4px 9px',
+                              borderRadius: 999,
+                              fontSize: 11.5,
+                              fontWeight: 700,
+                              background: statusStyle.bg,
+                              color: statusStyle.color,
+                              border: `1px solid ${statusStyle.border}`,
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {questionStatusLabel(item.status)}
+                          </span>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '1fr 1fr', gap: 0 }}>
+                          <div style={{ padding: 12, borderRight: isPhone ? 'none' : '1px solid #e2e8f0', borderBottom: isPhone ? '1px solid #e2e8f0' : 'none' }}>
+                            <div style={{ fontSize: 11, color: 'var(--gray-400)', textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: 8 }}>
+                              Pergunta
+                            </div>
+                            <div style={{ fontSize: 13.5, lineHeight: 1.7, color: 'var(--gray-800)', overflowWrap: 'anywhere' }}>
+                              {item.texto || '-'}
+                            </div>
+                          </div>
+                          <div style={{ padding: 12, background: item.respostaTexto ? '#fbfdff' : '#fff' }}>
+                            <div style={{ fontSize: 11, color: 'var(--gray-400)', textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: 8 }}>
+                              Resposta {item.respondidaEm ? `- ${formatDateTime(item.respondidaEm)}` : ''}
+                            </div>
+                            <div style={{ fontSize: 13.5, lineHeight: 1.7, color: item.respostaTexto ? 'var(--gray-800)' : 'var(--gray-400)', overflowWrap: 'anywhere' }}>
+                              {item.respostaTexto || 'Ainda sem resposta'}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </>
   );
 }

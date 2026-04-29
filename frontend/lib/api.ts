@@ -177,6 +177,7 @@ export const api = {
     disconnectMercadoPago: () => req<any>('/mercado-livre/mercado-pago/disconnect', { method: 'DELETE' }),
     perguntas: () => req<any[]>('/mercado-livre/perguntas'),
     syncPerguntas: () => req<any>('/mercado-livre/perguntas/sync', { method: 'POST' }),
+    historicoPerguntasAnuncio: (itemId: string) => req<any>(`/mercado-livre/perguntas/anuncios/${encodeURIComponent(itemId)}/historico`),
     responderPergunta: (questionId: string, text: string) => req<any>(`/mercado-livre/perguntas/${questionId}/responder`, {
       method: 'POST',
       body: JSON.stringify({ text }),
