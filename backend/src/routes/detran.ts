@@ -397,8 +397,22 @@ detranRouter.post('/config', async (req, res, next) => {
     });
 
     if (shouldResetGoogleDriveAccessToken) {
+      const googleDriveData: any = {
+        googleDriveAccessToken: '',
+        googleDriveTokenExpiry: null,
+      };
+      if (payload.gmailClientId !== undefined) {
+        googleDriveData.googleDriveClientId = normalizeText(payload.gmailClientId);
+      }
+      if (normalizeText(payload.gmailClientSecret)) {
+        googleDriveData.googleDriveClientSecret = normalizeText(payload.gmailClientSecret);
+      }
+      if (normalizeText(payload.gmailRefreshToken)) {
+        googleDriveData.googleDriveRefreshToken = normalizeText(payload.gmailRefreshToken);
+      }
+
       await prisma.configuracaoGeral.updateMany({
-        data: { googleDriveAccessToken: '', googleDriveTokenExpiry: null },
+        data: googleDriveData,
       });
     }
 

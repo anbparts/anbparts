@@ -22,6 +22,7 @@ export default function ConfGmailPage() {
   const [motos, setMotos] = useState<any[]>([]);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState('');
+  const [driveMeta, setDriveMeta] = useState<any>(null);
 
   // Gmail fields
   const [gmailEmail, setGmailEmail] = useState('');
@@ -41,14 +42,7 @@ export default function ConfGmailPage() {
   useEffect(() => {
     load();
     api.motos.list().then(setMotos).catch(() => {});
-    // Carrega config do Drive também
-    fetch(`${API}/google-drive/config`, { credentials: 'include' })
-      .then(r => r.json()).then(d => {
-        if (d.ok) {
-          setRootFolderId(d.rootFolderId || '');
-          setMotoDirs(d.motoDirs || {});
-        }
-      }).catch(() => {});
+    carregarDriveConfig();
   }, []);
 
   async function load() {
@@ -61,6 +55,18 @@ export default function ConfGmailPage() {
       setOtpRemetente(config.otpRemetente || 'detran.sisdev@sp.gov.br');
       setOtpAssunto(config.otpAssunto || '[DETRAN-SISDEV] Codigo de Verificacao');
       setOtpRegex(config.otpRegex || '([A-Z0-9]{4,10})\\s+e seu codigo de verificacao');
+    } catch {}
+  }
+
+  async function carregarDriveConfig() {
+    try {
+      const resp = await fetch(`${API}/google-drive/config`, { credentials: 'include' });
+      const data = await resp.json();
+      if (data.ok) {
+        setDriveMeta(data);
+        setRootFolderId(data.rootFolderId || '');
+        setMotoDirs(data.motoDirs || {});
+      }
     } catch {}
   }
 
@@ -77,6 +83,7 @@ export default function ConfGmailPage() {
       setGmailClientSecret('');
       setGmailRefreshToken('');
       await load();
+      await carregarDriveConfig();
       setFeedback('✓ Configurações Gmail salvas!');
     } catch (e: any) { setFeedback(`Erro: ${e.message}`); }
     setSaving(false);
@@ -86,11 +93,16 @@ export default function ConfGmailPage() {
     setSaving(true);
     setFeedback('');
     try {
-      await fetch(`${API}/google-drive/config`, {
+      const resp = await fetch(`${API}/google-drive/config`, {
         method: 'POST', credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ rootFolderId, motoDirs }),
       });
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => ({}));
+        throw new Error(data.error || `Erro ao salvar Drive (${resp.status})`);
+      }
+      await carregarDriveConfig();
       setFeedback('✓ Configurações Drive salvas!');
     } catch (e: any) { setFeedback(`Erro: ${e.message}`); }
     setSaving(false);
@@ -98,12 +110,20 @@ export default function ConfGmailPage() {
 
   async function listarPastas() {
     setLoadingPastas(true);
+    setFeedback('Buscando pastas no Google Drive...');
     try {
       const resp = await fetch(`${API}/google-drive/listar-pastas-moto`, { credentials: 'include' });
-      const data = await resp.json();
-      if (data.ok) setPastasDrive(data.pastas || []);
-      else alert(data.error || 'Erro ao listar pastas');
-    } catch (e: any) { alert(e.message); }
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || !data.ok) throw new Error(data.error || `Erro ao listar pastas (${resp.status})`);
+
+      const pastas = data.pastas || [];
+      setPastasDrive(pastas);
+      setFeedback(pastas.length ? `âœ“ ${pastas.length} pasta(s) carregada(s) do Drive.` : 'Nenhuma pasta encontrada na pasta raiz configurada.');
+      await carregarDriveConfig();
+    } catch (e: any) {
+      setPastasDrive([]);
+      setFeedback(`Erro Drive: ${e.message || e}`);
+    }
     setLoadingPastas(false);
   }
 
@@ -116,7 +136,7 @@ export default function ConfGmailPage() {
     } catch (e: any) { alert(String(e)); }
   }
 
-  const driveConnected = meta?.hasGmailRefreshToken;
+  const driveConnected = Boolean(driveMeta?.connected);
 
   return (
     <>
@@ -218,6 +238,12 @@ export default function ConfGmailPage() {
                 <button style={{ ...s.btn, background: '#1d4ed8', color: '#fff', marginLeft: 12, padding: '5px 14px' }} onClick={reconectar}>
                   🔑 Reconectar com Google
                 </button>
+              </div>
+            )}
+
+            {driveMeta?.connectionError && (
+              <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 12px', marginBottom: 16, fontSize: 12.5, color: '#b91c1c', lineHeight: 1.6 }}>
+                Erro atual do Drive: {driveMeta.connectionError}
               </div>
             )}
 

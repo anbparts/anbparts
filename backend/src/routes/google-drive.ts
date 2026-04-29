@@ -5,6 +5,15 @@ export const googleDriveRouter = Router();
 
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const GOOGLE_DRIVE_URL = 'https://www.googleapis.com/drive/v3';
+const DEFAULT_DETRAN_CONFIG_SLUG = 'default';
+const GOOGLE_OAUTH_SCOPES = [
+  'https://www.googleapis.com/auth/drive.readonly',
+  'https://www.googleapis.com/auth/gmail.readonly',
+];
+
+function normalizeText(value: any) {
+  return String(value || '').trim();
+}
 
 async function getConfig() {
   // Credenciais OAuth ficam na DetranConfig (gmailClientId, gmailClientSecret, gmailRefreshToken)
@@ -13,13 +22,16 @@ async function getConfig() {
   if (!cfg) cfg = await prisma.configuracaoGeral.create({ data: {} });
 
   const detranCfg = await prisma.detranConfig.findFirst();
+  const driveRefreshToken = normalizeText(cfg.googleDriveRefreshToken);
+  const gmailRefreshToken = normalizeText(detranCfg?.gmailRefreshToken);
 
   return {
     ...cfg,
     // Sobrepõe com as credenciais OAuth do DetranConfig
     googleDriveClientId: detranCfg?.gmailClientId || cfg.googleDriveClientId || '',
     googleDriveClientSecret: detranCfg?.gmailClientSecret || cfg.googleDriveClientSecret || '',
-    googleDriveRefreshToken: detranCfg?.gmailRefreshToken || cfg.googleDriveRefreshToken || '',
+    googleDriveRefreshToken: driveRefreshToken || gmailRefreshToken,
+    googleDriveFallbackRefreshToken: driveRefreshToken && gmailRefreshToken && driveRefreshToken !== gmailRefreshToken ? gmailRefreshToken : '',
   };
 }
 
@@ -51,32 +63,74 @@ async function getValidToken(cfg: any, options?: { forceRefresh?: boolean }): Pr
     return cfg.googleDriveAccessToken;
   }
 
-  if (!cfg.googleDriveRefreshToken) return null;
+  const refreshTokens = [
+    normalizeText(cfg.googleDriveRefreshToken),
+    normalizeText(cfg.googleDriveFallbackRefreshToken),
+  ].filter((token, index, array) => token && array.indexOf(token) === index);
+  if (!refreshTokens.length) return null;
 
-  const resp = await fetch(GOOGLE_TOKEN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      client_id: cfg.googleDriveClientId,
-      client_secret: cfg.googleDriveClientSecret,
-      refresh_token: cfg.googleDriveRefreshToken,
-      grant_type: 'refresh_token',
-    }),
-  });
-  const data = await resp.json().catch(() => ({})) as any;
-  if (!resp.ok || !data.access_token) {
-    await clearCachedGoogleDriveToken();
-    throw createGoogleDriveError(
-      getGoogleApiErrorMessage(data, 'Nao foi possivel renovar o acesso ao Google Drive. Reconecte o Google.'),
-      401,
-    );
+  let lastError: any = null;
+  for (const refreshToken of refreshTokens) {
+    const resp = await fetch(GOOGLE_TOKEN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: cfg.googleDriveClientId,
+        client_secret: cfg.googleDriveClientSecret,
+        refresh_token: refreshToken,
+        grant_type: 'refresh_token',
+      }),
+    });
+    const data = await resp.json().catch(() => ({})) as any;
+    if (!resp.ok || !data.access_token) {
+      lastError = data;
+      continue;
+    }
+
+    const newExpiry = new Date(Date.now() + (data.expires_in || 3600) * 1000);
+    await prisma.configuracaoGeral.updateMany({
+      data: {
+        googleDriveAccessToken: data.access_token,
+        googleDriveRefreshToken: normalizeText(data.refresh_token) || refreshToken,
+        googleDriveTokenExpiry: newExpiry,
+      },
+    });
+    return data.access_token;
   }
 
-  const newExpiry = new Date(Date.now() + (data.expires_in || 3600) * 1000);
+  await clearCachedGoogleDriveToken();
+  throw createGoogleDriveError(
+    getGoogleApiErrorMessage(lastError, 'Nao foi possivel renovar o acesso ao Google Drive. Reconecte o Google.'),
+    401,
+  );
+}
+
+async function saveGoogleDriveOAuthTokens(data: any, cfg: any, expiry: Date) {
+  const refreshToken = normalizeText(data.refresh_token) || normalizeText(cfg.googleDriveRefreshToken);
   await prisma.configuracaoGeral.updateMany({
-    data: { googleDriveAccessToken: data.access_token, googleDriveTokenExpiry: newExpiry },
+    data: {
+      googleDriveAccessToken: normalizeText(data.access_token),
+      googleDriveRefreshToken: refreshToken,
+      googleDriveTokenExpiry: expiry,
+    },
   });
-  return data.access_token;
+
+  if (refreshToken) {
+    await prisma.detranConfig.upsert({
+      where: { slug: DEFAULT_DETRAN_CONFIG_SLUG },
+      update: {
+        gmailClientId: normalizeText(cfg.googleDriveClientId),
+        gmailClientSecret: normalizeText(cfg.googleDriveClientSecret),
+        gmailRefreshToken: refreshToken,
+      },
+      create: {
+        slug: DEFAULT_DETRAN_CONFIG_SLUG,
+        gmailClientId: normalizeText(cfg.googleDriveClientId),
+        gmailClientSecret: normalizeText(cfg.googleDriveClientSecret),
+        gmailRefreshToken: refreshToken,
+      },
+    });
+  }
 }
 
 async function driveFetch(cfg: any, path: string) {
@@ -90,8 +144,12 @@ async function driveFetch(cfg: any, path: string) {
   let resp = await execute(token);
   if ((resp.status === 401 || resp.status === 403) && cfg.googleDriveRefreshToken) {
     await clearCachedGoogleDriveToken();
+    const fallbackRefreshToken = normalizeText(cfg.googleDriveFallbackRefreshToken);
+    const primaryRefreshToken = normalizeText(cfg.googleDriveRefreshToken);
     token = await getValidToken({
       ...cfg,
+      googleDriveRefreshToken: fallbackRefreshToken || primaryRefreshToken,
+      googleDriveFallbackRefreshToken: fallbackRefreshToken ? primaryRefreshToken : '',
       googleDriveAccessToken: '',
       googleDriveTokenExpiry: null,
     }, { forceRefresh: true });
@@ -114,11 +172,16 @@ async function driveGet(cfg: any, path: string): Promise<any> {
 googleDriveRouter.get('/config', async (_req, res, next) => {
   try {
     const cfg = await getConfig();
-    const token = await getValidToken(cfg).catch(() => null);
+    let connectionError = '';
+    const connected = await driveGet(cfg, '/about?fields=user').then(() => true).catch((error: any) => {
+      connectionError = error?.message || 'Falha ao validar conexao com Google Drive';
+      return false;
+    });
     res.json({
       ok: true,
       clientId: cfg.googleDriveClientId || '',
-      connected: !!token,
+      connected,
+      connectionError,
       rootFolderId: cfg.googleDriveRootFolderId || '',
       motoDirs: cfg.googleDriveMotoDirs || {},
     });
@@ -156,7 +219,7 @@ googleDriveRouter.get('/auth-url', async (_req, res, next) => {
       client_id: cfg.googleDriveClientId,
       redirect_uri: redirectUri,
       response_type: 'code',
-      scope: 'https://www.googleapis.com/auth/drive.readonly',
+      scope: GOOGLE_OAUTH_SCOPES.join(' '),
       access_type: 'offline',
       prompt: 'consent',
     });
@@ -188,13 +251,7 @@ googleDriveRouter.get('/callback', async (req, res, next) => {
     const data = await resp.json() as any;
     if (!data.access_token) return res.status(400).send(`Erro OAuth: ${JSON.stringify(data)}`);
     const expiry = new Date(Date.now() + (data.expires_in || 3600) * 1000);
-    await prisma.configuracaoGeral.updateMany({
-      data: {
-        googleDriveAccessToken: data.access_token,
-        googleDriveRefreshToken: data.refresh_token || cfg.googleDriveRefreshToken,
-        googleDriveTokenExpiry: expiry,
-      },
-    });
+    await saveGoogleDriveOAuthTokens(data, cfg, expiry);
     const frontendUrl = process.env.FRONTEND_URL || 'https://sistema.anbparts.com.br';
     res.redirect(`${frontendUrl}/conf-google-drive?connected=1`);
   } catch (e) { next(e); }
@@ -276,7 +333,10 @@ googleDriveRouter.post('/download-foto', async (req, res, next) => {
     if (!fileId) return res.status(400).json({ error: 'fileId obrigatorio' });
     const cfg = await getConfig();
     const resp = await driveFetch(cfg, `/files/${fileId}?alt=media`);
-    if (!resp.ok) return res.status(500).json({ error: `Erro ao baixar: ${resp.status}` });
+    if (!resp.ok) {
+      const data = await resp.json().catch(() => ({})) as any;
+      return res.status(resp.status).json({ error: getGoogleApiErrorMessage(data, `Erro ao baixar: ${resp.status}`) });
+    }
     const buffer = await resp.arrayBuffer();
     const base64 = Buffer.from(buffer).toString('base64');
     const mime = mimeType || resp.headers.get('content-type') || 'image/jpeg';
