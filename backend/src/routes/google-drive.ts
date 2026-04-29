@@ -205,7 +205,7 @@ async function listDriveFoldersInParent(cfg: any, parentId: string, pageSize = '
     cfg,
     `'${escapeDriveQueryValue(parentId)}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
     'files(id,name)',
-    { pageSize, orderBy: 'name' },
+    { pageSize, orderBy: 'name', corpora: 'allDrives' },
   );
 }
 
@@ -325,8 +325,34 @@ googleDriveRouter.get('/listar-pastas-moto', async (_req, res, next) => {
     const rootId = normalizeText(cfg.googleDriveRootFolderId);
     if (!rootId) return res.status(400).json({ error: 'ID da pasta raiz não configurado. Salve o ID na seção "Configuração Acesso Fotos Drive".' });
 
+    // Verifica se a pasta raiz existe e é acessível
+    let rootFolder: any = null;
+    try {
+      rootFolder = await getDriveFolder(cfg, rootId);
+    } catch (e: any) {
+      return res.status(400).json({
+        error: `Pasta raiz não encontrada ou sem acesso: ${e?.message || 'verifique o ID configurado'}`,
+      });
+    }
+
     // 1. Lista marcas (BMW, HONDA, YAMAHA...) dentro do root
-    const marcas = await listDriveFoldersInParent(cfg, rootId);
+    // Tenta com corpora=allDrives primeiro (cobre "Outros computadores" / Drive for Desktop)
+    let marcas: any[] = [];
+    try {
+      marcas = await listDriveFoldersInParent(cfg, rootId);
+    } catch {}
+
+    // Fallback: tenta sem corpora (Drive pessoal simples)
+    if (!marcas.length) {
+      try {
+        marcas = await listDriveFiles(
+          cfg,
+          `'${escapeDriveQueryValue(rootId)}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+          'files(id,name)',
+          { pageSize: '100', orderBy: 'name' },
+        );
+      } catch {}
+    }
 
     if (!marcas.length) {
       return res.json({
@@ -334,25 +360,22 @@ googleDriveRouter.get('/listar-pastas-moto', async (_req, res, next) => {
         pastas: [],
         diagnostico: {
           rootFolderId: rootId,
-          aviso: 'Nenhuma subpasta encontrada na pasta raiz. Verifique o ID e se o token tem acesso à pasta.',
+          rootFolderName: rootFolder?.name || '',
+          aviso: `Pasta raiz "${rootFolder?.name || rootId}" encontrada mas sem subpastas visíveis. O Refresh Token pode não ter escopo drive.readonly completo, ou as pastas estão em outro computador sincronizado.`,
         },
       });
     }
 
-    // 2. Para cada marca, lista as pastas de moto (2º nível) — estas são mapeadas às motos
+    // 2. Para cada marca, lista as pastas de moto (2º nível)
     const todasPastas: any[] = [];
     for (const marca of marcas) {
       const motoPastas = await listDriveFoldersInParent(cfg, marca.id);
       for (const pasta of motoPastas) {
-        todasPastas.push({
-          id: pasta.id,
-          nome: pasta.name,
-          marca: marca.name,
-        });
+        todasPastas.push({ id: pasta.id, nome: pasta.name, marca: marca.name });
       }
     }
 
-    // Inclui pastas já configuradas mas não encontradas na varredura (IDs salvos de antes)
+    // Inclui pastas já configuradas mas não encontradas na varredura
     const motoDirs = (cfg.googleDriveMotoDirs as any) || {};
     const idsEncontrados = new Set(todasPastas.map((p: any) => p.id));
     for (const [motoId, folderIdValue] of Object.entries(motoDirs)) {
@@ -375,6 +398,7 @@ googleDriveRouter.get('/listar-pastas-moto', async (_req, res, next) => {
       pastas: todasPastas,
       diagnostico: {
         rootFolderId: rootId,
+        rootFolderName: rootFolder?.name || '',
         marcasEncontradas: marcas.length,
         totalPastas: todasPastas.length,
       },
