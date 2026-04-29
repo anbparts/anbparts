@@ -163,6 +163,7 @@ export default function NuvemshopProdutosPage() {
   // Contagens do Drive por SKU — só busca quando ≤10 produtos encontrados
   const [atualizandoDrive, setAtualizandoDrive] = useState(false);
   const [driveLoopStatus, setDriveLoopStatus] = useState<{ materialAtual: number; totalMateriais: number; fotoAtual: number; totalFotos: number } | null>(null);
+  const [skuEmProcessamento, setSkuEmProcessamento] = useState<string | null>(null);
   const driveCache = useRef<Record<string, any[]>>({});
 
   const produtosEncontrados = produtos.filter(p => p.encontradoNuvemshop);
@@ -463,6 +464,7 @@ export default function NuvemshopProdutosPage() {
                         const fotosParaEnviar = produto.imagens > 0 ? fotos.slice(1) : fotos;
                         if (!fotosParaEnviar.length) continue;
                         setDriveLoopStatus({ materialAtual: mi + 1, totalMateriais: skusComDrive.length, fotoAtual: 0, totalFotos: fotosParaEnviar.length });
+                        setSkuEmProcessamento(sku);
                         for (let fi = 0; fi < fotosParaEnviar.length; fi++) {
                           const foto = fotosParaEnviar[fi];
                           setDriveLoopStatus(prev => prev ? { ...prev, fotoAtual: fi + 1 } : null);
@@ -485,6 +487,7 @@ export default function NuvemshopProdutosPage() {
                       } catch {}
                     }
                     setAtualizandoDrive(false);
+                    setSkuEmProcessamento(null);
                     // Mantém status visível por 3 segundos após finalizar
                     setTimeout(() => { setDriveLoopStatus(null); }, 3000);
                     setSelecionados(new Set());
@@ -530,7 +533,7 @@ export default function NuvemshopProdutosPage() {
                     {produtosOrdenados.map(p => {
                       const sug = editandoSugestao[p.sku];
                       const temSugestao = !!sug;
-                      const rowBg = !p.encontradoNuvemshop ? '#fffbeb' : temSugestao ? '#f5f3ff' : 'var(--white)';
+                      const rowBg = !p.encontradoNuvemshop ? '#fffbeb' : p.sku === skuEmProcessamento ? '#ede9fe' : temSugestao ? '#f5f3ff' : 'var(--white)';
                       return (
                         <tr key={p.sku} style={{ background: rowBg }}>
                           <td style={{ ...s.td, textAlign: 'center' }}>

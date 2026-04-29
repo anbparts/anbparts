@@ -119,6 +119,19 @@ function normalizarSkuBusca(value: string) {
 
 // ─── GET /nuvemshop/categorias ────────────────────────────────────────────────
 
+type NuvemshopImagemResumo = {
+  id: number | string;
+  src?: string | null;
+  position?: number | string | null;
+};
+
+async function listarImagensProdutoNuvemshop(produtoId: number | string) {
+  const imagens = await nuvemReq<NuvemshopImagemResumo[]>(
+    `/products/${encodeURIComponent(String(produtoId))}/images?per_page=200&fields=id,src,position`
+  );
+  return Array.isArray(imagens) ? imagens : [];
+}
+
 nuvemshopRouter.get('/categorias', async (_req, res, next) => {
   try {
     // Busca todas as categorias paginando
@@ -459,6 +472,24 @@ nuvemshopRouter.post('/aplicar', async (req, res, next) => {
 // ─── POST /nuvemshop/upload-imagens ──────────────────────────────────────────
 // Body: { produtoId, imagens: [{filename, base64}] }
 
+nuvemshopRouter.get('/produto-imagens', async (req, res, next) => {
+  try {
+    const produtoId = String(req.query.produtoId || '').trim();
+    if (!produtoId) return res.status(400).json({ ok: false, error: 'produtoId obrigatorio' });
+
+    const imagens = await listarImagensProdutoNuvemshop(produtoId);
+    res.json({
+      ok: true,
+      total: imagens.length,
+      imagens: imagens.map((img) => ({
+        id: img.id,
+        src: img.src || null,
+        position: img.position ?? null,
+      })),
+    });
+  } catch (e) { next(e); }
+});
+
 nuvemshopRouter.post('/upload-imagens', async (req, res, next) => {
   try {
     const { produtoId, imagens } = req.body || {};
@@ -466,9 +497,7 @@ nuvemshopRouter.post('/upload-imagens', async (req, res, next) => {
     if (!Array.isArray(imagens) || !imagens.length) return res.status(400).json({ ok: false, error: 'imagens obrigatorio' });
 
     const resultados: any[] = new Array(imagens.length);
-    const imagensExistentes = await nuvemReq<Array<{ id: number | string; position?: number | string | null }>>(
-      `/products/${produtoId}/images?per_page=200&fields=id,position`
-    );
+    const imagensExistentes = await listarImagensProdutoNuvemshop(produtoId);
     let proximaPosicao =
       (Array.isArray(imagensExistentes)
         ? imagensExistentes.reduce((max, img) => {
@@ -513,8 +542,15 @@ nuvemshopRouter.post('/upload-imagens', async (req, res, next) => {
       }
     }
 
+    const enviadas = resultados.filter(r => r.ok).length;
     const erros = resultados.filter(r => !r.ok);
-    res.json({ ok: true, enviadas: resultados.filter(r => r.ok).length, erros: erros.length, resultados });
+    res.json({
+      ok: true,
+      enviadas,
+      erros: erros.length,
+      totalImagens: imagensExistentes.length + enviadas,
+      resultados,
+    });
   } catch (e) { next(e); }
 });
 
