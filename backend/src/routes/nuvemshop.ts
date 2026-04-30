@@ -136,6 +136,48 @@ function normalizarSkuBusca(value: string) {
   return String(value || '').trim().replace(/^"+|"+$/g, '').trim().toUpperCase();
 }
 
+function produtoContemSku(produto: any, sku: string) {
+  const alvo = sku.toUpperCase();
+  const variants: any[] = produto?.variants || [];
+  return variants.some((variant: any) => String(variant?.sku || '').trim().toUpperCase() === alvo);
+}
+
+async function buscarProdutoNuvemshopPorSku(sku: string, modoConfiavel: boolean) {
+  const tentativas = modoConfiavel ? 4 : 1;
+  const perPage = modoConfiavel ? 20 : 5;
+  let ultimoErro: any = null;
+
+  for (let tentativa = 0; tentativa < tentativas; tentativa++) {
+    try {
+      if (modoConfiavel) {
+        try {
+          const produtoExato = await nuvemReq(`/products/sku/${encodeURIComponent(sku)}`, {
+            timeoutMs: 20000,
+          }) as any;
+          if (produtoExato && produtoContemSku(produtoExato, sku)) return produtoExato;
+        } catch (e: any) {
+          const mensagem = String(e?.message || e || '');
+          if (!mensagem.includes('Nuvemshop 404')) throw e;
+        }
+      }
+
+      const produtos = await nuvemReq(`/products?q=${encodeURIComponent(sku)}&per_page=${perPage}`, {
+        timeoutMs: modoConfiavel ? 20000 : 12000,
+      }) as any[];
+      const produtoEncontrado = (Array.isArray(produtos) ? produtos : []).find((produto) => produtoContemSku(produto, sku)) || null;
+      if (produtoEncontrado || !modoConfiavel || tentativa === tentativas - 1) return produtoEncontrado;
+    } catch (e: any) {
+      ultimoErro = e;
+      if (!modoConfiavel || tentativa === tentativas - 1) throw e;
+    }
+
+    await aguardar(450 * (tentativa + 1));
+  }
+
+  if (ultimoErro) throw ultimoErro;
+  return null;
+}
+
 async function mapComConcorrencia<T, R>(
   items: T[],
   limite: number,
@@ -255,21 +297,11 @@ nuvemshopRouter.post('/buscar-produtos', async (req, res, next) => {
     const pecasParaConsulta = usarLoteMoto ? pecasAgrupadas.slice(offset, offset + limit) : pecasAgrupadas;
 
     // 3. Para cada SKU base, busca o produto na Nuvemshop
-    const resultados = await mapComConcorrencia(pecasParaConsulta, usarLoteMoto ? 5 : 8, async (peca) => {
+    const resultados = await mapComConcorrencia(pecasParaConsulta, usarLoteMoto ? 1 : 8, async (peca) => {
       const sku = peca.idPeca; // já é o SKU base
       try {
         // Busca produto pelo SKU base na Nuvemshop
-        const produtos = await nuvemReq(`/products?q=${encodeURIComponent(sku)}&per_page=5`, { timeoutMs: 12000 }) as any[];
-        // Match: variant com SKU igual ao base (ex: HD03_0110)
-        let produtoEncontrado: any = null;
-        for (const p of produtos) {
-          const variants: any[] = p.variants || [];
-          if (variants.some((v: any) => String(v.sku || '').toUpperCase() === sku.toUpperCase())) {
-            produtoEncontrado = p;
-            break;
-          }
-        }
-
+        const produtoEncontrado = await buscarProdutoNuvemshopPorSku(sku, usarLoteMoto);
         if (!produtoEncontrado) {
           return { sku, titulo: peca.descricao, moto: peca.moto, encontradoNuvemshop: false, produtoId: null, imagens: 0, categorias: [], tags: [] };
         }

@@ -23,7 +23,7 @@ type Produto = {
   sku: string; titulo: string; moto: { marca: string; modelo: string; ano?: number } | null;
   encontradoNuvemshop: boolean; produtoId: number | null; imagens: number;
   categorias: { id: number; nome: string }[]; tags: string[];
-  semCategoria: boolean; semTags: boolean;
+  semCategoria: boolean; semTags: boolean; erroConsulta?: string;
 };
 type Sugestao = { sku: string; categorias: { id: number; nome: string }[]; tags: string[] };
 type FotoQueueItem = {
@@ -480,7 +480,8 @@ export default function NuvemshopProdutosPage() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 16 }}>
               {[
                 { label: 'Encontrados', value: produtos.filter(p => p.encontradoNuvemshop).length, color: 'var(--gray-800)' },
-                { label: 'Não encontrados', value: produtos.filter(p => !p.encontradoNuvemshop).length, color: 'var(--amber)' },
+                { label: 'Não encontrados', value: produtos.filter(p => !p.encontradoNuvemshop && !p.erroConsulta).length, color: 'var(--amber)' },
+                { label: 'Falha consulta', value: produtos.filter(p => !!p.erroConsulta).length, color: 'var(--red)' },
                 { label: 'Sem categoria', value: produtos.filter(p => p.semCategoria).length, color: 'var(--red)' },
                 { label: 'Sem tags', value: produtos.filter(p => p.semTags).length, color: '#7c3aed' },
               ].map(card => (
@@ -620,7 +621,7 @@ export default function NuvemshopProdutosPage() {
                     {produtosOrdenados.map(p => {
                       const sug = editandoSugestao[p.sku];
                       const temSugestao = !!sug;
-                      const rowBg = !p.encontradoNuvemshop ? '#fffbeb' : p.sku === skuEmProcessamento ? '#ede9fe' : temSugestao ? '#f5f3ff' : 'var(--white)';
+                      const rowBg = p.erroConsulta ? '#fef2f2' : !p.encontradoNuvemshop ? '#fffbeb' : p.sku === skuEmProcessamento ? '#ede9fe' : temSugestao ? '#f5f3ff' : 'var(--white)';
                       return (
                         <tr key={p.sku} style={{ background: rowBg }}>
                           <td style={{ ...s.td, textAlign: 'center' }}>
@@ -683,7 +684,9 @@ export default function NuvemshopProdutosPage() {
                             )}
                           </td>
                           <td style={s.td}>
-                            {!p.encontradoNuvemshop ? (
+                            {p.erroConsulta ? (
+                              <span title={p.erroConsulta} style={{ fontSize: 11, background: '#fef2f2', color: 'var(--red)', border: '1px solid #fecaca', padding: '2px 8px', borderRadius: 999, fontWeight: 600 }}>Erro consulta</span>
+                            ) : !p.encontradoNuvemshop ? (
                               <span style={{ fontSize: 11, background: '#fffbeb', color: 'var(--amber)', border: '1px solid #fcd34d', padding: '2px 8px', borderRadius: 999, fontWeight: 600 }}>Não encontrado</span>
                             ) : temSugestao ? (
                               <span style={{ fontSize: 11, background: '#f5f3ff', color: '#7c3aed', border: '1px solid #c4b5fd', padding: '2px 8px', borderRadius: 999, fontWeight: 600 }}>✨ Com sugestão</span>
