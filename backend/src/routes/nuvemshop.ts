@@ -82,25 +82,44 @@ nuvemshopRouter.post('/testar-conexao', async (_req, res, next) => {
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
-async function nuvemReq<T = unknown>(path: string, options: RequestInit = {}): Promise<T> {
+type NuvemReqOptions = RequestInit & { timeoutMs?: number };
+
+async function nuvemReq<T = unknown>(path: string, options: NuvemReqOptions = {}): Promise<T> {
   const cfg = await getConfig();
   const accessToken = cfg.nuvemshopAccessToken;
   const storeId = cfg.nuvemshopStoreId;
   if (!accessToken || !storeId) throw new Error('Nuvemshop nao configurado');
-  const res = await fetch(`https://api.nuvemshop.com.br/v1/${storeId}${path}`, {
-    ...options,
-    headers: {
-      'Authentication': `bearer ${accessToken}`,
-      'User-Agent': 'ANB Parts (contato@anbparts.com.br)',
-      'Content-Type': 'application/json',
-      ...((options.headers as any) || {}),
-    },
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Nuvemshop ${res.status}: ${text.slice(0, 300)}`);
+  const { timeoutMs = 60000, ...fetchOptions } = options;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  let res: Response;
+  try {
+    res = await fetch(`https://api.nuvemshop.com.br/v1/${storeId}${path}`, {
+      ...fetchOptions,
+      signal: controller.signal,
+      headers: {
+        'Authentication': `bearer ${accessToken}`,
+        'User-Agent': 'ANB Parts (contato@anbparts.com.br)',
+        'Content-Type': 'application/json',
+        ...((fetchOptions.headers as any) || {}),
+      },
+    });
+  } catch (e: any) {
+    if (e?.name === 'AbortError') {
+      throw new Error(`Nuvemshop timeout apos ${Math.round(timeoutMs / 1000)}s`);
+    }
+    throw e;
+  } finally {
+    clearTimeout(timeout);
   }
-  return res.json() as Promise<T>;
+
+  try {
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Nuvemshop ${res.status}: ${text.slice(0, 300)}`);
+    }
+    return res.json() as Promise<T>;
+  } catch (e) { throw e; }
 }
 
 function resolverMotoIdPorPrefixo(sku: string, prefixos: any[]): number | null {
@@ -115,6 +134,26 @@ function resolverMotoIdPorPrefixo(sku: string, prefixos: any[]): number | null {
 
 function normalizarSkuBusca(value: string) {
   return String(value || '').trim().replace(/^"+|"+$/g, '').trim().toUpperCase();
+}
+
+async function mapComConcorrencia<T, R>(
+  items: T[],
+  limite: number,
+  mapper: (item: T, index: number) => Promise<R>,
+) {
+  const resultados = new Array<R>(items.length);
+  let cursor = 0;
+  const totalWorkers = Math.min(Math.max(1, limite), items.length);
+
+  await Promise.all(Array.from({ length: totalWorkers }, async () => {
+    while (cursor < items.length) {
+      const index = cursor;
+      cursor++;
+      resultados[index] = await mapper(items[index], index);
+    }
+  }));
+
+  return resultados;
 }
 
 // ─── GET /nuvemshop/categorias ────────────────────────────────────────────────
@@ -174,7 +213,7 @@ nuvemshopRouter.get('/categorias', async (_req, res, next) => {
 
 nuvemshopRouter.post('/buscar-produtos', async (req, res, next) => {
   try {
-    const { motoId, skus: skusInput } = req.body || {};
+    const { motoId, skus: skusInput, offset: offsetInput, limit: limitInput } = req.body || {};
 
     // 1. Obtém SKUs do ANB com estoque
     // Quando SKUs específicos são informados, busca pelo SKU base E todas as variações (-2, -3...)
@@ -209,14 +248,18 @@ nuvemshopRouter.post('/buscar-produtos', async (req, res, next) => {
       if (!skuBaseMap.has(base)) skuBaseMap.set(base, { ...peca, idPeca: base });
     }
     const pecasAgrupadas = Array.from(skuBaseMap.values());
+    const total = pecasAgrupadas.length;
+    const usarLoteMoto = !!motoId && !(skusInput && Array.isArray(skusInput) && skusInput.length) && limitInput;
+    const offset = usarLoteMoto ? Math.max(0, Number(offsetInput) || 0) : 0;
+    const limit = usarLoteMoto ? Math.max(1, Math.min(50, Number(limitInput) || 10)) : total;
+    const pecasParaConsulta = usarLoteMoto ? pecasAgrupadas.slice(offset, offset + limit) : pecasAgrupadas;
 
     // 3. Para cada SKU base, busca o produto na Nuvemshop
-    const resultados: any[] = [];
-    for (const peca of pecasAgrupadas) {
+    const resultados = await mapComConcorrencia(pecasParaConsulta, usarLoteMoto ? 5 : 8, async (peca) => {
       const sku = peca.idPeca; // já é o SKU base
       try {
         // Busca produto pelo SKU base na Nuvemshop
-        const produtos = await nuvemReq(`/products?q=${encodeURIComponent(sku)}&per_page=5`) as any[];
+        const produtos = await nuvemReq(`/products?q=${encodeURIComponent(sku)}&per_page=5`, { timeoutMs: 12000 }) as any[];
         // Match: variant com SKU igual ao base (ex: HD03_0110)
         let produtoEncontrado: any = null;
         for (const p of produtos) {
@@ -228,8 +271,7 @@ nuvemshopRouter.post('/buscar-produtos', async (req, res, next) => {
         }
 
         if (!produtoEncontrado) {
-          resultados.push({ sku, titulo: peca.descricao, moto: peca.moto, encontradoNuvemshop: false, produtoId: null, imagens: 0, categorias: [], tags: [] });
-          continue;
+          return { sku, titulo: peca.descricao, moto: peca.moto, encontradoNuvemshop: false, produtoId: null, imagens: 0, categorias: [], tags: [] };
         }
 
         const titulo = (produtoEncontrado.name?.pt || produtoEncontrado.name?.['pt-BR'] || Object.values(produtoEncontrado.name || {})[0] || peca.descricao) as string;
@@ -238,7 +280,7 @@ nuvemshopRouter.post('/buscar-produtos', async (req, res, next) => {
         const tagsRaw = produtoEncontrado.tags || '';
         const tags = tagsRaw ? tagsRaw.split(',').map((t: string) => t.trim()).filter(Boolean) : [];
 
-        resultados.push({
+        return {
           sku,
           titulo,
           moto: peca.moto,
@@ -249,14 +291,35 @@ nuvemshopRouter.post('/buscar-produtos', async (req, res, next) => {
           tags,
           semCategoria: categorias.length === 0,
           semTags: tags.length === 0,
-        });
-      } catch {
-        resultados.push({ sku, titulo: peca.descricao, moto: peca.moto, encontradoNuvemshop: false, produtoId: null, imagens: 0, categorias: [], tags: [] });
+        };
+      } catch (e: any) {
+        return {
+          sku,
+          titulo: peca.descricao,
+          moto: peca.moto,
+          encontradoNuvemshop: false,
+          produtoId: null,
+          imagens: 0,
+          categorias: [],
+          tags: [],
+          erroConsulta: e?.message || 'Falha ao consultar Nuvemshop',
+        };
       }
-    }
+    });
 
-    res.json({ ok: true, produtos: resultados });
-  } catch (e) { next(e); }
+    res.json({
+      ok: true,
+      produtos: resultados,
+      total,
+      offset,
+      limit,
+      processed: offset + resultados.length,
+      hasMore: offset + resultados.length < total,
+    });
+  } catch (e: any) {
+    console.error('[nuvemshop/buscar-produtos]', e);
+    res.status(500).json({ ok: false, error: `Falha ao buscar produtos Nuvemshop: ${e?.message || String(e)}` });
+  }
 });
 
 // ─── POST /nuvemshop/sugerir-ia ───────────────────────────────────────────────

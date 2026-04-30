@@ -34,9 +34,11 @@ type FotoQueueItem = {
   erro?: string;
 };
 type FotoPendente = { foto: FotoQueueItem; idx: number };
+type MotoSearchProgress = { processados: number; total: number; loteAtual: number; totalLotes: number } | null;
 
 const MAX_UPLOAD_BATCH_BYTES = 7 * 1024 * 1024;
 const MAX_UPLOAD_BATCH_ITEMS = 3;
+const MOTO_SEARCH_BATCH_SIZE = 10;
 
 function normalizarSkuLista(value: string) {
   return value
@@ -137,6 +139,7 @@ export default function NuvemshopProdutosPage() {
   const [skusInput, setSkusInput] = useState('');
   const [modo, setModo] = useState<'moto' | 'skus'>('moto');
   const [buscando, setBuscando] = useState(false);
+  const [buscaMotoProgress, setBuscaMotoProgress] = useState<MotoSearchProgress>(null);
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [sortKey, setSortKey] = useState<string>('drive');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
@@ -255,12 +258,45 @@ export default function NuvemshopProdutosPage() {
   async function buscar() {
     setBuscando(true);
     setBuscou(false);
+    setBuscaMotoProgress(null);
+    setProdutos([]);
     setSugestoes([]);
     setEditandoSugestao({});
     setSelecionados(new Set());
     try {
+      if (modo === 'moto' && motoId) {
+        setBuscou(true);
+        let offset = 0;
+        let total = 0;
+        let totalLotes = 1;
+
+        while (true) {
+          const loteAtual = Math.floor(offset / MOTO_SEARCH_BATCH_SIZE) + 1;
+          const resp = await fetch(`${API}/nuvemshop/buscar-produtos`, {
+            method: 'POST', credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              motoId: Number(motoId),
+              offset,
+              limit: MOTO_SEARCH_BATCH_SIZE,
+            }),
+          });
+          const data = await lerRespostaApi(resp);
+          const loteProdutos = data.produtos || [];
+          total = Number(data.total || loteProdutos.length || 0);
+          totalLotes = Math.max(1, Math.ceil(total / MOTO_SEARCH_BATCH_SIZE));
+          const processados = Math.min(Number(data.processed ?? offset + loteProdutos.length), total);
+
+          setProdutos(prev => offset === 0 ? loteProdutos : [...prev, ...loteProdutos]);
+          setBuscaMotoProgress({ processados, total, loteAtual, totalLotes });
+
+          if (!data.hasMore || processados >= total) break;
+          offset += MOTO_SEARCH_BATCH_SIZE;
+        }
+        return;
+      }
+
       const body: any = {};
-      if (modo === 'moto' && motoId) body.motoId = Number(motoId);
       if (modo === 'skus') body.skus = normalizarSkuLista(skusInput);
       const resp = await fetch(`${API}/nuvemshop/buscar-produtos`, {
         method: 'POST', credentials: 'include',
@@ -272,7 +308,9 @@ export default function NuvemshopProdutosPage() {
       else alert(data.error || 'Erro ao buscar');
       setBuscou(true);
     } catch (e: any) { alert(e.message); }
-    setBuscando(false);
+    finally {
+      setBuscando(false);
+    }
   }
 
   async function sugerirIA() {
@@ -406,6 +444,34 @@ export default function NuvemshopProdutosPage() {
             </div>
           )}
         </div>
+
+        {modo === 'moto' && buscaMotoProgress && (
+          <div style={{ ...s.card, padding: 16, borderColor: buscando ? '#c4b5fd' : 'var(--border)', background: buscando ? '#faf5ff' : 'var(--white)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', marginBottom: 10 }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: buscando ? '#5b21b6' : 'var(--gray-800)' }}>
+                  {buscando ? 'Buscando produtos por moto' : 'Busca por moto concluida'}
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 2 }}>
+                  Lote {buscaMotoProgress.loteAtual}/{buscaMotoProgress.totalLotes} - {buscaMotoProgress.processados}/{buscaMotoProgress.total} SKU(s) processado(s)
+                </div>
+              </div>
+              <span style={{ fontSize: 12, fontWeight: 700, color: buscando ? '#7c3aed' : 'var(--green)' }}>
+                {buscaMotoProgress.total ? Math.round((buscaMotoProgress.processados / buscaMotoProgress.total) * 100) : 100}%
+              </span>
+            </div>
+            <div style={{ height: 8, borderRadius: 999, overflow: 'hidden', background: '#ede9fe' }}>
+              <div
+                style={{
+                  height: '100%',
+                  width: `${buscaMotoProgress.total ? Math.min(100, Math.round((buscaMotoProgress.processados / buscaMotoProgress.total) * 100)) : 100}%`,
+                  background: buscando ? '#7c3aed' : '#16a34a',
+                  transition: 'width .25s ease',
+                }}
+              />
+            </div>
+          </div>
+        )}
 
         {/* Resultados */}
         {buscou && (
