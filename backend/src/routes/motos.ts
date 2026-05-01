@@ -140,7 +140,7 @@ const CONTRATO_DETALHES_MOTO_CATEGORIAS = [
     { key: 'chaveIgnicao', label: 'Chave (ignição)' },
     { key: 'chassis', label: 'Chassis' },
     { key: 'motorFuncionando', label: 'Motor Funcionando' },
-    { key: 'avariasBarulhos', label: 'Avarias ou barulhos' },
+    { key: 'avariasBarulhos', label: 'Observações' },
     { key: 'chaveReserva', label: 'Moto Possui Chave Reserva' },
     { key: 'manual', label: 'Moto Possui Manual' },
     { key: 'numeroChassisVisivel', label: 'Número do chassis visível' },
@@ -886,25 +886,30 @@ async function gerarPdfContrato(dados: Record<string, any>): Promise<Buffer> {
         return text.length > max ? `${text.slice(0, max - 1)}...` : text;
       }
 
+      function cardItems(grupo: any) {
+        return (grupo?.itens || []).filter((item: any) => item.key !== 'avariasBarulhos');
+      }
+
       function cardHeight(grupo: any, columns = 1) {
-        const rows = Math.ceil((grupo?.itens?.length || 0) / columns);
+        const rows = Math.ceil(cardItems(grupo).length / columns);
         return headerH + (pad * 2) + (rows * rowH);
       }
 
       function renderDetalhesCard(grupo: any, x: number, y: number, width: number, columns = 1, targetHeight?: number) {
         if (!grupo) return 0;
 
+        const itens = cardItems(grupo);
         const height = targetHeight || cardHeight(grupo, columns);
         const innerW = width - (pad * 2);
         const colGap = columns > 1 ? 10 : 0;
         const colW = (innerW - (colGap * (columns - 1))) / columns;
-        const rows = Math.ceil(grupo.itens.length / columns);
+        const rows = Math.ceil(itens.length / columns);
 
         doc.rect(x, y, width, height).fill('#ffffff').stroke('#cbd5e1');
         doc.rect(x, y, width, headerH).fill(LIGHT_HEADER_BG);
         doc.fontSize(7.5).font('Helvetica-Bold').fillColor(LIGHT_HEADER_TEXT).text(grupo.categoria.toUpperCase(), x + 6, y + 4, { width: width - 12, lineBreak: false });
 
-        grupo.itens.forEach((item: any, index: number) => {
+        itens.forEach((item: any, index: number) => {
           const col = Math.floor(index / rows);
           const row = index % rows;
           const rowX = x + pad + (col * (colW + colGap));
@@ -919,6 +924,24 @@ async function gerarPdfContrato(dados: Record<string, any>): Promise<Buffer> {
         });
 
         return height;
+      }
+
+      function renderObservacoesDetalhes() {
+        const observacoes = String(detalhesMoto.avariasBarulhos ?? '').trim();
+        if (!observacoes) return;
+
+        doc.fontSize(8).font('Helvetica').fillColor(BLACK);
+        const bodyH = Math.max(30, doc.heightOfString(observacoes, { width: W - 14, lineGap: 2 }) + 12);
+        const height = headerH + bodyH;
+        ensureSpace(height + 10);
+
+        const y = doc.y;
+        doc.rect(65, y, W, height).fill('#ffffff').stroke('#cbd5e1');
+        doc.rect(65, y, W, headerH).fill(LIGHT_HEADER_BG);
+        doc.fontSize(7.5).font('Helvetica-Bold').fillColor(LIGHT_HEADER_TEXT).text('OBSERVAÇÕES', 71, y + 4, { width: W - 12, lineBreak: false });
+        doc.fontSize(8).font('Helvetica').fillColor(BLACK).text(observacoes, 71, y + headerH + 7, { width: W - 12, lineGap: 2 });
+        doc.y = y + height + 10;
+        doc.x = 65;
       }
 
       function renderParDetalhes(esquerda: string, direita: string) {
@@ -953,6 +976,8 @@ async function gerarPdfContrato(dados: Record<string, any>): Promise<Buffer> {
         doc.y += height + 10;
         doc.x = 65;
       }
+
+      renderObservacoesDetalhes();
     }
 
     // ── Cabeçalho ──────────────────────────────────────────────────────────────

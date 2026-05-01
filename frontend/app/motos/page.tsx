@@ -950,7 +950,7 @@ const DETALHES_MOTO_CATEGORIAS = [
     { key: 'chaveIgnicao', label: 'Chave (ignição)' },
     { key: 'chassis', label: 'Chassis' },
     { key: 'motorFuncionando', label: 'Motor Funcionando', tipo: 'simnao' },
-    { key: 'avariasBarulhos', label: 'Eventuais avarias ou barulhos', tipo: 'texto' },
+    { key: 'avariasBarulhos', label: 'Observações', tipo: 'texto' },
     { key: 'chaveReserva', label: 'Moto Possui Chave Reserva', tipo: 'simnao' },
     { key: 'manual', label: 'Moto Possui Manual', tipo: 'simnao' },
     { key: 'numeroChassisVisivel', label: 'Número do chassis visível', tipo: 'simnao' },
@@ -1026,7 +1026,7 @@ function DetalhesMotoModal({ open, value, onClose, onSave, viewportMode, saving 
           <textarea
             value={form[item.key] || ''}
             onChange={(event) => setField(item.key, event.target.value)}
-            placeholder="Descreva avarias, barulhos ou observações relevantes"
+            placeholder="Descreva observações, avarias ou barulhos relevantes"
             style={{ ...cs.fi, minHeight: 72, resize: 'vertical', fontSize: 13, background: 'var(--white)' }}
           />
         </div>
