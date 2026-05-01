@@ -106,6 +106,15 @@ function dataArquivoContrato(value: unknown) {
   return new Date().toISOString().slice(0, 10);
 }
 
+function localDataContratoAtual() {
+  const meses = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+  const partes = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'numeric', year: 'numeric' }).formatToParts(new Date());
+  const dia = partes.find((parte) => parte.type === 'day')?.value || '01';
+  const mes = Math.max(0, Number(partes.find((parte) => parte.type === 'month')?.value || '1') - 1);
+  const ano = partes.find((parte) => parte.type === 'year')?.value || String(new Date().getFullYear());
+  return `Jundiaí/SP - ${dia} de ${meses[mes] || 'janeiro'} de ${ano}`;
+}
+
 function nomeArquivoContratoPdf(source: any, numeroContrato?: unknown) {
   const dados = source?.dados && typeof source.dados === 'object' ? source.dados : source;
   const numero = slugArquivoContrato(numeroContrato ?? source?.id ?? 'novo', 'novo');
@@ -136,6 +145,7 @@ function normalizarContratoForm(dados: Record<string, any>) {
     debitoIpvaValor: form.debitoIpvaValor ? maskMoneyBR(form.debitoIpvaValor) : '',
     debitoLicenciamentoValor: form.debitoLicenciamentoValor ? maskMoneyBR(form.debitoLicenciamentoValor) : '',
     debitoMultasValor: form.debitoMultasValor ? maskMoneyBR(form.debitoMultasValor) : '',
+    localData: form.localData || localDataContratoAtual(),
   };
 }
 
@@ -1154,7 +1164,7 @@ function ContratoFormModal({ open, contrato, onClose, onSaved, viewportMode }: a
       setDocsEntregues(Array.isArray(d.docsEntregues) ? d.docsEntregues : []);
       setEmpresaCarregada(true);
     } else {
-      setForm({ ...FORM_VAZIO });
+      setForm(normalizarContratoForm({}));
       setDocsEntregues([]);
       setEmpresaCarregada(false);
       // Auto-preencher dados da empresa
@@ -1235,7 +1245,7 @@ function ContratoFormModal({ open, contrato, onClose, onSaved, viewportMode }: a
     setDocsEntregues((prev) => prev.includes(key) ? prev.filter((d) => d !== key) : [...prev, key]);
   }
 
-  const dadosCompletos = { ...form, docsEntregues };
+  const dadosCompletos = { ...form, localData: form.localData || localDataContratoAtual(), docsEntregues };
   const mostrarDebitos = form.debitosDeclaracao === 'com_debitos';
   const detalhesPreenchidos = countDetalhesMoto((form as any).detalhesMoto);
 
@@ -1264,31 +1274,18 @@ function ContratoFormModal({ open, contrato, onClose, onSaved, viewportMode }: a
   async function gerarPdf() {
     setGerando(true);
     try {
-      // Se já tem ID salvo, usa endpoint de PDF por ID
-      if (contrato?.id) {
-        const resp = await fetch(`${API}/motos/contratos/${contrato.id}/pdf`, { credentials: 'include' });
-        if (!resp.ok) throw new Error('Erro ao gerar PDF');
-        const blob = await resp.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url; a.download = nomeArquivoContratoPdf({ ...contrato, dados: form }, contrato.id);
-        document.body.appendChild(a); a.click(); a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 5000);
-      } else {
-        // Gera PDF sem salvar primeiro
-        const resp = await fetch(`${API}/motos/contrato/gerar`, {
-          method: 'POST', credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(dadosCompletos),
-        });
-        if (!resp.ok) throw new Error('Erro ao gerar PDF');
-        const blob = await resp.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url; a.download = nomeArquivoContratoPdf(dadosCompletos, 'novo');
-        document.body.appendChild(a); a.click(); a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 5000);
-      }
+      const resp = await fetch(`${API}/motos/contrato/gerar`, {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(dadosCompletos),
+      });
+      if (!resp.ok) throw new Error('Erro ao gerar PDF');
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = nomeArquivoContratoPdf(dadosCompletos, contrato?.id || 'novo');
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
     } catch (err: any) {
       alert(err.message || 'Erro ao gerar PDF');
     } finally {

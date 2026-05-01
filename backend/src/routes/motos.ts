@@ -834,6 +834,8 @@ async function gerarPdfContrato(dados: Record<string, any>): Promise<Buffer> {
     const LIGHT = '#888888';
     const BLACK = '#111111';
     const BLUE  = '#1a3a6b';
+    const LIGHT_HEADER_BG = '#e5e7eb';
+    const LIGHT_HEADER_TEXT = '#334155';
 
     function sectionHeader(text: string) {
       doc.moveDown(0.6);
@@ -872,6 +874,66 @@ async function gerarPdfContrato(dados: Record<string, any>): Promise<Buffer> {
     function renderAnexoDetalhesMoto() {
       if (!temDetalhesMoto) return;
 
+      const grupoPorNome = (nome: string) => CONTRATO_DETALHES_MOTO_CATEGORIAS.find((grupo) => grupo.categoria === nome);
+      const cardGap = 12;
+      const cardW = (W - cardGap) / 2;
+      const headerH = 15;
+      const rowH = 13;
+      const pad = 6;
+
+      function truncateText(value: string, max: number) {
+        const text = String(value || '');
+        return text.length > max ? `${text.slice(0, max - 1)}...` : text;
+      }
+
+      function cardHeight(grupo: any, columns = 1) {
+        const rows = Math.ceil((grupo?.itens?.length || 0) / columns);
+        return headerH + (pad * 2) + (rows * rowH);
+      }
+
+      function renderDetalhesCard(grupo: any, x: number, y: number, width: number, columns = 1, targetHeight?: number) {
+        if (!grupo) return 0;
+
+        const height = targetHeight || cardHeight(grupo, columns);
+        const innerW = width - (pad * 2);
+        const colGap = columns > 1 ? 10 : 0;
+        const colW = (innerW - (colGap * (columns - 1))) / columns;
+        const rows = Math.ceil(grupo.itens.length / columns);
+
+        doc.rect(x, y, width, height).fill('#ffffff').stroke('#cbd5e1');
+        doc.rect(x, y, width, headerH).fill(LIGHT_HEADER_BG);
+        doc.fontSize(7.5).font('Helvetica-Bold').fillColor(LIGHT_HEADER_TEXT).text(grupo.categoria.toUpperCase(), x + 6, y + 4, { width: width - 12, lineBreak: false });
+
+        grupo.itens.forEach((item: any, index: number) => {
+          const col = Math.floor(index / rows);
+          const row = index % rows;
+          const rowX = x + pad + (col * (colW + colGap));
+          const rowY = y + headerH + pad + (row * rowH);
+          const labelW = columns > 1 ? colW * 0.62 : colW * 0.64;
+          const valueW = colW - labelW - 4;
+          const labelMax = columns > 1 ? 24 : 32;
+
+          doc.rect(rowX, rowY - 1, colW, rowH).fill(row % 2 === 0 ? '#f8fafc' : '#ffffff');
+          doc.fontSize(7.2).font('Helvetica-Bold').fillColor(GRAY).text(truncateText(item.label, labelMax), rowX + 3, rowY + 2, { width: labelW, lineBreak: false });
+          doc.fontSize(7.2).font('Helvetica').fillColor(BLACK).text(truncateText(detalheMotoValor(item.key), columns > 1 ? 18 : 20), rowX + labelW + 4, rowY + 2, { width: valueW, lineBreak: false });
+        });
+
+        return height;
+      }
+
+      function renderParDetalhes(esquerda: string, direita: string) {
+        const left = grupoPorNome(esquerda);
+        const right = grupoPorNome(direita);
+        if (!left || !right) return;
+        const height = Math.max(cardHeight(left), cardHeight(right));
+        ensureSpace(height + 10);
+        const y = doc.y;
+        renderDetalhesCard(left, 65, y, cardW, 1, height);
+        renderDetalhesCard(right, 65 + cardW + cardGap, y, cardW, 1, height);
+        doc.y = y + height + 10;
+        doc.x = 65;
+      }
+
       doc.addPage();
       doc.x = 65;
       doc.y = 60;
@@ -879,18 +941,17 @@ async function gerarPdfContrato(dados: Record<string, any>): Promise<Buffer> {
       doc.moveDown(0.5);
       paragraph('Este anexo integra o presente contrato e registra a vistoria realizada pelas partes sobre os principais componentes da motocicleta, conforme informações preenchidas no ato da contratação.');
 
-      for (const grupo of CONTRATO_DETALHES_MOTO_CATEGORIAS) {
-        ensureSpace(34);
-        doc.moveDown(0.2);
-        doc.rect(65, doc.y, W, 16).fill('#222222');
-        doc.fontSize(8).font('Helvetica-Bold').fillColor('#ffffff').text(grupo.categoria.toUpperCase(), 69, doc.y + 4, { width: W - 8 });
-        doc.y += 18;
+      renderParDetalhes('Roda', 'Suspensão');
+      renderParDetalhes('Dianteira', 'Traseira');
+      renderParDetalhes('Lado Direito', 'Lado Esquerdo');
 
-        for (const item of grupo.itens) {
-          ensureSpace(18);
-          doc.x = 65;
-          field(item.label, detalheMotoValor(item.key));
-        }
+      const geral = grupoPorNome('Geral');
+      if (geral) {
+        const height = cardHeight(geral, 2);
+        ensureSpace(height + 10);
+        renderDetalhesCard(geral, 65, doc.y, W, 2, height);
+        doc.y += height + 10;
+        doc.x = 65;
       }
     }
 
@@ -961,10 +1022,10 @@ async function gerarPdfContrato(dados: Record<string, any>): Promise<Buffer> {
     ];
     const tColW = [80, W / 2 - 80, 80, W / 2 - 80];
     let tY = doc.y;
-    doc.rect(65, tY, W, 16).fill('#222222');
+    doc.rect(65, tY, W, 16).fill(LIGHT_HEADER_BG);
     let cx = 65;
     tHeaders.forEach((h, i) => {
-      doc.fontSize(7.5).font('Helvetica-Bold').fillColor('#ffffff').text(h.toUpperCase(), cx + 4, tY + 4, { width: tColW[i], lineBreak: false });
+      doc.fontSize(7.5).font('Helvetica-Bold').fillColor(LIGHT_HEADER_TEXT).text(h.toUpperCase(), cx + 4, tY + 4, { width: tColW[i], lineBreak: false });
       cx += tColW[i];
     });
     tY += 16;
@@ -1083,7 +1144,7 @@ async function gerarPdfContrato(dados: Record<string, any>): Promise<Buffer> {
         70, alertY, { width: W - 10, align: 'center' });
     doc.y = alertY + 34; doc.moveDown(0.5);
 
-    field('Local e data', dados.localData || '_____________________________, _____ de _____________ de 20____');
+    field('Local e data', dados.localData || localDataContratoAtual());
     doc.moveDown(0.8);
 
     const sigY = doc.y;
@@ -1153,6 +1214,15 @@ function dataArquivoContrato(value: unknown) {
   const date = new Date(text || Date.now());
   if (!Number.isNaN(date.getTime())) return date.toISOString().slice(0, 10);
   return new Date().toISOString().slice(0, 10);
+}
+
+function localDataContratoAtual() {
+  const meses = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+  const partes = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: 'numeric', year: 'numeric' }).formatToParts(new Date());
+  const dia = partes.find((parte) => parte.type === 'day')?.value || '01';
+  const mes = Math.max(0, Number(partes.find((parte) => parte.type === 'month')?.value || '1') - 1);
+  const ano = partes.find((parte) => parte.type === 'year')?.value || String(new Date().getFullYear());
+  return `Jundiaí/SP - ${dia} de ${meses[mes] || 'janeiro'} de ${ano}`;
 }
 
 function nomeArquivoContratoPdf(dados: Record<string, any>, numeroContrato: unknown, dataCriacao?: unknown) {
