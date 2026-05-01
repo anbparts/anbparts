@@ -1,0 +1,7 @@
+CREATE TABLE "Contrato" (
+  "id"           SERIAL PRIMARY KEY,
+  "titulo"       TEXT,
+  "dados"        JSONB NOT NULL DEFAULT '{}',
+  "criadoEm"    TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "atualizadoEm" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

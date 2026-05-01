@@ -463,3 +463,11 @@ model DetranExecucaoEtapa {
   @@index([execucaoId, ordem])
   @@index([status])
 }
+
+model Contrato {
+  id           Int      @id @default(autoincrement())
+  titulo       String?
+  dados        Json     @default("{}")
+  criadoEm    DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+}

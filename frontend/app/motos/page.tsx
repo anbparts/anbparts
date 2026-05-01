@@ -721,39 +721,68 @@ function AnexosMotoModal({ open, moto, loading, data, saving, onClose, onSave, v
 }
 
 // ── Aba Contratos ──────────────────────────────────────────────────────────────
-function ContratosTab({ viewportMode }: { viewportMode: MotosViewportMode }) {
+const FORM_VAZIO = {
+  nomeVendedor: '', cpfVendedor: '', rgVendedor: '', orgaoEmissor: '',
+  nascimentoVendedor: '', estadoCivil: 'Solteiro(a)', profissao: '', telefone: '', email: '',
+  enderecoVendedor: '', bairroVendedor: '', cepVendedor: '', cidadeUfVendedor: '',
+  razaoSocialComprador: '', cnpjComprador: '', enderecoComprador: '', representanteComprador: '',
+  marcaModelo: '', anoFabricacao: '', anoModelo: '', cor: '', categoria: '',
+  placa: '', combustivel: '', chassi: '', motor: '', renavam: '', estadoGeral: 'Bom',
+  descricaoVeiculo: '',
+  valorReais: '', valorExtenso: '', formaPagamento: 'À vista, em dinheiro', dadosPagamento: '',
+  localData: '', nomeRepresentante: '', cpfRepresentante: '',
+};
+
+function ContratoFormModal({ open, contrato, onClose, onSaved, viewportMode }: any) {
   const isPhone = viewportMode === 'phone';
   const isTabletLandscape = viewportMode === 'tablet-landscape';
-
-  const [form, setForm] = useState({
-    // Vendedor
-    nomeVendedor: '', cpfVendedor: '', rgVendedor: '', orgaoEmissor: '',
-    nascimentoVendedor: '', estadoCivil: '', profissao: '', telefone: '', email: '',
-    enderecoVendedor: '', bairroVendedor: '', cepVendedor: '', cidadeUfVendedor: '',
-    // Comprador
-    razaoSocialComprador: 'ANBParts Comércio de Peças Usadas', cnpjComprador: '',
-    enderecoComprador: '', representanteComprador: '',
-    // Veículo
-    marcaModelo: '', anoFabricacao: '', anoModelo: '', cor: '', categoria: '',
-    placa: '', combustivel: '', chassi: '', motor: '', renavam: '', estadoGeral: 'Bom',
-    descricaoVeiculo: '',
-    // Negociação
-    valorReais: '', valorExtenso: '', formaPagamento: 'À vista', dadosPagamento: '',
-    // Geral
-    localData: '', nomeRepresentante: '', cpfRepresentante: '',
-  });
+  const [form, setForm] = useState({ ...FORM_VAZIO });
   const [docsEntregues, setDocsEntregues] = useState<string[]>([]);
+  const [salvando, setSalvando] = useState(false);
   const [gerando, setGerando] = useState(false);
+  const [empresaCarregada, setEmpresaCarregada] = useState(false);
+
+  // Carregar dados da empresa e preencher comprador automaticamente
+  useEffect(() => {
+    if (!open) return;
+    if (contrato) {
+      const d = contrato.dados || {};
+      setForm({ ...FORM_VAZIO, ...d });
+      setDocsEntregues(Array.isArray(d.docsEntregues) ? d.docsEntregues : []);
+      setEmpresaCarregada(true);
+    } else {
+      setForm({ ...FORM_VAZIO });
+      setDocsEntregues([]);
+      setEmpresaCarregada(false);
+      // Auto-preencher dados da empresa
+      fetch(`${API}/empresa`, { credentials: 'include' })
+        .then((r) => r.json())
+        .then((empresa) => {
+          setForm((prev) => ({
+            ...prev,
+            razaoSocialComprador: empresa.razaoSocial || '',
+            cnpjComprador: empresa.cnpj || '',
+            enderecoComprador: empresa.enderecoCompleto || '',
+          }));
+          setEmpresaCarregada(true);
+        })
+        .catch(() => setEmpresaCarregada(true));
+    }
+  }, [open, contrato]);
+
+  if (!open) return null;
+
+  const cols2 = isPhone ? '1fr' : '1fr 1fr';
+  const cols3 = isPhone ? '1fr' : isTabletLandscape ? '1fr 1fr 1fr' : '1fr 1fr';
+
+  const sectionStyle: React.CSSProperties = {
+    fontSize: 10, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)',
+    letterSpacing: '0.8px', textTransform: 'uppercase', margin: '16px 0 10px',
+    paddingBottom: 6, borderBottom: '1px solid var(--border)',
+  };
 
   const f = (field: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
     setForm((prev) => ({ ...prev, [field]: e.target.value }));
-
-  const cols = isPhone ? '1fr' : isTabletLandscape ? '1fr 1fr 1fr' : '1fr 1fr';
-  const sectionStyle: React.CSSProperties = {
-    fontSize: 10, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)',
-    letterSpacing: '0.8px', textTransform: 'uppercase', margin: '18px 0 10px',
-    paddingBottom: 8, borderBottom: '1px solid var(--border)',
-  };
 
   function inp(label: string, field: string, type = 'text', placeholder = '', required = false) {
     return (
@@ -761,13 +790,7 @@ function ContratosTab({ viewportMode }: { viewportMode: MotosViewportMode }) {
         <label style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--ink-soft)', display: 'block', marginBottom: 4 }}>
           {label}{required && <span style={{ color: 'var(--red)', marginLeft: 2 }}>*</span>}
         </label>
-        <input
-          type={type}
-          placeholder={placeholder}
-          value={(form as any)[field]}
-          onChange={f(field)}
-          style={{ ...cs.fi, fontSize: 13 }}
-        />
+        <input type={type} placeholder={placeholder} value={(form as any)[field]} onChange={f(field)} style={{ ...cs.fi, fontSize: 13 }} />
       </div>
     );
   }
@@ -787,145 +810,357 @@ function ContratosTab({ viewportMode }: { viewportMode: MotosViewportMode }) {
     setDocsEntregues((prev) => prev.includes(key) ? prev.filter((d) => d !== key) : [...prev, key]);
   }
 
-  async function gerarContrato() {
-    if (!form.nomeVendedor || !form.cpfVendedor) {
-      alert('Preencha pelo menos nome e CPF do vendedor.');
-      return;
+  const dadosCompletos = { ...form, docsEntregues };
+
+  async function salvar() {
+    if (!form.nomeVendedor) { alert('Informe o nome do vendedor.'); return; }
+    setSalvando(true);
+    try {
+      const url = contrato ? `${API}/motos/contratos/${contrato.id}` : `${API}/motos/contratos`;
+      const method = contrato ? 'PUT' : 'POST';
+      const resp = await fetch(url, {
+        method, credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dados: dadosCompletos }),
+      });
+      if (!resp.ok) throw new Error('Erro ao salvar contrato');
+      onSaved();
+    } catch (err: any) {
+      alert(err.message || 'Erro ao salvar');
+    } finally {
+      setSalvando(false);
     }
+  }
+
+  async function gerarPdf() {
     setGerando(true);
     try {
-      const resp = await fetch(`${API}/motos/contrato/gerar`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ ...form, docsEntregues }),
-      });
-      if (!resp.ok) throw new Error('Erro ao gerar contrato');
-      const blob = await resp.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `contrato-${form.nomeVendedor.split(' ')[0].toLowerCase() || 'vendedor'}-${form.placa || 'moto'}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      // Se já tem ID salvo, usa endpoint de PDF por ID
+      if (contrato?.id) {
+        const resp = await fetch(`${API}/motos/contratos/${contrato.id}/pdf`, { credentials: 'include' });
+        if (!resp.ok) throw new Error('Erro ao gerar PDF');
+        const blob = await resp.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = `contrato-${contrato.id}-${form.nomeVendedor?.split(' ')[0] || 'vendedor'}.pdf`;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+      } else {
+        // Gera PDF sem salvar primeiro
+        const resp = await fetch(`${API}/motos/contrato/gerar`, {
+          method: 'POST', credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(dadosCompletos),
+        });
+        if (!resp.ok) throw new Error('Erro ao gerar PDF');
+        const blob = await resp.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = `contrato-${form.nomeVendedor?.split(' ')[0] || 'vendedor'}.pdf`;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+      }
     } catch (err: any) {
-      alert(err.message || 'Erro ao gerar contrato');
+      alert(err.message || 'Erro ao gerar PDF');
     } finally {
       setGerando(false);
     }
   }
 
   return (
-    <div style={{ padding: isPhone ? 14 : 28, maxWidth: 860 }}>
-      <div style={{ ...cs.card, padding: isPhone ? 16 : 28 }}>
-
-        {/* Cabeçalho */}
-        <div style={{ marginBottom: 6 }}>
-          <div style={{ fontFamily: 'Fraunces, serif', fontSize: 16, fontWeight: 600 }}>Gerar Contrato de Compra e Venda</div>
-          <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 3 }}>
-            Preencha os campos e gere o PDF do contrato particular de compra e venda de motocicleta.
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 300, display: 'flex', alignItems: isPhone ? 'stretch' : 'center', justifyContent: 'center', padding: isPhone ? 0 : 24, backdropFilter: 'blur(2px)' }}>
+      <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: isPhone ? 0 : 16, width: '100%', maxWidth: 860, maxHeight: isPhone ? '100dvh' : '95vh', minHeight: isPhone ? '100dvh' : undefined, overflow: 'hidden', boxShadow: '0 16px 40px rgba(0,0,0,.15)', display: 'flex', flexDirection: 'column' }}>
+        {/* Header */}
+        <div style={{ padding: isPhone ? '16px 14px 14px' : '20px 28px 16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+          <div>
+            <div style={{ fontFamily: 'Fraunces, serif', fontSize: isPhone ? 17 : 19, fontWeight: 600 }}>
+              {contrato ? 'Editar Contrato' : 'Novo Contrato'}
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 3 }}>
+              Contrato particular de compra e venda de motocicleta
+            </div>
           </div>
+          <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', flexShrink: 0 }}>✕</button>
         </div>
 
-        {/* VENDEDOR */}
-        <div style={sectionStyle}>PARTE I — Identificação do Vendedor</div>
-        <div style={{ display: 'grid', gridTemplateColumns: cols, gap: 12 }}>
-          {inp('Nome completo', 'nomeVendedor', 'text', 'Nome completo do vendedor', true)}
-          {inp('CPF', 'cpfVendedor', 'text', '000.000.000-00', true)}
-          {inp('RG', 'rgVendedor', 'text', '00.000.000-0')}
-          {inp('Órgão emissor', 'orgaoEmissor', 'text', 'SSP/SP')}
-          {inp('Data de nascimento', 'nascimentoVendedor', 'date')}
-          {sel('Estado civil', 'estadoCivil', ['Solteiro(a)', 'Casado(a)', 'Divorciado(a)', 'Viúvo(a)', 'União estável'])}
-          {inp('Profissão', 'profissao', 'text')}
-          {inp('Telefone', 'telefone', 'tel', '(00) 00000-0000')}
-          {inp('E-mail', 'email', 'email')}
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '2fr 1fr', gap: 12 }}>
-          {inp('Endereço completo', 'enderecoVendedor', 'text', 'Rua, número, complemento')}
-          {inp('Bairro', 'bairroVendedor')}
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '1fr 1fr', gap: 12 }}>
-          {inp('CEP', 'cepVendedor', 'text', '00000-000')}
-          {inp('Cidade / UF', 'cidadeUfVendedor', 'text', 'Ex: Jundiaí / SP')}
-        </div>
+        {/* Body */}
+        <div style={{ overflowY: 'auto', flex: 1, padding: isPhone ? '14px 14px 0' : '20px 28px 0' }}>
 
-        {/* VEÍCULO */}
-        <div style={sectionStyle}>PARTE III — Identificação do Veículo</div>
-        <div style={{ display: 'grid', gridTemplateColumns: cols, gap: 12 }}>
-          {inp('Marca / Modelo', 'marcaModelo', 'text', 'Ex: HARLEY-DAVIDSON TOURING ULTRA', true)}
-          {inp('Ano de fabricação', 'anoFabricacao', 'text', 'Ex: 2017')}
-          {inp('Ano do modelo', 'anoModelo', 'text', 'Ex: 2017')}
-          {inp('Cor', 'cor', 'text', 'Ex: Preto')}
-          {inp('Categoria', 'categoria', 'text', 'Ex: Automático')}
-          {inp('Combustível', 'combustivel', 'text', 'Ex: Gasolina')}
-          {inp('Placa', 'placa', 'text', 'ABC-1234')}
-          {inp('Chassi (VIN)', 'chassi')}
-          {inp('Número do Motor', 'motor')}
-          {inp('RENAVAM', 'renavam')}
-          {sel('Estado geral', 'estadoGeral', ['Bom', 'Regular', 'Sucata'])}
-        </div>
-        <div style={{ marginBottom: 12 }}>
-          <label style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--ink-soft)', display: 'block', marginBottom: 4 }}>
-            Descrição do estado do veículo
-          </label>
-          <textarea
-            value={form.descricaoVeiculo}
-            onChange={(e) => setForm((p) => ({ ...p, descricaoVeiculo: e.target.value }))}
-            placeholder="Descreva o estado geral do veículo conforme vistoria conjunta..."
-            style={{ ...cs.fi, resize: 'vertical', minHeight: 72, fontSize: 13 }}
-          />
-        </div>
+          {/* VENDEDOR */}
+          <div style={sectionStyle}>PARTE I — Identificação do Vendedor</div>
+          <div style={{ display: 'grid', gridTemplateColumns: cols3, gap: 12 }}>
+            {inp('Nome completo', 'nomeVendedor', 'text', 'Nome completo do vendedor', true)}
+            {inp('CPF', 'cpfVendedor', 'text', '000.000.000-00', true)}
+            {inp('RG', 'rgVendedor', 'text', '00.000.000-0')}
+            {inp('Órgão emissor', 'orgaoEmissor', 'text', 'SSP/SP')}
+            {inp('Data de nascimento', 'nascimentoVendedor', 'date')}
+            {sel('Estado civil', 'estadoCivil', ['Solteiro(a)', 'Casado(a)', 'Divorciado(a)', 'Viúvo(a)', 'União estável'])}
+            {inp('Profissão', 'profissao', 'text')}
+            {inp('Telefone', 'telefone', 'tel', '(00) 00000-0000')}
+            {inp('E-mail', 'email', 'email')}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '2fr 1fr', gap: 12 }}>
+            {inp('Endereço completo', 'enderecoVendedor', 'text', 'Rua, número, complemento')}
+            {inp('Bairro', 'bairroVendedor')}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: cols2, gap: 12 }}>
+            {inp('CEP', 'cepVendedor', 'text', '00000-000')}
+            {inp('Cidade / UF', 'cidadeUfVendedor', 'text', 'Ex: Jundiaí / SP')}
+          </div>
 
-        {/* NEGOCIAÇÃO */}
-        <div style={sectionStyle}>CLÁUSULA 2 — Preço e Pagamento</div>
-        <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '1fr 1fr', gap: 12 }}>
-          {inp('Valor (R$)', 'valorReais', 'text', 'Ex: 12.500,00', true)}
-          {inp('Valor por extenso', 'valorExtenso', 'text', 'Ex: doze mil e quinhentos reais')}
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '1fr 1fr', gap: 12 }}>
-          {sel('Forma de pagamento', 'formaPagamento', ['À vista, em dinheiro', 'PIX', 'TED / Transferência bancária', 'Outro'])}
-          {inp('Dados do pagamento', 'dadosPagamento', 'text', 'Chave PIX ou dados bancários')}
-        </div>
+          {/* COMPRADOR */}
+          <div style={sectionStyle}>
+            PARTE II — Comprador
+            {!empresaCarregada && <span style={{ fontSize: 10, color: 'var(--ink-muted)', marginLeft: 8 }}>carregando dados da empresa...</span>}
+            {empresaCarregada && <span style={{ fontSize: 10, color: 'var(--green)', marginLeft: 8 }}>✓ dados da empresa carregados automaticamente</span>}
+          </div>
+          <div style={{ background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', marginBottom: 12 }}>
+            <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginBottom: 6 }}>Os dados abaixo são preenchidos automaticamente a partir da página Empresa. Edite se necessário.</div>
+            <div style={{ display: 'grid', gridTemplateColumns: cols2, gap: 12 }}>
+              {inp('Razão Social', 'razaoSocialComprador')}
+              {inp('CNPJ', 'cnpjComprador')}
+            </div>
+            {inp('Endereço', 'enderecoComprador')}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: cols2, gap: 12 }}>
+            {inp('Nome do representante', 'nomeRepresentante')}
+            {inp('CPF do representante', 'cpfRepresentante', 'text', '000.000.000-00')}
+          </div>
 
-        {/* DOCUMENTOS */}
-        <div style={sectionStyle}>CLÁUSULA 9 — Documentação Entregue</div>
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
-          {[
-            { key: 'crlv', label: 'CRLV' },
-            { key: 'dut', label: 'CRV / DUT assinado' },
-            { key: 'chave', label: 'Chave(s)' },
-            { key: 'nf', label: 'NF de aquisição anterior' },
-            { key: 'manual', label: 'Manual do proprietário' },
-          ].map(({ key, label }) => (
-            <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer', padding: '6px 12px', borderRadius: 8, border: `1px solid ${docsEntregues.includes(key) ? '#93c5fd' : 'var(--border)'}`, background: docsEntregues.includes(key) ? '#eff6ff' : 'var(--white)', color: docsEntregues.includes(key) ? '#2563eb' : 'var(--ink-soft)' }}>
-              <input type="checkbox" checked={docsEntregues.includes(key)} onChange={() => toggleDoc(key)} style={{ accentColor: '#2563eb' }} />
-              {label}
-            </label>
-          ))}
-        </div>
+          {/* VEÍCULO */}
+          <div style={sectionStyle}>PARTE III — Identificação do Veículo</div>
+          <div style={{ display: 'grid', gridTemplateColumns: cols3, gap: 12 }}>
+            {inp('Marca / Modelo', 'marcaModelo', 'text', 'Ex: HARLEY-DAVIDSON TOURING ULTRA', true)}
+            {inp('Ano de fabricação', 'anoFabricacao', 'text', 'Ex: 2017')}
+            {inp('Ano do modelo', 'anoModelo', 'text', 'Ex: 2017')}
+            {inp('Cor', 'cor', 'text', 'Ex: Preto')}
+            {inp('Categoria', 'categoria', 'text', 'Ex: Automático')}
+            {inp('Combustível', 'combustivel', 'text', 'Ex: Gasolina')}
+            {inp('Placa', 'placa', 'text', 'ABC-1234')}
+            {inp('Chassi (VIN)', 'chassi')}
+            {inp('Número do Motor', 'motor')}
+            {inp('RENAVAM', 'renavam')}
+            {sel('Estado geral', 'estadoGeral', ['Bom', 'Regular', 'Sucata'])}
+          </div>
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--ink-soft)', display: 'block', marginBottom: 4 }}>Descrição do estado do veículo</label>
+            <textarea value={form.descricaoVeiculo} onChange={(e) => setForm((p) => ({ ...p, descricaoVeiculo: e.target.value }))} placeholder="Descreva o estado geral conforme vistoria conjunta..." style={{ ...cs.fi, resize: 'vertical', minHeight: 72, fontSize: 13 }} />
+          </div>
 
-        {/* GERAL */}
-        <div style={sectionStyle}>PARTE V — Assinaturas</div>
-        <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '1fr 1fr 1fr', gap: 12 }}>
+          {/* NEGOCIAÇÃO */}
+          <div style={sectionStyle}>Cláusula 2 — Preço e Pagamento</div>
+          <div style={{ display: 'grid', gridTemplateColumns: cols2, gap: 12 }}>
+            {inp('Valor (R$)', 'valorReais', 'text', 'Ex: 12.500,00', true)}
+            {inp('Valor por extenso', 'valorExtenso', 'text', 'Ex: doze mil e quinhentos reais')}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: cols2, gap: 12 }}>
+            {sel('Forma de pagamento', 'formaPagamento', ['À vista, em dinheiro', 'PIX', 'TED / Transferência bancária', 'Outro'])}
+            {inp('Dados do pagamento', 'dadosPagamento', 'text', 'Chave PIX ou dados bancários')}
+          </div>
+
+          {/* DOCUMENTOS */}
+          <div style={sectionStyle}>Cláusula 9 — Documentação Entregue</div>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
+            {[
+              { key: 'crlv', label: 'CRLV' }, { key: 'dut', label: 'CRV / DUT assinado' },
+              { key: 'chave', label: 'Chave(s)' }, { key: 'nf', label: 'NF de aquisição anterior' },
+              { key: 'manual', label: 'Manual do proprietário' },
+            ].map(({ key, label }) => (
+              <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer', padding: '6px 12px', borderRadius: 8, border: `1px solid ${docsEntregues.includes(key) ? '#93c5fd' : 'var(--border)'}`, background: docsEntregues.includes(key) ? '#eff6ff' : 'var(--white)', color: docsEntregues.includes(key) ? '#2563eb' : 'var(--ink-soft)' }}>
+                <input type="checkbox" checked={docsEntregues.includes(key)} onChange={() => toggleDoc(key)} style={{ accentColor: '#2563eb' }} />
+                {label}
+              </label>
+            ))}
+          </div>
+
+          {/* ASSINATURAS */}
+          <div style={sectionStyle}>Parte V — Local e Data</div>
           {inp('Local e data', 'localData', 'text', 'Ex: Jundiaí, 01 de maio de 2026')}
-          {inp('Nome do representante ANBParts', 'nomeRepresentante', 'text')}
-          {inp('CPF do representante', 'cpfRepresentante', 'text', '000.000.000-00')}
+          <div style={{ height: 20 }} />
         </div>
 
-        {/* Botão */}
-        <div style={{ marginTop: 8, display: 'flex', justifyContent: 'flex-end' }}>
+        {/* Footer */}
+        <div style={{ padding: isPhone ? 14 : '16px 28px 20px', borderTop: '1px solid var(--border)', display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap', flexDirection: isPhone ? 'column-reverse' : 'row', flexShrink: 0 }}>
+          <button onClick={onClose} style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink-soft)', borderColor: 'var(--border-strong)', width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>Cancelar</button>
+          <button onClick={gerarPdf} disabled={gerando} style={{ ...cs.btn, background: '#1d4ed8', color: '#fff', borderColor: '#1d4ed8', width: isPhone ? '100%' : undefined, justifyContent: 'center', opacity: gerando ? 0.7 : 1 }}>
+            {gerando ? '⏳ Gerando...' : '📄 Gerar PDF'}
+          </button>
+          <button onClick={salvar} disabled={salvando} style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)', width: isPhone ? '100%' : undefined, justifyContent: 'center', opacity: salvando ? 0.7 : 1 }}>
+            {salvando ? 'Salvando...' : contrato ? 'Salvar alterações' : 'Salvar contrato'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ContratosTab({ viewportMode }: { viewportMode: MotosViewportMode }) {
+  const isPhone = viewportMode === 'phone';
+  const [contratos, setContratos] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editando, setEditando] = useState<any>(null);
+  const [deletando, setDeletando] = useState<number | null>(null);
+  const [gerandoId, setGerandoId] = useState<number | null>(null);
+
+  async function loadContratos() {
+    setLoading(true);
+    try {
+      const resp = await fetch(`${API}/motos/contratos`, { credentials: 'include' });
+      const data = await resp.json();
+      setContratos(data.contratos || []);
+    } catch { setContratos([]); }
+    setLoading(false);
+  }
+
+  useEffect(() => { loadContratos(); }, []);
+
+  async function handleDelete(id: number, titulo: string) {
+    if (!confirm(`Excluir contrato "${titulo}"?`)) return;
+    setDeletando(id);
+    try {
+      await fetch(`${API}/motos/contratos/${id}`, { method: 'DELETE', credentials: 'include' });
+      loadContratos();
+    } catch { alert('Erro ao excluir'); }
+    setDeletando(null);
+  }
+
+  async function handleGerarPdf(contrato: any) {
+    setGerandoId(contrato.id);
+    try {
+      const resp = await fetch(`${API}/motos/contratos/${contrato.id}/pdf`, { credentials: 'include' });
+      if (!resp.ok) throw new Error('Erro ao gerar PDF');
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `contrato-${contrato.id}-${(contrato.dados?.nomeVendedor || 'vendedor').split(' ')[0].toLowerCase()}.pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    } catch (err: any) { alert(err.message || 'Erro ao gerar PDF'); }
+    setGerandoId(null);
+  }
+
+  const pagePadding = isPhone ? 14 : 28;
+
+  return (
+    <div style={{ padding: pagePadding }}>
+      <div style={cs.card}>
+        {/* Cabeçalho da listagem */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: isPhone ? '14px' : '14px 18px', borderBottom: '1px solid var(--border)', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>
+            Contratos{' '}
+            <span style={{ fontSize: 12, color: 'var(--ink-muted)', fontFamily: 'Geist, sans-serif', fontWeight: 400 }}>
+              — {contratos.length} registro{contratos.length !== 1 ? 's' : ''}
+            </span>
+          </div>
           <button
-            onClick={gerarContrato}
-            disabled={gerando}
-            style={{ ...cs.btn, background: gerando ? 'var(--ink-muted)' : 'var(--ink)', color: 'var(--white)', padding: '10px 24px', fontSize: 14, gap: 8 }}
+            onClick={() => { setEditando(null); setModalOpen(true); }}
+            style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)', justifyContent: 'center' }}
           >
-            {gerando ? '⏳ Gerando PDF...' : '📄 Gerar Contrato PDF'}
+            + Novo Contrato
           </button>
         </div>
 
+        {/* Listagem */}
+        {loading ? (
+          <div style={{ padding: 28, textAlign: 'center', color: 'var(--ink-muted)' }}>Carregando contratos...</div>
+        ) : contratos.length === 0 ? (
+          <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-muted)' }}>
+            <div style={{ fontSize: 32, marginBottom: 12 }}>📄</div>
+            <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 6 }}>Nenhum contrato cadastrado</div>
+            <div style={{ fontSize: 12 }}>Clique em "Novo Contrato" para começar</div>
+          </div>
+        ) : isPhone ? (
+          <div style={{ padding: 12, display: 'grid', gap: 10 }}>
+            {contratos.map((c) => (
+              <div key={c.id} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14, background: 'var(--white)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: 8 }}>
+                  <div>
+                    <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11, color: 'var(--ink-muted)' }}>#{c.id}</div>
+                    <div style={{ fontWeight: 600, fontSize: 14, marginTop: 2 }}>{c.titulo || '—'}</div>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--ink-muted)', whiteSpace: 'nowrap' }}>
+                    {new Date(c.criadoEm).toLocaleDateString('pt-BR')}
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginTop: 8 }}>
+                  <button onClick={() => handleGerarPdf(c)} disabled={gerandoId === c.id} style={{ ...cs.btn, fontSize: 11, padding: '7px 8px', justifyContent: 'center', background: '#eff6ff', color: '#2563eb', borderColor: '#93c5fd', opacity: gerandoId === c.id ? 0.7 : 1 }}>
+                    {gerandoId === c.id ? '...' : '📄 PDF'}
+                  </button>
+                  <button onClick={() => { setEditando(c); setModalOpen(true); }} style={{ ...cs.btn, fontSize: 11, padding: '7px 8px', justifyContent: 'center', background: 'var(--white)', color: 'var(--ink-soft)', borderColor: 'var(--border)' }}>
+                    ✏️ Editar
+                  </button>
+                  <button onClick={() => handleDelete(c.id, c.titulo || String(c.id))} disabled={deletando === c.id} style={{ ...cs.btn, fontSize: 11, padding: '7px 8px', justifyContent: 'center', background: '#fff1f2', color: 'var(--red-light)', borderColor: '#fecdd3', opacity: deletando === c.id ? 0.7 : 1 }}>
+                    Excluir
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
+                <tr>
+                  {['#', 'Título', 'Vendedor', 'Veículo', 'Valor', 'Criado em', 'Ações'].map((h) => (
+                    <th key={h} style={{ ...cs.th, cursor: 'default' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {contratos.map((c) => {
+                  const d = c.dados || {};
+                  return (
+                    <tr key={c.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                      <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, color: 'var(--ink-muted)' }}>#{c.id}</td>
+                      <td style={{ ...cs.td, maxWidth: 200 }}>
+                        <div style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.titulo || '—'}</div>
+                      </td>
+                      <td style={{ ...cs.td, fontSize: 12 }}>
+                        <div>{d.nomeVendedor || '—'}</div>
+                        {d.cpfVendedor && <div style={{ fontSize: 11, color: 'var(--ink-muted)', fontFamily: 'Geist Mono, monospace' }}>{d.cpfVendedor}</div>}
+                      </td>
+                      <td style={{ ...cs.td, fontSize: 12 }}>
+                        <div>{d.marcaModelo || '—'}</div>
+                        {d.placa && <div style={{ fontSize: 11, color: 'var(--ink-muted)', fontFamily: 'Geist Mono, monospace' }}>{d.placa}</div>}
+                      </td>
+                      <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12 }}>
+                        {d.valorReais ? `R$ ${d.valorReais}` : '—'}
+                      </td>
+                      <td style={{ ...cs.td, fontSize: 12, color: 'var(--ink-muted)', whiteSpace: 'nowrap' }}>
+                        {new Date(c.criadoEm).toLocaleDateString('pt-BR')}
+                      </td>
+                      <td style={{ ...cs.td }}>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button onClick={() => handleGerarPdf(c)} disabled={gerandoId === c.id} title="Gerar PDF" style={{ ...cs.btn, padding: '5px 10px', fontSize: 11, background: '#eff6ff', color: '#2563eb', borderColor: '#93c5fd', opacity: gerandoId === c.id ? 0.7 : 1 }}>
+                            {gerandoId === c.id ? '...' : '📄 PDF'}
+                          </button>
+                          <button onClick={() => { setEditando(c); setModalOpen(true); }} title="Editar" style={{ ...cs.btn, padding: '5px 10px', fontSize: 11, background: 'var(--white)', color: 'var(--ink-soft)', borderColor: 'var(--border)' }}>
+                            Editar
+                          </button>
+                          <button onClick={() => handleDelete(c.id, c.titulo || String(c.id))} disabled={deletando === c.id} title="Excluir" style={{ ...cs.btn, padding: '5px 10px', fontSize: 11, background: '#fff1f2', color: 'var(--red-light)', borderColor: '#fecdd3', opacity: deletando === c.id ? 0.7 : 1 }}>
+                            Excluir
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
+
+      {/* Modal de Novo / Edição */}
+      <ContratoFormModal
+        open={modalOpen}
+        contrato={editando}
+        onClose={() => { setModalOpen(false); setEditando(null); }}
+        onSaved={() => { setModalOpen(false); setEditando(null); loadContratos(); }}
+        viewportMode={viewportMode}
+      />
     </div>
   );
 }
