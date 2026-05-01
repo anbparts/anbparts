@@ -871,6 +871,38 @@ async function gerarPdfContrato(dados: Record<string, any>): Promise<Buffer> {
       }
     }
 
+    function renderTabelaIdentificacaoVeiculo() {
+      const tHeaders = ['Campo', 'Informação', 'Campo', 'Informação'];
+      const tRows = [
+        ['Marca / Modelo', dados.marcaModelo || '—', 'Ano fab. / modelo', `${dados.anoFabricacao || '—'} / ${dados.anoModelo || '—'}`],
+        ['Cor', dados.cor || '—', 'Categoria', dados.categoria || '—'],
+        ['Placa', dados.placa || '—', 'Combustível', dados.combustivel || '—'],
+        ['Chassi (VIN)', dados.chassi || '—', 'Número do Motor', dados.motor || '—'],
+        ['RENAVAM', dados.renavam || '—', 'Estado geral', dados.estadoGeral || '—'],
+      ];
+      const tColW = [80, W / 2 - 80, 80, W / 2 - 80];
+      let tY = doc.y;
+      doc.rect(65, tY, W, 16).fill(LIGHT_HEADER_BG);
+      let cx = 65;
+      tHeaders.forEach((h, i) => {
+        doc.fontSize(7.5).font('Helvetica-Bold').fillColor(LIGHT_HEADER_TEXT).text(h.toUpperCase(), cx + 4, tY + 4, { width: tColW[i], lineBreak: false });
+        cx += tColW[i];
+      });
+      tY += 16;
+      tRows.forEach((row, ri) => {
+        const rowH = 14;
+        doc.rect(65, tY, W, rowH).fill(ri % 2 === 0 ? '#f7f7f7' : '#ffffff');
+        cx = 65;
+        row.forEach((cell, ci) => {
+          doc.fontSize(8).font(ci % 2 === 0 ? 'Helvetica-Bold' : 'Helvetica').fillColor(ci % 2 === 0 ? GRAY : BLACK).text(cell, cx + 4, tY + 3, { width: tColW[ci] - 6, lineBreak: false });
+          cx += tColW[ci];
+        });
+        tY += rowH;
+      });
+      doc.y = tY + 6;
+      doc.x = 65;
+    }
+
     function renderAnexoDetalhesMoto() {
       if (!temDetalhesMoto) return;
 
@@ -989,6 +1021,8 @@ async function gerarPdfContrato(dados: Record<string, any>): Promise<Buffer> {
       doc.fontSize(13).font('Helvetica-Bold').fillColor(BLUE).text('ANEXO I — DETALHES DA MOTO', { align: 'center' });
       doc.moveDown(0.5);
       paragraph('Este anexo integra o presente contrato e registra a vistoria realizada pelas partes sobre os principais componentes da motocicleta, conforme informações preenchidas no ato da contratação.');
+      renderTabelaIdentificacaoVeiculo();
+      doc.moveDown(0.3);
 
       renderParDetalhes('Roda', 'Suspensão');
       renderParDetalhes('Dianteira', 'Traseira');
@@ -1065,34 +1099,7 @@ async function gerarPdfContrato(dados: Record<string, any>): Promise<Buffer> {
 
     // ── Parte III: Veículo ─────────────────────────────────────────────────────
     sectionHeader('PARTE III — IDENTIFICAÇÃO DO VEÍCULO');
-    const tHeaders = ['Campo', 'Informação', 'Campo', 'Informação'];
-    const tRows = [
-      ['Marca / Modelo', dados.marcaModelo || '—', 'Ano fab. / modelo', `${dados.anoFabricacao || '—'} / ${dados.anoModelo || '—'}`],
-      ['Cor', dados.cor || '—', 'Categoria', dados.categoria || '—'],
-      ['Placa', dados.placa || '—', 'Combustível', dados.combustivel || '—'],
-      ['Chassi (VIN)', dados.chassi || '—', 'Número do Motor', dados.motor || '—'],
-      ['RENAVAM', dados.renavam || '—', 'Estado geral', dados.estadoGeral || '—'],
-    ];
-    const tColW = [80, W / 2 - 80, 80, W / 2 - 80];
-    let tY = doc.y;
-    doc.rect(65, tY, W, 16).fill(LIGHT_HEADER_BG);
-    let cx = 65;
-    tHeaders.forEach((h, i) => {
-      doc.fontSize(7.5).font('Helvetica-Bold').fillColor(LIGHT_HEADER_TEXT).text(h.toUpperCase(), cx + 4, tY + 4, { width: tColW[i], lineBreak: false });
-      cx += tColW[i];
-    });
-    tY += 16;
-    tRows.forEach((row, ri) => {
-      const rowH = 14;
-      doc.rect(65, tY, W, rowH).fill(ri % 2 === 0 ? '#f7f7f7' : '#ffffff');
-      cx = 65;
-      row.forEach((cell, ci) => {
-        doc.fontSize(8).font(ci % 2 === 0 ? 'Helvetica-Bold' : 'Helvetica').fillColor(ci % 2 === 0 ? GRAY : BLACK).text(cell, cx + 4, tY + 3, { width: tColW[ci] - 6, lineBreak: false });
-        cx += tColW[ci];
-      });
-      tY += rowH;
-    });
-    doc.y = tY + 6; doc.x = 65;
+    renderTabelaIdentificacaoVeiculo();
 
     if (temDetalhesMoto) {
       doc.fontSize(8.5).font('Helvetica').fillColor(GRAY).text('O Anexo I — Detalhes da Moto deste instrumento foi preenchido em conjunto pelo VENDEDOR e pelo COMPRADOR. Ambas as partes declaram estar plenamente de acordo com o detalhamento registrado, reconhecendo-o como fiel representação do estado real do bem.', { align: 'justify', lineGap: 2 });
