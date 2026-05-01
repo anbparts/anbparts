@@ -624,6 +624,30 @@ async function gerarPdfContrato(dados: Record<string, any>): Promise<Buffer> {
   const empresaEndereco    = String(config?.empresaEnderecoCompleto || dados.enderecoComprador || '').trim();
   const empresaTelefone    = String(config?.empresaTelefoneWhats || '').trim();
 
+  function formatDateBR(value: unknown) {
+    const text = String(value || '').trim();
+    if (!text) return '';
+
+    const isoDate = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (isoDate) return `${isoDate[3]}/${isoDate[2]}/${isoDate[1]}`;
+
+    const date = new Date(text);
+    if (Number.isNaN(date.getTime())) return text;
+    return new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(date);
+  }
+
+  function responsavelContrato(value: unknown) {
+    const text = String(value || '').toLowerCase();
+    if (text === 'comprador') return 'COMPRADOR';
+    return 'VENDEDOR';
+  }
+
+  function debitoContrato(label: string, valorKey: string, responsavelKey: string) {
+    const valor = String(dados[valorKey] || '').trim();
+    if (!valor) return null;
+    return `${label} no valor de R$ ${valor}, sob responsabilidade do ${responsavelContrato(dados[responsavelKey])}`;
+  }
+
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({
       size: 'A4',
@@ -697,23 +721,21 @@ async function gerarPdfContrato(dados: Record<string, any>): Promise<Buffer> {
     doc.x = 65;
     doc.fontSize(9).font('Helvetica-Bold').fillColor(GRAY).text('RG / Órgão emissor: ', { continued: true }).font('Helvetica').fillColor(BLACK).text(`${dados.rgVendedor || '—'} / ${dados.orgaoEmissor || '—'}`, { width: colW });
     doc.x = 65;
-    doc.fontSize(9).font('Helvetica-Bold').fillColor(GRAY).text('Data de nascimento: ', { continued: true }).font('Helvetica').fillColor(BLACK).text(dados.nascimentoVendedor || '—', { width: colW });
+    doc.fontSize(9).font('Helvetica-Bold').fillColor(GRAY).text('Data de nascimento: ', { continued: true }).font('Helvetica').fillColor(BLACK).text(formatDateBR(dados.nascimentoVendedor) || '—', { width: colW });
     doc.x = 65;
     doc.fontSize(9).font('Helvetica-Bold').fillColor(GRAY).text('Estado civil: ', { continued: true }).font('Helvetica').fillColor(BLACK).text(dados.estadoCivil || '—', { width: colW });
     const col1EndY = doc.y;
 
     doc.x = col2x; doc.y = startY;
-    doc.fontSize(9).font('Helvetica-Bold').fillColor(GRAY).text('Profissão: ', { continued: true }).font('Helvetica').fillColor(BLACK).text(dados.profissao || '—', { width: colW });
-    doc.x = col2x;
-    doc.fontSize(9).font('Helvetica-Bold').fillColor(GRAY).text('Telefone: ', { continued: true }).font('Helvetica').fillColor(BLACK).text(dados.telefone || '—', { width: colW });
-    doc.x = col2x;
-    doc.fontSize(9).font('Helvetica-Bold').fillColor(GRAY).text('E-mail: ', { continued: true }).font('Helvetica').fillColor(BLACK).text(dados.email || '—', { width: colW });
 
     doc.x = 65;
     doc.y = Math.max(col1EndY, doc.y) + 4;
     field('Endereço', dados.enderecoVendedor || '—');
     field('Bairro / CEP', `${dados.bairroVendedor || '—'} / ${dados.cepVendedor || '—'}`);
     field('Cidade / UF', dados.cidadeUfVendedor || '—');
+    field('Profissão', dados.profissao || '—');
+    field('Telefone', dados.telefone || '—');
+    field('E-mail', dados.email || '—');
 
     // ── Parte II: Comprador (dados da empresa) ─────────────────────────────────
     sectionHeader('PARTE II — IDENTIFICAÇÃO DO COMPRADOR');
@@ -789,7 +811,18 @@ async function gerarPdfContrato(dados: Record<string, any>): Promise<Buffer> {
     paragraph('O COMPRADOR é empresa especializada em avaliação, aquisição e desmanche de motocicletas, tendo realizado vistoria técnica do veículo previamente à assinatura deste instrumento. A aquisição se dá no estado em que o veículo se encontra, conforme descrito na Parte III e confirmado pelo VENDEDOR. Não há garantia pós-venda sobre o estado geral do bem, dado que: (i) o preço foi negociado com pleno conhecimento das condições do veículo; e (ii) a destinação é o desmanche, e não a revenda do veículo inteiro. O VENDEDOR declara ter informado ao COMPRADOR, de boa-fé, todos os vícios, defeitos e limitações do veículo de que tinha conhecimento, não havendo omissão dolosa de sua parte.');
 
     clauseTitle('5', 'DOS DÉBITOS E ENCARGOS ANTERIORES');
-    paragraph('O VENDEDOR é responsável exclusivo por todos os débitos que recaiam sobre o veículo até a data de assinatura deste contrato, incluindo: IPVA de exercícios anteriores e corrente; licenciamento; multas de trânsito; taxas de DETRAN; e quaisquer débitos junto a financeiras ou credores com garantia sobre o veículo. O VENDEDOR se compromete a ressarcir integralmente o COMPRADOR, acrescido de correção monetária pelo IPCA, juros de 1% ao mês e honorários advocatícios de 20%, caso qualquer débito anterior à data deste contrato venha a ser exigido do COMPRADOR.');
+    const debitosInformados = [
+      debitoContrato('IPVA', 'debitoIpvaValor', 'debitoIpvaResponsavel'),
+      debitoContrato('licenciamento', 'debitoLicenciamentoValor', 'debitoLicenciamentoResponsavel'),
+      debitoContrato('multas de trânsito', 'debitoMultasValor', 'debitoMultasResponsavel'),
+    ].filter(Boolean) as string[];
+    const vendedorDeclaraSemDebitos = dados.debitosDeclaracao === 'sem_debitos' || debitosInformados.length === 0;
+    if (vendedorDeclaraSemDebitos) {
+      paragraph('O VENDEDOR declara, sob sua responsabilidade civil e criminal, que até a data de assinatura deste contrato não existem débitos, encargos, restrições financeiras ou pendências incidentes sobre o veículo, incluindo, mas não se limitando a IPVA, licenciamento, multas de trânsito, taxas de DETRAN, gravames, alienação fiduciária, bloqueios administrativos ou judiciais e quaisquer cobranças de natureza anterior à presente venda.');
+    } else {
+      paragraph(`As partes declaram ciência dos seguintes débitos e encargos identificados até a data de assinatura deste contrato: ${debitosInformados.join('; ')}. Cada parte assume, de forma expressa, a obrigação de quitar os valores atribuídos à sua responsabilidade, isentando a outra parte de qualquer cobrança relativa ao respectivo item declarado.`);
+    }
+    paragraph('Independentemente dos débitos expressamente informados acima, todo e qualquer débito, encargo, multa, taxa, gravame, restrição, cobrança ou obrigação anterior à data deste contrato que não tenha sido informado pelo VENDEDOR, ou que não tenha sido identificado ou conhecido pelo COMPRADOR no momento da negociação, permanecerá sob responsabilidade exclusiva do VENDEDOR. Caso qualquer débito anterior à data deste contrato venha a ser exigido do COMPRADOR, o VENDEDOR deverá ressarci-lo integralmente, inclusive quanto a principal, custas, despesas administrativas ou judiciais, acrescido de correção monetária pelo IPCA, juros de 1% ao mês e honorários advocatícios de 20%.');
 
     clauseTitle('6', 'DA GARANTIA CONTRA EVICÇÃO');
     paragraph('O VENDEDOR responde pela evicção do bem, nos termos do Código Civil Brasileiro, obrigando-se a indenizar o COMPRADOR de todas as perdas e danos — incluindo o valor pago, lucros cessantes, custas judiciais e honorários advocatícios — caso o veículo seja reivindicado por terceiros com fundamento em direito anterior à data deste contrato.');

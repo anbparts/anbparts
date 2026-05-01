@@ -78,7 +78,7 @@ function contratoMaskValue(field: string, value: string) {
   if (field === 'cpfVendedor' || field === 'cpfRepresentante') return maskCpf(value);
   if (field === 'telefone') return maskPhone(value);
   if (field === 'cepVendedor') return maskCep(value);
-  if (field === 'valorReais') return maskMoneyBR(value);
+  if (field === 'valorReais' || field === 'debitoIpvaValor' || field === 'debitoLicenciamentoValor' || field === 'debitoMultasValor') return maskMoneyBR(value);
   return value;
 }
 
@@ -92,6 +92,9 @@ function normalizarContratoForm(dados: Record<string, any>) {
     cpfRepresentante: maskCpf(form.cpfRepresentante),
     valorReais: form.valorReais ? maskMoneyBR(form.valorReais) : '',
     valorExtenso: form.valorExtenso || valorReaisPorExtenso(form.valorReais),
+    debitoIpvaValor: form.debitoIpvaValor ? maskMoneyBR(form.debitoIpvaValor) : '',
+    debitoLicenciamentoValor: form.debitoLicenciamentoValor ? maskMoneyBR(form.debitoLicenciamentoValor) : '',
+    debitoMultasValor: form.debitoMultasValor ? maskMoneyBR(form.debitoMultasValor) : '',
   };
 }
 
@@ -830,6 +833,10 @@ const FORM_VAZIO = {
   placa: '', combustivel: '', chassi: '', motor: '', renavam: '', estadoGeral: 'Bom',
   descricaoVeiculo: '',
   valorReais: '', valorExtenso: '', formaPagamento: 'À vista, em dinheiro', dadosPagamento: '',
+  debitosDeclaracao: 'sem_debitos',
+  debitoIpvaValor: '', debitoIpvaResponsavel: 'vendedor',
+  debitoLicenciamentoValor: '', debitoLicenciamentoResponsavel: 'vendedor',
+  debitoMultasValor: '', debitoMultasResponsavel: 'vendedor',
   localData: '', nomeRepresentante: '', cpfRepresentante: '',
 };
 
@@ -912,11 +919,28 @@ function ContratoFormModal({ open, contrato, onClose, onSaved, viewportMode }: a
     );
   }
 
+  function debitoRow(label: string, valorField: string, responsavelField: string) {
+    return (
+      <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '1.2fr 1fr 1fr', gap: 12, alignItems: 'end' }}>
+        <div style={{ marginBottom: 12, fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{label}</div>
+        {inp('Valor em aberto (R$)', valorField, 'text', '0,00')}
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--ink-soft)', display: 'block', marginBottom: 4 }}>Responsável</label>
+          <select value={(form as any)[responsavelField]} onChange={f(responsavelField)} style={{ ...cs.fi, fontSize: 13 }}>
+            <option value="vendedor">Vendedor</option>
+            <option value="comprador">Comprador</option>
+          </select>
+        </div>
+      </div>
+    );
+  }
+
   function toggleDoc(key: string) {
     setDocsEntregues((prev) => prev.includes(key) ? prev.filter((d) => d !== key) : [...prev, key]);
   }
 
   const dadosCompletos = { ...form, docsEntregues };
+  const mostrarDebitos = form.debitosDeclaracao === 'com_debitos';
 
   async function salvar() {
     if (!form.nomeVendedor) { alert('Informe o nome do vendedor.'); return; }
@@ -1003,9 +1027,6 @@ function ContratoFormModal({ open, contrato, onClose, onSaved, viewportMode }: a
             {inp('Órgão emissor', 'orgaoEmissor', 'text', 'SSP/SP')}
             {inp('Data de nascimento', 'nascimentoVendedor', 'date')}
             {sel('Estado civil', 'estadoCivil', ['Solteiro(a)', 'Casado(a)', 'Divorciado(a)', 'Viúvo(a)', 'União estável'])}
-            {inp('Profissão', 'profissao', 'text')}
-            {inp('Telefone', 'telefone', 'tel', '(00) 00000-0000')}
-            {inp('E-mail', 'email', 'email')}
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '2fr 1fr', gap: 12 }}>
             {inp('Endereço completo', 'enderecoVendedor', 'text', 'Rua, número, complemento')}
@@ -1014,6 +1035,11 @@ function ContratoFormModal({ open, contrato, onClose, onSaved, viewportMode }: a
           <div style={{ display: 'grid', gridTemplateColumns: cols2, gap: 12 }}>
             {inp('CEP', 'cepVendedor', 'text', '00000-000')}
             {inp('Cidade / UF', 'cidadeUfVendedor', 'text', 'Ex: Jundiaí / SP')}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: cols3, gap: 12 }}>
+            {inp('Profissão', 'profissao', 'text')}
+            {inp('Telefone', 'telefone', 'tel', '(00) 00000-0000')}
+            {inp('E-mail', 'email', 'email')}
           </div>
 
           {/* COMPRADOR */}
@@ -1065,6 +1091,26 @@ function ContratoFormModal({ open, contrato, onClose, onSaved, viewportMode }: a
             {sel('Forma de pagamento', 'formaPagamento', ['À vista, em dinheiro', 'PIX', 'TED / Transferência bancária', 'Outro'])}
             {inp('Dados do pagamento', 'dadosPagamento', 'text', 'Chave PIX ou dados bancários')}
           </div>
+
+          {/* DEBITOS */}
+          <div style={sectionStyle}>Cláusula 5 — Débitos e Encargos</div>
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--ink-soft)', display: 'block', marginBottom: 4 }}>Declaração sobre débitos</label>
+            <select value={form.debitosDeclaracao} onChange={f('debitosDeclaracao')} style={{ ...cs.fi, fontSize: 13 }}>
+              <option value="sem_debitos">Vendedor declara que não existem débitos em aberto</option>
+              <option value="com_debitos">Existem débitos em aberto para informar</option>
+            </select>
+          </div>
+          {mostrarDebitos && (
+            <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: isPhone ? 12 : '12px 14px', background: 'var(--gray-50)', marginBottom: 12 }}>
+              <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginBottom: 10 }}>
+                Informe o valor em aberto e quem ficará responsável pelo pagamento de cada item.
+              </div>
+              {debitoRow('IPVA', 'debitoIpvaValor', 'debitoIpvaResponsavel')}
+              {debitoRow('Licenciamento', 'debitoLicenciamentoValor', 'debitoLicenciamentoResponsavel')}
+              {debitoRow('Multas', 'debitoMultasValor', 'debitoMultasResponsavel')}
+            </div>
+          )}
 
           {/* DOCUMENTOS */}
           <div style={sectionStyle}>Cláusula 9 — Documentação Entregue</div>
