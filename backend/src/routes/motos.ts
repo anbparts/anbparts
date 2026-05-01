@@ -817,6 +817,41 @@ async function gerarPdfContrato(dados: Record<string, any>): Promise<Buffer> {
     return String(detalhesMoto[key] ?? '').trim() || '—';
   }
 
+  function parseEnderecoEmpresa(value: string) {
+    const source = String(value || '').replace(/\s+/g, ' ').trim();
+    const result: Record<string, string> = {};
+    if (!source) return result;
+
+    const labels = [
+      { key: 'endereco', pattern: /\b(?:end|endereco|endereço)\s*:/i },
+      { key: 'bairro', pattern: /\b(?:bairro|bairo)\s*:/i },
+      { key: 'cidadeEstado', pattern: /\b(?:cidade\s*\/\s*estado|cidade\s*\/\s*uf|cidade\s+estado|cidade\s+uf)\s*:/i },
+      { key: 'cep', pattern: /\bcep\s*:/i },
+    ];
+
+    const matches = labels
+      .map((label) => {
+        const match = source.match(label.pattern);
+        return match && typeof match.index === 'number'
+          ? { key: label.key, index: match.index, end: match.index + match[0].length }
+          : null;
+      })
+      .filter(Boolean) as Array<{ key: string; index: number; end: number }>;
+
+    if (!matches.length) return { endereco: source };
+
+    matches.sort((a, b) => a.index - b.index);
+    const prefix = source.slice(0, matches[0].index).trim();
+    if (prefix && matches[0].key !== 'endereco') result.endereco = prefix;
+
+    matches.forEach((match, index) => {
+      const nextIndex = matches[index + 1]?.index ?? source.length;
+      result[match.key] = source.slice(match.end, nextIndex).trim();
+    });
+
+    return result;
+  }
+
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({
       size: 'A4',
@@ -1090,9 +1125,13 @@ async function gerarPdfContrato(dados: Record<string, any>): Promise<Buffer> {
 
     // ── Parte II: Comprador (dados da empresa) ─────────────────────────────────
     sectionHeader('PARTE II — IDENTIFICAÇÃO DO COMPRADOR');
+    const enderecoEmpresa = parseEnderecoEmpresa(empresaEndereco);
     field('Razão Social', empresaRazaoSocial);
     field('CNPJ', empresaCnpj || '—');
-    field('Endereço', empresaEndereco || '—');
+    field('Endereço', enderecoEmpresa.endereco || empresaEndereco || '—');
+    if (enderecoEmpresa.bairro) field('Bairro', enderecoEmpresa.bairro);
+    if (enderecoEmpresa.cidadeEstado) field('Cidade/Estado', enderecoEmpresa.cidadeEstado);
+    if (enderecoEmpresa.cep) field('CEP', enderecoEmpresa.cep);
     if (empresaTelefone) field('Telefone / WhatsApp', empresaTelefone);
     field('Representado por', dados.nomeRepresentante || '—');
     if (dados.cpfRepresentante) field('CPF do representante', dados.cpfRepresentante);
