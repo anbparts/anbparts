@@ -720,7 +720,219 @@ function AnexosMotoModal({ open, moto, loading, data, saving, onClose, onSave, v
   );
 }
 
+// ── Aba Contratos ──────────────────────────────────────────────────────────────
+function ContratosTab({ viewportMode }: { viewportMode: MotosViewportMode }) {
+  const isPhone = viewportMode === 'phone';
+  const isTabletLandscape = viewportMode === 'tablet-landscape';
+
+  const [form, setForm] = useState({
+    // Vendedor
+    nomeVendedor: '', cpfVendedor: '', rgVendedor: '', orgaoEmissor: '',
+    nascimentoVendedor: '', estadoCivil: '', profissao: '', telefone: '', email: '',
+    enderecoVendedor: '', bairroVendedor: '', cepVendedor: '', cidadeUfVendedor: '',
+    // Comprador
+    razaoSocialComprador: 'ANBParts Comércio de Peças Usadas', cnpjComprador: '',
+    enderecoComprador: '', representanteComprador: '',
+    // Veículo
+    marcaModelo: '', anoFabricacao: '', anoModelo: '', cor: '', categoria: '',
+    placa: '', combustivel: '', chassi: '', motor: '', renavam: '', estadoGeral: 'Bom',
+    descricaoVeiculo: '',
+    // Negociação
+    valorReais: '', valorExtenso: '', formaPagamento: 'À vista', dadosPagamento: '',
+    // Geral
+    localData: '', nomeRepresentante: '', cpfRepresentante: '',
+  });
+  const [docsEntregues, setDocsEntregues] = useState<string[]>([]);
+  const [gerando, setGerando] = useState(false);
+
+  const f = (field: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
+    setForm((prev) => ({ ...prev, [field]: e.target.value }));
+
+  const cols = isPhone ? '1fr' : isTabletLandscape ? '1fr 1fr 1fr' : '1fr 1fr';
+  const sectionStyle: React.CSSProperties = {
+    fontSize: 10, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)',
+    letterSpacing: '0.8px', textTransform: 'uppercase', margin: '18px 0 10px',
+    paddingBottom: 8, borderBottom: '1px solid var(--border)',
+  };
+
+  function inp(label: string, field: string, type = 'text', placeholder = '', required = false) {
+    return (
+      <div style={{ marginBottom: 12 }}>
+        <label style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--ink-soft)', display: 'block', marginBottom: 4 }}>
+          {label}{required && <span style={{ color: 'var(--red)', marginLeft: 2 }}>*</span>}
+        </label>
+        <input
+          type={type}
+          placeholder={placeholder}
+          value={(form as any)[field]}
+          onChange={f(field)}
+          style={{ ...cs.fi, fontSize: 13 }}
+        />
+      </div>
+    );
+  }
+
+  function sel(label: string, field: string, options: string[]) {
+    return (
+      <div style={{ marginBottom: 12 }}>
+        <label style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--ink-soft)', display: 'block', marginBottom: 4 }}>{label}</label>
+        <select value={(form as any)[field]} onChange={f(field)} style={{ ...cs.fi, fontSize: 13 }}>
+          {options.map((o) => <option key={o} value={o}>{o}</option>)}
+        </select>
+      </div>
+    );
+  }
+
+  function toggleDoc(key: string) {
+    setDocsEntregues((prev) => prev.includes(key) ? prev.filter((d) => d !== key) : [...prev, key]);
+  }
+
+  async function gerarContrato() {
+    if (!form.nomeVendedor || !form.cpfVendedor) {
+      alert('Preencha pelo menos nome e CPF do vendedor.');
+      return;
+    }
+    setGerando(true);
+    try {
+      const resp = await fetch(`${API}/motos/contrato/gerar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ ...form, docsEntregues }),
+      });
+      if (!resp.ok) throw new Error('Erro ao gerar contrato');
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `contrato-${form.nomeVendedor.split(' ')[0].toLowerCase() || 'vendedor'}-${form.placa || 'moto'}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    } catch (err: any) {
+      alert(err.message || 'Erro ao gerar contrato');
+    } finally {
+      setGerando(false);
+    }
+  }
+
+  return (
+    <div style={{ padding: isPhone ? 14 : 28, maxWidth: 860 }}>
+      <div style={{ ...cs.card, padding: isPhone ? 16 : 28 }}>
+
+        {/* Cabeçalho */}
+        <div style={{ marginBottom: 6 }}>
+          <div style={{ fontFamily: 'Fraunces, serif', fontSize: 16, fontWeight: 600 }}>Gerar Contrato de Compra e Venda</div>
+          <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 3 }}>
+            Preencha os campos e gere o PDF do contrato particular de compra e venda de motocicleta.
+          </div>
+        </div>
+
+        {/* VENDEDOR */}
+        <div style={sectionStyle}>PARTE I — Identificação do Vendedor</div>
+        <div style={{ display: 'grid', gridTemplateColumns: cols, gap: 12 }}>
+          {inp('Nome completo', 'nomeVendedor', 'text', 'Nome completo do vendedor', true)}
+          {inp('CPF', 'cpfVendedor', 'text', '000.000.000-00', true)}
+          {inp('RG', 'rgVendedor', 'text', '00.000.000-0')}
+          {inp('Órgão emissor', 'orgaoEmissor', 'text', 'SSP/SP')}
+          {inp('Data de nascimento', 'nascimentoVendedor', 'date')}
+          {sel('Estado civil', 'estadoCivil', ['Solteiro(a)', 'Casado(a)', 'Divorciado(a)', 'Viúvo(a)', 'União estável'])}
+          {inp('Profissão', 'profissao', 'text')}
+          {inp('Telefone', 'telefone', 'tel', '(00) 00000-0000')}
+          {inp('E-mail', 'email', 'email')}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '2fr 1fr', gap: 12 }}>
+          {inp('Endereço completo', 'enderecoVendedor', 'text', 'Rua, número, complemento')}
+          {inp('Bairro', 'bairroVendedor')}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '1fr 1fr', gap: 12 }}>
+          {inp('CEP', 'cepVendedor', 'text', '00000-000')}
+          {inp('Cidade / UF', 'cidadeUfVendedor', 'text', 'Ex: Jundiaí / SP')}
+        </div>
+
+        {/* VEÍCULO */}
+        <div style={sectionStyle}>PARTE III — Identificação do Veículo</div>
+        <div style={{ display: 'grid', gridTemplateColumns: cols, gap: 12 }}>
+          {inp('Marca / Modelo', 'marcaModelo', 'text', 'Ex: HARLEY-DAVIDSON TOURING ULTRA', true)}
+          {inp('Ano de fabricação', 'anoFabricacao', 'text', 'Ex: 2017')}
+          {inp('Ano do modelo', 'anoModelo', 'text', 'Ex: 2017')}
+          {inp('Cor', 'cor', 'text', 'Ex: Preto')}
+          {inp('Categoria', 'categoria', 'text', 'Ex: Automático')}
+          {inp('Combustível', 'combustivel', 'text', 'Ex: Gasolina')}
+          {inp('Placa', 'placa', 'text', 'ABC-1234')}
+          {inp('Chassi (VIN)', 'chassi')}
+          {inp('Número do Motor', 'motor')}
+          {inp('RENAVAM', 'renavam')}
+          {sel('Estado geral', 'estadoGeral', ['Bom', 'Regular', 'Sucata'])}
+        </div>
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--ink-soft)', display: 'block', marginBottom: 4 }}>
+            Descrição do estado do veículo
+          </label>
+          <textarea
+            value={form.descricaoVeiculo}
+            onChange={(e) => setForm((p) => ({ ...p, descricaoVeiculo: e.target.value }))}
+            placeholder="Descreva o estado geral do veículo conforme vistoria conjunta..."
+            style={{ ...cs.fi, resize: 'vertical', minHeight: 72, fontSize: 13 }}
+          />
+        </div>
+
+        {/* NEGOCIAÇÃO */}
+        <div style={sectionStyle}>CLÁUSULA 2 — Preço e Pagamento</div>
+        <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '1fr 1fr', gap: 12 }}>
+          {inp('Valor (R$)', 'valorReais', 'text', 'Ex: 12.500,00', true)}
+          {inp('Valor por extenso', 'valorExtenso', 'text', 'Ex: doze mil e quinhentos reais')}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '1fr 1fr', gap: 12 }}>
+          {sel('Forma de pagamento', 'formaPagamento', ['À vista, em dinheiro', 'PIX', 'TED / Transferência bancária', 'Outro'])}
+          {inp('Dados do pagamento', 'dadosPagamento', 'text', 'Chave PIX ou dados bancários')}
+        </div>
+
+        {/* DOCUMENTOS */}
+        <div style={sectionStyle}>CLÁUSULA 9 — Documentação Entregue</div>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
+          {[
+            { key: 'crlv', label: 'CRLV' },
+            { key: 'dut', label: 'CRV / DUT assinado' },
+            { key: 'chave', label: 'Chave(s)' },
+            { key: 'nf', label: 'NF de aquisição anterior' },
+            { key: 'manual', label: 'Manual do proprietário' },
+          ].map(({ key, label }) => (
+            <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer', padding: '6px 12px', borderRadius: 8, border: `1px solid ${docsEntregues.includes(key) ? '#93c5fd' : 'var(--border)'}`, background: docsEntregues.includes(key) ? '#eff6ff' : 'var(--white)', color: docsEntregues.includes(key) ? '#2563eb' : 'var(--ink-soft)' }}>
+              <input type="checkbox" checked={docsEntregues.includes(key)} onChange={() => toggleDoc(key)} style={{ accentColor: '#2563eb' }} />
+              {label}
+            </label>
+          ))}
+        </div>
+
+        {/* GERAL */}
+        <div style={sectionStyle}>PARTE V — Assinaturas</div>
+        <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '1fr 1fr 1fr', gap: 12 }}>
+          {inp('Local e data', 'localData', 'text', 'Ex: Jundiaí, 01 de maio de 2026')}
+          {inp('Nome do representante ANBParts', 'nomeRepresentante', 'text')}
+          {inp('CPF do representante', 'cpfRepresentante', 'text', '000.000.000-00')}
+        </div>
+
+        {/* Botão */}
+        <div style={{ marginTop: 8, display: 'flex', justifyContent: 'flex-end' }}>
+          <button
+            onClick={gerarContrato}
+            disabled={gerando}
+            style={{ ...cs.btn, background: gerando ? 'var(--ink-muted)' : 'var(--ink)', color: 'var(--white)', padding: '10px 24px', fontSize: 14, gap: 8 }}
+          >
+            {gerando ? '⏳ Gerando PDF...' : '📄 Gerar Contrato PDF'}
+          </button>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
+// ── Página principal ───────────────────────────────────────────────────────────
 export default function MotosPage() {
+  const [abaAtiva, setAbaAtiva] = useState<'cadastro' | 'contratos'>('cadastro');
   const [motos, setMotos] = useState<any[]>([]);
   const [filtered, setFiltered] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1048,7 +1260,31 @@ export default function MotosPage() {
           <div style={cs.title}>Motos</div>
           <div style={cs.sub}>Cadastro e gestao de motos</div>
         </div>
+        {/* Abas */}
+        <div style={{ display: 'flex', gap: 4 }}>
+          {(['cadastro', 'contratos'] as const).map((aba) => (
+            <button
+              key={aba}
+              onClick={() => setAbaAtiva(aba)}
+              style={{
+                padding: '7px 18px', borderRadius: 8, fontSize: 13, fontWeight: 500,
+                cursor: 'pointer', fontFamily: 'Geist, sans-serif',
+                border: abaAtiva === aba ? '1px solid var(--ink)' : '1px solid var(--border)',
+                background: abaAtiva === aba ? 'var(--ink)' : 'var(--white)',
+                color: abaAtiva === aba ? 'var(--white)' : 'var(--ink-soft)',
+                transition: 'all 0.15s',
+              }}
+            >
+              {aba === 'cadastro' ? 'Cadastro' : 'Contratos'}
+            </button>
+          ))}
+        </div>
       </div>
+
+      {abaAtiva === 'contratos' ? (
+        <ContratosTab viewportMode={viewportMode} />
+      ) : (
+        <>
       <div style={{ padding: pagePadding }}>
         <div style={cs.card}>
           <div style={{ display: 'flex', alignItems: controlStack ? 'stretch' : 'center', flexDirection: controlStack ? 'column' : 'row', justifyContent: 'space-between', padding: isPhone ? '14px' : '14px 18px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', gap: 12 }}>
@@ -1321,6 +1557,8 @@ export default function MotosPage() {
           onClose={() => setEtiquetaMoto(null)}
           onSaved={() => { setEtiquetaMoto(null); load(); }}
         />
+      )}
+        </>
       )}
     </>
   );

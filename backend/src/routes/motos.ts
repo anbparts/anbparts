@@ -605,3 +605,402 @@ motosRouter.post('/:id/detran-cartela', async (req, res, next) => {
     res.json({ ok: true, resultados, total: posicoes.length });
   } catch (e) { next(e); }
 });
+
+// ── Geração de Contrato de Compra e Venda ─────────────────────────────────────
+import PDFDocument from 'pdfkit';
+
+motosRouter.post('/contrato/gerar', async (req, res, next) => {
+  try {
+    const dados = req.body as {
+      // Vendedor
+      nomeVendedor?: string;
+      cpfVendedor?: string;
+      rgVendedor?: string;
+      orgaoEmissor?: string;
+      nascimentoVendedor?: string;
+      estadoCivil?: string;
+      profissao?: string;
+      telefone?: string;
+      email?: string;
+      enderecoVendedor?: string;
+      bairroVendedor?: string;
+      cepVendedor?: string;
+      cidadeUfVendedor?: string;
+      // Comprador
+      razaoSocialComprador?: string;
+      cnpjComprador?: string;
+      enderecoComprador?: string;
+      representanteComprador?: string;
+      // Veículo
+      marcaModelo?: string;
+      anoFabricacao?: string;
+      anoModelo?: string;
+      cor?: string;
+      categoria?: string;
+      placa?: string;
+      combustivel?: string;
+      chassi?: string;
+      motor?: string;
+      renavam?: string;
+      estadoGeral?: string;
+      descricaoVeiculo?: string;
+      // Negociação
+      valorReais?: string;
+      valorExtenso?: string;
+      formaPagamento?: string;
+      dadosPagamento?: string;
+      // Documentos
+      docsEntregues?: string[];
+      // Geral
+      localData?: string;
+      nomeRepresentante?: string;
+      cpfRepresentante?: string;
+    };
+
+    const doc = new PDFDocument({
+      size: 'A4',
+      margins: { top: 60, bottom: 60, left: 65, right: 65 },
+      info: { Title: 'Contrato de Compra e Venda de Motocicleta', Author: 'ANBParts' },
+    });
+
+    const chunks: Buffer[] = [];
+    doc.on('data', (chunk: Buffer) => chunks.push(chunk));
+    doc.on('end', () => {
+      const pdf = Buffer.concat(chunks);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', 'attachment; filename="contrato-compra-venda-moto.pdf"');
+      res.send(pdf);
+    });
+
+    const W = 595.28 - 130; // usable width
+    const GRAY = '#555555';
+    const LIGHT = '#888888';
+    const BLACK = '#111111';
+    const BLUE = '#1a3a6b';
+
+    function sectionHeader(text: string) {
+      doc.moveDown(0.6);
+      doc.rect(65, doc.y, W, 1).fill('#333333');
+      doc.moveDown(0.3);
+      doc.fontSize(8).font('Helvetica-Bold').fillColor(BLACK)
+        .text(text.toUpperCase(), { characterSpacing: 0.8 });
+      doc.moveDown(0.4);
+      doc.font('Helvetica').fillColor(GRAY).fontSize(10);
+    }
+
+    function field(label: string, value: string) {
+      doc.fontSize(9).font('Helvetica-Bold').fillColor(GRAY).text(`${label}: `, { continued: true });
+      doc.fontSize(9).font('Helvetica').fillColor(BLACK).text(value || '—');
+    }
+
+    function clauseTitle(num: string, title: string) {
+      doc.moveDown(0.5);
+      doc.fontSize(9).font('Helvetica-Bold').fillColor(BLACK)
+        .text(`CLÁUSULA ${num}ª — ${title}`);
+      doc.moveDown(0.2);
+      doc.font('Helvetica').fillColor(GRAY).fontSize(9);
+    }
+
+    function paragraph(text: string) {
+      doc.fontSize(9).font('Helvetica').fillColor(GRAY)
+        .text(text, { align: 'justify', lineGap: 2 });
+      doc.moveDown(0.3);
+    }
+
+    // ── Cabeçalho ──────────────────────────────────────────────────────────────
+    doc.fontSize(14).font('Helvetica-Bold').fillColor(BLUE)
+      .text('CONTRATO PARTICULAR DE COMPRA E VENDA DE MOTOCICLETA', { align: 'center' });
+    doc.fontSize(9).font('Helvetica').fillColor(LIGHT)
+      .text('ANBParts Comércio de Peças Usadas · Versão 4.0', { align: 'center' });
+    doc.moveDown(0.4);
+    doc.rect(65, doc.y, W, 1.5).fill(BLUE);
+    doc.moveDown(0.6);
+
+    doc.fontSize(9).font('Helvetica').fillColor(GRAY)
+      .text(
+        'Pelo presente instrumento particular, celebrado nos termos do Código Civil Brasileiro (Lei nº 10.406/2002), ' +
+        'as partes abaixo qualificadas, reconhecendo-se mutuamente capazes e livres para contratar, ajustam a ' +
+        'compra e venda da motocicleta descrita neste instrumento, nas condições a seguir estipuladas.',
+        { align: 'justify', lineGap: 2 }
+      );
+    doc.moveDown(0.5);
+
+    // ── Parte I: Vendedor ──────────────────────────────────────────────────────
+    sectionHeader('PARTE I — IDENTIFICAÇÃO DO VENDEDOR');
+
+    const col1x = 65;
+    const col2x = 65 + W / 2 + 10;
+    const colW = W / 2 - 10;
+    let startY = doc.y;
+
+    // Col1
+    doc.x = col1x; doc.y = startY;
+    doc.fontSize(9).font('Helvetica-Bold').fillColor(GRAY).text('Nome completo: ', { continued: true }).font('Helvetica').fillColor(BLACK).text(dados.nomeVendedor || '—', { width: colW });
+    doc.x = col1x;
+    doc.fontSize(9).font('Helvetica-Bold').fillColor(GRAY).text('CPF: ', { continued: true }).font('Helvetica').fillColor(BLACK).text(dados.cpfVendedor || '—', { width: colW });
+    doc.x = col1x;
+    doc.fontSize(9).font('Helvetica-Bold').fillColor(GRAY).text('RG / Órgão emissor: ', { continued: true }).font('Helvetica').fillColor(BLACK).text(`${dados.rgVendedor || '—'} / ${dados.orgaoEmissor || '—'}`, { width: colW });
+    doc.x = col1x;
+    doc.fontSize(9).font('Helvetica-Bold').fillColor(GRAY).text('Data de nascimento: ', { continued: true }).font('Helvetica').fillColor(BLACK).text(dados.nascimentoVendedor || '—', { width: colW });
+    doc.x = col1x;
+    doc.fontSize(9).font('Helvetica-Bold').fillColor(GRAY).text('Estado civil: ', { continued: true }).font('Helvetica').fillColor(BLACK).text(dados.estadoCivil || '—', { width: colW });
+
+    const col1EndY = doc.y;
+
+    // Col2
+    doc.x = col2x; doc.y = startY;
+    doc.fontSize(9).font('Helvetica-Bold').fillColor(GRAY).text('Profissão: ', { continued: true }).font('Helvetica').fillColor(BLACK).text(dados.profissao || '—', { width: colW });
+    doc.x = col2x;
+    doc.fontSize(9).font('Helvetica-Bold').fillColor(GRAY).text('Telefone: ', { continued: true }).font('Helvetica').fillColor(BLACK).text(dados.telefone || '—', { width: colW });
+    doc.x = col2x;
+    doc.fontSize(9).font('Helvetica-Bold').fillColor(GRAY).text('E-mail: ', { continued: true }).font('Helvetica').fillColor(BLACK).text(dados.email || '—', { width: colW });
+
+    doc.x = 65;
+    doc.y = Math.max(col1EndY, doc.y) + 4;
+    field('Endereço', dados.enderecoVendedor || '—');
+    field('Bairro / CEP', `${dados.bairroVendedor || '—'} / ${dados.cepVendedor || '—'}`);
+    field('Cidade / UF', dados.cidadeUfVendedor || '—');
+
+    // ── Parte II: Comprador ────────────────────────────────────────────────────
+    sectionHeader('PARTE II — IDENTIFICAÇÃO DO COMPRADOR');
+    field('Razão Social', dados.razaoSocialComprador || 'ANBParts Comércio de Peças Usadas');
+    field('CNPJ / CPF', dados.cnpjComprador || '—');
+    field('Endereço', dados.enderecoComprador || '—');
+    field('Representado por', dados.representanteComprador || '—');
+
+    // ── Parte III: Veículo ─────────────────────────────────────────────────────
+    sectionHeader('PARTE III — IDENTIFICAÇÃO DO VEÍCULO');
+
+    // Tabela simples
+    const tHeaders = ['Campo', 'Informação', 'Campo', 'Informação'];
+    const tRows = [
+      ['Marca / Modelo', dados.marcaModelo || '—', 'Ano fab. / modelo', `${dados.anoFabricacao || '—'} / ${dados.anoModelo || '—'}`],
+      ['Cor', dados.cor || '—', 'Categoria', dados.categoria || '—'],
+      ['Placa', dados.placa || '—', 'Combustível', dados.combustivel || '—'],
+      ['Chassi (VIN)', dados.chassi || '—', 'Número do Motor', dados.motor || '—'],
+      ['RENAVAM', dados.renavam || '—', 'Estado geral', dados.estadoGeral || '—'],
+    ];
+
+    const tX = 65;
+    const tColW = [80, W / 2 - 80, 80, W / 2 - 80];
+    let tY = doc.y;
+
+    // header row
+    doc.rect(tX, tY, W, 16).fill('#222222');
+    let cx = tX;
+    tHeaders.forEach((h, i) => {
+      doc.fontSize(7.5).font('Helvetica-Bold').fillColor('#ffffff')
+        .text(h.toUpperCase(), cx + 4, tY + 4, { width: tColW[i], lineBreak: false });
+      cx += tColW[i];
+    });
+    tY += 16;
+
+    tRows.forEach((row, ri) => {
+      const rowH = 14;
+      doc.rect(tX, tY, W, rowH).fill(ri % 2 === 0 ? '#f7f7f7' : '#ffffff');
+      cx = tX;
+      row.forEach((cell, ci) => {
+        const isBold = ci % 2 === 0;
+        doc.fontSize(8)
+          .font(isBold ? 'Helvetica-Bold' : 'Helvetica')
+          .fillColor(isBold ? GRAY : BLACK)
+          .text(cell, cx + 4, tY + 3, { width: tColW[ci] - 6, lineBreak: false });
+        cx += tColW[ci];
+      });
+      tY += rowH;
+    });
+    doc.rect(tX, doc.y < tY ? tY : doc.y, W, 0.5).fill('#cccccc');
+    doc.y = tY + 6;
+    doc.x = 65;
+
+    if (dados.descricaoVeiculo) {
+      doc.fontSize(8.5).font('Helvetica-Bold').fillColor(GRAY).text('Descrição do estado do veículo:', { lineGap: 1 });
+      doc.fontSize(8.5).font('Helvetica').fillColor(BLACK).text(dados.descricaoVeiculo, { align: 'justify', lineGap: 2 });
+      doc.moveDown(0.3);
+      doc.fontSize(8.5).font('Helvetica').fillColor(GRAY)
+        .text('A descrição acima foi realizada em conjunto pelo VENDEDOR e pelo COMPRADOR, mediante vistoria presencial do veículo, e ambas as partes declaram estar plenamente de acordo com o detalhamento registrado, reconhecendo-o como fiel representação do estado real do bem na data de celebração deste contrato.', { align: 'justify', lineGap: 2 });
+    }
+
+    // ── Parte IV: Cláusulas ────────────────────────────────────────────────────
+    sectionHeader('PARTE IV — CLÁUSULAS E CONDIÇÕES');
+
+    clauseTitle('1', 'DO OBJETO E FINALIDADE DA AQUISIÇÃO');
+    paragraph(
+      'O presente contrato tem por objeto a compra e venda da motocicleta descrita na Parte III, que o VENDEDOR declara ser de sua legítima propriedade. ' +
+      'O VENDEDOR tem plena ciência de que a motocicleta ora alienada destina-se ao desmanche e comercialização de suas peças e componentes pelo COMPRADOR, ' +
+      'concordando expressamente com tal finalidade. Esta ciência não implica qualquer ônus adicional ao VENDEDOR, servindo apenas para registrar a destinação do bem negociado.'
+    );
+
+    clauseTitle('2', 'DO PREÇO, NEGOCIAÇÃO E FORMA DE PAGAMENTO');
+    paragraph(
+      'O preço da motocicleta foi livremente negociado entre as partes, com pleno conhecimento e concordância do VENDEDOR, sem qualquer pressão, ' +
+      'coação ou estado de necessidade que o obrigasse a aceitar condições desfavoráveis.'
+    );
+    const valorTexto = dados.valorReais
+      ? `O VENDEDOR vende a motocicleta pelo valor de R$ ${dados.valorReais}${dados.valorExtenso ? ` (${dados.valorExtenso} reais)` : ''}, pago pelo COMPRADOR na seguinte forma: ${dados.formaPagamento || '—'}${dados.dadosPagamento ? ` — ${dados.dadosPagamento}` : ''}.`
+      : 'O VENDEDOR vende a motocicleta pelo valor acordado entre as partes, pago conforme forma de pagamento combinada.';
+    paragraph(valorTexto);
+    paragraph('O VENDEDOR declara que o valor acima é justo e condizente com o estado e condições do veículo, dando ao COMPRADOR plena e irrevogável quitação após o recebimento, nada mais tendo a reclamar a qualquer título sobre este negócio.');
+
+    clauseTitle('3', 'DA LEGITIMIDADE, TITULARIDADE E BOA-FÉ');
+    paragraph('Nos termos do Código Civil Brasileiro, as partes obrigam-se a agir com boa-fé, lealdade e transparência. Em cumprimento a este princípio, o VENDEDOR declara expressamente:');
+    doc.fontSize(9).font('Helvetica').fillColor(GRAY)
+      .text('a) Que é o legítimo proprietário e possuidor do veículo, com plenos poderes para aliená-lo, inexistindo qualquer impedimento legal, judicial ou contratual que impeça esta venda;', { align: 'justify', lineGap: 2, indent: 10 });
+    doc.moveDown(0.2);
+    doc.fontSize(9).font('Helvetica').fillColor(GRAY)
+      .text('b) Que o veículo não se encontra dado em garantia, penhorado, arrestado, sequestrado, gravado com alienação fiduciária, reserva de domínio, usufruto, ou qualquer outro ônus real ou pessoal;', { align: 'justify', lineGap: 2, indent: 10 });
+    doc.moveDown(0.2);
+    doc.fontSize(9).font('Helvetica').fillColor(GRAY)
+      .text('c) Que o veículo não é produto de crime, furto, roubo, receptação ou qualquer atividade ilícita, assumindo total e exclusiva responsabilidade penal e civil — incluindo perda do valor recebido e indenização por danos — caso tal situação se configure;', { align: 'justify', lineGap: 2, indent: 10 });
+    doc.moveDown(0.2);
+    doc.fontSize(9).font('Helvetica').fillColor(GRAY)
+      .text('d) Que não há ação judicial, inquérito policial ou procedimento administrativo em curso que recaia sobre o veículo e que possa prejudicar o COMPRADOR.', { align: 'justify', lineGap: 2, indent: 10 });
+    doc.moveDown(0.4);
+
+    clauseTitle('4', 'DO ESTADO DO VEÍCULO');
+    paragraph(
+      'O COMPRADOR é empresa especializada em avaliação, aquisição e desmanche de motocicletas, tendo realizado vistoria técnica do veículo previamente à assinatura deste instrumento. ' +
+      'A aquisição se dá no estado em que o veículo se encontra, conforme descrito na Parte III e confirmado pelo VENDEDOR. Não há garantia pós-venda sobre o estado geral do bem, dado que: ' +
+      '(i) o preço foi negociado com pleno conhecimento das condições do veículo; e (ii) a destinação é o desmanche, e não a revenda do veículo inteiro. ' +
+      'O VENDEDOR declara ter informado ao COMPRADOR, de boa-fé, todos os vícios, defeitos e limitações do veículo de que tinha conhecimento, não havendo omissão dolosa de sua parte.'
+    );
+
+    clauseTitle('5', 'DOS DÉBITOS E ENCARGOS ANTERIORES');
+    paragraph(
+      'O VENDEDOR é responsável exclusivo por todos os débitos que recaiam sobre o veículo até a data de assinatura deste contrato, incluindo: ' +
+      'IPVA de exercícios anteriores e corrente (proporcional à data da venda); licenciamento; multas de trânsito; taxas de DETRAN; e quaisquer débitos junto a financeiras ou credores com garantia sobre o veículo. ' +
+      'O VENDEDOR se compromete a ressarcir integralmente o COMPRADOR, acrescido de correção monetária pelo IPCA, juros de 1% ao mês e honorários advocatícios de 20%, caso qualquer débito anterior à data deste contrato venha a ser exigido do COMPRADOR.'
+    );
+
+    clauseTitle('6', 'DA GARANTIA CONTRA EVICÇÃO');
+    paragraph(
+      'O VENDEDOR responde pela evicção do bem, nos termos do Código Civil Brasileiro, obrigando-se a indenizar o COMPRADOR de todas as perdas e danos — incluindo o valor pago, lucros cessantes, custas judiciais e honorários advocatícios — caso o veículo seja reivindicado por terceiros com fundamento em direito anterior à data deste contrato.'
+    );
+
+    clauseTitle('7', 'DA AUSÊNCIA DE FRAUDE CONTRA CREDORES');
+    paragraph(
+      'O VENDEDOR declara, nos termos do Código Civil Brasileiro, que esta alienação não constitui fraude contra credores nem fraude à execução, não se encontrando em estado de insolvência, e que após a venda remanescem bens suficientes para solver suas obrigações. Caso esta declaração se revele falsa, o VENDEDOR responderá por perdas e danos integrais perante o COMPRADOR.'
+    );
+
+    clauseTitle('8', 'DA TRANSFERÊNCIA DE RESPONSABILIDADE');
+    paragraph(
+      'A responsabilidade civil, administrativa e criminal sobre o veículo é transferida ao COMPRADOR a partir da data de assinatura deste instrumento. ' +
+      'O VENDEDOR se compromete a comunicar a venda ao DETRAN no prazo legal de 30 (trinta) dias, isentando-se de responsabilidades por infrações cometidas após esta data. ' +
+      'Em caso de descumprimento, o VENDEDOR ressarcirá o COMPRADOR de quaisquer débitos decorrentes de multas ou penalidades geradas no período.'
+    );
+
+    const docsLabels: Record<string, string> = {
+      crlv: 'CRLV', dut: 'CRV / DUT assinado', chave: 'Chave(s)', nf: 'NF de aquisição anterior', manual: 'Manual',
+    };
+    const docsEntregues = dados.docsEntregues || [];
+    const docsTexto = docsEntregues.length
+      ? docsEntregues.map((d) => docsLabels[d] || d).join(', ')
+      : '—';
+
+    clauseTitle('9', 'DA DOCUMENTAÇÃO ENTREGUE');
+    paragraph(
+      `O VENDEDOR entrega ao COMPRADOR, neste ato, os seguintes documentos: ${docsTexto}. ` +
+      'A entrega dos documentos é condição essencial para a eficácia deste contrato. Caso o VENDEDOR não possua algum documento, deverá declarar o motivo por escrito no campo de observações ao final deste instrumento.'
+    );
+
+    clauseTitle('10', 'DA CAPACIDADE CIVIL E VALIDADE DO NEGÓCIO');
+    paragraph(
+      'As partes declaram, nos termos do Código Civil Brasileiro, que este negócio jurídico atende a todos os requisitos de validade: (i) agentes capazes; (ii) objeto lícito, possível e determinado; (iii) forma não defesa em lei. ' +
+      'O VENDEDOR declara ser maior de 18 anos, civilmente capaz, e que não age sob coação, dolo, erro ou estado de perigo que pudesse viciar sua manifestação de vontade.'
+    );
+
+    clauseTitle('11', 'DA QUITAÇÃO');
+    paragraph(
+      'Com o recebimento do valor descrito na Cláusula 2ª, o VENDEDOR dá ao COMPRADOR plena, geral e irrevogável quitação sobre o veículo ora transacionado, declarando nada mais ter a reclamar a qualquer título, seja judicial ou extrajudicialmente.'
+    );
+
+    clauseTitle('12', 'DO FORO');
+    paragraph(
+      'As partes elegem o foro da Comarca de Jundiaí / SP para dirimir quaisquer controvérsias oriundas deste contrato, com renúncia expressa a qualquer outro, por mais privilegiado que seja, nos termos do Código de Processo Civil (Lei nº 13.105/2015).'
+    );
+
+    // ── Parte V: Assinaturas ───────────────────────────────────────────────────
+    sectionHeader('PARTE V — LOCAL, DATA E ASSINATURAS');
+
+    doc.fontSize(9).font('Helvetica').fillColor(GRAY)
+      .text('Por estarem assim justos e contratados, as partes assinam o presente instrumento em ', { continued: true })
+      .font('Helvetica-Bold').fillColor(BLACK).text('2 (duas) vias de igual teor e forma', { continued: true })
+      .font('Helvetica').fillColor(GRAY).text(', na presença das testemunhas abaixo.');
+    doc.moveDown(0.4);
+
+    // Declaração vendedor em destaque
+    doc.rect(65, doc.y, W, 32).fill('#fff8e1');
+    const alertY = doc.y + 6;
+    doc.fontSize(8.5).font('Helvetica-Bold').fillColor('#7a0000')
+      .text(
+        '⚠  O VENDEDOR declara que leu integralmente este contrato antes de assiná-lo, compreendeu seu conteúdo e teve plena oportunidade de esclarecer dúvidas, firmando-o de livre e espontânea vontade, sem qualquer coação ou pressão.',
+        70, alertY, { width: W - 10, align: 'center' }
+      );
+    doc.y = alertY + 28;
+    doc.moveDown(0.5);
+
+    field('Local e data', dados.localData || '_____________________________, _____ de _____________ de 20____');
+    doc.moveDown(0.8);
+
+    // Assinaturas
+    const sigY = doc.y;
+    const halfW = W / 2 - 15;
+
+    // Vendedor
+    doc.rect(65, sigY + 20, halfW, 0.7).fill('#333333');
+    doc.fontSize(8.5).font('Helvetica-Bold').fillColor(BLACK)
+      .text('VENDEDOR(A)', 65, sigY + 26, { width: halfW, align: 'center' });
+    doc.fontSize(8).font('Helvetica').fillColor(GRAY)
+      .text(`Nome: ${dados.nomeVendedor || '________________________________'}`, 65, sigY + 38, { width: halfW, align: 'center' });
+    doc.fontSize(8).font('Helvetica').fillColor(GRAY)
+      .text(`CPF: ${dados.cpfVendedor || '________________________'}`, 65, sigY + 50, { width: halfW, align: 'center' });
+
+    // Comprador
+    const compX = 65 + halfW + 30;
+    doc.rect(compX, sigY + 20, halfW, 0.7).fill('#333333');
+    doc.fontSize(8.5).font('Helvetica-Bold').fillColor(BLACK)
+      .text('COMPRADOR — ANBParts', compX, sigY + 26, { width: halfW, align: 'center' });
+    doc.fontSize(8).font('Helvetica').fillColor(GRAY)
+      .text(`Representante: ${dados.nomeRepresentante || '____________________'}`, compX, sigY + 38, { width: halfW, align: 'center' });
+    doc.fontSize(8).font('Helvetica').fillColor(GRAY)
+      .text(`CPF: ${dados.cpfRepresentante || '________________________'}`, compX, sigY + 50, { width: halfW, align: 'center' });
+
+    doc.y = sigY + 68;
+    doc.moveDown(0.8);
+
+    // Testemunhas
+    doc.fontSize(8.5).font('Helvetica-Bold').fillColor(BLACK).text('TESTEMUNHAS');
+    doc.moveDown(0.3);
+    const testY = doc.y;
+
+    doc.rect(65, testY + 20, halfW, 0.7).fill('#aaaaaa');
+    doc.fontSize(8.5).font('Helvetica').fillColor(GRAY)
+      .text('Testemunha 1', 65, testY + 26, { width: halfW, align: 'center' });
+    doc.fontSize(8).font('Helvetica').fillColor(GRAY)
+      .text('Nome: ________________________________', 65, testY + 38, { width: halfW, align: 'center' });
+    doc.fontSize(8).font('Helvetica').fillColor(GRAY)
+      .text('CPF: ________________________', 65, testY + 50, { width: halfW, align: 'center' });
+
+    doc.rect(compX, testY + 20, halfW, 0.7).fill('#aaaaaa');
+    doc.fontSize(8.5).font('Helvetica').fillColor(GRAY)
+      .text('Testemunha 2', compX, testY + 26, { width: halfW, align: 'center' });
+    doc.fontSize(8).font('Helvetica').fillColor(GRAY)
+      .text('Nome: ________________________________', compX, testY + 38, { width: halfW, align: 'center' });
+    doc.fontSize(8).font('Helvetica').fillColor(GRAY)
+      .text('CPF: ________________________', compX, testY + 50, { width: halfW, align: 'center' });
+
+    doc.y = testY + 70;
+    doc.moveDown(0.6);
+
+    // Rodapé
+    doc.rect(65, doc.y, W, 0.5).fill('#cccccc');
+    doc.moveDown(0.4);
+    doc.fontSize(7).font('Helvetica').fillColor('#aaaaaa')
+      .text(
+        'Template de referência — recomenda-se validação por advogado antes do uso oficial.  |  ANBParts · Template v4.0  |  Baseado no Código Civil Brasileiro (Lei nº 10.406/2002)',
+        { align: 'center' }
+      );
+
+    doc.end();
+  } catch (e) { next(e); }
+});
