@@ -710,10 +710,107 @@ async function gerarPdfContrato(dados: Record<string, any>): Promise<Buffer> {
     return 'VENDEDOR';
   }
 
+  function parseCurrencyCents(value: unknown) {
+    const text = String(value || '').trim();
+    if (!text) return 0;
+    const normalized = text.replace(/\s/g, '').replace(/[^\d,.-]/g, '');
+
+    if (normalized.includes(',')) {
+      const digits = normalized.replace(/\D/g, '');
+      return digits ? Number(digits) : 0;
+    }
+
+    if (/^\d{1,3}(\.\d{3})+$/.test(normalized)) {
+      return Number(normalized.replace(/\./g, '')) * 100;
+    }
+
+    if (/^\d+\.\d{1,2}$/.test(normalized)) {
+      return Math.round(Number(normalized) * 100);
+    }
+
+    if (/^\d+$/.test(normalized)) {
+      return Number(normalized) * 100;
+    }
+
+    const digits = text.replace(/\D/g, '');
+    if (!digits) return 0;
+    return Number(digits);
+  }
+
+  function formatCurrencyCents(cents: number) {
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cents / 100);
+  }
+
+  function numeroPorExtenso(value: number): string {
+    const unidades = ['', 'um', 'dois', 'três', 'quatro', 'cinco', 'seis', 'sete', 'oito', 'nove'];
+    const especiais = ['dez', 'onze', 'doze', 'treze', 'quatorze', 'quinze', 'dezesseis', 'dezessete', 'dezoito', 'dezenove'];
+    const dezenas = ['', '', 'vinte', 'trinta', 'quarenta', 'cinquenta', 'sessenta', 'setenta', 'oitenta', 'noventa'];
+    const centenas = ['', 'cento', 'duzentos', 'trezentos', 'quatrocentos', 'quinhentos', 'seiscentos', 'setecentos', 'oitocentos', 'novecentos'];
+
+    if (value === 0) return 'zero';
+    if (value < 10) return unidades[value];
+    if (value < 20) return especiais[value - 10];
+    if (value < 100) {
+      const dezena = Math.floor(value / 10);
+      const unidade = value % 10;
+      return unidade ? `${dezenas[dezena]} e ${unidades[unidade]}` : dezenas[dezena];
+    }
+    if (value === 100) return 'cem';
+    if (value < 1000) {
+      const centena = Math.floor(value / 100);
+      const resto = value % 100;
+      return resto ? `${centenas[centena]} e ${numeroPorExtenso(resto)}` : centenas[centena];
+    }
+
+    const escalas = [
+      { valor: 1000000000, singular: 'bilhão', plural: 'bilhões' },
+      { valor: 1000000, singular: 'milhão', plural: 'milhões' },
+      { valor: 1000, singular: 'mil', plural: 'mil' },
+    ];
+
+    for (const escala of escalas) {
+      if (value >= escala.valor) {
+        const maior = Math.floor(value / escala.valor);
+        const resto = value % escala.valor;
+        const maiorTexto = escala.valor === 1000 && maior === 1
+          ? escala.singular
+          : `${numeroPorExtenso(maior)} ${maior === 1 ? escala.singular : escala.plural}`;
+        if (!resto) return maiorTexto;
+        return `${maiorTexto} e ${numeroPorExtenso(resto)}`;
+      }
+    }
+
+    return String(value);
+  }
+
+  function valorMoedaPorExtenso(cents: number) {
+    const reais = Math.floor(cents / 100);
+    const centavos = cents % 100;
+    const partes: string[] = [];
+
+    if (reais > 0) partes.push(`${numeroPorExtenso(reais)} ${reais === 1 ? 'real' : 'reais'}`);
+    if (centavos > 0) partes.push(`${numeroPorExtenso(centavos)} ${centavos === 1 ? 'centavo' : 'centavos'}`);
+
+    return partes.length ? partes.join(' e ') : 'zero reais';
+  }
+
+  function joinListaContrato(items: string[]) {
+    if (items.length <= 1) return items[0] || '';
+    if (items.length === 2) return `${items[0]} e ${items[1]}`;
+    return `${items.slice(0, -1).join(', ')} e ${items[items.length - 1]}`;
+  }
+
   function debitoContrato(label: string, valorKey: string, responsavelKey: string) {
-    const valor = String(dados[valorKey] || '').trim();
-    if (!valor) return null;
-    return `${label} no valor de R$ ${valor}, sob responsabilidade do ${responsavelContrato(dados[responsavelKey])}`;
+    const valorCents = parseCurrencyCents(dados[valorKey]);
+    if (valorCents <= 0) return null;
+    const valorFormatado = formatCurrencyCents(valorCents);
+    const valorExtenso = valorMoedaPorExtenso(valorCents);
+    return {
+      label,
+      responsavel: responsavelContrato(dados[responsavelKey]),
+      valorCents,
+      textoItem: `${label} no valor de ${valorFormatado} (${valorExtenso})`,
+    };
   }
 
   function detalheMotoValor(key: string) {
@@ -780,7 +877,7 @@ async function gerarPdfContrato(dados: Record<string, any>): Promise<Buffer> {
       doc.y = 60;
       doc.fontSize(13).font('Helvetica-Bold').fillColor(BLUE).text('ANEXO I — DETALHES DA MOTO', { align: 'center' });
       doc.moveDown(0.5);
-      paragraph('Este anexo integra o presente contrato e registra a vistoria visual realizada pelas partes sobre os principais componentes da motocicleta, conforme informações preenchidas no ato da contratação.');
+      paragraph('Este anexo integra o presente contrato e registra a vistoria realizada pelas partes sobre os principais componentes da motocicleta, conforme informações preenchidas no ato da contratação.');
 
       for (const grupo of CONTRATO_DETALHES_MOTO_CATEGORIAS) {
         ensureSpace(34);
@@ -889,7 +986,7 @@ async function gerarPdfContrato(dados: Record<string, any>): Promise<Buffer> {
         doc.fontSize(8.5).font('Helvetica').fillColor(BLACK).text(dados.descricaoVeiculo, { align: 'justify', lineGap: 2 });
         doc.moveDown(0.3);
       }
-      doc.fontSize(8.5).font('Helvetica').fillColor(GRAY).text('A descrição do estado do veículo e, quando preenchido, o Anexo I — Detalhes da Moto foram realizados em conjunto pelo VENDEDOR e pelo COMPRADOR, mediante vistoria presencial do veículo, e ambas as partes declaram estar plenamente de acordo com o detalhamento registrado, reconhecendo-o como fiel representação do estado real do bem.', { align: 'justify', lineGap: 2 });
+      doc.fontSize(8.5).font('Helvetica').fillColor(GRAY).text('A descrição do estado do veículo consta no Anexo I — Detalhes da Moto deste instrumento, e foi realizada em conjunto pelo VENDEDOR e pelo COMPRADOR. Ambas as partes declaram estar plenamente de acordo com o detalhamento registrado, reconhecendo-o como fiel representação do estado real do bem.', { align: 'justify', lineGap: 2 });
     }
 
     // ── Parte IV: Cláusulas ────────────────────────────────────────────────────
@@ -923,14 +1020,27 @@ async function gerarPdfContrato(dados: Record<string, any>): Promise<Buffer> {
       debitoContrato('IPVA', 'debitoIpvaValor', 'debitoIpvaResponsavel'),
       debitoContrato('licenciamento', 'debitoLicenciamentoValor', 'debitoLicenciamentoResponsavel'),
       debitoContrato('multas de trânsito', 'debitoMultasValor', 'debitoMultasResponsavel'),
-    ].filter(Boolean) as string[];
+    ].filter(Boolean) as Array<NonNullable<ReturnType<typeof debitoContrato>>>;
     const vendedorDeclaraSemDebitos = dados.debitosDeclaracao === 'sem_debitos' || debitosInformados.length === 0;
     if (vendedorDeclaraSemDebitos) {
       paragraph('O VENDEDOR declara, sob sua responsabilidade civil e criminal, que até a data de assinatura deste contrato não existem débitos, encargos, restrições financeiras ou pendências incidentes sobre o veículo, incluindo, mas não se limitando a IPVA, licenciamento, multas de trânsito, taxas de DETRAN, gravames, alienação fiduciária, bloqueios administrativos ou judiciais e quaisquer cobranças de natureza anterior à presente venda.');
     } else {
-      paragraph(`As partes declaram ciência dos seguintes débitos e encargos identificados até a data de assinatura deste contrato: ${debitosInformados.join('; ')}. Cada parte assume, de forma expressa, a obrigação de quitar os valores atribuídos à sua responsabilidade, isentando a outra parte de qualquer cobrança relativa ao respectivo item declarado.`);
+      const debitosPorResponsavel = debitosInformados.reduce<Record<string, { labels: string[]; totalCents: number }>>((acc, debito) => {
+        if (!acc[debito.responsavel]) acc[debito.responsavel] = { labels: [], totalCents: 0 };
+        acc[debito.responsavel].labels.push(debito.label);
+        acc[debito.responsavel].totalCents += debito.valorCents;
+        return acc;
+      }, {});
+
+      const responsabilidades = Object.entries(debitosPorResponsavel).map(([responsavel, grupo]) => (
+        `o pagamento referente a ${joinListaContrato(grupo.labels)} será de responsabilidade do ${responsavel}, totalizando ${formatCurrencyCents(grupo.totalCents)} (${valorMoedaPorExtenso(grupo.totalCents)})`
+      ));
+
+      paragraph(`As partes declaram ciência dos seguintes débitos e encargos identificados até a data de assinatura deste contrato: ${debitosInformados.map((debito) => debito.textoItem).join(', ')}.`);
+      paragraph(`As partes acordam que ${joinListaContrato(responsabilidades)}.`);
     }
-    paragraph('Independentemente dos débitos expressamente informados acima, todo e qualquer débito, encargo, multa, taxa, gravame, restrição, cobrança ou obrigação anterior à data deste contrato que não tenha sido informado pelo VENDEDOR, ou que não tenha sido identificado ou conhecido pelo COMPRADOR no momento da negociação, permanecerá sob responsabilidade exclusiva do VENDEDOR. Caso qualquer débito anterior à data deste contrato venha a ser exigido do COMPRADOR, o VENDEDOR deverá ressarci-lo integralmente, inclusive quanto a principal, custas, despesas administrativas ou judiciais, acrescido de correção monetária pelo IPCA, juros de 1% ao mês e honorários advocatícios de 20%.');
+    paragraph('Todo e qualquer débito, encargo, multa, taxa, gravame, restrição, cobrança ou obrigação anterior à data deste contrato que não tenha sido descrito na cláusula acima permanecerá sob responsabilidade exclusiva do VENDEDOR.');
+    paragraph('Caso qualquer débito anterior à data deste contrato venha a ser exigido do COMPRADOR, o VENDEDOR deverá ressarci-lo integralmente, inclusive quanto a principal, custas, despesas administrativas ou judiciais, acrescido de correção monetária pelo IPCA, juros de 1% ao mês e honorários advocatícios de 20%.');
 
     clauseTitle('6', 'DA GARANTIA CONTRA EVICÇÃO');
     paragraph('O VENDEDOR responde pela evicção do bem, nos termos do Código Civil Brasileiro, obrigando-se a indenizar o COMPRADOR de todas as perdas e danos — incluindo o valor pago, lucros cessantes, custas judiciais e honorários advocatícios — caso o veículo seja reivindicado por terceiros com fundamento em direito anterior à data deste contrato.');
