@@ -944,6 +944,32 @@ async function gerarPdfContrato(dados: Record<string, any>): Promise<Buffer> {
         doc.x = 65;
       }
 
+      function renderAssinaturasAnexo() {
+        ensureSpace(92);
+        doc.moveDown(0.2);
+        doc.fontSize(8.5).font('Helvetica-Bold').fillColor(BLACK).text('ASSINATURAS DO ANEXO I');
+        doc.moveDown(0.3);
+        field('Local e data', dados.localData || localDataContratoAtual());
+        doc.moveDown(0.6);
+
+        const sigY = doc.y;
+        const halfW = W / 2 - 15;
+        const compX = 65 + halfW + 30;
+
+        doc.rect(65, sigY + 20, halfW, 0.7).fill('#333333');
+        doc.fontSize(8.5).font('Helvetica-Bold').fillColor(BLACK).text('VENDEDOR(A)', 65, sigY + 26, { width: halfW, align: 'center' });
+        doc.fontSize(8).font('Helvetica').fillColor(GRAY).text(`Nome: ${dados.nomeVendedor || '________________________________'}`, 65, sigY + 38, { width: halfW, align: 'center' });
+        doc.fontSize(8).font('Helvetica').fillColor(GRAY).text(`CPF: ${dados.cpfVendedor || '________________________'}`, 65, sigY + 50, { width: halfW, align: 'center' });
+
+        doc.rect(compX, sigY + 20, halfW, 0.7).fill('#333333');
+        doc.fontSize(8.5).font('Helvetica-Bold').fillColor(BLACK).text(`COMPRADOR — ${empresaRazaoSocial}`, compX, sigY + 26, { width: halfW, align: 'center' });
+        doc.fontSize(8).font('Helvetica').fillColor(GRAY).text(`Representante: ${dados.nomeRepresentante || '____________________'}`, compX, sigY + 38, { width: halfW, align: 'center' });
+        doc.fontSize(8).font('Helvetica').fillColor(GRAY).text(`CPF: ${dados.cpfRepresentante || '________________________'}`, compX, sigY + 50, { width: halfW, align: 'center' });
+
+        doc.y = sigY + 70;
+        doc.x = 65;
+      }
+
       function renderParDetalhes(esquerda: string, direita: string) {
         const left = grupoPorNome(esquerda);
         const right = grupoPorNome(direita);
@@ -979,6 +1005,7 @@ async function gerarPdfContrato(dados: Record<string, any>): Promise<Buffer> {
       }
 
       renderObservacoesDetalhes();
+      renderAssinaturasAnexo();
     }
 
     // ── Cabeçalho ──────────────────────────────────────────────────────────────
@@ -1148,13 +1175,6 @@ async function gerarPdfContrato(dados: Record<string, any>): Promise<Buffer> {
     clauseTitle('12', 'DO FORO');
     paragraph('As partes elegem o foro da Comarca de Jundiaí / SP para dirimir quaisquer controvérsias oriundas deste contrato, com renúncia expressa a qualquer outro, por mais privilegiado que seja, nos termos do Código de Processo Civil (Lei nº 13.105/2015).');
 
-    renderAnexoDetalhesMoto();
-    if (temDetalhesMoto) {
-      doc.addPage();
-      doc.x = 65;
-      doc.y = 60;
-    }
-
     // ── Parte V: Assinaturas ───────────────────────────────────────────────────
     sectionHeader('PARTE V — LOCAL, DATA E ASSINATURAS');
     doc.fontSize(9).font('Helvetica').fillColor(GRAY)
@@ -1201,10 +1221,7 @@ async function gerarPdfContrato(dados: Record<string, any>): Promise<Buffer> {
     doc.fontSize(8).font('Helvetica').fillColor(GRAY).text('CPF: ________________________', compX, testY + 50, { width: halfW, align: 'center' });
     doc.y = testY + 70; doc.moveDown(0.6);
 
-    doc.rect(65, doc.y, W, 0.5).fill('#cccccc');
-    doc.moveDown(0.4);
-    doc.fontSize(7).font('Helvetica').fillColor('#aaaaaa')
-      .text('Template de referência — recomenda-se validação por advogado antes do uso oficial.  |  ' + empresaRazaoSocial + '  |  Baseado no Código Civil Brasileiro (Lei nº 10.406/2002)', { align: 'center' });
+    renderAnexoDetalhesMoto();
 
     doc.end();
   });
