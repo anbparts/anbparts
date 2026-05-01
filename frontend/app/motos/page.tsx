@@ -42,6 +42,106 @@ function countDetranLabels(value: unknown) {
     .length;
 }
 
+function onlyDigits(value: unknown) {
+  return String(value ?? '').replace(/\D/g, '');
+}
+
+function maskCpf(value: unknown) {
+  const digits = onlyDigits(value).slice(0, 11);
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 6) return `${digits.slice(0, 3)}.${digits.slice(3)}`;
+  if (digits.length <= 9) return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6)}`;
+  return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
+}
+
+function maskPhone(value: unknown) {
+  const digits = onlyDigits(value).slice(0, 11);
+  if (digits.length <= 2) return digits ? `(${digits}` : '';
+  if (digits.length <= 7) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+}
+
+function maskCep(value: unknown) {
+  const digits = onlyDigits(value).slice(0, 8);
+  if (digits.length <= 5) return digits;
+  return `${digits.slice(0, 5)}-${digits.slice(5)}`;
+}
+
+function maskMoneyBR(value: unknown) {
+  const digits = onlyDigits(value);
+  if (!digits) return '';
+  const cents = Number(digits) / 100;
+  return cents.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function contratoMaskValue(field: string, value: string) {
+  if (field === 'cpfVendedor' || field === 'cpfRepresentante') return maskCpf(value);
+  if (field === 'telefone') return maskPhone(value);
+  if (field === 'cepVendedor') return maskCep(value);
+  if (field === 'valorReais') return maskMoneyBR(value);
+  return value;
+}
+
+function normalizarContratoForm(dados: Record<string, any>) {
+  const form = { ...FORM_VAZIO, ...dados };
+  return {
+    ...form,
+    cpfVendedor: maskCpf(form.cpfVendedor),
+    telefone: maskPhone(form.telefone),
+    cepVendedor: maskCep(form.cepVendedor),
+    cpfRepresentante: maskCpf(form.cpfRepresentante),
+    valorReais: form.valorReais ? maskMoneyBR(form.valorReais) : '',
+    valorExtenso: form.valorExtenso || valorReaisPorExtenso(form.valorReais),
+  };
+}
+
+const UNIDADES_EXTENSO = ['', 'um', 'dois', 'tres', 'quatro', 'cinco', 'seis', 'sete', 'oito', 'nove'];
+const DEZ_A_DEZENOVE_EXTENSO = ['dez', 'onze', 'doze', 'treze', 'quatorze', 'quinze', 'dezesseis', 'dezessete', 'dezoito', 'dezenove'];
+const DEZENAS_EXTENSO = ['', '', 'vinte', 'trinta', 'quarenta', 'cinquenta', 'sessenta', 'setenta', 'oitenta', 'noventa'];
+const CENTENAS_EXTENSO = ['', 'cento', 'duzentos', 'trezentos', 'quatrocentos', 'quinhentos', 'seiscentos', 'setecentos', 'oitocentos', 'novecentos'];
+
+function extensoAte999(value: number): string {
+  if (value === 0) return '';
+  if (value === 100) return 'cem';
+
+  const partes: string[] = [];
+  const centenas = Math.floor(value / 100);
+  const resto = value % 100;
+
+  if (centenas) partes.push(CENTENAS_EXTENSO[centenas]);
+  if (resto >= 10 && resto < 20) partes.push(DEZ_A_DEZENOVE_EXTENSO[resto - 10]);
+  else {
+    const dezenas = Math.floor(resto / 10);
+    const unidades = resto % 10;
+    if (dezenas) partes.push(DEZENAS_EXTENSO[dezenas]);
+    if (unidades) partes.push(UNIDADES_EXTENSO[unidades]);
+  }
+
+  return partes.filter(Boolean).join(' e ');
+}
+
+function numeroInteiroPorExtenso(value: number): string {
+  if (!value) return 'zero';
+
+  const milhoes = Math.floor(value / 1000000);
+  const milhares = Math.floor((value % 1000000) / 1000);
+  const resto = value % 1000;
+  const partes: string[] = [];
+
+  if (milhoes) partes.push(`${milhoes === 1 ? 'um' : extensoAte999(milhoes)} ${milhoes === 1 ? 'milhao' : 'milhoes'}`);
+  if (milhares) partes.push(milhares === 1 ? 'mil' : `${extensoAte999(milhares)} mil`);
+  if (resto) partes.push(extensoAte999(resto));
+
+  return partes.join(resto && partes.length > 1 && (resto < 100 || resto % 100 === 0) ? ' e ' : ' ');
+}
+
+function valorReaisPorExtenso(value: unknown) {
+  const digits = onlyDigits(value);
+  if (!digits) return '';
+  const reais = Math.floor(Number(digits) / 100);
+  return numeroInteiroPorExtenso(reais);
+}
+
 async function fileToDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -747,7 +847,7 @@ function ContratoFormModal({ open, contrato, onClose, onSaved, viewportMode }: a
     if (!open) return;
     if (contrato) {
       const d = contrato.dados || {};
-      setForm({ ...FORM_VAZIO, ...d });
+      setForm(normalizarContratoForm(d));
       setDocsEntregues(Array.isArray(d.docsEntregues) ? d.docsEntregues : []);
       setEmpresaCarregada(true);
     } else {
@@ -781,8 +881,14 @@ function ContratoFormModal({ open, contrato, onClose, onSaved, viewportMode }: a
     paddingBottom: 6, borderBottom: '1px solid var(--border)',
   };
 
-  const f = (field: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
-    setForm((prev) => ({ ...prev, [field]: e.target.value }));
+  const f = (field: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    const value = contratoMaskValue(field, e.target.value);
+    setForm((prev) => ({
+      ...prev,
+      [field]: value,
+      ...(field === 'valorReais' ? { valorExtenso: valorReaisPorExtenso(value) } : {}),
+    }));
+  };
 
   function inp(label: string, field: string, type = 'text', placeholder = '', required = false) {
     return (
@@ -823,8 +929,10 @@ function ContratoFormModal({ open, contrato, onClose, onSaved, viewportMode }: a
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dados: dadosCompletos }),
       });
-      if (!resp.ok) throw new Error('Erro ao salvar contrato');
-      onSaved();
+      const data = await resp.json().catch(() => null);
+      if (!resp.ok || data?.ok === false) throw new Error(data?.error || 'Erro ao salvar contrato');
+      if (!data?.contrato?.id) throw new Error('Contrato salvo sem retorno de ID');
+      onSaved(data.contrato);
     } catch (err: any) {
       alert(err.message || 'Erro ao salvar');
     } finally {
@@ -951,7 +1059,7 @@ function ContratoFormModal({ open, contrato, onClose, onSaved, viewportMode }: a
           <div style={sectionStyle}>Cláusula 2 — Preço e Pagamento</div>
           <div style={{ display: 'grid', gridTemplateColumns: cols2, gap: 12 }}>
             {inp('Valor (R$)', 'valorReais', 'text', 'Ex: 12.500,00', true)}
-            {inp('Valor por extenso', 'valorExtenso', 'text', 'Ex: doze mil e quinhentos reais')}
+            {inp('Valor por extenso', 'valorExtenso', 'text', 'Ex: doze mil e quinhentos')}
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: cols2, gap: 12 }}>
             {sel('Forma de pagamento', 'formaPagamento', ['À vista, em dinheiro', 'PIX', 'TED / Transferência bancária', 'Outro'])}
@@ -1007,9 +1115,13 @@ function ContratosTab({ viewportMode }: { viewportMode: MotosViewportMode }) {
     setLoading(true);
     try {
       const resp = await fetch(`${API}/motos/contratos`, { credentials: 'include' });
-      const data = await resp.json();
+      const data = await resp.json().catch(() => null);
+      if (!resp.ok || data?.ok === false) throw new Error(data?.error || 'Erro ao carregar contratos');
       setContratos(data.contratos || []);
-    } catch { setContratos([]); }
+    } catch (err) {
+      console.error('[contratos] falha ao carregar', err);
+      setContratos([]);
+    }
     setLoading(false);
   }
 

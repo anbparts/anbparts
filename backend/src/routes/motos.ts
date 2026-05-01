@@ -464,8 +464,11 @@ motosRouter.put('/:id/anexos', async (req, res, next) => {
 // GET /motos/:id
 motosRouter.get('/:id', async (req, res, next) => {
   try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return next();
+
     const moto = await prisma.moto.findUniqueOrThrow({
-      where: { id: Number(req.params.id) },
+      where: { id },
       include: { pecas: { orderBy: { idPeca: 'asc' } } }
     });
     res.json(moto);
@@ -611,6 +614,9 @@ motosRouter.post('/:id/detran-cartela', async (req, res, next) => {
 
 // ── Helper: gera buffer PDF do contrato ───────────────────────────────────────
 async function gerarPdfContrato(dados: Record<string, any>): Promise<Buffer> {
+  const valorExtensoNormalizado = String(dados.valorExtenso || '').trim().replace(/\s+reais$/i, '');
+  dados = { ...dados, valorExtenso: valorExtensoNormalizado };
+
   // Busca dados da empresa automaticamente
   const config = await getConfiguracaoGeral().catch(() => null);
   const empresaRazaoSocial = String(config?.empresaRazaoSocial || dados.razaoSocialComprador || 'ANBParts Comércio de Peças Usadas').trim();
