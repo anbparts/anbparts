@@ -972,8 +972,9 @@ async function gerarPdfContrato(dados: Record<string, any>): Promise<Buffer> {
       if (geral) {
         const height = cardHeight(geral, 2);
         ensureSpace(height + 10);
-        renderDetalhesCard(geral, 65, doc.y, W, 2, height);
-        doc.y += height + 10;
+        const y = doc.y;
+        renderDetalhesCard(geral, 65, y, W, 2, height);
+        doc.y = y + height + 10;
         doc.x = 65;
       }
 
