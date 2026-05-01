@@ -906,16 +906,30 @@ async function gerarPdfContrato(dados: Record<string, any>): Promise<Buffer> {
       }
     }
 
-    function renderTabelaIdentificacaoVeiculo() {
-      const tHeaders = ['Campo', 'Informação', 'Campo', 'Informação'];
-      const tRows = [
-        ['Marca / Modelo', dados.marcaModelo || '—', 'Ano fab. / modelo', `${dados.anoFabricacao || '—'} / ${dados.anoModelo || '—'}`],
-        ['Cor', dados.cor || '—', 'Categoria', dados.categoria || '—'],
-        ['Placa', dados.placa || '—', 'Combustível', dados.combustivel || '—'],
-        ['Chassi (VIN)', dados.chassi || '—', 'Número do Motor', dados.motor || '—'],
-        ['RENAVAM', dados.renavam || '—', 'Estado geral', dados.estadoGeral || '—'],
+    function renderTabelaIdentificacaoVeiculo(layout: 'duplo' | 'simples' = 'duplo') {
+      const camposVeiculo = [
+        ['Marca / Modelo', dados.marcaModelo || '—'],
+        ['Ano fab. / modelo', `${dados.anoFabricacao || '—'} / ${dados.anoModelo || '—'}`],
+        ['Cor', dados.cor || '—'],
+        ['Categoria', dados.categoria || '—'],
+        ['Placa', dados.placa || '—'],
+        ['Combustível', dados.combustivel || '—'],
+        ['Chassi (VIN)', dados.chassi || '—'],
+        ['Número do Motor', dados.motor || '—'],
+        ['RENAVAM', dados.renavam || '—'],
+        ['Estado geral', dados.estadoGeral || '—'],
       ];
-      const tColW = [80, W / 2 - 80, 80, W / 2 - 80];
+      const tHeaders = layout === 'simples' ? ['Campo', 'Informação'] : ['Campo', 'Informação', 'Campo', 'Informação'];
+      const tRows = layout === 'simples'
+        ? camposVeiculo
+        : [
+          [...camposVeiculo[0], ...camposVeiculo[1]],
+          [...camposVeiculo[2], ...camposVeiculo[3]],
+          [...camposVeiculo[4], ...camposVeiculo[5]],
+          [...camposVeiculo[6], ...camposVeiculo[7]],
+          [...camposVeiculo[8], ...camposVeiculo[9]],
+        ];
+      const tColW = layout === 'simples' ? [150, W - 150] : [80, W / 2 - 80, 80, W / 2 - 80];
       let tY = doc.y;
       doc.rect(65, tY, W, 16).fill(LIGHT_HEADER_BG);
       let cx = 65;
@@ -1012,9 +1026,7 @@ async function gerarPdfContrato(dados: Record<string, any>): Promise<Buffer> {
       }
 
       function renderAssinaturasAnexo() {
-        ensureSpace(92);
-        doc.moveDown(0.2);
-        doc.fontSize(8.5).font('Helvetica-Bold').fillColor(BLACK).text('ASSINATURAS DO ANEXO I');
+        ensureSpace(84);
         doc.moveDown(0.3);
         field('Local e data', dados.localData || localDataContratoAtual());
         doc.moveDown(1.4);
@@ -1056,12 +1068,16 @@ async function gerarPdfContrato(dados: Record<string, any>): Promise<Buffer> {
       doc.fontSize(13).font('Helvetica-Bold').fillColor(BLUE).text('ANEXO I — DETALHES DA MOTO', { align: 'center' });
       doc.moveDown(0.5);
       paragraph('Este anexo integra o presente contrato e registra a vistoria realizada pelas partes sobre os principais componentes da motocicleta, conforme informações preenchidas no ato da contratação.');
-      renderTabelaIdentificacaoVeiculo();
+      renderTabelaIdentificacaoVeiculo('simples');
       doc.moveDown(0.3);
 
       renderParDetalhes('Roda', 'Suspensão');
       renderParDetalhes('Dianteira', 'Traseira');
       renderParDetalhes('Lado Direito', 'Lado Esquerdo');
+
+      doc.addPage();
+      doc.x = 65;
+      doc.y = 60;
 
       const geral = grupoPorNome('Geral');
       if (geral) {
