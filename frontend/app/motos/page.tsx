@@ -74,6 +74,47 @@ function maskMoneyBR(value: unknown) {
   return cents.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function slugArquivoContrato(value: unknown, fallback: string) {
+  const slug = String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60);
+  return slug || fallback;
+}
+
+function dataArquivoContrato(value: unknown) {
+  const text = String(value ?? '').trim();
+  const meses: Record<string, string> = {
+    janeiro: '01', fevereiro: '02', marco: '03', março: '03', abril: '04', maio: '05', junho: '06',
+    julho: '07', agosto: '08', setembro: '09', outubro: '10', novembro: '11', dezembro: '12',
+  };
+
+  const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+
+  const br = text.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (br) return `${br[3]}-${br[2].padStart(2, '0')}-${br[1].padStart(2, '0')}`;
+
+  const extenso = text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').match(/(\d{1,2})\s+de\s+([a-z]+)\s+de\s+(\d{4})/);
+  if (extenso) return `${extenso[3]}-${(meses[extenso[2]] || '00')}-${extenso[1].padStart(2, '0')}`;
+
+  const date = new Date(text || Date.now());
+  if (!Number.isNaN(date.getTime())) return date.toISOString().slice(0, 10);
+  return new Date().toISOString().slice(0, 10);
+}
+
+function nomeArquivoContratoPdf(source: any, numeroContrato?: unknown) {
+  const dados = source?.dados && typeof source.dados === 'object' ? source.dados : source;
+  const numero = slugArquivoContrato(numeroContrato ?? source?.id ?? 'novo', 'novo');
+  const cliente = slugArquivoContrato(dados?.nomeVendedor, 'cliente');
+  const moto = slugArquivoContrato(dados?.marcaModelo, 'moto');
+  const data = dataArquivoContrato(dados?.localData || source?.criadoEm || source?.createdAt || Date.now());
+  return `contrato-${numero}-${cliente}-${moto}-${data}.pdf`;
+}
+
 function contratoMaskValue(field: string, value: string) {
   if (field === 'cpfVendedor' || field === 'cpfRepresentante') return maskCpf(value);
   if (field === 'telefone') return maskPhone(value);
@@ -912,6 +953,21 @@ function countDetalhesMoto(value: any) {
   return Object.values(value).filter((item) => String(item ?? '').trim()).length;
 }
 
+const DETALHES_MOTO_STATUS_META: Record<string, { bg: string; border: string; text: string }> = {
+  Bom: { bg: '#ecfdf5', border: '#86efac', text: '#047857' },
+  Regular: { bg: '#fffbeb', border: '#fcd34d', text: '#92400e' },
+  Ruim: { bg: '#fef2f2', border: '#fca5a5', text: '#b91c1c' },
+  Inexistente: { bg: '#f8fafc', border: '#cbd5e1', text: '#475569' },
+  Sim: { bg: '#ecfdf5', border: '#86efac', text: '#047857' },
+  Não: { bg: '#fef2f2', border: '#fca5a5', text: '#b91c1c' },
+};
+
+const DETALHES_MOTO_PENDING_META = { bg: '#ffffff', border: '#dbe3ef', text: '#64748b' };
+
+function detalheMotoMeta(value: string) {
+  return DETALHES_MOTO_STATUS_META[value] || DETALHES_MOTO_PENDING_META;
+}
+
 function DetalhesMotoModal({ open, value, onClose, onSave, viewportMode, saving = false }: any) {
   const isPhone = viewportMode === 'phone';
   const [form, setForm] = useState<Record<string, string>>({});
@@ -927,29 +983,83 @@ function DetalhesMotoModal({ open, value, onClose, onSave, viewportMode, saving 
     setForm((prev) => ({ ...prev, [key]: nextValue }));
   };
 
+  const selectableTotal = DETALHES_MOTO_CATEGORIAS.reduce((total, grupo) => (
+    total + grupo.itens.filter((item) => item.tipo !== 'texto').length
+  ), 0);
+  const selectableFilled = DETALHES_MOTO_CATEGORIAS.reduce((total, grupo) => (
+    total + grupo.itens.filter((item) => item.tipo !== 'texto' && String(form[item.key] ?? '').trim()).length
+  ), 0);
+  const selectablePending = Math.max(0, selectableTotal - selectableFilled);
+  const progressPercent = selectableTotal ? Math.round((selectableFilled / selectableTotal) * 100) : 0;
+  const statusCounts = [...DETALHES_MOTO_STATUS, ...DETALHES_MOTO_SIM_NAO].reduce<Record<string, number>>((acc, option) => {
+    acc[option] = Object.values(form).filter((value) => value === option).length;
+    return acc;
+  }, {});
+
+  const getGrupoStats = (grupo: any) => {
+    const itens = grupo.itens.filter((item: any) => item.tipo !== 'texto');
+    const preenchidos = itens.filter((item: any) => String(form[item.key] ?? '').trim()).length;
+    return { total: itens.length, preenchidos, pendentes: Math.max(0, itens.length - preenchidos) };
+  };
+
   const renderItem = (item: any) => {
     if (item.tipo === 'texto') {
+      const filled = Boolean(String(form[item.key] ?? '').trim());
       return (
-        <div key={item.key} style={{ gridColumn: '1 / -1', marginBottom: 10 }}>
-          <label style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--ink-soft)', display: 'block', marginBottom: 4 }}>{item.label}</label>
+        <div key={item.key} style={{ gridColumn: '1 / -1', border: `1px solid ${filled ? '#93c5fd' : 'var(--border)'}`, borderRadius: 8, padding: 10, background: filled ? '#eff6ff' : 'var(--white)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', marginBottom: 7 }}>
+            <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink)', display: 'block' }}>{item.label}</label>
+            <span style={{ border: `1px solid ${filled ? '#93c5fd' : '#dbe3ef'}`, borderRadius: 999, padding: '3px 8px', fontSize: 11, fontWeight: 700, color: filled ? '#2563eb' : '#64748b', background: filled ? '#dbeafe' : '#f8fafc', whiteSpace: 'nowrap' }}>
+              {filled ? 'Preenchido' : 'Opcional'}
+            </span>
+          </div>
           <textarea
             value={form[item.key] || ''}
             onChange={(event) => setField(item.key, event.target.value)}
             placeholder="Descreva avarias, barulhos ou observações relevantes"
-            style={{ ...cs.fi, minHeight: 72, resize: 'vertical', fontSize: 13 }}
+            style={{ ...cs.fi, minHeight: 72, resize: 'vertical', fontSize: 13, background: 'var(--white)' }}
           />
         </div>
       );
     }
 
     const options = item.tipo === 'simnao' ? DETALHES_MOTO_SIM_NAO : DETALHES_MOTO_STATUS;
+    const currentValue = form[item.key] || '';
+    const currentMeta = detalheMotoMeta(currentValue);
     return (
-      <div key={item.key} style={{ marginBottom: 10 }}>
-        <label style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--ink-soft)', display: 'block', marginBottom: 4 }}>{item.label}</label>
-        <select value={form[item.key] || ''} onChange={(event) => setField(item.key, event.target.value)} style={{ ...cs.fi, fontSize: 13 }}>
-          <option value="">Selecionar</option>
-          {options.map((option) => <option key={option} value={option}>{option}</option>)}
-        </select>
+      <div key={item.key} style={{ border: `1px solid ${currentValue ? currentMeta.border : '#dbe3ef'}`, borderRadius: 8, padding: 10, background: currentValue ? currentMeta.bg : 'var(--white)', minHeight: 104 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'flex-start', marginBottom: 8 }}>
+          <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.25 }}>{item.label}</label>
+          <span style={{ border: `1px solid ${currentValue ? currentMeta.border : '#dbe3ef'}`, borderRadius: 999, padding: '3px 8px', fontSize: 10.5, fontWeight: 800, color: currentMeta.text, background: currentValue ? '#ffffff' : '#f8fafc', whiteSpace: 'nowrap' }}>
+            {currentValue || 'Pendente'}
+          </span>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: item.tipo === 'simnao' ? 'repeat(2, minmax(0, 1fr))' : 'repeat(2, minmax(0, 1fr))', gap: 6 }}>
+          {options.map((option) => {
+            const active = currentValue === option;
+            const meta = detalheMotoMeta(option);
+            return (
+              <button
+                key={option}
+                type="button"
+                onClick={() => setField(item.key, active ? '' : option)}
+                style={{
+                  minHeight: 32,
+                  borderRadius: 7,
+                  border: `1px solid ${active ? meta.border : '#dbe3ef'}`,
+                  background: active ? meta.bg : '#ffffff',
+                  color: active ? meta.text : 'var(--ink-soft)',
+                  fontSize: 12,
+                  fontWeight: active ? 800 : 650,
+                  cursor: 'pointer',
+                  boxShadow: active ? `inset 0 0 0 1px ${meta.border}` : 'none',
+                }}
+              >
+                {option}
+              </button>
+            );
+          })}
+        </div>
       </div>
     );
   };
@@ -960,29 +1070,65 @@ function DetalhesMotoModal({ open, value, onClose, onSave, viewportMode, saving 
         <div style={{ padding: isPhone ? '16px 14px 14px' : '18px 24px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
           <div>
             <div style={{ fontFamily: 'Fraunces, serif', fontSize: 18, fontWeight: 600 }}>Detalhes Moto</div>
-            <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 3 }}>Anexo de vistoria visual para o contrato</div>
+            <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 3 }}>Anexo de vistoria para o contrato</div>
           </div>
           <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', flexShrink: 0 }}>X</button>
         </div>
 
         <div style={{ overflowY: 'auto', flex: 1, padding: isPhone ? 14 : 22 }}>
-          {DETALHES_MOTO_CATEGORIAS.map((grupo) => (
-            <div key={grupo.categoria} style={{ border: '1px solid var(--border)', borderRadius: 10, marginBottom: 14, overflow: 'hidden', background: 'var(--white)' }}>
-              <div style={{ padding: '9px 12px', background: 'var(--gray-50)', borderBottom: '1px solid var(--border)', fontSize: 11, fontFamily: 'Geist Mono, monospace', textTransform: 'uppercase', letterSpacing: '0.7px', color: 'var(--ink-muted)', fontWeight: 600 }}>
-                {grupo.categoria}
+          <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 12, marginBottom: 14, background: 'var(--gray-50)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: isPhone ? 'stretch' : 'center', flexDirection: isPhone ? 'column' : 'row', marginBottom: 10 }}>
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--ink)' }}>{selectableFilled} de {selectableTotal} itens marcados</div>
+                <div style={{ fontSize: 11.5, color: 'var(--ink-muted)', marginTop: 2 }}>{selectablePending} pendente(s)</div>
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {DETALHES_MOTO_STATUS.map((status) => {
+                  const meta = detalheMotoMeta(status);
+                  return (
+                    <span key={status} style={{ border: `1px solid ${meta.border}`, background: meta.bg, color: meta.text, borderRadius: 999, padding: '4px 8px', fontSize: 11, fontWeight: 800 }}>
+                      {status}: {statusCounts[status] || 0}
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+            <div style={{ height: 8, borderRadius: 999, background: '#e2e8f0', overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${progressPercent}%`, borderRadius: 999, background: progressPercent === 100 ? '#16a34a' : '#2563eb', transition: 'width .2s ease' }} />
+            </div>
+          </div>
+
+          {DETALHES_MOTO_CATEGORIAS.map((grupo) => {
+            const stats = getGrupoStats(grupo);
+            const complete = stats.total > 0 && stats.preenchidos === stats.total;
+            return (
+            <div key={grupo.categoria} style={{ border: `1px solid ${complete ? '#86efac' : 'var(--border)'}`, borderRadius: 10, marginBottom: 14, overflow: 'hidden', background: 'var(--white)' }}>
+              <div style={{ padding: '10px 12px', background: complete ? '#ecfdf5' : 'var(--gray-50)', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
+                <div style={{ fontSize: 12, fontFamily: 'Geist Mono, monospace', textTransform: 'uppercase', letterSpacing: 0, color: complete ? '#047857' : 'var(--ink-muted)', fontWeight: 800 }}>
+                  {grupo.categoria}
+                </div>
+                <span style={{ border: `1px solid ${complete ? '#86efac' : '#dbe3ef'}`, borderRadius: 999, padding: '4px 9px', fontSize: 11, fontWeight: 800, color: complete ? '#047857' : '#64748b', background: complete ? '#dcfce7' : '#ffffff', whiteSpace: 'nowrap' }}>
+                  {stats.preenchidos}/{stats.total || grupo.itens.length}
+                </span>
               </div>
               <div style={{ padding: 12, display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(3, minmax(0, 1fr))', gap: 12 }}>
                 {grupo.itens.map(renderItem)}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
 
-        <div style={{ padding: isPhone ? 14 : '14px 24px 18px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap', flexDirection: isPhone ? 'column-reverse' : 'row' }}>
-          <button onClick={onClose} style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink-soft)', borderColor: 'var(--border-strong)', justifyContent: 'center', width: isPhone ? '100%' : undefined }}>Cancelar</button>
-          <button onClick={() => onSave(form)} disabled={saving} style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)', justifyContent: 'center', opacity: saving ? 0.7 : 1, width: isPhone ? '100%' : undefined }}>
-            {saving ? 'Salvando...' : 'Salvar detalhes'}
-          </button>
+        <div style={{ padding: isPhone ? 14 : '14px 24px 18px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: isPhone ? 'stretch' : 'center', gap: 10, flexWrap: 'wrap', flexDirection: isPhone ? 'column' : 'row' }}>
+          <div style={{ fontSize: 12, color: selectablePending ? '#92400e' : '#047857', fontWeight: 800 }}>
+            {selectablePending ? `${selectablePending} item(ns) pendente(s)` : 'Vistoria completa'}
+          </div>
+          <div style={{ display: 'flex', gap: 10, flexDirection: isPhone ? 'column-reverse' : 'row', width: isPhone ? '100%' : undefined }}>
+            <button onClick={onClose} style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink-soft)', borderColor: 'var(--border-strong)', justifyContent: 'center', width: isPhone ? '100%' : undefined }}>Cancelar</button>
+            <button onClick={() => onSave(form)} disabled={saving} style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)', justifyContent: 'center', opacity: saving ? 0.7 : 1, width: isPhone ? '100%' : undefined }}>
+              {saving ? 'Salvando...' : 'Salvar detalhes'}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -1125,7 +1271,7 @@ function ContratoFormModal({ open, contrato, onClose, onSaved, viewportMode }: a
         const blob = await resp.blob();
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = url; a.download = `contrato-${contrato.id}-${form.nomeVendedor?.split(' ')[0] || 'vendedor'}.pdf`;
+        a.href = url; a.download = nomeArquivoContratoPdf({ ...contrato, dados: form }, contrato.id);
         document.body.appendChild(a); a.click(); a.remove();
         setTimeout(() => URL.revokeObjectURL(url), 5000);
       } else {
@@ -1139,7 +1285,7 @@ function ContratoFormModal({ open, contrato, onClose, onSaved, viewportMode }: a
         const blob = await resp.blob();
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = url; a.download = `contrato-${form.nomeVendedor?.split(' ')[0] || 'vendedor'}.pdf`;
+        a.href = url; a.download = nomeArquivoContratoPdf(dadosCompletos, 'novo');
         document.body.appendChild(a); a.click(); a.remove();
         setTimeout(() => URL.revokeObjectURL(url), 5000);
       }
@@ -1227,10 +1373,6 @@ function ContratoFormModal({ open, contrato, onClose, onSaved, viewportMode }: a
             {inp('Número do Motor', 'motor')}
             {inp('RENAVAM', 'renavam')}
             {sel('Estado geral', 'estadoGeral', ['Bom', 'Regular', 'Sucata'])}
-          </div>
-          <div style={{ marginBottom: 12 }}>
-            <label style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--ink-soft)', display: 'block', marginBottom: 4 }}>Descrição do estado do veículo</label>
-            <textarea value={form.descricaoVeiculo} onChange={(e) => setForm((p) => ({ ...p, descricaoVeiculo: e.target.value }))} placeholder="Descreva o estado geral conforme vistoria conjunta..." style={{ ...cs.fi, resize: 'vertical', minHeight: 72, fontSize: 13 }} />
           </div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', background: 'var(--gray-50)', marginBottom: 12 }}>
             <div>
@@ -1368,7 +1510,7 @@ function ContratosTab({ viewportMode }: { viewportMode: MotosViewportMode }) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `contrato-${contrato.id}-${(contrato.dados?.nomeVendedor || 'vendedor').split(' ')[0].toLowerCase()}.pdf`;
+      a.download = nomeArquivoContratoPdf(contrato, contrato.id);
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 5000);
     } catch (err: any) { alert(err.message || 'Erro ao gerar PDF'); }

@@ -980,13 +980,8 @@ async function gerarPdfContrato(dados: Record<string, any>): Promise<Buffer> {
     });
     doc.y = tY + 6; doc.x = 65;
 
-    if (dados.descricaoVeiculo || temDetalhesMoto) {
-      if (dados.descricaoVeiculo) {
-        doc.fontSize(8.5).font('Helvetica-Bold').fillColor(GRAY).text('Descrição do estado do veículo:', { lineGap: 1 });
-        doc.fontSize(8.5).font('Helvetica').fillColor(BLACK).text(dados.descricaoVeiculo, { align: 'justify', lineGap: 2 });
-        doc.moveDown(0.3);
-      }
-      doc.fontSize(8.5).font('Helvetica').fillColor(GRAY).text('A descrição do estado do veículo consta no Anexo I — Detalhes da Moto deste instrumento, e foi realizada em conjunto pelo VENDEDOR e pelo COMPRADOR. Ambas as partes declaram estar plenamente de acordo com o detalhamento registrado, reconhecendo-o como fiel representação do estado real do bem.', { align: 'justify', lineGap: 2 });
+    if (temDetalhesMoto) {
+      doc.fontSize(8.5).font('Helvetica').fillColor(GRAY).text('O Anexo I — Detalhes da Moto deste instrumento foi preenchido em conjunto pelo VENDEDOR e pelo COMPRADOR. Ambas as partes declaram estar plenamente de acordo com o detalhamento registrado, reconhecendo-o como fiel representação do estado real do bem.', { align: 'justify', lineGap: 2 });
     }
 
     // ── Parte IV: Cláusulas ────────────────────────────────────────────────────
@@ -1128,6 +1123,46 @@ async function gerarPdfContrato(dados: Record<string, any>): Promise<Buffer> {
   });
 }
 
+function slugArquivoContrato(value: unknown, fallback: string) {
+  const slug = String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60);
+  return slug || fallback;
+}
+
+function dataArquivoContrato(value: unknown) {
+  const text = String(value ?? '').trim();
+  const meses: Record<string, string> = {
+    janeiro: '01', fevereiro: '02', marco: '03', março: '03', abril: '04', maio: '05', junho: '06',
+    julho: '07', agosto: '08', setembro: '09', outubro: '10', novembro: '11', dezembro: '12',
+  };
+
+  const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+
+  const br = text.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (br) return `${br[3]}-${br[2].padStart(2, '0')}-${br[1].padStart(2, '0')}`;
+
+  const extenso = text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').match(/(\d{1,2})\s+de\s+([a-z]+)\s+de\s+(\d{4})/);
+  if (extenso) return `${extenso[3]}-${(meses[extenso[2]] || '00')}-${extenso[1].padStart(2, '0')}`;
+
+  const date = new Date(text || Date.now());
+  if (!Number.isNaN(date.getTime())) return date.toISOString().slice(0, 10);
+  return new Date().toISOString().slice(0, 10);
+}
+
+function nomeArquivoContratoPdf(dados: Record<string, any>, numeroContrato: unknown, dataCriacao?: unknown) {
+  const numero = slugArquivoContrato(numeroContrato ?? 'novo', 'novo');
+  const cliente = slugArquivoContrato(dados?.nomeVendedor, 'cliente');
+  const moto = slugArquivoContrato(dados?.marcaModelo, 'moto');
+  const data = dataArquivoContrato(dados?.localData || dataCriacao || Date.now());
+  return `contrato-${numero}-${cliente}-${moto}-${data}.pdf`;
+}
+
 // ── CRUD Contratos ────────────────────────────────────────────────────────────
 
 // Listar contratos
@@ -1188,8 +1223,9 @@ motosRouter.get('/contratos/:id/pdf', async (req, res, next) => {
     const contrato = await prisma.contrato.findUnique({ where: { id } });
     if (!contrato) { res.status(404).json({ error: 'Contrato não encontrado' }); return; }
     const pdf = await gerarPdfContrato(contrato.dados as Record<string, any>);
+    const fileName = nomeArquivoContratoPdf(contrato.dados as Record<string, any>, id, contrato.criadoEm);
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="contrato-${id}.pdf"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
     res.send(pdf);
   } catch (e) { next(e); }
 });
@@ -1199,8 +1235,9 @@ motosRouter.post('/contrato/gerar', async (req, res, next) => {
   try {
     const dados = req.body || {};
     const pdf = await gerarPdfContrato(dados);
+    const fileName = nomeArquivoContratoPdf(dados, 'novo');
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', 'attachment; filename="contrato-compra-venda-moto.pdf"');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
     res.send(pdf);
   } catch (e) { next(e); }
 });
