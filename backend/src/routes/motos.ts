@@ -886,6 +886,11 @@ async function gerarPdfContrato(dados: Record<string, any>): Promise<Buffer> {
       doc.fontSize(9).font('Helvetica').fillColor(BLACK).text(value || '—');
     }
 
+    function renderLocalDataDireita() {
+      doc.fontSize(9).font('Helvetica').fillColor(BLACK)
+        .text(dados.localData || localDataContratoAtual(), 65, doc.y, { width: W, align: 'right' });
+    }
+
     function clauseTitle(num: string, title: string) {
       doc.moveDown(0.5);
       doc.fontSize(9).font('Helvetica-Bold').fillColor(BLACK).text(`CLÁUSULA ${num}ª — ${title}`);
@@ -1028,7 +1033,7 @@ async function gerarPdfContrato(dados: Record<string, any>): Promise<Buffer> {
       function renderAssinaturasAnexo() {
         ensureSpace(84);
         doc.moveDown(0.3);
-        field('Local e data', dados.localData || localDataContratoAtual());
+        renderLocalDataDireita();
         doc.moveDown(1.4);
 
         const sigY = doc.y;
@@ -1243,16 +1248,9 @@ async function gerarPdfContrato(dados: Record<string, any>): Promise<Buffer> {
       .text('Por estarem assim justos e contratados, as partes assinam o presente instrumento em ', { continued: true })
       .font('Helvetica-Bold').fillColor(BLACK).text('2 (duas) vias de igual teor e forma', { continued: true })
       .font('Helvetica').fillColor(GRAY).text(', na presença das testemunhas abaixo.');
-    doc.moveDown(0.4);
+    doc.moveDown(0.6);
 
-    doc.rect(65, doc.y, W, 36).fill('#fff8e1');
-    const alertY = doc.y + 6;
-    doc.fontSize(8.5).font('Helvetica-Bold').fillColor('#7a0000')
-      .text('ATENÇÃO: O VENDEDOR declara que leu integralmente este contrato antes de assiná-lo, compreendeu seu conteúdo e teve plena oportunidade de esclarecer dúvidas, firmando-o de livre e espontânea vontade, sem qualquer coação ou pressão.',
-        70, alertY, { width: W - 10, align: 'center' });
-    doc.y = alertY + 34; doc.moveDown(0.5);
-
-    field('Local e data', dados.localData || localDataContratoAtual());
+    renderLocalDataDireita();
     doc.moveDown(2.2);
 
     const sigY = doc.y;
