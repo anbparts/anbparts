@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { z } from 'zod';
 import { syncDetranEtiquetaBling } from '../lib/sync-bling-detran';
+import PDFDocument from 'pdfkit';
+import { getConfiguracaoGeral } from '../lib/configuracoes-gerais';
 
 export const motosRouter = Router();
 
@@ -604,10 +606,8 @@ motosRouter.post('/:id/detran-cartela', async (req, res, next) => {
 
     res.json({ ok: true, resultados, total: posicoes.length });
   } catch (e) { next(e); }
+});
 
-// ── CONTRATOS DE COMPRA E VENDA ───────────────────────────────────────────────
-import PDFDocument from 'pdfkit';
-import { getConfiguracaoGeral } from '../lib/configuracoes-gerais';
 
 // ── Helper: gera buffer PDF do contrato ───────────────────────────────────────
 async function gerarPdfContrato(dados: Record<string, any>): Promise<Buffer> {
