@@ -84,6 +84,70 @@ function normalizeDetranEtiqueta(value: unknown) {
   return text || null;
 }
 
+const CONTRATO_DETALHES_MOTO_CATEGORIAS = [
+  { categoria: 'Roda', itens: [
+    { key: 'rodaDianteira', label: 'Roda Dianteira' },
+    { key: 'rodaTraseira', label: 'Roda Traseira' },
+    { key: 'pneuDianteiro', label: 'Pneu Dianteiro' },
+    { key: 'pneuTraseiro', label: 'Pneu Traseiro' },
+    { key: 'discoFreioDianteiro', label: 'Disco de Freio Dianteiro' },
+    { key: 'discoFreioTraseiro', label: 'Disco de Freio Traseiro' },
+  ] },
+  { categoria: 'Suspensão', itens: [
+    { key: 'suspensaoDianteira', label: 'Suspensão Dianteira' },
+    { key: 'amortecedorTraseiro', label: 'Amortecedor Traseiro' },
+  ] },
+  { categoria: 'Dianteira', itens: [
+    { key: 'farolDianteiro', label: 'Farol Dianteiro' },
+    { key: 'carenagensFrontal', label: 'Carenagens Frontal' },
+    { key: 'bolhaDianteira', label: 'Bolha Dianteira' },
+  ] },
+  { categoria: 'Lado Direito', itens: [
+    { key: 'manoplaDireita', label: 'Manopla Direita' },
+    { key: 'maneteFreioDianteiro', label: 'Manete de Freio Dianteiro' },
+    { key: 'carenagensLadoDireito', label: 'Carenagens Lado Direito' },
+    { key: 'pedaleiraDianteiraDireita', label: 'Pedaleira Dianteira Lado Direito' },
+    { key: 'pedaleiraTraseiraDireita', label: 'Pedaleira Traseira Lado Direito' },
+    { key: 'setaDianteiraDireita', label: 'Seta Dianteira Lado Direito' },
+    { key: 'setaTraseiraDireita', label: 'Seta Traseira Lado Direito' },
+    { key: 'punhoIgnicao', label: 'Punho de Ignição' },
+    { key: 'retrovisorDireito', label: 'Retrovisor Lado Direito' },
+  ] },
+  { categoria: 'Lado Esquerdo', itens: [
+    { key: 'manoplaEsquerda', label: 'Manopla Esquerda' },
+    { key: 'maneteEmbreagemFreioTraseiro', label: 'Manete de Embreagem (ou Freio traseiro)' },
+    { key: 'carenagensLadoEsquerdo', label: 'Carenagens Lado Esquerdo' },
+    { key: 'pedaleiraDianteiraEsquerda', label: 'Pedaleira Dianteira Lado Esquerdo' },
+    { key: 'pedaleiraTraseiraEsquerda', label: 'Pedaleira Traseira Lado Esquerdo' },
+    { key: 'setaDianteiraEsquerda', label: 'Seta Dianteira Esquerda' },
+    { key: 'setaTraseiraEsquerda', label: 'Seta Traseira Esquerda' },
+    { key: 'punhoLuz', label: 'Punho de Luz' },
+    { key: 'retrovisorEsquerdo', label: 'Retrovisor Lado Esquerdo' },
+  ] },
+  { categoria: 'Traseira', itens: [
+    { key: 'carenagensRabeta', label: 'Carenagens Rabeta' },
+    { key: 'lanternaTraseira', label: 'Lanterna Traseira' },
+    { key: 'eixoCarda', label: 'Eixo Carda' },
+  ] },
+  { categoria: 'Geral', itens: [
+    { key: 'pintura', label: 'Pintura' },
+    { key: 'bancoMotorista', label: 'Banco do Motorista' },
+    { key: 'bancoPassageiro', label: 'Banco do Passageiro' },
+    { key: 'painel', label: 'Painel' },
+    { key: 'tanque', label: 'Tanque' },
+    { key: 'escapamento', label: 'Escapamento' },
+    { key: 'buzina', label: 'Buzina' },
+    { key: 'chaveIgnicao', label: 'Chave (ignição)' },
+    { key: 'chassis', label: 'Chassis' },
+    { key: 'motorFuncionando', label: 'Motor Funcionando' },
+    { key: 'avariasBarulhos', label: 'Avarias ou barulhos' },
+    { key: 'chaveReserva', label: 'Moto Possui Chave Reserva' },
+    { key: 'manual', label: 'Moto Possui Manual' },
+    { key: 'numeroChassisVisivel', label: 'Número do chassis visível' },
+    { key: 'numeroMotorVisivel', label: 'Número do motor visível' },
+  ] },
+];
+
 // GET /motos
 motosRouter.get('/', async (req, res, next) => {
   try {
@@ -623,6 +687,10 @@ async function gerarPdfContrato(dados: Record<string, any>): Promise<Buffer> {
   const empresaCnpj        = String(config?.empresaCnpj        || dados.cnpjComprador        || '').trim();
   const empresaEndereco    = String(config?.empresaEnderecoCompleto || dados.enderecoComprador || '').trim();
   const empresaTelefone    = String(config?.empresaTelefoneWhats || '').trim();
+  const detalhesMoto = dados.detalhesMoto && typeof dados.detalhesMoto === 'object' && !Array.isArray(dados.detalhesMoto)
+    ? dados.detalhesMoto as Record<string, unknown>
+    : {};
+  const temDetalhesMoto = Object.values(detalhesMoto).some((value) => String(value ?? '').trim());
 
   function formatDateBR(value: unknown) {
     const text = String(value || '').trim();
@@ -646,6 +714,10 @@ async function gerarPdfContrato(dados: Record<string, any>): Promise<Buffer> {
     const valor = String(dados[valorKey] || '').trim();
     if (!valor) return null;
     return `${label} no valor de R$ ${valor}, sob responsabilidade do ${responsavelContrato(dados[responsavelKey])}`;
+  }
+
+  function detalheMotoValor(key: string) {
+    return String(detalhesMoto[key] ?? '').trim() || '—';
   }
 
   return new Promise((resolve, reject) => {
@@ -692,6 +764,39 @@ async function gerarPdfContrato(dados: Record<string, any>): Promise<Buffer> {
       doc.moveDown(0.3);
     }
 
+    function ensureSpace(height = 24) {
+      if (doc.y + height > 760) {
+        doc.addPage();
+        doc.x = 65;
+        doc.y = 60;
+      }
+    }
+
+    function renderAnexoDetalhesMoto() {
+      if (!temDetalhesMoto) return;
+
+      doc.addPage();
+      doc.x = 65;
+      doc.y = 60;
+      doc.fontSize(13).font('Helvetica-Bold').fillColor(BLUE).text('ANEXO I — DETALHES DA MOTO', { align: 'center' });
+      doc.moveDown(0.5);
+      paragraph('Este anexo integra o presente contrato e registra a vistoria visual realizada pelas partes sobre os principais componentes da motocicleta, conforme informações preenchidas no ato da contratação.');
+
+      for (const grupo of CONTRATO_DETALHES_MOTO_CATEGORIAS) {
+        ensureSpace(34);
+        doc.moveDown(0.2);
+        doc.rect(65, doc.y, W, 16).fill('#222222');
+        doc.fontSize(8).font('Helvetica-Bold').fillColor('#ffffff').text(grupo.categoria.toUpperCase(), 69, doc.y + 4, { width: W - 8 });
+        doc.y += 18;
+
+        for (const item of grupo.itens) {
+          ensureSpace(18);
+          doc.x = 65;
+          field(item.label, detalheMotoValor(item.key));
+        }
+      }
+    }
+
     // ── Cabeçalho ──────────────────────────────────────────────────────────────
     doc.fontSize(14).font('Helvetica-Bold').fillColor(BLUE)
       .text('CONTRATO PARTICULAR DE COMPRA E VENDA DE MOTOCICLETA', { align: 'center' });
@@ -731,7 +836,8 @@ async function gerarPdfContrato(dados: Record<string, any>): Promise<Buffer> {
     doc.x = 65;
     doc.y = Math.max(col1EndY, doc.y) + 4;
     field('Endereço', dados.enderecoVendedor || '—');
-    field('Bairro / CEP', `${dados.bairroVendedor || '—'} / ${dados.cepVendedor || '—'}`);
+    field('Bairro', dados.bairroVendedor || '—');
+    field('CEP', dados.cepVendedor || '—');
     field('Cidade / UF', dados.cidadeUfVendedor || '—');
     field('Profissão', dados.profissao || '—');
     field('Telefone', dados.telefone || '—');
@@ -777,18 +883,20 @@ async function gerarPdfContrato(dados: Record<string, any>): Promise<Buffer> {
     });
     doc.y = tY + 6; doc.x = 65;
 
-    if (dados.descricaoVeiculo) {
-      doc.fontSize(8.5).font('Helvetica-Bold').fillColor(GRAY).text('Descrição do estado do veículo:', { lineGap: 1 });
-      doc.fontSize(8.5).font('Helvetica').fillColor(BLACK).text(dados.descricaoVeiculo, { align: 'justify', lineGap: 2 });
-      doc.moveDown(0.3);
-      doc.fontSize(8.5).font('Helvetica').fillColor(GRAY).text('A descrição acima foi realizada em conjunto pelo VENDEDOR e pelo COMPRADOR, mediante vistoria presencial do veículo, e ambas as partes declaram estar plenamente de acordo com o detalhamento registrado, reconhecendo-o como fiel representação do estado real do bem.', { align: 'justify', lineGap: 2 });
+    if (dados.descricaoVeiculo || temDetalhesMoto) {
+      if (dados.descricaoVeiculo) {
+        doc.fontSize(8.5).font('Helvetica-Bold').fillColor(GRAY).text('Descrição do estado do veículo:', { lineGap: 1 });
+        doc.fontSize(8.5).font('Helvetica').fillColor(BLACK).text(dados.descricaoVeiculo, { align: 'justify', lineGap: 2 });
+        doc.moveDown(0.3);
+      }
+      doc.fontSize(8.5).font('Helvetica').fillColor(GRAY).text('A descrição do estado do veículo e, quando preenchido, o Anexo I — Detalhes da Moto foram realizados em conjunto pelo VENDEDOR e pelo COMPRADOR, mediante vistoria presencial do veículo, e ambas as partes declaram estar plenamente de acordo com o detalhamento registrado, reconhecendo-o como fiel representação do estado real do bem.', { align: 'justify', lineGap: 2 });
     }
 
     // ── Parte IV: Cláusulas ────────────────────────────────────────────────────
     sectionHeader('PARTE IV — CLÁUSULAS E CONDIÇÕES');
 
     clauseTitle('1', 'DO OBJETO E FINALIDADE DA AQUISIÇÃO');
-    paragraph('O presente contrato tem por objeto a compra e venda da motocicleta descrita na Parte III, que o VENDEDOR declara ser de sua legítima propriedade. O VENDEDOR tem plena ciência de que a motocicleta ora alienada destina-se ao desmanche e comercialização de suas peças e componentes pelo COMPRADOR, concordando expressamente com tal finalidade.');
+    paragraph('O presente contrato tem por objeto a compra e venda da motocicleta descrita na Parte III, que o VENDEDOR declara ser de sua legítima propriedade. O VENDEDOR tem plena ciência de que a motocicleta ora alienada destina-se ao desmonte e comercialização de suas peças e componentes pelo COMPRADOR, concordando expressamente com tal finalidade.');
 
     clauseTitle('2', 'DO PREÇO, NEGOCIAÇÃO E FORMA DE PAGAMENTO');
     paragraph('O preço da motocicleta foi livremente negociado entre as partes, com pleno conhecimento e concordância do VENDEDOR, sem qualquer pressão, coação ou estado de necessidade que o obrigasse a aceitar condições desfavoráveis.');
@@ -808,7 +916,7 @@ async function gerarPdfContrato(dados: Record<string, any>): Promise<Buffer> {
     doc.moveDown(0.2);
 
     clauseTitle('4', 'DO ESTADO DO VEÍCULO');
-    paragraph('O COMPRADOR é empresa especializada em avaliação, aquisição e desmanche de motocicletas, tendo realizado vistoria técnica do veículo previamente à assinatura deste instrumento. A aquisição se dá no estado em que o veículo se encontra, conforme descrito na Parte III e confirmado pelo VENDEDOR. Não há garantia pós-venda sobre o estado geral do bem, dado que: (i) o preço foi negociado com pleno conhecimento das condições do veículo; e (ii) a destinação é o desmanche, e não a revenda do veículo inteiro. O VENDEDOR declara ter informado ao COMPRADOR, de boa-fé, todos os vícios, defeitos e limitações do veículo de que tinha conhecimento, não havendo omissão dolosa de sua parte.');
+    paragraph('O COMPRADOR é empresa especializada em avaliação, aquisição e desmonte de motocicletas, tendo realizado vistoria técnica do veículo previamente à assinatura deste instrumento. A aquisição se dá no estado em que o veículo se encontra, conforme descrito na Parte III e confirmado pelo VENDEDOR. Não há garantia pós-venda sobre o estado geral do bem, dado que: (i) o preço foi negociado com pleno conhecimento das condições do veículo; e (ii) a destinação é o desmonte, e não a revenda do veículo inteiro. O VENDEDOR declara ter informado ao COMPRADOR, de boa-fé, todos os vícios, defeitos e limitações do veículo de que tinha conhecimento, não havendo omissão dolosa de sua parte.');
 
     clauseTitle('5', 'DOS DÉBITOS E ENCARGOS ANTERIORES');
     const debitosInformados = [
@@ -848,6 +956,13 @@ async function gerarPdfContrato(dados: Record<string, any>): Promise<Buffer> {
     clauseTitle('12', 'DO FORO');
     paragraph('As partes elegem o foro da Comarca de Jundiaí / SP para dirimir quaisquer controvérsias oriundas deste contrato, com renúncia expressa a qualquer outro, por mais privilegiado que seja, nos termos do Código de Processo Civil (Lei nº 13.105/2015).');
 
+    renderAnexoDetalhesMoto();
+    if (temDetalhesMoto) {
+      doc.addPage();
+      doc.x = 65;
+      doc.y = 60;
+    }
+
     // ── Parte V: Assinaturas ───────────────────────────────────────────────────
     sectionHeader('PARTE V — LOCAL, DATA E ASSINATURAS');
     doc.fontSize(9).font('Helvetica').fillColor(GRAY)
@@ -859,7 +974,7 @@ async function gerarPdfContrato(dados: Record<string, any>): Promise<Buffer> {
     doc.rect(65, doc.y, W, 36).fill('#fff8e1');
     const alertY = doc.y + 6;
     doc.fontSize(8.5).font('Helvetica-Bold').fillColor('#7a0000')
-      .text('⚠  O VENDEDOR declara que leu integralmente este contrato antes de assiná-lo, compreendeu seu conteúdo e teve plena oportunidade de esclarecer dúvidas, firmando-o de livre e espontânea vontade, sem qualquer coação ou pressão.',
+      .text('ATENÇÃO: O VENDEDOR declara que leu integralmente este contrato antes de assiná-lo, compreendeu seu conteúdo e teve plena oportunidade de esclarecer dúvidas, firmando-o de livre e espontânea vontade, sem qualquer coação ou pressão.',
         70, alertY, { width: W - 10, align: 'center' });
     doc.y = alertY + 34; doc.moveDown(0.5);
 

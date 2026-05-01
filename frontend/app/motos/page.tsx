@@ -838,7 +838,156 @@ const FORM_VAZIO = {
   debitoLicenciamentoValor: '', debitoLicenciamentoResponsavel: 'vendedor',
   debitoMultasValor: '', debitoMultasResponsavel: 'vendedor',
   localData: '', nomeRepresentante: '', cpfRepresentante: '',
+  detalhesMoto: {},
 };
+
+const DETALHES_MOTO_STATUS = ['Bom', 'Regular', 'Ruim', 'Inexistente'];
+const DETALHES_MOTO_SIM_NAO = ['Sim', 'Não'];
+const DETALHES_MOTO_CATEGORIAS = [
+  { categoria: 'Roda', itens: [
+    { key: 'rodaDianteira', label: 'Roda Dianteira' },
+    { key: 'rodaTraseira', label: 'Roda Traseira' },
+    { key: 'pneuDianteiro', label: 'Pneu Dianteiro' },
+    { key: 'pneuTraseiro', label: 'Pneu Traseiro' },
+    { key: 'discoFreioDianteiro', label: 'Disco de Freio Dianteiro' },
+    { key: 'discoFreioTraseiro', label: 'Disco de Freio Traseiro' },
+  ] },
+  { categoria: 'Suspensão', itens: [
+    { key: 'suspensaoDianteira', label: 'Suspensão Dianteira' },
+    { key: 'amortecedorTraseiro', label: 'Amortecedor Traseiro' },
+  ] },
+  { categoria: 'Dianteira', itens: [
+    { key: 'farolDianteiro', label: 'Farol Dianteiro' },
+    { key: 'carenagensFrontal', label: 'Carenagens Frontal' },
+    { key: 'bolhaDianteira', label: 'Bolha Dianteira' },
+  ] },
+  { categoria: 'Lado Direito', itens: [
+    { key: 'manoplaDireita', label: 'Manopla Direita' },
+    { key: 'maneteFreioDianteiro', label: 'Manete de Freio Dianteiro' },
+    { key: 'carenagensLadoDireito', label: 'Carenagens Lado Direito' },
+    { key: 'pedaleiraDianteiraDireita', label: 'Pedaleira Dianteira Lado Direito' },
+    { key: 'pedaleiraTraseiraDireita', label: 'Pedaleira Traseira Lado Direito' },
+    { key: 'setaDianteiraDireita', label: 'Seta Dianteira Lado Direito' },
+    { key: 'setaTraseiraDireita', label: 'Seta Traseira Lado Direito' },
+    { key: 'punhoIgnicao', label: 'Punho de Ignição' },
+    { key: 'retrovisorDireito', label: 'Retrovisor Lado Direito' },
+  ] },
+  { categoria: 'Lado Esquerdo', itens: [
+    { key: 'manoplaEsquerda', label: 'Manopla Esquerda' },
+    { key: 'maneteEmbreagemFreioTraseiro', label: 'Manete de Embreagem (ou Freio traseiro)' },
+    { key: 'carenagensLadoEsquerdo', label: 'Carenagens Lado Esquerdo' },
+    { key: 'pedaleiraDianteiraEsquerda', label: 'Pedaleira Dianteira Lado Esquerdo' },
+    { key: 'pedaleiraTraseiraEsquerda', label: 'Pedaleira Traseira Lado Esquerdo' },
+    { key: 'setaDianteiraEsquerda', label: 'Seta Dianteira Esquerda' },
+    { key: 'setaTraseiraEsquerda', label: 'Seta Traseira Esquerda' },
+    { key: 'punhoLuz', label: 'Punho de Luz' },
+    { key: 'retrovisorEsquerdo', label: 'Retrovisor Lado Esquerdo' },
+  ] },
+  { categoria: 'Traseira', itens: [
+    { key: 'carenagensRabeta', label: 'Carenagens Rabeta' },
+    { key: 'lanternaTraseira', label: 'Lanterna Traseira' },
+    { key: 'eixoCarda', label: 'Eixo Carda' },
+  ] },
+  { categoria: 'Geral', itens: [
+    { key: 'pintura', label: 'Pintura' },
+    { key: 'bancoMotorista', label: 'Banco do Motorista' },
+    { key: 'bancoPassageiro', label: 'Banco do Passageiro' },
+    { key: 'painel', label: 'Painel' },
+    { key: 'tanque', label: 'Tanque' },
+    { key: 'escapamento', label: 'Escapamento' },
+    { key: 'buzina', label: 'Buzina' },
+    { key: 'chaveIgnicao', label: 'Chave (ignição)' },
+    { key: 'chassis', label: 'Chassis' },
+    { key: 'motorFuncionando', label: 'Motor Funcionando', tipo: 'simnao' },
+    { key: 'avariasBarulhos', label: 'Eventuais avarias ou barulhos', tipo: 'texto' },
+    { key: 'chaveReserva', label: 'Moto Possui Chave Reserva', tipo: 'simnao' },
+    { key: 'manual', label: 'Moto Possui Manual', tipo: 'simnao' },
+    { key: 'numeroChassisVisivel', label: 'Número do chassis visível', tipo: 'simnao' },
+    { key: 'numeroMotorVisivel', label: 'Número do motor visível', tipo: 'simnao' },
+  ] },
+];
+
+function countDetalhesMoto(value: any) {
+  if (!value || typeof value !== 'object') return 0;
+  return Object.values(value).filter((item) => String(item ?? '').trim()).length;
+}
+
+function DetalhesMotoModal({ open, value, onClose, onSave, viewportMode, saving = false }: any) {
+  const isPhone = viewportMode === 'phone';
+  const [form, setForm] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!open) return;
+    setForm(value && typeof value === 'object' ? { ...value } : {});
+  }, [open, value]);
+
+  if (!open) return null;
+
+  const setField = (key: string, nextValue: string) => {
+    setForm((prev) => ({ ...prev, [key]: nextValue }));
+  };
+
+  const renderItem = (item: any) => {
+    if (item.tipo === 'texto') {
+      return (
+        <div key={item.key} style={{ gridColumn: '1 / -1', marginBottom: 10 }}>
+          <label style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--ink-soft)', display: 'block', marginBottom: 4 }}>{item.label}</label>
+          <textarea
+            value={form[item.key] || ''}
+            onChange={(event) => setField(item.key, event.target.value)}
+            placeholder="Descreva avarias, barulhos ou observações relevantes"
+            style={{ ...cs.fi, minHeight: 72, resize: 'vertical', fontSize: 13 }}
+          />
+        </div>
+      );
+    }
+
+    const options = item.tipo === 'simnao' ? DETALHES_MOTO_SIM_NAO : DETALHES_MOTO_STATUS;
+    return (
+      <div key={item.key} style={{ marginBottom: 10 }}>
+        <label style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--ink-soft)', display: 'block', marginBottom: 4 }}>{item.label}</label>
+        <select value={form[item.key] || ''} onChange={(event) => setField(item.key, event.target.value)} style={{ ...cs.fi, fontSize: 13 }}>
+          <option value="">Selecionar</option>
+          {options.map((option) => <option key={option} value={option}>{option}</option>)}
+        </select>
+      </div>
+    );
+  };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.48)', zIndex: 460, display: 'flex', alignItems: isPhone ? 'stretch' : 'center', justifyContent: 'center', padding: isPhone ? 0 : 24, backdropFilter: 'blur(2px)' }}>
+      <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: isPhone ? 0 : 16, width: '100%', maxWidth: 980, maxHeight: isPhone ? '100dvh' : '94vh', minHeight: isPhone ? '100dvh' : undefined, overflow: 'hidden', boxShadow: '0 16px 40px rgba(0,0,0,.16)', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ padding: isPhone ? '16px 14px 14px' : '18px 24px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+          <div>
+            <div style={{ fontFamily: 'Fraunces, serif', fontSize: 18, fontWeight: 600 }}>Detalhes Moto</div>
+            <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 3 }}>Anexo de vistoria visual para o contrato</div>
+          </div>
+          <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', flexShrink: 0 }}>X</button>
+        </div>
+
+        <div style={{ overflowY: 'auto', flex: 1, padding: isPhone ? 14 : 22 }}>
+          {DETALHES_MOTO_CATEGORIAS.map((grupo) => (
+            <div key={grupo.categoria} style={{ border: '1px solid var(--border)', borderRadius: 10, marginBottom: 14, overflow: 'hidden', background: 'var(--white)' }}>
+              <div style={{ padding: '9px 12px', background: 'var(--gray-50)', borderBottom: '1px solid var(--border)', fontSize: 11, fontFamily: 'Geist Mono, monospace', textTransform: 'uppercase', letterSpacing: '0.7px', color: 'var(--ink-muted)', fontWeight: 600 }}>
+                {grupo.categoria}
+              </div>
+              <div style={{ padding: 12, display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(3, minmax(0, 1fr))', gap: 12 }}>
+                {grupo.itens.map(renderItem)}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ padding: isPhone ? 14 : '14px 24px 18px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap', flexDirection: isPhone ? 'column-reverse' : 'row' }}>
+          <button onClick={onClose} style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink-soft)', borderColor: 'var(--border-strong)', justifyContent: 'center', width: isPhone ? '100%' : undefined }}>Cancelar</button>
+          <button onClick={() => onSave(form)} disabled={saving} style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)', justifyContent: 'center', opacity: saving ? 0.7 : 1, width: isPhone ? '100%' : undefined }}>
+            {saving ? 'Salvando...' : 'Salvar detalhes'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function ContratoFormModal({ open, contrato, onClose, onSaved, viewportMode }: any) {
   const isPhone = viewportMode === 'phone';
@@ -848,6 +997,7 @@ function ContratoFormModal({ open, contrato, onClose, onSaved, viewportMode }: a
   const [salvando, setSalvando] = useState(false);
   const [gerando, setGerando] = useState(false);
   const [empresaCarregada, setEmpresaCarregada] = useState(false);
+  const [detalhesOpen, setDetalhesOpen] = useState(false);
 
   // Carregar dados da empresa e preencher comprador automaticamente
   useEffect(() => {
@@ -941,6 +1091,7 @@ function ContratoFormModal({ open, contrato, onClose, onSaved, viewportMode }: a
 
   const dadosCompletos = { ...form, docsEntregues };
   const mostrarDebitos = form.debitosDeclaracao === 'com_debitos';
+  const detalhesPreenchidos = countDetalhesMoto((form as any).detalhesMoto);
 
   async function salvar() {
     if (!form.nomeVendedor) { alert('Informe o nome do vendedor.'); return; }
@@ -1000,6 +1151,7 @@ function ContratoFormModal({ open, contrato, onClose, onSaved, viewportMode }: a
   }
 
   return (
+    <>
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 300, display: 'flex', alignItems: isPhone ? 'stretch' : 'center', justifyContent: 'center', padding: isPhone ? 0 : 24, backdropFilter: 'blur(2px)' }}>
       <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: isPhone ? 0 : 16, width: '100%', maxWidth: 860, maxHeight: isPhone ? '100dvh' : '95vh', minHeight: isPhone ? '100dvh' : undefined, overflow: 'hidden', boxShadow: '0 16px 40px rgba(0,0,0,.15)', display: 'flex', flexDirection: 'column' }}>
         {/* Header */}
@@ -1080,6 +1232,17 @@ function ContratoFormModal({ open, contrato, onClose, onSaved, viewportMode }: a
             <label style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--ink-soft)', display: 'block', marginBottom: 4 }}>Descrição do estado do veículo</label>
             <textarea value={form.descricaoVeiculo} onChange={(e) => setForm((p) => ({ ...p, descricaoVeiculo: e.target.value }))} placeholder="Descreva o estado geral conforme vistoria conjunta..." style={{ ...cs.fi, resize: 'vertical', minHeight: 72, fontSize: 13 }} />
           </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', background: 'var(--gray-50)', marginBottom: 12 }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>Anexo de detalhes da moto</div>
+              <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginTop: 2 }}>
+                {detalhesPreenchidos ? `${detalhesPreenchidos} item(ns) preenchido(s)` : 'Nenhum detalhe preenchido'}
+              </div>
+            </div>
+            <button type="button" onClick={() => setDetalhesOpen(true)} style={{ ...cs.btn, background: '#eff6ff', color: '#2563eb', borderColor: '#93c5fd' }}>
+              Detalhes Moto
+            </button>
+          </div>
 
           {/* NEGOCIAÇÃO */}
           <div style={sectionStyle}>Cláusula 2 — Preço e Pagamento</div>
@@ -1145,6 +1308,17 @@ function ContratoFormModal({ open, contrato, onClose, onSaved, viewportMode }: a
         </div>
       </div>
     </div>
+    <DetalhesMotoModal
+      open={detalhesOpen}
+      value={(form as any).detalhesMoto || {}}
+      onClose={() => setDetalhesOpen(false)}
+      onSave={(detalhes: any) => {
+        setForm((prev) => ({ ...prev, detalhesMoto: detalhes }));
+        setDetalhesOpen(false);
+      }}
+      viewportMode={viewportMode}
+    />
+    </>
   );
 }
 
@@ -1156,6 +1330,8 @@ function ContratosTab({ viewportMode }: { viewportMode: MotosViewportMode }) {
   const [editando, setEditando] = useState<any>(null);
   const [deletando, setDeletando] = useState<number | null>(null);
   const [gerandoId, setGerandoId] = useState<number | null>(null);
+  const [detalhesContrato, setDetalhesContrato] = useState<any>(null);
+  const [salvandoDetalhesId, setSalvandoDetalhesId] = useState<number | null>(null);
 
   async function loadContratos() {
     setLoading(true);
@@ -1197,6 +1373,28 @@ function ContratosTab({ viewportMode }: { viewportMode: MotosViewportMode }) {
       setTimeout(() => URL.revokeObjectURL(url), 5000);
     } catch (err: any) { alert(err.message || 'Erro ao gerar PDF'); }
     setGerandoId(null);
+  }
+
+  async function handleSalvarDetalhesContrato(detalhes: any) {
+    if (!detalhesContrato?.id) return;
+    setSalvandoDetalhesId(detalhesContrato.id);
+    try {
+      const dados = { ...(detalhesContrato.dados || {}), detalhesMoto: detalhes };
+      const resp = await fetch(`${API}/motos/contratos/${detalhesContrato.id}`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dados }),
+      });
+      const data = await resp.json().catch(() => null);
+      if (!resp.ok || data?.ok === false) throw new Error(data?.error || 'Erro ao salvar detalhes');
+      setDetalhesContrato(null);
+      await loadContratos();
+    } catch (err: any) {
+      alert(err.message || 'Erro ao salvar detalhes da moto');
+    } finally {
+      setSalvandoDetalhesId(null);
+    }
   }
 
   const pagePadding = isPhone ? 14 : 28;
@@ -1242,9 +1440,12 @@ function ContratosTab({ viewportMode }: { viewportMode: MotosViewportMode }) {
                     {new Date(c.criadoEm).toLocaleDateString('pt-BR')}
                   </div>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginTop: 8 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginTop: 8 }}>
                   <button onClick={() => handleGerarPdf(c)} disabled={gerandoId === c.id} style={{ ...cs.btn, fontSize: 11, padding: '7px 8px', justifyContent: 'center', background: '#eff6ff', color: '#2563eb', borderColor: '#93c5fd', opacity: gerandoId === c.id ? 0.7 : 1 }}>
                     {gerandoId === c.id ? '...' : '📄 PDF'}
+                  </button>
+                  <button onClick={() => setDetalhesContrato(c)} style={{ ...cs.btn, fontSize: 11, padding: '7px 8px', justifyContent: 'center', background: '#f0fdf4', color: '#16a34a', borderColor: '#86efac' }}>
+                    Detalhes Moto
                   </button>
                   <button onClick={() => { setEditando(c); setModalOpen(true); }} style={{ ...cs.btn, fontSize: 11, padding: '7px 8px', justifyContent: 'center', background: 'var(--white)', color: 'var(--ink-soft)', borderColor: 'var(--border)' }}>
                     ✏️ Editar
@@ -1294,6 +1495,9 @@ function ContratosTab({ viewportMode }: { viewportMode: MotosViewportMode }) {
                           <button onClick={() => handleGerarPdf(c)} disabled={gerandoId === c.id} title="Gerar PDF" style={{ ...cs.btn, padding: '5px 10px', fontSize: 11, background: '#eff6ff', color: '#2563eb', borderColor: '#93c5fd', opacity: gerandoId === c.id ? 0.7 : 1 }}>
                             {gerandoId === c.id ? '...' : '📄 PDF'}
                           </button>
+                          <button onClick={() => setDetalhesContrato(c)} title="Detalhes Moto" style={{ ...cs.btn, padding: '5px 10px', fontSize: 11, background: '#f0fdf4', color: '#16a34a', borderColor: '#86efac' }}>
+                            Detalhes Moto
+                          </button>
                           <button onClick={() => { setEditando(c); setModalOpen(true); }} title="Editar" style={{ ...cs.btn, padding: '5px 10px', fontSize: 11, background: 'var(--white)', color: 'var(--ink-soft)', borderColor: 'var(--border)' }}>
                             Editar
                           </button>
@@ -1318,6 +1522,14 @@ function ContratosTab({ viewportMode }: { viewportMode: MotosViewportMode }) {
         onClose={() => { setModalOpen(false); setEditando(null); }}
         onSaved={() => { setModalOpen(false); setEditando(null); loadContratos(); }}
         viewportMode={viewportMode}
+      />
+      <DetalhesMotoModal
+        open={!!detalhesContrato}
+        value={detalhesContrato?.dados?.detalhesMoto || {}}
+        onClose={() => setDetalhesContrato(null)}
+        onSave={handleSalvarDetalhesContrato}
+        viewportMode={viewportMode}
+        saving={salvandoDetalhesId === detalhesContrato?.id}
       />
     </div>
   );
