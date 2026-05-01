@@ -950,7 +950,7 @@ async function gerarPdfContrato(dados: Record<string, any>): Promise<Buffer> {
         doc.fontSize(8.5).font('Helvetica-Bold').fillColor(BLACK).text('ASSINATURAS DO ANEXO I');
         doc.moveDown(0.3);
         field('Local e data', dados.localData || localDataContratoAtual());
-        doc.moveDown(0.6);
+        doc.moveDown(1.4);
 
         const sigY = doc.y;
         const halfW = W / 2 - 15;
@@ -1191,7 +1191,7 @@ async function gerarPdfContrato(dados: Record<string, any>): Promise<Buffer> {
     doc.y = alertY + 34; doc.moveDown(0.5);
 
     field('Local e data', dados.localData || localDataContratoAtual());
-    doc.moveDown(0.8);
+    doc.moveDown(2.2);
 
     const sigY = doc.y;
     const halfW = W / 2 - 15;
