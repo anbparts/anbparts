@@ -147,3 +147,127 @@ faturamentoRouter.get('/dashboard', async (req, res, next) => {
     });
   } catch (e) { next(e); }
 });
+
+// GET /faturamento/estoque-percentual — % do estoque vendido por mês/moto
+faturamentoRouter.get('/estoque-percentual', async (req, res, next) => {
+  try {
+    // Buscar todas as peças com dados necessários (excluindo prejuízos)
+    const pecas = await prisma.peca.findMany({
+      where: { emPrejuizo: false },
+      select: {
+        valorLiq: true,
+        precoML:  true,
+        cadastro: true,
+        dataVenda: true,
+        disponivel: true,
+        moto: { select: { id: true, marca: true, modelo: true, ano: true } },
+      },
+    });
+
+    // Determinar range de meses existentes nas vendas
+    const mesesVenda = pecas
+      .filter(p => p.dataVenda)
+      .map(p => {
+        const d = new Date(p.dataVenda!);
+        return { ano: d.getFullYear(), mes: d.getMonth() + 1 };
+      });
+
+    if (mesesVenda.length === 0) { res.json({ meses: [], porMoto: [], consolidado: [] }); return; }
+
+    // Range de meses: do mais antigo ao mais recente com venda
+    const minAno  = Math.min(...mesesVenda.map(m => m.ano));
+    const minMes  = Math.min(...mesesVenda.filter(m => m.ano === minAno).map(m => m.mes));
+    const maxAno  = Math.max(...mesesVenda.map(m => m.ano));
+    const maxMes  = Math.max(...mesesVenda.filter(m => m.ano === maxAno).map(m => m.mes));
+
+    // Gerar lista de meses no range
+    const meses: { ano: number; mes: number; key: string }[] = [];
+    let a = minAno, m = minMes;
+    while (a < maxAno || (a === maxAno && m <= maxMes)) {
+      meses.push({ ano: a, mes: m, key: `${a}-${String(m).padStart(2, '0')}` });
+      m++; if (m > 12) { m = 1; a++; }
+    }
+
+    // Agrupar peças por moto
+    const motoMap: Record<number, { id: number; nome: string; pecas: typeof pecas }> = {};
+    for (const p of pecas) {
+      const mid = p.moto.id;
+      if (!motoMap[mid]) {
+        motoMap[mid] = {
+          id: mid,
+          nome: `${p.moto.marca} ${p.moto.modelo}${p.moto.ano ? ' ' + p.moto.ano : ''}`,
+          pecas: [],
+        };
+      }
+      motoMap[mid].pecas.push(p);
+    }
+
+    // Para cada moto × mês: calcular estoque início do mês e vendas do mês
+    const porMoto: any[] = [];
+    const consolidadoMap: Record<string, { estoqueInicio: number; vendido: number; qtdVendida: number }> = {};
+
+    for (const motoData of Object.values(motoMap)) {
+      for (const { ano, mes, key } of meses) {
+        const inicioMes = new Date(ano, mes - 1, 1);
+        const fimMes    = new Date(ano, mes, 1);
+
+        // Estoque no início do mês: cadastrado antes do início do mês
+        // E (ainda disponível OU foi vendida durante ou depois do início do mês)
+        const estoqueInicioPecas = motoData.pecas.filter(p => {
+          const cad = new Date(p.cadastro);
+          if (cad >= inicioMes) return false;
+          if (p.disponivel) return true;
+          if (!p.dataVenda) return false;
+          return new Date(p.dataVenda) >= inicioMes;
+        });
+
+        // Vendas no mês
+        const vendidasMes = motoData.pecas.filter(p => {
+          if (!p.dataVenda) return false;
+          const dv = new Date(p.dataVenda);
+          return dv >= inicioMes && dv < fimMes;
+        });
+
+        const estoqueInicio = estoqueInicioPecas.reduce((s, p) => s + Number(p.valorLiq || p.precoML), 0);
+        const vendido       = vendidasMes.reduce((s, p) => s + Number(p.valorLiq), 0);
+        const percentual    = estoqueInicio > 0 ? (vendido / estoqueInicio) * 100 : 0;
+
+        if (estoqueInicio > 0 || vendido > 0) {
+          porMoto.push({
+            motoId: motoData.id,
+            moto:   motoData.nome,
+            ano, mes, key,
+            estoqueInicio: Math.round(estoqueInicio * 100) / 100,
+            vendido:       Math.round(vendido * 100) / 100,
+            qtdVendida:    vendidasMes.length,
+            percentual:    Math.round(percentual * 10) / 10,
+          });
+        }
+
+        // Consolidado
+        if (!consolidadoMap[key]) consolidadoMap[key] = { estoqueInicio: 0, vendido: 0, qtdVendida: 0 };
+        consolidadoMap[key].estoqueInicio += estoqueInicio;
+        consolidadoMap[key].vendido       += vendido;
+        consolidadoMap[key].qtdVendida    += vendidasMes.length;
+      }
+    }
+
+    // Consolidado final
+    const consolidado = meses
+      .filter(({ key }) => consolidadoMap[key])
+      .map(({ ano, mes, key }) => {
+        const c = consolidadoMap[key];
+        return {
+          ano, mes, key,
+          estoqueInicio: Math.round(c.estoqueInicio * 100) / 100,
+          vendido:       Math.round(c.vendido * 100) / 100,
+          qtdVendida:    c.qtdVendida,
+          percentual:    c.estoqueInicio > 0
+            ? Math.round((c.vendido / c.estoqueInicio) * 1000) / 10
+            : 0,
+        };
+      });
+
+    res.json({ meses: meses.map(m => m.key), porMoto, consolidado });
+  } catch (e) { next(e); }
+});

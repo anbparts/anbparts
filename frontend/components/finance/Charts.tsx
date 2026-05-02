@@ -3,7 +3,7 @@
 import { type CSSProperties, type ReactNode } from 'react';
 import { sensitiveMaskStyle, sensitiveText, useCompanyValueVisibility } from '@/lib/company-values';
 
-export type ViewMode = 'grafico' | 'relatorio';
+export type ViewMode = 'grafico' | 'relatorio' | 'estoque';
 
 export type ChartItem = {
   label: string;
@@ -92,6 +92,9 @@ export function ViewModeSwitch({
       </button>
       <button type="button" style={button(value === 'relatorio')} onClick={() => onChange('relatorio')}>
         Relatorio
+      </button>
+      <button type="button" style={button(value === 'estoque')} onClick={() => onChange('estoque')}>
+        % Estoque
       </button>
     </div>
   );
