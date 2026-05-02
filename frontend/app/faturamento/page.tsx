@@ -480,4 +480,174 @@ export default function FaturamentoMotoPage() {
                 </table>
               </div>
             )}
-          </div>\n        )}\n      </div>\n\n      {/* ── ABA % ESTOQUE VENDIDO ──────────────────────────────────── */}\n      {modo === 'estoque' && (\n        <div style={{ marginTop: 18 }}>\n          {/* Filtros */}\n          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14, alignItems: 'center' }}>\n            <select\n              value={estoqueAnoFilt}\n              onChange={e => setEstoqueAnoFilt(e.target.value)}\n              style={cs.sel}\n            >\n              <option value="">Todos os anos</option>\n              {Array.from(new Set((estoqueData?.consolidado || []).map((c: any) => String(c.ano)))).sort().reverse().map(a => (\n                <option key={a} value={a}>{a}</option>\n              ))}\n            </select>\n            <select\n              value={estoqueMotoFilt}\n              onChange={e => setEstoqueMotoFilt(e.target.value)}\n              style={cs.sel}\n            >\n              <option value="todas">Todas as motos</option>\n              {Array.from(new Set((estoqueData?.porMoto || []).map((p: any) => p.moto))).sort().map(m => (\n                <option key={String(m)} value={String(m)}>{String(m)}</option>\n              ))}\n            </select>\n          </div>\n\n          {estoqueLoading ? (\n            <div style={{ ...cs.card, padding: 32, textAlign: 'center', color: 'var(--ink-muted)' }}>Calculando percentuais de estoque...</div>\n          ) : !estoqueData ? (\n            <div style={{ ...cs.card, padding: 32, textAlign: 'center', color: 'var(--ink-muted)' }}>Sem dados disponíveis</div>\n          ) : (\n            <div style={{ display: 'grid', gap: 18 }}>\n\n              {/* Consolidado geral */}\n              {estoqueMotoFilt === 'todas' && (\n                <div style={cs.card}>\n                  <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>\n                    <div>\n                      <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>Consolidado — Todas as Motos</div>\n                      <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>% do valor de estoque vendido a cada mês</div>\n                    </div>\n                  </div>\n                  <div style={{ overflowX: 'auto' }}>\n                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>\n                      <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>\n                        <tr>\n                          {['Mês', 'Estoque início', 'Vendido', '% vendido', 'Qtd peças'].map(h => (\n                            <th key={h} style={cs.th}>{h}</th>\n                          ))}\n                        </tr>\n                      </thead>\n                      <tbody>\n                        {estoqueData.consolidado\n                          .filter((c: any) => !estoqueAnoFilt || String(c.ano) === estoqueAnoFilt)\n                          .map((c: any) => {\n                            const pct = c.percentual;\n                            const pctColor = pct >= 15 ? '#16a34a' : pct >= 7 ? '#d97706' : '#6b7280';\n                            return (\n                              <tr key={c.key}>\n                                <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, whiteSpace: 'nowrap' as const }}>\n                                  {MESES[c.mes - 1]}/{c.ano}\n                                </td>\n                                <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, ...sensitiveMaskStyle(hidden) }}>\n                                  {sensitiveText(fmt(c.estoqueInicio), hidden)}\n                                </td>\n                                <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, color: 'var(--sage)', ...sensitiveMaskStyle(hidden) }}>\n                                  {sensitiveText(fmt(c.vendido), hidden)}\n                                </td>\n                                <td style={{ ...cs.td }}>\n                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>\n                                    <div style={{ flex: 1, maxWidth: 80, height: 6, background: 'var(--border)', borderRadius: 99, overflow: 'hidden' }}>\n                                      <div style={{ width: `${Math.min(pct, 100)}%`, height: '100%', background: pctColor, borderRadius: 99 }} />\n                                    </div>\n                                    <span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 12, fontWeight: 600, color: pctColor, minWidth: 42 }}>\n                                      {sensitiveText(`${pct.toFixed(1)}%`, hidden)}\n                                    </span>\n                                  </div>\n                                </td>\n                                <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, ...sensitiveMaskStyle(hidden) }}>\n                                  {sensitiveText(String(c.qtdVendida), hidden)}\n                                </td>\n                              </tr>\n                            );\n                          })}\n                      </tbody>\n                    </table>\n                  </div>\n                </div>\n              )}\n\n              {/* Detalhe por moto */}\n              <div style={cs.card}>\n                <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>\n                  <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>\n                    {estoqueMotoFilt === 'todas' ? 'Detalhe por Moto' : estoqueMotoFilt}\n                  </div>\n                  <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>% do valor de estoque de cada moto vendido a cada mês</div>\n                </div>\n                <div style={{ overflowX: 'auto' }}>\n                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>\n                    <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>\n                      <tr>\n                        {(estoqueMotoFilt === 'todas' ? ['Moto', 'Mês', 'Estoque início', 'Vendido', '% vendido', 'Qtd'] : ['Mês', 'Estoque início', 'Vendido', '% vendido', 'Qtd']).map(h => (\n                          <th key={h} style={cs.th}>{h}</th>\n                        ))}\n                      </tr>\n                    </thead>\n                    <tbody>\n                      {estoqueData.porMoto\n                        .filter((p: any) =>\n                          (estoqueMotoFilt === 'todas' || p.moto === estoqueMotoFilt) &&\n                          (!estoqueAnoFilt || String(p.ano) === estoqueAnoFilt)\n                        )\n                        .sort((a: any, b: any) => a.ano !== b.ano ? a.ano - b.ano : a.mes !== b.mes ? a.mes - b.mes : a.moto.localeCompare(b.moto))\n                        .map((p: any, i: number) => {\n                          const pct = p.percentual;\n                          const pctColor = pct >= 15 ? '#16a34a' : pct >= 7 ? '#d97706' : '#6b7280';\n                          return (\n                            <tr key={`${p.motoId}-${p.key}-${i}`}>\n                              {estoqueMotoFilt === 'todas' && (\n                                <td style={{ ...cs.td, fontSize: 12, maxWidth: 200 }}>\n                                  <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>{p.moto}</div>\n                                </td>\n                              )}\n                              <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, whiteSpace: 'nowrap' as const }}>\n                                {MESES[p.mes - 1]}/{p.ano}\n                              </td>\n                              <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, ...sensitiveMaskStyle(hidden) }}>\n                                {sensitiveText(fmt(p.estoqueInicio), hidden)}\n                              </td>\n                              <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, color: 'var(--sage)', ...sensitiveMaskStyle(hidden) }}>\n                                {sensitiveText(fmt(p.vendido), hidden)}\n                              </td>\n                              <td style={{ ...cs.td }}>\n                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>\n                                  <div style={{ flex: 1, maxWidth: 60, height: 6, background: 'var(--border)', borderRadius: 99, overflow: 'hidden' }}>\n                                    <div style={{ width: `${Math.min(pct, 100)}%`, height: '100%', background: pctColor, borderRadius: 99 }} />\n                                  </div>\n                                  <span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 12, fontWeight: 600, color: pctColor, minWidth: 42 }}>\n                                    {sensitiveText(`${pct.toFixed(1)}%`, hidden)}\n                                  </span>\n                                </div>\n                              </td>\n                              <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, ...sensitiveMaskStyle(hidden) }}>\n                                {sensitiveText(String(p.qtdVendida), hidden)}\n                              </td>\n                            </tr>\n                          );\n                        })}\n                    </tbody>\n                  </table>\n                </div>\n              </div>\n\n            </div>\n          )}\n        </div>\n      )}\n    </>\n  );\n}\n
+          </div>
+        )}
+      </div>
+
+      {/* ── ABA % ESTOQUE VENDIDO ──────────────────────────────────── */}
+      {modo === 'estoque' && (
+        <div style={{ marginTop: 18 }}>
+          {/* Filtros */}
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14, alignItems: 'center' }}>
+            <select
+              value={estoqueAnoFilt}
+              onChange={e => setEstoqueAnoFilt(e.target.value)}
+              style={cs.sel}
+            >
+              <option value="">Todos os anos</option>
+              {Array.from(new Set((estoqueData?.consolidado || []).map((c: any) => String(c.ano)))).sort().reverse().map(a => (
+                <option key={a} value={a}>{a}</option>
+              ))}
+            </select>
+            <select
+              value={estoqueMotoFilt}
+              onChange={e => setEstoqueMotoFilt(e.target.value)}
+              style={cs.sel}
+            >
+              <option value="todas">Todas as motos</option>
+              {Array.from(new Set((estoqueData?.porMoto || []).map((p: any) => p.moto))).sort().map(m => (
+                <option key={String(m)} value={String(m)}>{String(m)}</option>
+              ))}
+            </select>
+          </div>
+
+          {estoqueLoading ? (
+            <div style={{ ...cs.card, padding: 32, textAlign: 'center', color: 'var(--ink-muted)' }}>Calculando percentuais de estoque...</div>
+          ) : !estoqueData ? (
+            <div style={{ ...cs.card, padding: 32, textAlign: 'center', color: 'var(--ink-muted)' }}>Sem dados disponíveis</div>
+          ) : (
+            <div style={{ display: 'grid', gap: 18 }}>
+
+              {/* Consolidado */}
+              {estoqueMotoFilt === 'todas' && (
+                <div style={cs.card}>
+                  <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
+                    <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>Consolidado — Todas as Motos</div>
+                    <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>% do valor de estoque vendido a cada mês</div>
+                  </div>
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
+                        <tr>
+                          {['Mês', 'Estoque início', 'Vendido', '% vendido', 'Qtd peças'].map(h => (
+                            <th key={h} style={cs.th}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {estoqueData.consolidado
+                          .filter((c: any) => !estoqueAnoFilt || String(c.ano) === estoqueAnoFilt)
+                          .map((c: any) => {
+                            const pct = c.percentual;
+                            const pctColor = pct >= 15 ? '#16a34a' : pct >= 7 ? '#d97706' : '#6b7280';
+                            return (
+                              <tr key={c.key}>
+                                <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, whiteSpace: 'nowrap' as const }}>
+                                  {MESES[c.mes - 1]}/{c.ano}
+                                </td>
+                                <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, ...sensitiveMaskStyle(hidden) }}>
+                                  {sensitiveText(fmt(c.estoqueInicio), hidden)}
+                                </td>
+                                <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, color: 'var(--sage)', ...sensitiveMaskStyle(hidden) }}>
+                                  {sensitiveText(fmt(c.vendido), hidden)}
+                                </td>
+                                <td style={{ ...cs.td }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <div style={{ flex: 1, maxWidth: 80, height: 6, background: 'var(--border)', borderRadius: 99, overflow: 'hidden' }}>
+                                      <div style={{ width: `${Math.min(pct, 100)}%`, height: '100%', background: pctColor, borderRadius: 99 }} />
+                                    </div>
+                                    <span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 12, fontWeight: 600, color: pctColor, minWidth: 42 }}>
+                                      {sensitiveText(`${pct.toFixed(1)}%`, hidden)}
+                                    </span>
+                                  </div>
+                                </td>
+                                <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, ...sensitiveMaskStyle(hidden) }}>
+                                  {sensitiveText(String(c.qtdVendida), hidden)}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Detalhe por moto */}
+              <div style={cs.card}>
+                <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
+                  <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>
+                    {estoqueMotoFilt === 'todas' ? 'Detalhe por Moto' : estoqueMotoFilt}
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>% do valor de estoque de cada moto vendido a cada mês</div>
+                </div>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
+                      <tr>
+                        {(estoqueMotoFilt === 'todas'
+                          ? ['Moto', 'Mês', 'Estoque início', 'Vendido', '% vendido', 'Qtd']
+                          : ['Mês', 'Estoque início', 'Vendido', '% vendido', 'Qtd']
+                        ).map(h => (
+                          <th key={h} style={cs.th}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {estoqueData.porMoto
+                        .filter((p: any) =>
+                          (estoqueMotoFilt === 'todas' || p.moto === estoqueMotoFilt) &&
+                          (!estoqueAnoFilt || String(p.ano) === estoqueAnoFilt)
+                        )
+                        .sort((a: any, b: any) =>
+                          a.ano !== b.ano ? a.ano - b.ano :
+                          a.mes !== b.mes ? a.mes - b.mes :
+                          a.moto.localeCompare(b.moto)
+                        )
+                        .map((p: any, i: number) => {
+                          const pct = p.percentual;
+                          const pctColor = pct >= 15 ? '#16a34a' : pct >= 7 ? '#d97706' : '#6b7280';
+                          return (
+                            <tr key={`${p.motoId}-${p.key}-${i}`}>
+                              {estoqueMotoFilt === 'todas' && (
+                                <td style={{ ...cs.td, fontSize: 12, maxWidth: 200 }}>
+                                  <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>{p.moto}</div>
+                                </td>
+                              )}
+                              <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, whiteSpace: 'nowrap' as const }}>
+                                {MESES[p.mes - 1]}/{p.ano}
+                              </td>
+                              <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, ...sensitiveMaskStyle(hidden) }}>
+                                {sensitiveText(fmt(p.estoqueInicio), hidden)}
+                              </td>
+                              <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, color: 'var(--sage)', ...sensitiveMaskStyle(hidden) }}>
+                                {sensitiveText(fmt(p.vendido), hidden)}
+                              </td>
+                              <td style={{ ...cs.td }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                  <div style={{ flex: 1, maxWidth: 60, height: 6, background: 'var(--border)', borderRadius: 99, overflow: 'hidden' }}>
+                                    <div style={{ width: `${Math.min(pct, 100)}%`, height: '100%', background: pctColor, borderRadius: 99 }} />
+                                  </div>
+                                  <span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 12, fontWeight: 600, color: pctColor, minWidth: 42 }}>
+                                    {sensitiveText(`${pct.toFixed(1)}%`, hidden)}
+                                  </span>
+                                </div>
+                              </td>
+                              <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, ...sensitiveMaskStyle(hidden) }}>
+                                {sensitiveText(String(p.qtdVendida), hidden)}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
