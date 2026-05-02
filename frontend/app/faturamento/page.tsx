@@ -74,6 +74,7 @@ export default function FaturamentoMotoPage() {
   const [estoqueLoading, setEstoqueLoading] = useState(false);
   const [estoqueMotoFilt, setEstoqueMotoFilt] = useState('todas');
   const [estoqueAnoFilt, setEstoqueAnoFilt] = useState(currentYear());
+  const [estoqueMesFilt, setEstoqueMesFilt] = useState('');
   const { hidden } = useCompanyValueVisibility();
   const viewportMode = useFinancialViewportMode();
   const isPhone = viewportMode === 'phone';
@@ -491,12 +492,22 @@ export default function FaturamentoMotoPage() {
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14, alignItems: 'center' }}>
             <select
               value={estoqueAnoFilt}
-              onChange={e => setEstoqueAnoFilt(e.target.value)}
+              onChange={e => { setEstoqueAnoFilt(e.target.value); setEstoqueMesFilt(''); }}
               style={cs.sel}
             >
               <option value="">Todos os anos</option>
               {Array.from(new Set((estoqueData?.consolidado || []).map((c: any) => String(c.ano)))).sort().reverse().map(a => (
                 <option key={a} value={a}>{a}</option>
+              ))}
+            </select>
+            <select
+              value={estoqueMesFilt}
+              onChange={e => setEstoqueMesFilt(e.target.value)}
+              style={cs.sel}
+            >
+              <option value="">Todos os meses</option>
+              {MESES.map((m, i) => (
+                <option key={i + 1} value={String(i + 1)}>{m}</option>
               ))}
             </select>
             <select
@@ -536,7 +547,7 @@ export default function FaturamentoMotoPage() {
                       </thead>
                       <tbody>
                         {estoqueData.consolidado
-                          .filter((c: any) => !estoqueAnoFilt || String(c.ano) === estoqueAnoFilt)
+                          .filter((c: any) => (!estoqueAnoFilt || String(c.ano) === estoqueAnoFilt) && (!estoqueMesFilt || String(c.mes) === estoqueMesFilt))
                           .map((c: any) => {
                             const pct = c.percentual;
                             const pctColor = pct >= 15 ? '#16a34a' : pct >= 7 ? '#d97706' : '#6b7280';
@@ -597,7 +608,8 @@ export default function FaturamentoMotoPage() {
                       {estoqueData.porMoto
                         .filter((p: any) =>
                           (estoqueMotoFilt === 'todas' || p.moto === estoqueMotoFilt) &&
-                          (!estoqueAnoFilt || String(p.ano) === estoqueAnoFilt)
+                          (!estoqueAnoFilt || String(p.ano) === estoqueAnoFilt) &&
+                          (!estoqueMesFilt || String(p.mes) === estoqueMesFilt)
                         )
                         .sort((a: any, b: any) =>
                           a.ano !== b.ano ? a.ano - b.ano :
