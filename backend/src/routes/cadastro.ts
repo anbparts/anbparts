@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { compressDataUrlImage, normalizeImageFileName } from '../lib/image';
 import { blingReq, collectMercadoLivreStatusByProductIds } from './bling';
+import { getMercadoLivreItemPermalink } from '../lib/mercado-livre';
 
 export const cadastroRouter = Router();
 
@@ -798,10 +799,10 @@ cadastroRouter.post('/:id/finalizar', async (req, res, next) => {
       const mlStatus = mlStatuses.statuses?.get(Number(cadastro.blingProdutoId));
       if (mlStatus?.found && mlStatus.anuncioIds?.length) {
         const anuncioId = mlStatus.anuncioIds[0];
-        const lojaId = mlStatus.lojaIds?.[0] || 205204423;
-        const detalhe = await blingReq(`/anuncios/${anuncioId}?tipoIntegracao=MercadoLivre&idLoja=${lojaId}`) as any;
-        if (detalhe?.data?.link) mercadoLivreLink = String(detalhe.data.link);
-        if (detalhe?.data?.idAnuncio) mercadoLivreItemId = String(detalhe.data.idAnuncio);
+        const itemCode = `MLB${anuncioId}`;
+        mercadoLivreItemId = itemCode;
+        const permalink = await getMercadoLivreItemPermalink(itemCode);
+        mercadoLivreLink = permalink || `https://produto.mercadolivre.com.br/${itemCode}`;
       }
     } catch { /* sem anuncio ainda */ }
 
