@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { compressDataUrlImage, normalizeImageFileName } from '../lib/image';
-import { blingReq, resolveMLLinkForBlingProduct } from './bling';
+import { blingReq, fetchProdutoLojaLinksByProductId, resolveBlingMercadoLivreItemId, resolveBlingMercadoLivreLinkWithFallback } from './bling';
 
 export const cadastroRouter = Router();
 
@@ -794,9 +794,9 @@ cadastroRouter.post('/:id/finalizar', async (req, res, next) => {
     let mercadoLivreLink: string | null = null;
     let mercadoLivreItemId: string | null = null;
     try {
-      const ml = await resolveMLLinkForBlingProduct(Number(cadastro.blingProdutoId));
-      mercadoLivreLink   = ml.link;
-      mercadoLivreItemId = ml.itemId;
+      const lojaRows = await fetchProdutoLojaLinksByProductId(Number(cadastro.blingProdutoId));
+      mercadoLivreItemId = resolveBlingMercadoLivreItemId(null, b, lojaRows);
+      mercadoLivreLink   = (await resolveBlingMercadoLivreLinkWithFallback(null, b, lojaRows)).link;
     } catch { /* sem anuncio ainda */ }
 
     // Busca config de taxa e frete

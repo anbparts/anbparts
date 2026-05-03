@@ -745,7 +745,7 @@ function normalizeMercadoLivreItemCode(value: any) {
   return permalink ? permalink[1].replace(/[-_ ]+/g, '') : null;
 }
 
-function resolveBlingMercadoLivreItemId(produto: any, detail?: any, lojaRows: any[] = []) {
+export function resolveBlingMercadoLivreItemId(produto: any, detail?: any, lojaRows: any[] = []) {
   return lojaRows.map((row: any) => findFirstMercadoLivreItemCode(row)).find(Boolean)
     || findFirstMercadoLivreItemCode(detail)
     || findFirstMercadoLivreItemCode(produto)
@@ -884,7 +884,7 @@ function resolveBlingMercadoLivreLink(produto: any, detail?: any, lojaRows: any[
   return { link: null, resolved: false };
 }
 
-async function resolveBlingMercadoLivreLinkWithFallback(
+export async function resolveBlingMercadoLivreLinkWithFallback(
   produto: any,
   detail?: any,
   lojaRows: any[] = [],
@@ -1436,7 +1436,7 @@ async function findBlingProductsByCodes(codes: string[]) {
   return found;
 }
 
-async function fetchBlingProductDetailById(id: number) {
+export async function fetchBlingProductDetailById(id: number) {
   const cached = blingProductDetailCache.get(id);
   if (cached && cached.expiresAt > Date.now()) {
     return cached.value;
@@ -1611,7 +1611,7 @@ function isLikelyMercadoLivreLink(row: any) {
   return false;
 }
 
-async function fetchProdutoLojaLinksByProductId(productId: number) {
+export async function fetchProdutoLojaLinksByProductId(productId: number) {
   const cached = produtoLojaLinksCache.get(productId);
   if (cached && cached.expiresAt > Date.now()) {
     return cached.rows;
