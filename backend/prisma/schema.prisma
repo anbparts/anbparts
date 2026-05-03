@@ -19,6 +19,7 @@ model Moto {
   dataCompra   DateTime?
   precoCompra  Decimal  @default(0) @db.Decimal(12, 2)
   origemCompra String?
+  valorFipe    Decimal?  @db.Decimal(12, 2)
   observacoes       String?
   descricaoModelo   String?  @db.Text
   etiquetaSkuLabel  String?  // Abreviação para etiqueta SKU (ex: "HD ULTRA")

@@ -300,7 +300,7 @@ const cs: any = {
 type MotosViewportMode = 'phone' | 'tablet-portrait' | 'tablet-landscape' | 'desktop';
 
 function Modal({ open, title, onClose, onSave, moto, viewportMode = 'desktop' }: any) {
-  const empty = { marca: '', modelo: '', ano: '', cor: '', placa: '', chassi: '', renavam: '', dataCompra: '', precoCompra: '', origemCompra: '', observacoes: '' };
+  const empty = { marca: '', modelo: '', ano: '', cor: '', placa: '', chassi: '', renavam: '', dataCompra: '', precoCompra: '', origemCompra: '', valorFipe: '', observacoes: '' };
   const [form, setForm] = useState(empty);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
@@ -318,6 +318,7 @@ function Modal({ open, title, onClose, onSave, moto, viewportMode = 'desktop' }:
         dataCompra: moto.dataCompra?.split('T')[0] || '',
         precoCompra: moto.precoCompra || '',
         origemCompra: moto.origemCompra || '',
+        valorFipe: moto.valorFipe != null ? String(moto.valorFipe) : '',
         observacoes: moto.observacoes || '',
       });
     } else {
@@ -348,6 +349,7 @@ function Modal({ open, title, onClose, onSave, moto, viewportMode = 'desktop' }:
         ...form,
         ano: form.ano ? Number(form.ano) : null,
         precoCompra: Number(form.precoCompra) || 0,
+        valorFipe: form.valorFipe !== '' ? Number(form.valorFipe) : null,
       });
     } catch (e: any) {
       setErr(e.message);
@@ -394,7 +396,10 @@ function Modal({ open, title, onClose, onSave, moto, viewportMode = 'desktop' }:
             {row('Data de compra', 'dataCompra', 'date')}
             {row('Preco de compra (R$) *', 'precoCompra', 'number', '0,00')}
           </div>
-          {row('Origem da compra', 'origemCompra', 'text', 'Ex: Leilao, Particular...')}
+          <div style={{ display: 'grid', gridTemplateColumns: modalColumns, gap: 12 }}>
+            {row('Valor FIPE na epoca (R$)', 'valorFipe', 'number', 'Ex: 45000')}
+            {row('Origem da compra', 'origemCompra', 'text', 'Ex: Leilao, Particular...')}
+          </div>
           <div style={{ marginBottom: 14 }}>
             <label style={cs.fl}>Observacoes</label>
             <textarea

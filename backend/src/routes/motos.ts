@@ -18,6 +18,7 @@ const motoSchema = z.object({
   dataCompra:        z.string().optional().nullable(),
   precoCompra:       z.number().default(0),
   origemCompra:      z.string().optional().nullable(),
+  valorFipe:         z.number().optional().nullable(),
   observacoes:       z.string().optional().nullable(),
   etiquetaSkuLabel:  z.string().optional().nullable(),
 });
@@ -165,6 +166,7 @@ motosRouter.get('/', async (req, res, next) => {
           dataCompra: true,
           precoCompra: true,
           origemCompra: true,
+          valorFipe: true,
           observacoes: true,
           descricaoModelo: true,
           etiquetaSkuLabel: true,
@@ -290,6 +292,7 @@ motosRouter.get('/', async (req, res, next) => {
         dataCompra:     m.dataCompra,
         precoCompra:    Number(m.precoCompra),
         origemCompra:   m.origemCompra,
+        valorFipe:      m.valorFipe != null ? Number(m.valorFipe) : null,
         observacoes:    m.observacoes,
         descricaoModelo: m.descricaoModelo,
         etiquetaSkuLabel: m.etiquetaSkuLabel,
