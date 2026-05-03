@@ -3037,8 +3037,10 @@ async function compareProdutosBlingCodes(
       const emPrejuizo = local.qtdPrejuizoAnb > 0;
 
       if (produtoBling) {
-        if (!temLinkNuvemshop) {
+        if (!temLinkNuvemshop && !ns?.encontrado) {
           // Caso 1: tem estoque mas não existe na Nuvemshop
+          // Guarda dupla: só alerta se o Bling não tem link E consulta direta à Nuvemshop também não encontrou.
+          // Evita falso positivo quando Bling falha silenciosamente no /produtos/lojas sob rate limit em massa.
           if (temEstoque) {
             divergenciasSku.push(buildDivergenciaPayload(codigo, local, qtdBling, descricaoBling, statusMercadoLivre, {
               tipo: 'sem_anuncio_nuvemshop',
