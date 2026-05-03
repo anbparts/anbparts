@@ -52,48 +52,82 @@ async function nuvemshopReq<T = unknown>(path: string, accessToken: string, stor
   return (await resp.json()) as T;
 }
 
+// Cache do catálogo completo da Nuvemshop (evita 995 chamadas individuais)
+let _catalogCache: { map: Map<string, NuvemshopAnuncioStatus>; expiresAt: number } | null = null;
+const CATALOG_CACHE_TTL_MS = 15 * 60 * 1000; // 15 min
+
 /**
- * Consulta o status de um anúncio na Nuvemshop por SKU.
- * A Nuvemshop armazena SKU nas variantes do produto.
- * Endpoint: GET /products?sku={sku}
+ * Busca TODOS os produtos da Nuvemshop paginado e monta um Map<sku, status>.
+ * Muito mais eficiente que consultar SKU por SKU — evita rate limit.
  */
-export async function getNuvemshopStatusBySku(sku: string): Promise<NuvemshopAnuncioStatus> {
-  try {
-    const creds = await getCredentials();
-    if (!creds) {
-      return { encontrado: false, publicado: false, erro: 'Credenciais Nuvemshop nao configuradas' };
-    }
+export async function buildNuvemshopCatalogMap(): Promise<Map<string, NuvemshopAnuncioStatus>> {
+  const now = Date.now();
+  if (_catalogCache && _catalogCache.expiresAt > now) return _catalogCache.map;
 
-    const { accessToken, storeId } = creds;
+  const creds = await getCredentials();
+  if (!creds) return new Map();
 
-    // Busca produto por SKU via variantes
+  const { accessToken, storeId } = creds;
+  const map = new Map<string, NuvemshopAnuncioStatus>();
+
+  let page = 1;
+  const perPage = 200;
+
+  while (true) {
     const data = await nuvemshopReq<any[]>(
-      `/products?sku=${encodeURIComponent(sku)}&fields=id,name,published,variants`,
+      `/products?page=${page}&per_page=${perPage}&fields=id,name,published,variants`,
       accessToken,
       storeId,
     );
 
-    if (!Array.isArray(data) || data.length === 0) {
-      return { encontrado: false, publicado: false };
+    if (!Array.isArray(data) || data.length === 0) break;
+
+    for (const produto of data) {
+      const publicado = produto.published === true;
+      const variants: any[] = Array.isArray(produto.variants) ? produto.variants : [];
+      const estoqueTotal = variants.reduce((s: number, v: any) => s + (Number(v.stock) || 0), 0);
+      const nome = typeof produto.name === 'object'
+        ? (produto.name.pt || produto.name.en || '')
+        : String(produto.name || '');
+
+      for (const v of variants) {
+        const sku = String(v.sku || '').trim();
+        if (!sku) continue;
+        map.set(sku.toUpperCase(), {
+          encontrado: true,
+          publicado,
+          estoqueNuvemshop: estoqueTotal,
+          productId: produto.id,
+          nome,
+          sku,
+        });
+      }
     }
 
-    const produto = data[0];
-    const publicado = produto.published === true;
-    // Soma estoque de todas as variantes
-    const estoqueNuvemshop = Array.isArray(produto.variants)
-      ? produto.variants.reduce((sum: number, v: any) => sum + (Number(v.stock) || 0), 0)
-      : 0;
+    if (data.length < perPage) break;
+    page++;
+    await new Promise(r => setTimeout(r, 300)); // respeitar rate limit
+  }
 
-    return {
-      encontrado: true,
-      publicado,
-      estoqueNuvemshop,
-      productId: produto.id,
-      nome: typeof produto.name === 'object' ? (produto.name.pt || produto.name.en || '') : String(produto.name || ''),
-      sku,
-    };
+  _catalogCache = { map, expiresAt: now + CATALOG_CACHE_TTL_MS };
+  return map;
+}
+
+export function clearNuvemshopCatalogCache() {
+  _catalogCache = null;
+}
+
+/**
+ * Consulta o status de um anúncio na Nuvemshop por SKU.
+ * Usa o catálogo paginado em cache — não faz chamada individual por SKU.
+ */
+export async function getNuvemshopStatusBySku(sku: string): Promise<NuvemshopAnuncioStatus> {
+  try {
+    const map = await buildNuvemshopCatalogMap();
+    const status = map.get(sku.trim().toUpperCase());
+    return status || { encontrado: false, publicado: false };
   } catch (e: any) {
-    return { encontrado: false, publicado: false, estoqueNuvemshop: 0, erro: String(e?.message || e) };
+    return { encontrado: false, publicado: false, erro: String(e?.message || e) };
   }
 }
 

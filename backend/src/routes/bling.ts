@@ -17,7 +17,7 @@ import {
 import { sendDetranBaixaEmailIfNeeded } from '../lib/detran-alert';
 import { downloadImageAsDataUrl } from '../lib/image';
 import { getMercadoLivreItemPermalink } from '../lib/mercado-livre';
-import { getNuvemshopStatusBySkus, NuvemshopAnuncioStatus } from '../lib/nuvemshop';
+import { getNuvemshopStatusBySkus, buildNuvemshopCatalogMap, NuvemshopAnuncioStatus } from '../lib/nuvemshop';
 
 export const blingRouter = Router();
 
@@ -2848,9 +2848,9 @@ async function compareProdutosBlingCodes(
     let nuvemshopStatusMap: Map<string, NuvemshopAnuncioStatus> = options?.nuvemshopStatusMap || new Map();
     if (options?.nuvemshopAtiva && !options?.nuvemshopStatusMap) {
       try {
-        await emitProgress({ totalProcessados: 0, fase: 'Consultando status Nuvemshop' });
-        const skusParaConsultar = codigos.filter((c) => produtosBling.has(c));
-        nuvemshopStatusMap = await getNuvemshopStatusBySkus(skusParaConsultar, 150);
+        await emitProgress({ totalProcessados: 0, fase: 'Consultando catalogo Nuvemshop' });
+        // Busca catálogo completo paginado de uma vez — evita rate limit de 995 chamadas individuais
+        nuvemshopStatusMap = await buildNuvemshopCatalogMap();
       } catch (e: any) {
         warnings.add(`Falha ao consultar Nuvemshop: ${e?.message || 'erro desconhecido'}`);
       }
