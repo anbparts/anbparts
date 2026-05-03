@@ -795,20 +795,20 @@ cadastroRouter.post('/:id/finalizar', async (req, res, next) => {
     let mercadoLivreItemId: string | null = null;
     try {
       const lojaML = 205204423;
-      const lojasData = await blingReq(`/produtos/lojas?pagina=1&limite=100&idProduto=${cadastro.blingProdutoId}`);
-      const lojas = lojasData?.data || [];
-      const lojaLink = lojas.find((l: any) => Number(l.loja?.id) === lojaML);
-      if (lojaLink) {
-        // Testa múltiplos campos — Bling pode retornar o anúncio em estruturas diferentes
-        const anuncioId = Number(
-          lojaLink?.idAnuncio || lojaLink?.anuncio?.id || lojaLink?.item?.id ||
-          lojaLink?.vinculo?.id || lojaLink?.id
-        );
-        if (anuncioId) {
-          const anuncioData = await blingReq(`/anuncios/${anuncioId}?tipoIntegracao=MercadoLivre&idLoja=${lojaML}`);
-          const anuncio = anuncioData?.data;
-          if (anuncio?.link) mercadoLivreLink = String(anuncio.link);
-          if (anuncio?.idAnuncio) mercadoLivreItemId = String(anuncio.idAnuncio);
+      // Busca o anúncio ML via /anuncios (mesmo caminho usado pela auditoria)
+      // O /produtos/lojas não retorna idAnuncio de forma confiável para ML
+      for (const situacao of [1, 2, 3, 4]) {
+        if (mercadoLivreLink) break;
+        const anunciosData = await blingReq(
+          `/anuncios?pagina=1&limite=100&idProduto=${cadastro.blingProdutoId}&tipoIntegracao=MercadoLivre&idLoja=${lojaML}&situacao=${situacao}`
+        ) as any;
+        const anuncios: any[] = Array.isArray(anunciosData?.data) ? anunciosData.data : [];
+        for (const anuncio of anuncios) {
+          const anuncioId = Number(anuncio?.id || anuncio?.idAnuncio || 0);
+          if (!anuncioId) continue;
+          const detalhe = await blingReq(`/anuncios/${anuncioId}?tipoIntegracao=MercadoLivre&idLoja=${lojaML}`) as any;
+          const d = detalhe?.data;
+          if (d?.link) { mercadoLivreLink = String(d.link); mercadoLivreItemId = String(d.idAnuncio || anuncioId); break; }
         }
       }
     } catch { /* sem anuncio ainda */ }
