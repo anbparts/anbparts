@@ -285,8 +285,14 @@ export default function CadastroPage() {
       setUploadingFotoCapa(true);
       const image = await compressFotoCapaFile(file);
 
+      // Padrão de nome: SKU_Capa.jpg (igual ao módulo Estoque)
+      const idPeca = itemFinalizar?.idPeca || form?.idPeca || '';
+      const skuNome = idPeca
+        ? `${String(idPeca).toUpperCase()}_Capa.jpg`
+        : image.fileName;
+
       setFinalizarFotoCapa(image.dataUrl);
-      setFinalizarFotoCapaNome(image.fileName);
+      setFinalizarFotoCapaNome(skuNome);
     } catch (e: any) {
       alert(e.message || 'Erro ao importar foto capa');
     }

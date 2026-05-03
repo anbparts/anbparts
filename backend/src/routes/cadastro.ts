@@ -794,15 +794,22 @@ cadastroRouter.post('/:id/finalizar', async (req, res, next) => {
     let mercadoLivreLink: string | null = null;
     let mercadoLivreItemId: string | null = null;
     try {
-      const lojaML = 205204423; // ID loja ML hardcoded
+      const lojaML = 205204423;
       const lojasData = await blingReq(`/produtos/lojas?pagina=1&limite=100&idProduto=${cadastro.blingProdutoId}`);
       const lojas = lojasData?.data || [];
       const lojaLink = lojas.find((l: any) => Number(l.loja?.id) === lojaML);
-      if (lojaLink?.idAnuncio) {
-        const anuncioData = await blingReq(`/anuncios/${lojaLink.idAnuncio}?tipoIntegracao=MercadoLivre&idLoja=${lojaML}`);
-        const anuncio = anuncioData?.data;
-        if (anuncio?.link) mercadoLivreLink = String(anuncio.link);
-        if (anuncio?.idAnuncio) mercadoLivreItemId = String(anuncio.idAnuncio);
+      if (lojaLink) {
+        // Testa múltiplos campos — Bling pode retornar o anúncio em estruturas diferentes
+        const anuncioId = Number(
+          lojaLink?.idAnuncio || lojaLink?.anuncio?.id || lojaLink?.item?.id ||
+          lojaLink?.vinculo?.id || lojaLink?.id
+        );
+        if (anuncioId) {
+          const anuncioData = await blingReq(`/anuncios/${anuncioId}?tipoIntegracao=MercadoLivre&idLoja=${lojaML}`);
+          const anuncio = anuncioData?.data;
+          if (anuncio?.link) mercadoLivreLink = String(anuncio.link);
+          if (anuncio?.idAnuncio) mercadoLivreItemId = String(anuncio.idAnuncio);
+        }
       }
     } catch { /* sem anuncio ainda */ }
 
