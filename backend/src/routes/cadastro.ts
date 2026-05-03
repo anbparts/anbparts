@@ -1,8 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { compressDataUrlImage, normalizeImageFileName } from '../lib/image';
-import { blingReq, collectMercadoLivreStatusByProductIds } from './bling';
-import { getMercadoLivreItemPermalink } from '../lib/mercado-livre';
+import { blingReq, resolveMLLinkForBlingProduct } from './bling';
 
 export const cadastroRouter = Router();
 
@@ -795,15 +794,9 @@ cadastroRouter.post('/:id/finalizar', async (req, res, next) => {
     let mercadoLivreLink: string | null = null;
     let mercadoLivreItemId: string | null = null;
     try {
-      const mlStatuses = await collectMercadoLivreStatusByProductIds([Number(cadastro.blingProdutoId)]);
-      const mlStatus = mlStatuses.statuses?.get(Number(cadastro.blingProdutoId));
-      if (mlStatus?.found && mlStatus.anuncioIds?.length) {
-        const anuncioId = mlStatus.anuncioIds[0];
-        const itemCode = `MLB${anuncioId}`;
-        mercadoLivreItemId = itemCode;
-        const permalink = await getMercadoLivreItemPermalink(itemCode);
-        mercadoLivreLink = permalink || `https://produto.mercadolivre.com.br/${itemCode}`;
-      }
+      const ml = await resolveMLLinkForBlingProduct(Number(cadastro.blingProdutoId));
+      mercadoLivreLink   = ml.link;
+      mercadoLivreItemId = ml.itemId;
     } catch { /* sem anuncio ainda */ }
 
     // Busca config de taxa e frete

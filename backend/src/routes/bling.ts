@@ -1952,6 +1952,32 @@ async function collectMercadoLivreStatusesStoreWideForProducts(
   };
 }
 
+// Resolve o link público do ML a partir do blingProdutoId
+// Usa o mesmo fluxo do botão "Atualizar Link ML" já existente no sistema
+export async function resolveMLLinkForBlingProduct(blingProdutoId: number): Promise<{ link: string | null; itemId: string | null }> {
+  try {
+    const result = await collectMercadoLivreStatusByProductIds([blingProdutoId]);
+    const status = result.statuses?.get(blingProdutoId);
+    if (!status?.found || !status.anuncioIds?.length) return { link: null, itemId: null };
+
+    const lojaId = status.lojaIds?.[0] || 205204423;
+
+    for (const anuncioId of status.anuncioIds) {
+      try {
+        const anuncioDetail = await getMercadoLivreAnuncioDetail(anuncioId, lojaId);
+        const detailLink = findFirstMercadoLivreLink(anuncioDetail);
+        const detailCode = findFirstMercadoLivreItemCode(detailLink) || findFirstMercadoLivreItemCode(anuncioDetail);
+        if (detailCode) {
+          const publicLink = await resolveMercadoLivrePublicLinkByItemCode(detailCode);
+          return { link: publicLink || detailLink, itemId: detailCode };
+        }
+        if (detailLink) return { link: detailLink, itemId: findFirstMercadoLivreItemCode(detailLink) };
+      } catch { /* tenta proximo */ }
+    }
+  } catch { /* sem resultado */ }
+  return { link: null, itemId: null };
+}
+
 export async function collectMercadoLivreStatusByProductIds(
   ids: number[],
   withDebug = false,
