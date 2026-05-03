@@ -1952,7 +1952,7 @@ async function collectMercadoLivreStatusesStoreWideForProducts(
   };
 }
 
-async function collectMercadoLivreStatusByProductIds(
+export async function collectMercadoLivreStatusByProductIds(
   ids: number[],
   withDebug = false,
   options?: {

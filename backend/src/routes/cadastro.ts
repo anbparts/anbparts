@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { compressDataUrlImage, normalizeImageFileName } from '../lib/image';
-import { blingReq } from './bling';
+import { blingReq, collectMercadoLivreStatusByProductIds } from './bling';
 
 export const cadastroRouter = Router();
 
@@ -794,22 +794,14 @@ cadastroRouter.post('/:id/finalizar', async (req, res, next) => {
     let mercadoLivreLink: string | null = null;
     let mercadoLivreItemId: string | null = null;
     try {
-      const lojaML = 205204423;
-      // Busca o anúncio ML via /anuncios (mesmo caminho usado pela auditoria)
-      // O /produtos/lojas não retorna idAnuncio de forma confiável para ML
-      for (const situacao of [1, 2, 3, 4]) {
-        if (mercadoLivreLink) break;
-        const anunciosData = await blingReq(
-          `/anuncios?pagina=1&limite=100&idProduto=${cadastro.blingProdutoId}&tipoIntegracao=MercadoLivre&idLoja=${lojaML}&situacao=${situacao}`
-        ) as any;
-        const anuncios: any[] = Array.isArray(anunciosData?.data) ? anunciosData.data : [];
-        for (const anuncio of anuncios) {
-          const anuncioId = Number(anuncio?.id || anuncio?.idAnuncio || 0);
-          if (!anuncioId) continue;
-          const detalhe = await blingReq(`/anuncios/${anuncioId}?tipoIntegracao=MercadoLivre&idLoja=${lojaML}`) as any;
-          const d = detalhe?.data;
-          if (d?.link) { mercadoLivreLink = String(d.link); mercadoLivreItemId = String(d.idAnuncio || anuncioId); break; }
-        }
+      const mlStatuses = await collectMercadoLivreStatusByProductIds([Number(cadastro.blingProdutoId)]);
+      const mlStatus = mlStatuses.statuses?.get(Number(cadastro.blingProdutoId));
+      if (mlStatus?.found && mlStatus.anuncioIds?.length) {
+        const anuncioId = mlStatus.anuncioIds[0];
+        const lojaId = mlStatus.lojaIds?.[0] || 205204423;
+        const detalhe = await blingReq(`/anuncios/${anuncioId}?tipoIntegracao=MercadoLivre&idLoja=${lojaId}`) as any;
+        if (detalhe?.data?.link) mercadoLivreLink = String(detalhe.data.link);
+        if (detalhe?.data?.idAnuncio) mercadoLivreItemId = String(detalhe.data.idAnuncio);
       }
     } catch { /* sem anuncio ainda */ }
 
