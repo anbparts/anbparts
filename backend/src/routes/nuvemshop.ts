@@ -255,7 +255,7 @@ nuvemshopRouter.get('/categorias', async (_req, res, next) => {
 
 nuvemshopRouter.post('/buscar-produtos', async (req, res, next) => {
   try {
-    const { motoId, skus: skusInput, offset: offsetInput, limit: limitInput } = req.body || {};
+    const { motoId, skus: skusInput, offset: offsetInput, limit: limitInput, dataDe, dataAte } = req.body || {};
 
     // 1. Obtém SKUs do ANB com estoque
     // Quando SKUs específicos são informados, busca pelo SKU base E todas as variações (-2, -3...)
@@ -265,6 +265,11 @@ nuvemshopRouter.post('/buscar-produtos', async (req, res, next) => {
       const bases = skusInput.map((s: string) => normalizarSkuBusca(s).replace(/-\d+$/, ''));
       // Busca qualquer peça cujo idPeca começa com um dos SKUs base informados
       where.OR = bases.map(base => ({ idPeca: { startsWith: base } }));
+    }
+    if (dataDe || dataAte) {
+      const de  = dataDe  ? new Date(dataDe  + 'T00:00:00.000Z') : undefined;
+      const ate = dataAte ? new Date(dataAte + 'T23:59:59.999Z') : undefined;
+      where.cadastro = { ...(de ? { gte: de } : {}), ...(ate ? { lte: ate } : {}) };
     }
 
     const pecas = await prisma.peca.findMany({

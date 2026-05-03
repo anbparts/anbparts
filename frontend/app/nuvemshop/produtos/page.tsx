@@ -137,7 +137,10 @@ export default function NuvemshopProdutosPage() {
   const [motos, setMotos] = useState<Moto[]>([]);
   const [motoId, setMotoId] = useState('');
   const [skusInput, setSkusInput] = useState('');
-  const [modo, setModo] = useState<'moto' | 'skus'>('moto');
+  const [modo, setModo] = useState<'moto' | 'skus' | 'data'>('moto');
+  const hoje = new Date().toISOString().slice(0, 10);
+  const [dataDe, setDataDe] = useState(hoje);
+  const [dataAte, setDataAte] = useState(hoje);
   const [buscando, setBuscando] = useState(false);
   const [buscaMotoProgress, setBuscaMotoProgress] = useState<MotoSearchProgress>(null);
   const [produtos, setProdutos] = useState<Produto[]>([]);
@@ -298,6 +301,7 @@ export default function NuvemshopProdutosPage() {
 
       const body: any = {};
       if (modo === 'skus') body.skus = normalizarSkuLista(skusInput);
+      if (modo === 'data') { body.dataDe = dataDe; body.dataAte = dataAte; }
       const resp = await fetch(`${API}/nuvemshop/buscar-produtos`, {
         method: 'POST', credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -412,10 +416,10 @@ export default function NuvemshopProdutosPage() {
         <div style={s.card}>
           <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 14 }}>Buscar produtos</div>
           <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-            {(['moto', 'skus'] as const).map(m => (
+            {(['moto', 'skus', 'data'] as const).map(m => (
               <button key={m} onClick={() => setModo(m)}
                 style={{ ...s.btn, padding: '6px 14px', background: modo === m ? 'var(--gray-800)' : 'var(--white)', color: modo === m ? '#fff' : 'var(--gray-600)', border: '1px solid var(--border)' }}>
-                {m === 'moto' ? '🏍️ Por Moto' : '📋 Por Lista de SKUs'}
+                {m === 'moto' ? '🏍️ Por Moto' : m === 'skus' ? '📋 Por Lista de SKUs' : '📅 Data de Cadastro'}
               </button>
             ))}
           </div>
@@ -433,7 +437,7 @@ export default function NuvemshopProdutosPage() {
                 {buscando ? 'Buscando...' : 'Buscar'}
               </button>
             </div>
-          ) : (
+          ) : modo === 'skus' ? (
             <div>
               <label style={s.label}>SKUs (um por linha)</label>
               <textarea style={{ ...s.input, minHeight: 100, resize: 'vertical' }} value={skusInput}
@@ -441,6 +445,22 @@ export default function NuvemshopProdutosPage() {
               <button style={{ ...s.btn, background: '#7c3aed', color: '#fff', marginTop: 10, opacity: buscando ? 0.7 : 1 }} onClick={buscar} disabled={buscando || !skusInput.trim()}>
                 {buscando ? 'Buscando...' : 'Buscar'}
               </button>
+            </div>
+          ) : (
+            <div>
+              <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
+                <div>
+                  <label style={s.label}>De</label>
+                  <input type="date" style={s.input} value={dataDe} onChange={e => setDataDe(e.target.value)} />
+                </div>
+                <div>
+                  <label style={s.label}>Até</label>
+                  <input type="date" style={s.input} value={dataAte} onChange={e => setDataAte(e.target.value)} />
+                </div>
+                <button style={{ ...s.btn, background: '#7c3aed', color: '#fff', opacity: buscando ? 0.7 : 1 }} onClick={buscar} disabled={buscando || !dataDe || !dataAte}>
+                  {buscando ? 'Buscando...' : 'Buscar'}
+                </button>
+              </div>
             </div>
           )}
         </div>
