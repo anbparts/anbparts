@@ -449,7 +449,7 @@ export default function EtiquetasDetranPage() {
       )}
       {/* Modal de Confirmação de Baixa */}
       {modalBaixa && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }}>
           <div style={{ background: 'var(--white)', borderRadius: 14, width: '100%', maxWidth: 480, boxShadow: '0 16px 40px rgba(0,0,0,.15)', overflow: 'hidden' }}>
             <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--border)' }}>
               <div style={{ fontFamily: 'Fraunces, serif', fontSize: 16, fontWeight: 600 }}>Confirmar Baixa Detran</div>
