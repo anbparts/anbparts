@@ -363,6 +363,9 @@ function collectFreightValues(value: any, acc: number[] = []): number[] {
 }
 
 function resolvePedidoFrete(pedido: any) {
+  const custoFrete = roundMoney(Math.abs(toNumber(pedido?.taxas?.custoFrete, 0)));
+  if (custoFrete > 0) return custoFrete;
+
   const freightCandidates = [
     ...collectFreightValues(pedido?.transportador),
     ...collectFreightValues(pedido?.transportadora),
@@ -373,10 +376,8 @@ function resolvePedidoFrete(pedido: any) {
     .filter((value) => value > 0);
 
   const transportadorFrete = freightCandidates.sort((a, b) => b - a)[0] || 0;
-  const custoFrete = roundMoney(Math.abs(toNumber(pedido?.taxas?.custoFrete, 0)));
-
   if (transportadorFrete > 0) return transportadorFrete;
-  if (custoFrete > 0) return custoFrete;
+
   return roundMoney(Math.abs(toNumber(pedido?.transporte?.frete, 0)));
 }
 
