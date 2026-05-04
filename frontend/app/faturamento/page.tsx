@@ -268,7 +268,7 @@ export default function FaturamentoMotoPage() {
           <div style={cs.title}>Faturamento por Moto</div>
           <div style={cs.sub}>Receita mensal por moto</div>
         </div>
-        <ViewModeSwitch value={modo} onChange={setModo} />
+        <ViewModeSwitch value={modo} onChange={setModo} modes={['grafico', 'relatorio', 'estoque']} />
       </div>
 
       <div style={{ padding: isCompact ? 16 : 28 }}>

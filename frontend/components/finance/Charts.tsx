@@ -57,9 +57,11 @@ function emptyBlock(message: string) {
 export function ViewModeSwitch({
   value,
   onChange,
+  modes,
 }: {
   value: ViewMode;
   onChange: (mode: ViewMode) => void;
+  modes?: ViewMode[];
 }) {
   const wrap: CSSProperties = {
     display: 'inline-flex',
@@ -85,17 +87,20 @@ export function ViewModeSwitch({
     transition: 'all .18s ease',
   });
 
+  const allButtons: { mode: ViewMode; label: string }[] = [
+    { mode: 'grafico',   label: 'Grafico' },
+    { mode: 'relatorio', label: 'Relatorio' },
+    { mode: 'estoque',   label: '% Estoque' },
+  ];
+  const buttons = modes ? allButtons.filter(b => modes.includes(b.mode)) : allButtons.filter(b => b.mode !== 'estoque');
+
   return (
     <div style={wrap}>
-      <button type="button" style={button(value === 'grafico')} onClick={() => onChange('grafico')}>
-        Grafico
-      </button>
-      <button type="button" style={button(value === 'relatorio')} onClick={() => onChange('relatorio')}>
-        Relatorio
-      </button>
-      <button type="button" style={button(value === 'estoque')} onClick={() => onChange('estoque')}>
-        % Estoque
-      </button>
+      {buttons.map(({ mode, label }) => (
+        <button key={mode} type="button" style={button(value === mode)} onClick={() => onChange(mode)}>
+          {label}
+        </button>
+      ))}
     </div>
   );
 }
