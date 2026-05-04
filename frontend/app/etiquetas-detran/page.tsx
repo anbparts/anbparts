@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { API_BASE } from '@/lib/api-base';
+import { compressFotoCapaFile } from '@/lib/image-compression';
 
 const API = API_BASE;
 
@@ -210,12 +211,21 @@ export default function EtiquetasDetranPage() {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      setComprovanteDataUrl(reader.result as string);
+
+    if (file.type.startsWith('image/')) {
+      // Imagem — comprime com as mesmas regras do sistema
+      const image = await compressFotoCapaFile(file);
+      setComprovanteDataUrl(image.dataUrl);
       setComprovanteNome(file.name);
-    };
-    reader.readAsDataURL(file);
+    } else {
+      // PDF — lê direto sem compressão
+      const reader = new FileReader();
+      reader.onload = () => {
+        setComprovanteDataUrl(reader.result as string);
+        setComprovanteNome(file.name);
+      };
+      reader.readAsDataURL(file);
+    }
   }
 
   async function confirmarBaixaComComprovante() {
