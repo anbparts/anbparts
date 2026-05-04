@@ -383,6 +383,7 @@ etiquetasDetranRouter.get('/pendencias-baixa', async (req, res, next) => {
 etiquetasDetranRouter.post('/:pecaId/confirmar-baixa', async (req, res, next) => {
   try {
     const { pecaId } = req.params;
+    const { comprovanteNome, comprovanteArquivo } = req.body || {};
 
     const peca = await prisma.peca.findUnique({ where: { id: Number(pecaId) } });
     if (!peca) return res.status(404).json({ ok: false, error: 'Peca nao encontrada' });
@@ -392,6 +393,8 @@ etiquetasDetranRouter.post('/:pecaId/confirmar-baixa', async (req, res, next) =>
       data: {
         detranBaixada: true,
         detranBaixadaAt: new Date(),
+        ...(comprovanteNome    ? { detranComprovanteNome:    comprovanteNome }    : {}),
+        ...(comprovanteArquivo ? { detranComprovanteArquivo: comprovanteArquivo } : {}),
       },
     });
 

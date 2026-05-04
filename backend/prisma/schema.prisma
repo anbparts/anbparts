@@ -46,6 +46,8 @@ model Peca {
   mercadoLivreLink String?
   detranBaixada  Boolean  @default(false)
   detranBaixadaAt DateTime?
+  detranComprovanteNome String?
+  detranComprovanteArquivo String? @db.Text
   cadastro    DateTime @default(now())
   precoML     Decimal  @default(0) @db.Decimal(12, 2)
   valorLiq    Decimal  @default(0) @db.Decimal(12, 2)

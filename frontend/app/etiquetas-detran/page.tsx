@@ -149,6 +149,9 @@ export default function EtiquetasDetranPage() {
   const [pendencias, setPendencias] = useState<any[]>([]);
   const [loadingPendencias, setLoadingPendencias] = useState(false);
   const [confirmando, setConfirmando] = useState<string | null>(null);
+  const [modalBaixa, setModalBaixa] = useState<any | null>(null);
+  const [comprovanteDataUrl, setComprovanteDataUrl] = useState<string | null>(null);
+  const [comprovanteNome, setComprovanteNome] = useState<string>('');
   const [sort, setSort] = useState<SortState>({ key: 'sku', dir: 'asc' });
   const [pendenciasSort, setPendenciasSort] = useState<SortState>({ key: 'dataVenda', dir: 'desc' });
   const linhasOrdenadas = useMemo(() => sortRows(linhas, sort), [linhas, sort]);
@@ -197,7 +200,27 @@ export default function EtiquetasDetranPage() {
     setLoadingPendencias(false);
   }
 
-  async function confirmarBaixa(linha: any) {
+  function abrirModalBaixa(linha: any) {
+    setModalBaixa(linha);
+    setComprovanteDataUrl(null);
+    setComprovanteNome('');
+  }
+
+  async function handleComprovanteChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      setComprovanteDataUrl(reader.result as string);
+      setComprovanteNome(file.name);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function confirmarBaixaComComprovante() {
+    if (!modalBaixa) return;
+    const linha = modalBaixa;
     const key = `${linha.pecaId}|${linha.etiqueta}`;
     setConfirmando(key);
     try {
@@ -205,9 +228,14 @@ export default function EtiquetasDetranPage() {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ etiqueta: linha.etiqueta }),
+        body: JSON.stringify({
+          etiqueta: linha.etiqueta,
+          comprovanteNome:    comprovanteNome    || null,
+          comprovanteArquivo: comprovanteDataUrl || null,
+        }),
       });
       if (!resp.ok) throw new Error('Erro ao confirmar baixa');
+      setModalBaixa(null);
       setPendencias((prev) => prev.filter((p) => p.pecaId !== linha.pecaId));
       await buscar();
     } catch {}
@@ -393,7 +421,7 @@ export default function EtiquetasDetranPage() {
                           <td style={{ ...s.td, fontSize: 12, whiteSpace: 'nowrap' }}>{formatDate(linha.dataVenda)}</td>
                           <td style={{ ...s.td, width: 142, whiteSpace: 'nowrap' }}>
                             <button
-                              onClick={() => confirmarBaixa(linha)}
+                              onClick={() => abrirModalBaixa(linha)}
                               disabled={confirmando === key}
                               style={{ ...s.btn, background: '#16a34a', color: '#fff', padding: '5px 12px', fontSize: 12, opacity: confirmando === key ? 0.6 : 1 }}>
                               {confirmando === key ? 'Salvando...' : 'Confirmar Baixa'}
@@ -405,6 +433,52 @@ export default function EtiquetasDetranPage() {
                   </tbody>
                 </table>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Modal de Confirmação de Baixa */}
+      {modalBaixa && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }}>
+          <div style={{ background: 'var(--white)', borderRadius: 14, width: '100%', maxWidth: 480, boxShadow: '0 16px 40px rgba(0,0,0,.15)', overflow: 'hidden' }}>
+            <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--border)' }}>
+              <div style={{ fontFamily: 'Fraunces, serif', fontSize: 16, fontWeight: 600 }}>Confirmar Baixa Detran</div>
+              <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 3 }}>{modalBaixa.sku} — {modalBaixa.etiqueta}</div>
+            </div>
+            <div style={{ padding: '18px 22px' }}>
+              <div style={{ fontSize: 13, color: 'var(--ink-soft)', marginBottom: 16 }}>
+                Confirma a baixa desta etiqueta? Você pode anexar o comprovante (opcional).
+              </div>
+
+              {/* Upload comprovante */}
+              <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px', background: 'var(--gray-50)' }}>
+                <div style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--ink-soft)', marginBottom: 8 }}>COMPROVANTE (opcional)</div>
+                {comprovanteDataUrl ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ fontSize: 12, color: 'var(--ink)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>
+                      ✓ {comprovanteNome}
+                    </span>
+                    <button onClick={() => { setComprovanteDataUrl(null); setComprovanteNome(''); }}
+                      style={{ ...s.btn, fontSize: 11, padding: '4px 10px', color: 'var(--red-light)', borderColor: 'var(--red-light)' }}>
+                      Remover
+                    </button>
+                  </div>
+                ) : (
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, color: 'var(--ink-soft)', padding: '6px 12px', border: '1px dashed var(--border)', borderRadius: 8 }}>
+                    📎 Anexar comprovante
+                    <input type="file" accept="image/*,application/pdf" style={{ display: 'none' }} onChange={handleComprovanteChange} />
+                  </label>
+                )}
+              </div>
+            </div>
+            <div style={{ padding: '14px 22px 20px', display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button onClick={() => setModalBaixa(null)} style={{ ...s.btn, color: 'var(--ink-soft)' }}>Cancelar</button>
+              <button
+                onClick={confirmarBaixaComComprovante}
+                disabled={!!confirmando}
+                style={{ ...s.btn, background: '#16a34a', color: '#fff', opacity: confirmando ? 0.7 : 1 }}>
+                {confirmando ? 'Salvando...' : 'Confirmar Baixa'}
+              </button>
             </div>
           </div>
         </div>
