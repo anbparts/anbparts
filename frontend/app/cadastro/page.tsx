@@ -148,6 +148,7 @@ export default function CadastroPage() {
   const [categorias, setCategorias] = useState<any[]>([]);
   const [buscandoCategoria, setBuscandoCategoria] = useState(false);
   const categoriaTimerRef = useRef<any>(null);
+  const descricaoPecaTituloRef = useRef<HTMLInputElement | null>(null);
   const [modalFinalizar, setModalFinalizar] = useState(false);
   const [itemFinalizar, setItemFinalizar] = useState<CadastroPeca | null>(null);
   const [previewBling, setPreviewBling] = useState<any>(null);
@@ -168,6 +169,11 @@ export default function CadastroPage() {
 
   useEffect(() => { loadSupportData(); }, []);
   useEffect(() => { loadCadastros(); }, [filters, somentePendentes]);
+  useEffect(() => {
+    if (!modal) return;
+    const timer = window.setTimeout(() => descricaoPecaTituloRef.current?.focus(), 0);
+    return () => window.clearTimeout(timer);
+  }, [modal]);
   useEffect(() => {
     const timer = setTimeout(() => {
       setFilters((prev) => (prev.search === searchInput ? prev : { ...prev, search: searchInput }));
@@ -240,12 +246,19 @@ export default function CadastroPage() {
         fetch(`${API}/cadastro/proximo-id/${motoId}`, { credentials: 'include' }).then(r => r.json()),
         fetch(`${API}/cadastro/motos/${motoId}/descricao-modelo`, { credentials: 'include' }).then(r => r.json()),
       ]);
-      setForm((prev: any) => ({
-        ...(formAtual || prev),
-        idPeca: idResp.sugestao || prev.idPeca,
-        descricaoPeca:  modeloResp.descricaoModelo || prev.descricaoPeca,
-        sufixoTitulo:   modeloResp.sufixoTitulo    || '',
-      }));
+      setForm((prev: any) => {
+        const base = formAtual || prev;
+        const sufixoTitulo = modeloResp.sufixoTitulo || '';
+        const descricaoPecaTitulo = base.descricaoPecaTitulo || '';
+        const sufixo = sufixoTitulo ? ` ${sufixoTitulo}` : '';
+        return {
+          ...base,
+          idPeca: idResp.sugestao || prev.idPeca,
+          descricaoPeca: modeloResp.descricaoModelo || prev.descricaoPeca,
+          sufixoTitulo,
+          descricao: descricaoPecaTitulo ? `${descricaoPecaTitulo}${sufixo}`.slice(0, 60) : base.descricao,
+        };
+      });
     } catch { }
   }
 
@@ -269,6 +282,14 @@ export default function CadastroPage() {
     setForm((prev: any) => ({ ...prev, descricao: val.slice(0, 60) }));
     clearTimeout(categoriaTimerRef.current);
     categoriaTimerRef.current = setTimeout(() => buscarCategoriaML(val), 800);
+  }
+
+  function handleDescricaoPecaTituloChange(parte: string) {
+    const sufixo = form.sufixoTitulo ? ` ${form.sufixoTitulo}` : '';
+    const titulo = `${parte}${sufixo}`.slice(0, 60);
+    setForm((prev: any) => ({ ...prev, descricaoPecaTitulo: parte, descricao: titulo }));
+    clearTimeout(categoriaTimerRef.current);
+    categoriaTimerRef.current = setTimeout(() => buscarCategoriaML(titulo), 800);
   }
 
   function inserirHtml(cmd: string) {
@@ -598,14 +619,10 @@ Deseja forçar a exclusão mesmo assim?`);
                   {/* Campo Descrição da Peça */}
                   <label style={s.label}>Descrição da Peça *</label>
                   <input
+                    ref={descricaoPecaTituloRef}
                     style={s.input}
                     value={form.descricaoPecaTitulo || ''}
-                    onChange={(e) => {
-                      const parte = e.target.value;
-                      const sufixo = form.sufixoTitulo ? ` ${form.sufixoTitulo}` : '';
-                      const titulo = `${parte}${sufixo}`.slice(0, 60);
-                      setForm((p: any) => ({ ...p, descricaoPecaTitulo: parte, descricao: titulo }));
-                    }}
+                    onChange={(e) => handleDescricaoPecaTituloChange(e.target.value)}
                     placeholder="Ex: Bloco do Motor"
                   />
                 </div>
