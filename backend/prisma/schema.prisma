@@ -23,6 +23,7 @@ model Moto {
   observacoes       String?
   descricaoModelo   String?  @db.Text
   etiquetaSkuLabel  String?  // Abreviação para etiqueta SKU (ex: "HD ULTRA")
+  sufixoTitulo      String?  // Sufixo do título do anúncio (ex: "YAMAHA CROSSER 2024")
   anexos            Json     @default("{}")
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt

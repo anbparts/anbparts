@@ -30,7 +30,7 @@ type CadastroPeca = {
 };
 
 const EMPTY_FORM = {
-  motoId: '', idPeca: '', descricao: '', descricaoPeca: '', precoVenda: '',
+  motoId: '', idPeca: '', descricao: '', descricaoPeca: '', precoVenda: '', sufixoTitulo: '',
   condicao: 'usado', peso: '', largura: '', altura: '', profundidade: '',
   numeroPeca: '', detranEtiqueta: '', localizacao: '', estoque: '1',
   categoriaMLId: '', categoriaMLNome: '', urlRef: '', fotoCapa: '', fotoCapaNome: '',
@@ -243,7 +243,8 @@ export default function CadastroPage() {
       setForm((prev: any) => ({
         ...(formAtual || prev),
         idPeca: idResp.sugestao || prev.idPeca,
-        descricaoPeca: modeloResp.descricaoModelo || prev.descricaoPeca,
+        descricaoPeca:  modeloResp.descricaoModelo || prev.descricaoPeca,
+        sufixoTitulo:   modeloResp.sufixoTitulo    || '',
       }));
     } catch { }
   }
@@ -585,8 +586,38 @@ Deseja forçar a exclusão mesmo assim?`);
                 </div>
 
                 <div>
+                  {/* Sufixo da moto */}
+                  {form.sufixoTitulo && (
+                    <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ background: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0', borderRadius: 5, padding: '2px 7px', fontSize: 11, fontWeight: 600 }}>
+                        {form.sufixoTitulo}
+                      </span>
+                      <span style={{ color: 'var(--ink-muted)' }}>será adicionado automaticamente ao título</span>
+                    </div>
+                  )}
+                  {/* Campo Descrição da Peça */}
+                  <label style={s.label}>Descrição da Peça *</label>
+                  <input
+                    style={s.input}
+                    value={form.descricaoPecaTitulo || ''}
+                    onChange={(e) => {
+                      const parte = e.target.value;
+                      const sufixo = form.sufixoTitulo ? ` ${form.sufixoTitulo}` : '';
+                      const titulo = `${parte}${sufixo}`.slice(0, 60);
+                      setForm((p: any) => ({ ...p, descricaoPecaTitulo: parte, descricao: titulo }));
+                    }}
+                    placeholder="Ex: Bloco do Motor"
+                  />
+                </div>
+
+                <div>
                   <label style={s.label}>Descrição (título) * — {form.descricao.length}/60</label>
-                  <input style={{ ...s.input, borderColor: form.descricao.length >= 55 ? '#fcd34d' : undefined }} value={form.descricao} onChange={(e) => handleDescricaoChange(e.target.value)} placeholder="Título para ML e Nuvemshop" />
+                  <input
+                    style={{ ...s.input, borderColor: form.descricao.length >= 55 ? '#fcd34d' : undefined }}
+                    value={form.descricao}
+                    onChange={(e) => handleDescricaoChange(e.target.value)}
+                    placeholder="Título para ML e Nuvemshop"
+                  />
                 </div>
 
                 <div>

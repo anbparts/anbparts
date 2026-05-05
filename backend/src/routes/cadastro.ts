@@ -1072,21 +1072,22 @@ cadastroRouter.get('/motos/:motoId/descricao-modelo', async (req, res, next) => 
   try {
     const moto = await prisma.moto.findUnique({
       where: { id: Number(req.params.motoId) },
-      select: { id: true, descricaoModelo: true, etiquetaSkuLabel: true },
+      select: { id: true, descricaoModelo: true, etiquetaSkuLabel: true, sufixoTitulo: true },
     });
-    res.json({ descricaoModelo: moto?.descricaoModelo || '', etiquetaSkuLabel: moto?.etiquetaSkuLabel || '' });
+    res.json({ descricaoModelo: moto?.descricaoModelo || '', etiquetaSkuLabel: moto?.etiquetaSkuLabel || '', sufixoTitulo: moto?.sufixoTitulo || '' });
   } catch (e) { next(e); }
 });
 
 // PUT /cadastro/motos/:motoId/descricao-modelo
 cadastroRouter.put('/motos/:motoId/descricao-modelo', async (req, res, next) => {
   try {
-    const { descricaoModelo, etiquetaSkuLabel } = req.body;
+    const { descricaoModelo, etiquetaSkuLabel, sufixoTitulo } = req.body;
     await prisma.moto.update({
       where: { id: Number(req.params.motoId) },
       data: {
-        descricaoModelo: descricaoModelo ? String(descricaoModelo).trim() : null,
-        etiquetaSkuLabel: etiquetaSkuLabel ? String(etiquetaSkuLabel).trim().toUpperCase() : null,
+        descricaoModelo:  descricaoModelo  ? String(descricaoModelo).trim()                     : null,
+        etiquetaSkuLabel: etiquetaSkuLabel ? String(etiquetaSkuLabel).trim().toUpperCase()      : null,
+        sufixoTitulo:     sufixoTitulo     ? String(sufixoTitulo).trim()                        : null,
       },
     });
     res.json({ ok: true });

@@ -1692,6 +1692,7 @@ export default function MotosPage() {
   const [etiquetaMoto, setEtiquetaMoto] = useState<any>(null); // moto para cartela etiqueta
   const [textoModelo, setTextoModelo] = useState('');
   const [etiquetaSkuLabel, setEtiquetaSkuLabel] = useState('');
+  const [sufixoTituloModelo, setSufixoTituloModelo] = useState('');
   const [savingTexto, setSavingTexto] = useState(false);
   const [search, setSearch] = useState('');
   const [detranModalOpen, setDetranModalOpen] = useState(false);
@@ -1983,6 +1984,7 @@ export default function MotosPage() {
       const data = await resp.json();
       setTextoModelo(data.descricaoModelo || '');
       setEtiquetaSkuLabel(data.etiquetaSkuLabel || '');
+      setSufixoTituloModelo(data.sufixoTitulo || '');
     } catch { setTextoModelo(''); setEtiquetaSkuLabel(''); }
   }
 
@@ -1994,7 +1996,7 @@ export default function MotosPage() {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ descricaoModelo: textoModelo, etiquetaSkuLabel }),
+        body: JSON.stringify({ descricaoModelo: textoModelo, etiquetaSkuLabel, sufixoTitulo: sufixoTituloModelo }),
       });
       alert('Texto modelo salvo!');
       setTextoModeloModal(null);
@@ -2240,6 +2242,25 @@ export default function MotosPage() {
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--ink-muted)' }}>
                     Aparece no campo <strong>Moto:</strong> da etiqueta SKU. Se vazio, usa marca + modelo padrão.
+                  </div>
+                </div>
+              </div>
+
+              {/* Campo Sufixo do Título */}
+              <div style={{ padding: isPhone ? '0 14px 0' : '0 24px 0', flexShrink: 0 }}>
+                <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: isPhone ? '12px' : '14px 16px' }}>
+                  <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: '#166534', letterSpacing: '.6px', textTransform: 'uppercase' as const, marginBottom: 8 }}>
+                    Sufixo do Título
+                  </div>
+                  <input
+                    style={{ width: '100%', fontSize: 13, fontWeight: 600, background: 'var(--white)', border: '1px solid #86efac', borderRadius: 6, padding: '6px 10px', outline: 'none', boxSizing: 'border-box' as const }}
+                    value={sufixoTituloModelo}
+                    onChange={(e) => setSufixoTituloModelo(e.target.value)}
+                    placeholder={`Ex: ${textoModeloModal.marca} ${textoModeloModal.modelo} ${textoModeloModal.ano || ''}`}
+                  />
+                  <div style={{ fontSize: 11, color: '#166534', marginTop: 6 }}>
+                    Será concatenado automaticamente com a "Descrição da Peça" no pré-cadastro.<br />
+                    Ex: <strong>Bloco do Motor</strong> + <em>{sufixoTituloModelo || `${textoModeloModal.marca} ${textoModeloModal.modelo}`}</em> → <strong>Bloco do Motor {sufixoTituloModelo || `${textoModeloModal.marca} ${textoModeloModal.modelo}`}</strong>
                   </div>
                 </div>
               </div>
