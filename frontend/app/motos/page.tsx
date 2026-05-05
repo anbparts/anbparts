@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '@/lib/api';
 import EtiquetaCartelaModal from '../estoque/EtiquetaCartelaModal';
 import { API_BASE } from '@/lib/api-base';
@@ -1693,6 +1693,7 @@ export default function MotosPage() {
   const [textoModelo, setTextoModelo] = useState('');
   const [etiquetaSkuLabel, setEtiquetaSkuLabel] = useState('');
   const [sufixoTituloModelo, setSufixoTituloModelo] = useState('');
+  const textoModeloEditorRef = useRef<HTMLDivElement | null>(null);
   const [savingTexto, setSavingTexto] = useState(false);
   const [search, setSearch] = useState('');
   const [detranModalOpen, setDetranModalOpen] = useState(false);
@@ -1752,6 +1753,14 @@ export default function MotosPage() {
       tabletLandscapeMedia.removeEventListener('change', syncViewportMode);
     };
   }, []);
+
+  useEffect(() => {
+    if (!textoModeloModal) return;
+    const editor = textoModeloEditorRef.current;
+    if (editor && editor.innerHTML !== textoModelo) {
+      editor.innerHTML = textoModelo;
+    }
+  }, [textoModeloModal, textoModelo]);
 
   useEffect(() => {
     const q = search.toLowerCase().trim();
@@ -2287,6 +2296,7 @@ export default function MotosPage() {
                 </div>
                 <div
                   id="textoModelo-wysiwyg"
+                  ref={textoModeloEditorRef}
                   contentEditable
                   suppressContentEditableWarning
                   style={{
@@ -2304,7 +2314,6 @@ export default function MotosPage() {
                     lineHeight: 1.6,
                     whiteSpace: 'pre-wrap',
                   }}
-                  dangerouslySetInnerHTML={{ __html: textoModelo }}
                   onInput={(e) => setTextoModelo((e.target as HTMLDivElement).innerHTML)}
                 />
               </div>

@@ -149,6 +149,7 @@ export default function CadastroPage() {
   const [buscandoCategoria, setBuscandoCategoria] = useState(false);
   const categoriaTimerRef = useRef<any>(null);
   const descricaoPecaTituloRef = useRef<HTMLInputElement | null>(null);
+  const descricaoPecaEditorRef = useRef<HTMLDivElement | null>(null);
   const [modalFinalizar, setModalFinalizar] = useState(false);
   const [itemFinalizar, setItemFinalizar] = useState<CadastroPeca | null>(null);
   const [previewBling, setPreviewBling] = useState<any>(null);
@@ -174,6 +175,14 @@ export default function CadastroPage() {
     const timer = window.setTimeout(() => descricaoPecaTituloRef.current?.focus(), 0);
     return () => window.clearTimeout(timer);
   }, [modal]);
+  useEffect(() => {
+    if (!modal) return;
+    const editor = descricaoPecaEditorRef.current;
+    const value = form.descricaoPeca || '';
+    if (editor && document.activeElement !== editor && editor.innerHTML !== value) {
+      editor.innerHTML = value;
+    }
+  }, [modal, form.descricaoPeca]);
   useEffect(() => {
     const timer = setTimeout(() => {
       setFilters((prev) => (prev.search === searchInput ? prev : { ...prev, search: searchInput }));
@@ -804,10 +813,10 @@ Deseja forçar a exclusão mesmo assim?`);
                     </div>
                     <div
                       id="descricaoPeca-wysiwyg"
+                      ref={descricaoPecaEditorRef}
                       contentEditable
                       suppressContentEditableWarning
                       style={{ ...s.input, flex: 1, minHeight: isPhone ? 200 : 220, borderRadius: 0, border: 'none', overflowY: 'auto', whiteSpace: 'pre-wrap', outline: 'none' }}
-                      dangerouslySetInnerHTML={{ __html: form.descricaoPeca || '' }}
                       onInput={(e) => setForm((p: any) => ({ ...p, descricaoPeca: (e.target as HTMLDivElement).innerHTML }))}
                     />
                   </div>
