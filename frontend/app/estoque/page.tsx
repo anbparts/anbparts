@@ -1803,7 +1803,7 @@ function DevolucaoModal({ peca, onClose, onSaved }: any) {
   async function confirmar() {
     setSalvando(true);
     try {
-      const resp = await fetch(`${API}/devolucoes`, {
+      const resp = await fetch(`${API_BASE}/devolucoes`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -1911,7 +1911,7 @@ function DevolucaoHistoricoModal({ motos, onClose }: any) {
     try {
       const params = new URLSearchParams();
       Object.entries(f).forEach(([k, v]) => { if (v !== '' && v !== undefined) params.set(k, String(v)); });
-      const resp = await fetch(`${API}/devolucoes?${params}`, { credentials: 'include' });
+      const resp = await fetch(`${API_BASE}/devolucoes?${params}`, { credentials: 'include' });
       const data = await resp.json();
       setDados(data);
     } catch {}
