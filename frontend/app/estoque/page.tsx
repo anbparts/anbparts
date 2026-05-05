@@ -1170,7 +1170,7 @@ function PecaDetalheModal({ open, peca, onClose, onSaved }: any) {
   );
 }
 
-function PecaActionsModal({ open, peca, onClose, onEdit, onSell, onDelete }: any) {
+function PecaActionsModal({ open, peca, onClose, onEdit, onSell, onDelete, onDevolucao }: any) {
   if (!open || !peca) return null;
   const bloqueadaPrejuizo = isPrejuizoPeca(peca);
 
@@ -1199,9 +1199,14 @@ function PecaActionsModal({ open, peca, onClose, onEdit, onSell, onDelete }: any
                   Vender
                 </button>
               ) : (
-                <div style={{ fontSize: 12, color: 'var(--ink-muted)', textAlign: 'center' }}>
-                  Esta peca ja esta vendida.
-                </div>
+                <>
+                  <div style={{ fontSize: 12, color: 'var(--ink-muted)', textAlign: 'center' }}>
+                    Esta peca ja esta vendida.
+                  </div>
+                  <button onClick={onDevolucao} style={{ ...cs.btn, width: '100%', justifyContent: 'center', background: '#eff6ff', color: '#2563eb', borderColor: '#93c5fd' }}>
+                    📦 Devolução Venda
+                  </button>
+                </>
               )}
               <button onClick={onDelete} style={{ ...cs.btn, width: '100%', justifyContent: 'center', background: '#fff1f2', color: 'var(--red)', borderColor: '#fecdd3' }}>
                 Deletar
@@ -1783,6 +1788,285 @@ function VendaModal({ open, peca, onClose, onConfirm }: any) {
   );
 }
 
+// ── Modal de Devolução de Venda ───────────────────────────────────────────────
+function DevolucaoModal({ peca, onClose, onSaved }: any) {
+  const hoje = new Date().toISOString().slice(0, 10);
+  const [dataDevolucao, setDataDevolucao] = useState(hoje);
+  const [nfVendaNumero, setNfVendaNumero] = useState('');
+  const [nfDevolucaoNumero, setNfDevolucaoNumero] = useState('');
+  const [observacoes, setObservacoes] = useState('');
+  const [salvando, setSalvando] = useState(false);
+
+  const fmt = (v: any) => v ? `R$ ${Number(v).toFixed(2).replace('.', ',')}` : '—';
+  const fmtDate = (d: any) => d ? new Date(d).toLocaleDateString('pt-BR') : '—';
+
+  async function confirmar() {
+    setSalvando(true);
+    try {
+      const resp = await fetch(`${API}/devolucoes`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pecaId: peca.id, dataDevolucao, nfVendaNumero: nfVendaNumero || null, nfDevolucaoNumero: nfDevolucaoNumero || null, observacoes: observacoes || null }),
+      });
+      if (!resp.ok) throw new Error('Erro ao registrar devolução');
+      onSaved();
+    } catch (err: any) {
+      alert(err.message || 'Erro ao registrar devolução');
+    }
+    setSalvando(false);
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }}>
+      <div style={{ background: 'var(--white)', borderRadius: 16, width: '100%', maxWidth: 520, boxShadow: '0 20px 50px rgba(0,0,0,.2)', overflow: 'hidden' }}>
+        {/* Header */}
+        <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--border)', background: 'linear-gradient(135deg, #eff6ff 0%, #fff 100%)' }}>
+          <div style={{ fontFamily: 'Fraunces, serif', fontSize: 17, fontWeight: 700 }}>📦 Devolução de Venda</div>
+          <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>{peca.idPeca} — {peca.descricao}</div>
+        </div>
+
+        {/* Dados da venda */}
+        <div style={{ padding: '16px 22px', background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-muted)', marginBottom: 10, letterSpacing: '0.5px', textTransform: 'uppercase' }}>Dados da Venda Original</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            {[
+              ['Pedido Bling', peca.blingPedidoNum || '—'],
+              ['Data da Venda', fmtDate(peca.dataVenda)],
+              ['Valor Líq.', fmt(peca.valorLiq)],
+              ['Frete', fmt(peca.valorFrete)],
+              ['Etiqueta Detran', peca.detranEtiqueta || 'Sem etiqueta'],
+            ].map(([label, value]) => (
+              <div key={label}>
+                <div style={{ fontSize: 10.5, color: 'var(--ink-muted)', marginBottom: 2 }}>{label}</div>
+                <div style={{ fontSize: 13, fontWeight: 500, fontFamily: label === 'Pedido Bling' || label === 'Etiqueta Detran' ? 'Geist Mono, monospace' : undefined }}>{value}</div>
+              </div>
+            ))}
+          </div>
+          {peca.detranEtiqueta && (
+            <div style={{ marginTop: 10, padding: '8px 12px', background: '#fef3c7', border: '1px solid #fde68a', borderRadius: 8, fontSize: 12, color: '#92400e' }}>
+              ⚠️ A etiqueta <strong>{peca.detranEtiqueta}</strong> será removida da peça e registrada no histórico. A peça ficará com <strong>Etiqueta Pendente</strong> até nova emissão.
+            </div>
+          )}
+        </div>
+
+        {/* Formulário */}
+        <div style={{ padding: '16px 22px', display: 'grid', gap: 12 }}>
+          <div>
+            <label style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--ink-soft)', display: 'block', marginBottom: 4 }}>Data de Retorno *</label>
+            <input type="date" value={dataDevolucao} onChange={e => setDataDevolucao(e.target.value)}
+              style={{ ...cs.fi, fontSize: 13 }} />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <div>
+              <label style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--ink-soft)', display: 'block', marginBottom: 4 }}>NF Venda Original</label>
+              <input type="text" value={nfVendaNumero} onChange={e => setNfVendaNumero(e.target.value)}
+                placeholder="Nº NF-e venda" style={{ ...cs.fi, fontSize: 13 }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--ink-soft)', display: 'block', marginBottom: 4 }}>NF Devolução (CFOP 1.202)</label>
+              <input type="text" value={nfDevolucaoNumero} onChange={e => setNfDevolucaoNumero(e.target.value)}
+                placeholder="Nº NF-e devolução" style={{ ...cs.fi, fontSize: 13 }} />
+            </div>
+          </div>
+          <div>
+            <label style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--ink-soft)', display: 'block', marginBottom: 4 }}>Observações</label>
+            <textarea value={observacoes} onChange={e => setObservacoes(e.target.value)}
+              placeholder="Motivo da devolução, condição de retorno..."
+              style={{ ...cs.fi, resize: 'vertical', minHeight: 64, fontSize: 13 }} />
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding: '12px 22px 18px', borderTop: '1px solid var(--border)', display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+          <button onClick={onClose} style={{ ...cs.btn, color: 'var(--ink-soft)' }}>Cancelar</button>
+          <button onClick={confirmar} disabled={salvando || !dataDevolucao}
+            style={{ ...cs.btn, background: '#2563eb', color: '#fff', borderColor: '#2563eb', opacity: salvando ? 0.7 : 1 }}>
+            {salvando ? 'Registrando...' : '✓ Confirmar Devolução'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Modal Histórico de Devoluções ─────────────────────────────────────────────
+function DevolucaoHistoricoModal({ motos, onClose }: any) {
+  const hoje = new Date().toISOString().slice(0, 10);
+  const [filtros, setFiltros] = useState({
+    idPeca: '', descricao: '', motoId: '', pedidoBlingNum: '',
+    comEtiqueta: '', dataVendaDe: '', dataVendaAte: '',
+    dataDevolucaoDe: hoje, dataDevolucaoAte: hoje,
+    orderBy: 'dataDevolucao', orderDir: 'desc',
+    page: 1, perPage: 50,
+  });
+  const [dados, setDados] = useState<any>({ total: 0, devolucoes: [] });
+  const [loading, setLoading] = useState(false);
+
+  const fmt = (v: any) => v ? `R$ ${Number(v).toFixed(2).replace('.', ',')}` : '—';
+  const fmtDate = (d: any) => d ? new Date(d).toLocaleDateString('pt-BR') : '—';
+
+  async function buscar(f = filtros) {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      Object.entries(f).forEach(([k, v]) => { if (v !== '' && v !== undefined) params.set(k, String(v)); });
+      const resp = await fetch(`${API}/devolucoes?${params}`, { credentials: 'include' });
+      const data = await resp.json();
+      setDados(data);
+    } catch {}
+    setLoading(false);
+  }
+
+  useEffect(() => { buscar(); }, []);
+
+  function setF(key: string, value: any) {
+    const next = { ...filtros, [key]: value, page: 1 };
+    setFiltros(next);
+  }
+
+  function sort(col: string) {
+    const next = { ...filtros, orderBy: col, orderDir: filtros.orderBy === col && filtros.orderDir === 'asc' ? 'desc' : 'asc', page: 1 };
+    setFiltros(next);
+    buscar(next);
+  }
+
+  const sortIcon = (col: string) => filtros.orderBy === col ? (filtros.orderDir === 'asc' ? ' ↑' : ' ↓') : '';
+
+  const colunas = [
+    { key: 'idPeca',         label: 'SKU' },
+    { key: 'descricao',      label: 'Descrição' },
+    { key: 'motoNome',       label: 'Moto' },
+    { key: 'pedidoBlingNum', label: 'Pedido Bling' },
+    { key: 'valorLiq',       label: 'Valor Líq.' },
+    { key: 'valorFrete',     label: 'Frete' },
+    { key: 'dataVenda',      label: 'Data Venda' },
+    { key: 'dataDevolucao',  label: 'Data Devolução' },
+    { key: 'etiquetasDetran',label: 'Etiqueta Detran' },
+    { key: 'nfVendaNumero',  label: 'NF Venda' },
+    { key: 'nfDevolucaoNumero', label: 'NF Devolução' },
+    { key: 'observacoes',    label: 'Observações' },
+  ];
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, backdropFilter: 'blur(2px)' }}>
+      <div style={{ background: 'var(--white)', borderRadius: 16, width: '100%', maxWidth: 1200, maxHeight: '95vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,.2)', overflow: 'hidden' }}>
+
+        {/* Header */}
+        <div style={{ padding: '16px 22px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+          <div>
+            <div style={{ fontFamily: 'Fraunces, serif', fontSize: 17, fontWeight: 700 }}>📦 Histórico de Devoluções</div>
+            <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>{dados.total} registro(s)</div>
+          </div>
+          <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', fontSize: 16 }}>✕</button>
+        </div>
+
+        {/* Filtros */}
+        <div style={{ padding: '14px 22px', borderBottom: '1px solid var(--border)', background: 'var(--gray-50)', flexShrink: 0 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10, marginBottom: 10 }}>
+            <input placeholder="SKU" value={filtros.idPeca} onChange={e => setF('idPeca', e.target.value.toUpperCase())}
+              style={{ ...cs.fi, fontSize: 12, fontFamily: 'Geist Mono, monospace' }} />
+            <input placeholder="Descrição" value={filtros.descricao} onChange={e => setF('descricao', e.target.value)}
+              style={{ ...cs.fi, fontSize: 12 }} />
+            <select value={filtros.motoId} onChange={e => setF('motoId', e.target.value)} style={{ ...cs.fi, fontSize: 12 }}>
+              <option value="">Todas as motos</option>
+              {motos.map((m: any) => <option key={m.id} value={m.id}>{m.marca} {m.modelo}{m.ano ? ' ' + m.ano : ''}</option>)}
+            </select>
+            <input placeholder="Pedido Bling" value={filtros.pedidoBlingNum} onChange={e => setF('pedidoBlingNum', e.target.value)}
+              style={{ ...cs.fi, fontSize: 12, fontFamily: 'Geist Mono, monospace' }} />
+            <select value={filtros.comEtiqueta} onChange={e => setF('comEtiqueta', e.target.value)} style={{ ...cs.fi, fontSize: 12 }}>
+              <option value="">Etiqueta Detran</option>
+              <option value="com">Com etiqueta</option>
+              <option value="sem">Sem etiqueta</option>
+            </select>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10, alignItems: 'flex-end' }}>
+            <div>
+              <div style={{ fontSize: 10.5, color: 'var(--ink-muted)', marginBottom: 3 }}>Devolução de</div>
+              <input type="date" value={filtros.dataDevolucaoDe} onChange={e => setF('dataDevolucaoDe', e.target.value)} style={{ ...cs.fi, fontSize: 12 }} />
+            </div>
+            <div>
+              <div style={{ fontSize: 10.5, color: 'var(--ink-muted)', marginBottom: 3 }}>Devolução até</div>
+              <input type="date" value={filtros.dataDevolucaoAte} onChange={e => setF('dataDevolucaoAte', e.target.value)} style={{ ...cs.fi, fontSize: 12 }} />
+            </div>
+            <div>
+              <div style={{ fontSize: 10.5, color: 'var(--ink-muted)', marginBottom: 3 }}>Venda de</div>
+              <input type="date" value={filtros.dataVendaDe} onChange={e => setF('dataVendaDe', e.target.value)} style={{ ...cs.fi, fontSize: 12 }} />
+            </div>
+            <div>
+              <div style={{ fontSize: 10.5, color: 'var(--ink-muted)', marginBottom: 3 }}>Venda até</div>
+              <input type="date" value={filtros.dataVendaAte} onChange={e => setF('dataVendaAte', e.target.value)} style={{ ...cs.fi, fontSize: 12 }} />
+            </div>
+            <button onClick={() => buscar(filtros)} style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)', justifyContent: 'center' }}>
+              Buscar
+            </button>
+          </div>
+        </div>
+
+        {/* Tabela */}
+        <div style={{ overflowY: 'auto', flex: 1 }}>
+          {loading ? (
+            <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-muted)' }}>Carregando...</div>
+          ) : dados.devolucoes.length === 0 ? (
+            <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-muted)' }}>
+              <div style={{ fontSize: 28, marginBottom: 10 }}>📦</div>
+              <div>Nenhuma devolução encontrada</div>
+            </div>
+          ) : (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, zIndex: 1 }}>
+                <tr>
+                  {colunas.map(c => (
+                    <th key={c.key} onClick={() => sort(c.key)}
+                      style={{ padding: '9px 12px', textAlign: 'left', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none', color: filtros.orderBy === c.key ? 'var(--ink)' : 'var(--ink-soft)', fontSize: 11 }}>
+                      {c.label}{sortIcon(c.key)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {dados.devolucoes.map((d: any) => (
+                  <tr key={d.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                    <td style={{ padding: '8px 12px', fontFamily: 'Geist Mono, monospace', fontWeight: 600, color: 'var(--blue)', whiteSpace: 'nowrap' }}>{d.idPeca}</td>
+                    <td style={{ padding: '8px 12px', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.descricao}</td>
+                    <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>{d.motoNome}</td>
+                    <td style={{ padding: '8px 12px', fontFamily: 'Geist Mono, monospace', whiteSpace: 'nowrap' }}>{d.pedidoBlingNum || '—'}</td>
+                    <td style={{ padding: '8px 12px', fontFamily: 'Geist Mono, monospace', whiteSpace: 'nowrap', color: 'var(--sage)' }}>{fmt(d.valorLiq)}</td>
+                    <td style={{ padding: '8px 12px', fontFamily: 'Geist Mono, monospace', whiteSpace: 'nowrap' }}>{fmt(d.valorFrete)}</td>
+                    <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>{fmtDate(d.dataVenda)}</td>
+                    <td style={{ padding: '8px 12px', whiteSpace: 'nowrap', fontWeight: 600 }}>{fmtDate(d.dataDevolucao)}</td>
+                    <td style={{ padding: '8px 12px', fontFamily: 'Geist Mono, monospace', fontSize: 11 }}>
+                      {d.etiquetasDetran
+                        ? <span style={{ background: '#ecfdf5', color: '#065f46', padding: '2px 6px', borderRadius: 6, border: '1px solid #a7f3d0' }}>{d.etiquetasDetran}</span>
+                        : <span style={{ color: 'var(--ink-muted)' }}>—</span>}
+                    </td>
+                    <td style={{ padding: '8px 12px', fontFamily: 'Geist Mono, monospace', fontSize: 11 }}>{d.nfVendaNumero || '—'}</td>
+                    <td style={{ padding: '8px 12px', fontFamily: 'Geist Mono, monospace', fontSize: 11 }}>{d.nfDevolucaoNumero || '—'}</td>
+                    <td style={{ padding: '8px 12px', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--ink-soft)', fontSize: 11 }}>{d.observacoes || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {/* Paginação */}
+        {dados.total > filtros.perPage && (
+          <div style={{ padding: '12px 22px', borderTop: '1px solid var(--border)', display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'flex-end', flexShrink: 0 }}>
+            <span style={{ fontSize: 12, color: 'var(--ink-muted)' }}>
+              Página {filtros.page} de {Math.ceil(dados.total / filtros.perPage)}
+            </span>
+            <button disabled={filtros.page <= 1} onClick={() => { const next = { ...filtros, page: filtros.page - 1 }; setFiltros(next); buscar(next); }}
+              style={{ ...cs.btn, padding: '5px 12px', fontSize: 12, opacity: filtros.page <= 1 ? 0.4 : 1 }}>← Anterior</button>
+            <button disabled={filtros.page >= Math.ceil(dados.total / filtros.perPage)} onClick={() => { const next = { ...filtros, page: filtros.page + 1 }; setFiltros(next); buscar(next); }}
+              style={{ ...cs.btn, padding: '5px 12px', fontSize: 12, opacity: filtros.page >= Math.ceil(dados.total / filtros.perPage) ? 0.4 : 1 }}>Próximo →</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function EstoquePage() {
   const { user } = useAuth();
   const colStorageKey = getColumnStorageKey(user?.username);
@@ -1820,6 +2104,9 @@ export default function EstoquePage() {
   const [caixaFilterSearch, setCaixaFilterSearch] = useState('');
   const [colSelectorOpen, setColSelectorOpen] = useState(false);
   const [etiquetaCartelaOpen, setEtiquetaCartelaOpen] = useState(false);
+  const [devolucaoModal, setDevolucaoModal] = useState(false);
+  const [devolucaoPeca, setDevolucaoPeca] = useState<any>(null);
+  const [devolucaoHistoricoOpen, setDevolucaoHistoricoOpen] = useState(false);
 
   const pecasRequestIdRef = useRef(0);
   const [savedColsVisiveis, setSavedColsVisiveis] = useState<ColKey[]>(COL_DEFAULT);
@@ -2583,6 +2870,13 @@ export default function EstoquePage() {
           >
             Impressao Caixa
           </button>
+          <button
+            type="button"
+            onClick={() => setDevolucaoHistoricoOpen(true)}
+            style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink)', borderColor: 'var(--border)', padding: '7px 14px', fontSize: 13, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}
+          >
+            📦 Devoluções
+          </button>
           {filters.motoId && (
             <button
               type="button"
@@ -2712,6 +3006,7 @@ export default function EstoquePage() {
                 <option value="">Etiqueta Detran</option>
                 <option value="com">Com etiqueta</option>
                 <option value="sem">Sem etiqueta</option>
+                <option value="pendente">Etiqueta Pendente</option>
               </select>
               <select style={{ ...cs.sel, width: '100%' }} value={filters.imagem} onChange={(e) => setFilters({ ...filters, imagem: e.target.value, page: 1 })}>
                 <option value="">Imagem</option>
@@ -3193,7 +3488,28 @@ export default function EstoquePage() {
           setVendaModal(true);
         }}
         onDelete={() => handleDeletePeca(actionPeca)}
+        onDevolucao={() => {
+          setDevolucaoPeca(actionPeca);
+          setActionPeca(null);
+          setDevolucaoModal(true);
+        }}
       />
+      {/* Modal de Devolução */}
+      {devolucaoModal && devolucaoPeca && (
+        <DevolucaoModal
+          peca={devolucaoPeca}
+          onClose={() => { setDevolucaoModal(false); setDevolucaoPeca(null); }}
+          onSaved={() => { setDevolucaoModal(false); setDevolucaoPeca(null); load(); }}
+        />
+      )}
+
+      {/* Modal Histórico de Devoluções */}
+      {devolucaoHistoricoOpen && (
+        <DevolucaoHistoricoModal
+          motos={motos}
+          onClose={() => setDevolucaoHistoricoOpen(false)}
+        />
+      )}
     </>
   );
 }

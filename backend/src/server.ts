@@ -18,6 +18,7 @@ import { googleDriveRouter } from './routes/google-drive';
 import { cadastroRouter } from './routes/cadastro';
 import { etiquetasRouter } from './routes/etiquetas';
 import { detranRouter } from './routes/detran';
+import { devolucoesRouter } from './routes/devolucoes';
 import { startDetranExecutionWorker } from './lib/detran-worker';
 import { authMiddleware } from './middlewares/auth';
 import { errorMiddleware } from './middlewares/error';
@@ -78,6 +79,7 @@ app.use('/google-drive', googleDriveRouter);
 app.use('/cadastro', cadastroRouter);
 app.use('/etiquetas', etiquetasRouter);
 app.use('/detran', detranRouter);
+app.use('/devolucoes', devolucoesRouter);
 
 app.use(errorMiddleware);
 

@@ -29,6 +29,7 @@ model Moto {
 
   pecas             Peca[]
   cadastrosPeca     CadastroPeca[]
+  devolucoes        HistoricoDevolucao[]
   detranPosicoes    MotoDetranPosicao[]
 }
 
@@ -48,6 +49,7 @@ model Peca {
   detranBaixadaAt DateTime?
   detranComprovanteNome String?
   detranComprovanteArquivo String? @db.Text
+  etiquetaPendente Boolean @default(false)
   cadastro    DateTime @default(now())
   precoML     Decimal  @default(0) @db.Decimal(12, 2)
   valorLiq    Decimal  @default(0) @db.Decimal(12, 2)
@@ -69,6 +71,7 @@ model Peca {
 
   moto        Moto     @relation(fields: [motoId], references: [id])
   prejuizo    Prejuizo?
+  devolucoes  HistoricoDevolucao[]
 
   @@index([localizacao])
   @@index([mercadoLivreItemId])
@@ -473,4 +476,35 @@ model Contrato {
   dados        Json     @default("{}")
   criadoEm    DateTime @default(now())
   atualizadoEm DateTime @updatedAt
+}
+
+model HistoricoDevolucao {
+  id                Int       @id @default(autoincrement())
+  pecaId            Int
+  idPeca            String
+  descricao         String
+  motoId            Int
+  motoNome          String
+  pedidoBlingId     String?
+  pedidoBlingNum    String?
+  valorLiq          Decimal   @db.Decimal(12, 2)
+  valorFrete        Decimal   @db.Decimal(12, 2)
+  valorTaxas        Decimal   @db.Decimal(12, 2)
+  precoML           Decimal   @db.Decimal(12, 2)
+  dataVenda         DateTime?
+  dataDevolucao     DateTime
+  etiquetasDetran   String?
+  nfVendaNumero     String?
+  nfDevolucaoNumero String?
+  observacoes       String?   @db.Text
+  criadoEm         DateTime  @default(now())
+
+  peca Peca @relation(fields: [pecaId], references: [id])
+  moto Moto @relation(fields: [motoId], references: [id])
+
+  @@index([idPeca])
+  @@index([motoId])
+  @@index([dataDevolucao])
+  @@index([dataVenda])
+  @@index([pedidoBlingNum])
 }

@@ -153,6 +153,9 @@ export default function EtiquetasDetranPage() {
   const [modalBaixa, setModalBaixa] = useState<any | null>(null);
   const [comprovanteDataUrl, setComprovanteDataUrl] = useState<string | null>(null);
   const [comprovanteNome, setComprovanteNome] = useState<string>('');
+  const [pendenciasDevOpen, setPendenciasDevOpen] = useState(false);
+  const [pendenciasDev, setPendenciasDev] = useState<any[]>([]);
+  const [loadingPendenciasDev, setLoadingPendenciasDev] = useState(false);
   const [sort, setSort] = useState<SortState>({ key: 'sku', dir: 'asc' });
   const [pendenciasSort, setPendenciasSort] = useState<SortState>({ key: 'dataVenda', dir: 'desc' });
   const linhasOrdenadas = useMemo(() => sortRows(linhas, sort), [linhas, sort]);
@@ -263,6 +266,18 @@ export default function EtiquetasDetranPage() {
         </div>
         <button style={{ ...s.btn, background: '#7c3aed', color: '#fff' }} onClick={abrirPendencias}>
           Pendencias Baixa
+        </button>
+        <button style={{ ...s.btn, background: '#2563eb', color: '#fff' }} onClick={async () => {
+          setPendenciasDevOpen(true);
+          setLoadingPendenciasDev(true);
+          try {
+            const resp = await fetch(`${API}/devolucoes/pendentes-etiqueta`, { credentials: 'include' });
+            const data = await resp.json();
+            setPendenciasDev(data.pecas || []);
+          } catch { setPendenciasDev([]); }
+          setLoadingPendenciasDev(false);
+        }}>
+          Pendências Devolução
         </button>
       </div>
 
@@ -489,6 +504,62 @@ export default function EtiquetasDetranPage() {
                 style={{ ...s.btn, background: '#16a34a', color: '#fff', opacity: confirmando ? 0.7 : 1 }}>
                 {confirmando ? 'Salvando...' : 'Confirmar Baixa'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Modal Pendências Devolução */}
+      {pendenciasDevOpen && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }}>
+          <div style={{ background: 'var(--white)', borderRadius: 14, width: '100%', maxWidth: 700, maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 16px 40px rgba(0,0,0,.15)', overflow: 'hidden' }}>
+            <div style={{ padding: '16px 22px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontFamily: 'Fraunces, serif', fontSize: 16, fontWeight: 600 }}>Pendências Devolução — Etiqueta Detran</div>
+                <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>
+                  {loadingPendenciasDev ? 'Carregando...' : `${pendenciasDev.length} SKU(s) aguardando nova etiqueta`}
+                </div>
+              </div>
+              <button onClick={() => setPendenciasDevOpen(false)}
+                style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', fontSize: 16 }}>✕</button>
+            </div>
+            <div style={{ overflowY: 'auto', flex: 1 }}>
+              {loadingPendenciasDev ? (
+                <div style={{ padding: 32, textAlign: 'center', color: 'var(--ink-muted)' }}>Buscando...</div>
+              ) : pendenciasDev.length === 0 ? (
+                <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-muted)' }}>
+                  <div style={{ fontSize: 28, marginBottom: 8 }}>✅</div>
+                  <div>Nenhuma pendência de etiqueta por devolução</div>
+                </div>
+              ) : (
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
+                    <tr>
+                      {['SKU', 'Descrição', 'Moto', 'Etiqueta Anterior', 'Pedido', 'Data Devolução'].map(h => (
+                        <th key={h} style={{ padding: '9px 12px', textAlign: 'left', fontWeight: 600, fontSize: 11, color: 'var(--ink-soft)', whiteSpace: 'nowrap' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pendenciasDev.map((p: any) => {
+                      const ult = p.devolucoes?.[0];
+                      return (
+                        <tr key={p.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                          <td style={{ padding: '8px 12px', fontFamily: 'Geist Mono, monospace', fontWeight: 600, color: '#2563eb' }}>{p.idPeca}</td>
+                          <td style={{ padding: '8px 12px', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.descricao}</td>
+                          <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>{p.moto?.marca} {p.moto?.modelo}</td>
+                          <td style={{ padding: '8px 12px', fontFamily: 'Geist Mono, monospace', fontSize: 11 }}>
+                            {ult?.etiquetasDetran
+                              ? <span style={{ background: '#fef3c7', color: '#92400e', padding: '2px 6px', borderRadius: 6 }}>{ult.etiquetasDetran}</span>
+                              : '—'}
+                          </td>
+                          <td style={{ padding: '8px 12px', fontFamily: 'Geist Mono, monospace', fontSize: 11 }}>{ult?.pedidoBlingNum || '—'}</td>
+                          <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>{ult?.dataDevolucao ? new Date(ult.dataDevolucao).toLocaleDateString('pt-BR') : '—'}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
             </div>
           </div>
         </div>

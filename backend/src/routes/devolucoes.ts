@@ -1,0 +1,146 @@
+import { Router } from 'express';
+import { prisma } from '../lib/prisma';
+
+export const devolucoesRouter = Router();
+
+// ── POST /devolucoes — registrar devolução e reverter peça ao estoque ──────────
+devolucoesRouter.post('/', async (req, res, next) => {
+  try {
+    const {
+      pecaId,
+      dataDevolucao,
+      nfVendaNumero,
+      nfDevolucaoNumero,
+      observacoes,
+    } = req.body || {};
+
+    if (!pecaId) return res.status(400).json({ error: 'pecaId obrigatorio' });
+
+    const peca = await prisma.peca.findUnique({
+      where: { id: Number(pecaId) },
+      include: { moto: true },
+    });
+
+    if (!peca) return res.status(404).json({ error: 'Peca nao encontrada' });
+    if (peca.disponivel) return res.status(400).json({ error: 'Peca ja esta em estoque' });
+
+    // Registrar histórico de devolução
+    const devolucao = await prisma.historicoDevolucao.create({
+      data: {
+        pecaId:            peca.id,
+        idPeca:            peca.idPeca,
+        descricao:         peca.descricao,
+        motoId:            peca.motoId,
+        motoNome:          `${peca.moto.marca} ${peca.moto.modelo}${peca.moto.ano ? ' ' + peca.moto.ano : ''}`,
+        pedidoBlingId:     peca.blingPedidoId  || null,
+        pedidoBlingNum:    peca.blingPedidoNum || null,
+        valorLiq:          peca.valorLiq,
+        valorFrete:        peca.valorFrete,
+        valorTaxas:        peca.valorTaxas,
+        precoML:           peca.precoML,
+        dataVenda:         peca.dataVenda      || null,
+        dataDevolucao:     dataDevolucao ? new Date(dataDevolucao) : new Date(),
+        etiquetasDetran:   peca.detranEtiqueta || null,
+        nfVendaNumero:     nfVendaNumero       || null,
+        nfDevolucaoNumero: nfDevolucaoNumero   || null,
+        observacoes:       observacoes         || null,
+      },
+    });
+
+    // Reverter peça ao estoque — limpar dados de venda e etiqueta
+    await prisma.peca.update({
+      where: { id: peca.id },
+      data: {
+        disponivel:      true,
+        dataVenda:       null,
+        blingPedidoId:   null,
+        blingPedidoNum:  null,
+        detranEtiqueta:  null,
+        detranStatus:    null,
+        detranBaixada:   false,
+        detranBaixadaAt: null,
+        etiquetaPendente: peca.detranEtiqueta ? true : false,
+      },
+    });
+
+    res.json({ ok: true, devolucaoId: devolucao.id });
+  } catch (e) { next(e); }
+});
+
+// ── GET /devolucoes — listar histórico com filtros ────────────────────────────
+devolucoesRouter.get('/', async (req, res, next) => {
+  try {
+    const {
+      idPeca, descricao, motoId,
+      pedidoBlingNum,
+      comEtiqueta,
+      dataVendaDe, dataVendaAte,
+      dataDevolucaoDe, dataDevolucaoAte,
+      orderBy = 'dataDevolucao', orderDir = 'desc',
+      page = '1', perPage = '50',
+    } = req.query as Record<string, string>;
+
+    const where: any = {};
+
+    if (idPeca)        where.idPeca     = { contains: idPeca.toUpperCase() };
+    if (descricao)     where.descricao  = { contains: descricao, mode: 'insensitive' };
+    if (motoId)        where.motoId     = Number(motoId);
+    if (pedidoBlingNum) where.pedidoBlingNum = { contains: pedidoBlingNum };
+
+    if (comEtiqueta === 'com')  where.etiquetasDetran = { not: null };
+    if (comEtiqueta === 'sem')  where.etiquetasDetran = null;
+
+    if (dataVendaDe || dataVendaAte) {
+      where.dataVenda = {
+        ...(dataVendaDe  ? { gte: new Date(dataVendaDe  + 'T00:00:00.000Z') } : {}),
+        ...(dataVendaAte ? { lte: new Date(dataVendaAte + 'T23:59:59.999Z') } : {}),
+      };
+    }
+    if (dataDevolucaoDe || dataDevolucaoAte) {
+      where.dataDevolucao = {
+        ...(dataDevolucaoDe  ? { gte: new Date(dataDevolucaoDe  + 'T00:00:00.000Z') } : {}),
+        ...(dataDevolucaoAte ? { lte: new Date(dataDevolucaoAte + 'T23:59:59.999Z') } : {}),
+      };
+    }
+
+    const validOrder = ['idPeca','descricao','motoNome','pedidoBlingNum','valorLiq','dataVenda','dataDevolucao','etiquetasDetran','criadoEm'];
+    const safeOrder  = validOrder.includes(orderBy) ? orderBy : 'dataDevolucao';
+    const safeDir    = orderDir === 'asc' ? 'asc' : 'desc';
+    const pageNum    = Math.max(1, Number(page));
+    const perPageNum = Math.min(200, Math.max(1, Number(perPage)));
+
+    const [total, devolucoes] = await Promise.all([
+      prisma.historicoDevolucao.count({ where }),
+      prisma.historicoDevolucao.findMany({
+        where,
+        orderBy: { [safeOrder]: safeDir },
+        skip:  (pageNum - 1) * perPageNum,
+        take:  perPageNum,
+        include: { moto: { select: { id: true, marca: true, modelo: true, ano: true } } },
+      }),
+    ]);
+
+    res.json({ ok: true, total, page: pageNum, perPage: perPageNum, devolucoes });
+  } catch (e) { next(e); }
+});
+
+// ── GET /devolucoes/pendentes-etiqueta — SKUs com etiquetaPendente ────────────
+devolucoesRouter.get('/pendentes-etiqueta', async (_req, res, next) => {
+  try {
+    const pecas = await prisma.peca.findMany({
+      where: { etiquetaPendente: true, disponivel: true },
+      select: {
+        id: true, idPeca: true, descricao: true, motoId: true,
+        localizacao: true, cadastro: true,
+        moto: { select: { marca: true, modelo: true, ano: true } },
+        devolucoes: {
+          orderBy: { dataDevolucao: 'desc' },
+          take: 1,
+          select: { dataDevolucao: true, etiquetasDetran: true, pedidoBlingNum: true },
+        },
+      },
+      orderBy: { idPeca: 'asc' },
+    });
+    res.json({ ok: true, total: pecas.length, pecas });
+  } catch (e) { next(e); }
+});

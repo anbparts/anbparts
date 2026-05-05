@@ -386,6 +386,9 @@ pecasRouter.get('/', async (req, res, next) => {
     if (detranEtiqueta === 'sem') {
       andConditions.push({ OR: [{ detranEtiqueta: null }, { detranEtiqueta: '' }] });
     }
+    if (detranEtiqueta === 'pendente') {
+      andConditions.push({ etiquetaPendente: true });
+    }
     if (imagem === 'com') {
       andConditions.push({ fotoCapaArquivo: { not: null } });
       andConditions.push({ NOT: { fotoCapaArquivo: '' } });
@@ -928,8 +931,9 @@ pecasRouter.post('/bulk-detran-cartela', async (req, res, next) => {
         await prisma.peca.update({
           where: { id: peca.id },
           data: {
-            detranEtiqueta: detranEtiqueta || null,
-            detranStatus: detranStatus || null,
+            detranEtiqueta:   detranEtiqueta || null,
+            detranStatus:     detranStatus   || null,
+            etiquetaPendente: detranEtiqueta ? false : peca.etiquetaPendente,
           },
         });
         resultados.push({ idPeca, ok: true });
