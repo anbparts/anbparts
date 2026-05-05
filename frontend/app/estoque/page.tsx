@@ -1818,8 +1818,8 @@ function DevolucaoModal({ peca, onClose, onSaved }: any) {
   }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }}>
-      <div style={{ background: 'var(--white)', borderRadius: 16, width: '100%', maxWidth: 520, boxShadow: '0 20px 50px rgba(0,0,0,.2)', overflow: 'hidden' }}>
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--white)', borderRadius: 16, width: '100%', maxWidth: 520, boxShadow: '0 20px 50px rgba(0,0,0,.2)', overflow: 'hidden' }}>
         {/* Header */}
         <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--border)', background: 'linear-gradient(135deg, #eff6ff 0%, #fff 100%)' }}>
           <div style={{ fontFamily: 'Fraunces, serif', fontSize: 17, fontWeight: 700 }}>📦 Devolução de Venda</div>

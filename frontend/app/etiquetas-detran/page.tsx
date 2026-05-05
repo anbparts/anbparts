@@ -264,21 +264,23 @@ export default function EtiquetasDetranPage() {
             {loading ? 'Carregando...' : `${linhas.length} etiqueta(s) encontrada(s)`}
           </div>
         </div>
-        <button style={{ ...s.btn, background: '#7c3aed', color: '#fff' }} onClick={abrirPendencias}>
-          Pendencias Baixa
-        </button>
-        <button style={{ ...s.btn, background: '#2563eb', color: '#fff' }} onClick={async () => {
-          setPendenciasDevOpen(true);
-          setLoadingPendenciasDev(true);
-          try {
-            const resp = await fetch(`${API}/devolucoes/pendentes-etiqueta`, { credentials: 'include' });
-            const data = await resp.json();
-            setPendenciasDev(data.pecas || []);
-          } catch { setPendenciasDev([]); }
-          setLoadingPendenciasDev(false);
-        }}>
-          Pendências Devolução
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button style={{ ...s.btn, background: '#7c3aed', color: '#fff' }} onClick={abrirPendencias}>
+            Pendencias Baixa
+          </button>
+          <button style={{ ...s.btn, background: '#2563eb', color: '#fff' }} onClick={async () => {
+            setPendenciasDevOpen(true);
+            setLoadingPendenciasDev(true);
+            try {
+              const resp = await fetch(`${API}/devolucoes/pendentes-etiqueta`, { credentials: 'include' });
+              const data = await resp.json();
+              setPendenciasDev(data.pecas || []);
+            } catch { setPendenciasDev([]); }
+            setLoadingPendenciasDev(false);
+          }}>
+            Pendências Devolução
+          </button>
+        </div>
       </div>
 
       <div style={{ padding: 28, display: 'flex', flexDirection: 'column', gap: 16 }}>
