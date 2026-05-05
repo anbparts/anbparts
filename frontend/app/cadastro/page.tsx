@@ -634,6 +634,7 @@ Deseja forçar a exclusão mesmo assim?`);
                     value={form.descricao}
                     onChange={(e) => handleDescricaoChange(e.target.value)}
                     placeholder="Título para ML e Nuvemshop"
+                    tabIndex={-1}
                   />
                 </div>
 
@@ -641,7 +642,7 @@ Deseja forçar a exclusão mesmo assim?`);
                   <label style={s.label}>Categoria ML *{form.categoriaMLId && <span style={{ marginLeft: 8, fontSize: 10, color: 'var(--gray-400)', fontWeight: 400 }}>ID: {form.categoriaMLId}</span>}</label>
                   <div style={{ display: 'flex', gap: 8 }}>
                     {categorias.length > 0 ? (
-                      <select style={{ ...s.input, flex: 1 }} value={form.categoriaMLId} onChange={(e) => {
+                      <select style={{ ...s.input, flex: 1 }} value={form.categoriaMLId} tabIndex={-1} onChange={(e) => {
                         const cat = categorias.find((c: any) => (c.category_id || c.id) === e.target.value);
                         setForm((p: any) => ({ ...p, categoriaMLId: e.target.value, categoriaMLNome: cat?.category_name || cat?.name || '' }));
                       }}>
@@ -649,10 +650,11 @@ Deseja forçar a exclusão mesmo assim?`);
                         {categorias.map((c: any) => <option key={c.category_id || c.id} value={c.category_id || c.id}>{c.category_name || c.name}</option>)}
                       </select>
                     ) : (
-                      <input style={{ ...s.input, flex: 1 }} value={form.categoriaMLNome || ''} onChange={(e) => setForm((p: any) => ({ ...p, categoriaMLNome: e.target.value }))}
+                      <input style={{ ...s.input, flex: 1 }} value={form.categoriaMLNome || ''} tabIndex={-1} onChange={(e) => setForm((p: any) => ({ ...p, categoriaMLNome: e.target.value }))}
                         placeholder={buscandoCategoria ? 'Buscando...' : 'Clique buscar para sugerir'} readOnly={buscandoCategoria} />
                     )}
                     <button type="button" style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', fontSize: 12, whiteSpace: 'nowrap' as const, opacity: buscandoCategoria ? 0.6 : 1 }}
+                      tabIndex={-1}
                       onClick={() => { setCategorias([]); buscarCategoriaML(form.descricao); }} disabled={buscandoCategoria || !form.descricao}>
                       {buscandoCategoria ? '...' : '🔍 Buscar'}
                     </button>
