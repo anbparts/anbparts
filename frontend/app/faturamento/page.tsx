@@ -261,6 +261,27 @@ export default function FaturamentoMotoPage() {
         .filter((item) => item.receita > 0 || item.qtd > 0),
     }));
 
+  const estoqueConsolidadoFiltrado = (estoqueData?.consolidado || [])
+    .filter((c: any) => (!estoqueAnoFilt || String(c.ano) === estoqueAnoFilt) && (!estoqueMesFilt || String(c.mes) === estoqueMesFilt));
+
+  const estoquePorMotoFiltrado = (estoqueData?.porMoto || [])
+    .filter((p: any) =>
+      (estoqueMotoFilt === 'todas' || p.moto === estoqueMotoFilt) &&
+      (!estoqueAnoFilt || String(p.ano) === estoqueAnoFilt) &&
+      (!estoqueMesFilt || String(p.mes) === estoqueMesFilt)
+    )
+    .sort((a: any, b: any) =>
+      a.ano !== b.ano ? a.ano - b.ano :
+      a.mes !== b.mes ? a.mes - b.mes :
+      a.moto.localeCompare(b.moto)
+    );
+
+  const estoqueSelectStyle = {
+    ...cs.sel,
+    width: isPhone ? '100%' : undefined,
+    height: isPhone ? 42 : cs.sel.height,
+  };
+
   return (
     <>
       <div style={{ ...cs.topbar, alignItems: isCompact ? 'flex-start' : 'center', flexDirection: isCompact ? 'column' : 'row', gap: 10, padding: isCompact ? '14px 16px' : cs.topbar.padding }}>
@@ -421,7 +442,7 @@ export default function FaturamentoMotoPage() {
               </ChartPanel>
             </div>
           )
-        ) : (
+        ) : modo === 'relatorio' ? (
           <div style={cs.card}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: isCompact ? '14px 16px' : '14px 18px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', gap: 10 }}>
               <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>Relatorio por moto</div>
@@ -482,18 +503,24 @@ export default function FaturamentoMotoPage() {
               </div>
             )}
           </div>
-        )}
+        ) : null}
       </div>
 
       {/* ── ABA % ESTOQUE VENDIDO ──────────────────────────────────── */}
       {modo === 'estoque' && (
-        <div style={{ marginTop: 18 }}>
+        <div style={{ marginTop: isPhone ? 0 : 18, padding: isPhone ? '0 16px 16px' : '0 28px 28px' }}>
           {/* Filtros */}
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14, alignItems: 'center' }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isPhone ? '1fr' : 'repeat(3, minmax(150px, max-content))',
+            gap: 10,
+            marginBottom: 14,
+            alignItems: 'center',
+          }}>
             <select
               value={estoqueAnoFilt}
               onChange={e => { setEstoqueAnoFilt(e.target.value); setEstoqueMesFilt(''); }}
-              style={cs.sel}
+              style={estoqueSelectStyle}
             >
               <option value="">Todos os anos</option>
               {Array.from(new Set((estoqueData?.consolidado || []).map((c: any) => String(c.ano)))).sort().reverse().map(a => (
@@ -503,7 +530,7 @@ export default function FaturamentoMotoPage() {
             <select
               value={estoqueMesFilt}
               onChange={e => setEstoqueMesFilt(e.target.value)}
-              style={cs.sel}
+              style={estoqueSelectStyle}
             >
               <option value="">Todos os meses</option>
               {MESES.map((m, i) => (
@@ -513,7 +540,7 @@ export default function FaturamentoMotoPage() {
             <select
               value={estoqueMotoFilt}
               onChange={e => setEstoqueMotoFilt(e.target.value)}
-              style={cs.sel}
+              style={estoqueSelectStyle}
             >
               <option value="todas">Todas as motos</option>
               {Array.from(new Set((estoqueData?.porMoto || []).map((p: any) => p.moto))).sort().map(m => (
@@ -530,7 +557,51 @@ export default function FaturamentoMotoPage() {
             <div style={{ display: 'grid', gap: 18 }}>
 
               {/* Consolidado */}
-              {estoqueMotoFilt === 'todas' && (
+              {isPhone && estoqueMotoFilt === 'todas' && (
+                <div style={cs.card}>
+                  <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
+                    <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>Consolidado - Todas as Motos</div>
+                    <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>% do valor de estoque vendido a cada mes</div>
+                  </div>
+                  <div style={{ display: 'grid', gap: 12, padding: 14 }}>
+                    {!estoqueConsolidadoFiltrado.length ? (
+                      <div style={{ color: 'var(--ink-muted)', fontSize: 13 }}>Sem dados no filtro</div>
+                    ) : estoqueConsolidadoFiltrado.map((c: any) => {
+                      const pct = c.percentual;
+                      const pctColor = pct >= 15 ? '#16a34a' : pct >= 7 ? '#d97706' : '#6b7280';
+                      return (
+                        <div key={c.key} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>{MESES[c.mes - 1]}/{c.ano}</div>
+                            <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 13, fontWeight: 700, color: pctColor, ...sensitiveMaskStyle(hidden) }}>
+                              {sensitiveText(`${pct.toFixed(1)}%`, hidden)}
+                            </div>
+                          </div>
+                          <div style={{ height: 7, background: 'var(--border)', borderRadius: 99, overflow: 'hidden', marginTop: 12 }}>
+                            <div style={{ width: `${Math.min(pct, 100)}%`, height: '100%', background: pctColor, borderRadius: 99 }} />
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 12 }}>
+                            <div>
+                              <div style={{ fontSize: 11, color: 'var(--ink-muted)', fontFamily: 'Geist Mono, monospace' }}>Estoque inicio</div>
+                              <div style={{ fontSize: 12, color: 'var(--ink)', fontFamily: 'Geist Mono, monospace', ...sensitiveMaskStyle(hidden) }}>{sensitiveText(fmt(c.estoqueInicio), hidden)}</div>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 11, color: 'var(--ink-muted)', fontFamily: 'Geist Mono, monospace' }}>Vendido</div>
+                              <div style={{ fontSize: 12, color: 'var(--sage)', fontFamily: 'Geist Mono, monospace', ...sensitiveMaskStyle(hidden) }}>{sensitiveText(fmt(c.vendido), hidden)}</div>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 11, color: 'var(--ink-muted)', fontFamily: 'Geist Mono, monospace' }}>Qtd pecas</div>
+                              <div style={{ fontSize: 12, color: 'var(--ink)', ...sensitiveMaskStyle(hidden) }}>{sensitiveText(String(c.qtdVendida), hidden)}</div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {estoqueMotoFilt === 'todas' && !isPhone && (
                 <div style={cs.card}>
                   <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
                     <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>Consolidado — Todas as Motos</div>
@@ -585,7 +656,56 @@ export default function FaturamentoMotoPage() {
               )}
 
               {/* Detalhe por moto */}
-              <div style={cs.card}>
+              {isPhone && (
+                <div style={cs.card}>
+                  <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
+                    <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>
+                      {estoqueMotoFilt === 'todas' ? 'Detalhe por Moto' : estoqueMotoFilt}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>% do valor de estoque de cada moto vendido a cada mes</div>
+                  </div>
+                  <div style={{ display: 'grid', gap: 12, padding: 14 }}>
+                    {!estoquePorMotoFiltrado.length ? (
+                      <div style={{ color: 'var(--ink-muted)', fontSize: 13 }}>Sem dados no filtro</div>
+                    ) : estoquePorMotoFiltrado.map((p: any, i: number) => {
+                      const pct = p.percentual;
+                      const pctColor = pct >= 15 ? '#16a34a' : pct >= 7 ? '#d97706' : '#6b7280';
+                      return (
+                        <div key={`${p.motoId}-${p.key}-mobile-${i}`} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14 }}>
+                          {estoqueMotoFilt === 'todas' && (
+                            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: 8 }}>{p.moto}</div>
+                          )}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
+                            <div style={{ fontSize: 12, color: 'var(--ink-muted)', fontFamily: 'Geist Mono, monospace' }}>{MESES[p.mes - 1]}/{p.ano}</div>
+                            <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 13, fontWeight: 700, color: pctColor, ...sensitiveMaskStyle(hidden) }}>
+                              {sensitiveText(`${pct.toFixed(1)}%`, hidden)}
+                            </div>
+                          </div>
+                          <div style={{ height: 7, background: 'var(--border)', borderRadius: 99, overflow: 'hidden', marginTop: 12 }}>
+                            <div style={{ width: `${Math.min(pct, 100)}%`, height: '100%', background: pctColor, borderRadius: 99 }} />
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 12 }}>
+                            <div>
+                              <div style={{ fontSize: 11, color: 'var(--ink-muted)', fontFamily: 'Geist Mono, monospace' }}>Estoque inicio</div>
+                              <div style={{ fontSize: 12, color: 'var(--ink)', fontFamily: 'Geist Mono, monospace', ...sensitiveMaskStyle(hidden) }}>{sensitiveText(fmt(p.estoqueInicio), hidden)}</div>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 11, color: 'var(--ink-muted)', fontFamily: 'Geist Mono, monospace' }}>Vendido</div>
+                              <div style={{ fontSize: 12, color: 'var(--sage)', fontFamily: 'Geist Mono, monospace', ...sensitiveMaskStyle(hidden) }}>{sensitiveText(fmt(p.vendido), hidden)}</div>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 11, color: 'var(--ink-muted)', fontFamily: 'Geist Mono, monospace' }}>Qtd</div>
+                              <div style={{ fontSize: 12, color: 'var(--ink)', ...sensitiveMaskStyle(hidden) }}>{sensitiveText(String(p.qtdVendida), hidden)}</div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <div style={{ ...cs.card, display: isPhone ? 'none' : undefined }}>
                 <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
                   <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>
                     {estoqueMotoFilt === 'todas' ? 'Detalhe por Moto' : estoqueMotoFilt}
