@@ -410,6 +410,77 @@ nuvemshopRouter.get('/testar-ia', async (_req, res) => {
   }
 });
 
+function extrairJsonObjeto(text: string) {
+  const input = String(text || '').trim();
+  const fenced = input.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const source = (fenced?.[1] || input).trim();
+  const start = source.indexOf('{');
+  if (start === -1) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = start; i < source.length; i++) {
+    const char = source[i];
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      escaped = inString;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) continue;
+
+    if (char === '{') depth++;
+    if (char === '}') {
+      depth--;
+      if (depth === 0) return source.slice(start, i + 1);
+    }
+  }
+
+  return null;
+}
+
+function normalizarSugestoesIA(parsed: any, categoriasDisponiveis: any[]) {
+  const categoriaPorId = new Map(
+    categoriasDisponiveis.map((c: any) => {
+      const nome = c.name?.pt || c.name?.['pt-BR'] || (Object.values(c.name || {}) as string[])[0] || c.nome || String(c.id);
+      return [Number(c.id), { id: Number(c.id), nome: String(nome || c.id) }];
+    }),
+  );
+
+  const sugestoes = Array.isArray(parsed?.sugestoes) ? parsed.sugestoes : [];
+  return sugestoes
+    .map((item: any) => {
+      const sku = String(item?.sku || '').trim();
+      if (!sku) return null;
+
+      const categorias = (Array.isArray(item?.categorias) ? item.categorias : [])
+        .map((cat: any) => categoriaPorId.get(Number(cat?.id)) || (cat?.id ? { id: Number(cat.id), nome: String(cat.nome || cat.name || cat.id) } : null))
+        .filter(Boolean)
+        .filter((cat: any, index: number, arr: any[]) => arr.findIndex((x: any) => x.id === cat.id) === index);
+
+      const tags = (Array.isArray(item?.tags) ? item.tags : [])
+        .map((tag: any) => String(tag || '').replace(/[",]/g, '').trim())
+        .filter(Boolean)
+        .filter((tag: string, index: number, arr: string[]) => arr.indexOf(tag) === index)
+        .slice(0, 12);
+
+      return { sku, categorias, tags };
+    })
+    .filter(Boolean);
+}
+
 nuvemshopRouter.post('/sugerir-ia', async (req, res, next) => {
   let etapa = 'inicio';
   try {
@@ -485,6 +556,45 @@ IMPORTANTE: tags devem ser strings simples sem aspas internas ou caracteres espe
         body: JSON.stringify({
           model: anthropicModel,
           max_tokens: 8000,
+          tool_choice: { type: 'tool', name: 'responder_sugestoes' },
+          tools: [{
+            name: 'responder_sugestoes',
+            description: 'Retorna sugestoes de categorias e tags para produtos Nuvemshop.',
+            input_schema: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                sugestoes: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    additionalProperties: false,
+                    properties: {
+                      sku: { type: 'string' },
+                      categorias: {
+                        type: 'array',
+                        items: {
+                          type: 'object',
+                          additionalProperties: false,
+                          properties: {
+                            id: { type: 'number' },
+                            nome: { type: 'string' },
+                          },
+                          required: ['id', 'nome'],
+                        },
+                      },
+                      tags: {
+                        type: 'array',
+                        items: { type: 'string' },
+                      },
+                    },
+                    required: ['sku', 'categorias', 'tags'],
+                  },
+                },
+              },
+              required: ['sugestoes'],
+            },
+          }],
           messages: [{ role: 'user', content: prompt }],
         }),
       });
@@ -503,23 +613,32 @@ IMPORTANTE: tags devem ser strings simples sem aspas internas ou caracteres espe
     }
 
     const data = await response.json() as any;
-    const rawText = (data.content?.[0]?.text || '').trim();
-    tracePayload.resposta = rawText.slice(0, 10000);
-    const text = rawText;
+    const toolUse = Array.isArray(data.content)
+      ? data.content.find((item: any) => item?.type === 'tool_use' && item?.name === 'responder_sugestoes')
+      : null;
+    const rawText = Array.isArray(data.content)
+      ? data.content.map((item: any) => item?.type === 'text' ? item.text : '').filter(Boolean).join('\n').trim()
+      : '';
+    tracePayload.resposta = JSON.stringify(toolUse?.input || rawText || data).slice(0, 10000);
+
+    if (toolUse?.input) {
+      const sugestoes = normalizarSugestoesIA(toolUse.input, categorias);
+      return res.json({ ok: true, sugestoes, modelo: anthropicModel });
+    }
 
     if (!rawText) {
       console.error('[sugerir-ia] trace:', JSON.stringify(tracePayload));
       return res.status(500).json({ ok: false, error: 'Resposta vazia da IA' });
     }
 
-    const start = text.indexOf('{');
-    if (start === -1) {
+    const jsonText = extrairJsonObjeto(rawText);
+    if (!jsonText) {
       console.error('[sugerir-ia] sem JSON na resposta — trace:', JSON.stringify(tracePayload));
-      return res.status(500).json({ ok: false, error: `IA nao retornou JSON: ${text.slice(0, 200)}` });
+      return res.status(500).json({ ok: false, error: `IA nao retornou JSON: ${rawText.slice(0, 200)}` });
     }
 
     // Remove markdown fences se presentes
-    const cleanText = text.slice(start).replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+    const cleanText = jsonText.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
 
     // Tenta múltiplas estratégias de extração + repair
     const tentativas: string[] = [];
@@ -552,7 +671,7 @@ IMPORTANTE: tags devem ser strings simples sem aspas internas ou caracteres espe
       return res.status(500).json({ ok: false, error: 'Não foi possível parsear a resposta da IA' });
     }
 
-    res.json({ ok: true, sugestoes: parsed.sugestoes || [], modelo: anthropicModel });
+    res.json({ ok: true, sugestoes: normalizarSugestoesIA(parsed, categorias), modelo: anthropicModel });
   } catch (e: any) {
     console.error('[nuvemshop/sugerir-ia]', { etapa, erro: e });
     res.status(500).json({ ok: false, error: `Falha em ${etapa}: ${e?.message || String(e)}` });
