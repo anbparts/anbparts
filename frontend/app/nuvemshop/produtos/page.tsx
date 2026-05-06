@@ -191,6 +191,7 @@ export default function NuvemshopProdutosPage() {
   const [atualizandoDrive, setAtualizandoDrive] = useState(false);
   const [driveLoopStatus, setDriveLoopStatus] = useState<{ materialAtual: number; totalMateriais: number; fotoAtual: number; totalFotos: number } | null>(null);
   const [skuEmProcessamento, setSkuEmProcessamento] = useState<string | null>(null);
+  const [isPhone, setIsPhone] = useState(false);
   const driveCache = useRef<Record<string, any[]>>({});
 
   const produtosEncontrados = produtos.filter(p => p.encontradoNuvemshop);
@@ -256,6 +257,14 @@ export default function NuvemshopProdutosPage() {
       .then(lerRespostaApi)
       .then((d: any) => { if (d.ok) setCategorias(d.categorias || []); })
       .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 640px)');
+    const update = () => setIsPhone(media.matches);
+    update();
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
   }, []);
 
   async function buscar() {
@@ -396,68 +405,70 @@ export default function NuvemshopProdutosPage() {
   const modalProd = modalSku ? produtos.find(p => p.sku === modalSku) : null;
   const modalSugestao = modalSku ? editandoSugestao[modalSku] : null;
   const modalFotoAtual = modalFoto ? (produtos.find(p => p.sku === modalFoto.sku) || modalFoto) : null;
+  const phoneButtonStyle = isPhone ? { width: '100%', justifyContent: 'center', minHeight: 42 } : {};
+  const phoneCardStyle = isPhone ? { padding: 16, borderRadius: 10 } : {};
 
   return (
     <>
-      <div style={s.topbar}>
-        <div>
+      <div style={{ ...s.topbar, height: isPhone ? 'auto' : s.topbar.height, minHeight: 'var(--topbar-h)', alignItems: isPhone ? 'flex-start' : 'center', flexDirection: isPhone ? 'column' : 'row', gap: 10, padding: isPhone ? '14px 16px' : s.topbar.padding }}>
+        <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)', letterSpacing: '-0.3px' }}>Produtos Nuvemshop</div>
           <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>Diagnóstico e enriquecimento com IA de categorias e tags</div>
         </div>
         {sugestoes.length > 0 && (
-          <button style={{ ...s.btn, background: '#16a34a', color: '#fff' }} onClick={aplicarSugestoes} disabled={aplicando}>
+          <button style={{ ...s.btn, ...phoneButtonStyle, background: '#16a34a', color: '#fff' }} onClick={aplicarSugestoes} disabled={aplicando}>
             {aplicando ? 'Aplicando...' : `✓ Aplicar ${sugestoes.length} sugestão(ões) na Nuvemshop`}
           </button>
         )}
       </div>
 
-      <div style={{ padding: 28 }}>
+      <div style={{ padding: isPhone ? 16 : 28 }}>
         {/* Filtros */}
-        <div style={s.card}>
+        <div style={{ ...s.card, ...phoneCardStyle }}>
           <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 14 }}>Buscar produtos</div>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(3, max-content)', gap: 8, marginBottom: 14 }}>
             {(['moto', 'skus', 'data'] as const).map(m => (
               <button key={m} onClick={() => setModo(m)}
-                style={{ ...s.btn, padding: '6px 14px', background: modo === m ? 'var(--gray-800)' : 'var(--white)', color: modo === m ? '#fff' : 'var(--gray-600)', border: '1px solid var(--border)' }}>
+                style={{ ...s.btn, ...phoneButtonStyle, padding: isPhone ? '8px 12px' : '6px 14px', background: modo === m ? 'var(--gray-800)' : 'var(--white)', color: modo === m ? '#fff' : 'var(--gray-600)', border: '1px solid var(--border)' }}>
                 {m === 'moto' ? '🏍️ Por Moto' : m === 'skus' ? '📋 Por Lista de SKUs' : '📅 Data de Cadastro'}
               </button>
             ))}
           </div>
 
           {modo === 'moto' ? (
-            <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
+            <div style={{ display: isPhone ? 'grid' : 'flex', gridTemplateColumns: '1fr', gap: 12, alignItems: 'flex-end' }}>
               <div style={{ flex: 1 }}>
                 <label style={s.label}>Moto (somente com estoque)</label>
-                <select style={s.input} value={motoId} onChange={e => setMotoId(e.target.value)}>
+                <select style={{ ...s.input, minHeight: isPhone ? 42 : undefined }} value={motoId} onChange={e => setMotoId(e.target.value)}>
                   <option value="">Selecione a moto...</option>
                   {motos.map(m => <option key={m.id} value={m.id}>ID {m.id} - {m.marca} {m.modelo} {m.ano || ''}</option>)}
                 </select>
               </div>
-              <button style={{ ...s.btn, background: '#7c3aed', color: '#fff', opacity: buscando ? 0.7 : 1 }} onClick={buscar} disabled={buscando || !motoId}>
+              <button style={{ ...s.btn, ...phoneButtonStyle, background: '#7c3aed', color: '#fff', opacity: buscando ? 0.7 : 1 }} onClick={buscar} disabled={buscando || !motoId}>
                 {buscando ? 'Buscando...' : 'Buscar'}
               </button>
             </div>
           ) : modo === 'skus' ? (
             <div>
               <label style={s.label}>SKUs (um por linha)</label>
-              <textarea style={{ ...s.input, minHeight: 100, resize: 'vertical' }} value={skusInput}
+              <textarea style={{ ...s.input, minHeight: isPhone ? 140 : 100, resize: 'vertical' }} value={skusInput}
                 onChange={e => setSkusInput(e.target.value)} placeholder={'HD01_0074\nHD01_0075\nBM01_0012'} />
-              <button style={{ ...s.btn, background: '#7c3aed', color: '#fff', marginTop: 10, opacity: buscando ? 0.7 : 1 }} onClick={buscar} disabled={buscando || !skusInput.trim()}>
+              <button style={{ ...s.btn, ...phoneButtonStyle, background: '#7c3aed', color: '#fff', marginTop: 10, opacity: buscando ? 0.7 : 1 }} onClick={buscar} disabled={buscando || !skusInput.trim()}>
                 {buscando ? 'Buscando...' : 'Buscar'}
               </button>
             </div>
           ) : (
             <div>
-              <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
+              <div style={{ display: isPhone ? 'grid' : 'flex', gridTemplateColumns: '1fr', gap: 12, alignItems: 'flex-end' }}>
                 <div>
                   <label style={s.label}>De</label>
-                  <input type="date" style={s.input} value={dataDe} onChange={e => setDataDe(e.target.value)} />
+                  <input type="date" style={{ ...s.input, minHeight: isPhone ? 42 : undefined }} value={dataDe} onChange={e => setDataDe(e.target.value)} />
                 </div>
                 <div>
                   <label style={s.label}>Até</label>
-                  <input type="date" style={s.input} value={dataAte} onChange={e => setDataAte(e.target.value)} />
+                  <input type="date" style={{ ...s.input, minHeight: isPhone ? 42 : undefined }} value={dataAte} onChange={e => setDataAte(e.target.value)} />
                 </div>
-                <button style={{ ...s.btn, background: '#7c3aed', color: '#fff', opacity: buscando ? 0.7 : 1 }} onClick={buscar} disabled={buscando || !dataDe || !dataAte}>
+                <button style={{ ...s.btn, ...phoneButtonStyle, background: '#7c3aed', color: '#fff', opacity: buscando ? 0.7 : 1 }} onClick={buscar} disabled={buscando || !dataDe || !dataAte}>
                   {buscando ? 'Buscando...' : 'Buscar'}
                 </button>
               </div>
@@ -514,7 +525,7 @@ export default function NuvemshopProdutosPage() {
 
             {/* Botão sugerir IA */}
             {semDados.length > 0 && (
-              <div style={{ ...s.card, background: 'linear-gradient(135deg, #f5f3ff, #ede9fe)', border: '1px solid #c4b5fd', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+              <div style={{ ...s.card, ...phoneCardStyle, background: 'linear-gradient(135deg, #f5f3ff, #ede9fe)', border: '1px solid #c4b5fd', display: isPhone ? 'grid' : 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
                 <div>
                   <div style={{ fontSize: 14, fontWeight: 700, color: '#5b21b6' }}>
                     ✨ {selecionados.size ? selecionados.size : semDados.length} produto(s) pendentes de categoria/tag
@@ -523,7 +534,7 @@ export default function NuvemshopProdutosPage() {
                     A IA vai analisar o título e sugerir categorias e tags baseadas na sua estrutura atual da Nuvemshop
                   </div>
                 </div>
-                <button style={{ ...s.btn, background: '#7c3aed', color: '#fff', opacity: sugerindo ? 0.7 : 1 }} onClick={sugerirIA} disabled={sugerindo}>
+                <button style={{ ...s.btn, ...phoneButtonStyle, background: '#7c3aed', color: '#fff', opacity: sugerindo ? 0.7 : 1 }} onClick={sugerirIA} disabled={sugerindo}>
                   {sugerindo ? (sugerindoLabel || '✨ Analisando...') : '✨ Sugerir com IA'}
                 </button>
               </div>
@@ -531,7 +542,7 @@ export default function NuvemshopProdutosPage() {
 
             {/* Botão Atualizar Imagens Drive — só aparece quando ≤10 SKUs e há selecionados com fotos no Drive */}
             {modoComDrive && (driveLoopStatus !== null || (selecionados.size > 0 && Array.from(selecionados).some(sku => (driveContagens[sku] || 0) > 0))) && (
-              <div style={{ ...s.card, background: '#faf5ff', border: '1px solid #c4b5fd', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+              <div style={{ ...s.card, ...phoneCardStyle, background: '#faf5ff', border: '1px solid #c4b5fd', display: isPhone ? 'grid' : 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 700, color: '#5b21b6' }}>
                     📂 {Array.from(selecionados).filter(sku => (driveContagens[sku] || 0) > 0).length} produto(s) selecionado(s) com fotos no Drive
@@ -600,14 +611,123 @@ export default function NuvemshopProdutosPage() {
                     setTimeout(() => { setDriveLoopStatus(null); }, 3000);
                     setSelecionados(new Set());
                   }}
-                  style={{ ...s.btn, background: '#7c3aed', color: '#fff', opacity: atualizandoDrive ? 0.6 : 1, whiteSpace: 'nowrap' as const }}>
+                  style={{ ...s.btn, ...phoneButtonStyle, background: '#7c3aed', color: '#fff', opacity: atualizandoDrive ? 0.6 : 1, whiteSpace: 'nowrap' as const }}>
                   {atualizandoDrive && driveLoopStatus ? `⏳ Material ${driveLoopStatus.materialAtual}/${driveLoopStatus.totalMateriais} · Foto ${driveLoopStatus.fotoAtual}/${driveLoopStatus.totalFotos}` : atualizandoDrive ? '⏳ Iniciando...' : driveLoopStatus ? `✓ Concluído — Material ${driveLoopStatus.materialAtual}/${driveLoopStatus.totalMateriais}` : '📂 Atualizar Imagens Drive'}
                 </button>
               </div>
             )}
 
             {/* Tabela */}
-            <div style={{ ...s.card, padding: 0, overflow: 'hidden' }}>
+            {isPhone && (
+              <div style={{ display: 'grid', gap: 12, marginBottom: 16 }}>
+                <label style={{ ...s.card, ...phoneCardStyle, marginBottom: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <input type="checkbox" onChange={e => {
+                    if (e.target.checked) setSelecionados(new Set(produtos.filter(p => p.encontradoNuvemshop).map(p => p.sku)));
+                    else setSelecionados(new Set());
+                  }} />
+                  <span style={{ fontSize: 13, color: 'var(--gray-700)', fontWeight: 700 }}>Selecionar todos encontrados</span>
+                </label>
+
+                {produtosOrdenados.map(p => {
+                  const sug = editandoSugestao[p.sku];
+                  const temSugestao = !!sug;
+                  const rowBg = p.erroConsulta ? '#fef2f2' : !p.encontradoNuvemshop ? '#fffbeb' : p.sku === skuEmProcessamento ? '#ede9fe' : temSugestao ? '#f5f3ff' : 'var(--white)';
+                  const statusLabel = p.erroConsulta
+                    ? 'Erro consulta'
+                    : !p.encontradoNuvemshop
+                    ? 'Nao encontrado'
+                    : temSugestao
+                    ? 'Com sugestao'
+                    : p.semCategoria || p.semTags
+                    ? 'Pendente'
+                    : 'OK';
+                  const statusColor = p.erroConsulta || p.semCategoria || p.semTags
+                    ? 'var(--red)'
+                    : !p.encontradoNuvemshop
+                    ? 'var(--amber)'
+                    : temSugestao
+                    ? '#7c3aed'
+                    : 'var(--green)';
+                  return (
+                    <div key={`${p.sku}-mobile`} style={{ ...s.card, ...phoneCardStyle, marginBottom: 0, background: rowBg }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 12, color: 'var(--blue-500)', fontWeight: 800 }}>{p.sku}</div>
+                          <div style={{ marginTop: 6, fontSize: 13, lineHeight: 1.4, color: 'var(--gray-800)' }}>{p.titulo || '-'}</div>
+                          <div style={{ marginTop: 6, fontSize: 12, color: 'var(--gray-500)' }}>
+                            {p.moto ? `${p.moto.marca} ${p.moto.modelo}` : '-'}
+                          </div>
+                        </div>
+                        {p.encontradoNuvemshop && (
+                          <input type="checkbox" checked={selecionados.has(p.sku)} onChange={() => toggleSel(p.sku)} style={{ width: 18, height: 18 }} />
+                        )}
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 12 }}>
+                        <div>
+                          <div style={{ fontSize: 10.5, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '.6px' }}>Imagens</div>
+                          {p.encontradoNuvemshop ? (
+                            <button onClick={() => { setModalFoto(p); setFotosQueue([]); }} style={{ marginTop: 3, background: 'none', border: 'none', padding: 0, color: p.imagens > 0 ? 'var(--green)' : 'var(--red)', fontSize: 13, fontWeight: 800, textDecoration: 'underline dotted' }}>
+                              {p.imagens} foto(s)
+                            </button>
+                          ) : <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>-</div>}
+                        </div>
+                        {modoComDrive && (
+                          <div>
+                            <div style={{ fontSize: 10.5, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '.6px' }}>Drive</div>
+                            <div style={{ marginTop: 3, fontSize: 13, fontWeight: 800, color: (driveContagens[p.sku] || 0) > 0 ? '#7c3aed' : 'var(--gray-400)' }}>
+                              {p.imagens <= 2 && p.encontradoNuvemshop
+                                ? driveContagens[p.sku] === undefined
+                                  ? '...'
+                                  : driveContagens[p.sku] === 0
+                                  ? '-'
+                                  : `${driveContagens[p.sku]} foto(s)`
+                                : '-'}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      <div style={{ marginTop: 12 }}>
+                        <div style={{ fontSize: 10.5, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 6 }}>Categorias</div>
+                        {temSugestao ? (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>{sug.categorias.map(c => <span key={c.id} style={{ ...s.catBadge, background: '#f0fdf4', color: '#16a34a' }}>{c.nome}</span>)}</div>
+                        ) : p.categorias.length > 0 ? (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>{p.categorias.map(c => <span key={c.id} style={s.catBadge}>{c.nome}</span>)}</div>
+                        ) : (
+                          <span style={{ fontSize: 12, color: 'var(--red)', fontWeight: 700 }}>Sem categoria</span>
+                        )}
+                      </div>
+
+                      <div style={{ marginTop: 12 }}>
+                        <div style={{ fontSize: 10.5, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 6 }}>Tags</div>
+                        {temSugestao ? (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>{sug.tags.slice(0, 6).map(t => <span key={t} style={{ ...s.tag, background: '#f5f3ff', color: '#7c3aed', border: '1px solid #c4b5fd' }}>{t}</span>)}</div>
+                        ) : p.tags.length > 0 ? (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>{p.tags.slice(0, 6).map(t => <span key={t} style={s.tag}>{t}</span>)}</div>
+                        ) : (
+                          <span style={{ fontSize: 12, color: '#7c3aed', fontWeight: 700 }}>Sem tags</span>
+                        )}
+                      </div>
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', marginTop: 12 }}>
+                        <span style={{ fontSize: 11, color: statusColor, border: `1px solid ${statusColor}`, padding: '2px 8px', borderRadius: 999, fontWeight: 800 }}>{statusLabel}</span>
+                        {temSugestao && (
+                          <button onClick={() => setModalSku(p.sku)} style={{ ...s.btn, padding: '7px 12px', fontSize: 12, background: '#f5f3ff', color: '#7c3aed', border: '1px solid #c4b5fd' }}>
+                            Editar
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+                {produtos.length === 0 && (
+                  <div style={{ ...s.card, ...phoneCardStyle, marginBottom: 0, textAlign: 'center', color: 'var(--gray-400)', fontSize: 13 }}>Nenhum produto encontrado.</div>
+                )}
+              </div>
+            )}
+
+            <div style={{ ...s.card, padding: 0, overflow: 'hidden', display: isPhone ? 'none' : undefined }}>
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead style={{ background: 'var(--gray-50)' }}>
@@ -740,17 +860,17 @@ export default function NuvemshopProdutosPage() {
 
       {/* Modal edição sugestão */}
       {modalSku && modalProd && modalSugestao && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }}>
-          <div style={{ background: 'var(--white)', borderRadius: 14, width: '100%', maxWidth: 640, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 12px 32px rgba(0,0,0,.15)' }}>
-            <div style={{ padding: '18px 22px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 300, display: 'flex', alignItems: isPhone ? 'stretch' : 'center', justifyContent: 'center', padding: isPhone ? 0 : 24, backdropFilter: 'blur(2px)' }}>
+          <div style={{ background: 'var(--white)', borderRadius: isPhone ? 0 : 14, width: '100%', maxWidth: isPhone ? 'none' : 640, height: isPhone ? '100vh' : undefined, maxHeight: isPhone ? 'none' : '90vh', overflowY: 'auto', boxShadow: '0 12px 32px rgba(0,0,0,.15)' }}>
+            <div style={{ padding: isPhone ? '14px 16px' : '18px 22px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+              <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 15, fontWeight: 700 }}>Editar sugestão — {modalSku}</div>
                 <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>{modalProd.titulo}</div>
               </div>
               <button onClick={() => setModalSku(null)} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer' }}>×</button>
             </div>
 
-            <div style={{ padding: '16px 22px' }}>
+            <div style={{ padding: isPhone ? 16 : '16px 22px' }}>
               {/* Categorias */}
               <div style={{ marginBottom: 20 }}>
                 <label style={s.label}>Categorias selecionadas</label>
@@ -764,7 +884,7 @@ export default function NuvemshopProdutosPage() {
                   ))}
                 </div>
                 <label style={{ ...s.label, marginTop: 8 }}>Adicionar categoria</label>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, maxHeight: 200, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8, padding: 8 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '1fr 1fr', gap: 8, maxHeight: isPhone ? 280 : 200, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8, padding: 8 }}>
                   {categorias.map(c => {
                     const nome = c.name?.pt || c.name?.['pt-BR'] || Object.values(c.name || {})[0] || String(c.id);
                     const isParent = !c.parent_id;
@@ -807,20 +927,20 @@ export default function NuvemshopProdutosPage() {
               </div>
             </div>
 
-            <div style={{ padding: '14px 22px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-              <button onClick={() => setModalSku(null)} style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)' }}>Fechar</button>
+            <div style={{ padding: isPhone ? 16 : '14px 22px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button onClick={() => setModalSku(null)} style={{ ...s.btn, ...phoneButtonStyle, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)' }}>Fechar</button>
             </div>
           </div>
         </div>
       )}
       {/* MODAL UPLOAD FOTOS */}
       {modalFotoAtual && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.5)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }}>
-          <div style={{ background: 'var(--white)', borderRadius: 14, width: '100%', maxWidth: 700, maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 12px 40px rgba(0,0,0,.15)', overflow: 'hidden' }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.5)', zIndex: 400, display: 'flex', alignItems: isPhone ? 'stretch' : 'center', justifyContent: 'center', padding: isPhone ? 0 : 24, backdropFilter: 'blur(2px)' }}>
+          <div style={{ background: 'var(--white)', borderRadius: isPhone ? 0 : 14, width: '100%', maxWidth: isPhone ? 'none' : 700, height: isPhone ? '100vh' : undefined, maxHeight: isPhone ? 'none' : '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 12px 40px rgba(0,0,0,.15)', overflow: 'hidden' }}>
 
             {/* Header */}
-            <div style={{ padding: '18px 22px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
-              <div>
+            <div style={{ padding: isPhone ? '14px 16px' : '18px 22px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, gap: 10 }}>
+              <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 15, fontWeight: 700 }}>📷 Fotos — {modalFotoAtual.sku}</div>
                 <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>
                   {modalFotoAtual.titulo} · {modalFotoAtual.imagens} foto(s) já cadastrada(s)
@@ -831,8 +951,8 @@ export default function NuvemshopProdutosPage() {
             </div>
 
             {/* Drop zone + Drive button */}
-            <div style={{ padding: '16px 22px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <div style={{ display: 'flex', gap: 10 }}>
+            <div style={{ padding: isPhone ? 16 : '16px 22px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ display: isPhone ? 'grid' : 'flex', gridTemplateColumns: '1fr', gap: 10 }}>
                 <label style={{ flex: 1, display: 'flex', flexDirection: 'column' as const, alignItems: 'center', justifyContent: 'center', border: '2px dashed var(--border)', borderRadius: 10, padding: 16, cursor: 'pointer', background: '#fafafa', gap: 4 }}>
                   <div style={{ fontSize: 24 }}>📁</div>
                   <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-700)' }}>Selecionar do computador</div>
@@ -905,7 +1025,7 @@ export default function NuvemshopProdutosPage() {
                     if (enviadas > 0 || fotosParaEnviar.length === 0) setTimeout(() => { setModalFoto(null); setFotosQueue([]); setDriveStatus([]); }, 1200);
                   }}
                   disabled={importandoDrive || driveContador === null || driveContador === 0}
-                  style={{ display: 'flex', flexDirection: 'column' as const, alignItems: 'center', justifyContent: 'center', border: '2px dashed #c4b5fd', borderRadius: 10, padding: 16, cursor: driveContador ? 'pointer' : 'default', background: '#faf5ff', gap: 4, minWidth: 160, opacity: driveContador === 0 ? 0.5 : 1 }}
+                  style={{ display: 'flex', flexDirection: 'column' as const, alignItems: 'center', justifyContent: 'center', border: '2px dashed #c4b5fd', borderRadius: 10, padding: 16, cursor: driveContador ? 'pointer' : 'default', background: '#faf5ff', gap: 4, minWidth: isPhone ? 0 : 160, opacity: driveContador === 0 ? 0.5 : 1 }}
                 >
                   <div style={{ fontSize: 24 }}>{importandoDrive ? '⏳' : driveContador === null ? '⏳' : '📂'}</div>
                   <div style={{ fontSize: 12, fontWeight: 600, color: '#7c3aed' }}>
@@ -921,7 +1041,7 @@ export default function NuvemshopProdutosPage() {
 
             {/* Painel de status Drive */}
             {driveStatus.length > 0 && (
-              <div style={{ margin: '0 22px 14px', border: '1px solid #c4b5fd', borderRadius: 10, overflow: 'hidden' }}>
+              <div style={{ margin: isPhone ? '0 16px 14px' : '0 22px 14px', border: '1px solid #c4b5fd', borderRadius: 10, overflow: 'hidden' }}>
                 <div style={{ padding: '8px 12px', background: '#f5f3ff', borderBottom: '1px solid #c4b5fd', fontSize: 12, fontWeight: 700, color: '#5b21b6' }}>
                   📂 Enviando do Drive → Nuvemshop
                   <span style={{ marginLeft: 10, fontWeight: 400, color: '#7c3aed' }}>
@@ -948,11 +1068,11 @@ export default function NuvemshopProdutosPage() {
 
             {/* Preview grid */}
             {fotosQueue.length > 0 && (
-              <div style={{ flex: 1, overflowY: 'auto', padding: '0 22px 16px' }}>
+              <div style={{ flex: 1, overflowY: 'auto', padding: isPhone ? '0 16px 16px' : '0 22px 16px' }}>
                 <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 10 }}>
                   {fotosQueue.length} foto(s) na fila · serão adicionadas a partir da posição {modalFotoAtual.imagens + 1}
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 10 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isPhone ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fill, minmax(130px, 1fr))', gap: 10 }}>
                   {fotosQueue.map((foto, idx) => (
                     <div key={idx} style={{ position: 'relative', borderRadius: 8, overflow: 'hidden', border: `2px solid ${foto.status === 'ok' ? '#86efac' : foto.status === 'erro' ? '#fca5a5' : foto.status === 'enviando' ? '#93c5fd' : 'var(--border)'}` }}>
                       <img src={foto.preview} alt={foto.file.name} style={{ width: '100%', height: 110, objectFit: 'cover', display: 'block' }} />
@@ -979,14 +1099,14 @@ export default function NuvemshopProdutosPage() {
             )}
 
             {/* Footer */}
-            <div style={{ padding: '14px 22px', borderTop: '1px solid var(--border)', display: 'flex', gap: 10, justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+            <div style={{ padding: isPhone ? 16 : '14px 22px', borderTop: '1px solid var(--border)', display: isPhone ? 'grid' : 'flex', gap: 10, justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
               <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>
                 {fotosQueue.filter(f => f.status === 'ok').length > 0 && `✓ ${fotosQueue.filter(f => f.status === 'ok').length} enviada(s)`}
                 {fotosQueue.filter(f => f.status === 'erro').length > 0 && ` · ✗ ${fotosQueue.filter(f => f.status === 'erro').length} com erro`}
               </div>
-              <div style={{ display: 'flex', gap: 8 }}>
+              <div style={{ display: isPhone ? 'grid' : 'flex', gridTemplateColumns: '1fr', gap: 8 }}>
                 <button onClick={() => { setModalFoto(null); setFotosQueue([]); }}
-                  style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)' }}>
+                  style={{ ...s.btn, ...phoneButtonStyle, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)' }}>
                   Fechar
                 </button>
                 <button
@@ -1128,7 +1248,7 @@ export default function NuvemshopProdutosPage() {
                       });
                     }
                   }}
-                  style={{ ...s.btn, background: '#7c3aed', color: '#fff', opacity: (enviandoFotos || fotosQueue.filter(f => f.status === 'aguardando').length === 0) ? 0.6 : 1 }}>
+                  style={{ ...s.btn, ...phoneButtonStyle, background: '#7c3aed', color: '#fff', opacity: (enviandoFotos || fotosQueue.filter(f => f.status === 'aguardando').length === 0) ? 0.6 : 1 }}>
                   {enviandoFotos ? '⏳ Enviando...' : `Enviar ${fotosQueue.filter(f => f.status === 'aguardando').length} foto(s)`}
                 </button>
               </div>
