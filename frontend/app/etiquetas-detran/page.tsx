@@ -158,10 +158,18 @@ export default function EtiquetasDetranPage() {
   const [loadingPendenciasDev, setLoadingPendenciasDev] = useState(false);
   const [sort, setSort] = useState<SortState>({ key: 'sku', dir: 'asc' });
   const [pendenciasSort, setPendenciasSort] = useState<SortState>({ key: 'dataVenda', dir: 'desc' });
+  const [isPhone, setIsPhone] = useState(false);
   const linhasOrdenadas = useMemo(() => sortRows(linhas, sort), [linhas, sort]);
   const pendenciasOrdenadas = useMemo(() => sortRows(pendencias, pendenciasSort), [pendencias, pendenciasSort]);
 
   useEffect(() => { buscar(); }, []);
+  useEffect(() => {
+    const phoneMedia = window.matchMedia('(max-width: 767px)');
+    const sync = () => setIsPhone(phoneMedia.matches);
+    sync();
+    phoneMedia.addEventListener('change', sync);
+    return () => phoneMedia.removeEventListener('change', sync);
+  }, []);
 
   function toggleSort(key: string) {
     setSort((current) => ({ key, dir: current.key === key && current.dir === 'asc' ? 'desc' : 'asc' }));
@@ -257,18 +265,18 @@ export default function EtiquetasDetranPage() {
 
   return (
     <>
-      <div style={s.topbar}>
+      <div style={{ ...s.topbar, height: isPhone ? 'auto' : 'var(--topbar-h)', minHeight: 'var(--topbar-h)', padding: isPhone ? '12px 14px' : '0 28px', alignItems: isPhone ? 'stretch' : 'center', flexDirection: isPhone ? 'column' : 'row' }}>
         <div>
           <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)' }}>Etiquetas Detran</div>
           <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>
             {loading ? 'Carregando...' : `${linhas.length} etiqueta(s) encontrada(s)`}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button style={{ ...s.btn, background: '#7c3aed', color: '#fff' }} onClick={abrirPendencias}>
+        <div style={{ display: 'flex', gap: 8, flexDirection: isPhone ? 'column' : 'row', width: isPhone ? '100%' : undefined }}>
+          <button style={{ ...s.btn, background: '#7c3aed', color: '#fff', width: isPhone ? '100%' : undefined }} onClick={abrirPendencias}>
             Pendencias Baixa
           </button>
-          <button style={{ ...s.btn, background: '#2563eb', color: '#fff' }} onClick={async () => {
+          <button style={{ ...s.btn, background: '#2563eb', color: '#fff', width: isPhone ? '100%' : undefined }} onClick={async () => {
             setPendenciasDevOpen(true);
             setLoadingPendenciasDev(true);
             try {
@@ -283,9 +291,9 @@ export default function EtiquetasDetranPage() {
         </div>
       </div>
 
-      <div style={{ padding: 28, display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ padding: isPhone ? 14 : 28, display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div style={{ ...s.card, padding: 16 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr)) 118px', gap: 12, alignItems: 'end' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fit, minmax(170px, 1fr)) 118px', gap: 12, alignItems: 'end' }}>
             <div>
               <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--gray-500)', marginBottom: 4 }}>SKU</div>
               <input style={{ ...s.input, width: '100%', boxSizing: 'border-box' }} placeholder="ex: HD03_0110"
@@ -337,13 +345,50 @@ export default function EtiquetasDetranPage() {
                 <option value="multiplas">Múltiplas Etiquetas</option>
               </select>
             </div>
-            <button style={{ ...s.btn, height: 32, background: 'var(--ink)', color: '#fff' }} onClick={buscar} disabled={loading}>
+            <button style={{ ...s.btn, height: isPhone ? 40 : 32, background: 'var(--ink)', color: '#fff', width: isPhone ? '100%' : undefined }} onClick={buscar} disabled={loading}>
               {loading ? 'Buscando...' : 'Buscar'}
             </button>
           </div>
         </div>
 
         <div style={{ ...s.card, padding: 0 }}>
+          {isPhone ? (
+            <div style={{ padding: 12, display: 'grid', gap: 10, background: '#f8fafc' }}>
+              {loading && <div style={{ textAlign: 'center', color: 'var(--gray-400)', padding: 24 }}>Carregando...</div>}
+              {!loading && linhasOrdenadas.length === 0 && <div style={{ textAlign: 'center', color: 'var(--gray-400)', padding: 24 }}>Nenhuma etiqueta encontrada</div>}
+              {!loading && linhasOrdenadas.map((linha) => {
+                const etqColors = TIPO_ETQ_COLORS[linha.tipoEtiqueta] || { bg: '#f1f5f9', color: '#64748b' };
+                const stColors = STATUS_COLORS[linha.status] || STATUS_COLORS['-'];
+                return (
+                  <div key={`${linha.pecaId}-${linha.etiqueta}`} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 12, background: 'var(--white)', display: 'grid', gap: 10 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 12, fontWeight: 700, color: '#2563eb' }}>{linha.sku}</div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-800)', marginTop: 3, lineHeight: 1.25 }}>{linha.descricao || '-'}</div>
+                      </div>
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 999, background: stColors.bg, color: stColors.color, flexShrink: 0 }}>
+                        {linha.status || '-'}
+                      </span>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 8 }}>
+                        <div style={{ fontSize: 10, color: 'var(--gray-500)', marginBottom: 3 }}>Tipo</div>
+                        <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 5, background: etqColors.bg, color: etqColors.color }}>{linha.tipoEtiqueta}</span>
+                      </div>
+                      <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 8 }}>
+                        <div style={{ fontSize: 10, color: 'var(--gray-500)', marginBottom: 3 }}>Peça</div>
+                        <div style={{ fontSize: 11.5, color: 'var(--gray-700)' }}>{linha.tipoPeca || '-'}</div>
+                      </div>
+                    </div>
+                    <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 8 }}>
+                      <div style={{ fontSize: 10, color: 'var(--gray-500)', marginBottom: 3 }}>Etiqueta Detran</div>
+                      <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 12, color: 'var(--gray-800)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{linha.etiqueta}</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', minWidth: 980, borderCollapse: 'collapse' }}>
               <thead>
@@ -385,15 +430,16 @@ export default function EtiquetasDetranPage() {
               </tbody>
             </table>
           </div>
+          )}
         </div>
       </div>
 
       {modalPendencias && (
         <div onClick={() => setModalPendencias(false)}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.55)', zIndex: 320, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }}>
+          style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.55)', zIndex: 320, display: 'flex', alignItems: isPhone ? 'stretch' : 'center', justifyContent: 'center', padding: isPhone ? 0 : 24, backdropFilter: 'blur(2px)' }}>
           <div onClick={e => e.stopPropagation()}
-            style={{ background: 'var(--white)', borderRadius: 12, width: 'min(1380px, calc(100vw - 48px))', maxHeight: '88vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 70px rgba(2, 6, 23, 0.28)', border: '1px solid rgba(226,232,240,0.95)' }}>
-            <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, background: 'var(--white)' }}>
+            style={{ background: 'var(--white)', borderRadius: isPhone ? 0 : 12, width: isPhone ? '100%' : 'min(1380px, calc(100vw - 48px))', maxHeight: isPhone ? '100dvh' : '88vh', minHeight: isPhone ? '100dvh' : undefined, overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: isPhone ? 'none' : '0 24px 70px rgba(2, 6, 23, 0.28)', border: '1px solid rgba(226,232,240,0.95)' }}>
+            <div style={{ padding: isPhone ? '14px' : '18px 22px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: isPhone ? 'stretch' : 'center', justifyContent: 'space-between', gap: 12, background: 'var(--white)', flexDirection: isPhone ? 'column' : 'row' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0 }}>
                 <div>
                   <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--gray-800)' }}>Pendencias de Baixa</div>
@@ -403,7 +449,7 @@ export default function EtiquetasDetranPage() {
                 </div>
               </div>
               <button onClick={() => setModalPendencias(false)}
-                style={{ ...s.btn, background: 'var(--gray-100)', color: 'var(--gray-600)', border: '1px solid var(--border)' }}>
+                style={{ ...s.btn, background: 'var(--gray-100)', color: 'var(--gray-600)', border: '1px solid var(--border)', width: isPhone ? '100%' : undefined }}>
                 Fechar
               </button>
             </div>
@@ -416,6 +462,54 @@ export default function EtiquetasDetranPage() {
               ) : pendenciasOrdenadas.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: 60, color: 'var(--gray-400)' }}>
                   Nenhuma pendencia de baixa encontrada
+                </div>
+              ) : isPhone ? (
+                <div style={{ padding: 12, display: 'grid', gap: 10, background: '#f8fafc' }}>
+                  {pendenciasOrdenadas.map((linha) => {
+                    const key = `${linha.pecaId}|${linha.etiqueta}`;
+                    const stColors = STATUS_COLORS[linha.status] || STATUS_COLORS['-'];
+                    return (
+                      <div key={key} style={{ border: '1px solid var(--border)', borderRadius: 12, background: 'var(--white)', padding: 12, display: 'grid', gap: 10 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 12, fontWeight: 700, color: '#2563eb' }}>{linha.sku}</div>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-800)', marginTop: 3, lineHeight: 1.25 }}>{linha.descricao || '-'}</div>
+                          </div>
+                          <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 999, background: stColors.bg, color: stColors.color, flexShrink: 0 }}>
+                            {linha.status || '-'}
+                          </span>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                          <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 8 }}>
+                            <div style={{ fontSize: 10, color: 'var(--gray-500)', marginBottom: 3 }}>Etiqueta</div>
+                            <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11.5 }}>{linha.etiqueta}</div>
+                          </div>
+                          <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 8 }}>
+                            <div style={{ fontSize: 10, color: 'var(--gray-500)', marginBottom: 3 }}>Venda</div>
+                            <div style={{ fontSize: 11.5 }}>{formatDate(linha.dataVenda)}</div>
+                          </div>
+                          <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 8 }}>
+                            <div style={{ fontSize: 10, color: 'var(--gray-500)', marginBottom: 3 }}>Pedido</div>
+                            <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11.5 }}>{linha.blingPedidoNum || '-'}</div>
+                          </div>
+                          <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 8 }}>
+                            <div style={{ fontSize: 10, color: 'var(--gray-500)', marginBottom: 3 }}>NF</div>
+                            <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11.5 }}>{linha.nfNumero || '-'}</div>
+                          </div>
+                        </div>
+                        <div style={{ fontSize: 11.5, color: 'var(--gray-600)', lineHeight: 1.45 }}>
+                          <div>{linha.clienteNome || '-'}</div>
+                          <div style={{ fontFamily: 'Geist Mono, monospace' }}>{formatCpfCnpj(linha.clienteDoc)}</div>
+                        </div>
+                        <button
+                          onClick={() => abrirModalBaixa(linha)}
+                          disabled={confirmando === key}
+                          style={{ ...s.btn, background: '#16a34a', color: '#fff', padding: '9px 12px', fontSize: 12, opacity: confirmando === key ? 0.6 : 1, width: '100%' }}>
+                          {confirmando === key ? 'Salvando...' : 'Confirmar Baixa'}
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               ) : (
                 <table style={{ width: '100%', minWidth: 1280, borderCollapse: 'collapse', tableLayout: 'fixed' }}>
@@ -466,13 +560,13 @@ export default function EtiquetasDetranPage() {
       )}
       {/* Modal de Confirmação de Baixa */}
       {modalBaixa && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }}>
-          <div style={{ background: 'var(--white)', borderRadius: 14, width: '100%', maxWidth: 480, boxShadow: '0 16px 40px rgba(0,0,0,.15)', overflow: 'hidden' }}>
-            <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--border)' }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 500, display: 'flex', alignItems: isPhone ? 'stretch' : 'center', justifyContent: 'center', padding: isPhone ? 0 : 24, backdropFilter: 'blur(2px)' }}>
+          <div style={{ background: 'var(--white)', borderRadius: isPhone ? 0 : 14, width: '100%', maxWidth: isPhone ? undefined : 480, minHeight: isPhone ? '100dvh' : undefined, boxShadow: isPhone ? 'none' : '0 16px 40px rgba(0,0,0,.15)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ padding: isPhone ? '16px 14px' : '18px 22px', borderBottom: '1px solid var(--border)' }}>
               <div style={{ fontFamily: 'Fraunces, serif', fontSize: 16, fontWeight: 600 }}>Confirmar Baixa Detran</div>
               <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 3 }}>{modalBaixa.sku} — {modalBaixa.etiqueta}</div>
             </div>
-            <div style={{ padding: '18px 22px' }}>
+            <div style={{ padding: isPhone ? 14 : '18px 22px', flex: 1 }}>
               <div style={{ fontSize: 13, color: 'var(--ink-soft)', marginBottom: 16 }}>
                 Confirma a baixa desta etiqueta? Você pode anexar o comprovante (opcional).
               </div>
@@ -498,12 +592,12 @@ export default function EtiquetasDetranPage() {
                 )}
               </div>
             </div>
-            <div style={{ padding: '14px 22px 20px', display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-              <button onClick={() => setModalBaixa(null)} style={{ ...s.btn, color: 'var(--ink-soft)' }}>Cancelar</button>
+            <div style={{ padding: isPhone ? '12px 14px calc(12px + env(safe-area-inset-bottom))' : '14px 22px 20px', display: 'flex', gap: 10, justifyContent: 'flex-end', flexDirection: isPhone ? 'column-reverse' : 'row' }}>
+              <button onClick={() => setModalBaixa(null)} style={{ ...s.btn, color: 'var(--ink-soft)', width: isPhone ? '100%' : undefined }}>Cancelar</button>
               <button
                 onClick={confirmarBaixaComComprovante}
                 disabled={!!confirmando}
-                style={{ ...s.btn, background: '#16a34a', color: '#fff', opacity: confirmando ? 0.7 : 1 }}>
+                style={{ ...s.btn, background: '#16a34a', color: '#fff', opacity: confirmando ? 0.7 : 1, width: isPhone ? '100%' : undefined }}>
                 {confirmando ? 'Salvando...' : 'Confirmar Baixa'}
               </button>
             </div>
@@ -512,9 +606,9 @@ export default function EtiquetasDetranPage() {
       )}
       {/* Modal Pendências Devolução */}
       {pendenciasDevOpen && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }}>
-          <div style={{ background: 'var(--white)', borderRadius: 14, width: '100%', maxWidth: 700, maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 16px 40px rgba(0,0,0,.15)', overflow: 'hidden' }}>
-            <div style={{ padding: '16px 22px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 500, display: 'flex', alignItems: isPhone ? 'stretch' : 'center', justifyContent: 'center', padding: isPhone ? 0 : 24, backdropFilter: 'blur(2px)' }}>
+          <div style={{ background: 'var(--white)', borderRadius: isPhone ? 0 : 14, width: '100%', maxWidth: isPhone ? undefined : 700, maxHeight: isPhone ? '100dvh' : '85vh', minHeight: isPhone ? '100dvh' : undefined, display: 'flex', flexDirection: 'column', boxShadow: isPhone ? 'none' : '0 16px 40px rgba(0,0,0,.15)', overflow: 'hidden' }}>
+            <div style={{ padding: isPhone ? '14px' : '16px 22px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
               <div>
                 <div style={{ fontFamily: 'Fraunces, serif', fontSize: 16, fontWeight: 600 }}>Pendências Devolução — Etiqueta Detran</div>
                 <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>
@@ -531,6 +625,35 @@ export default function EtiquetasDetranPage() {
                 <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-muted)' }}>
                   <div style={{ fontSize: 28, marginBottom: 8 }}>✅</div>
                   <div>Nenhuma pendência de etiqueta por devolução</div>
+                </div>
+              ) : isPhone ? (
+                <div style={{ padding: 12, display: 'grid', gap: 10, background: '#f8fafc' }}>
+                  {pendenciasDev.map((p: any) => {
+                    const ult = p.devolucoes?.[0];
+                    return (
+                      <div key={p.id} style={{ border: '1px solid var(--border)', borderRadius: 12, background: 'var(--white)', padding: 12, display: 'grid', gap: 10 }}>
+                        <div>
+                          <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 12, fontWeight: 700, color: '#2563eb' }}>{p.idPeca}</div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-800)', marginTop: 3, lineHeight: 1.25 }}>{p.descricao}</div>
+                          <div style={{ fontSize: 11.5, color: 'var(--gray-500)', marginTop: 4 }}>{p.moto?.marca} {p.moto?.modelo}</div>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                          <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 8 }}>
+                            <div style={{ fontSize: 10, color: 'var(--gray-500)', marginBottom: 3 }}>Etiqueta anterior</div>
+                            <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11.5 }}>{ult?.etiquetasDetran || '—'}</div>
+                          </div>
+                          <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 8 }}>
+                            <div style={{ fontSize: 10, color: 'var(--gray-500)', marginBottom: 3 }}>Devolução</div>
+                            <div style={{ fontSize: 11.5 }}>{ult?.dataDevolucao ? new Date(ult.dataDevolucao).toLocaleDateString('pt-BR') : '—'}</div>
+                          </div>
+                          <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 8, gridColumn: 'span 2' }}>
+                            <div style={{ fontSize: 10, color: 'var(--gray-500)', marginBottom: 3 }}>Pedido</div>
+                            <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11.5 }}>{ult?.pedidoBlingNum || '—'}</div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               ) : (
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
