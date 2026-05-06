@@ -458,6 +458,7 @@ export default function VendasBlingPage() {
   const [filtroPedidoManual, setFiltroPedidoManual] = useState('');
   const [erroPedidosManuais, setErroPedidosManuais] = useState('');
   const [defaults, setDefaults] = useState<Defaults>({ fretePadrao: 29.9, taxaPadraoPct: 17 });
+  const [isPhone, setIsPhone] = useState(false);
 
   useEffect(() => {
     fetch(`${API}/bling/config-produtos`)
@@ -467,6 +468,14 @@ export default function VendasBlingPage() {
         taxaPadraoPct: Number(d.taxaPadraoPct ?? 17),
       }))
       .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 640px)');
+    const update = () => setIsPhone(media.matches);
+    update();
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
   }, []);
 
   async function buscarVendas() {
@@ -735,10 +744,11 @@ export default function VendasBlingPage() {
   const mensagemVaziaSeparacao = relatorioSeparacaoModo === 'manual'
     ? 'Nenhum pedido selecionado gerou itens para separacao.'
     : 'Nenhum pedido em aberto foi encontrado nesse periodo.';
+  const phoneButtonStyle = isPhone ? { width: '100%', justifyContent: 'center', minHeight: 42 } : {};
 
   return (
     <>
-      <div style={s.topbar}>
+      <div style={{ ...s.topbar, height: isPhone ? 'auto' : s.topbar.height, minHeight: 'var(--topbar-h)', alignItems: isPhone ? 'flex-start' : 'center', flexDirection: isPhone ? 'column' : 'row', gap: 10, padding: isPhone ? '14px 16px' : s.topbar.padding }}>
         <div>
           <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)', letterSpacing: '-0.3px' }}>Vendas Bling</div>
           <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>Revise baixas e cancelamentos antes de refletir no estoque</div>
@@ -753,24 +763,24 @@ export default function VendasBlingPage() {
         )}
       </div>
 
-      <div style={{ padding: 28 }}>
-        <div style={s.card}>
+      <div style={{ padding: isPhone ? 16 : 28 }}>
+        <div style={{ ...s.card, padding: isPhone ? 16 : s.card.padding }}>
           <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 14 }}>Buscar pedidos do Bling</div>
-          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-            <div>
+          <div style={{ display: isPhone ? 'grid' : 'flex', gridTemplateColumns: '1fr', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <div style={{ width: isPhone ? '100%' : undefined }}>
               <label style={s.label}>Data inicio</label>
-              <input style={{ ...s.input, width: 160 }} type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} />
+              <input style={{ ...s.input, width: isPhone ? '100%' : 160, minHeight: isPhone ? 42 : undefined }} type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} />
             </div>
-            <div>
+            <div style={{ width: isPhone ? '100%' : undefined }}>
               <label style={s.label}>Data fim</label>
-              <input style={{ ...s.input, width: 160 }} type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} />
+              <input style={{ ...s.input, width: isPhone ? '100%' : 160, minHeight: isPhone ? 42 : undefined }} type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} />
             </div>
-            <button style={{ ...s.btn, background: '#FF6900', color: '#fff', opacity: buscando ? 0.7 : 1 }} onClick={buscarVendas} disabled={buscando}>
+            <button style={{ ...s.btn, ...phoneButtonStyle, background: '#FF6900', color: '#fff', opacity: buscando ? 0.7 : 1 }} onClick={buscarVendas} disabled={buscando}>
               {buscando ? 'Buscando...' : 'Buscar vendas'}
             </button>
             <button
               type="button"
-              style={{ ...s.btn, background: 'var(--blue-500)', color: '#fff', opacity: carregandoSeparacao ? 0.7 : 1 }}
+              style={{ ...s.btn, ...phoneButtonStyle, background: 'var(--blue-500)', color: '#fff', opacity: carregandoSeparacao ? 0.7 : 1 }}
               onClick={buscarRelatorioSeparacao}
               disabled={carregandoSeparacao}
             >
@@ -778,7 +788,7 @@ export default function VendasBlingPage() {
             </button>
             <button
               type="button"
-              style={{ ...s.btn, background: manualAberto ? '#0f172a' : 'var(--white)', color: manualAberto ? '#fff' : 'var(--gray-800)', borderColor: '#cbd5e1', opacity: (carregandoPedidosManuais || carregandoSeparacao) ? 0.7 : 1 }}
+              style={{ ...s.btn, ...phoneButtonStyle, background: manualAberto ? '#0f172a' : 'var(--white)', color: manualAberto ? '#fff' : 'var(--gray-800)', borderColor: '#cbd5e1', opacity: (carregandoPedidosManuais || carregandoSeparacao) ? 0.7 : 1 }}
               onClick={toggleRelatorioManual}
               disabled={carregandoPedidosManuais || carregandoSeparacao}
             >
@@ -791,20 +801,20 @@ export default function VendasBlingPage() {
         </div>
 
         {manualAberto && (
-          <div style={{ ...s.card, borderColor: '#dbeafe', background: '#f8fbff' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: 14 }}>
-              <div>
+          <div style={{ ...s.card, padding: isPhone ? 16 : s.card.padding, borderColor: '#dbeafe', background: '#f8fbff' }}>
+            <div style={{ display: isPhone ? 'grid' : 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: 14 }}>
+              <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--gray-800)' }}>Relatorio de Separacao - Manual</div>
                 <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 4 }}>
                   Selecione pedidos ja importados e salvos no ANB para montar a separacao manual.
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <div style={{ display: isPhone ? 'grid' : 'flex', gridTemplateColumns: '1fr', gap: 8, flexWrap: 'wrap', width: isPhone ? '100%' : undefined }}>
                 <button
                   type="button"
                   onClick={() => carregarPedidosManuais(true)}
                   disabled={carregandoPedidosManuais}
-                  style={{ ...s.btn, background: 'var(--white)', color: 'var(--gray-800)', border: '1px solid #cbd5e1', opacity: carregandoPedidosManuais ? 0.6 : 1 }}
+                  style={{ ...s.btn, ...phoneButtonStyle, background: 'var(--white)', color: 'var(--gray-800)', border: '1px solid #cbd5e1', opacity: carregandoPedidosManuais ? 0.6 : 1 }}
                 >
                   {carregandoPedidosManuais ? 'Atualizando...' : 'Atualizar lista'}
                 </button>
@@ -819,7 +829,7 @@ export default function VendasBlingPage() {
                       ])),
                   )}
                   disabled={!pedidosManuaisFiltrados.length}
-                  style={{ ...s.btn, background: 'var(--white)', color: 'var(--gray-800)', border: '1px solid #cbd5e1', opacity: !pedidosManuaisFiltrados.length ? 0.5 : 1 }}
+                  style={{ ...s.btn, ...phoneButtonStyle, background: 'var(--white)', color: 'var(--gray-800)', border: '1px solid #cbd5e1', opacity: !pedidosManuaisFiltrados.length ? 0.5 : 1 }}
                 >
                   {todosPedidosManuaisVisiveisSelecionados ? 'Limpar exibidos' : 'Selecionar exibidos'}
                 </button>
@@ -827,7 +837,7 @@ export default function VendasBlingPage() {
                   type="button"
                   onClick={() => setPedidosManuaisSelecionados([])}
                   disabled={!pedidosManuaisSelecionados.length}
-                  style={{ ...s.btn, background: 'var(--white)', color: 'var(--gray-800)', border: '1px solid #cbd5e1', opacity: !pedidosManuaisSelecionados.length ? 0.5 : 1 }}
+                  style={{ ...s.btn, ...phoneButtonStyle, background: 'var(--white)', color: 'var(--gray-800)', border: '1px solid #cbd5e1', opacity: !pedidosManuaisSelecionados.length ? 0.5 : 1 }}
                 >
                   Limpar selecao
                 </button>
@@ -835,16 +845,16 @@ export default function VendasBlingPage() {
                   type="button"
                   onClick={buscarRelatorioSeparacaoManual}
                   disabled={!pedidosManuaisSelecionados.length || carregandoSeparacao}
-                  style={{ ...s.btn, background: '#0f172a', color: '#fff', opacity: (!pedidosManuaisSelecionados.length || carregandoSeparacao) ? 0.5 : 1 }}
+                  style={{ ...s.btn, ...phoneButtonStyle, background: '#0f172a', color: '#fff', opacity: (!pedidosManuaisSelecionados.length || carregandoSeparacao) ? 0.5 : 1 }}
                 >
                   {carregandoSeparacao ? 'Montando relatorio...' : `Gerar manual (${pedidosManuaisSelecionados.length})`}
                 </button>
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
+            <div style={{ display: isPhone ? 'grid' : 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
               <input
-                style={{ ...s.input, maxWidth: 320 }}
+                style={{ ...s.input, maxWidth: isPhone ? undefined : 320, minHeight: isPhone ? 42 : undefined }}
                 value={filtroPedidoManual}
                 onChange={(e) => setFiltroPedidoManual(e.target.value)}
                 placeholder="Buscar por pedido, ID ou data..."
@@ -868,6 +878,46 @@ export default function VendasBlingPage() {
               ) : !pedidosManuaisFiltrados.length ? (
                 <div style={{ padding: '18px 16px', fontSize: 13, color: 'var(--gray-500)' }}>
                   Nenhum pedido importado encontrado para a selecao manual.
+                </div>
+              ) : isPhone ? (
+                <div style={{ maxHeight: 420, overflowY: 'auto', display: 'grid', gap: 10, padding: 12 }}>
+                  {pedidosManuaisFiltrados.map((pedido) => {
+                    const checked = pedidosManuaisSelecionadosSet.has(pedido.pedidoId);
+                    return (
+                      <label
+                        key={pedido.pedidoId}
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: '28px 1fr',
+                          gap: 10,
+                          alignItems: 'flex-start',
+                          border: `1px solid ${checked ? '#93c5fd' : 'var(--border)'}`,
+                          background: checked ? '#eff6ff' : 'var(--white)',
+                          borderRadius: 12,
+                          padding: 12,
+                        }}
+                      >
+                        <input type="checkbox" checked={checked} onChange={() => togglePedidoManual(pedido.pedidoId)} style={{ marginTop: 3, width: 18, height: 18 }} />
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--blue-500)' }}>#{pedido.pedidoNum}</div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 10 }}>
+                            <div>
+                              <div style={{ fontSize: 10.5, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '.6px' }}>ID Bling</div>
+                              <div style={{ fontSize: 12, color: 'var(--gray-700)', fontFamily: 'JetBrains Mono, monospace' }}>{pedido.pedidoId}</div>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 10.5, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '.6px' }}>Data</div>
+                              <div style={{ fontSize: 12, color: 'var(--gray-700)' }}>{fmtDate(pedido.dataVenda)}</div>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 10.5, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '.6px' }}>Itens ANB</div>
+                              <div style={{ fontSize: 12, color: 'var(--gray-800)', fontWeight: 700 }}>{pedido.quantidadeItens}</div>
+                            </div>
+                          </div>
+                        </div>
+                      </label>
+                    );
+                  })}
                 </div>
               ) : (
                 <div style={{ maxHeight: 360, overflowY: 'auto' }}>
@@ -914,9 +964,9 @@ export default function VendasBlingPage() {
         )}
 
         {relatorioSeparacao && (
-          <div style={{ ...s.card, borderColor: '#bfdbfe', background: '#f8fbff' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: 14 }}>
-              <div>
+          <div style={{ ...s.card, padding: isPhone ? 16 : s.card.padding, borderColor: '#bfdbfe', background: '#f8fbff' }}>
+            <div style={{ display: isPhone ? 'grid' : 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: 14 }}>
+              <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--gray-800)' }}>{tituloRelatorioSeparacao}</div>
                 <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 4 }}>
                   Data da separacao: {fmtIsoDate(relatorioSeparacao.geradoEm || '')}
@@ -929,13 +979,13 @@ export default function VendasBlingPage() {
                 type="button"
                 onClick={gerarPdfSeparacao}
                 disabled={relatorioSeparacao.pedidos.length === 0 || gerandoPdf}
-                style={{ ...s.btn, background: '#0f172a', color: '#fff', opacity: relatorioSeparacao.pedidos.length === 0 || gerandoPdf ? 0.5 : 1 }}
+                style={{ ...s.btn, ...phoneButtonStyle, background: '#0f172a', color: '#fff', opacity: relatorioSeparacao.pedidos.length === 0 || gerandoPdf ? 0.5 : 1 }}
               >
                 {gerandoPdf ? 'Gerando PDF...' : 'Gerar PDF'}
               </button>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10, marginBottom: 14 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10, marginBottom: 14 }}>
               {[
                 { label: 'Pedidos', value: relatorioSeparacao.totaisGerais.totalPedidos, color: 'var(--gray-800)' },
                 { label: 'Itens', value: relatorioSeparacao.totaisGerais.totalItens, color: 'var(--gray-800)' },
@@ -966,9 +1016,9 @@ export default function VendasBlingPage() {
                       boxShadow: '0 1px 2px rgba(15, 23, 42, 0.04)',
                     }}
                   >
-                    <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)' }}>
-                      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-                        <div style={{ flex: '0 1 300px', minWidth: 240, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                    <div style={{ padding: isPhone ? 12 : '12px 14px', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ display: isPhone ? 'grid' : 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <div style={{ flex: '0 1 300px', minWidth: isPhone ? 0 : 240, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                           <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-800)' }}>Pedido #{pedido.pedidoNum}</div>
                           <div style={{ fontSize: 11.5, color: 'var(--gray-500)', marginTop: 5 }}>
                             Data da venda: {fmtDate(pedido.dataVenda)}
@@ -984,7 +1034,7 @@ export default function VendasBlingPage() {
                           </div>
                         </div>
 
-                        <div style={{ flex: '1 1 520px', minWidth: 320, border: '1px solid #dbeafe', background: '#f8fbff', borderRadius: 10, padding: '8px 10px' }}>
+                        <div style={{ flex: '1 1 520px', minWidth: isPhone ? 0 : 320, border: '1px solid #dbeafe', background: '#f8fbff', borderRadius: 10, padding: '8px 10px' }}>
                           <div style={{ fontSize: 10, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '.7px', marginBottom: 5 }}>Obs. interna</div>
                           <textarea
                             style={{ ...s.input, minHeight: 86, resize: 'vertical', lineHeight: 1.45 }}
@@ -1005,7 +1055,42 @@ export default function VendasBlingPage() {
                       </div>
                     </div>
 
-                    <div style={{ overflowX: 'auto' }}>
+                    {isPhone && (
+                      <div style={{ display: 'grid', gap: 10, padding: 12 }}>
+                        {pedido.itens.map((item) => (
+                          <div key={`${item.lineKey}-mobile`} style={{ border: '1px solid #e2e8f0', borderRadius: 12, padding: 12, background: 'var(--white)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
+                              <div style={{ minWidth: 0 }}>
+                                <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--blue-500)', fontWeight: 800 }}>{item.skuSistema || '-'}</div>
+                                <div style={{ marginTop: 6, fontSize: 12.5, color: 'var(--gray-800)', lineHeight: 1.4 }}>{item.descricao || '-'}</div>
+                              </div>
+                              <div style={{ flex: '0 0 auto', border: '1px solid #dbeafe', borderRadius: 8, padding: '4px 8px', fontSize: 12, fontWeight: 800, color: 'var(--gray-800)' }}>
+                                {item.quantidade}x
+                              </div>
+                            </div>
+                            <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
+                              <div>
+                                <div style={{ fontSize: 10.5, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '.6px' }}>Localizacao</div>
+                                <div style={{ fontSize: 12, color: 'var(--gray-700)' }}>{item.localizacaoAnb || '-'}</div>
+                                {!item.localizacaoConfere && (
+                                  <div style={{ marginTop: 3, fontSize: 10.5, color: '#b91c1c', fontWeight: 700 }}>
+                                    Divergente da localizacao do Bling
+                                  </div>
+                                )}
+                              </div>
+                              <div>
+                                <div style={{ fontSize: 10.5, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '.6px' }}>Etiqueta Detran</div>
+                                <div style={{ fontSize: 12, color: item.detranRelatorio === 'ENVIAR FOTO DA ETIQUETA DETRAN' ? 'var(--amber)' : 'var(--gray-800)', fontWeight: item.detranRelatorio ? 800 : 500 }}>
+                                  {item.detranRelatorio || '-'}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div style={{ overflowX: 'auto', display: isPhone ? 'none' : undefined }}>
                       <table style={{ width: '100%', minWidth: 760, borderCollapse: 'collapse', fontSize: 12.5 }}>
                         <thead style={{ background: 'var(--gray-50)' }}>
                           <tr>
