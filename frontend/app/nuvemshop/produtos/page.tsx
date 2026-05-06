@@ -221,7 +221,7 @@ export default function NuvemshopProdutosPage() {
         } catch { setDriveContagens(prev => ({ ...prev, [p.sku]: 0 })); }
       }
     })();
-  }, [produtos]);
+  }, [produtos, modo]);
 
   // Quando o modal abre, busca automaticamente o total de fotos no Drive
   useEffect(() => {

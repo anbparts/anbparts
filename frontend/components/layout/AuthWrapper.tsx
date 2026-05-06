@@ -54,7 +54,11 @@ export function AuthWrapper({ children }: { children: React.ReactNode }) {
         : init);
 
       if (isBackendRequest && response.status === 401) {
-        void logout();
+        const payload = await response.clone().json().catch(() => null);
+        const message = String(payload?.error || '');
+        if (/sess[aã]o invalida|sess[aã]o expirada|login novamente/i.test(message)) {
+          void logout();
+        }
       }
 
       return response;
