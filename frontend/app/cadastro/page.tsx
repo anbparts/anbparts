@@ -486,7 +486,7 @@ Deseja forçar a exclusão mesmo assim?`);
 
   return (
     <>
-      <div style={{ ...s.topbar, padding: isPhone ? '0 14px' : '0 28px' }}>
+      <div style={{ ...s.topbar, height: isPhone ? 'auto' : 'var(--topbar-h)', minHeight: 'var(--topbar-h)', padding: isPhone ? '12px 14px' : '0 28px', gap: 10, flexWrap: isPhone ? 'wrap' : 'nowrap' }}>
         <div>
           <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)', letterSpacing: '-0.3px' }}>Cadastro</div>
           <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>Pré-cadastro e cadastro de peças</div>
@@ -513,7 +513,68 @@ Deseja forçar a exclusão mesmo assim?`);
         <div style={s.card}>
           <div style={{ fontSize: 12, color: 'var(--gray-400)', marginBottom: 14 }}>{data.total} registro(s){somentePendentes ? ' (pendentes)' : ''}</div>
           {loading ? <div style={{ textAlign: 'center', padding: 32, color: 'var(--gray-400)' }}>Carregando...</div> :
-            data.data.length === 0 ? <div style={{ textAlign: 'center', padding: 32, color: 'var(--gray-400)' }}>Nenhum cadastro encontrado.</div> : (
+            data.data.length === 0 ? <div style={{ textAlign: 'center', padding: 32, color: 'var(--gray-400)' }}>Nenhum cadastro encontrado.</div> : isPhone ? (
+            <div style={{ display: 'grid', gap: 10 }}>
+              {data.data.map((item) => {
+                const cadastOk = item.status === 'cadastrado';
+                return (
+                  <div key={item.id} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 12, background: 'var(--white)', display: 'grid', gap: 10 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--blue-600)', fontWeight: 700 }}>{item.idPeca}</div>
+                        <div style={{ fontSize: 13, color: 'var(--gray-800)', fontWeight: 600, marginTop: 3, lineHeight: 1.25 }}>{item.descricao}</div>
+                        <div style={{ fontSize: 11.5, color: 'var(--gray-500)', marginTop: 4 }}>{item.moto?.marca} {item.moto?.modelo}</div>
+                      </div>
+                      <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--gray-800)' }}>R$ {Number(item.precoVenda).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+                        <div style={{ fontSize: 11, color: 'var(--gray-500)', marginTop: 3 }}>Estoque {item.estoque}</div>
+                      </div>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      <div>
+                        <div style={{ fontSize: 10, color: 'var(--gray-500)', marginBottom: 4 }}>Pré-cadastro</div>
+                        {cadastOk
+                          ? <span style={s.badge('#2563eb', '#eff6ff', '#bfdbfe')}>OK</span>
+                          : <button onClick={() => openEditar(item)} style={{ ...s.badge('var(--green)', '#f0fdf4', '#86efac'), cursor: 'pointer', width: '100%', justifyContent: 'center' }}>OK</button>}
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 10, color: 'var(--gray-500)', marginBottom: 4 }}>Cadastro</div>
+                        {cadastOk ? (
+                          <span style={s.badge('#2563eb', '#eff6ff', '#bfdbfe')}>OK</span>
+                        ) : (
+                          <button onClick={() => abrirFinalizar(item)}
+                            style={{ ...s.badge('#dc2626', '#fef2f2', '#fecaca'), cursor: 'pointer', width: '100%', justifyContent: 'center' }}>
+                            Pendente
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: isBruno ? '1fr 1fr' : '1fr', gap: 8 }}>
+                      <button
+                        style={{ ...s.btn, fontSize: 12, padding: '8px 10px', background: '#eff6ff', border: '1px solid #bfdbfe', color: '#2563eb', opacity: imprimindoItemId === item.id ? 0.7 : 1, justifyContent: 'center' }}
+                        onClick={() => imprimirEtiquetasCadastro(item)}
+                        disabled={imprimindoItemId === item.id}
+                      >
+                        {imprimindoItemId === item.id ? 'Imprimindo...' : 'Impressão'}
+                      </button>
+                      {!cadastOk && (
+                        <button style={{ ...s.btn, fontSize: 12, padding: '8px 10px', background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', justifyContent: 'center' }} onClick={() => openEditar(item)}>Editar</button>
+                      )}
+                      {isBruno && (
+                        <button
+                          style={{ ...s.btn, gridColumn: !cadastOk ? 'span 2' : undefined, fontSize: 12, padding: '8px 10px', background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', opacity: eliminandoLinhaId === item.id ? 0.7 : 1, justifyContent: 'center' }}
+                          onClick={() => eliminarLinhaCadastro(item)}
+                          disabled={eliminandoLinhaId === item.id}
+                        >
+                          {eliminandoLinhaId === item.id ? 'Eliminando...' : 'Eliminar linha'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead><tr>{['ID Peça', 'Descrição', 'Moto', 'Preço', 'Estoque', 'Pré-Cadastro', 'Cadastro', 'Ações'].map(h => <th key={h} style={s.th}>{h}</th>)}</tr></thead>
@@ -601,7 +662,7 @@ Deseja forçar a exclusão mesmo assim?`);
                   {motoSelecionada && <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 3 }}>Marca: {motoSelecionada.marca}</div>}
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '1fr 1fr', gap: 10 }}>
                   <div>
                     <label style={s.label}>ID Peça (SKU) *</label>
                     <input style={s.input} value={form.idPeca} onChange={(e) => setForm((p: any) => ({ ...p, idPeca: e.target.value.toUpperCase() }))} disabled={!!editItem} placeholder="Ex: HD04_0023" />
@@ -649,7 +710,7 @@ Deseja forçar a exclusão mesmo assim?`);
 
                 <div>
                   <label style={s.label}>Categoria ML *{form.categoriaMLId && <span style={{ marginLeft: 8, fontSize: 10, color: 'var(--gray-400)', fontWeight: 400 }}>ID: {form.categoriaMLId}</span>}</label>
-                  <div style={{ display: 'flex', gap: 8 }}>
+                  <div style={{ display: 'flex', gap: 8, flexDirection: isPhone ? 'column' : 'row' }}>
                     {categorias.length > 0 ? (
                       <select style={{ ...s.input, flex: 1 }} value={form.categoriaMLId} tabIndex={-1} onChange={(e) => {
                         const cat = categorias.find((c: any) => (c.category_id || c.id) === e.target.value);
@@ -662,7 +723,7 @@ Deseja forçar a exclusão mesmo assim?`);
                       <input style={{ ...s.input, flex: 1 }} value={form.categoriaMLNome || ''} tabIndex={-1} onChange={(e) => setForm((p: any) => ({ ...p, categoriaMLNome: e.target.value }))}
                         placeholder={buscandoCategoria ? 'Buscando...' : 'Clique buscar para sugerir'} readOnly={buscandoCategoria} />
                     )}
-                    <button type="button" style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', fontSize: 12, whiteSpace: 'nowrap' as const, opacity: buscandoCategoria ? 0.6 : 1 }}
+                    <button type="button" style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', fontSize: 12, whiteSpace: 'nowrap' as const, opacity: buscandoCategoria ? 0.6 : 1, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}
                       tabIndex={-1}
                       onClick={() => { setCategorias([]); buscarCategoriaML(form.descricao); }} disabled={buscandoCategoria || !form.descricao}>
                       {buscandoCategoria ? '...' : '🔍 Buscar'}
@@ -670,21 +731,21 @@ Deseja forçar a exclusão mesmo assim?`);
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '1fr 1fr', gap: 10 }}>
                   <div><label style={s.label}>Preço de Venda (R$) *</label><input style={s.input} type="number" min="0" step="0.01" value={form.precoVenda} onChange={(e) => setForm((p: any) => ({ ...p, precoVenda: e.target.value }))} placeholder="0.00" /></div>
                   <div><label style={s.label}>Estoque *</label><input style={s.input} type="number" min="1" value={form.estoque} onChange={(e) => setForm((p: any) => ({ ...p, estoque: e.target.value }))} /></div>
                 </div>
 
                 <div>
                   <label style={s.label}>Dimensões e Peso *</label>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: isPhone ? 'repeat(2, minmax(0, 1fr))' : 'repeat(4,1fr)', gap: 8 }}>
                     {[{ key: 'peso', label: 'Peso (kg)' }, { key: 'largura', label: 'Largura (cm)' }, { key: 'altura', label: 'Altura (cm)' }, { key: 'profundidade', label: 'Prof. (cm)' }].map(({ key, label }) => (
                       <div key={key}><div style={{ fontSize: 10, color: 'var(--gray-500)', marginBottom: 3 }}>{label}</div><input style={s.input} type="number" min="0" step="0.01" value={form[key]} onChange={(e) => setForm((p: any) => ({ ...p, [key]: e.target.value }))} placeholder="0" /></div>
                     ))}
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '1fr 1fr', gap: 10 }}>
                   <div>
                     <label style={s.label}>Localização (Caixa) *</label>
                     <input style={s.input} list="caixas-list" value={form.localizacao} onChange={(e) => setForm((p: any) => ({ ...p, localizacao: e.target.value }))} placeholder="Nome da caixa" />
@@ -825,15 +886,15 @@ Deseja forçar a exclusão mesmo assim?`);
             </div>
 
             {/* Footer */}
-            <div style={{ padding: isPhone ? '14px' : '14px 24px', borderTop: '1px solid var(--border)', display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'center', flexDirection: isPhone ? 'column-reverse' : 'row', flexShrink: 0 }}>
-              <button onClick={() => setModal(false)} style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>Cancelar</button>
+            <div style={{ padding: isPhone ? '12px 14px calc(12px + env(safe-area-inset-bottom))' : '14px 24px', borderTop: '1px solid var(--border)', display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'center', flexDirection: isPhone ? 'column-reverse' : 'row', flexShrink: 0 }}>
+              <button onClick={() => setModal(false)} style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', width: isPhone ? '100%' : undefined, justifyContent: 'center', minHeight: isPhone ? 42 : undefined }}>Cancelar</button>
               {editItem && isBruno && (
                 <button onClick={() => excluir()} disabled={excluindo}
-                  style={{ ...s.btn, background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', opacity: excluindo ? 0.7 : 1, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>
+                  style={{ ...s.btn, background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', opacity: excluindo ? 0.7 : 1, width: isPhone ? '100%' : undefined, justifyContent: 'center', minHeight: isPhone ? 42 : undefined }}>
                   {excluindo ? 'Excluindo...' : '🗑️ Excluir'}
                 </button>
               )}
-              <button onClick={salvar} disabled={saving} style={{ ...s.btn, background: 'var(--gray-800)', color: '#fff', opacity: saving ? 0.7 : 1, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>
+              <button onClick={salvar} disabled={saving} style={{ ...s.btn, background: 'var(--gray-800)', color: '#fff', opacity: saving ? 0.7 : 1, width: isPhone ? '100%' : undefined, justifyContent: 'center', minHeight: isPhone ? 42 : undefined }}>
                 {saving ? 'Enviando...' : editItem ? '🔄 Atualizar Produto Bling' : '🚀 Criar Produto Bling'}
               </button>
             </div>
@@ -858,16 +919,16 @@ Deseja forçar a exclusão mesmo assim?`);
       )}
       {/* MODAL FINALIZAR */}
       {modalFinalizar && itemFinalizar && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-          <div style={{ background: 'var(--white)', borderRadius: 14, width: '100%', maxWidth: 680, boxShadow: '0 20px 60px rgba(0,0,0,0.2)', maxHeight: '90vh', overflowY: 'auto' }}>
-            <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 200, display: 'flex', alignItems: isPhone ? 'stretch' : 'center', justifyContent: 'center', padding: isPhone ? 0 : 24 }}>
+          <div style={{ background: 'var(--white)', borderRadius: isPhone ? 0 : 14, width: '100%', maxWidth: isPhone ? undefined : 680, boxShadow: '0 20px 60px rgba(0,0,0,0.2)', maxHeight: isPhone ? '100dvh' : '90vh', minHeight: isPhone ? '100dvh' : undefined, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ padding: isPhone ? '16px 14px 14px' : '20px 24px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexShrink: 0 }}>
               <div>
                 <div style={{ fontSize: 16, fontWeight: 600 }}>Lançar no Estoque</div>
                 <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>{itemFinalizar.idPeca} — {itemFinalizar.descricao}</div>
               </div>
               <button onClick={() => { setModalFinalizar(false); setFotoPreviewOpen(false); }} style={{ border: 'none', background: 'transparent', fontSize: 20, cursor: 'pointer', color: 'var(--gray-400)' }}>×</button>
             </div>
-            <div style={{ padding: '20px 24px' }}>
+            <div style={{ padding: isPhone ? '14px' : '20px 24px', flex: 1, overflowY: 'auto' }}>
               {loadingPreview ? <div style={{ textAlign: 'center', padding: 32, color: 'var(--gray-400)' }}>Buscando dados do Bling...</div> : previewBling ? (
                 <div style={{ display: 'grid', gap: 14 }}>
                   <div style={{ display: 'none' }}>{[
@@ -939,7 +1000,7 @@ Deseja forçar a exclusão mesmo assim?`);
                       onChange={handleFotoCapaChange}
                       style={{ display: 'none' }}
                     />
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: isPhone ? 'stretch' : 'flex-start', gap: 12, flexWrap: 'wrap', flexDirection: isPhone ? 'column' : 'row' }}>
                       <div style={{ minWidth: 0, flex: 1 }}>
                         <div style={{ fontSize: 11, color: 'var(--gray-500)', textTransform: 'uppercase' as const, letterSpacing: '0.04em', marginBottom: 4 }}>Foto Capa</div>
                         {finalizarFotoCapa ? (
@@ -961,7 +1022,7 @@ Deseja forçar a exclusão mesmo assim?`);
                         type="button"
                         onClick={() => fotoInputRef.current?.click()}
                         disabled={uploadingFotoCapa}
-                        style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', opacity: uploadingFotoCapa ? 0.7 : 1 }}
+                        style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', opacity: uploadingFotoCapa ? 0.7 : 1, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}
                       >
                         {uploadingFotoCapa ? 'Importando...' : (finalizarFotoCapa ? 'Trocar Foto Capa' : 'Importar Foto Capa')}
                       </button>
@@ -970,13 +1031,13 @@ Deseja forçar a exclusão mesmo assim?`);
 
                   <hr style={{ border: 'none', borderTop: '1px solid var(--border)' }} />
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '1fr 1fr', gap: 12 }}>
                     <div><label style={s.label}>Frete (R$)</label><input style={s.input} type="number" step="0.01" value={previewFrete} onChange={(e) => setPreviewFrete(Number(e.target.value))} /></div>
                     <div><label style={s.label}>Taxa ML (%)</label><input style={s.input} type="number" step="0.1" value={previewTaxa} onChange={(e) => setPreviewTaxa(Number(e.target.value))} /></div>
                   </div>
 
                   <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 8, padding: 14 }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, textAlign: 'center' as const }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '1fr 1fr 1fr', gap: 8, textAlign: 'center' as const }}>
                       <div><div style={{ fontSize: 10, color: 'var(--gray-500)', marginBottom: 2 }}>PREÇO ML</div><div style={{ fontSize: 15, fontWeight: 700 }}>R$ {Number(previewBling.precoML).toFixed(2)}</div></div>
                       <div><div style={{ fontSize: 10, color: 'var(--gray-500)', marginBottom: 2 }}>TAXAS + FRETE</div><div style={{ fontSize: 15, fontWeight: 700, color: '#dc2626' }}>- R$ {(valorTaxas + previewFrete).toFixed(2)}</div></div>
                       <div><div style={{ fontSize: 10, color: 'var(--gray-500)', marginBottom: 2 }}>LÍQUIDO</div><div style={{ fontSize: 15, fontWeight: 700, color: valorLiq >= 0 ? 'var(--green)' : '#dc2626' }}>R$ {valorLiq.toFixed(2)}</div></div>
@@ -1020,10 +1081,10 @@ Deseja forçar a exclusão mesmo assim?`);
                 </div>
               ) : null}
             </div>
-            <div style={{ padding: '16px 24px', borderTop: '1px solid var(--border)', display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-              <button onClick={() => { setModalFinalizar(false); setFotoPreviewOpen(false); }} style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)' }}>Cancelar</button>
+            <div style={{ padding: isPhone ? '12px 14px calc(12px + env(safe-area-inset-bottom))' : '16px 24px', borderTop: '1px solid var(--border)', display: 'flex', gap: 10, justifyContent: 'flex-end', flexDirection: isPhone ? 'column-reverse' : 'row', flexShrink: 0 }}>
+              <button onClick={() => { setModalFinalizar(false); setFotoPreviewOpen(false); }} style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', width: isPhone ? '100%' : undefined, justifyContent: 'center', minHeight: isPhone ? 42 : undefined }}>Cancelar</button>
               <button onClick={confirmarFinalizar} disabled={confirmando || !previewBling || loadingPreview}
-                style={{ ...s.btn, background: 'var(--green)', color: '#fff', opacity: (confirmando || !previewBling || loadingPreview) ? 0.7 : 1 }}>
+                style={{ ...s.btn, background: 'var(--green)', color: '#fff', opacity: (confirmando || !previewBling || loadingPreview) ? 0.7 : 1, width: isPhone ? '100%' : undefined, justifyContent: 'center', minHeight: isPhone ? 42 : undefined }}>
                 {confirmando ? 'Lançando...' : '✓ Confirmar e Lançar no Estoque'}
               </button>
             </div>

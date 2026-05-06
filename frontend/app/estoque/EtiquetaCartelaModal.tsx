@@ -84,11 +84,20 @@ export default function EtiquetaCartelaModal({ motoId, motoLabel, onClose, onSav
   const [buscaTexto, setBuscaTexto] = useState('');
   const [buscaResultados, setBuscaResultados] = useState<any[]>([]);
   const [buscandoPecas, setBuscandoPecas] = useState(false);
+  const [isPhone, setIsPhone] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
 
   // Carrega posições salvas da moto ao abrir
   useEffect(() => {
     carregarExistentes();
+  }, []);
+
+  useEffect(() => {
+    const phoneMedia = window.matchMedia('(max-width: 767px)');
+    const sync = () => setIsPhone(phoneMedia.matches);
+    sync();
+    phoneMedia.addEventListener('change', sync);
+    return () => phoneMedia.removeEventListener('change', sync);
   }, []);
 
   async function carregarExistentes() {
@@ -308,22 +317,22 @@ export default function EtiquetaCartelaModal({ motoId, motoLabel, onClose, onSav
   const comStatus = posicoes.filter(p => p.status).length;
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.5)', zIndex: 400, display: 'flex', alignItems: 'stretch', justifyContent: 'flex-end' }}>
-      <div style={{ background: 'var(--white)', width: '100%', maxWidth: 900, display: 'flex', flexDirection: 'column', boxShadow: '-8px 0 32px rgba(0,0,0,.12)', overflow: 'hidden' }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.5)', zIndex: 400, display: 'flex', alignItems: 'stretch', justifyContent: isPhone ? 'center' : 'flex-end' }}>
+      <div style={{ background: 'var(--white)', width: '100%', maxWidth: isPhone ? undefined : 900, height: isPhone ? '100dvh' : undefined, display: 'flex', flexDirection: 'column', boxShadow: isPhone ? 'none' : '-8px 0 32px rgba(0,0,0,.12)', overflow: 'hidden' }}>
 
         {/* Header */}
-        <div style={{ padding: '18px 22px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexShrink: 0 }}>
-          <div>
-            <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--gray-800)' }}>Cartela de Etiquetas Detran</div>
+        <div style={{ padding: isPhone ? '14px 14px 12px' : '18px 22px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexShrink: 0, gap: 12 }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: isPhone ? 16 : 17, fontWeight: 700, color: 'var(--gray-800)' }}>Cartela de Etiquetas Detran</div>
             <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>{motoLabel} · {preenchidas} de 34 posições vinculadas · {comStatus} com status</div>
           </div>
           <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', fontSize: 16, flexShrink: 0 }}>×</button>
         </div>
 
         {/* Cartela ID */}
-        <div style={{ padding: '14px 22px', borderBottom: '1px solid var(--border)', background: '#f8fafc', flexShrink: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ flex: 1, maxWidth: 380 }}>
+        <div style={{ padding: isPhone ? '12px 14px' : '14px 22px', borderBottom: '1px solid var(--border)', background: '#f8fafc', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: isPhone ? 'stretch' : 'center', gap: isPhone ? 8 : 12, flexDirection: isPhone ? 'column' : 'row' }}>
+            <div style={{ flex: 1, maxWidth: isPhone ? undefined : 380 }}>
               <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 6, display: 'block' }}>
                 ID da Cartela (prefixo)
               </label>
@@ -335,16 +344,107 @@ export default function EtiquetaCartelaModal({ motoId, motoLabel, onClose, onSav
               />
             </div>
             {cartelaId && (
-              <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 18 }}>
+              <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: isPhone ? 0 : 18 }}>
                 Ex: <span style={{ fontFamily: 'Geist Mono, monospace', color: 'var(--gray-800)', fontWeight: 600 }}>{cartelaId}001</span> até <span style={{ fontFamily: 'Geist Mono, monospace', color: 'var(--gray-800)', fontWeight: 600 }}>{cartelaId}034</span>
               </div>
             )}
-            {loadingExistentes && <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 18 }}>Carregando dados existentes...</div>}
+            {loadingExistentes && <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: isPhone ? 0 : 18 }}>Carregando dados existentes...</div>}
           </div>
         </div>
 
         {/* Tabela das 34 posições */}
-        <div style={{ flex: 1, overflowY: 'auto' }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: isPhone ? 12 : 0, background: isPhone ? '#f8fafc' : undefined }}>
+          {isPhone ? (
+            <div style={{ display: 'grid', gap: 10 }}>
+              {DETRAN_TIPOS.map((tipo, idx) => {
+                const pos = posicoes[idx];
+                const etiqueta = gerarEtiqueta(idx + 1);
+                const isOpen = buscaAberta === idx;
+
+                return (
+                  <div key={idx} style={{ border: '1px solid var(--border)', borderRadius: 12, background: 'var(--white)', padding: 12, display: 'grid', gap: 10 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 10.5, color: 'var(--gray-400)', fontFamily: 'Geist Mono, monospace', marginBottom: 3 }}>#{String(idx + 1).padStart(2, '0')} · {etiqueta || 'sem etiqueta'}</div>
+                        <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--gray-800)' }}>{tipo}</div>
+                      </div>
+                      {(pos.skuId || pos.status) && (
+                        <button onClick={() => limparPosicao(idx)}
+                          style={{ width: 30, height: 30, borderRadius: 8, background: '#fff7f7', border: '1px solid #fecaca', cursor: 'pointer', color: '#dc2626', fontSize: 16, flexShrink: 0 }}
+                          title="Limpar posição">
+                          ×
+                        </button>
+                      )}
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6 }}>
+                      {STATUS_OPTS.slice(1).map(opt => (
+                        <button key={opt} onClick={() => setStatus(idx, pos.status === opt ? '' : opt as any)}
+                          style={{
+                            padding: '8px 6px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                            border: `1px solid ${pos.status === opt ? STATUS_COLORS[opt].border : 'var(--border)'}`,
+                            background: pos.status === opt ? STATUS_COLORS[opt].bg : 'var(--white)',
+                            color: pos.status === opt ? STATUS_COLORS[opt].color : 'var(--gray-500)',
+                          }}>
+                          {opt}
+                        </button>
+                      ))}
+                    </div>
+
+                    {isOpen ? (
+                      <div style={{ position: 'relative' }}>
+                        <input
+                          ref={searchRef}
+                          autoFocus
+                          style={{ width: '100%', border: '1px solid var(--blue-500)', borderRadius: 8, padding: '9px 10px', fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
+                          placeholder="Buscar por descrição..."
+                          value={buscaTexto}
+                          onChange={e => setBuscaTexto(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Escape') setBuscaAberta(null); }}
+                        />
+                        <div style={{ marginTop: 8, background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, maxHeight: 260, overflowY: 'auto' }}>
+                          {buscandoPecas ? (
+                            <div style={{ padding: '12px', fontSize: 12, color: 'var(--gray-400)' }}>Buscando...</div>
+                          ) : buscaResultados.length === 0 ? (
+                            <div style={{ padding: '12px', fontSize: 12, color: 'var(--gray-400)' }}>Nenhuma peça encontrada</div>
+                          ) : buscaResultados.map((peca: any) => (
+                            <button key={peca.id} type="button" onClick={() => selecionarSku(idx, peca)}
+                              style={{ width: '100%', textAlign: 'left', padding: '10px 12px', cursor: 'pointer', border: 'none', borderBottom: '1px solid var(--gray-100)', background: 'var(--white)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                              <span style={{ minWidth: 0 }}>
+                                <span style={{ display: 'block', fontFamily: 'Geist Mono, monospace', fontSize: 11, fontWeight: 700, color: 'var(--blue-500)' }}>{peca.idPeca}</span>
+                                <span style={{ display: 'block', fontSize: 11.5, color: 'var(--gray-600)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{peca.descricao}</span>
+                              </span>
+                              <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 7px', borderRadius: 999, background: peca.disponivel ? '#f0fdf4' : '#fef2f2', color: peca.disponivel ? '#16a34a' : '#dc2626', flexShrink: 0 }}>
+                                {peca.disponivel ? 'Estoque' : 'Vendida'}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : pos.skuId ? (
+                      <button type="button" onClick={() => abrirBusca(idx)}
+                        style={{ width: '100%', border: '1px solid #bfdbfe', background: '#eff6ff', borderRadius: 10, padding: 10, textAlign: 'left', cursor: 'pointer' }}>
+                        <span style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
+                          <span style={{ minWidth: 0 }}>
+                            <span style={{ display: 'block', fontFamily: 'Geist Mono, monospace', fontSize: 12, fontWeight: 700, color: 'var(--blue-500)' }}>{pos.skuId}</span>
+                            <span style={{ display: 'block', fontSize: 11.5, color: 'var(--gray-600)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pos.skuDescricao}</span>
+                          </span>
+                          <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 7px', borderRadius: 999, background: pos.skuDisponivel ? '#f0fdf4' : '#fef2f2', color: pos.skuDisponivel ? '#16a34a' : '#dc2626', flexShrink: 0 }}>
+                            {pos.skuDisponivel ? 'Estoque' : 'Vendida'}
+                          </span>
+                        </span>
+                      </button>
+                    ) : (
+                      <button onClick={() => abrirBusca(idx)}
+                        style={{ width: '100%', background: 'var(--white)', border: '1px dashed var(--border)', borderRadius: 10, padding: '10px 12px', fontSize: 12, color: 'var(--gray-500)', cursor: 'pointer' }}>
+                        🔍 Vincular SKU
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead style={{ position: 'sticky', top: 0, background: 'var(--gray-50)', zIndex: 10 }}>
               <tr>
@@ -465,20 +565,21 @@ export default function EtiquetaCartelaModal({ motoId, motoLabel, onClose, onSav
               })}
             </tbody>
           </table>
+          )}
         </div>
 
         {/* Footer */}
-        <div style={{ padding: '14px 22px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, background: 'var(--white)' }}>
+        <div style={{ padding: isPhone ? '12px 14px calc(12px + env(safe-area-inset-bottom))' : '14px 22px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: isPhone ? 'stretch' : 'center', flexShrink: 0, background: 'var(--white)', flexDirection: isPhone ? 'column' : 'row', gap: isPhone ? 10 : 12 }}>
           <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>
             {preenchidas} SKU(s) vinculados · {comStatus} com status definido
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, flexDirection: isPhone ? 'column-reverse' : 'row', width: isPhone ? '100%' : undefined }}>
             <button onClick={onClose}
-              style={{ padding: '8px 18px', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', border: '1px solid var(--border)', background: 'var(--white)', color: 'var(--gray-600)', fontFamily: 'Inter, sans-serif' }}>
+              style={{ padding: '8px 18px', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', border: '1px solid var(--border)', background: 'var(--white)', color: 'var(--gray-600)', fontFamily: 'Inter, sans-serif', width: isPhone ? '100%' : undefined }}>
               Cancelar
             </button>
             <button onClick={salvar} disabled={saving || (!preenchidas && !comStatus && Object.keys(skusRemovidos).length === 0)}
-              style={{ padding: '8px 22px', borderRadius: 7, fontSize: 13, fontWeight: 600, cursor: 'pointer', border: 'none', background: '#1d4ed8', color: '#fff', fontFamily: 'Inter, sans-serif', opacity: saving ? 0.6 : 1 }}>
+              style={{ padding: '8px 22px', borderRadius: 7, fontSize: 13, fontWeight: 600, cursor: 'pointer', border: 'none', background: '#1d4ed8', color: '#fff', fontFamily: 'Inter, sans-serif', opacity: saving ? 0.6 : 1, width: isPhone ? '100%' : undefined }}>
               {saving ? 'Salvando...' : Object.keys(skusRemovidos).length > 0 && !preenchidas ? `Remover ${Object.keys(skusRemovidos).length} etiqueta(s)` : `Salvar ${preenchidas} peça(s)`}
             </button>
           </div>

@@ -1757,7 +1757,7 @@ export default function MotosPage() {
   useEffect(() => {
     if (!textoModeloModal) return;
     const editor = textoModeloEditorRef.current;
-    if (editor && editor.innerHTML !== textoModelo) {
+    if (editor && document.activeElement !== editor && editor.innerHTML !== textoModelo) {
       editor.innerHTML = textoModelo;
     }
   }, [textoModeloModal, textoModelo]);

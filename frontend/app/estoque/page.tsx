@@ -1893,6 +1893,7 @@ function DevolucaoModal({ peca, onClose, onSaved }: any) {
 // ── Modal Histórico de Devoluções ─────────────────────────────────────────────
 function DevolucaoHistoricoModal({ motos, onClose }: any) {
   const hoje = new Date().toISOString().slice(0, 10);
+  const [isPhone, setIsPhone] = useState(false);
   const [filtros, setFiltros] = useState({
     idPeca: '', descricao: '', motoId: '', pedidoBlingNum: '',
     comEtiqueta: '', dataVendaDe: '', dataVendaAte: '',
@@ -1919,6 +1920,13 @@ function DevolucaoHistoricoModal({ motos, onClose }: any) {
   }
 
   useEffect(() => { buscar(); }, []);
+  useEffect(() => {
+    const phoneMedia = window.matchMedia('(max-width: 767px)');
+    const sync = () => setIsPhone(phoneMedia.matches);
+    sync();
+    phoneMedia.addEventListener('change', sync);
+    return () => phoneMedia.removeEventListener('change', sync);
+  }, []);
 
   function setF(key: string, value: any) {
     const next = { ...filtros, [key]: value, page: 1 };
@@ -1949,11 +1957,11 @@ function DevolucaoHistoricoModal({ motos, onClose }: any) {
   ];
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, backdropFilter: 'blur(2px)' }}>
-      <div style={{ background: 'var(--white)', borderRadius: 16, width: '100%', maxWidth: 1200, maxHeight: '95vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,.2)', overflow: 'hidden' }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 400, display: 'flex', alignItems: isPhone ? 'stretch' : 'center', justifyContent: 'center', padding: isPhone ? 0 : 16, backdropFilter: 'blur(2px)' }}>
+      <div style={{ background: 'var(--white)', borderRadius: isPhone ? 0 : 16, width: '100%', maxWidth: isPhone ? undefined : 1200, maxHeight: isPhone ? '100dvh' : '95vh', minHeight: isPhone ? '100dvh' : undefined, display: 'flex', flexDirection: 'column', boxShadow: isPhone ? 'none' : '0 20px 60px rgba(0,0,0,.2)', overflow: 'hidden' }}>
 
         {/* Header */}
-        <div style={{ padding: '16px 22px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+        <div style={{ padding: isPhone ? '14px 14px 12px' : '16px 22px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, gap: 12 }}>
           <div>
             <div style={{ fontFamily: 'Fraunces, serif', fontSize: 17, fontWeight: 700 }}>📦 Histórico de Devoluções</div>
             <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>{dados.total} registro(s)</div>
@@ -1962,8 +1970,8 @@ function DevolucaoHistoricoModal({ motos, onClose }: any) {
         </div>
 
         {/* Filtros */}
-        <div style={{ padding: '14px 22px', borderBottom: '1px solid var(--border)', background: 'var(--gray-50)', flexShrink: 0 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10, marginBottom: 10 }}>
+        <div style={{ padding: isPhone ? 14 : '14px 22px', borderBottom: '1px solid var(--border)', background: 'var(--gray-50)', flexShrink: 0 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10, marginBottom: 10 }}>
             <input placeholder="SKU" value={filtros.idPeca} onChange={e => setF('idPeca', e.target.value.toUpperCase())}
               style={{ ...cs.fi, fontSize: 12, fontFamily: 'Geist Mono, monospace' }} />
             <input placeholder="Descrição" value={filtros.descricao} onChange={e => setF('descricao', e.target.value)}
@@ -1980,7 +1988,7 @@ function DevolucaoHistoricoModal({ motos, onClose }: any) {
               <option value="sem">Sem etiqueta</option>
             </select>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10, alignItems: 'flex-end' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr 1fr' : 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10, alignItems: 'flex-end' }}>
             <div>
               <div style={{ fontSize: 10.5, color: 'var(--ink-muted)', marginBottom: 3 }}>Devolução de</div>
               <input type="date" value={filtros.dataDevolucaoDe} onChange={e => setF('dataDevolucaoDe', e.target.value)} style={{ ...cs.fi, fontSize: 12 }} />
@@ -1997,7 +2005,7 @@ function DevolucaoHistoricoModal({ motos, onClose }: any) {
               <div style={{ fontSize: 10.5, color: 'var(--ink-muted)', marginBottom: 3 }}>Venda até</div>
               <input type="date" value={filtros.dataVendaAte} onChange={e => setF('dataVendaAte', e.target.value)} style={{ ...cs.fi, fontSize: 12 }} />
             </div>
-            <button onClick={() => buscar(filtros)} style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)', justifyContent: 'center' }}>
+            <button onClick={() => buscar(filtros)} style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)', justifyContent: 'center', gridColumn: isPhone ? 'span 2' : undefined }}>
               Buscar
             </button>
           </div>
@@ -2011,6 +2019,49 @@ function DevolucaoHistoricoModal({ motos, onClose }: any) {
             <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-muted)' }}>
               <div style={{ fontSize: 28, marginBottom: 10 }}>📦</div>
               <div>Nenhuma devolução encontrada</div>
+            </div>
+          ) : isPhone ? (
+            <div style={{ padding: 12, display: 'grid', gap: 10, background: '#f8fafc' }}>
+              {dados.devolucoes.map((d: any) => (
+                <div key={d.id} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 12, background: 'var(--white)', display: 'grid', gap: 10 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 12, fontWeight: 700, color: 'var(--blue)' }}>{d.idPeca}</div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', marginTop: 3, lineHeight: 1.25 }}>{d.descricao}</div>
+                      <div style={{ fontSize: 11.5, color: 'var(--ink-muted)', marginTop: 4 }}>{d.motoNome}</div>
+                    </div>
+                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                      <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 12, fontWeight: 700, color: 'var(--sage)' }}>{fmt(d.valorLiq)}</div>
+                      <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginTop: 3 }}>{fmtDate(d.dataDevolucao)}</div>
+                    </div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 8 }}>
+                      <div style={{ fontSize: 10, color: 'var(--ink-muted)', marginBottom: 3 }}>Pedido Bling</div>
+                      <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11.5 }}>{d.pedidoBlingNum || '—'}</div>
+                    </div>
+                    <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 8 }}>
+                      <div style={{ fontSize: 10, color: 'var(--ink-muted)', marginBottom: 3 }}>Venda</div>
+                      <div style={{ fontSize: 11.5 }}>{fmtDate(d.dataVenda)}</div>
+                    </div>
+                    <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 8 }}>
+                      <div style={{ fontSize: 10, color: 'var(--ink-muted)', marginBottom: 3 }}>Frete</div>
+                      <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11.5 }}>{fmt(d.valorFrete)}</div>
+                    </div>
+                    <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 8 }}>
+                      <div style={{ fontSize: 10, color: 'var(--ink-muted)', marginBottom: 3 }}>Etiqueta</div>
+                      <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.etiquetasDetran || '—'}</div>
+                    </div>
+                  </div>
+                  {(d.nfVendaNumero || d.nfDevolucaoNumero || d.observacoes) && (
+                    <div style={{ fontSize: 11.5, color: 'var(--ink-soft)', lineHeight: 1.45 }}>
+                      {d.nfVendaNumero && <div>NF venda: <span style={{ fontFamily: 'Geist Mono, monospace' }}>{d.nfVendaNumero}</span></div>}
+                      {d.nfDevolucaoNumero && <div>NF devolução: <span style={{ fontFamily: 'Geist Mono, monospace' }}>{d.nfDevolucaoNumero}</span></div>}
+                      {d.observacoes && <div>{d.observacoes}</div>}
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           ) : (
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
@@ -2052,7 +2103,7 @@ function DevolucaoHistoricoModal({ motos, onClose }: any) {
 
         {/* Paginação */}
         {dados.total > filtros.perPage && (
-          <div style={{ padding: '12px 22px', borderTop: '1px solid var(--border)', display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'flex-end', flexShrink: 0 }}>
+          <div style={{ padding: isPhone ? '12px 14px calc(12px + env(safe-area-inset-bottom))' : '12px 22px', borderTop: '1px solid var(--border)', display: 'flex', gap: 8, alignItems: isPhone ? 'stretch' : 'center', justifyContent: 'flex-end', flexShrink: 0, flexDirection: isPhone ? 'column' : 'row' }}>
             <span style={{ fontSize: 12, color: 'var(--ink-muted)' }}>
               Página {filtros.page} de {Math.ceil(dados.total / filtros.perPage)}
             </span>
