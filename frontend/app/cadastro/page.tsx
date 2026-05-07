@@ -374,12 +374,14 @@ export default function CadastroPage() {
   }
 
   function atualizarContadorFotosLocal(sku: string, sistema: CadastroFotosSistema, enviadas: number) {
+    let removerSelecao = false;
     setFotosLinhas((prev) => ordenarFotosLinhas(prev.map((linha) => {
       if (linha.sku !== sku) return linha;
       const atual = Number((linha as any)[sistema]?.fotos || 0);
       const proximo = sistema === 'anb' ? Math.max(1, atual) : Math.min(sistema === 'ml' ? 12 : 999, atual + Math.max(0, enviadas));
       const flags = { ...linha.flags, [sistema]: false };
       const temFlag = flags.anb || flags.ml || flags.nuvemshop;
+      if (!temFlag) removerSelecao = true;
       return {
         ...linha,
         [sistema]: { ...(linha as any)[sistema], fotos: proximo, ok: sistema === 'anb' ? proximo > 0 : (linha as any)[sistema]?.ok },
@@ -388,6 +390,13 @@ export default function CadastroPage() {
         status: temFlag ? 'pendente' : 'ok',
       } as CadastroFotosLinha;
     })));
+    if (removerSelecao) {
+      setFotosSelecionados((prev) => {
+        const next = new Set(prev);
+        next.delete(sku);
+        return next;
+      });
+    }
   }
 
   function aplicarResultadoProcessamentoLocal(sku: string, detalhes: any[]) {
