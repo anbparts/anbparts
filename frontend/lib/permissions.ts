@@ -30,14 +30,14 @@ export const PAGE_KEY_BY_HREF: Record<string, string> = {
   '/detran/execucoes': 'detran',
   '/detran/logs': 'detran',
   '/configuracoes': 'configuracoes',
-  '/bling': 'conexoes',
-  '/configuracoes-gerais': 'conexoes',
-  '/bling/config-produtos': 'conexoes',
-  '/conf-gerais': 'conexoes',
-  '/config-ml': 'conexoes',
-  '/conf-nuvemshop': 'conexoes',
-  '/conf-gmail': 'conexoes',
-  '/conf-google-drive': 'conexoes',
+  '/bling': 'conf_bling',
+  '/configuracoes-gerais': 'conf_emails',
+  '/bling/config-produtos': 'conf_produtos_bling',
+  '/conf-gerais': 'conf_gerais',
+  '/config-ml': 'conf_ml',
+  '/conf-nuvemshop': 'conf_nuvemshop',
+  '/conf-gmail': 'conf_gmail',
+  '/conf-google-drive': 'conf_google_drive',
 };
 
 export function isBruno(user?: LoggedUser | null) {
