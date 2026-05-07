@@ -765,9 +765,14 @@ financeiroRouter.get('/despesas-receita', async (req, res, next) => {
 
     const monthIndexes = mes ? [mes] : Array.from({ length: 12 }, (_, index) => index + 1);
 
-    // Coleta todas as categorias únicas — exclui "Contador" e categorias sem valor no período
-    const CATEGORIAS_EXCLUIDAS = ['contador'];
-    const todasCategorias = Array.from(new Set(despesas.map((d) => String(d.categoria || 'Outros').trim())))
+    // Coleta somente despesas operacionais: "Moto" é investimento e não entra nesta tela.
+    const CATEGORIAS_EXCLUIDAS = ['contador', 'moto'];
+    const isDespesaOperacional = (despesa: { categoria?: string | null }) => {
+      const categoria = String(despesa.categoria || 'Outros').trim().toLowerCase();
+      return !CATEGORIAS_EXCLUIDAS.includes(categoria);
+    };
+    const despesasOperacionais = despesas.filter(isDespesaOperacional);
+    const todasCategorias: string[] = Array.from(new Set<string>(despesasOperacionais.map((d) => String(d.categoria || 'Outros').trim())))
       .filter((cat) => !CATEGORIAS_EXCLUIDAS.includes(cat.toLowerCase()))
       .sort();
 
@@ -784,18 +789,18 @@ financeiroRouter.get('/despesas-receita', async (req, res, next) => {
         .filter((item) => matchesYearMonth(item.dataVenda, ano, monthIndex))
         .reduce((sum, item) => sum + toNumber(item.valorFrete), 0);
 
-      const despesasMes = despesas
+      const despesasMes = despesasOperacionais
         .filter((item) => matchesYearMonth(item.data, ano, monthIndex))
         .reduce((sum, item) => sum + toNumber(item.valor), 0);
 
-      const despesasPendentes = despesas
+      const despesasPendentes = despesasOperacionais
         .filter((item) => item.statusPagamento === 'pendente' && matchesYearMonth(item.data, ano, monthIndex))
         .reduce((sum, item) => sum + toNumber(item.valor), 0);
 
       // Breakdown por categoria
       const despesasPorCategoria: Record<string, number> = {};
       todasCategorias.forEach((cat) => {
-        despesasPorCategoria[cat] = despesas
+        despesasPorCategoria[cat] = despesasOperacionais
           .filter((item) => matchesYearMonth(item.data, ano, monthIndex) && String(item.categoria || 'Outros').trim() === cat)
           .reduce((sum, item) => sum + toNumber(item.valor), 0);
       });

@@ -26,6 +26,8 @@ type CadastroPeca = {
   numeroPeca?: string; detranEtiqueta?: string; localizacao?: string;
   estoque: number; categoriaMLId?: string; categoriaMLNome?: string;
   urlRef?: string; fotoCapa?: string; fotoCapaNome?: string; status: string; blingProdutoId?: string;
+  createdAt?: string;
+  updatedAt?: string;
   moto: { id: number; marca: string; modelo: string; ano?: number; descricaoModelo?: string };
 };
 
@@ -46,6 +48,22 @@ type CadastroFotosLinha = {
 type CadastroFotosSistema = 'anb' | 'ml' | 'nuvemshop';
 type CadastroFotoDrive = { id: string; nome: string; mimeType: string; size?: string | number | null };
 type CadastroFotoManualLocal = { id: string; nome: string; dataUrl: string; base64: string; mimeType: string; status?: 'aguardando' | 'enviando' | 'ok' | 'erro'; erro?: string };
+type CategoriaNuvemshop = { id: number; nome?: string; name?: any; parent_id?: number | null };
+type CadastroCategoriaLinha = {
+  sku: string;
+  titulo: string;
+  moto: { marca?: string; modelo?: string; ano?: number } | null;
+  encontradoNuvemshop: boolean;
+  produtoId: number | null;
+  categorias: { id: number; nome: string }[];
+  tags: string[];
+  semCategoria: boolean;
+  semTags: boolean;
+  temFlag: boolean;
+  status: 'pendente' | 'ok' | 'erro' | 'nao-encontrado';
+  erroConsulta?: string;
+};
+type CadastroCategoriaSugestao = { sku: string; categorias: { id: number; nome: string }[]; tags: string[] };
 
 const EMPTY_FORM = {
   motoId: '', idPeca: '', descricao: '', descricaoPeca: '', precoVenda: '', sufixoTitulo: '',
@@ -81,6 +99,51 @@ function camposOk(form: any) {
 function ordenarFotosLinhas(linhas: CadastroFotosLinha[]) {
   return [...linhas].sort((a, b) => {
     if (a.temFlag !== b.temFlag) return a.temFlag ? -1 : 1;
+    return a.sku.localeCompare(b.sku, 'pt-BR', { numeric: true, sensitivity: 'base' });
+  });
+}
+
+function formatDateBr(value?: string | Date | null) {
+  if (!value) return '-';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return date.toLocaleDateString('pt-BR');
+}
+
+function normalizarListaSkus(value: string) {
+  return value
+    .split(/[\n,;]+/)
+    .map((sku) => sku.trim().replace(/^"+|"+$/g, '').toUpperCase())
+    .filter(Boolean);
+}
+
+function normalizarLinhaCategoria(produto: any): CadastroCategoriaLinha {
+  const encontradoNuvemshop = !!produto.encontradoNuvemshop;
+  const semCategoria = !!produto.semCategoria;
+  const semTags = !!produto.semTags;
+  const temFlag = encontradoNuvemshop && (semCategoria || semTags);
+  return {
+    sku: String(produto.sku || '').trim().toUpperCase(),
+    titulo: String(produto.titulo || produto.descricao || ''),
+    moto: produto.moto || null,
+    encontradoNuvemshop,
+    produtoId: produto.produtoId || null,
+    categorias: Array.isArray(produto.categorias) ? produto.categorias : [],
+    tags: Array.isArray(produto.tags) ? produto.tags : [],
+    semCategoria,
+    semTags,
+    temFlag,
+    status: produto.erroConsulta ? 'erro' : (!encontradoNuvemshop ? 'nao-encontrado' : (temFlag ? 'pendente' : 'ok')),
+    erroConsulta: produto.erroConsulta,
+  };
+}
+
+function ordenarCategoriaLinhas(linhas: CadastroCategoriaLinha[]) {
+  const pesoStatus: Record<string, number> = { pendente: 0, erro: 1, 'nao-encontrado': 2, ok: 3 };
+  return [...linhas].sort((a, b) => {
+    const pesoA = pesoStatus[a.status] ?? 9;
+    const pesoB = pesoStatus[b.status] ?? 9;
+    if (pesoA !== pesoB) return pesoA - pesoB;
     return a.sku.localeCompare(b.sku, 'pt-BR', { numeric: true, sensitivity: 'base' });
   });
 }
@@ -161,7 +224,7 @@ export default function CadastroPage() {
   const [somentePendentes, setSomentePendentes] = useState(true);
   const [filters, setFilters] = useState({ motoId: '', search: '', semDimensoes: '' });
   const [searchInput, setSearchInput] = useState('');
-  const [paginaCadastro, setPaginaCadastro] = useState<'sku' | 'fotos'>('sku');
+  const [paginaCadastro, setPaginaCadastro] = useState<'sku' | 'fotos' | 'categoria'>('sku');
   const hoje = new Date().toISOString().slice(0, 10);
   const [fotosModo, setFotosModo] = useState<'skus' | 'data'>('data');
   const [fotosSkusInput, setFotosSkusInput] = useState('');
@@ -186,6 +249,20 @@ export default function CadastroPage() {
     enviando: boolean;
     status: { nome: string; status: 'aguardando' | 'enviando' | 'ok' | 'erro' | 'pulada'; erro?: string }[];
   } | null>(null);
+  const [categoriaModo, setCategoriaModo] = useState<'data' | 'skus'>('data');
+  const [categoriaSkusInput, setCategoriaSkusInput] = useState('');
+  const [categoriaDataDe, setCategoriaDataDe] = useState(hoje);
+  const [categoriaDataAte, setCategoriaDataAte] = useState(hoje);
+  const [categoriaLinhas, setCategoriaLinhas] = useState<CadastroCategoriaLinha[]>([]);
+  const [categoriaSelecionados, setCategoriaSelecionados] = useState<Set<string>>(new Set());
+  const [categoriaBuscando, setCategoriaBuscando] = useState(false);
+  const [categoriaProcessando, setCategoriaProcessando] = useState(false);
+  const [categoriaSkuProcessando, setCategoriaSkuProcessando] = useState('');
+  const [categoriaResultado, setCategoriaResultado] = useState('');
+  const [categoriaStatus, setCategoriaStatus] = useState('');
+  const [categoriaProgresso, setCategoriaProgresso] = useState({ atual: 0, total: 0 });
+  const [categoriasNuvemshop, setCategoriasNuvemshop] = useState<CategoriaNuvemshop[]>([]);
+  const [categoriaSugestoes, setCategoriaSugestoes] = useState<Record<string, CadastroCategoriaSugestao>>({});
   const [viewportMode, setViewportMode] = useState<'phone' | 'tablet-portrait' | 'tablet-landscape' | 'desktop'>('desktop');
 
   useEffect(() => {
@@ -266,10 +343,17 @@ export default function CadastroPage() {
 
   async function loadSupportData() {
     try {
-      const resp = await fetch(`${API}/cadastro/opcoes`, { credentials: 'include' });
+      const [resp, catResp] = await Promise.all([
+        fetch(`${API}/cadastro/opcoes`, { credentials: 'include' }),
+        fetch(`${API}/nuvemshop/categorias`, { credentials: 'include' }).catch(() => null),
+      ]);
       const d = await resp.json();
       setMotos(Array.isArray(d?.motos) ? d.motos : []);
       setCaixas(Array.isArray(d?.caixas) ? d.caixas : []);
+      if (catResp) {
+        const catData = await readApiResponse(catResp, 'Erro ao carregar categorias').catch(() => null);
+        if (catData?.ok) setCategoriasNuvemshop(Array.isArray(catData.categorias) ? catData.categorias : []);
+      }
     } catch { }
   }
 
@@ -283,16 +367,18 @@ export default function CadastroPage() {
       if (filters.semDimensoes) params.set('semDimensoes', filters.semDimensoes);
       params.set('per', '200');
       const d = await fetch(`${API}/cadastro?${params}`, { credentials: 'include' }).then(r => r.json());
-      setData(d);
+      const linhas = Array.isArray(d?.data) ? [...d.data].sort((a: CadastroPeca, b: CadastroPeca) => {
+        const dataA = new Date(a.createdAt || 0).getTime();
+        const dataB = new Date(b.createdAt || 0).getTime();
+        return dataB - dataA;
+      }) : [];
+      setData({ total: Number(d?.total || linhas.length), data: linhas });
     } catch { }
     setLoading(false);
   }
 
   function normalizarListaFotosSkus(value: string) {
-    return value
-      .split(/[\n,;]+/)
-      .map((sku) => sku.trim().replace(/^"+|"+$/g, '').toUpperCase())
-      .filter(Boolean);
+    return normalizarListaSkus(value);
   }
 
   async function buscarFotosCadastro() {
@@ -347,6 +433,142 @@ export default function CadastroPage() {
       setFotosBuscaStatus('');
     } finally {
       setFotosBuscando(false);
+    }
+  }
+
+  async function buscarCategoriaCadastro() {
+    setCategoriaBuscando(true);
+    setCategoriaResultado('');
+    setCategoriaSelecionados(new Set());
+    setCategoriaSugestoes({});
+    setCategoriaSkuProcessando('');
+    setCategoriaStatus('Buscando produtos na Nuvemshop...');
+    setCategoriaProgresso({ atual: 0, total: 0 });
+    try {
+      const body = categoriaModo === 'skus'
+        ? { skus: normalizarListaSkus(categoriaSkusInput) }
+        : { dataDe: categoriaDataDe, dataAte: categoriaDataAte };
+
+      const resp = await fetch(`${API}/nuvemshop/buscar-produtos`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await readApiResponse(resp, 'Erro ao buscar produtos para categoria');
+      const linhas = ordenarCategoriaLinhas((Array.isArray(data.produtos) ? data.produtos : []).map(normalizarLinhaCategoria));
+      setCategoriaLinhas(linhas);
+      setCategoriaSelecionados(new Set(linhas.filter((linha) => linha.temFlag).map((linha) => linha.sku)));
+      setCategoriaProgresso({ atual: linhas.length, total: linhas.length });
+      setCategoriaStatus(`Busca concluida: ${linhas.length} SKU(s) verificado(s).`);
+    } catch (e: any) {
+      alert(e.message || 'Erro ao buscar categorias');
+      setCategoriaStatus('');
+    } finally {
+      setCategoriaBuscando(false);
+    }
+  }
+
+  function toggleCategoriaSelecionado(sku: string) {
+    setCategoriaSelecionados((prev) => {
+      const next = new Set(prev);
+      next.has(sku) ? next.delete(sku) : next.add(sku);
+      return next;
+    });
+  }
+
+  function selecionarCategoriaPendentes() {
+    setCategoriaSelecionados(new Set(categoriaLinhas.filter((linha) => linha.temFlag).map((linha) => linha.sku)));
+  }
+
+  async function processarCategoriasCadastro() {
+    const alvo = categoriaLinhas.filter((linha) => categoriaSelecionados.has(linha.sku) && linha.temFlag && linha.encontradoNuvemshop && linha.produtoId);
+    if (!alvo.length) return alert('Nenhum SKU pendente selecionado.');
+    if (!categoriasNuvemshop.length) return alert('Categorias da Nuvemshop nao carregadas. Reabra a tela ou tente buscar novamente.');
+
+    setCategoriaProcessando(true);
+    setCategoriaResultado('');
+    setCategoriaSugestoes({});
+    setCategoriaProgresso({ atual: 0, total: alvo.length });
+    const sugestoesMap: Record<string, CadastroCategoriaSugestao> = {};
+
+    try {
+      const lotesIa = dividirEmLotes(alvo, 8);
+      let analisados = 0;
+      for (const lote of lotesIa) {
+        setCategoriaSkuProcessando(lote[0]?.sku || '');
+        setCategoriaStatus(`IA analisando categorias (${analisados + 1}-${Math.min(analisados + lote.length, alvo.length)}/${alvo.length})...`);
+        const resp = await fetch(`${API}/nuvemshop/sugerir-ia`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            produtos: lote.map((linha) => ({ sku: linha.sku, titulo: linha.titulo, moto: linha.moto })),
+            categorias: categoriasNuvemshop.map((cat: any) => ({ id: cat.id, name: cat.name, parent_id: cat.parent_id })),
+          }),
+        });
+        const data = await readApiResponse(resp, 'Erro IA ao sugerir categorias');
+        (Array.isArray(data.sugestoes) ? data.sugestoes : []).forEach((sugestao: CadastroCategoriaSugestao) => {
+          if (sugestao?.sku) sugestoesMap[sugestao.sku] = sugestao;
+        });
+        analisados += lote.length;
+        setCategoriaSugestoes({ ...sugestoesMap });
+        setCategoriaProgresso({ atual: analisados, total: alvo.length });
+      }
+
+      const aplicacoes = alvo
+        .map((linha) => {
+          const sugestao = sugestoesMap[linha.sku];
+          if (!sugestao) return null;
+          return { sku: linha.sku, produtoId: linha.produtoId, categorias: sugestao.categorias || [], tags: sugestao.tags || [] };
+        })
+        .filter(Boolean) as any[];
+
+      if (!aplicacoes.length) throw new Error('IA nao retornou sugestoes para os SKUs selecionados.');
+
+      let atualizados = 0;
+      let erros = 0;
+      for (const lote of dividirEmLotes(aplicacoes, 20)) {
+        setCategoriaSkuProcessando(lote[0]?.sku || '');
+        setCategoriaStatus(`Aplicando na Nuvemshop (${atualizados + 1}-${Math.min(atualizados + lote.length, aplicacoes.length)}/${aplicacoes.length})...`);
+        const resp = await fetch(`${API}/nuvemshop/aplicar`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ aplicacoes: lote.map(({ produtoId, categorias, tags }) => ({ produtoId, categorias, tags })) }),
+        });
+        const data = await readApiResponse(resp, 'Erro ao aplicar categorias na Nuvemshop');
+        const resultados = Array.isArray(data.resultados) ? data.resultados : [];
+        const errosLote = resultados.filter((item: any) => !item.ok).length;
+        erros += errosLote;
+        atualizados += lote.length - errosLote;
+
+        const skusOk = new Set(lote.filter((item) => {
+          const resultado = resultados.find((r: any) => Number(r.produtoId) === Number(item.produtoId));
+          return !resultado || resultado.ok;
+        }).map((item) => item.sku));
+
+        setCategoriaLinhas((prev) => ordenarCategoriaLinhas(prev.map((linha) => {
+          if (!skusOk.has(linha.sku)) return linha;
+          const sugestao = sugestoesMap[linha.sku];
+          return { ...linha, categorias: sugestao?.categorias || linha.categorias, tags: sugestao?.tags || linha.tags, semCategoria: false, semTags: false, temFlag: false, status: 'ok' };
+        })));
+        setCategoriaSelecionados((prev) => {
+          const next = new Set(prev);
+          skusOk.forEach((sku) => next.delete(sku));
+          return next;
+        });
+      }
+
+      setCategoriaResultado(`Processamento concluido: ${atualizados} SKU(s) atualizado(s), ${erros} com erro.`);
+      setCategoriaStatus(`Categorias concluidas: ${atualizados} SKU(s) OK, ${erros} com erro.`);
+    } catch (e: any) {
+      alert(e.message || 'Erro ao processar categorias');
+      setCategoriaStatus('');
+    } finally {
+      setCategoriaProcessando(false);
+      setCategoriaSkuProcessando('');
+      setCategoriaProgresso((prev) => ({ atual: prev.total || prev.atual, total: prev.total }));
     }
   }
 
@@ -592,11 +814,20 @@ export default function CadastroPage() {
   }
 
   const fotosPendentes = fotosLinhas.filter((linha) => linha.temFlag).length;
+  const categoriaPendentes = categoriaLinhas.filter((linha) => linha.temFlag).length;
+  const categoriaOk = categoriaLinhas.filter((linha) => linha.status === 'ok').length;
   const renderFotosStatus = (linha: CadastroFotosLinha) => {
     if (linha.status === 'verificando') return <span style={s.badge('#6d28d9', '#faf5ff', '#c4b5fd')}>Verificando</span>;
     if (linha.status === 'erro') return <span style={s.badge('#b91c1c', '#fef2f2', '#fecaca')}>Erro</span>;
     return linha.temFlag
       ? <span style={{ ...s.badge('#dc2626', '#fef2f2', '#fecaca') }}>Pendente</span>
+      : <span style={s.badge('var(--green)', '#f0fdf4', '#86efac')}>OK</span>;
+  };
+  const renderCategoriaStatus = (linha: CadastroCategoriaLinha) => {
+    if (linha.status === 'erro') return <span style={s.badge('#b91c1c', '#fef2f2', '#fecaca')}>Erro</span>;
+    if (linha.status === 'nao-encontrado') return <span style={s.badge('#92400e', '#fffbeb', '#fde68a')}>Nao encontrado</span>;
+    return linha.temFlag
+      ? <span style={s.badge('#dc2626', '#fef2f2', '#fecaca')}>Pendente</span>
       : <span style={s.badge('var(--green)', '#f0fdf4', '#86efac')}>OK</span>;
   };
 
@@ -869,6 +1100,157 @@ Deseja forçar a exclusão mesmo assim?`);
   const motoSelecionada = motos.find((m) => String(m.id) === String(form.motoId));
   const formOk = camposOk(form);
   const fotoCapaDisplayName = finalizarFotoCapaNome || (finalizarFotoCapa ? 'foto-capa.jpg' : '');
+  const renderCategoriaConteudo = () => (
+    <>
+      <div style={{ ...s.card, padding: isPhone ? '14px' : '18px' }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 12 }}>Buscar SKUs para categoria</div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14, flexDirection: isPhone ? 'column' : 'row' }}>
+          {(['data', 'skus'] as const).map((modo) => (
+            <button key={modo} onClick={() => setCategoriaModo(modo)}
+              style={{ ...s.btn, background: categoriaModo === modo ? 'var(--gray-800)' : 'var(--white)', color: categoriaModo === modo ? '#fff' : 'var(--gray-600)', border: '1px solid var(--border)', width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>
+              {modo === 'data' ? 'Data de Cadastro' : 'Por Lista de SKUs'}
+            </button>
+          ))}
+        </div>
+
+        {categoriaModo === 'skus' ? (
+          <div>
+            <label style={s.label}>SKUs</label>
+            <textarea style={{ ...s.input, minHeight: isPhone ? 150 : 110, resize: 'vertical' }} value={categoriaSkusInput} onChange={(e) => setCategoriaSkusInput(e.target.value)} placeholder={'HD04_0001\nPN_0001\nYM01_0001'} />
+            <button onClick={buscarCategoriaCadastro} disabled={categoriaBuscando || !categoriaSkusInput.trim()}
+              style={{ ...s.btn, marginTop: 10, background: '#7c3aed', color: '#fff', opacity: categoriaBuscando ? 0.7 : 1, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>
+              {categoriaBuscando ? 'Buscando...' : 'Buscar'}
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: isPhone ? 'grid' : 'flex', gap: 12, alignItems: 'flex-end' }}>
+            <div><label style={s.label}>De</label><input type="date" style={{ ...s.input, minHeight: isPhone ? 42 : undefined }} value={categoriaDataDe} onChange={(e) => setCategoriaDataDe(e.target.value)} /></div>
+            <div><label style={s.label}>Ate</label><input type="date" style={{ ...s.input, minHeight: isPhone ? 42 : undefined }} value={categoriaDataAte} onChange={(e) => setCategoriaDataAte(e.target.value)} /></div>
+            <button onClick={buscarCategoriaCadastro} disabled={categoriaBuscando || !categoriaDataDe || !categoriaDataAte}
+              style={{ ...s.btn, background: '#7c3aed', color: '#fff', opacity: categoriaBuscando ? 0.7 : 1, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>
+              {categoriaBuscando ? 'Buscando...' : 'Buscar'}
+            </button>
+          </div>
+        )}
+      </div>
+
+      {categoriaStatus && (
+        <div style={{ ...s.card, padding: isPhone ? 12 : 14, borderColor: '#c4b5fd', background: '#faf5ff' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', marginBottom: 8 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: '#5b21b6' }}>{categoriaStatus}</div>
+            {categoriaProgresso.total > 0 && (
+              <div style={{ fontSize: 12, color: '#6d28d9', fontWeight: 700, whiteSpace: 'nowrap' }}>{categoriaProgresso.atual}/{categoriaProgresso.total}</div>
+            )}
+          </div>
+          <div style={{ height: 8, borderRadius: 999, background: '#ede9fe', overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${categoriaProgresso.total > 0 ? Math.round((categoriaProgresso.atual / categoriaProgresso.total) * 100) : (categoriaBuscando ? 12 : 100)}%`, background: '#7c3aed', transition: 'width .2s ease' }} />
+          </div>
+        </div>
+      )}
+
+      {categoriaLinhas.length > 0 && (
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr 1fr' : 'repeat(4, minmax(140px, 1fr))', gap: 12, marginBottom: 16 }}>
+            {[
+              { label: 'SKUs', value: categoriaLinhas.length, color: 'var(--gray-800)' },
+              { label: 'Pendentes', value: categoriaPendentes, color: '#dc2626' },
+              { label: 'Selecionados', value: categoriaSelecionados.size, color: '#7c3aed' },
+              { label: 'OK', value: categoriaOk, color: 'var(--green)' },
+            ].map((card) => (
+              <div key={card.label} style={{ ...s.card, marginBottom: 0, padding: isPhone ? 12 : 16 }}>
+                <div style={{ fontSize: 10, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 6 }}>{card.label}</div>
+                <div style={{ fontSize: 24, fontWeight: 800, color: card.color }}>{card.value}</div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ ...s.card, background: '#faf5ff', border: '1px solid #c4b5fd', display: isPhone ? 'grid' : 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 800, color: '#5b21b6' }}>{categoriaPendentes} SKU(s) com pendencia de categoria/tag</div>
+              <div style={{ fontSize: 12, color: '#6d28d9', marginTop: 2 }}>Selecionar pendentes pega somente linhas com flag automatico.</div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', flexDirection: isPhone ? 'column' : 'row' }}>
+              <button onClick={selecionarCategoriaPendentes} style={{ ...s.btn, background: 'var(--white)', border: '1px solid #c4b5fd', color: '#5b21b6', width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>Selecionar pendentes</button>
+              <button onClick={() => setCategoriaSelecionados(new Set())} style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>Limpar selecao</button>
+              <button onClick={processarCategoriasCadastro} disabled={categoriaProcessando || categoriaSelecionados.size === 0} style={{ ...s.btn, background: '#7c3aed', color: '#fff', opacity: categoriaProcessando ? 0.7 : 1, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>
+                {categoriaProcessando ? `Processando ${categoriaSkuProcessando || 'categorias'}...` : 'Processar categorias selecionadas'}
+              </button>
+            </div>
+          </div>
+
+          {categoriaResultado && <div style={{ ...s.card, padding: 14, borderColor: '#86efac', background: '#f0fdf4', color: '#166534', fontSize: 13, fontWeight: 700 }}>{categoriaResultado}</div>}
+
+          {isPhone ? (
+            <div style={{ display: 'grid', gap: 10 }}>
+              {categoriaLinhas.map((linha) => {
+                const sugestao = categoriaSugestoes[linha.sku];
+                return (
+                  <div key={linha.sku} style={{ border: linha.sku === categoriaSkuProcessando ? '2px solid #7c3aed' : '1px solid var(--border)', borderRadius: 12, padding: 12, background: linha.sku === categoriaSkuProcessando ? '#faf5ff' : (linha.temFlag ? 'var(--white)' : '#f8fafc'), display: 'grid', gap: 10, opacity: linha.temFlag || linha.sku === categoriaSkuProcessando ? 1 : 0.78 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--blue-600)', fontWeight: 800 }}>{linha.sku}</div>
+                        <div style={{ marginTop: 4, fontSize: 13, color: 'var(--gray-800)', fontWeight: 700, lineHeight: 1.3 }}>{linha.titulo}</div>
+                        <div style={{ marginTop: 8 }}>{renderCategoriaStatus(linha)}</div>
+                      </div>
+                      <input type="checkbox" checked={categoriaSelecionados.has(linha.sku)} disabled={!linha.temFlag} onChange={() => toggleCategoriaSelecionado(linha.sku)} style={{ width: 18, height: 18 }} />
+                    </div>
+                    <div style={{ display: 'grid', gap: 8 }}>
+                      <div style={{ fontSize: 11, color: 'var(--gray-500)', fontWeight: 700 }}>Categorias</div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                        {(sugestao?.categorias?.length ? sugestao.categorias : linha.categorias).map((cat) => <span key={cat.id} style={s.badge(sugestao ? '#166534' : 'var(--gray-600)', sugestao ? '#f0fdf4' : '#f8fafc', sugestao ? '#86efac' : 'var(--border)')}>{cat.nome}</span>)}
+                        {!(sugestao?.categorias?.length || linha.categorias.length) && <span style={{ fontSize: 12, color: '#dc2626', fontWeight: 700 }}>Sem categoria</span>}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--gray-500)', fontWeight: 700 }}>Tags</div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                        {(sugestao?.tags?.length ? sugestao.tags : linha.tags).map((tag) => <span key={tag} style={s.badge(sugestao ? '#166534' : 'var(--gray-600)', sugestao ? '#f0fdf4' : '#f8fafc', sugestao ? '#86efac' : 'var(--border)')}>{tag}</span>)}
+                        {!(sugestao?.tags?.length || linha.tags.length) && <span style={{ fontSize: 12, color: '#dc2626', fontWeight: 700 }}>Sem tags</span>}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div style={{ ...s.card, padding: 0, overflow: 'hidden' }}>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead style={{ background: 'var(--gray-50)' }}><tr>
+                    <th style={{ ...s.th, width: 38 }}><input type="checkbox" checked={categoriaPendentes > 0 && categoriaSelecionados.size === categoriaPendentes} onChange={(e) => e.target.checked ? selecionarCategoriaPendentes() : setCategoriaSelecionados(new Set())} /></th>
+                    {['SKU', 'Descricao', 'Categorias', 'Tags', 'Status'].map((h) => <th key={h} style={s.th}>{h}</th>)}
+                  </tr></thead>
+                  <tbody>
+                    {categoriaLinhas.map((linha) => {
+                      const sugestao = categoriaSugestoes[linha.sku];
+                      return (
+                        <tr key={linha.sku} style={{ background: linha.sku === categoriaSkuProcessando ? '#faf5ff' : (linha.temFlag ? 'var(--white)' : '#f8fafc'), opacity: linha.temFlag || linha.sku === categoriaSkuProcessando ? 1 : 0.72, outline: linha.sku === categoriaSkuProcessando ? '2px solid #7c3aed' : 'none', outlineOffset: -2 }}>
+                          <td style={{ ...s.td, textAlign: 'center' }}><input type="checkbox" checked={categoriaSelecionados.has(linha.sku)} disabled={!linha.temFlag} onChange={() => toggleCategoriaSelecionado(linha.sku)} /></td>
+                          <td style={{ ...s.td, fontFamily: 'JetBrains Mono, monospace', color: 'var(--blue-600)', fontWeight: 700, whiteSpace: 'nowrap' }}>{linha.sku}</td>
+                          <td style={{ ...s.td, maxWidth: 360 }}><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{linha.titulo}</div></td>
+                          <td style={{ ...s.td, minWidth: 190 }}>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                              {(sugestao?.categorias?.length ? sugestao.categorias : linha.categorias).map((cat) => <span key={cat.id} style={s.badge(sugestao ? '#166534' : 'var(--gray-600)', sugestao ? '#f0fdf4' : '#f8fafc', sugestao ? '#86efac' : 'var(--border)')}>{sugestao ? `IA ${cat.nome}` : cat.nome}</span>)}
+                              {!(sugestao?.categorias?.length || linha.categorias.length) && <span style={{ fontSize: 12, color: '#dc2626', fontWeight: 700 }}>Sem categoria</span>}
+                            </div>
+                          </td>
+                          <td style={{ ...s.td, minWidth: 190 }}>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                              {(sugestao?.tags?.length ? sugestao.tags : linha.tags).slice(0, 8).map((tag) => <span key={tag} style={s.badge(sugestao ? '#166534' : 'var(--gray-600)', sugestao ? '#f0fdf4' : '#f8fafc', sugestao ? '#86efac' : 'var(--border)')}>{tag}</span>)}
+                              {!(sugestao?.tags?.length || linha.tags.length) && <span style={{ fontSize: 12, color: '#dc2626', fontWeight: 700 }}>Sem tags</span>}
+                            </div>
+                          </td>
+                          <td style={s.td}>{renderCategoriaStatus(linha)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </>
+  );
 
   return (
     <>
@@ -879,13 +1261,13 @@ Deseja forçar a exclusão mesmo assim?`);
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', width: isPhone ? '100%' : undefined, justifyContent: isPhone ? 'space-between' : 'flex-end' }}>
           <div style={{ display: 'inline-flex', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', background: 'var(--white)' }}>
-            {(['sku', 'fotos'] as const).map((tab) => (
+            {(['sku', 'fotos', 'categoria'] as const).map((tab, index, arr) => (
               <button
                 key={tab}
                 onClick={() => setPaginaCadastro(tab)}
                 style={{
                   border: 'none',
-                  borderRight: tab === 'sku' ? '1px solid var(--border)' : 'none',
+                  borderRight: index < arr.length - 1 ? '1px solid var(--border)' : 'none',
                   background: paginaCadastro === tab ? 'var(--gray-800)' : 'var(--white)',
                   color: paginaCadastro === tab ? '#fff' : 'var(--gray-600)',
                   padding: isPhone ? '7px 12px' : '7px 14px',
@@ -894,7 +1276,7 @@ Deseja forçar a exclusão mesmo assim?`);
                   cursor: 'pointer',
                 }}
               >
-                {tab === 'sku' ? 'SKU' : 'Fotos'}
+                {tab === 'sku' ? 'SKU' : tab === 'fotos' ? 'Fotos' : 'Categoria'}
               </button>
             ))}
           </div>
@@ -905,7 +1287,7 @@ Deseja forçar a exclusão mesmo assim?`);
       </div>
 
       <div style={{ padding: isPhone ? '14px' : '20px 24px' }}>
-        {paginaCadastro === 'fotos' ? (
+        {paginaCadastro === 'categoria' ? renderCategoriaConteudo() : paginaCadastro === 'fotos' ? (
           <>
             <div style={{ ...s.card, padding: isPhone ? '14px' : '18px' }}>
               <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 12 }}>Buscar SKUs para fotos</div>
@@ -1093,6 +1475,7 @@ Deseja forçar a exclusão mesmo assim?`);
                         <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--blue-600)', fontWeight: 700 }}>{item.idPeca}</div>
                         <div style={{ fontSize: 13, color: 'var(--gray-800)', fontWeight: 600, marginTop: 3, lineHeight: 1.25 }}>{item.descricao}</div>
                         <div style={{ fontSize: 11.5, color: 'var(--gray-500)', marginTop: 4 }}>{item.moto?.marca} {item.moto?.modelo}</div>
+                        <div style={{ fontSize: 11.5, color: 'var(--gray-500)', marginTop: 3 }}>Pre-cadastro: {formatDateBr(item.createdAt)}</div>
                       </div>
                       <div style={{ textAlign: 'right', flexShrink: 0 }}>
                         <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--gray-800)' }}>R$ {Number(item.precoVenda).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
@@ -1146,7 +1529,7 @@ Deseja forçar a exclusão mesmo assim?`);
           ) : (
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead><tr>{['ID Peça', 'Descrição', 'Moto', 'Preço', 'Estoque', 'Pré-Cadastro', 'Cadastro', 'Ações'].map(h => <th key={h} style={s.th}>{h}</th>)}</tr></thead>
+                <thead><tr>{['ID Peça', 'Descrição', 'Moto', 'Data Pré-Cadastro', 'Preço', 'Estoque', 'Pré-Cadastro', 'Cadastro', 'Ações'].map(h => <th key={h} style={s.th}>{h}</th>)}</tr></thead>
                 <tbody>
                   {data.data.map((item) => {
                     const cadastOk = item.status === 'cadastrado';
@@ -1155,6 +1538,7 @@ Deseja forçar a exclusão mesmo assim?`);
                         <td style={{ ...s.td, fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--blue-600)', whiteSpace: 'nowrap' as const }}>{item.idPeca}</td>
                         <td style={{ ...s.td, maxWidth: 240 }}><div style={{ whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.descricao}</div></td>
                         <td style={{ ...s.td, whiteSpace: 'nowrap' as const, fontSize: 12 }}>{item.moto?.marca} {item.moto?.modelo}</td>
+                        <td style={{ ...s.td, whiteSpace: 'nowrap' as const, fontSize: 12 }}>{formatDateBr(item.createdAt)}</td>
                         <td style={s.td}>R$ {Number(item.precoVenda).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
                         <td style={s.td}>{item.estoque}</td>
                         <td style={s.td}>
