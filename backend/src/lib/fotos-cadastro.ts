@@ -871,7 +871,18 @@ export async function enviarCadastroFotosManual(input: {
       where: { id: peca.id },
       data: { fotoCapaNome, fotoCapaArquivo },
     });
-    return { ok: true, sistema, sku, enviadas: 1, resultados: [{ sistema, nome: fotoCapaNome, ok: true }] };
+    return {
+      ok: true,
+      sistema,
+      sku,
+      enviadas: 1,
+      resultados: [{
+        sistema,
+        nome: origem === 'manual' ? imagensManuais[0]?.nome : fotosSelecionadas[0]?.nome,
+        filename: fotoCapaNome,
+        ok: true,
+      }],
+    };
   }
 
   if (sistema === 'nuvemshop') {

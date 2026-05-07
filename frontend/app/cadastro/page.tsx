@@ -505,14 +505,14 @@ export default function CadastroPage() {
     if (!fotoManualModal || fotoManualModal.enviando) return;
     const origem = fotoManualModal.origem;
     const fotos = fotoManualModal.fotos.filter((foto) => fotoManualModal.selecionadas.has(foto.id));
-    const imagens = fotoManualModal.imagens.filter((foto) => foto.status !== 'ok');
+    const imagens = fotoManualModal.imagens.filter((foto) => foto.status !== 'ok' && foto.status !== 'enviando');
     if (origem === 'drive' && !fotos.length) return alert('Selecione ao menos uma foto do Drive.');
     if (origem === 'manual' && !imagens.length) return alert('Selecione ao menos uma foto do computador.');
 
     setFotoManualModal((prev) => prev ? {
       ...prev,
       enviando: true,
-      imagens: prev.origem === 'manual' ? prev.imagens.map((foto) => ({ ...foto, status: 'enviando' as const, erro: undefined })) : prev.imagens,
+      imagens: prev.origem === 'manual' ? prev.imagens.map((foto) => ({ ...foto, status: 'aguardando' as const, erro: undefined })) : prev.imagens,
       status: prev.origem === 'drive' ? prev.fotos.map((foto, idx) => ({
         nome: foto.nome,
         status: prev.selecionadas.has(foto.id)
@@ -531,6 +531,13 @@ export default function CadastroPage() {
       let enviadasTotal = 0;
 
       for (const lote of lotes) {
+        const loteIds = new Set(lote.map((item: any) => item.id || item.nome));
+        if (origem === 'manual') {
+          setFotoManualModal((prev) => prev ? {
+            ...prev,
+            imagens: prev.imagens.map((foto) => loteIds.has(foto.id) || loteIds.has(foto.nome) ? { ...foto, status: 'enviando' as const, erro: undefined } : foto),
+          } : prev);
+        }
         const resp = await fetch(`${API}/cadastro/fotos/enviar-manual`, {
           method: 'POST',
           credentials: 'include',
@@ -549,17 +556,19 @@ export default function CadastroPage() {
         enviadasTotal += Number(data.enviadas || parcial.filter((item: any) => item.ok && !item.pulada).length || 0);
         atualizarContadorFotosLocal(fotoManualModal.linha.sku, fotoManualModal.sistema, Number(data.enviadas || parcial.filter((item: any) => item.ok && !item.pulada).length || 0));
       }
+      const enviadosIds = new Set(itensEnvio.map((item: any) => item.id || item.nome));
       setFotoManualModal((prev) => prev ? {
         ...prev,
         enviando: false,
         imagens: prev.origem === 'manual' ? prev.imagens.map((foto) => {
+          if (!enviadosIds.has(foto.id) && !enviadosIds.has(foto.nome)) return { ...foto, status: 'aguardando' as const };
           const r = resultados.find((res: any) => res.nome === foto.nome || res.filename === foto.nome);
-          return { ...foto, status: r?.ok ? 'ok' : 'erro', erro: r?.error };
+          return { ...foto, status: r?.ok ? 'ok' : 'erro', erro: r?.error || 'Falha no envio' };
         }) : prev.imagens,
         status: prev.status.map((item) => {
           if (item.status === 'pulada') return item;
           const r = resultados.find((res: any) => res.nome === item.nome || res.filename === item.nome);
-          return { ...item, status: r?.ok ? 'ok' : 'erro', erro: r?.error };
+          return { ...item, status: r?.ok ? 'ok' : 'erro', erro: r?.error || 'Falha no envio' };
         }),
       } : prev);
       if (enviadasTotal > 0) setTimeout(() => setFotoManualModal(null), 1200);
@@ -984,13 +993,13 @@ Deseja forçar a exclusão mesmo assim?`);
                           {(['anb', 'ml', 'nuvemshop'] as const).map((sistema) => {
                             const info: any = linha[sistema];
                             return (
-                              <label key={sistema} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, border: '1px solid var(--border)', borderRadius: 8, padding: '9px 10px', background: '#fcfdff' }}>
+                              <div key={sistema} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, border: '1px solid var(--border)', borderRadius: 8, padding: '9px 10px', background: '#fcfdff' }}>
                                 <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--gray-700)' }}>{sistema === 'anb' ? 'ANB' : sistema === 'ml' ? 'ML' : 'Nuvemshop'}: {Number(info?.fotos || 0)} foto(s)</span>
                                 <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
-                                  <button type="button" onClick={() => abrirModalFotosManual(linha, sistema)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: Number(info?.fotos || 0) > 0 ? 'var(--green)' : '#dc2626', fontSize: 16, padding: 0 }}>📷</button>
+                                  <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); abrirModalFotosManual(linha, sistema); }} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: Number(info?.fotos || 0) > 0 ? 'var(--green)' : '#dc2626', fontSize: 16, padding: 0 }}>📷</button>
                                   <input type="checkbox" checked={!!linha.flags[sistema]} onChange={(e) => atualizarFlagFoto(linha.sku, sistema, e.target.checked)} />
                                 </span>
-                              </label>
+                              </div>
                             );
                           })}
                         </div>
@@ -1024,12 +1033,12 @@ Deseja forçar a exclusão mesmo assim?`);
                                 const info: any = linha[sistema];
                                 return (
                                   <td key={sistema} style={{ ...s.td, textAlign: 'center' }}>
-                                    <label style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                                    <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                                       <input type="checkbox" checked={!!linha.flags[sistema]} onChange={(e) => atualizarFlagFoto(linha.sku, sistema, e.target.checked)} />
-                                      <button type="button" onClick={(e) => { e.preventDefault(); abrirModalFotosManual(linha, sistema); }} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: Number(info?.fotos || 0) > 0 ? 'var(--green)' : '#dc2626', fontSize: 12, fontWeight: 800, textDecoration: 'underline dotted', padding: 0 }}>
+                                      <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); abrirModalFotosManual(linha, sistema); }} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: Number(info?.fotos || 0) > 0 ? 'var(--green)' : '#dc2626', fontSize: 12, fontWeight: 800, textDecoration: 'underline dotted', padding: 0 }}>
                                         📷 {Number(info?.fotos || 0)}
                                       </button>
-                                    </label>
+                                    </div>
                                   </td>
                                 );
                               })}
@@ -1194,7 +1203,10 @@ Deseja forçar a exclusão mesmo assim?`);
           <div style={{ background: 'var(--white)', borderRadius: isPhone ? 0 : 14, width: '100%', maxWidth: isPhone ? undefined : 720, maxHeight: isPhone ? '100dvh' : '92vh', minHeight: isPhone ? '100dvh' : undefined, display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,.2)' }}>
             <div style={{ padding: isPhone ? '14px 16px' : '18px 22px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 15, fontWeight: 800 }}>Fotos {fotoManualModal.sistema === 'anb' ? 'ANB' : fotoManualModal.sistema === 'ml' ? 'Mercado Livre' : 'Nuvemshop'} - {fotoManualModal.linha.sku}</div>
+                <div style={{ fontSize: 15, fontWeight: 800 }}>Fotos - {fotoManualModal.linha.sku}</div>
+                <div style={{ fontSize: 12, color: fotoManualModal.sistema === 'ml' ? '#2563eb' : fotoManualModal.sistema === 'nuvemshop' ? '#7c3aed' : '#166534', marginTop: 3, fontWeight: 800 }}>
+                  Destino: {fotoManualModal.sistema === 'anb' ? 'ANB' : fotoManualModal.sistema === 'ml' ? 'Mercado Livre' : 'Nuvemshop'}
+                </div>
                 <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fotoManualModal.linha.descricao}</div>
               </div>
               <button onClick={() => setFotoManualModal(null)} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', fontSize: 16 }}>×</button>
