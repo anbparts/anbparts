@@ -5,6 +5,7 @@ const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const GOOGLE_DRIVE_URL = 'https://www.googleapis.com/drive/v3';
 const NUVEMSHOP_USER_AGENT = 'ANB Parts (contato@anbparts.com.br)';
 const MERCADO_LIVRE_API = 'https://api.mercadolibre.com';
+const MERCADO_LIVRE_MAX_FOTOS = 12;
 
 type DriveFoto = {
   id: string;
@@ -445,6 +446,11 @@ async function uploadMercadoLivreDrive(itemId: string, fotos: DriveFoto[]) {
   return resultados;
 }
 
+function limitarFotosMercadoLivre(fotos: DriveFoto[], imagensAtuais: number) {
+  const vagas = Math.max(0, MERCADO_LIVRE_MAX_FOTOS - Math.max(0, Number(imagensAtuais) || 0));
+  return fotos.slice(0, vagas);
+}
+
 async function getPecasParaFotos(input: { skus?: any; dataDe?: string; dataAte?: string }) {
   const skus = parseSkuList(input.skus).map(baseSku);
   const where: any = { disponivel: true, emPrejuizo: false };
@@ -667,9 +673,14 @@ export async function processarCadastroFotos(rowsInput: CadastroFotosRowInput[])
         if (!itemId) throw new Error('Item ID do Mercado Livre nao encontrado no SKU.');
         const item = await mercadoLivreReq(`/items/${encodeURIComponent(itemId)}`);
         const imagensAtuais = Array.isArray(item?.pictures) ? item.pictures.length : 0;
-        const fotosParaEnviar = imagensAtuais > 0 ? drive.fotos.slice(1) : drive.fotos;
-        const envios = await uploadMercadoLivreDrive(itemId, fotosParaEnviar);
-        detalhes.push({ sistema: 'ml', ok: envios.some((item) => item.ok), enviados: envios.filter((item) => item.ok).length, resultados: envios });
+        const fotosBase = imagensAtuais > 0 ? drive.fotos.slice(1) : drive.fotos;
+        const fotosParaEnviar = limitarFotosMercadoLivre(fotosBase, imagensAtuais);
+        if (!fotosParaEnviar.length) {
+          detalhes.push({ sistema: 'ml', ok: true, enviados: 0, limite: MERCADO_LIVRE_MAX_FOTOS, resultados: [{ sistema: 'ml', ok: true, pulada: true, error: 'Mercado Livre ja esta com 12 fotos.' }] });
+        } else {
+          const envios = await uploadMercadoLivreDrive(itemId, fotosParaEnviar);
+          detalhes.push({ sistema: 'ml', ok: envios.some((item) => item.ok), enviados: envios.filter((item) => item.ok).length, resultados: envios });
+        }
       } catch (e: any) {
         detalhes.push({ sistema: 'ml', ok: false, error: e?.message || String(e) });
       }
@@ -774,7 +785,9 @@ export async function enviarCadastroFotosManual(input: {
   const fotosParaEnviar = imagensAtuais > 0
     ? fotosSelecionadas.filter((foto) => foto.id !== capaDriveId)
     : fotosSelecionadas;
+  const fotosLimitadas = limitarFotosMercadoLivre(fotosParaEnviar, imagensAtuais);
   if (!fotosParaEnviar.length) return { ok: true, sistema, sku, enviadas: 0, resultados: [{ sistema, ok: true, pulada: true, error: 'Capa pulada porque o anuncio ja possui foto.' }] };
-  const resultados = await uploadMercadoLivreDrive(itemId, fotosParaEnviar);
+  if (!fotosLimitadas.length) return { ok: true, sistema, sku, enviadas: 0, resultados: [{ sistema, ok: true, pulada: true, error: 'Mercado Livre ja esta com 12 fotos.' }] };
+  const resultados = await uploadMercadoLivreDrive(itemId, fotosLimitadas);
   return { ok: true, sistema, sku, enviadas: resultados.filter((item) => item.ok).length, resultados };
 }

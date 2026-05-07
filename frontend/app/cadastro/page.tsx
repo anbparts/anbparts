@@ -164,6 +164,7 @@ export default function CadastroPage() {
   const [fotosSelecionados, setFotosSelecionados] = useState<Set<string>>(new Set());
   const [fotosBuscando, setFotosBuscando] = useState(false);
   const [fotosProcessando, setFotosProcessando] = useState(false);
+  const [fotosProcessandoSku, setFotosProcessandoSku] = useState('');
   const [fotosResultado, setFotosResultado] = useState('');
   const [fotosBuscaStatus, setFotosBuscaStatus] = useState('');
   const [fotosBuscaProgresso, setFotosBuscaProgresso] = useState({ atual: 0, total: 0 });
@@ -363,6 +364,32 @@ export default function CadastroPage() {
     setFotosSelecionados(new Set(fotosLinhas.filter((linha) => linha.temFlag).map((linha) => linha.sku)));
   }
 
+  function atualizarContadorFotosLocal(sku: string, sistema: CadastroFotosSistema, enviadas: number) {
+    setFotosLinhas((prev) => ordenarFotosLinhas(prev.map((linha) => {
+      if (linha.sku !== sku) return linha;
+      const atual = Number((linha as any)[sistema]?.fotos || 0);
+      const proximo = sistema === 'anb' ? Math.max(1, atual) : Math.min(sistema === 'ml' ? 12 : 999, atual + Math.max(0, enviadas));
+      const flags = { ...linha.flags, [sistema]: false };
+      const temFlag = flags.anb || flags.ml || flags.nuvemshop;
+      return {
+        ...linha,
+        [sistema]: { ...(linha as any)[sistema], fotos: proximo, ok: sistema === 'anb' ? proximo > 0 : (linha as any)[sistema]?.ok },
+        flags,
+        temFlag,
+        status: temFlag ? 'pendente' : 'ok',
+      } as CadastroFotosLinha;
+    })));
+  }
+
+  function aplicarResultadoProcessamentoLocal(sku: string, detalhes: any[]) {
+    for (const detalhe of detalhes || []) {
+      if (detalhe?.ok === false) continue;
+      const sistema = detalhe.sistema as CadastroFotosSistema;
+      if (!(['anb', 'ml', 'nuvemshop'] as CadastroFotosSistema[]).includes(sistema)) continue;
+      atualizarContadorFotosLocal(sku, sistema, sistema === 'anb' ? 1 : Number(detalhe.enviados || detalhe.enviada || 0));
+    }
+  }
+
   async function processarFotosCadastro() {
     const linhas = fotosLinhas
       .filter((linha) => fotosSelecionados.has(linha.sku) && (linha.flags.anb || linha.flags.ml || linha.flags.nuvemshop))
@@ -371,22 +398,56 @@ export default function CadastroPage() {
 
     setFotosProcessando(true);
     setFotosResultado('');
+    setFotosProcessandoSku('');
+    setFotosBuscaProgresso({ atual: 0, total: linhas.length });
     try {
-      const resp = await fetch(`${API}/cadastro/fotos/processar`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ linhas }),
-      });
-      const data = await readApiResponse(resp, 'Erro ao processar fotos');
-      const ok = (data.resultados || []).filter((item: any) => item.ok).length;
-      const erro = (data.resultados || []).filter((item: any) => !item.ok).length;
+      let ok = 0;
+      let erro = 0;
+
+      for (let index = 0; index < linhas.length; index += 1) {
+        const linha = linhas[index];
+        setFotosProcessandoSku(linha.sku);
+        setFotosBuscaStatus(`Enviando fotos (${index + 1}/${linhas.length}) - ${linha.sku}`);
+        setFotosBuscaProgresso({ atual: index, total: linhas.length });
+
+        try {
+          const resp = await fetch(`${API}/cadastro/fotos/processar`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ linhas: [linha] }),
+          });
+          const data = await readApiResponse(resp, `Erro ao processar fotos do SKU ${linha.sku}`);
+          const resultado = Array.isArray(data.resultados) ? data.resultados[0] : null;
+          if (resultado?.detalhes) {
+            aplicarResultadoProcessamentoLocal(linha.sku, resultado.detalhes || []);
+          }
+          if (resultado?.ok) {
+            ok++;
+            setFotosSelecionados((prev) => {
+              const next = new Set(prev);
+              next.delete(linha.sku);
+              return next;
+            });
+          } else {
+            erro++;
+            setFotosLinhas((prev) => prev.map((item) => item.sku === linha.sku ? { ...item, status: 'erro' } : item));
+          }
+        } catch {
+          erro++;
+          setFotosLinhas((prev) => prev.map((item) => item.sku === linha.sku ? { ...item, status: 'erro' } : item));
+        }
+
+        setFotosBuscaProgresso({ atual: index + 1, total: linhas.length });
+      }
+
       setFotosResultado(`Processamento concluido: ${ok} SKU(s) OK, ${erro} com erro.`);
-      await buscarFotosCadastro();
+      setFotosBuscaStatus(`Envio concluido: ${ok} SKU(s) OK, ${erro} com erro.`);
     } catch (e: any) {
       alert(e?.message || String(e));
     } finally {
       setFotosProcessando(false);
+      setFotosProcessandoSku('');
     }
   }
 
@@ -436,6 +497,7 @@ export default function CadastroPage() {
       });
       const data = await readApiResponse(resp, 'Erro ao enviar fotos');
       const resultados = Array.isArray(data.resultados) ? data.resultados : [];
+      atualizarContadorFotosLocal(fotoManualModal.linha.sku, fotoManualModal.sistema, Number(data.enviadas || resultados.filter((item: any) => item.ok).length || 0));
       setFotoManualModal((prev) => prev ? {
         ...prev,
         enviando: false,
@@ -843,7 +905,7 @@ Deseja forçar a exclusão mesmo assim?`);
                     <button onClick={selecionarFotosPendentes} style={{ ...s.btn, background: 'var(--white)', border: '1px solid #c4b5fd', color: '#5b21b6', width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>Selecionar pendentes</button>
                     <button onClick={() => setFotosSelecionados(new Set())} style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>Limpar selecao</button>
                     <button onClick={processarFotosCadastro} disabled={fotosProcessando || fotosSelecionados.size === 0} style={{ ...s.btn, background: '#7c3aed', color: '#fff', opacity: fotosProcessando ? 0.7 : 1, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>
-                      {fotosProcessando ? 'Processando...' : 'Enviar fotos selecionadas'}
+                      {fotosProcessando ? `Enviando ${fotosProcessandoSku || 'fotos'}...` : 'Enviar fotos selecionadas'}
                     </button>
                   </div>
                 </div>
@@ -853,7 +915,7 @@ Deseja forçar a exclusão mesmo assim?`);
                 {isPhone ? (
                   <div style={{ display: 'grid', gap: 10 }}>
                     {fotosLinhas.map((linha) => (
-                      <div key={linha.sku} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 12, background: linha.temFlag ? 'var(--white)' : '#f8fafc', display: 'grid', gap: 12, opacity: linha.temFlag ? 1 : 0.78 }}>
+                      <div key={linha.sku} style={{ border: linha.sku === fotosProcessandoSku ? '2px solid #7c3aed' : '1px solid var(--border)', borderRadius: 12, padding: 12, background: linha.sku === fotosProcessandoSku ? '#faf5ff' : (linha.temFlag ? 'var(--white)' : '#f8fafc'), display: 'grid', gap: 12, opacity: linha.temFlag || linha.sku === fotosProcessandoSku ? 1 : 0.78 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
                           <div style={{ minWidth: 0 }}>
                             <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--blue-600)', fontWeight: 800 }}>{linha.sku}</div>
@@ -890,7 +952,7 @@ Deseja forçar a exclusão mesmo assim?`);
                         </tr></thead>
                         <tbody>
                           {fotosLinhas.map((linha) => (
-                            <tr key={linha.sku} style={{ background: linha.temFlag ? 'var(--white)' : '#f8fafc', opacity: linha.temFlag ? 1 : 0.72 }}>
+                            <tr key={linha.sku} style={{ background: linha.sku === fotosProcessandoSku ? '#faf5ff' : (linha.temFlag ? 'var(--white)' : '#f8fafc'), opacity: linha.temFlag || linha.sku === fotosProcessandoSku ? 1 : 0.72, outline: linha.sku === fotosProcessandoSku ? '2px solid #7c3aed' : 'none', outlineOffset: -2 }}>
                               <td style={{ ...s.td, textAlign: 'center' }}><input type="checkbox" checked={fotosSelecionados.has(linha.sku)} disabled={!linha.temFlag} onChange={() => toggleFotosSelecionado(linha.sku)} /></td>
                               <td style={{ ...s.td, fontFamily: 'JetBrains Mono, monospace', color: 'var(--blue-600)', fontWeight: 700, whiteSpace: 'nowrap' }}>{linha.sku}</td>
                               <td style={{ ...s.td, maxWidth: 320 }}><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{linha.descricao}</div></td>
