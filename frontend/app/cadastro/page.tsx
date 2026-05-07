@@ -29,6 +29,23 @@ type CadastroPeca = {
   moto: { id: number; marca: string; modelo: string; ano?: number; descricaoModelo?: string };
 };
 
+type CadastroFotosLinha = {
+  sku: string;
+  descricao: string;
+  motoId: number;
+  moto?: { marca: string; modelo: string; ano?: number };
+  anb: { fotos: number; ok: boolean };
+  ml: { fotos: number; encontrado: boolean; itemId?: string | null; erro?: string };
+  nuvemshop: { fotos: number; encontrado: boolean; produtoId?: number | null; erro?: string };
+  flags: { anb: boolean; ml: boolean; nuvemshop: boolean };
+  temFlag: boolean;
+  drive?: { fotos: number | null; pasta?: string };
+  status?: string;
+};
+
+type CadastroFotosSistema = 'anb' | 'ml' | 'nuvemshop';
+type CadastroFotoDrive = { id: string; nome: string; mimeType: string; size?: string | number | null };
+
 const EMPTY_FORM = {
   motoId: '', idPeca: '', descricao: '', descricaoPeca: '', precoVenda: '', sufixoTitulo: '',
   condicao: 'usado', peso: '', largura: '', altura: '', profundidade: '',
@@ -112,6 +129,26 @@ export default function CadastroPage() {
   const [somentePendentes, setSomentePendentes] = useState(true);
   const [filters, setFilters] = useState({ motoId: '', search: '', semDimensoes: '' });
   const [searchInput, setSearchInput] = useState('');
+  const [paginaCadastro, setPaginaCadastro] = useState<'sku' | 'fotos'>('sku');
+  const hoje = new Date().toISOString().slice(0, 10);
+  const [fotosModo, setFotosModo] = useState<'skus' | 'data'>('skus');
+  const [fotosSkusInput, setFotosSkusInput] = useState('');
+  const [fotosDataDe, setFotosDataDe] = useState(hoje);
+  const [fotosDataAte, setFotosDataAte] = useState(hoje);
+  const [fotosLinhas, setFotosLinhas] = useState<CadastroFotosLinha[]>([]);
+  const [fotosSelecionados, setFotosSelecionados] = useState<Set<string>>(new Set());
+  const [fotosBuscando, setFotosBuscando] = useState(false);
+  const [fotosProcessando, setFotosProcessando] = useState(false);
+  const [fotosResultado, setFotosResultado] = useState('');
+  const [fotoManualModal, setFotoManualModal] = useState<{
+    linha: CadastroFotosLinha;
+    sistema: CadastroFotosSistema;
+    fotos: CadastroFotoDrive[];
+    selecionadas: Set<string>;
+    carregando: boolean;
+    enviando: boolean;
+    status: { nome: string; status: 'aguardando' | 'enviando' | 'ok' | 'erro' | 'pulada'; erro?: string }[];
+  } | null>(null);
   const [viewportMode, setViewportMode] = useState<'phone' | 'tablet-portrait' | 'tablet-landscape' | 'desktop'>('desktop');
 
   useEffect(() => {
@@ -213,6 +250,160 @@ export default function CadastroPage() {
     } catch { }
     setLoading(false);
   }
+
+  function normalizarListaFotosSkus(value: string) {
+    return value
+      .split(/[\n,;]+/)
+      .map((sku) => sku.trim().replace(/^"+|"+$/g, '').toUpperCase())
+      .filter(Boolean);
+  }
+
+  async function buscarFotosCadastro() {
+    setFotosBuscando(true);
+    setFotosResultado('');
+    setFotosSelecionados(new Set());
+    try {
+      const body = fotosModo === 'skus'
+        ? { skus: normalizarListaFotosSkus(fotosSkusInput) }
+        : { dataDe: fotosDataDe, dataAte: fotosDataAte };
+      const resp = await fetch(`${API}/cadastro/fotos/buscar`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || data.ok === false) throw new Error(data.error || 'Erro ao buscar fotos');
+      const linhas = Array.isArray(data.linhas) ? data.linhas : [];
+      setFotosLinhas(linhas);
+      setFotosSelecionados(new Set(linhas.filter((linha: CadastroFotosLinha) => linha.temFlag).map((linha: CadastroFotosLinha) => linha.sku)));
+    } catch (e: any) {
+      alert(e?.message || String(e));
+    } finally {
+      setFotosBuscando(false);
+    }
+  }
+
+  function atualizarFlagFoto(sku: string, sistema: 'anb' | 'ml' | 'nuvemshop', checked: boolean) {
+    setFotosLinhas((prev) => prev.map((linha) => {
+      if (linha.sku !== sku) return linha;
+      const flags = { ...linha.flags, [sistema]: checked };
+      return { ...linha, flags, temFlag: flags.anb || flags.ml || flags.nuvemshop };
+    }));
+    if (checked) {
+      setFotosSelecionados((prev) => new Set(prev).add(sku));
+    }
+  }
+
+  function toggleFotosSelecionado(sku: string) {
+    setFotosSelecionados((prev) => {
+      const next = new Set(prev);
+      next.has(sku) ? next.delete(sku) : next.add(sku);
+      return next;
+    });
+  }
+
+  function selecionarFotosPendentes() {
+    setFotosSelecionados(new Set(fotosLinhas.filter((linha) => linha.temFlag).map((linha) => linha.sku)));
+  }
+
+  async function processarFotosCadastro() {
+    const linhas = fotosLinhas
+      .filter((linha) => fotosSelecionados.has(linha.sku) && (linha.flags.anb || linha.flags.ml || linha.flags.nuvemshop))
+      .map((linha) => ({ sku: linha.sku, flags: linha.flags }));
+    if (!linhas.length) return alert('Nenhum SKU pendente selecionado.');
+
+    setFotosProcessando(true);
+    setFotosResultado('');
+    try {
+      const resp = await fetch(`${API}/cadastro/fotos/processar`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ linhas }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || data.ok === false) throw new Error(data.error || 'Erro ao processar fotos');
+      const ok = (data.resultados || []).filter((item: any) => item.ok).length;
+      const erro = (data.resultados || []).filter((item: any) => !item.ok).length;
+      setFotosResultado(`Processamento concluido: ${ok} SKU(s) OK, ${erro} com erro.`);
+      await buscarFotosCadastro();
+    } catch (e: any) {
+      alert(e?.message || String(e));
+    } finally {
+      setFotosProcessando(false);
+    }
+  }
+
+  async function abrirModalFotosManual(linha: CadastroFotosLinha, sistema: CadastroFotosSistema) {
+    setFotoManualModal({ linha, sistema, fotos: [], selecionadas: new Set(), carregando: true, enviando: false, status: [] });
+    try {
+      const resp = await fetch(`${API}/cadastro/fotos/drive`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sku: linha.sku }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || data.ok === false) throw new Error(data.error || 'Erro ao buscar fotos do Drive');
+      const fotos: CadastroFotoDrive[] = Array.isArray(data.fotos) ? data.fotos : [];
+      const fotosAtuais = Number((linha as any)[sistema]?.fotos || 0);
+      const selecionadas = new Set((fotosAtuais > 0 ? fotos.slice(1) : fotos).map((foto) => foto.id));
+      setFotoManualModal({ linha, sistema, fotos, selecionadas, carregando: false, enviando: false, status: [] });
+    } catch (e: any) {
+      alert(e?.message || String(e));
+      setFotoManualModal(null);
+    }
+  }
+
+  async function enviarFotosManual() {
+    if (!fotoManualModal || fotoManualModal.enviando) return;
+    const fotos = fotoManualModal.fotos.filter((foto) => fotoManualModal.selecionadas.has(foto.id));
+    if (!fotos.length) return alert('Selecione ao menos uma foto.');
+
+    setFotoManualModal((prev) => prev ? {
+      ...prev,
+      enviando: true,
+      status: prev.fotos.map((foto, idx) => ({
+        nome: foto.nome,
+        status: prev.selecionadas.has(foto.id)
+          ? 'aguardando'
+          : (idx === 0 && Number((prev.linha as any)[prev.sistema]?.fotos || 0) > 0 ? 'pulada' : 'pulada'),
+      })),
+    } : prev);
+
+    try {
+      setFotoManualModal((prev) => prev ? { ...prev, status: prev.status.map((item) => item.status === 'aguardando' ? { ...item, status: 'enviando' } : item) } : prev);
+      const resp = await fetch(`${API}/cadastro/fotos/enviar-manual`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sku: fotoManualModal.linha.sku, sistema: fotoManualModal.sistema, fotos }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || data.ok === false) throw new Error(data.error || 'Erro ao enviar fotos');
+      const resultados = Array.isArray(data.resultados) ? data.resultados : [];
+      setFotoManualModal((prev) => prev ? {
+        ...prev,
+        enviando: false,
+        status: prev.status.map((item) => {
+          if (item.status === 'pulada') return item;
+          const r = resultados.find((res: any) => res.nome === item.nome || res.filename === item.nome);
+          return { ...item, status: !r || r.ok ? 'ok' : 'erro', erro: r?.error };
+        }),
+      } : prev);
+      await buscarFotosCadastro();
+      setTimeout(() => setFotoManualModal(null), 1200);
+    } catch (e: any) {
+      setFotoManualModal((prev) => prev ? {
+        ...prev,
+        enviando: false,
+        status: prev.status.map((item) => item.status === 'enviando' ? { ...item, status: 'erro', erro: e?.message || String(e) } : item),
+      } : prev);
+    }
+  }
+
+  const fotosPendentes = fotosLinhas.filter((linha) => linha.temFlag).length;
 
   async function openNovo() {
     // Moto default = a de ID mais alto (última adicionada)
@@ -491,10 +682,168 @@ Deseja forçar a exclusão mesmo assim?`);
           <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)', letterSpacing: '-0.3px' }}>Cadastro</div>
           <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>Pré-cadastro e cadastro de peças</div>
         </div>
-        <button style={{ ...s.btn, background: 'var(--gray-800)', color: '#fff', fontSize: isPhone ? 12 : 12.5, padding: isPhone ? '7px 12px' : '7px 14px' }} onClick={openNovo}>+ Novo Pré-cadastro</button>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', width: isPhone ? '100%' : undefined, justifyContent: isPhone ? 'space-between' : 'flex-end' }}>
+          <div style={{ display: 'inline-flex', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', background: 'var(--white)' }}>
+            {(['sku', 'fotos'] as const).map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setPaginaCadastro(tab)}
+                style={{
+                  border: 'none',
+                  borderRight: tab === 'sku' ? '1px solid var(--border)' : 'none',
+                  background: paginaCadastro === tab ? 'var(--gray-800)' : 'var(--white)',
+                  color: paginaCadastro === tab ? '#fff' : 'var(--gray-600)',
+                  padding: isPhone ? '7px 12px' : '7px 14px',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                {tab === 'sku' ? 'SKU' : 'Fotos'}
+              </button>
+            ))}
+          </div>
+          {paginaCadastro === 'sku' && (
+            <button style={{ ...s.btn, background: 'var(--gray-800)', color: '#fff', fontSize: isPhone ? 12 : 12.5, padding: isPhone ? '7px 12px' : '7px 14px' }} onClick={openNovo}>+ Novo Pré-cadastro</button>
+          )}
+        </div>
       </div>
 
       <div style={{ padding: isPhone ? '14px' : '20px 24px' }}>
+        {paginaCadastro === 'fotos' ? (
+          <>
+            <div style={{ ...s.card, padding: isPhone ? '14px' : '18px' }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 12 }}>Buscar SKUs para fotos</div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14, flexDirection: isPhone ? 'column' : 'row' }}>
+                {(['skus', 'data'] as const).map((modo) => (
+                  <button key={modo} onClick={() => setFotosModo(modo)}
+                    style={{ ...s.btn, background: fotosModo === modo ? 'var(--gray-800)' : 'var(--white)', color: fotosModo === modo ? '#fff' : 'var(--gray-600)', border: '1px solid var(--border)', width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>
+                    {modo === 'skus' ? 'Por Lista de SKUs' : 'Data de Cadastro'}
+                  </button>
+                ))}
+              </div>
+
+              {fotosModo === 'skus' ? (
+                <div>
+                  <label style={s.label}>SKUs</label>
+                  <textarea style={{ ...s.input, minHeight: isPhone ? 150 : 110, resize: 'vertical' }} value={fotosSkusInput} onChange={(e) => setFotosSkusInput(e.target.value)} placeholder={'HD04_0001\nPN_0001\nYM01_0001'} />
+                  <button onClick={buscarFotosCadastro} disabled={fotosBuscando || !fotosSkusInput.trim()}
+                    style={{ ...s.btn, marginTop: 10, background: '#7c3aed', color: '#fff', opacity: fotosBuscando ? 0.7 : 1, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>
+                    {fotosBuscando ? 'Buscando...' : 'Buscar'}
+                  </button>
+                </div>
+              ) : (
+                <div style={{ display: isPhone ? 'grid' : 'flex', gap: 12, alignItems: 'flex-end' }}>
+                  <div><label style={s.label}>De</label><input type="date" style={{ ...s.input, minHeight: isPhone ? 42 : undefined }} value={fotosDataDe} onChange={(e) => setFotosDataDe(e.target.value)} /></div>
+                  <div><label style={s.label}>Ate</label><input type="date" style={{ ...s.input, minHeight: isPhone ? 42 : undefined }} value={fotosDataAte} onChange={(e) => setFotosDataAte(e.target.value)} /></div>
+                  <button onClick={buscarFotosCadastro} disabled={fotosBuscando || !fotosDataDe || !fotosDataAte}
+                    style={{ ...s.btn, background: '#7c3aed', color: '#fff', opacity: fotosBuscando ? 0.7 : 1, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>
+                    {fotosBuscando ? 'Buscando...' : 'Buscar'}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {fotosLinhas.length > 0 && (
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr 1fr' : 'repeat(4, minmax(140px, 1fr))', gap: 12, marginBottom: 16 }}>
+                  {[
+                    { label: 'SKUs', value: fotosLinhas.length, color: 'var(--gray-800)' },
+                    { label: 'Pendentes', value: fotosPendentes, color: '#dc2626' },
+                    { label: 'Selecionados', value: fotosSelecionados.size, color: '#7c3aed' },
+                    { label: 'OK', value: fotosLinhas.length - fotosPendentes, color: 'var(--green)' },
+                  ].map((card) => (
+                    <div key={card.label} style={{ ...s.card, marginBottom: 0, padding: isPhone ? 12 : 16 }}>
+                      <div style={{ fontSize: 10, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 6 }}>{card.label}</div>
+                      <div style={{ fontSize: 24, fontWeight: 800, color: card.color }}>{card.value}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ ...s.card, background: '#faf5ff', border: '1px solid #c4b5fd', display: isPhone ? 'grid' : 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: '#5b21b6' }}>{fotosPendentes} SKU(s) com pendencia de fotos</div>
+                    <div style={{ fontSize: 12, color: '#6d28d9', marginTop: 2 }}>Selecionar todos pega somente linhas com flag automatico.</div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', flexDirection: isPhone ? 'column' : 'row' }}>
+                    <button onClick={selecionarFotosPendentes} style={{ ...s.btn, background: 'var(--white)', border: '1px solid #c4b5fd', color: '#5b21b6', width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>Selecionar pendentes</button>
+                    <button onClick={() => setFotosSelecionados(new Set())} style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>Limpar selecao</button>
+                    <button onClick={processarFotosCadastro} disabled={fotosProcessando || fotosSelecionados.size === 0} style={{ ...s.btn, background: '#7c3aed', color: '#fff', opacity: fotosProcessando ? 0.7 : 1, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>
+                      {fotosProcessando ? 'Processando...' : 'Enviar fotos selecionadas'}
+                    </button>
+                  </div>
+                </div>
+
+                {fotosResultado && <div style={{ ...s.card, padding: 14, borderColor: '#86efac', background: '#f0fdf4', color: '#166534', fontSize: 13, fontWeight: 700 }}>{fotosResultado}</div>}
+
+                {isPhone ? (
+                  <div style={{ display: 'grid', gap: 10 }}>
+                    {fotosLinhas.map((linha) => (
+                      <div key={linha.sku} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 12, background: linha.temFlag ? 'var(--white)' : '#f8fafc', display: 'grid', gap: 12, opacity: linha.temFlag ? 1 : 0.78 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--blue-600)', fontWeight: 800 }}>{linha.sku}</div>
+                            <div style={{ marginTop: 4, fontSize: 13, color: 'var(--gray-800)', fontWeight: 700, lineHeight: 1.3 }}>{linha.descricao}</div>
+                          </div>
+                          <input type="checkbox" checked={fotosSelecionados.has(linha.sku)} disabled={!linha.temFlag} onChange={() => toggleFotosSelecionado(linha.sku)} style={{ width: 18, height: 18 }} />
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8 }}>
+                          {(['anb', 'ml', 'nuvemshop'] as const).map((sistema) => {
+                            const info: any = linha[sistema];
+                            return (
+                              <label key={sistema} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, border: '1px solid var(--border)', borderRadius: 8, padding: '9px 10px', background: '#fcfdff' }}>
+                                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--gray-700)' }}>{sistema === 'anb' ? 'ANB' : sistema === 'ml' ? 'ML' : 'Nuvemshop'}: {Number(info?.fotos || 0)} foto(s)</span>
+                                <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
+                                  <button type="button" onClick={() => abrirModalFotosManual(linha, sistema)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: Number(info?.fotos || 0) > 0 ? 'var(--green)' : '#dc2626', fontSize: 16, padding: 0 }}>📷</button>
+                                  <input type="checkbox" checked={!!linha.flags[sistema]} onChange={(e) => atualizarFlagFoto(linha.sku, sistema, e.target.checked)} />
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ ...s.card, padding: 0, overflow: 'hidden' }}>
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        <thead style={{ background: 'var(--gray-50)' }}><tr>
+                          <th style={{ ...s.th, width: 38 }}><input type="checkbox" checked={fotosPendentes > 0 && fotosSelecionados.size === fotosPendentes} onChange={(e) => e.target.checked ? selecionarFotosPendentes() : setFotosSelecionados(new Set())} /></th>
+                          {['SKU', 'Descricao', 'ANB', 'ML', 'Nuvemshop', 'Status'].map((h) => <th key={h} style={s.th}>{h}</th>)}
+                        </tr></thead>
+                        <tbody>
+                          {fotosLinhas.map((linha) => (
+                            <tr key={linha.sku} style={{ background: linha.temFlag ? 'var(--white)' : '#f8fafc', opacity: linha.temFlag ? 1 : 0.72 }}>
+                              <td style={{ ...s.td, textAlign: 'center' }}><input type="checkbox" checked={fotosSelecionados.has(linha.sku)} disabled={!linha.temFlag} onChange={() => toggleFotosSelecionado(linha.sku)} /></td>
+                              <td style={{ ...s.td, fontFamily: 'JetBrains Mono, monospace', color: 'var(--blue-600)', fontWeight: 700, whiteSpace: 'nowrap' }}>{linha.sku}</td>
+                              <td style={{ ...s.td, maxWidth: 320 }}><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{linha.descricao}</div></td>
+                              {(['anb', 'ml', 'nuvemshop'] as const).map((sistema) => {
+                                const info: any = linha[sistema];
+                                return (
+                                  <td key={sistema} style={{ ...s.td, textAlign: 'center' }}>
+                                    <label style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                                      <input type="checkbox" checked={!!linha.flags[sistema]} onChange={(e) => atualizarFlagFoto(linha.sku, sistema, e.target.checked)} />
+                                      <button type="button" onClick={(e) => { e.preventDefault(); abrirModalFotosManual(linha, sistema); }} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: Number(info?.fotos || 0) > 0 ? 'var(--green)' : '#dc2626', fontSize: 12, fontWeight: 800, textDecoration: 'underline dotted', padding: 0 }}>
+                                        📷 {Number(info?.fotos || 0)}
+                                      </button>
+                                    </label>
+                                  </td>
+                                );
+                              })}
+                              <td style={s.td}>{linha.temFlag ? <span style={{ ...s.badge('#dc2626', '#fef2f2', '#fecaca') }}>Pendente</span> : <span style={s.badge('var(--green)', '#f0fdf4', '#86efac')}>OK</span>}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </>
+        ) : (
+          <>
         <div style={{ ...s.card, padding: isPhone ? '10px 12px' : '14px 18px' }}>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' as const, alignItems: 'center', flexDirection: isPhone ? 'column' : 'row' }}>
             <button
@@ -634,7 +983,82 @@ Deseja forçar a exclusão mesmo assim?`);
             </div>
           )}
         </div>
+          </>
+        )}
       </div>
+
+      {fotoManualModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.5)', zIndex: 260, display: 'flex', alignItems: isPhone ? 'stretch' : 'center', justifyContent: 'center', padding: isPhone ? 0 : 24 }}>
+          <div style={{ background: 'var(--white)', borderRadius: isPhone ? 0 : 14, width: '100%', maxWidth: isPhone ? undefined : 720, maxHeight: isPhone ? '100dvh' : '92vh', minHeight: isPhone ? '100dvh' : undefined, display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,.2)' }}>
+            <div style={{ padding: isPhone ? '14px 16px' : '18px 22px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 15, fontWeight: 800 }}>Fotos {fotoManualModal.sistema === 'anb' ? 'ANB' : fotoManualModal.sistema === 'ml' ? 'Mercado Livre' : 'Nuvemshop'} - {fotoManualModal.linha.sku}</div>
+                <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fotoManualModal.linha.descricao}</div>
+              </div>
+              <button onClick={() => setFotoManualModal(null)} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', fontSize: 16 }}>×</button>
+            </div>
+
+            <div style={{ padding: isPhone ? 16 : '16px 22px', overflowY: 'auto', flex: 1 }}>
+              {fotoManualModal.carregando ? (
+                <div style={{ textAlign: 'center', padding: 32, color: 'var(--gray-400)' }}>Buscando fotos no Drive...</div>
+              ) : fotoManualModal.fotos.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: 32, color: 'var(--gray-400)' }}>Nenhuma foto encontrada no Drive.</div>
+              ) : (
+                <>
+                  <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 8, border: '1px solid #c4b5fd', background: '#faf5ff', fontSize: 12, color: '#5b21b6', fontWeight: 700 }}>
+                    {Number((fotoManualModal.linha as any)[fotoManualModal.sistema]?.fotos || 0) > 0
+                      ? 'Este sistema ja possui foto. A capa do Drive fica desmarcada por padrao.'
+                      : 'Este sistema esta sem foto. A capa do Drive fica selecionada.'}
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fill, minmax(170px, 1fr))', gap: 10 }}>
+                    {fotoManualModal.fotos.map((foto, idx) => {
+                      const status = fotoManualModal.status.find((item) => item.nome === foto.nome)?.status;
+                      const erro = fotoManualModal.status.find((item) => item.nome === foto.nome)?.erro;
+                      const selected = fotoManualModal.selecionadas.has(foto.id);
+                      return (
+                        <label key={foto.id} style={{ border: `2px solid ${selected ? '#7c3aed' : 'var(--border)'}`, borderRadius: 10, padding: 10, background: idx === 0 ? '#fffbeb' : 'var(--white)', cursor: fotoManualModal.enviando ? 'default' : 'pointer', display: 'grid', gap: 8 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontSize: 11, fontWeight: 800, color: idx === 0 ? '#92400e' : 'var(--gray-600)' }}>{idx === 0 ? 'CAPA' : `FOTO ${idx + 1}`}</span>
+                            <input
+                              type="checkbox"
+                              checked={selected}
+                              disabled={fotoManualModal.enviando}
+                              onChange={(e) => {
+                                setFotoManualModal((prev) => {
+                                  if (!prev) return prev;
+                                  const selecionadas = new Set(prev.selecionadas);
+                                  e.target.checked ? selecionadas.add(foto.id) : selecionadas.delete(foto.id);
+                                  return { ...prev, selecionadas };
+                                });
+                              }}
+                            />
+                          </div>
+                          <div style={{ fontSize: 11, color: 'var(--gray-700)', fontFamily: 'JetBrains Mono, monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{foto.nome}</div>
+                          {status && (
+                            <div style={{ fontSize: 11, color: status === 'ok' ? 'var(--green)' : status === 'erro' ? '#dc2626' : status === 'pulada' ? '#92400e' : '#7c3aed', fontWeight: 700 }}>
+                              {status === 'ok' ? 'Enviada' : status === 'erro' ? (erro || 'Erro') : status === 'pulada' ? 'Pulada' : status === 'enviando' ? 'Enviando...' : 'Aguardando'}
+                            </div>
+                          )}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div style={{ padding: isPhone ? 16 : '14px 22px', borderTop: '1px solid var(--border)', display: isPhone ? 'grid' : 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
+              <div style={{ fontSize: 12, color: 'var(--gray-500)' }}>{fotoManualModal.selecionadas.size} foto(s) selecionada(s)</div>
+              <div style={{ display: isPhone ? 'grid' : 'flex', gap: 8 }}>
+                <button onClick={() => setFotoManualModal(null)} style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>Fechar</button>
+                <button onClick={enviarFotosManual} disabled={fotoManualModal.enviando || fotoManualModal.carregando || fotoManualModal.selecionadas.size === 0} style={{ ...s.btn, background: '#7c3aed', color: '#fff', opacity: (fotoManualModal.enviando || fotoManualModal.carregando || fotoManualModal.selecionadas.size === 0) ? 0.65 : 1, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>
+                  {fotoManualModal.enviando ? 'Enviando...' : 'Enviar selecionadas'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MODAL PRÉ-CADASTRO */}
       {modal && (

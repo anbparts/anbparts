@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { compressDataUrlImage, normalizeImageFileName } from '../lib/image';
+import { buscarCadastroFotos, buscarCadastroFotosDrive, enviarCadastroFotosManual, processarCadastroFotos } from '../lib/fotos-cadastro';
 import { blingReq, fetchProdutoLojaLinksByProductId, resolveBlingMercadoLivreItemId, resolveBlingMercadoLivreLinkWithFallback } from './bling';
 
 export const cadastroRouter = Router();
@@ -726,6 +727,39 @@ cadastroRouter.post('/copiar-peca/:pecaId', async (req, res, next) => {
       detranEtiquetaEnviada: detranConcat,
       peca: novaPeca,
     });
+  } catch (e) { next(e); }
+});
+
+// POST /cadastro/fotos/buscar
+cadastroRouter.post('/fotos/buscar', async (req, res, next) => {
+  try {
+    const result = await buscarCadastroFotos(req.body || {});
+    res.json(result);
+  } catch (e) { next(e); }
+});
+
+// POST /cadastro/fotos/processar
+cadastroRouter.post('/fotos/processar', async (req, res, next) => {
+  try {
+    const { linhas } = req.body || {};
+    const result = await processarCadastroFotos(linhas || []);
+    res.json(result);
+  } catch (e) { next(e); }
+});
+
+// POST /cadastro/fotos/drive
+cadastroRouter.post('/fotos/drive', async (req, res, next) => {
+  try {
+    const result = await buscarCadastroFotosDrive(req.body || {});
+    res.json(result);
+  } catch (e) { next(e); }
+});
+
+// POST /cadastro/fotos/enviar-manual
+cadastroRouter.post('/fotos/enviar-manual', async (req, res, next) => {
+  try {
+    const result = await enviarCadastroFotosManual(req.body || {});
+    res.json(result);
   } catch (e) { next(e); }
 });
 
