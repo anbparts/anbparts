@@ -45,6 +45,7 @@ type CadastroFotosLinha = {
 
 type CadastroFotosSistema = 'anb' | 'ml' | 'nuvemshop';
 type CadastroFotoDrive = { id: string; nome: string; mimeType: string; size?: string | number | null };
+type CadastroFotoManualLocal = { id: string; nome: string; dataUrl: string; base64: string; mimeType: string; status?: 'aguardando' | 'enviando' | 'ok' | 'erro'; erro?: string };
 
 const EMPTY_FORM = {
   motoId: '', idPeca: '', descricao: '', descricaoPeca: '', precoVenda: '', sufixoTitulo: '',
@@ -82,6 +83,12 @@ function ordenarFotosLinhas(linhas: CadastroFotosLinha[]) {
     if (a.temFlag !== b.temFlag) return a.temFlag ? -1 : 1;
     return a.sku.localeCompare(b.sku, 'pt-BR', { numeric: true, sensitivity: 'base' });
   });
+}
+
+function dividirEmLotes<T>(itens: T[], tamanho = 4) {
+  const lotes: T[][] = [];
+  for (let i = 0; i < itens.length; i += tamanho) lotes.push(itens.slice(i, i + tamanho));
+  return lotes;
 }
 
 function ChecklistValidacao({ form }: { form: any }) {
@@ -156,7 +163,7 @@ export default function CadastroPage() {
   const [searchInput, setSearchInput] = useState('');
   const [paginaCadastro, setPaginaCadastro] = useState<'sku' | 'fotos'>('sku');
   const hoje = new Date().toISOString().slice(0, 10);
-  const [fotosModo, setFotosModo] = useState<'skus' | 'data'>('skus');
+  const [fotosModo, setFotosModo] = useState<'skus' | 'data'>('data');
   const [fotosSkusInput, setFotosSkusInput] = useState('');
   const [fotosDataDe, setFotosDataDe] = useState(hoje);
   const [fotosDataAte, setFotosDataAte] = useState(hoje);
@@ -172,6 +179,8 @@ export default function CadastroPage() {
     linha: CadastroFotosLinha;
     sistema: CadastroFotosSistema;
     fotos: CadastroFotoDrive[];
+    imagens: CadastroFotoManualLocal[];
+    origem: 'drive' | 'manual';
     selecionadas: Set<string>;
     carregando: boolean;
     enviando: boolean;
@@ -452,7 +461,7 @@ export default function CadastroPage() {
   }
 
   async function abrirModalFotosManual(linha: CadastroFotosLinha, sistema: CadastroFotosSistema) {
-    setFotoManualModal({ linha, sistema, fotos: [], selecionadas: new Set(), carregando: true, enviando: false, status: [] });
+    setFotoManualModal({ linha, sistema, fotos: [], imagens: [], origem: 'drive', selecionadas: new Set(), carregando: true, enviando: false, status: [] });
     try {
       const resp = await fetch(`${API}/cadastro/fotos/drive`, {
         method: 'POST',
@@ -464,55 +473,101 @@ export default function CadastroPage() {
       const fotos: CadastroFotoDrive[] = Array.isArray(data.fotos) ? data.fotos : [];
       const fotosAtuais = Number((linha as any)[sistema]?.fotos || 0);
       const selecionadas = new Set((fotosAtuais > 0 ? fotos.slice(1) : fotos).map((foto) => foto.id));
-      setFotoManualModal({ linha, sistema, fotos, selecionadas, carregando: false, enviando: false, status: [] });
+      setFotoManualModal({ linha, sistema, fotos, imagens: [], origem: 'drive', selecionadas, carregando: false, enviando: false, status: [] });
     } catch (e: any) {
       alert(e?.message || String(e));
       setFotoManualModal(null);
     }
   }
 
+  async function adicionarFotosManuais(files: File[]) {
+    if (!files.length) return;
+    const imagens = await Promise.all(files.map((file, index) => new Promise<CadastroFotoManualLocal>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const dataUrl = String(ev.target?.result || '');
+        resolve({
+          id: `${Date.now()}-${index}-${file.name}`,
+          nome: file.name,
+          dataUrl,
+          base64: dataUrl.split(',')[1] || '',
+          mimeType: file.type || 'image/jpeg',
+          status: 'aguardando',
+        });
+      };
+      reader.onerror = () => reject(reader.error || new Error('Erro ao ler imagem.'));
+      reader.readAsDataURL(file);
+    })));
+    setFotoManualModal((prev) => prev ? { ...prev, origem: 'manual', imagens: [...prev.imagens, ...imagens] } : prev);
+  }
+
   async function enviarFotosManual() {
     if (!fotoManualModal || fotoManualModal.enviando) return;
+    const origem = fotoManualModal.origem;
     const fotos = fotoManualModal.fotos.filter((foto) => fotoManualModal.selecionadas.has(foto.id));
-    if (!fotos.length) return alert('Selecione ao menos uma foto.');
+    const imagens = fotoManualModal.imagens.filter((foto) => foto.status !== 'ok');
+    if (origem === 'drive' && !fotos.length) return alert('Selecione ao menos uma foto do Drive.');
+    if (origem === 'manual' && !imagens.length) return alert('Selecione ao menos uma foto do computador.');
 
     setFotoManualModal((prev) => prev ? {
       ...prev,
       enviando: true,
-      status: prev.fotos.map((foto, idx) => ({
+      imagens: prev.origem === 'manual' ? prev.imagens.map((foto) => ({ ...foto, status: 'enviando' as const, erro: undefined })) : prev.imagens,
+      status: prev.origem === 'drive' ? prev.fotos.map((foto, idx) => ({
         nome: foto.nome,
         status: prev.selecionadas.has(foto.id)
           ? 'aguardando'
           : (idx === 0 && Number((prev.linha as any)[prev.sistema]?.fotos || 0) > 0 ? 'pulada' : 'pulada'),
-      })),
+      })) : [],
     } : prev);
 
     try {
       setFotoManualModal((prev) => prev ? { ...prev, status: prev.status.map((item) => item.status === 'aguardando' ? { ...item, status: 'enviando' } : item) } : prev);
-      const resp = await fetch(`${API}/cadastro/fotos/enviar-manual`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sku: fotoManualModal.linha.sku, sistema: fotoManualModal.sistema, fotos }),
-      });
-      const data = await readApiResponse(resp, 'Erro ao enviar fotos');
-      const resultados = Array.isArray(data.resultados) ? data.resultados : [];
-      atualizarContadorFotosLocal(fotoManualModal.linha.sku, fotoManualModal.sistema, Number(data.enviadas || resultados.filter((item: any) => item.ok).length || 0));
+      const itensEnvio = fotoManualModal.sistema === 'anb'
+        ? (origem === 'manual' ? imagens.slice(0, 1) : fotos.slice(0, 1))
+        : (origem === 'manual' ? imagens : fotos);
+      const lotes = dividirEmLotes(itensEnvio, 4);
+      const resultados: any[] = [];
+      let enviadasTotal = 0;
+
+      for (const lote of lotes) {
+        const resp = await fetch(`${API}/cadastro/fotos/enviar-manual`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sku: fotoManualModal.linha.sku,
+            sistema: fotoManualModal.sistema,
+            origem,
+            fotos: origem === 'drive' ? lote : [],
+            imagens: origem === 'manual' ? lote : [],
+          }),
+        });
+        const data = await readApiResponse(resp, 'Erro ao enviar fotos');
+        const parcial = Array.isArray(data.resultados) ? data.resultados : [];
+        resultados.push(...parcial);
+        enviadasTotal += Number(data.enviadas || parcial.filter((item: any) => item.ok && !item.pulada).length || 0);
+        atualizarContadorFotosLocal(fotoManualModal.linha.sku, fotoManualModal.sistema, Number(data.enviadas || parcial.filter((item: any) => item.ok && !item.pulada).length || 0));
+      }
       setFotoManualModal((prev) => prev ? {
         ...prev,
         enviando: false,
+        imagens: prev.origem === 'manual' ? prev.imagens.map((foto) => {
+          const r = resultados.find((res: any) => res.nome === foto.nome || res.filename === foto.nome);
+          return { ...foto, status: r?.ok ? 'ok' : 'erro', erro: r?.error };
+        }) : prev.imagens,
         status: prev.status.map((item) => {
           if (item.status === 'pulada') return item;
           const r = resultados.find((res: any) => res.nome === item.nome || res.filename === item.nome);
-          return { ...item, status: !r || r.ok ? 'ok' : 'erro', erro: r?.error };
+          return { ...item, status: r?.ok ? 'ok' : 'erro', erro: r?.error };
         }),
       } : prev);
-      await buscarFotosCadastro();
-      setTimeout(() => setFotoManualModal(null), 1200);
+      if (enviadasTotal > 0) setTimeout(() => setFotoManualModal(null), 1200);
     } catch (e: any) {
       setFotoManualModal((prev) => prev ? {
         ...prev,
         enviando: false,
+        imagens: prev.imagens.map((foto) => foto.status === 'enviando' ? { ...foto, status: 'erro', erro: e?.message || String(e) } : foto),
         status: prev.status.map((item) => item.status === 'enviando' ? { ...item, status: 'erro', erro: e?.message || String(e) } : item),
       } : prev);
     }
@@ -837,7 +892,7 @@ Deseja forçar a exclusão mesmo assim?`);
             <div style={{ ...s.card, padding: isPhone ? '14px' : '18px' }}>
               <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 12 }}>Buscar SKUs para fotos</div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14, flexDirection: isPhone ? 'column' : 'row' }}>
-                {(['skus', 'data'] as const).map((modo) => (
+                {(['data', 'skus'] as const).map((modo) => (
                   <button key={modo} onClick={() => setFotosModo(modo)}
                     style={{ ...s.btn, background: fotosModo === modo ? 'var(--gray-800)' : 'var(--white)', color: fotosModo === modo ? '#fff' : 'var(--gray-600)', border: '1px solid var(--border)', width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>
                     {modo === 'skus' ? 'Por Lista de SKUs' : 'Data de Cadastro'}
@@ -1146,7 +1201,42 @@ Deseja forçar a exclusão mesmo assim?`);
             </div>
 
             <div style={{ padding: isPhone ? 16 : '16px 22px', overflowY: 'auto', flex: 1 }}>
-              {fotoManualModal.carregando ? (
+              <div style={{ display: isPhone ? 'grid' : 'grid', gridTemplateColumns: isPhone ? '1fr' : '1fr 220px', gap: 10, marginBottom: 14 }}>
+                <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: `2px dashed ${fotoManualModal.origem === 'manual' ? '#7c3aed' : 'var(--border)'}`, borderRadius: 10, padding: 16, cursor: fotoManualModal.enviando ? 'default' : 'pointer', background: fotoManualModal.origem === 'manual' ? '#faf5ff' : '#fafafa', gap: 4 }}>
+                  <div style={{ fontSize: 24 }}>📁</div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--gray-700)' }}>Selecionar do computador</div>
+                  <div style={{ fontSize: 11, color: 'var(--gray-400)' }}>{fotoManualModal.imagens.length} foto(s) selecionada(s)</div>
+                  <input type="file" multiple accept="image/*" disabled={fotoManualModal.enviando} style={{ display: 'none' }} onChange={async (e) => {
+                    const files = Array.from(e.target.files || []);
+                    e.target.value = '';
+                    await adicionarFotosManuais(files);
+                  }} />
+                </label>
+                <button type="button" onClick={() => setFotoManualModal((prev) => prev ? { ...prev, origem: 'drive' } : prev)} disabled={fotoManualModal.enviando || fotoManualModal.carregando || fotoManualModal.fotos.length === 0}
+                  style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: `2px dashed ${fotoManualModal.origem === 'drive' ? '#7c3aed' : '#c4b5fd'}`, borderRadius: 10, padding: 16, cursor: fotoManualModal.fotos.length ? 'pointer' : 'default', background: '#faf5ff', gap: 4, opacity: fotoManualModal.fotos.length === 0 ? 0.55 : 1 }}>
+                  <div style={{ fontSize: 24 }}>{fotoManualModal.carregando ? '⏳' : '📂'}</div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#7c3aed' }}>{fotoManualModal.carregando ? 'Buscando no Drive...' : 'Usar fotos do Drive'}</div>
+                  <div style={{ fontSize: 11, color: '#7c3aed', fontWeight: 700 }}>{fotoManualModal.fotos.length} foto(s) encontrada(s)</div>
+                </button>
+              </div>
+
+              {fotoManualModal.origem === 'manual' ? (
+                fotoManualModal.imagens.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: 32, color: 'var(--gray-400)', border: '1px dashed var(--border)', borderRadius: 10 }}>Selecione uma pasta ou imagens do computador.</div>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: isPhone ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fill, minmax(135px, 1fr))', gap: 10 }}>
+                    {fotoManualModal.imagens.map((foto) => (
+                      <div key={foto.id} style={{ border: `2px solid ${foto.status === 'ok' ? '#86efac' : foto.status === 'erro' ? '#fca5a5' : foto.status === 'enviando' ? '#93c5fd' : 'var(--border)'}`, borderRadius: 10, overflow: 'hidden', position: 'relative', background: '#fff' }}>
+                        <img src={foto.dataUrl} alt={foto.nome} style={{ width: '100%', height: 105, objectFit: 'cover', display: 'block' }} />
+                        {foto.status === 'aguardando' && (
+                          <button type="button" onClick={() => setFotoManualModal((prev) => prev ? { ...prev, imagens: prev.imagens.filter((item) => item.id !== foto.id) } : prev)} style={{ position: 'absolute', top: 5, right: 5, width: 22, height: 22, borderRadius: 999, border: 'none', background: 'rgba(0,0,0,.62)', color: '#fff', cursor: 'pointer' }}>×</button>
+                        )}
+                        <div style={{ padding: '5px 7px', fontSize: 10.5, color: foto.status === 'erro' ? '#dc2626' : 'var(--gray-600)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{foto.status === 'erro' ? (foto.erro || 'Erro') : foto.nome}</div>
+                      </div>
+                    ))}
+                  </div>
+                )
+              ) : fotoManualModal.carregando ? (
                 <div style={{ textAlign: 'center', padding: 32, color: 'var(--gray-400)' }}>Buscando fotos no Drive...</div>
               ) : fotoManualModal.fotos.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: 32, color: 'var(--gray-400)' }}>Nenhuma foto encontrada no Drive.</div>
@@ -1195,10 +1285,10 @@ Deseja forçar a exclusão mesmo assim?`);
             </div>
 
             <div style={{ padding: isPhone ? 16 : '14px 22px', borderTop: '1px solid var(--border)', display: isPhone ? 'grid' : 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
-              <div style={{ fontSize: 12, color: 'var(--gray-500)' }}>{fotoManualModal.selecionadas.size} foto(s) selecionada(s)</div>
+              <div style={{ fontSize: 12, color: 'var(--gray-500)' }}>{fotoManualModal.origem === 'manual' ? fotoManualModal.imagens.filter((foto) => foto.status !== 'ok').length : fotoManualModal.selecionadas.size} foto(s) selecionada(s)</div>
               <div style={{ display: isPhone ? 'grid' : 'flex', gap: 8 }}>
                 <button onClick={() => setFotoManualModal(null)} style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>Fechar</button>
-                <button onClick={enviarFotosManual} disabled={fotoManualModal.enviando || fotoManualModal.carregando || fotoManualModal.selecionadas.size === 0} style={{ ...s.btn, background: '#7c3aed', color: '#fff', opacity: (fotoManualModal.enviando || fotoManualModal.carregando || fotoManualModal.selecionadas.size === 0) ? 0.65 : 1, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>
+                <button onClick={enviarFotosManual} disabled={fotoManualModal.enviando || (fotoManualModal.origem === 'drive' && (fotoManualModal.carregando || fotoManualModal.selecionadas.size === 0)) || (fotoManualModal.origem === 'manual' && fotoManualModal.imagens.filter((foto) => foto.status !== 'ok').length === 0)} style={{ ...s.btn, background: '#7c3aed', color: '#fff', opacity: (fotoManualModal.enviando || (fotoManualModal.origem === 'drive' && (fotoManualModal.carregando || fotoManualModal.selecionadas.size === 0)) || (fotoManualModal.origem === 'manual' && fotoManualModal.imagens.filter((foto) => foto.status !== 'ok').length === 0)) ? 0.65 : 1, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>
                   {fotoManualModal.enviando ? 'Enviando...' : 'Enviar selecionadas'}
                 </button>
               </div>

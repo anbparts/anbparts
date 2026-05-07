@@ -15,6 +15,12 @@ type DriveFoto = {
 };
 
 type FotoDestino = 'anb' | 'ml' | 'nuvemshop';
+type ManualFoto = {
+  nome: string;
+  dataUrl?: string;
+  base64?: string;
+  mimeType?: string;
+};
 
 type CadastroFotosRowInput = {
   sku: string;
@@ -27,6 +33,14 @@ function normalizeText(value: any) {
 
 function normalizeSku(value: any) {
   return normalizeText(value).replace(/^"+|"+$/g, '').toUpperCase();
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function pauseUploadBatch(index: number) {
+  if ((index + 1) % 4 === 0) await sleep(650);
 }
 
 function baseSku(value: any) {
@@ -308,6 +322,32 @@ async function uploadNuvemshopDrive(produtoId: number | string, fotos: DriveFoto
       });
       resultados.push({ sistema: 'nuvemshop', nome: foto.nome, ok: true, id: data?.id, position: proximaPosicao });
       proximaPosicao++;
+      await pauseUploadBatch(resultados.length - 1);
+    } catch (e: any) {
+      resultados.push({ sistema: 'nuvemshop', nome: foto.nome, ok: false, error: e?.message || String(e) });
+    }
+  }
+
+  return resultados;
+}
+
+async function uploadNuvemshopManual(produtoId: number | string, fotos: ManualFoto[]) {
+  let proximaPosicao = (await listarImagensNuvemshop(produtoId)).reduce((max, img) => Math.max(max, Number(img?.position || 0) || 0), 0) + 1;
+  const resultados: any[] = [];
+
+  for (const foto of fotos) {
+    try {
+      const data = await nuvemReq<any>(`/products/${encodeURIComponent(String(produtoId))}/images`, {
+        method: 'POST',
+        body: JSON.stringify({
+          attachment: manualFotoToBase64(foto),
+          filename: foto.nome || 'foto.jpg',
+          position: proximaPosicao,
+        }),
+      });
+      resultados.push({ sistema: 'nuvemshop', nome: foto.nome, ok: true, id: data?.id, position: proximaPosicao });
+      proximaPosicao++;
+      await pauseUploadBatch(resultados.length - 1);
     } catch (e: any) {
       resultados.push({ sistema: 'nuvemshop', nome: foto.nome, ok: false, error: e?.message || String(e) });
     }
@@ -438,6 +478,7 @@ async function uploadMercadoLivreDrive(itemId: string, fotos: DriveFoto[]) {
       });
 
       resultados.push({ sistema: 'ml', nome: foto.nome, ok: true, id: uploadData.id });
+      await pauseUploadBatch(resultados.length - 1);
     } catch (e: any) {
       resultados.push({ sistema: 'ml', nome: foto.nome, ok: false, error: e?.message || String(e) });
     }
@@ -446,9 +487,71 @@ async function uploadMercadoLivreDrive(itemId: string, fotos: DriveFoto[]) {
   return resultados;
 }
 
-function limitarFotosMercadoLivre(fotos: DriveFoto[], imagensAtuais: number) {
+async function uploadMercadoLivreManual(itemId: string, fotos: ManualFoto[]) {
+  const resultados: any[] = [];
+  const token = await getMercadoLivreTokenForUpload();
+
+  for (const foto of fotos) {
+    try {
+      const buffer = Buffer.from(manualFotoToBase64(foto), 'base64');
+      const form = new FormData();
+      const blob = new Blob([buffer], { type: foto.mimeType || 'image/jpeg' });
+      form.append('file', blob, foto.nome || 'foto.jpg');
+
+      let uploadResp = await fetch(`${MERCADO_LIVRE_API}/pictures/items/upload`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: form as any,
+      });
+      let uploadData: any = await uploadResp.json().catch(() => ({}));
+      if (uploadResp.status === 401) {
+        const refreshed = await refreshMercadoLivreToken(await getMercadoLivreConfig());
+        uploadResp = await fetch(`${MERCADO_LIVRE_API}/pictures/items/upload`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${refreshed}` },
+          body: form as any,
+        });
+        uploadData = await uploadResp.json().catch(() => ({}));
+      }
+      if (!uploadResp.ok || !uploadData?.id) throw new Error(getApiErrorMessage(uploadData, `Upload ML ${uploadResp.status}`));
+
+      await mercadoLivreReq(`/items/${encodeURIComponent(itemId)}/pictures`, {
+        method: 'POST',
+        body: JSON.stringify({ id: uploadData.id }),
+      });
+
+      resultados.push({ sistema: 'ml', nome: foto.nome, ok: true, id: uploadData.id });
+      await pauseUploadBatch(resultados.length - 1);
+    } catch (e: any) {
+      resultados.push({ sistema: 'ml', nome: foto.nome, ok: false, error: e?.message || String(e) });
+    }
+  }
+
+  return resultados;
+}
+
+function limitarFotosMercadoLivre<T>(fotos: T[], imagensAtuais: number) {
   const vagas = Math.max(0, MERCADO_LIVRE_MAX_FOTOS - Math.max(0, Number(imagensAtuais) || 0));
   return fotos.slice(0, vagas);
+}
+
+function normalizarManualFotos(value: any): ManualFoto[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((foto) => ({
+    nome: normalizeText(foto?.nome || foto?.filename || foto?.name) || 'foto.jpg',
+    dataUrl: normalizeText(foto?.dataUrl),
+    base64: normalizeText(foto?.base64),
+    mimeType: normalizeText(foto?.mimeType) || 'image/jpeg',
+  })).filter((foto) => foto.dataUrl || foto.base64);
+}
+
+function manualFotoToBase64(foto: ManualFoto) {
+  return normalizeText(foto.base64) || normalizeText(foto.dataUrl).replace(/^data:[^;]+;base64,/, '');
+}
+
+function manualFotoToDataUrl(foto: ManualFoto) {
+  if (normalizeText(foto.dataUrl).startsWith('data:image/')) return normalizeText(foto.dataUrl);
+  return `data:${foto.mimeType || 'image/jpeg'};base64,${manualFotoToBase64(foto)}`;
 }
 
 async function getPecasParaFotos(input: { skus?: any; dataDe?: string; dataAte?: string }) {
@@ -722,9 +825,12 @@ export async function enviarCadastroFotosManual(input: {
   sku: string;
   sistema: FotoDestino;
   fotos: DriveFoto[];
+  imagens?: ManualFoto[];
+  origem?: 'drive' | 'manual';
 }) {
   const sku = baseSku(input.sku);
   const sistema = input.sistema;
+  const origem = input.origem === 'manual' ? 'manual' : 'drive';
   const fotosSelecionadas = Array.isArray(input.fotos)
     ? input.fotos.map((foto) => ({
         id: normalizeText(foto.id),
@@ -733,10 +839,12 @@ export async function enviarCadastroFotosManual(input: {
         size: foto.size ?? null,
       })).filter((foto) => foto.id)
     : [];
+  const imagensManuais = normalizarManualFotos(input.imagens);
 
   if (!sku) throw new Error('SKU obrigatorio.');
   if (!(['anb', 'ml', 'nuvemshop'] as FotoDestino[]).includes(sistema)) throw new Error('Sistema invalido.');
-  if (!fotosSelecionadas.length) throw new Error('Selecione ao menos uma foto.');
+  if (origem === 'manual' && !imagensManuais.length) throw new Error('Selecione ao menos uma foto do computador.');
+  if (origem === 'drive' && !fotosSelecionadas.length) throw new Error('Selecione ao menos uma foto do Drive.');
 
   const peca = await prisma.peca.findFirst({
     where: { idPeca: { equals: sku, mode: 'insensitive' } },
@@ -753,8 +861,12 @@ export async function enviarCadastroFotosManual(input: {
   if (!peca) throw new Error('SKU nao encontrado no ANB.');
 
   if (sistema === 'anb') {
-    const capa = fotosSelecionadas[0];
-    const { fotoCapaNome, fotoCapaArquivo } = await prepararFotoCapaAnb(capa, sku);
+    const prepared = origem === 'manual'
+      ? await compressDataUrlImage(manualFotoToDataUrl(imagensManuais[0]), 'a foto capa do ANB')
+      : null;
+    const drivePrepared = origem === 'drive' ? await prepararFotoCapaAnb(fotosSelecionadas[0], sku) : null;
+    const fotoCapaNome = drivePrepared?.fotoCapaNome || normalizeImageFileName(buildAnbFotoCapaNome(sku, prepared?.extension || 'jpg'), prepared?.extension || 'jpg');
+    const fotoCapaArquivo = drivePrepared?.fotoCapaArquivo || prepared?.dataUrl || '';
     await prisma.peca.update({
       where: { id: peca.id },
       data: { fotoCapaNome, fotoCapaArquivo },
@@ -765,6 +877,10 @@ export async function enviarCadastroFotosManual(input: {
   if (sistema === 'nuvemshop') {
     const produto = await buscarProdutoNuvemshopPorSku(sku);
     if (!produto?.id) throw new Error('Produto nao encontrado na Nuvemshop.');
+    if (origem === 'manual') {
+      const resultados = await uploadNuvemshopManual(produto.id, imagensManuais);
+      return { ok: true, sistema, sku, enviadas: resultados.filter((item) => item.ok).length, resultados };
+    }
     const imagensAtuais = Array.isArray(produto.images) ? produto.images.length : (await listarImagensNuvemshop(produto.id)).length;
     const drive = await buscarFotosDriveSku(peca.motoId, sku);
     const capaDriveId = drive.fotos[0]?.id || '';
@@ -780,6 +896,12 @@ export async function enviarCadastroFotosManual(input: {
   if (!itemId) throw new Error('Item ID do Mercado Livre nao encontrado no SKU.');
   const item = await mercadoLivreReq(`/items/${encodeURIComponent(itemId)}`);
   const imagensAtuais = Array.isArray(item?.pictures) ? item.pictures.length : 0;
+  if (origem === 'manual') {
+    const fotosLimitadas = limitarFotosMercadoLivre(imagensManuais, imagensAtuais);
+    if (!fotosLimitadas.length) return { ok: true, sistema, sku, enviadas: 0, resultados: [{ sistema, ok: true, pulada: true, error: 'Mercado Livre ja esta com 12 fotos.' }] };
+    const resultados = await uploadMercadoLivreManual(itemId, fotosLimitadas);
+    return { ok: true, sistema, sku, enviadas: resultados.filter((item) => item.ok).length, resultados };
+  }
   const drive = await buscarFotosDriveSku(peca.motoId, sku);
   const capaDriveId = drive.fotos[0]?.id || '';
   const fotosParaEnviar = imagensAtuais > 0
