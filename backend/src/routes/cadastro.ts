@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { compressDataUrlImage, normalizeImageFileName } from '../lib/image';
-import { buscarCadastroFotos, buscarCadastroFotosDrive, enviarCadastroFotosManual, processarCadastroFotos } from '../lib/fotos-cadastro';
+import { buscarCadastroFotos, buscarCadastroFotosAnb, buscarCadastroFotosDrive, enviarCadastroFotosManual, processarCadastroFotos, verificarCadastroFotoSku } from '../lib/fotos-cadastro';
 import { blingReq, fetchProdutoLojaLinksByProductId, resolveBlingMercadoLivreItemId, resolveBlingMercadoLivreLinkWithFallback } from './bling';
 
 export const cadastroRouter = Router();
@@ -735,7 +735,29 @@ cadastroRouter.post('/fotos/buscar', async (req, res, next) => {
   try {
     const result = await buscarCadastroFotos(req.body || {});
     res.json(result);
-  } catch (e) { next(e); }
+  } catch (e: any) {
+    res.status(500).json({ ok: false, error: e?.message || 'Erro ao buscar fotos.' });
+  }
+});
+
+// POST /cadastro/fotos/anb
+cadastroRouter.post('/fotos/anb', async (req, res, next) => {
+  try {
+    const result = await buscarCadastroFotosAnb(req.body || {});
+    res.json(result);
+  } catch (e: any) {
+    res.status(500).json({ ok: false, error: e?.message || 'Erro ao buscar materiais ANB.' });
+  }
+});
+
+// POST /cadastro/fotos/verificar-sku
+cadastroRouter.post('/fotos/verificar-sku', async (req, res, next) => {
+  try {
+    const result = await verificarCadastroFotoSku(req.body || {});
+    res.json(result);
+  } catch (e: any) {
+    res.status(500).json({ ok: false, error: e?.message || 'Erro ao verificar fotos do SKU.' });
+  }
 });
 
 // POST /cadastro/fotos/processar

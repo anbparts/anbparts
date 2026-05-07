@@ -489,18 +489,20 @@ async function getPecasParaFotos(input: { skus?: any; dataDe?: string; dataAte?:
   return Array.from(map.values());
 }
 
-export async function buscarCadastroFotos(input: { skus?: any; dataDe?: string; dataAte?: string }) {
-  const pecas = await getPecasParaFotos(input);
-  const linhas: any[] = [];
+async function montarLinhaCadastroFotos(peca: any, verificarExternos: boolean) {
+  const sku = baseSku(peca.idPeca);
+  const anbFotos = peca.fotoCapaArquivo ? 1 : 0;
 
-  for (const peca of pecas) {
-    const sku = baseSku(peca.idPeca);
-    const anbFotos = peca.fotoCapaArquivo ? 1 : 0;
+  let nuvemshopProdutoId: number | null = null;
+  let nuvemshopFotos = 0;
+  let nuvemshopEncontrado = false;
+  let nuvemshopErro = '';
+  let mlFotos = 0;
+  let mlEncontrado = false;
+  let mlErro = '';
+  const mlItemId = normalizeText(peca.mercadoLivreItemId) || parseMercadoLivreItemId(peca.mercadoLivreLink);
 
-    let nuvemshopProdutoId: number | null = null;
-    let nuvemshopFotos = 0;
-    let nuvemshopEncontrado = false;
-    let nuvemshopErro = '';
+  if (verificarExternos) {
     try {
       const produto = await buscarProdutoNuvemshopPorSku(sku);
       if (produto?.id) {
@@ -512,10 +514,6 @@ export async function buscarCadastroFotos(input: { skus?: any; dataDe?: string; 
       nuvemshopErro = e?.message || String(e);
     }
 
-    const mlItemId = normalizeText(peca.mercadoLivreItemId) || parseMercadoLivreItemId(peca.mercadoLivreLink);
-    let mlFotos = 0;
-    let mlEncontrado = false;
-    let mlErro = '';
     try {
       if (mlItemId) {
         const item = await mercadoLivreReq(`/items/${encodeURIComponent(mlItemId)}`);
@@ -525,45 +523,72 @@ export async function buscarCadastroFotos(input: { skus?: any; dataDe?: string; 
     } catch (e: any) {
       mlErro = e?.message || String(e);
     }
-
-    const flags = {
-      anb: anbFotos === 0,
-      nuvemshop: nuvemshopEncontrado && nuvemshopFotos <= 2,
-      ml: mlEncontrado && mlFotos <= 2,
-    };
-    const temFlag = flags.anb || flags.nuvemshop || flags.ml;
-    let driveResumo = { fotos: null as number | null, pasta: '' };
-
-    if (flags.nuvemshop || flags.ml) {
-      try {
-        const drive = await buscarFotosDriveSku(peca.motoId, sku);
-        driveResumo = { fotos: drive.fotos.length, pasta: drive.pasta };
-      } catch {
-        driveResumo = { fotos: 0, pasta: '' };
-      }
-    }
-
-    linhas.push({
-      sku,
-      descricao: peca.descricao,
-      motoId: peca.motoId,
-      moto: peca.moto,
-      anb: { fotos: anbFotos, ok: anbFotos > 0 },
-      ml: { fotos: mlFotos, encontrado: mlEncontrado, itemId: mlItemId || null, erro: mlErro },
-      nuvemshop: { fotos: nuvemshopFotos, encontrado: nuvemshopEncontrado, produtoId: nuvemshopProdutoId, erro: nuvemshopErro },
-      flags,
-      temFlag,
-      drive: driveResumo,
-      status: temFlag ? 'pendente' : 'ok',
-    });
   }
 
+  const flags = {
+    anb: anbFotos === 0,
+    nuvemshop: verificarExternos && nuvemshopEncontrado && nuvemshopFotos <= 2,
+    ml: verificarExternos && mlEncontrado && mlFotos <= 2,
+  };
+  const temFlag = flags.anb || flags.nuvemshop || flags.ml;
+  let driveResumo = { fotos: null as number | null, pasta: '' };
+
+  if (flags.nuvemshop || flags.ml) {
+    try {
+      const drive = await buscarFotosDriveSku(peca.motoId, sku);
+      driveResumo = { fotos: drive.fotos.length, pasta: drive.pasta };
+    } catch {
+      driveResumo = { fotos: 0, pasta: '' };
+    }
+  }
+
+  return {
+    sku,
+    descricao: peca.descricao,
+    motoId: peca.motoId,
+    moto: peca.moto,
+    anb: { fotos: anbFotos, ok: anbFotos > 0 },
+    ml: { fotos: mlFotos, encontrado: mlEncontrado, itemId: mlItemId || null, erro: mlErro },
+    nuvemshop: { fotos: nuvemshopFotos, encontrado: nuvemshopEncontrado, produtoId: nuvemshopProdutoId, erro: nuvemshopErro },
+    flags,
+    temFlag,
+    drive: driveResumo,
+    status: verificarExternos ? (temFlag ? 'pendente' : 'ok') : 'verificando',
+  };
+}
+
+function ordenarLinhasCadastroFotos(linhas: any[]) {
   linhas.sort((a, b) => {
     if (a.temFlag !== b.temFlag) return a.temFlag ? -1 : 1;
     return a.sku.localeCompare(b.sku, 'pt-BR', { numeric: true, sensitivity: 'base' });
   });
+  return linhas;
+}
 
-  return { ok: true, total: linhas.length, linhas };
+export async function buscarCadastroFotosAnb(input: { skus?: any; dataDe?: string; dataAte?: string }) {
+  const pecas = await getPecasParaFotos(input);
+  const linhas = await Promise.all(pecas.map((peca) => montarLinhaCadastroFotos(peca, false)));
+  return { ok: true, total: linhas.length, linhas: ordenarLinhasCadastroFotos(linhas) };
+}
+
+export async function verificarCadastroFotoSku(input: { sku?: string }) {
+  const sku = baseSku(input.sku);
+  if (!sku) throw new Error('SKU obrigatorio.');
+  const pecas = await getPecasParaFotos({ skus: [sku] });
+  const peca = pecas.find((item) => baseSku(item.idPeca) === sku);
+  if (!peca) throw new Error('SKU nao encontrado no ANB.');
+  return { ok: true, linha: await montarLinhaCadastroFotos(peca, true) };
+}
+
+export async function buscarCadastroFotos(input: { skus?: any; dataDe?: string; dataAte?: string }) {
+  const pecas = await getPecasParaFotos(input);
+  const linhas: any[] = [];
+
+  for (const peca of pecas) {
+    linhas.push(await montarLinhaCadastroFotos(peca, true));
+  }
+
+  return { ok: true, total: linhas.length, linhas: ordenarLinhasCadastroFotos(linhas) };
 }
 
 export async function processarCadastroFotos(rowsInput: CadastroFotosRowInput[]) {

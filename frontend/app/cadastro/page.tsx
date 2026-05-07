@@ -53,10 +53,35 @@ const EMPTY_FORM = {
   categoriaMLId: '', categoriaMLNome: '', urlRef: '', fotoCapa: '', fotoCapaNome: '',
 };
 
+async function readApiResponse(resp: Response, fallback: string) {
+  const text = await resp.text().catch(() => '');
+  let data: any = {};
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = {};
+    }
+  }
+  if (!resp.ok || data.ok === false) {
+    const rawMessage = data.error || data.message || text || fallback;
+    const cleanMessage = String(rawMessage).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    throw new Error(cleanMessage || `${fallback} (${resp.status})`);
+  }
+  return data;
+}
+
 function camposOk(form: any) {
   return !!(form.motoId && form.idPeca && form.descricao && form.precoVenda &&
     form.peso && form.largura && form.altura && form.profundidade &&
     form.localizacao && form.numeroPeca && form.estoque && form.categoriaMLId);
+}
+
+function ordenarFotosLinhas(linhas: CadastroFotosLinha[]) {
+  return [...linhas].sort((a, b) => {
+    if (a.temFlag !== b.temFlag) return a.temFlag ? -1 : 1;
+    return a.sku.localeCompare(b.sku, 'pt-BR', { numeric: true, sensitivity: 'base' });
+  });
 }
 
 function ChecklistValidacao({ form }: { form: any }) {
@@ -140,6 +165,8 @@ export default function CadastroPage() {
   const [fotosBuscando, setFotosBuscando] = useState(false);
   const [fotosProcessando, setFotosProcessando] = useState(false);
   const [fotosResultado, setFotosResultado] = useState('');
+  const [fotosBuscaStatus, setFotosBuscaStatus] = useState('');
+  const [fotosBuscaProgresso, setFotosBuscaProgresso] = useState({ atual: 0, total: 0 });
   const [fotoManualModal, setFotoManualModal] = useState<{
     linha: CadastroFotosLinha;
     sistema: CadastroFotosSistema;
@@ -262,23 +289,52 @@ export default function CadastroPage() {
     setFotosBuscando(true);
     setFotosResultado('');
     setFotosSelecionados(new Set());
+    setFotosBuscaStatus('Buscando materiais do ANB...');
+    setFotosBuscaProgresso({ atual: 0, total: 0 });
     try {
       const body = fotosModo === 'skus'
         ? { skus: normalizarListaFotosSkus(fotosSkusInput) }
         : { dataDe: fotosDataDe, dataAte: fotosDataAte };
-      const resp = await fetch(`${API}/cadastro/fotos/buscar`, {
+      const resp = await fetch(`${API}/cadastro/fotos/anb`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-      const data = await resp.json().catch(() => ({}));
-      if (!resp.ok || data.ok === false) throw new Error(data.error || 'Erro ao buscar fotos');
-      const linhas = Array.isArray(data.linhas) ? data.linhas : [];
+      const data = await readApiResponse(resp, 'Erro ao buscar fotos');
+      let linhas = ordenarFotosLinhas(Array.isArray(data.linhas) ? data.linhas : []);
       setFotosLinhas(linhas);
       setFotosSelecionados(new Set(linhas.filter((linha: CadastroFotosLinha) => linha.temFlag).map((linha: CadastroFotosLinha) => linha.sku)));
+      setFotosBuscaProgresso({ atual: 0, total: linhas.length });
+      const skusParaVerificar = linhas.map((linha) => linha.sku);
+
+      for (let index = 0; index < skusParaVerificar.length; index += 1) {
+        const sku = skusParaVerificar[index];
+        setFotosBuscaStatus(`Buscando fotos Nuvemshop, Mercado Livre e Drive (${index + 1}/${skusParaVerificar.length}) - ${sku}`);
+        try {
+          const skuResp = await fetch(`${API}/cadastro/fotos/verificar-sku`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sku }),
+          });
+          const skuData = await readApiResponse(skuResp, `Erro ao verificar fotos do SKU ${sku}`);
+          if (skuData.linha) {
+            linhas = ordenarFotosLinhas(linhas.map((linha) => linha.sku === sku ? skuData.linha : linha));
+            setFotosLinhas(linhas);
+            setFotosSelecionados(new Set(linhas.filter((linha: CadastroFotosLinha) => linha.temFlag).map((linha: CadastroFotosLinha) => linha.sku)));
+          }
+        } catch (skuError: any) {
+          linhas = linhas.map((linha) => linha.sku === sku ? { ...linha, status: 'erro', ml: { ...linha.ml, erro: skuError?.message || String(skuError) } } : linha);
+          setFotosLinhas(linhas);
+        }
+        setFotosBuscaProgresso({ atual: index + 1, total: skusParaVerificar.length });
+      }
+
+      setFotosBuscaStatus(`Busca concluida: ${linhas.length} SKU(s) verificado(s).`);
     } catch (e: any) {
       alert(e?.message || String(e));
+      setFotosBuscaStatus('');
     } finally {
       setFotosBuscando(false);
     }
@@ -322,8 +378,7 @@ export default function CadastroPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ linhas }),
       });
-      const data = await resp.json().catch(() => ({}));
-      if (!resp.ok || data.ok === false) throw new Error(data.error || 'Erro ao processar fotos');
+      const data = await readApiResponse(resp, 'Erro ao processar fotos');
       const ok = (data.resultados || []).filter((item: any) => item.ok).length;
       const erro = (data.resultados || []).filter((item: any) => !item.ok).length;
       setFotosResultado(`Processamento concluido: ${ok} SKU(s) OK, ${erro} com erro.`);
@@ -344,8 +399,7 @@ export default function CadastroPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sku: linha.sku }),
       });
-      const data = await resp.json().catch(() => ({}));
-      if (!resp.ok || data.ok === false) throw new Error(data.error || 'Erro ao buscar fotos do Drive');
+      const data = await readApiResponse(resp, 'Erro ao buscar fotos do Drive');
       const fotos: CadastroFotoDrive[] = Array.isArray(data.fotos) ? data.fotos : [];
       const fotosAtuais = Number((linha as any)[sistema]?.fotos || 0);
       const selecionadas = new Set((fotosAtuais > 0 ? fotos.slice(1) : fotos).map((foto) => foto.id));
@@ -380,8 +434,7 @@ export default function CadastroPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sku: fotoManualModal.linha.sku, sistema: fotoManualModal.sistema, fotos }),
       });
-      const data = await resp.json().catch(() => ({}));
-      if (!resp.ok || data.ok === false) throw new Error(data.error || 'Erro ao enviar fotos');
+      const data = await readApiResponse(resp, 'Erro ao enviar fotos');
       const resultados = Array.isArray(data.resultados) ? data.resultados : [];
       setFotoManualModal((prev) => prev ? {
         ...prev,
@@ -404,6 +457,13 @@ export default function CadastroPage() {
   }
 
   const fotosPendentes = fotosLinhas.filter((linha) => linha.temFlag).length;
+  const renderFotosStatus = (linha: CadastroFotosLinha) => {
+    if (linha.status === 'verificando') return <span style={s.badge('#6d28d9', '#faf5ff', '#c4b5fd')}>Verificando</span>;
+    if (linha.status === 'erro') return <span style={s.badge('#b91c1c', '#fef2f2', '#fecaca')}>Erro</span>;
+    return linha.temFlag
+      ? <span style={{ ...s.badge('#dc2626', '#fef2f2', '#fecaca') }}>Pendente</span>
+      : <span style={s.badge('var(--green)', '#f0fdf4', '#86efac')}>OK</span>;
+  };
 
   async function openNovo() {
     // Moto default = a de ID mais alto (última adicionada)
@@ -744,6 +804,20 @@ Deseja forçar a exclusão mesmo assim?`);
               )}
             </div>
 
+            {fotosBuscaStatus && (
+              <div style={{ ...s.card, padding: isPhone ? 12 : 14, borderColor: '#c4b5fd', background: '#faf5ff' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', marginBottom: 8 }}>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: '#5b21b6' }}>{fotosBuscaStatus}</div>
+                  {fotosBuscaProgresso.total > 0 && (
+                    <div style={{ fontSize: 12, color: '#6d28d9', fontWeight: 700, whiteSpace: 'nowrap' }}>{fotosBuscaProgresso.atual}/{fotosBuscaProgresso.total}</div>
+                  )}
+                </div>
+                <div style={{ height: 8, borderRadius: 999, background: '#ede9fe', overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${fotosBuscaProgresso.total > 0 ? Math.round((fotosBuscaProgresso.atual / fotosBuscaProgresso.total) * 100) : (fotosBuscando ? 12 : 100)}%`, background: '#7c3aed', transition: 'width .2s ease' }} />
+                </div>
+              </div>
+            )}
+
             {fotosLinhas.length > 0 && (
               <>
                 <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr 1fr' : 'repeat(4, minmax(140px, 1fr))', gap: 12, marginBottom: 16 }}>
@@ -785,6 +859,7 @@ Deseja forçar a exclusão mesmo assim?`);
                             <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--blue-600)', fontWeight: 800 }}>{linha.sku}</div>
                             <div style={{ marginTop: 4, fontSize: 13, color: 'var(--gray-800)', fontWeight: 700, lineHeight: 1.3 }}>{linha.descricao}</div>
                             <div style={{ marginTop: 5, fontSize: 12, color: '#7c3aed', fontWeight: 800 }}>Drive: {linha.drive?.fotos == null ? '-' : `${linha.drive.fotos} foto(s)`}</div>
+                            <div style={{ marginTop: 8 }}>{renderFotosStatus(linha)}</div>
                           </div>
                           <input type="checkbox" checked={fotosSelecionados.has(linha.sku)} disabled={!linha.temFlag} onChange={() => toggleFotosSelecionado(linha.sku)} style={{ width: 18, height: 18 }} />
                         </div>
@@ -841,7 +916,7 @@ Deseja forçar a exclusão mesmo assim?`);
                                   </td>
                                 );
                               })}
-                              <td style={s.td}>{linha.temFlag ? <span style={{ ...s.badge('#dc2626', '#fef2f2', '#fecaca') }}>Pendente</span> : <span style={s.badge('var(--green)', '#f0fdf4', '#86efac')}>OK</span>}</td>
+                              <td style={s.td}>{renderFotosStatus(linha)}</td>
                             </tr>
                           ))}
                         </tbody>
