@@ -5,6 +5,7 @@ import { API_BASE } from '@/lib/api-base';
 import { useAuth } from '@/lib/auth';
 import { formatEtiquetaMotoLabel, printSkuLabels } from '@/lib/estoque-label-print';
 import { compressFotoCapaFile } from '@/lib/image-compression';
+import { canProcessAction } from '@/lib/permissions';
 
 const API = API_BASE;
 
@@ -290,6 +291,11 @@ export default function CadastroPage() {
   const isTabletPortrait = viewportMode === 'tablet-portrait';
   const isTabletLandscape = viewportMode === 'tablet-landscape';
   const isMobile = isPhone || isTabletPortrait;
+  const canCriarPreCadastro = canProcessAction(user, 'cadastro', 'criar_pre_cadastro');
+  const canEditarPreCadastro = canProcessAction(user, 'cadastro', 'editar_pre_cadastro');
+  const canCriarProdutoBling = canProcessAction(user, 'cadastro', 'criar_bling');
+  const canEnviarFotos = canProcessAction(user, 'cadastro', 'enviar_fotos');
+  const canProcessarCategoria = canProcessAction(user, 'cadastro', 'processar_categoria');
 
   const [modal, setModal] = useState(false);
   const [editItem, setEditItem] = useState<CadastroPeca | null>(null);
@@ -482,6 +488,7 @@ export default function CadastroPage() {
   }
 
   async function processarCategoriasCadastro() {
+    if (!canProcessarCategoria) return alert('Seu usuario nao tem permissao para processar categoria.');
     const alvo = categoriaLinhas.filter((linha) => categoriaSelecionados.has(linha.sku) && linha.temFlag && linha.encontradoNuvemshop && linha.produtoId);
     if (!alvo.length) return alert('Nenhum SKU pendente selecionado.');
     if (!categoriasNuvemshop.length) return alert('Categorias da Nuvemshop nao carregadas. Reabra a tela ou tente buscar novamente.');
@@ -631,6 +638,7 @@ export default function CadastroPage() {
   }
 
   async function processarFotosCadastro() {
+    if (!canEnviarFotos) return alert('Seu usuario nao tem permissao para enviar fotos.');
     const linhas = fotosLinhas
       .filter((linha) => fotosSelecionados.has(linha.sku) && (linha.flags.anb || linha.flags.ml || linha.flags.nuvemshop))
       .map((linha) => ({ sku: linha.sku, flags: linha.flags }));
@@ -692,6 +700,7 @@ export default function CadastroPage() {
   }
 
   async function abrirModalFotosManual(linha: CadastroFotosLinha, sistema: CadastroFotosSistema) {
+    if (!canEnviarFotos) return alert('Seu usuario nao tem permissao para enviar fotos.');
     setFotoManualModal({ linha, sistema, fotos: [], imagens: [], origem: 'drive', selecionadas: new Set(), carregando: true, enviando: false, status: [] });
     try {
       const resp = await fetch(`${API}/cadastro/fotos/drive`, {
@@ -832,6 +841,7 @@ export default function CadastroPage() {
   };
 
   async function openNovo() {
+    if (!canCriarPreCadastro) return alert('Seu usuario nao tem permissao para criar pre-cadastro.');
     // Moto default = a de ID mais alto (última adicionada)
     const motoOrdenada = [...motos].sort((a, b) => b.id - a.id);
     const motoId = motoOrdenada[0]?.id ? String(motoOrdenada[0].id) : '';
@@ -842,6 +852,7 @@ export default function CadastroPage() {
   }
 
   async function openEditar(item: CadastroPeca) {
+    if (!canEditarPreCadastro) return alert('Seu usuario nao tem permissao para editar pre-cadastro.');
     if (item.status === 'cadastrado') return;
     setEditItem(item);
     setForm({
@@ -948,6 +959,8 @@ export default function CadastroPage() {
   }
 
   async function salvar() {
+    if (editItem && !canEditarPreCadastro) return alert('Seu usuario nao tem permissao para editar pre-cadastro.');
+    if (!editItem && !canCriarPreCadastro) return alert('Seu usuario nao tem permissao para criar pre-cadastro.');
     if (!form.motoId || !form.idPeca || !form.descricao) return alert('Moto, ID da Peça e Descrição são obrigatórios');
     const detranResumo = getDetranEtiquetasResumo(etiquetas, form.estoque);
     if (detranResumo.possuiAlguma && detranResumo.faltantes > 0) {
@@ -1043,6 +1056,7 @@ Deseja forçar a exclusão mesmo assim?`);
   }
 
   async function abrirFinalizar(item: CadastroPeca) {
+    if (!canCriarProdutoBling) return alert('Seu usuario nao tem permissao para criar produto Bling.');
     if (!item.blingProdutoId) return alert('Produto não foi enviado ao Bling ainda. Salve o pré-cadastro primeiro.');
     setItemFinalizar(item); setPreviewBling(null); setPreviewDiff({});
     setFinalizarFotoCapa(item.fotoCapa || '');
@@ -1063,6 +1077,7 @@ Deseja forçar a exclusão mesmo assim?`);
   }
 
   async function confirmarFinalizar() {
+    if (!canCriarProdutoBling) return alert('Seu usuario nao tem permissao para criar produto Bling.');
     if (!itemFinalizar) return;
     setConfirmando(true);
     try {
@@ -1172,7 +1187,7 @@ Deseja forçar a exclusão mesmo assim?`);
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', flexDirection: isPhone ? 'column' : 'row' }}>
               <button onClick={selecionarCategoriaPendentes} style={{ ...s.btn, background: 'var(--white)', border: '1px solid #c4b5fd', color: '#5b21b6', width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>Selecionar pendentes</button>
               <button onClick={() => setCategoriaSelecionados(new Set())} style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>Limpar selecao</button>
-              <button onClick={processarCategoriasCadastro} disabled={categoriaProcessando || categoriaSelecionados.size === 0} style={{ ...s.btn, background: '#7c3aed', color: '#fff', opacity: categoriaProcessando ? 0.7 : 1, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>
+              <button onClick={processarCategoriasCadastro} disabled={!canProcessarCategoria || categoriaProcessando || categoriaSelecionados.size === 0} style={{ ...s.btn, background: '#7c3aed', color: '#fff', opacity: (!canProcessarCategoria || categoriaProcessando) ? 0.7 : 1, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>
                 {categoriaProcessando ? `Processando ${categoriaSkuProcessando || 'categorias'}...` : 'Processar categorias selecionadas'}
               </button>
             </div>
@@ -1280,7 +1295,7 @@ Deseja forçar a exclusão mesmo assim?`);
               </button>
             ))}
           </div>
-          {paginaCadastro === 'sku' && (
+          {paginaCadastro === 'sku' && canCriarPreCadastro && (
             <button style={{ ...s.btn, background: 'var(--gray-800)', color: '#fff', fontSize: isPhone ? 12 : 12.5, padding: isPhone ? '7px 12px' : '7px 14px' }} onClick={openNovo}>+ Novo Pré-cadastro</button>
           )}
         </div>
@@ -1359,7 +1374,7 @@ Deseja forçar a exclusão mesmo assim?`);
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', flexDirection: isPhone ? 'column' : 'row' }}>
                     <button onClick={selecionarFotosPendentes} style={{ ...s.btn, background: 'var(--white)', border: '1px solid #c4b5fd', color: '#5b21b6', width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>Selecionar pendentes</button>
                     <button onClick={() => setFotosSelecionados(new Set())} style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>Limpar selecao</button>
-                    <button onClick={processarFotosCadastro} disabled={fotosProcessando || fotosSelecionados.size === 0} style={{ ...s.btn, background: '#7c3aed', color: '#fff', opacity: fotosProcessando ? 0.7 : 1, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>
+                    <button onClick={processarFotosCadastro} disabled={!canEnviarFotos || fotosProcessando || fotosSelecionados.size === 0} style={{ ...s.btn, background: '#7c3aed', color: '#fff', opacity: (!canEnviarFotos || fotosProcessando) ? 0.7 : 1, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>
                       {fotosProcessando ? `Enviando ${fotosProcessandoSku || 'fotos'}...` : 'Enviar fotos selecionadas'}
                     </button>
                   </div>
@@ -1387,7 +1402,7 @@ Deseja forçar a exclusão mesmo assim?`);
                               <div key={sistema} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, border: '1px solid var(--border)', borderRadius: 8, padding: '9px 10px', background: '#fcfdff' }}>
                                 <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--gray-700)' }}>{sistema === 'anb' ? 'ANB' : sistema === 'ml' ? 'ML' : 'Nuvemshop'}: {Number(info?.fotos || 0)} foto(s)</span>
                                 <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
-                                  <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); abrirModalFotosManual(linha, sistema); }} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: Number(info?.fotos || 0) > 0 ? 'var(--green)' : '#dc2626', fontSize: 16, padding: 0 }}>📷</button>
+                                  <button type="button" disabled={!canEnviarFotos} onClick={(e) => { e.preventDefault(); e.stopPropagation(); abrirModalFotosManual(linha, sistema); }} style={{ border: 'none', background: 'transparent', cursor: canEnviarFotos ? 'pointer' : 'not-allowed', color: Number(info?.fotos || 0) > 0 ? 'var(--green)' : '#dc2626', fontSize: 16, padding: 0, opacity: canEnviarFotos ? 1 : 0.45 }}>📷</button>
                                   <input type="checkbox" checked={!!linha.flags[sistema]} onChange={(e) => atualizarFlagFoto(linha.sku, sistema, e.target.checked)} />
                                 </span>
                               </div>
@@ -1426,7 +1441,7 @@ Deseja forçar a exclusão mesmo assim?`);
                                   <td key={sistema} style={{ ...s.td, textAlign: 'center' }}>
                                     <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                                       <input type="checkbox" checked={!!linha.flags[sistema]} onChange={(e) => atualizarFlagFoto(linha.sku, sistema, e.target.checked)} />
-                                      <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); abrirModalFotosManual(linha, sistema); }} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: Number(info?.fotos || 0) > 0 ? 'var(--green)' : '#dc2626', fontSize: 12, fontWeight: 800, textDecoration: 'underline dotted', padding: 0 }}>
+                                      <button type="button" disabled={!canEnviarFotos} onClick={(e) => { e.preventDefault(); e.stopPropagation(); abrirModalFotosManual(linha, sistema); }} style={{ border: 'none', background: 'transparent', cursor: canEnviarFotos ? 'pointer' : 'not-allowed', color: Number(info?.fotos || 0) > 0 ? 'var(--green)' : '#dc2626', fontSize: 12, fontWeight: 800, textDecoration: 'underline dotted', padding: 0, opacity: canEnviarFotos ? 1 : 0.45 }}>
                                         📷 {Number(info?.fotos || 0)}
                                       </button>
                                     </div>
@@ -1487,17 +1502,19 @@ Deseja forçar a exclusão mesmo assim?`);
                         <div style={{ fontSize: 10, color: 'var(--gray-500)', marginBottom: 4 }}>Pré-cadastro</div>
                         {cadastOk
                           ? <span style={s.badge('#2563eb', '#eff6ff', '#bfdbfe')}>OK</span>
-                          : <button onClick={() => openEditar(item)} style={{ ...s.badge('var(--green)', '#f0fdf4', '#86efac'), cursor: 'pointer', width: '100%', justifyContent: 'center' }}>OK</button>}
+                          : canEditarPreCadastro
+                            ? <button onClick={() => openEditar(item)} style={{ ...s.badge('var(--green)', '#f0fdf4', '#86efac'), cursor: 'pointer', width: '100%', justifyContent: 'center' }}>OK</button>
+                            : <span style={{ ...s.badge('var(--green)', '#f0fdf4', '#86efac'), width: '100%', justifyContent: 'center' }}>OK</span>}
                       </div>
                       <div>
                         <div style={{ fontSize: 10, color: 'var(--gray-500)', marginBottom: 4 }}>Cadastro</div>
                         {cadastOk ? (
                           <span style={s.badge('#2563eb', '#eff6ff', '#bfdbfe')}>OK</span>
                         ) : (
-                          <button onClick={() => abrirFinalizar(item)}
+                          canCriarProdutoBling ? <button onClick={() => abrirFinalizar(item)}
                             style={{ ...s.badge('#dc2626', '#fef2f2', '#fecaca'), cursor: 'pointer', width: '100%', justifyContent: 'center' }}>
                             Pendente
-                          </button>
+                          </button> : <span style={{ ...s.badge('#dc2626', '#fef2f2', '#fecaca'), width: '100%', justifyContent: 'center' }}>Pendente</span>
                         )}
                       </div>
                     </div>
@@ -1509,7 +1526,7 @@ Deseja forçar a exclusão mesmo assim?`);
                       >
                         {imprimindoItemId === item.id ? 'Imprimindo...' : 'Impressão'}
                       </button>
-                      {!cadastOk && (
+                      {!cadastOk && canEditarPreCadastro && (
                         <button style={{ ...s.btn, fontSize: 12, padding: '8px 10px', background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', justifyContent: 'center' }} onClick={() => openEditar(item)}>Editar</button>
                       )}
                       {isBruno && (
@@ -1544,16 +1561,18 @@ Deseja forçar a exclusão mesmo assim?`);
                         <td style={s.td}>
                           {cadastOk
                             ? <span style={s.badge('#2563eb', '#eff6ff', '#bfdbfe')}>✓ OK</span>
-                            : <button onClick={() => openEditar(item)} style={{ ...s.badge('var(--green)', '#f0fdf4', '#86efac'), cursor: 'pointer' }}>✓ OK</button>}
+                            : canEditarPreCadastro
+                              ? <button onClick={() => openEditar(item)} style={{ ...s.badge('var(--green)', '#f0fdf4', '#86efac'), cursor: 'pointer' }}>✓ OK</button>
+                              : <span style={s.badge('var(--green)', '#f0fdf4', '#86efac')}>✓ OK</span>}
                         </td>
                         <td style={s.td}>
                           {cadastOk ? (
                             <span style={s.badge('#2563eb', '#eff6ff', '#bfdbfe')}>✓ OK</span>
                           ) : (
-                            <button onClick={() => abrirFinalizar(item)}
+                            canCriarProdutoBling ? <button onClick={() => abrirFinalizar(item)}
                               style={{ ...s.badge('#dc2626', '#fef2f2', '#fecaca'), cursor: 'pointer' }}>
                               Pendente
-                            </button>
+                            </button> : <span style={s.badge('#dc2626', '#fef2f2', '#fecaca')}>Pendente</span>
                           )}
                         </td>
                         <td style={s.td}>
@@ -1565,7 +1584,7 @@ Deseja forçar a exclusão mesmo assim?`);
                             >
                               {imprimindoItemId === item.id ? 'Imprimindo...' : 'Impressão'}
                             </button>
-                            {!cadastOk && (
+                            {!cadastOk && canEditarPreCadastro && (
                               <button style={{ ...s.btn, fontSize: 11, padding: '4px 10px', background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)' }} onClick={() => openEditar(item)}>Editar</button>
                             )}
                             {isBruno && (
@@ -1960,7 +1979,7 @@ Deseja forçar a exclusão mesmo assim?`);
                   {excluindo ? 'Excluindo...' : '🗑️ Excluir'}
                 </button>
               )}
-              <button onClick={salvar} disabled={saving} style={{ ...s.btn, background: 'var(--gray-800)', color: '#fff', opacity: saving ? 0.7 : 1, width: isPhone ? '100%' : undefined, justifyContent: 'center', minHeight: isPhone ? 42 : undefined }}>
+              <button onClick={salvar} disabled={saving || (editItem ? !canEditarPreCadastro : !canCriarPreCadastro)} style={{ ...s.btn, background: 'var(--gray-800)', color: '#fff', opacity: (saving || (editItem ? !canEditarPreCadastro : !canCriarPreCadastro)) ? 0.7 : 1, width: isPhone ? '100%' : undefined, justifyContent: 'center', minHeight: isPhone ? 42 : undefined }}>
                 {saving ? 'Enviando...' : editItem ? '🔄 Atualizar Produto Bling' : '🚀 Criar Produto Bling'}
               </button>
             </div>
@@ -2149,8 +2168,8 @@ Deseja forçar a exclusão mesmo assim?`);
             </div>
             <div style={{ padding: isPhone ? '12px 14px calc(12px + env(safe-area-inset-bottom))' : '16px 24px', borderTop: '1px solid var(--border)', display: 'flex', gap: 10, justifyContent: 'flex-end', flexDirection: isPhone ? 'column-reverse' : 'row', flexShrink: 0 }}>
               <button onClick={() => { setModalFinalizar(false); setFotoPreviewOpen(false); }} style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', width: isPhone ? '100%' : undefined, justifyContent: 'center', minHeight: isPhone ? 42 : undefined }}>Cancelar</button>
-              <button onClick={confirmarFinalizar} disabled={confirmando || !previewBling || loadingPreview}
-                style={{ ...s.btn, background: 'var(--green)', color: '#fff', opacity: (confirmando || !previewBling || loadingPreview) ? 0.7 : 1, width: isPhone ? '100%' : undefined, justifyContent: 'center', minHeight: isPhone ? 42 : undefined }}>
+              <button onClick={confirmarFinalizar} disabled={!canCriarProdutoBling || confirmando || !previewBling || loadingPreview}
+                style={{ ...s.btn, background: 'var(--green)', color: '#fff', opacity: (!canCriarProdutoBling || confirmando || !previewBling || loadingPreview) ? 0.7 : 1, width: isPhone ? '100%' : undefined, justifyContent: 'center', minHeight: isPhone ? 42 : undefined }}>
                 {confirmando ? 'Lançando...' : '✓ Confirmar e Lançar no Estoque'}
               </button>
             </div>

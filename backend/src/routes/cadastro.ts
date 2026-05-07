@@ -15,6 +15,21 @@ const BLING_CONDICAO_NAO_ESPECIFICADO = 0;
 const BLING_CONDICAO_NOVO = 1;
 const BLING_CONDICAO_USADO = 2;
 
+function hasCadastroAction(req: any, action: string) {
+  const user = req.authUser || {};
+  const username = String(user.username || '').trim().toLowerCase();
+  if (username === 'bruno' || user.isAdmin) return true;
+  const actions = user.permissions?.cadastro;
+  return Array.isArray(actions) && actions.includes(action);
+}
+
+function requireCadastroAction(action: string) {
+  return (req: any, res: any, next: any) => {
+    if (hasCadastroAction(req, action)) return next();
+    return res.status(403).json({ ok: false, error: 'Seu usuario nao tem permissao para executar esta acao.' });
+  };
+}
+
 function buildCadastroBlingErrorResponse(error: any) {
   const message = String(error?.message || 'Falha ao criar produto no Bling.');
   const isInputError = /Bling API 400|Bling API 404|Bling API 409|codigo.*exist|sku.*exist|já existe|ja existe|duplic/i.test(message);
@@ -469,7 +484,7 @@ cadastroRouter.get('/proximo-id/:motoId', async (req, res, next) => {
 });
 
 // POST /cadastro - criar pré-cadastro e enviar ao Bling
-cadastroRouter.post('/', async (req, res, next) => {
+cadastroRouter.post('/', requireCadastroAction('criar_pre_cadastro'), async (req, res, next) => {
   try {
     const { motoId, idPeca, descricao, descricaoPeca, precoVenda, condicao, peso, largura, altura, profundidade, numeroPeca, detranEtiqueta, localizacao, estoque, categoriaMLId, categoriaMLNome, urlRef } = req.body;
 
@@ -576,7 +591,7 @@ cadastroRouter.get('/copiar-peca/:pecaId/preview', async (req, res, next) => {
 });
 
 // POST /cadastro/copiar-peca/:pecaId - cria nova variacao no estoque e sincroniza Bling
-cadastroRouter.post('/copiar-peca/:pecaId', async (req, res, next) => {
+cadastroRouter.post('/copiar-peca/:pecaId', requireCadastroAction('criar_pre_cadastro'), async (req, res, next) => {
   try {
     const pecaId = Number(req.params.pecaId);
     const origem = await prisma.peca.findUnique({
@@ -761,7 +776,7 @@ cadastroRouter.post('/fotos/verificar-sku', async (req, res, next) => {
 });
 
 // POST /cadastro/fotos/processar
-cadastroRouter.post('/fotos/processar', async (req, res, next) => {
+cadastroRouter.post('/fotos/processar', requireCadastroAction('enviar_fotos'), async (req, res, next) => {
   try {
     const { linhas } = req.body || {};
     const result = await processarCadastroFotos(linhas || []);
@@ -778,7 +793,7 @@ cadastroRouter.post('/fotos/drive', async (req, res, next) => {
 });
 
 // POST /cadastro/fotos/enviar-manual
-cadastroRouter.post('/fotos/enviar-manual', async (req, res, next) => {
+cadastroRouter.post('/fotos/enviar-manual', requireCadastroAction('enviar_fotos'), async (req, res, next) => {
   try {
     const result = await enviarCadastroFotosManual(req.body || {});
     res.json(result);
@@ -786,7 +801,7 @@ cadastroRouter.post('/fotos/enviar-manual', async (req, res, next) => {
 });
 
 // PUT /cadastro/:id
-cadastroRouter.put('/:id', async (req, res, next) => {
+cadastroRouter.put('/:id', requireCadastroAction('editar_pre_cadastro'), async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     const atual = await prisma.cadastroPeca.findUnique({ where: { id } });
@@ -832,7 +847,7 @@ cadastroRouter.put('/:id', async (req, res, next) => {
 });
 
 // POST /cadastro/:id/finalizar — busca dados do Bling e lança no estoque
-cadastroRouter.post('/:id/finalizar', async (req, res, next) => {
+cadastroRouter.post('/:id/finalizar', requireCadastroAction('criar_bling'), async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     const cadastro = await prisma.cadastroPeca.findUnique({
@@ -1085,7 +1100,7 @@ cadastroRouter.post('/sync-bling-peca', async (req, res, next) => {
 });
 
 // DELETE /cadastro/:id
-cadastroRouter.delete('/:id', async (req, res, next) => {
+cadastroRouter.delete('/:id', requireCadastroAction('editar_pre_cadastro'), async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     const cadastro = await prisma.cadastroPeca.findUnique({ where: { id } });
