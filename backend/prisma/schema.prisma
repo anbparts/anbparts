@@ -509,3 +509,15 @@ model HistoricoDevolucao {
   @@index([dataVenda])
   @@index([pedidoBlingNum])
 }
+
+model AppUser {
+  id           Int      @id @default(autoincrement())
+  username     String   @unique
+  displayName  String
+  passwordHash String
+  active       Boolean  @default(true)
+  isAdmin      Boolean  @default(false)
+  permissions  Json     @default("{}")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}

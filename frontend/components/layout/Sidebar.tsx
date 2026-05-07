@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { isDetranAllowedUser, type DetranAuthUser } from '@/lib/detran-access';
+import { canAccessPage, isBruno } from '@/lib/permissions';
 
 type NavItem = {
   href: string;
@@ -77,6 +78,7 @@ export const NAV: NavGroup[] = [
   {
     section: 'Configuracoes',
     items: [
+      { href: '/configuracoes', icon: 'key-round', label: 'Configuracoes' },
       { href: '/bling', icon: 'plug', label: 'Conf. Conexao Bling' },
       { href: '/configuracoes-gerais', icon: 'mail', label: 'Conf. E-mails' },
       { href: '/bling/config-produtos', icon: 'sliders', label: 'Conf. Produtos Bling' },
@@ -99,6 +101,7 @@ function getActiveHref(path: string, authUser?: DetranAuthUser) {
   for (const group of NAV) {
     if (group.requiresBruno && !isDetranAllowedUser(authUser)) continue;
     for (const item of group.items) {
+      if (!canAccessPage(authUser as any, item.href)) continue;
       if (!isNavActive(path, item.href)) continue;
       if (item.href.length > bestMatch.length) {
         bestMatch = item.href;
@@ -115,6 +118,7 @@ export function getNavLabel(path: string, authUser?: DetranAuthUser) {
   for (const group of NAV) {
     if (group.requiresBruno && !isDetranAllowedUser(authUser)) continue;
     for (const item of group.items) {
+      if (!canAccessPage(authUser as any, item.href)) continue;
       if (item.href === activeHref) {
         return item.label;
       }
@@ -221,7 +225,13 @@ export function Sidebar({
   const path = usePathname();
   const router = useRouter();
   const activeHref = getActiveHref(path, authUser);
-  const visibleNav = NAV.filter((group) => !group.requiresBruno || isDetranAllowedUser(authUser));
+  const visibleNav = NAV
+    .filter((group) => !group.requiresBruno || isDetranAllowedUser(authUser))
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => item.href === '/configuracoes' ? isBruno(authUser as any) : canAccessPage(authUser as any, item.href)),
+    }))
+    .filter((group) => group.items.length > 0);
   const isDrawer = mode === 'phone' || mode === 'tablet-portrait';
   const isTabletLandscape = mode === 'tablet-landscape';
   const isDesktop = mode === 'desktop';

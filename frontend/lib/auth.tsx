@@ -6,7 +6,11 @@ import { API_BASE } from './api-base';
 type LoggedUser = {
   username: string;
   displayName: string;
+  isAdmin?: boolean;
+  permissions?: Record<string, string[]>;
 };
+
+export type { LoggedUser };
 
 export function useAuth() {
   const [authed, setAuthed] = useState<boolean | null>(null);

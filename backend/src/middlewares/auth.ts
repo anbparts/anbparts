@@ -12,6 +12,7 @@ const PUBLIC_PATHS = new Set([
   '/auth/logout',
   '/auth/me',
   '/bling/callback',
+  '/google/callback',
   '/mercado-livre/callback',
   '/mercado-livre/mercado-pago/callback',
 ]);

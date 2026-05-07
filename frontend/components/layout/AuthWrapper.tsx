@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { LoginPage, useAuth } from '@/lib/auth';
 import { API_BASE } from '@/lib/api-base';
 import { GlobalSensitiveNumberMask } from '@/lib/company-values';
+import { canAccessPage } from '@/lib/permissions';
 import { getNavLabel, Sidebar, type SidebarMode } from './Sidebar';
 
 const DESKTOP_SIDEBAR_WIDTH = 252;
@@ -179,6 +180,7 @@ export function AuthWrapper({ children }: { children: React.ReactNode }) {
     : 0;
   const headerVisible = !isDesktop;
   const currentLabel = getNavLabel(pathname || '/', user);
+  const canOpenCurrentPage = canAccessPage(user, pathname || '/');
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--gray-50)' }}>
@@ -334,7 +336,16 @@ export function AuthWrapper({ children }: { children: React.ReactNode }) {
             minHeight: headerVisible ? 'calc(100vh - 64px)' : '100vh',
           }}
         >
-          <GlobalSensitiveNumberMask>{children}</GlobalSensitiveNumberMask>
+          <GlobalSensitiveNumberMask>
+            {canOpenCurrentPage ? children : (
+              <div style={{ padding: 28 }}>
+                <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 14, padding: 22, maxWidth: 560 }}>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: '#0f172a', marginBottom: 8 }}>Acesso bloqueado</div>
+                  <div style={{ fontSize: 14, color: '#64748b', lineHeight: 1.6 }}>Seu usuario nao tem permissao para acessar esta pagina.</div>
+                </div>
+              </div>
+            )}
+          </GlobalSensitiveNumberMask>
         </main>
       </div>
     </div>

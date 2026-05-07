@@ -1,4 +1,6 @@
 import { createHmac, randomBytes, scryptSync, timingSafeEqual } from 'crypto';
+import { prisma } from './prisma';
+import { buildFullPermissions, normalizePermissions } from './app-permissions';
 
 export const AUTH_COOKIE_NAME = 'anb_session';
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
@@ -15,6 +17,8 @@ type SessionPayload = {
   sub: string;
   name: string;
   exp: number;
+  admin?: boolean;
+  permissions?: Record<string, string[]>;
 };
 
 let warnedAboutSessionSecret = false;
@@ -142,6 +146,45 @@ export function authenticateUser(usernameInput: string, passwordInput: string) {
   };
 }
 
+async function authenticateDatabaseUser(usernameInput: string, passwordInput: string) {
+  const username = normalizeUsername(usernameInput);
+  const password = normalizeText(passwordInput);
+  if (!username || !password) return null;
+
+  try {
+    const user = await (prisma as any).appUser.findUnique({ where: { username } });
+    if (!user || !user.active) return null;
+    if (!verifyHashedPassword(password, String(user.passwordHash || ''))) return null;
+
+    const isAdmin = !!user.isAdmin || username === 'bruno';
+    return {
+      username: user.username,
+      displayName: user.displayName,
+      isAdmin,
+      permissions: isAdmin ? buildFullPermissions() : normalizePermissions(user.permissions),
+    };
+  } catch (error: any) {
+    const message = String(error?.message || '');
+    if (/appuser|does not exist|table.*not.*exist|Unknown arg|Unknown field/i.test(message)) return null;
+    console.error('Falha ao autenticar usuario do banco:', error);
+    return null;
+  }
+}
+
+export async function authenticateAppUser(usernameInput: string, passwordInput: string) {
+  const dbUser = await authenticateDatabaseUser(usernameInput, passwordInput);
+  if (dbUser) return dbUser;
+
+  const envUser = authenticateUser(usernameInput, passwordInput);
+  if (!envUser) return null;
+  const isAdmin = envUser.username === 'bruno';
+  return {
+    ...envUser,
+    isAdmin,
+    permissions: buildFullPermissions(),
+  };
+}
+
 export function getSessionSecret() {
   const secret = normalizeText(
     process.env.AUTH_SESSION_SECRET
@@ -166,10 +209,12 @@ function signPayload(payloadBase64: string, secret: string) {
   return createHmac('sha256', secret).update(payloadBase64).digest('base64url');
 }
 
-export function createSessionToken(user: { username: string; displayName: string }) {
+export function createSessionToken(user: { username: string; displayName: string; isAdmin?: boolean; permissions?: Record<string, string[]> }) {
   const payload: SessionPayload = {
     sub: user.username,
     name: user.displayName,
+    admin: !!user.isAdmin || user.username === 'bruno',
+    permissions: user.permissions || (user.username === 'bruno' ? buildFullPermissions() : {}),
     exp: Date.now() + SESSION_TTL_MS,
   };
   const payloadBase64 = base64UrlEncode(JSON.stringify(payload));
@@ -194,6 +239,8 @@ export function readSessionFromToken(token: string | null | undefined) {
     return {
       username: normalizeUsername(payload.sub),
       displayName: normalizeText(payload.name) || toDisplayName(normalizeUsername(payload.sub)),
+      isAdmin: !!payload.admin || normalizeUsername(payload.sub) === 'bruno',
+      permissions: payload.admin || normalizeUsername(payload.sub) === 'bruno' ? buildFullPermissions() : normalizePermissions(payload.permissions),
       expiresAt: payload.exp,
     };
   } catch {

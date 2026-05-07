@@ -2,9 +2,8 @@ import { Router } from 'express';
 import { z } from 'zod';
 import {
   AUTH_COOKIE_NAME,
-  authenticateUser,
+  authenticateAppUser,
   createSessionToken,
-  getConfiguredUsers,
   parseCookies,
   readSessionFromToken,
   serializeClearedSessionCookie,
@@ -31,11 +30,7 @@ function readSessionFromRequest(req: any) {
 
 authRouter.post('/login', async (req, res) => {
   const payload = loginSchema.parse(req.body || {});
-  if (!getConfiguredUsers().size) {
-    return res.status(500).json({ error: 'Configure AUTH_USERS_JSON ou AUTH_PASS_* no backend antes de liberar o login.' });
-  }
-
-  const user = authenticateUser(payload.user, payload.pass);
+  const user = await authenticateAppUser(payload.user, payload.pass);
 
   if (!user) {
     return res.status(401).json({ error: 'Usuario ou senha incorretos' });
@@ -50,6 +45,8 @@ authRouter.post('/login', async (req, res) => {
     user: {
       username: user.username,
       displayName: user.displayName,
+      isAdmin: user.isAdmin,
+      permissions: user.permissions,
     },
   });
 });
@@ -68,6 +65,8 @@ authRouter.get('/me', async (req, res) => {
     user: {
       username: session.username,
       displayName: session.displayName,
+      isAdmin: session.isAdmin,
+      permissions: session.permissions,
     },
   });
 });

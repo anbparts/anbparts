@@ -2,84 +2,58 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import { authRouter } from './routes/auth';
-import { motosRouter } from './routes/motos';
-import { pecasRouter } from './routes/pecas';
-import { faturamentoRouter } from './routes/faturamento';
-import { importRouter } from './routes/import';
 import { blingRouter, startBlingAuditoriaScheduler } from './routes/bling';
-import { financeiroRouter, startFinanceiroSchedulers } from './routes/financeiro';
-import { inventarioRouter } from './routes/inventario';
-import { configuracoesGeraisRouter } from './routes/configuracoes-gerais';
-import { empresaRouter } from './routes/empresa';
-import { mercadoLivreRouter, startMercadoLivreScheduler } from './routes/mercado-livre';
-import { nuvemshopRouter } from './routes/nuvemshop';
-import { etiquetasDetranRouter } from './routes/etiquetas-detran';
-import { googleDriveRouter } from './routes/google-drive';
 import { cadastroRouter } from './routes/cadastro';
-import { etiquetasRouter } from './routes/etiquetas';
+import { configuracoesGeraisRouter } from './routes/configuracoes-gerais';
+import { configuracoesUsuariosRouter } from './routes/configuracoes-usuarios';
 import { detranRouter } from './routes/detran';
 import { devolucoesRouter } from './routes/devolucoes';
-import { startDetranExecutionWorker } from './lib/detran-worker';
+import { empresaRouter } from './routes/empresa';
+import { etiquetasDetranRouter } from './routes/etiquetas-detran';
+import { etiquetasRouter } from './routes/etiquetas';
+import { faturamentoRouter } from './routes/faturamento';
+import { financeiroRouter, startFinanceiroSchedulers } from './routes/financeiro';
+import { googleDriveRouter } from './routes/google-drive';
+import { importRouter } from './routes/import';
+import { inventarioRouter } from './routes/inventario';
+import { mercadoLivreRouter, startMercadoLivreScheduler } from './routes/mercado-livre';
+import { motosRouter } from './routes/motos';
+import { nuvemshopRouter } from './routes/nuvemshop';
+import { pecasRouter } from './routes/pecas';
 import { authMiddleware } from './middlewares/auth';
 import { errorMiddleware } from './middlewares/error';
 
 const app = express();
 
-function getAllowedOrigins() {
-  return String(process.env.FRONTEND_URL || 'http://localhost:3000')
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
 app.use(cors({
-  origin: (origin, callback) => {
-    const allowedOrigins = getAllowedOrigins();
-
-    if (!origin) {
-      return callback(null, true);
-    }
-
-    if (!allowedOrigins.length) {
-      return callback(null, origin);
-    }
-
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-
-    return callback(new Error('Origem nao permitida pelo CORS'));
-  },
+  origin: process.env.FRONTEND_URL || '*',
   credentials: true,
 }));
 
-app.use(express.json({ limit: '25mb' }));
+app.use(express.json({ limit: '35mb' }));
 
 app.get('/health', (_, res) => res.json({ ok: true, ts: new Date() }));
 app.use('/auth', authRouter);
-
-// Google OAuth callback — público (sem auth), Google redireciona sem sessão ANB
-app.use('/google', googleDriveRouter);
-
 app.use(authMiddleware);
 
-app.use('/motos', motosRouter);
-app.use('/pecas', pecasRouter);
-app.use('/faturamento', faturamentoRouter);
-app.use('/import', importRouter);
 app.use('/bling', blingRouter);
-app.use('/mercado-livre', mercadoLivreRouter);
-app.use('/financeiro', financeiroRouter);
-app.use('/inventario', inventarioRouter);
-app.use('/configuracoes-gerais', configuracoesGeraisRouter);
-app.use('/empresa', empresaRouter);
-app.use('/nuvemshop', nuvemshopRouter);
-app.use('/etiquetas-detran', etiquetasDetranRouter);
-app.use('/google-drive', googleDriveRouter);
 app.use('/cadastro', cadastroRouter);
-app.use('/etiquetas', etiquetasRouter);
+app.use('/configuracoes-gerais', configuracoesGeraisRouter);
+app.use('/configuracoes', configuracoesUsuariosRouter);
 app.use('/detran', detranRouter);
 app.use('/devolucoes', devolucoesRouter);
+app.use('/empresa', empresaRouter);
+app.use('/etiquetas-detran', etiquetasDetranRouter);
+app.use('/etiquetas', etiquetasRouter);
+app.use('/faturamento', faturamentoRouter);
+app.use('/financeiro', financeiroRouter);
+app.use('/google', googleDriveRouter);
+app.use('/import', importRouter);
+app.use('/inventario', inventarioRouter);
+app.use('/mercado-livre', mercadoLivreRouter);
+app.use('/motos', motosRouter);
+app.use('/nuvemshop', nuvemshopRouter);
+app.use('/pecas', pecasRouter);
 
 app.use(errorMiddleware);
 
@@ -88,6 +62,5 @@ app.listen(port, () => {
   startBlingAuditoriaScheduler();
   startFinanceiroSchedulers();
   startMercadoLivreScheduler();
-  startDetranExecutionWorker();
   console.log(`ANB Backend rodando na porta ${port}`);
 });
