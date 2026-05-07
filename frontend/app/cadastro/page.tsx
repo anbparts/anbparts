@@ -784,6 +784,7 @@ Deseja forçar a exclusão mesmo assim?`);
                           <div style={{ minWidth: 0 }}>
                             <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--blue-600)', fontWeight: 800 }}>{linha.sku}</div>
                             <div style={{ marginTop: 4, fontSize: 13, color: 'var(--gray-800)', fontWeight: 700, lineHeight: 1.3 }}>{linha.descricao}</div>
+                            <div style={{ marginTop: 5, fontSize: 12, color: '#7c3aed', fontWeight: 800 }}>Drive: {linha.drive?.fotos == null ? '-' : `${linha.drive.fotos} foto(s)`}</div>
                           </div>
                           <input type="checkbox" checked={fotosSelecionados.has(linha.sku)} disabled={!linha.temFlag} onChange={() => toggleFotosSelecionado(linha.sku)} style={{ width: 18, height: 18 }} />
                         </div>
@@ -810,7 +811,7 @@ Deseja forçar a exclusão mesmo assim?`);
                       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                         <thead style={{ background: 'var(--gray-50)' }}><tr>
                           <th style={{ ...s.th, width: 38 }}><input type="checkbox" checked={fotosPendentes > 0 && fotosSelecionados.size === fotosPendentes} onChange={(e) => e.target.checked ? selecionarFotosPendentes() : setFotosSelecionados(new Set())} /></th>
-                          {['SKU', 'Descricao', 'ANB', 'ML', 'Nuvemshop', 'Status'].map((h) => <th key={h} style={s.th}>{h}</th>)}
+                          {['SKU', 'Descricao', 'Drive', 'ANB', 'ML', 'Nuvemshop', 'Status'].map((h) => <th key={h} style={s.th}>{h}</th>)}
                         </tr></thead>
                         <tbody>
                           {fotosLinhas.map((linha) => (
@@ -818,6 +819,15 @@ Deseja forçar a exclusão mesmo assim?`);
                               <td style={{ ...s.td, textAlign: 'center' }}><input type="checkbox" checked={fotosSelecionados.has(linha.sku)} disabled={!linha.temFlag} onChange={() => toggleFotosSelecionado(linha.sku)} /></td>
                               <td style={{ ...s.td, fontFamily: 'JetBrains Mono, monospace', color: 'var(--blue-600)', fontWeight: 700, whiteSpace: 'nowrap' }}>{linha.sku}</td>
                               <td style={{ ...s.td, maxWidth: 320 }}><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{linha.descricao}</div></td>
+                              <td style={{ ...s.td, textAlign: 'center' }}>
+                                {linha.drive?.fotos == null ? (
+                                  <span style={{ fontSize: 11, color: 'var(--gray-300)' }}>-</span>
+                                ) : linha.drive.fotos > 0 ? (
+                                  <span title={linha.drive.pasta || undefined} style={{ fontSize: 12, fontWeight: 800, color: '#7c3aed' }}>📂 {linha.drive.fotos}</span>
+                                ) : (
+                                  <span style={{ fontSize: 12, fontWeight: 800, color: '#dc2626' }}>📂 0</span>
+                                )}
+                              </td>
                               {(['anb', 'ml', 'nuvemshop'] as const).map((sistema) => {
                                 const info: any = linha[sistema];
                                 return (

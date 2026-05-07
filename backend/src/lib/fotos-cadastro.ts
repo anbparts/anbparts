@@ -32,6 +32,11 @@ function baseSku(value: any) {
   return normalizeSku(value).replace(/-\d+$/, '');
 }
 
+function buildAnbFotoCapaNome(sku: string, extension = 'jpg') {
+  const safeExtension = String(extension || 'jpg').replace(/^\.+/, '') || 'jpg';
+  return `${baseSku(sku) || 'FOTO'}_Capa.${safeExtension}`;
+}
+
 function parseSkuList(value: any) {
   if (Array.isArray(value)) return value.map(normalizeSku).filter(Boolean);
   return normalizeText(value)
@@ -229,6 +234,15 @@ async function downloadDriveFoto(foto: DriveFoto) {
     mimeType,
     base64: buffer.toString('base64'),
     dataUrl: `data:${mimeType};base64,${buffer.toString('base64')}`,
+  };
+}
+
+async function prepararFotoCapaAnb(foto: DriveFoto, sku: string) {
+  const downloaded = await downloadDriveFoto(foto);
+  const prepared = await compressDataUrlImage(downloaded.dataUrl, 'a foto capa do ANB');
+  return {
+    fotoCapaNome: normalizeImageFileName(buildAnbFotoCapaNome(sku, prepared.extension), prepared.extension),
+    fotoCapaArquivo: prepared.dataUrl,
   };
 }
 
@@ -518,6 +532,16 @@ export async function buscarCadastroFotos(input: { skus?: any; dataDe?: string; 
       ml: mlEncontrado && mlFotos <= 2,
     };
     const temFlag = flags.anb || flags.nuvemshop || flags.ml;
+    let driveResumo = { fotos: null as number | null, pasta: '' };
+
+    if (flags.nuvemshop || flags.ml) {
+      try {
+        const drive = await buscarFotosDriveSku(peca.motoId, sku);
+        driveResumo = { fotos: drive.fotos.length, pasta: drive.pasta };
+      } catch {
+        driveResumo = { fotos: 0, pasta: '' };
+      }
+    }
 
     linhas.push({
       sku,
@@ -529,7 +553,7 @@ export async function buscarCadastroFotos(input: { skus?: any; dataDe?: string; 
       nuvemshop: { fotos: nuvemshopFotos, encontrado: nuvemshopEncontrado, produtoId: nuvemshopProdutoId, erro: nuvemshopErro },
       flags,
       temFlag,
-      drive: { fotos: null, pasta: '' },
+      drive: driveResumo,
       status: temFlag ? 'pendente' : 'ok',
     });
   }
@@ -589,12 +613,10 @@ export async function processarCadastroFotos(rowsInput: CadastroFotosRowInput[])
     if (flags.anb) {
       try {
         const capa = drive.fotos[0];
-        const downloaded = await downloadDriveFoto(capa);
-        const prepared = await compressDataUrlImage(downloaded.dataUrl);
-        const fotoCapaNome = normalizeImageFileName(capa.nome || `${sku}-capa.jpg`, prepared.extension);
+        const { fotoCapaNome, fotoCapaArquivo } = await prepararFotoCapaAnb(capa, sku);
         await prisma.peca.update({
           where: { id: peca.id },
-          data: { fotoCapaNome, fotoCapaArquivo: prepared.dataUrl },
+          data: { fotoCapaNome, fotoCapaArquivo },
         });
         detalhes.push({ sistema: 'anb', ok: true, enviada: 1, nome: fotoCapaNome });
       } catch (e: any) {
@@ -696,12 +718,10 @@ export async function enviarCadastroFotosManual(input: {
 
   if (sistema === 'anb') {
     const capa = fotosSelecionadas[0];
-    const downloaded = await downloadDriveFoto(capa);
-    const prepared = await compressDataUrlImage(downloaded.dataUrl);
-    const fotoCapaNome = normalizeImageFileName(capa.nome || `${sku}-capa.jpg`, prepared.extension);
+    const { fotoCapaNome, fotoCapaArquivo } = await prepararFotoCapaAnb(capa, sku);
     await prisma.peca.update({
       where: { id: peca.id },
-      data: { fotoCapaNome, fotoCapaArquivo: prepared.dataUrl },
+      data: { fotoCapaNome, fotoCapaArquivo },
     });
     return { ok: true, sistema, sku, enviadas: 1, resultados: [{ sistema, nome: fotoCapaNome, ok: true }] };
   }
