@@ -18,10 +18,14 @@ function requireBruno(req: any, res: any) {
 const userSchema = z.object({
   username: z.string().trim().min(2),
   displayName: z.string().trim().min(2),
-  password: z.string().trim().min(4).optional(),
+  password: z.union([z.string().trim().min(4), z.literal('')]).optional(),
   active: z.boolean().default(true),
   isAdmin: z.boolean().default(false),
   permissions: z.record(z.array(z.string())).default({}),
+});
+
+const userUpdateSchema = userSchema.extend({
+  password: z.union([z.string().trim().min(4), z.literal('')]).optional(),
 });
 
 function cleanUser(user: any) {
@@ -103,7 +107,7 @@ configuracoesUsuariosRouter.put('/usuarios/:id', async (req, res, next) => {
   try {
     if (!requireBruno(req, res)) return;
     const id = Number(req.params.id);
-    const payload = userSchema.partial({ password: true }).parse(req.body || {});
+    const payload = userUpdateSchema.parse(req.body || {});
     const username = payload.username ? payload.username.toLowerCase() : undefined;
     const isAdmin = !!payload.isAdmin || username === 'bruno';
     const user = await (prisma as any).appUser.update({

@@ -159,11 +159,12 @@ export default function ConfiguracoesPage() {
     setMsg('');
     try {
       const url = isNovo ? `${API}/configuracoes/usuarios` : `${API}/configuracoes/usuarios/${selecionadoId}`;
+      const payload = isNovo ? form : { ...form, password: undefined };
       const resp = await fetch(url, {
         method: isNovo ? 'POST' : 'PUT',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
+        body: JSON.stringify(payload),
       });
       await readApi(resp, 'Erro ao salvar usuario');
       setMsg('Usuario salvo.');
