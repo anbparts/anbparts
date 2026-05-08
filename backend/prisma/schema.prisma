@@ -520,4 +520,31 @@ model AppUser {
   permissions  Json     @default("{}")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+
+  notificationSettings AppUserNotificationSetting[]
+}
+
+model AppUserNotificationSetting {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  type      String
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user AppUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, type])
+  @@index([type])
+}
+
+model AppNotificationRead {
+  id        Int      @id @default(autoincrement())
+  username  String
+  type      String
+  itemKey   String
+  readAt    DateTime @default(now())
+
+  @@unique([username, type, itemKey])
+  @@index([username, type])
 }

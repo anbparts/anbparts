@@ -98,3 +98,11 @@ export function buildFullPermissions(): AppPermissions {
     return acc;
   }, {});
 }
+
+export function canAccessPage(permissions: AppPermissions | null | undefined, pageKey: string) {
+  return Array.isArray(permissions?.[pageKey]) && permissions![pageKey].includes('__page');
+}
+
+export function canProcessAction(permissions: AppPermissions | null | undefined, pageKey: string, actionKey: string) {
+  return Array.isArray(permissions?.[pageKey]) && permissions![pageKey].includes(actionKey);
+}

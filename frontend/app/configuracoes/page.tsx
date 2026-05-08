@@ -24,6 +24,15 @@ type AppUser = {
   active: boolean;
   isAdmin: boolean;
   permissions: AppPermissions;
+  notifications: string[];
+};
+
+type NotificationOption = {
+  key: string;
+  label: string;
+  description: string;
+  pageKey: string;
+  actionKey?: string;
 };
 
 const EMPTY_FORM = {
@@ -33,6 +42,7 @@ const EMPTY_FORM = {
   active: true,
   isAdmin: false,
   permissions: {} as AppPermissions,
+  notifications: [] as string[],
 };
 
 async function readApi(resp: Response, fallback: string) {
@@ -88,6 +98,7 @@ export default function ConfiguracoesPage() {
   const { user } = useAuth();
   const [usuarios, setUsuarios] = useState<AppUser[]>([]);
   const [catalogo, setCatalogo] = useState<AppPagePermission[]>([]);
+  const [notificacoes, setNotificacoes] = useState<NotificationOption[]>([]);
   const [selecionadoId, setSelecionadoId] = useState<number | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [senhaReset, setSenhaReset] = useState('');
@@ -122,6 +133,7 @@ export default function ConfiguracoesPage() {
       const catData = await readApi(catResp, 'Erro ao carregar catalogo');
       const userData = await readApi(userResp, 'Erro ao carregar usuarios');
       setCatalogo(Array.isArray(catData.catalogo) ? catData.catalogo : []);
+      setNotificacoes(Array.isArray(catData.notificacoes) ? catData.notificacoes : []);
       const lista = Array.isArray(userData.usuarios) ? userData.usuarios : [];
       setUsuarios(lista);
       if (!selecionadoId && lista.length) selecionarUsuario(lista[0]);
@@ -142,6 +154,7 @@ export default function ConfiguracoesPage() {
       active: usuario.active,
       isAdmin: usuario.isAdmin,
       permissions: usuario.permissions || {},
+      notifications: Array.isArray(usuario.notifications) ? usuario.notifications : [],
     });
   }
 
@@ -183,6 +196,14 @@ export default function ConfiguracoesPage() {
 
   function limparPermissoes() {
     setForm((prev) => ({ ...prev, permissions: {} }));
+  }
+
+  function toggleNotification(type: string, checked: boolean) {
+    setForm((prev) => {
+      const current = new Set(prev.notifications || []);
+      checked ? current.add(type) : current.delete(type);
+      return { ...prev, notifications: Array.from(current) };
+    });
   }
 
   async function salvar() {
@@ -307,6 +328,43 @@ export default function ConfiguracoesPage() {
               </div>
             </div>
           )}
+
+          <div style={s.card}>
+            <div style={{ fontSize: 14, fontWeight: 900, color: '#0f172a' }}>Notificacoes</div>
+            <div style={{ marginTop: 3, fontSize: 12, color: '#64748b' }}>
+              Marque os alertas que aparecem para este usuario. O sistema ainda respeita as permissoes de pagina e botoes.
+            </div>
+            <div style={{ marginTop: 14, display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fit, minmax(260px, 1fr))', gap: 10 }}>
+              {notificacoes.map((item) => (
+                <label
+                  key={item.key}
+                  title={item.description}
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '18px 1fr',
+                    gap: 10,
+                    alignItems: 'flex-start',
+                    border: '1px solid var(--border)',
+                    borderRadius: 10,
+                    padding: 12,
+                    background: (form.notifications || []).includes(item.key) ? '#f8fbff' : '#fff',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={(form.notifications || []).includes(item.key)}
+                    onChange={(e) => toggleNotification(item.key, e.target.checked)}
+                  />
+                  <span>
+                    <span style={{ display: 'block', fontSize: 13, fontWeight: 900, color: '#0f172a' }}>{item.label}</span>
+                    <span style={{ display: 'block', marginTop: 4, fontSize: 12, lineHeight: 1.45, color: '#64748b' }}>{item.description}</span>
+                  </span>
+                </label>
+              ))}
+              {!notificacoes.length && <div style={{ fontSize: 13, color: '#64748b' }}>Nenhuma notificacao disponivel.</div>}
+            </div>
+          </div>
 
           <div style={{ ...s.card, padding: 0, overflow: 'hidden' }}>
             <div style={{ padding: 16, borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>

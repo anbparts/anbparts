@@ -263,6 +263,177 @@ function AccessBlockedPanel({
   );
 }
 
+type NotificationItem = {
+  id: string;
+  type: string;
+  title: string;
+  description: string;
+  href: string;
+  meta?: string;
+  createdAt?: string;
+  read: boolean;
+};
+
+function NotificationsBox({ sidebarOffset }: { sidebarOffset: number }) {
+  const [open, setOpen] = useState(false);
+  const [items, setItems] = useState<NotificationItem[]>([]);
+  const [unread, setUnread] = useState(0);
+  const [loading, setLoading] = useState(false);
+
+  async function loadNotifications() {
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/notificacoes`, { credentials: 'include', cache: 'no-store' });
+      const data = await response.json();
+      if (!response.ok || data.ok === false) return;
+      setItems(Array.isArray(data.items) ? data.items : []);
+      setUnread(Number(data.unread || 0));
+    } catch {
+      // silencioso para nao atrapalhar o uso do sistema
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function markUnreadAsRead(currentItems: NotificationItem[]) {
+    const ids = currentItems.filter((item) => !item.read).map((item) => item.id);
+    if (!ids.length) return;
+    setItems((prev) => prev.map((item) => (ids.includes(item.id) ? { ...item, read: true } : item)));
+    setUnread(0);
+    try {
+      await fetch(`${API_BASE}/notificacoes/read`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      });
+    } catch {
+      // na proxima leitura o backend corrige o estado
+    }
+  }
+
+  useEffect(() => {
+    void loadNotifications();
+    const timer = window.setInterval(() => { void loadNotifications(); }, 60000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const left = sidebarOffset > 0 ? sidebarOffset + 14 : 64;
+
+  return (
+    <div style={{ position: 'fixed', top: 12, left, zIndex: 140 }}>
+      <button
+        type="button"
+        onClick={() => {
+          const nextOpen = !open;
+          setOpen(nextOpen);
+          if (nextOpen) void markUnreadAsRead(items);
+        }}
+        title={unread > 0 ? `${unread} notificacao(oes) nova(s)` : 'Notificacoes'}
+        style={{
+          width: 42,
+          height: 42,
+          borderRadius: 14,
+          border: unread > 0 ? '1px solid #fecaca' : '1px solid rgba(148,163,184,.25)',
+          background: unread > 0 ? '#dc2626' : '#fff',
+          color: unread > 0 ? '#fff' : '#0f172a',
+          cursor: 'pointer',
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          boxShadow: '0 14px 32px rgba(15, 23, 42, 0.14)',
+          position: 'relative',
+        }}
+      >
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" />
+          <path d="M13.7 21a2 2 0 0 1-3.4 0" />
+        </svg>
+        {unread > 0 ? (
+          <span
+            style={{
+              position: 'absolute',
+              top: -5,
+              right: -5,
+              minWidth: 18,
+              height: 18,
+              borderRadius: 999,
+              background: '#fff',
+              color: '#dc2626',
+              fontSize: 10,
+              fontWeight: 900,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              border: '1px solid #fecaca',
+              padding: '0 4px',
+            }}
+          >
+            {unread > 9 ? '9+' : unread}
+          </span>
+        ) : null}
+      </button>
+
+      {open ? (
+        <div
+          style={{
+            marginTop: 10,
+            width: 'min(360px, calc(100vw - 24px))',
+            maxHeight: 'min(520px, calc(100vh - 80px))',
+            overflow: 'hidden',
+            borderRadius: 16,
+            border: '1px solid #dbe3ef',
+            background: '#fff',
+            boxShadow: '0 24px 70px rgba(15, 23, 42, 0.18)',
+          }}
+        >
+          <div style={{ padding: '14px 16px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 900, color: '#0f172a' }}>Notificacoes</div>
+              <div style={{ marginTop: 2, fontSize: 12, color: '#64748b' }}>
+                {loading ? 'Atualizando...' : `${items.length} pendencia(s) ativa(s)`}
+              </div>
+            </div>
+            <button type="button" onClick={() => { void loadNotifications(); }} style={{ border: '1px solid #e2e8f0', background: '#fff', borderRadius: 8, padding: '6px 9px', cursor: 'pointer', fontSize: 12, fontWeight: 800 }}>
+              Atualizar
+            </button>
+          </div>
+
+          <div style={{ maxHeight: 430, overflowY: 'auto' }}>
+            {!items.length ? (
+              <div style={{ padding: 18, color: '#64748b', fontSize: 13, lineHeight: 1.6 }}>
+                Nenhuma notificacao ativa para seu usuario.
+              </div>
+            ) : (
+              items.map((item) => (
+                <a
+                  key={item.id}
+                  href={item.href}
+                  style={{
+                    display: 'block',
+                    textDecoration: 'none',
+                    padding: '12px 16px',
+                    borderBottom: '1px solid #f1f5f9',
+                    background: item.read ? '#fff' : '#fff7f7',
+                    color: '#0f172a',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+                    <div style={{ fontSize: 13, fontWeight: 900, lineHeight: 1.35 }}>{item.title}</div>
+                    {!item.read ? <span style={{ color: '#dc2626', fontSize: 11, fontWeight: 900 }}>Novo</span> : null}
+                  </div>
+                  <div style={{ marginTop: 5, fontSize: 12, color: '#64748b', lineHeight: 1.45 }}>{item.description || '-'}</div>
+                  {item.meta ? <div style={{ marginTop: 5, fontSize: 11, color: '#2563eb', fontWeight: 800 }}>{item.meta}</div> : null}
+                </a>
+              ))
+            )}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function AuthWrapper({ children }: { children: React.ReactNode }) {
   const { authed, login, logout, user } = useAuth();
   const pathname = usePathname();
@@ -424,6 +595,7 @@ export function AuthWrapper({ children }: { children: React.ReactNode }) {
         onClose={() => setSidebarOpen(false)}
         onToggle={() => setSidebarOpen((value) => !value)}
       />
+      <NotificationsBox sidebarOffset={sidebarOffset} />
 
       <div
         style={{

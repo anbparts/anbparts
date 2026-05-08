@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { hashPassword } from '../lib/auth';
 import { APP_PERMISSION_CATALOG, buildFullPermissions, normalizePermissions } from '../lib/app-permissions';
+import { APP_NOTIFICATION_CATALOG, normalizeNotificationTypes } from '../lib/app-notifications';
 import { prisma } from '../lib/prisma';
 
 export const configuracoesUsuariosRouter = Router();
@@ -22,6 +23,7 @@ const userSchema = z.object({
   active: z.boolean().default(true),
   isAdmin: z.boolean().default(false),
   permissions: z.record(z.array(z.string())).default({}),
+  notifications: z.array(z.string()).default([]),
 });
 
 const userUpdateSchema = userSchema.extend({
@@ -37,9 +39,20 @@ function cleanUser(user: any) {
     active: user.active,
     isAdmin,
     permissions: isAdmin ? buildFullPermissions() : normalizePermissions(user.permissions),
+    notifications: normalizeNotificationTypes(user.notificationSettings?.filter((item: any) => item.enabled).map((item: any) => item.type)),
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
   };
+}
+
+async function saveNotificationSettings(userId: number, types: string[]) {
+  const normalizedTypes = normalizeNotificationTypes(types);
+  await (prisma as any).appUserNotificationSetting.deleteMany({ where: { userId } });
+  if (!normalizedTypes.length) return;
+  await (prisma as any).appUserNotificationSetting.createMany({
+    data: normalizedTypes.map((type) => ({ userId, type, enabled: true })),
+    skipDuplicates: true,
+  });
 }
 
 async function ensureBrunoFromSession(req: any) {
@@ -63,7 +76,7 @@ async function ensureBrunoFromSession(req: any) {
 configuracoesUsuariosRouter.get('/catalogo', async (req, res, next) => {
   try {
     if (!requireBruno(req, res)) return;
-    res.json({ ok: true, catalogo: APP_PERMISSION_CATALOG });
+    res.json({ ok: true, catalogo: APP_PERMISSION_CATALOG, notificacoes: APP_NOTIFICATION_CATALOG });
   } catch (e) {
     next(e);
   }
@@ -73,7 +86,10 @@ configuracoesUsuariosRouter.get('/usuarios', async (req, res, next) => {
   try {
     if (!requireBruno(req, res)) return;
     await ensureBrunoFromSession(req);
-    const users = await (prisma as any).appUser.findMany({ orderBy: [{ active: 'desc' }, { username: 'asc' }] });
+    const users = await (prisma as any).appUser.findMany({
+      orderBy: [{ active: 'desc' }, { username: 'asc' }],
+      include: { notificationSettings: true },
+    });
     res.json({ ok: true, usuarios: users.map(cleanUser) });
   } catch (e) {
     next(e);
@@ -96,7 +112,9 @@ configuracoesUsuariosRouter.post('/usuarios', async (req, res, next) => {
         permissions: payload.isAdmin || username === 'bruno' ? buildFullPermissions() : normalizePermissions(payload.permissions),
       },
     });
-    res.json({ ok: true, usuario: cleanUser(user) });
+    await saveNotificationSettings(user.id, payload.notifications);
+    const updated = await (prisma as any).appUser.findUnique({ where: { id: user.id }, include: { notificationSettings: true } });
+    res.json({ ok: true, usuario: cleanUser(updated) });
   } catch (e: any) {
     if (String(e?.code) === 'P2002') return res.status(409).json({ ok: false, error: 'Usuario ja existe.' });
     next(e);
@@ -120,7 +138,9 @@ configuracoesUsuariosRouter.put('/usuarios/:id', async (req, res, next) => {
         ...(payload.permissions ? { permissions: isAdmin ? buildFullPermissions() : normalizePermissions(payload.permissions) } : {}),
       },
     });
-    res.json({ ok: true, usuario: cleanUser(user) });
+    await saveNotificationSettings(user.id, payload.notifications);
+    const updated = await (prisma as any).appUser.findUnique({ where: { id: user.id }, include: { notificationSettings: true } });
+    res.json({ ok: true, usuario: cleanUser(updated) });
   } catch (e) {
     next(e);
   }
