@@ -53,6 +53,22 @@ function hasAction(permissions: AppPermissions, pageKey: string, actionKey: stri
   return Array.isArray(permissions[pageKey]) && permissions[pageKey].includes(actionKey);
 }
 
+const PAGE_HELP: Record<string, string> = {
+  cadastro: [
+    'Cadastro: acesso abre a pagina.',
+    'Novo pre-cadastro: libera o botao + Novo Pre-cadastro.',
+    'Botao Pre-Cadastro: libera editar o pre-cadastro pendente pela linha.',
+    'Botao Cadastro: libera finalizar o item e criar/atualizar no Bling.',
+    'Enviar fotos e Processar categoria controlam as abas Fotos e Categoria.',
+  ].join('\n'),
+};
+
+function permissionHelp(page: AppPagePermission, action?: { key: string; label: string; description?: string }) {
+  if (action?.description) return action.description;
+  if (!action) return PAGE_HELP[page.key] || `${page.label}: libera o acesso a esta pagina.`;
+  return `${action.label}: libera este botao/processo dentro da pagina ${page.label}.`;
+}
+
 export default function ConfiguracoesPage() {
   const { user } = useAuth();
   const [usuarios, setUsuarios] = useState<AppUser[]>([]);
@@ -296,7 +312,19 @@ export default function ConfiguracoesPage() {
                 <tbody>
                   {catalogo.map((page) => (
                     <tr key={page.key}>
-                      <td style={{ ...s.td, fontWeight: 800, color: '#0f172a', minWidth: 180 }}>{page.label}</td>
+                      <td style={{ ...s.td, fontWeight: 800, color: '#0f172a', minWidth: 180 }}>
+                        <span title={permissionHelp(page)} style={{ cursor: page.key === 'cadastro' ? 'help' : 'default' }}>
+                          {page.label}
+                        </span>
+                        {page.key === 'cadastro' && (
+                          <span
+                            title={permissionHelp(page)}
+                            style={{ marginLeft: 6, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 16, height: 16, borderRadius: 999, background: '#eff6ff', color: '#2563eb', fontSize: 11, fontWeight: 900, cursor: 'help' }}
+                          >
+                            ?
+                          </span>
+                        )}
+                      </td>
                       <td style={s.td}>
                         <input type="checkbox" checked={form.isAdmin || hasPage(form.permissions, page.key)} disabled={form.isAdmin} onChange={(e) => togglePage(page.key, e.target.checked)} />
                       </td>
@@ -306,7 +334,7 @@ export default function ConfiguracoesPage() {
                         ) : (
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
                             {page.actions.map((action) => (
-                              <label key={action.key} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#334155', fontWeight: 700 }}>
+                              <label key={action.key} title={permissionHelp(page, action)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#334155', fontWeight: 700, cursor: 'help' }}>
                                 <input type="checkbox" checked={form.isAdmin || hasAction(form.permissions, page.key, action.key)} disabled={form.isAdmin} onChange={(e) => toggleAction(page.key, action.key, e.target.checked)} />
                                 {action.label}
                               </label>

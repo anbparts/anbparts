@@ -1,6 +1,7 @@
 export type AppAction = {
   key: string;
   label: string;
+  description?: string;
 };
 
 export type AppPagePermission = {
@@ -21,11 +22,11 @@ export const APP_PERMISSION_CATALOG: AppPagePermission[] = [
     { key: 'excluir', label: 'Excluir moto' },
   ] },
   { key: 'cadastro', label: 'Cadastro', href: '/cadastro', actions: [
-    { key: 'criar_pre_cadastro', label: 'Criar pre-cadastro' },
-    { key: 'editar_pre_cadastro', label: 'Editar pre-cadastro' },
-    { key: 'criar_bling', label: 'Criar produto Bling' },
-    { key: 'enviar_fotos', label: 'Enviar fotos' },
-    { key: 'processar_categoria', label: 'Processar categoria' },
+    { key: 'criar_pre_cadastro', label: 'Novo pre-cadastro', description: 'Libera o botao + Novo Pre-cadastro no topo da tela Cadastro.' },
+    { key: 'editar_pre_cadastro', label: 'Botao Pre-Cadastro', description: 'Libera editar o pre-cadastro pendente, incluindo o botao verde Pre-Cadastro/OK na linha e o botao Editar.' },
+    { key: 'criar_bling', label: 'Botao Cadastro', description: 'Libera o botao Cadastro/Pendente da linha para finalizar o item e criar/atualizar o produto no Bling.' },
+    { key: 'enviar_fotos', label: 'Enviar fotos', description: 'Libera envio de fotos na aba Fotos da tela Cadastro.' },
+    { key: 'processar_categoria', label: 'Processar categoria', description: 'Libera analise de IA e atualizacao de categorias/tags na aba Categoria.' },
   ] },
   { key: 'estoque', label: 'Estoque', href: '/estoque', actions: [
     { key: 'editar', label: 'Editar peca' },

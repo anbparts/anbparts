@@ -1,6 +1,6 @@
 import type { LoggedUser } from './auth';
 
-export type AppAction = { key: string; label: string };
+export type AppAction = { key: string; label: string; description?: string };
 export type AppPagePermission = { key: string; label: string; href: string; actions: AppAction[] };
 export type AppPermissions = Record<string, string[]>;
 
