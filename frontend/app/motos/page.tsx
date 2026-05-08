@@ -1469,6 +1469,8 @@ function ContratoFormModal({ open, contrato, onClose, onSaved, viewportMode }: a
 }
 
 function ContratosTab({ viewportMode }: { viewportMode: MotosViewportMode }) {
+  const { user } = useAuth();
+  const canContratosMoto = canProcessAction(user, 'motos', 'contratos');
   const isPhone = viewportMode === 'phone';
   const [contratos, setContratos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1480,6 +1482,11 @@ function ContratosTab({ viewportMode }: { viewportMode: MotosViewportMode }) {
   const [salvandoDetalhesId, setSalvandoDetalhesId] = useState<number | null>(null);
 
   async function loadContratos() {
+    if (!canContratosMoto) {
+      setContratos([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const resp = await fetch(`${API}/motos/contratos`, { credentials: 'include' });
@@ -1493,9 +1500,10 @@ function ContratosTab({ viewportMode }: { viewportMode: MotosViewportMode }) {
     setLoading(false);
   }
 
-  useEffect(() => { loadContratos(); }, []);
+  useEffect(() => { loadContratos(); }, [canContratosMoto]);
 
   async function handleDelete(id: number, titulo: string) {
+    if (!canContratosMoto) return alert('Seu usuario nao tem permissao para contratos.');
     if (!confirm(`Excluir contrato "${titulo}"?`)) return;
     setDeletando(id);
     try {
@@ -1506,6 +1514,7 @@ function ContratosTab({ viewportMode }: { viewportMode: MotosViewportMode }) {
   }
 
   async function handleGerarPdf(contrato: any) {
+    if (!canContratosMoto) return alert('Seu usuario nao tem permissao para contratos.');
     setGerandoId(contrato.id);
     try {
       const resp = await fetch(`${API}/motos/contratos/${contrato.id}/pdf`, { credentials: 'include' });
@@ -1523,6 +1532,7 @@ function ContratosTab({ viewportMode }: { viewportMode: MotosViewportMode }) {
 
   async function handleSalvarDetalhesContrato(detalhes: any) {
     if (!detalhesContrato?.id) return;
+    if (!canContratosMoto) return alert('Seu usuario nao tem permissao para contratos.');
     setSalvandoDetalhesId(detalhesContrato.id);
     try {
       const dados = { ...(detalhesContrato.dados || {}), detalhesMoto: detalhes };
@@ -1544,6 +1554,16 @@ function ContratosTab({ viewportMode }: { viewportMode: MotosViewportMode }) {
   }
 
   const pagePadding = isPhone ? 14 : 28;
+
+  if (!canContratosMoto) {
+    return (
+      <div style={{ padding: pagePadding }}>
+        <div style={cs.card}>
+          <div style={{ padding: 28, textAlign: 'center', color: 'var(--ink-muted)' }}>Seu usuario nao tem permissao para acessar contratos.</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ padding: pagePadding }}>
@@ -1687,6 +1707,7 @@ export default function MotosPage() {
   const canCriarMoto = canProcessAction(user, 'motos', 'criar');
   const canEditarMoto = canProcessAction(user, 'motos', 'editar');
   const canEtiquetaMoto = canProcessAction(user, 'motos', 'etiqueta');
+  const canContratosMoto = canProcessAction(user, 'motos', 'contratos');
   const canExcluirMoto = canProcessAction(user, 'motos', 'excluir');
   const [abaAtiva, setAbaAtiva] = useState<'cadastro' | 'contratos'>('cadastro');
   const [motos, setMotos] = useState<any[]>([]);
@@ -1725,6 +1746,9 @@ export default function MotosPage() {
   useEffect(() => {
     load();
   }, [load]);
+  useEffect(() => {
+    if (abaAtiva === 'contratos' && !canContratosMoto) setAbaAtiva('cadastro');
+  }, [abaAtiva, canContratosMoto]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -2034,7 +2058,7 @@ export default function MotosPage() {
         </div>
         {/* Abas */}
         <div style={{ display: 'flex', gap: 4 }}>
-          {(['cadastro', 'contratos'] as const).map((aba) => (
+          {(['cadastro', ...(canContratosMoto ? ['contratos'] : [])] as const).map((aba) => (
             <button
               key={aba}
               onClick={() => setAbaAtiva(aba)}

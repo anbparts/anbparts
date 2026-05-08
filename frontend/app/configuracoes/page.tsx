@@ -54,12 +54,27 @@ function hasAction(permissions: AppPermissions, pageKey: string, actionKey: stri
 }
 
 const PAGE_HELP: Record<string, string> = {
+  motos: [
+    'Motos: acesso abre a pagina.',
+    'Criar moto: libera o botao + Nova moto.',
+    'Editar moto: libera editar dados, texto modelo e anexos.',
+    'Etiqueta: libera a area de etiquetas DETRAN.',
+    'Contratos: libera a aba Contratos, criar/editar/excluir, detalhes da moto e PDF.',
+    'Excluir moto: libera apagar moto.',
+  ].join('\n'),
   cadastro: [
     'Cadastro: acesso abre a pagina.',
     'Novo pre-cadastro: libera o botao + Novo Pre-cadastro.',
     'Botao Pre-Cadastro: libera editar o pre-cadastro pendente pela linha.',
     'Botao Cadastro: libera finalizar o item e criar/atualizar no Bling.',
     'Enviar fotos e Processar categoria controlam as abas Fotos e Categoria.',
+  ].join('\n'),
+  estoque: [
+    'Estoque: acesso abre a pagina.',
+    'Editar peca: libera editar, vender, marcar prejuizo, cancelar venda e excluir.',
+    'Trocar foto capa: libera importar/trocar foto capa da peca.',
+    'Impressao caixa: libera imprimir etiquetas termicas das caixas.',
+    'Devolucoes: libera historico e registro de devolucoes.',
   ].join('\n'),
 };
 
@@ -313,17 +328,15 @@ export default function ConfiguracoesPage() {
                   {catalogo.map((page) => (
                     <tr key={page.key}>
                       <td style={{ ...s.td, fontWeight: 800, color: '#0f172a', minWidth: 180 }}>
-                        <span title={permissionHelp(page)} style={{ cursor: page.key === 'cadastro' ? 'help' : 'default' }}>
+                        <span title={permissionHelp(page)} style={{ cursor: 'help' }}>
                           {page.label}
                         </span>
-                        {page.key === 'cadastro' && (
-                          <span
-                            title={permissionHelp(page)}
-                            style={{ marginLeft: 6, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 16, height: 16, borderRadius: 999, background: '#eff6ff', color: '#2563eb', fontSize: 11, fontWeight: 900, cursor: 'help' }}
-                          >
-                            ?
-                          </span>
-                        )}
+                        <span
+                          title={permissionHelp(page)}
+                          style={{ marginLeft: 6, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 16, height: 16, borderRadius: 999, background: '#eff6ff', color: '#2563eb', fontSize: 11, fontWeight: 900, cursor: 'help' }}
+                        >
+                          ?
+                        </span>
                       </td>
                       <td style={s.td}>
                         <input type="checkbox" checked={form.isAdmin || hasPage(form.permissions, page.key)} disabled={form.isAdmin} onChange={(e) => togglePage(page.key, e.target.checked)} />

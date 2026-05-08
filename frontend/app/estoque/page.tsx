@@ -2137,6 +2137,7 @@ export default function EstoquePage() {
   const { user } = useAuth();
   const canEditarPeca = canProcessAction(user, 'estoque', 'editar');
   const canTrocarFotoCapa = canProcessAction(user, 'estoque', 'trocar_foto');
+  const canImpressaoCaixa = canProcessAction(user, 'estoque', 'impressao_caixa');
   const canDevolucoes = canProcessAction(user, 'estoque', 'devolucoes');
   const colStorageKey = getColumnStorageKey(user?.username);
   const [data, setData] = useState<any>({ total: 0, totalDisp: 0, totalVend: 0, totalEtiquetas: 0, data: [] });
@@ -2815,6 +2816,7 @@ export default function EstoquePage() {
   }
 
   function openImpressaoCaixaModal() {
+    if (!canImpressaoCaixa) return alert('Seu usuario nao tem permissao para impressao caixa.');
     setBuscaCaixaImpressao('');
     setCaixasSelecionadasImpressao([]);
     setImpressaoCaixaOpen(true);
@@ -2834,6 +2836,7 @@ export default function EstoquePage() {
   }
 
   async function handleImprimirCaixas() {
+    if (!canImpressaoCaixa) return alert('Seu usuario nao tem permissao para impressao caixa.');
     if (!caixasSelecionadasImpressao.length) return;
 
     setImprimindoCaixas(true);
@@ -2956,13 +2959,13 @@ export default function EstoquePage() {
           <div style={cs.sub}>Controle de pecas e disponibilidade</div>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', width: isPhone ? '100%' : undefined, justifyContent: isPhone ? 'stretch' : 'flex-end' }}>
-          <button
+          {canImpressaoCaixa && <button
             type="button"
             onClick={openImpressaoCaixaModal}
             style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink)', borderColor: 'var(--border)', padding: '7px 14px', fontSize: 13, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}
           >
             Impressao Caixa
-          </button>
+          </button>}
           {canDevolucoes && <button
             type="button"
             onClick={() => setDevolucaoHistoricoOpen(true)}
@@ -3528,7 +3531,7 @@ export default function EstoquePage() {
 
       <PecaModal open={modal && canEditarPeca} onClose={() => { setModal(false); setEditPeca(null); }} onSave={handleSavePeca} onCancelSale={handleCancelSale} onMarkPrejuizo={handleMarkPrejuizo} peca={editPeca} motos={motos} viewportMode={viewportMode} />
       <ImpressaoCaixaModal
-        open={impressaoCaixaOpen}
+        open={impressaoCaixaOpen && canImpressaoCaixa}
         loading={loadingCaixas}
         printing={imprimindoCaixas}
         options={caixaOptions}

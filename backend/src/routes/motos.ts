@@ -1357,7 +1357,7 @@ function nomeArquivoContratoPdf(dados: Record<string, any>, numeroContrato: unkn
 // ── CRUD Contratos ────────────────────────────────────────────────────────────
 
 // Listar contratos
-motosRouter.get('/contratos', async (_req, res, next) => {
+motosRouter.get('/contratos', requireMotosAction('contratos'), async (_req, res, next) => {
   try {
     const contratos = await prisma.contrato.findMany({
       orderBy: { criadoEm: 'desc' },
@@ -1368,7 +1368,7 @@ motosRouter.get('/contratos', async (_req, res, next) => {
 });
 
 // Buscar um contrato
-motosRouter.get('/contratos/:id', async (req, res, next) => {
+motosRouter.get('/contratos/:id', requireMotosAction('contratos'), async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     const contrato = await prisma.contrato.findUnique({ where: { id } });
@@ -1378,7 +1378,7 @@ motosRouter.get('/contratos/:id', async (req, res, next) => {
 });
 
 // Criar contrato
-motosRouter.post('/contratos', requireMotosAction('editar'), async (req, res, next) => {
+motosRouter.post('/contratos', requireMotosAction('contratos'), async (req, res, next) => {
   try {
     const dados = req.body?.dados || req.body || {};
     const titulo = req.body?.titulo || `Contrato - ${dados.nomeVendedor || 'Sem nome'} - ${dados.marcaModelo || 'Sem moto'}`;
@@ -1388,7 +1388,7 @@ motosRouter.post('/contratos', requireMotosAction('editar'), async (req, res, ne
 });
 
 // Atualizar contrato
-motosRouter.put('/contratos/:id', requireMotosAction('editar'), async (req, res, next) => {
+motosRouter.put('/contratos/:id', requireMotosAction('contratos'), async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     const dados = req.body?.dados || req.body || {};
@@ -1399,7 +1399,7 @@ motosRouter.put('/contratos/:id', requireMotosAction('editar'), async (req, res,
 });
 
 // Deletar contrato
-motosRouter.delete('/contratos/:id', requireMotosAction('editar'), async (req, res, next) => {
+motosRouter.delete('/contratos/:id', requireMotosAction('contratos'), async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     await prisma.contrato.delete({ where: { id } });
@@ -1408,7 +1408,7 @@ motosRouter.delete('/contratos/:id', requireMotosAction('editar'), async (req, r
 });
 
 // Gerar PDF de um contrato salvo
-motosRouter.get('/contratos/:id/pdf', async (req, res, next) => {
+motosRouter.get('/contratos/:id/pdf', requireMotosAction('contratos'), async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     const contrato = await prisma.contrato.findUnique({ where: { id } });
@@ -1422,7 +1422,7 @@ motosRouter.get('/contratos/:id/pdf', async (req, res, next) => {
 });
 
 // Gerar PDF avulso (sem salvar)
-motosRouter.post('/contrato/gerar', async (req, res, next) => {
+motosRouter.post('/contrato/gerar', requireMotosAction('contratos'), async (req, res, next) => {
   try {
     const dados = req.body || {};
     const pdf = await gerarPdfContrato(dados);

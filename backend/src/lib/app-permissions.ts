@@ -16,10 +16,11 @@ export type AppPermissions = Record<string, string[]>;
 export const APP_PERMISSION_CATALOG: AppPagePermission[] = [
   { key: 'dashboard', label: 'Dashboard', href: '/', actions: [] },
   { key: 'motos', label: 'Motos', href: '/motos', actions: [
-    { key: 'criar', label: 'Criar moto' },
-    { key: 'editar', label: 'Editar moto' },
-    { key: 'etiqueta', label: 'Etiqueta' },
-    { key: 'excluir', label: 'Excluir moto' },
+    { key: 'criar', label: 'Criar moto', description: 'Libera o botao + Nova moto na tela Motos.' },
+    { key: 'editar', label: 'Editar moto', description: 'Libera editar dados da moto, texto modelo e anexos.' },
+    { key: 'etiqueta', label: 'Etiqueta', description: 'Libera a area de etiquetas DETRAN da moto.' },
+    { key: 'contratos', label: 'Contratos', description: 'Libera a aba Contratos dentro de Motos, incluindo criar, editar, excluir, detalhes da moto e gerar PDF.' },
+    { key: 'excluir', label: 'Excluir moto', description: 'Libera excluir uma moto.' },
   ] },
   { key: 'cadastro', label: 'Cadastro', href: '/cadastro', actions: [
     { key: 'criar_pre_cadastro', label: 'Novo pre-cadastro', description: 'Libera o botao + Novo Pre-cadastro no topo da tela Cadastro.' },
@@ -29,9 +30,10 @@ export const APP_PERMISSION_CATALOG: AppPagePermission[] = [
     { key: 'processar_categoria', label: 'Processar categoria', description: 'Libera analise de IA e atualizacao de categorias/tags na aba Categoria.' },
   ] },
   { key: 'estoque', label: 'Estoque', href: '/estoque', actions: [
-    { key: 'editar', label: 'Editar peca' },
-    { key: 'trocar_foto', label: 'Trocar foto capa' },
-    { key: 'devolucoes', label: 'Devolucoes' },
+    { key: 'editar', label: 'Editar peca', description: 'Libera editar peca, vender, marcar prejuizo, cancelar venda e excluir.' },
+    { key: 'trocar_foto', label: 'Trocar foto capa', description: 'Libera importar ou trocar a foto capa da peca.' },
+    { key: 'impressao_caixa', label: 'Impressao caixa', description: 'Libera o botao Impressao Caixa para imprimir etiquetas termicas das caixas.' },
+    { key: 'devolucoes', label: 'Devolucoes', description: 'Libera historico e registro de devolucoes de venda.' },
   ] },
   { key: 'inventario', label: 'Inventario', href: '/inventario', actions: [
     { key: 'criar', label: 'Criar inventario' },
