@@ -66,6 +66,13 @@ type CadastroCategoriaLinha = {
 };
 type CadastroCategoriaSugestao = { sku: string; categorias: { id: number; nome: string }[]; tags: string[] };
 
+const FOTOS_SISTEMAS_PROCESSAMENTO: CadastroFotosSistema[] = ['anb', 'ml', 'nuvemshop'];
+const FOTOS_SISTEMA_LABEL: Record<CadastroFotosSistema, string> = {
+  anb: 'ANB',
+  ml: 'Mercado Livre',
+  nuvemshop: 'Nuvemshop',
+};
+
 const EMPTY_FORM = {
   motoId: '', idPeca: '', descricao: '', descricaoPeca: '', precoVenda: '', sufixoTitulo: '',
   condicao: 'usado', peso: '', largura: '', altura: '', profundidade: '',
@@ -236,6 +243,7 @@ export default function CadastroPage() {
   const [fotosBuscando, setFotosBuscando] = useState(false);
   const [fotosProcessando, setFotosProcessando] = useState(false);
   const [fotosProcessandoSku, setFotosProcessandoSku] = useState('');
+  const [fotosProcessandoSistema, setFotosProcessandoSistema] = useState<CadastroFotosSistema | ''>('');
   const [fotosResultado, setFotosResultado] = useState('');
   const [fotosBuscaStatus, setFotosBuscaStatus] = useState('');
   const [fotosBuscaProgresso, setFotosBuscaProgresso] = useState({ atual: 0, total: 0 });
@@ -602,6 +610,12 @@ export default function CadastroPage() {
     setFotosSelecionados(new Set(fotosLinhas.filter((linha) => linha.temFlag).map((linha) => linha.sku)));
   }
 
+  function marcarLinhaFotosProcessando(sku: string, sistema: CadastroFotosSistema) {
+    setFotosLinhas((prev) => prev.map((linha) => (
+      linha.sku === sku ? { ...linha, status: `processando-${sistema}` } : linha
+    )));
+  }
+
   function atualizarContadorFotosLocal(sku: string, sistema: CadastroFotosSistema, enviadas: number) {
     let removerSelecao = false;
     setFotosLinhas((prev) => ordenarFotosLinhas(prev.map((linha) => {
@@ -637,6 +651,14 @@ export default function CadastroPage() {
     }
   }
 
+  function marcarErroFotosLocal(sku: string, sistema?: CadastroFotosSistema) {
+    setFotosLinhas((prev) => prev.map((item) => item.sku === sku ? {
+      ...item,
+      status: 'erro',
+      ...(sistema ? { [sistema]: { ...(item as any)[sistema], erro: `Erro ao enviar ${FOTOS_SISTEMA_LABEL[sistema]}` } } : {}),
+    } as CadastroFotosLinha : item));
+  }
+
   async function processarFotosCadastro() {
     if (!canEnviarFotos) return alert('Seu usuario nao tem permissao para enviar fotos.');
     const linhas = fotosLinhas
@@ -647,6 +669,7 @@ export default function CadastroPage() {
     setFotosProcessando(true);
     setFotosResultado('');
     setFotosProcessandoSku('');
+    setFotosProcessandoSistema('');
     setFotosBuscaProgresso({ atual: 0, total: linhas.length });
     try {
       let ok = 0;
@@ -655,35 +678,51 @@ export default function CadastroPage() {
       for (let index = 0; index < linhas.length; index += 1) {
         const linha = linhas[index];
         setFotosProcessandoSku(linha.sku);
-        setFotosBuscaStatus(`Enviando fotos (${index + 1}/${linhas.length}) - ${linha.sku}`);
+        setFotosProcessandoSistema('');
+        setFotosBuscaStatus(`Preparando envio (${index + 1}/${linhas.length}) - ${linha.sku}`);
         setFotosBuscaProgresso({ atual: index, total: linhas.length });
+        const sistemas = FOTOS_SISTEMAS_PROCESSAMENTO.filter((sistema) => !!linha.flags[sistema]);
+        let skuComErro = false;
 
-        try {
-          const resp = await fetch(`${API}/cadastro/fotos/processar`, {
-            method: 'POST',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ linhas: [linha] }),
-          });
-          const data = await readApiResponse(resp, `Erro ao processar fotos do SKU ${linha.sku}`);
-          const resultado = Array.isArray(data.resultados) ? data.resultados[0] : null;
-          if (resultado?.detalhes) {
-            aplicarResultadoProcessamentoLocal(linha.sku, resultado.detalhes || []);
-          }
-          if (resultado?.ok) {
-            ok++;
-            setFotosSelecionados((prev) => {
-              const next = new Set(prev);
-              next.delete(linha.sku);
-              return next;
+        for (const sistema of sistemas) {
+          setFotosProcessandoSistema(sistema);
+          marcarLinhaFotosProcessando(linha.sku, sistema);
+          setFotosBuscaStatus(`Enviando ${FOTOS_SISTEMA_LABEL[sistema]} (${index + 1}/${linhas.length}) - ${linha.sku}`);
+
+          try {
+            const resp = await fetch(`${API}/cadastro/fotos/processar`, {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ linhas: [{ sku: linha.sku, flags: { anb: false, ml: false, nuvemshop: false, [sistema]: true } }] }),
             });
-          } else {
-            erro++;
-            setFotosLinhas((prev) => prev.map((item) => item.sku === linha.sku ? { ...item, status: 'erro' } : item));
+            const data = await readApiResponse(resp, `Erro ao processar fotos ${FOTOS_SISTEMA_LABEL[sistema]} do SKU ${linha.sku}`);
+            const resultado = Array.isArray(data.resultados) ? data.resultados[0] : null;
+            const detalhes = Array.isArray(resultado?.detalhes) ? resultado.detalhes : [];
+            const detalheSistema = detalhes.find((detalhe: any) => detalhe?.sistema === sistema);
+            if (detalhes.length) {
+              aplicarResultadoProcessamentoLocal(linha.sku, detalhes);
+            }
+            if (!resultado?.ok || detalheSistema?.ok === false || (!detalheSistema && !detalhes.length)) {
+              skuComErro = true;
+              marcarErroFotosLocal(linha.sku, sistema);
+            }
+          } catch {
+            skuComErro = true;
+            marcarErroFotosLocal(linha.sku, sistema);
           }
-        } catch {
+        }
+
+        setFotosProcessandoSistema('');
+        if (skuComErro) {
           erro++;
-          setFotosLinhas((prev) => prev.map((item) => item.sku === linha.sku ? { ...item, status: 'erro' } : item));
+        } else {
+          ok++;
+          setFotosSelecionados((prev) => {
+            const next = new Set(prev);
+            next.delete(linha.sku);
+            return next;
+          });
         }
 
         setFotosBuscaProgresso({ atual: index + 1, total: linhas.length });
@@ -696,6 +735,7 @@ export default function CadastroPage() {
     } finally {
       setFotosProcessando(false);
       setFotosProcessandoSku('');
+      setFotosProcessandoSistema('');
     }
   }
 
@@ -826,6 +866,9 @@ export default function CadastroPage() {
   const categoriaPendentes = categoriaLinhas.filter((linha) => linha.temFlag).length;
   const categoriaOk = categoriaLinhas.filter((linha) => linha.status === 'ok').length;
   const renderFotosStatus = (linha: CadastroFotosLinha) => {
+    if (linha.sku === fotosProcessandoSku && fotosProcessandoSistema) {
+      return <span style={s.badge('#6d28d9', '#faf5ff', '#c4b5fd')}>Enviando {FOTOS_SISTEMA_LABEL[fotosProcessandoSistema]}</span>;
+    }
     if (linha.status === 'verificando') return <span style={s.badge('#6d28d9', '#faf5ff', '#c4b5fd')}>Verificando</span>;
     if (linha.status === 'erro') return <span style={s.badge('#b91c1c', '#fef2f2', '#fecaca')}>Erro</span>;
     return linha.temFlag
@@ -1375,7 +1418,7 @@ Deseja forçar a exclusão mesmo assim?`);
                     <button onClick={selecionarFotosPendentes} style={{ ...s.btn, background: 'var(--white)', border: '1px solid #c4b5fd', color: '#5b21b6', width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>Selecionar pendentes</button>
                     <button onClick={() => setFotosSelecionados(new Set())} style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>Limpar selecao</button>
                     <button onClick={processarFotosCadastro} disabled={!canEnviarFotos || fotosProcessando || fotosSelecionados.size === 0} style={{ ...s.btn, background: '#7c3aed', color: '#fff', opacity: (!canEnviarFotos || fotosProcessando) ? 0.7 : 1, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>
-                      {fotosProcessando ? `Enviando ${fotosProcessandoSku || 'fotos'}...` : 'Enviar fotos selecionadas'}
+                      {fotosProcessando ? `Enviando ${fotosProcessandoSistema ? FOTOS_SISTEMA_LABEL[fotosProcessandoSistema] : 'fotos'} ${fotosProcessandoSku || ''}...` : 'Enviar fotos selecionadas'}
                     </button>
                   </div>
                 </div>
@@ -1398,8 +1441,9 @@ Deseja forçar a exclusão mesmo assim?`);
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8 }}>
                           {(['anb', 'ml', 'nuvemshop'] as const).map((sistema) => {
                             const info: any = linha[sistema];
+                            const isSistemaProcessando = linha.sku === fotosProcessandoSku && sistema === fotosProcessandoSistema;
                             return (
-                              <div key={sistema} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, border: '1px solid var(--border)', borderRadius: 8, padding: '9px 10px', background: '#fcfdff' }}>
+                              <div key={sistema} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, border: isSistemaProcessando ? '2px solid #7c3aed' : '1px solid var(--border)', borderRadius: 8, padding: '9px 10px', background: isSistemaProcessando ? '#f5f3ff' : '#fcfdff' }}>
                                 <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--gray-700)' }}>{sistema === 'anb' ? 'ANB' : sistema === 'ml' ? 'ML' : 'Nuvemshop'}: {Number(info?.fotos || 0)} foto(s)</span>
                                 <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
                                   <button type="button" disabled={!canEnviarFotos} onClick={(e) => { e.preventDefault(); e.stopPropagation(); abrirModalFotosManual(linha, sistema); }} style={{ border: 'none', background: 'transparent', cursor: canEnviarFotos ? 'pointer' : 'not-allowed', color: Number(info?.fotos || 0) > 0 ? 'var(--green)' : '#dc2626', fontSize: 16, padding: 0, opacity: canEnviarFotos ? 1 : 0.45 }}>📷</button>
@@ -1437,8 +1481,9 @@ Deseja forçar a exclusão mesmo assim?`);
                               </td>
                               {(['anb', 'ml', 'nuvemshop'] as const).map((sistema) => {
                                 const info: any = linha[sistema];
+                                const isSistemaProcessando = linha.sku === fotosProcessandoSku && sistema === fotosProcessandoSistema;
                                 return (
-                                  <td key={sistema} style={{ ...s.td, textAlign: 'center' }}>
+                                  <td key={sistema} style={{ ...s.td, textAlign: 'center', background: isSistemaProcessando ? '#f5f3ff' : undefined }}>
                                     <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                                       <input type="checkbox" checked={!!linha.flags[sistema]} onChange={(e) => atualizarFlagFoto(linha.sku, sistema, e.target.checked)} />
                                       <button type="button" disabled={!canEnviarFotos} onClick={(e) => { e.preventDefault(); e.stopPropagation(); abrirModalFotosManual(linha, sistema); }} style={{ border: 'none', background: 'transparent', cursor: canEnviarFotos ? 'pointer' : 'not-allowed', color: Number(info?.fotos || 0) > 0 ? 'var(--green)' : '#dc2626', fontSize: 12, fontWeight: 800, textDecoration: 'underline dotted', padding: 0, opacity: canEnviarFotos ? 1 : 0.45 }}>

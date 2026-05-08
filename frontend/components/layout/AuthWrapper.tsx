@@ -318,10 +318,10 @@ function NotificationsBox({ sidebarOffset }: { sidebarOffset: number }) {
     return () => window.clearInterval(timer);
   }, []);
 
-  const left = sidebarOffset > 0 ? sidebarOffset + 14 : 64;
+  const left = sidebarOffset > 0 ? Math.max(12, sidebarOffset - 62) : 64;
 
   return (
-    <div style={{ position: 'fixed', top: 12, left, zIndex: 140 }}>
+    <div style={{ position: 'fixed', top: 18, left, zIndex: 140 }}>
       <button
         type="button"
         onClick={() => {

@@ -30,7 +30,7 @@ export const APP_NOTIFICATION_CATALOG: NotificationType[] = [
   {
     key: 'pagamentos_dia',
     label: 'Pagamentos do dia',
-    description: 'Avisa despesas pendentes com vencimento ate hoje.',
+    description: 'Avisa despesas pendentes com vencimento no dia atual.',
     pageKey: 'despesas',
     href: '/despesas',
   },
@@ -70,6 +70,12 @@ function dateKeyInSaoPaulo(date = new Date()) {
 
 function dateOnlyUtc(value: string) {
   return new Date(`${value}T00:00:00.000Z`);
+}
+
+function addUtcDays(date: Date, days: number) {
+  const next = new Date(date);
+  next.setUTCDate(next.getUTCDate() + days);
+  return next;
 }
 
 function shortText(value: any, max = 96) {
@@ -116,8 +122,9 @@ async function collectPreCadastros(limit: number) {
 
 async function collectPagamentosDia(limit: number) {
   const today = dateOnlyUtc(dateKeyInSaoPaulo());
+  const tomorrow = addUtcDays(today, 1);
   const rows = await prisma.despesa.findMany({
-    where: { statusPagamento: 'pendente', data: { lte: today } },
+    where: { statusPagamento: 'pendente', data: { gte: today, lt: tomorrow } },
     orderBy: [{ data: 'asc' }, { id: 'asc' }],
     take: limit,
   });
