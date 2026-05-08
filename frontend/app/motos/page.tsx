@@ -1929,6 +1929,7 @@ export default function MotosPage() {
   const desktopHeaders = ['ID', 'Marca', 'Modelo', 'Ano', 'Placa', 'Chassi', 'Renavam', 'Data compra', 'Itens', 'Anexos', 'Detran', ''];
   const tabletHeaders = ['ID', 'Marca', 'Modelo', 'Ano', 'Placa', 'Compra', 'Itens', 'Anexos', 'Detran', ''];
   const activeHeaders = compactTable ? tabletHeaders : desktopHeaders;
+  const abasDisponiveis: Array<'cadastro' | 'contratos'> = canContratosMoto ? ['cadastro', 'contratos'] : ['cadastro'];
 
   function renderAnexosButton(m: any) {
     return (
@@ -2058,7 +2059,7 @@ export default function MotosPage() {
         </div>
         {/* Abas */}
         <div style={{ display: 'flex', gap: 4 }}>
-          {(['cadastro', ...(canContratosMoto ? ['contratos'] : [])] as const).map((aba) => (
+          {abasDisponiveis.map((aba) => (
             <button
               key={aba}
               onClick={() => setAbaAtiva(aba)}
