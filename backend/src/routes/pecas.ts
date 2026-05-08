@@ -85,6 +85,21 @@ function isBrunoAuthUser(req: any) {
   return String(req?.authUser?.username || '').trim().toLowerCase() === 'bruno';
 }
 
+function hasEstoqueAction(req: any, action: string) {
+  const user = req.authUser || {};
+  const username = String(user.username || '').trim().toLowerCase();
+  if (username === 'bruno' || user.isAdmin) return true;
+  const actions = user.permissions?.estoque;
+  return Array.isArray(actions) && actions.includes(action);
+}
+
+function requireEstoqueAction(action: string) {
+  return (req: any, res: any, next: any) => {
+    if (hasEstoqueAction(req, action)) return next();
+    return res.status(403).json({ ok: false, error: 'Seu usuario nao tem permissao para executar esta acao.' });
+  };
+}
+
 async function gerarIdPeca(): Promise<string> {
   const last = await prisma.peca.findFirst({ orderBy: { idPeca: 'desc' } });
   if (!last) return 'PN0001';
@@ -572,7 +587,7 @@ pecasRouter.get('/sugestao-id', async (req, res, next) => {
 });
 
 // POST /pecas
-pecasRouter.post('/', async (req, res, next) => {
+pecasRouter.post('/', requireEstoqueAction('editar'), async (req, res, next) => {
   try {
     const data = createPecaSchema.parse(req.body);
     const suggested = await suggestIdPecaForMoto(Number(data.motoId));
@@ -610,7 +625,7 @@ pecasRouter.post('/', async (req, res, next) => {
 });
 
 // PUT /pecas/:id
-pecasRouter.put('/:id', async (req, res, next) => {
+pecasRouter.put('/:id', requireEstoqueAction('editar'), async (req, res, next) => {
   try {
     const data = updatePecaSchema.parse(req.body);
     const current = await prisma.peca.findUnique({
@@ -651,7 +666,7 @@ pecasRouter.put('/:id', async (req, res, next) => {
 });
 
 // PATCH /pecas/:id/foto-capa
-pecasRouter.patch('/:id/foto-capa', async (req, res, next) => {
+pecasRouter.patch('/:id/foto-capa', requireEstoqueAction('trocar_foto'), async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) {
@@ -694,7 +709,7 @@ pecasRouter.patch('/:id/foto-capa', async (req, res, next) => {
 });
 
 // PATCH /pecas/:id/cancelar-venda
-pecasRouter.patch('/:id/cancelar-venda', async (req, res, next) => {
+pecasRouter.patch('/:id/cancelar-venda', requireEstoqueAction('editar'), async (req, res, next) => {
   try {
     const current = await prisma.peca.findUnique({
       where: { id: Number(req.params.id) },
@@ -723,7 +738,7 @@ pecasRouter.patch('/:id/cancelar-venda', async (req, res, next) => {
 });
 
 // PATCH /pecas/:id/vender
-pecasRouter.patch('/:id/vender', async (req, res, next) => {
+pecasRouter.patch('/:id/vender', requireEstoqueAction('editar'), async (req, res, next) => {
   try {
     const { dataVenda, pedidoNum, precoML, frete, taxaValor } = req.body;
     if (!pedidoNum || !String(pedidoNum).trim()) {
@@ -796,7 +811,7 @@ pecasRouter.patch('/:id/vender', async (req, res, next) => {
 });
 
 // PATCH /pecas/:id/prejuizo
-pecasRouter.patch('/:id/prejuizo', async (req, res, next) => {
+pecasRouter.patch('/:id/prejuizo', requireEstoqueAction('editar'), async (req, res, next) => {
   try {
     const payload = prejuizoPayloadSchema.parse(req.body || {});
     const motivo = String(payload.motivo || '').trim();
@@ -882,7 +897,7 @@ pecasRouter.get('/:id', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-pecasRouter.post('/bulk-delete', async (req, res, next) => {
+pecasRouter.post('/bulk-delete', requireEstoqueAction('editar'), async (req, res, next) => {
   try {
     if (!isBrunoAuthUser(req)) {
       return res.status(403).json({ error: 'Apenas o usuario Bruno pode deletar pecas em massa.' });
@@ -904,7 +919,7 @@ pecasRouter.post('/bulk-delete', async (req, res, next) => {
 });
 
 // DELETE /pecas/:id
-pecasRouter.delete('/:id', async (req, res, next) => {
+pecasRouter.delete('/:id', requireEstoqueAction('editar'), async (req, res, next) => {
   try {
     await prisma.peca.delete({ where: { id: Number(req.params.id) } });
     res.json({ ok: true });
@@ -949,7 +964,7 @@ pecasRouter.post('/bulk-detran-cartela', async (req, res, next) => {
 // POST /pecas/recomprimir-fotos-capa
 // Recomprime todas as fotoCapaArquivo existentes no banco com as novas configurações
 // Só processa as acima de 150KB (meta atual)
-pecasRouter.post('/recomprimir-fotos-capa', async (req, res, next) => {
+pecasRouter.post('/recomprimir-fotos-capa', requireEstoqueAction('trocar_foto'), async (req, res, next) => {
   try {
     const ALVO_BYTES = 150 * 1024;
 

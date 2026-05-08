@@ -7,6 +7,21 @@ import { getConfiguracaoGeral } from '../lib/configuracoes-gerais';
 
 export const motosRouter = Router();
 
+function hasMotosAction(req: any, action: string) {
+  const user = req.authUser || {};
+  const username = String(user.username || '').trim().toLowerCase();
+  if (username === 'bruno' || user.isAdmin) return true;
+  const actions = user.permissions?.motos;
+  return Array.isArray(actions) && actions.includes(action);
+}
+
+function requireMotosAction(action: string) {
+  return (req: any, res: any, next: any) => {
+    if (hasMotosAction(req, action)) return next();
+    return res.status(403).json({ ok: false, error: 'Seu usuario nao tem permissao para executar esta acao.' });
+  };
+}
+
 const motoSchema = z.object({
   marca:             z.string().min(1),
   modelo:            z.string().min(1),
@@ -365,7 +380,7 @@ motosRouter.get('/:id/detran-etiquetas', async (req, res, next) => {
 });
 
 // PATCH /motos/pecas/:pecaId/detran-status
-motosRouter.patch('/pecas/:pecaId/detran-status', async (req, res, next) => {
+motosRouter.patch('/pecas/:pecaId/detran-status', requireMotosAction('etiqueta'), async (req, res, next) => {
   try {
     const pecaId = Number(req.params.pecaId);
     if (!Number.isInteger(pecaId) || pecaId <= 0) {
@@ -467,7 +482,7 @@ motosRouter.get('/:id/anexos', async (req, res, next) => {
 });
 
 // PUT /motos/:id/anexos
-motosRouter.put('/:id/anexos', async (req, res, next) => {
+motosRouter.put('/:id/anexos', requireMotosAction('editar'), async (req, res, next) => {
   try {
     const motoId = Number(req.params.id);
     if (!Number.isInteger(motoId) || motoId <= 0) {
@@ -543,7 +558,7 @@ motosRouter.get('/:id', async (req, res, next) => {
 });
 
 // POST /motos
-motosRouter.post('/', async (req, res, next) => {
+motosRouter.post('/', requireMotosAction('criar'), async (req, res, next) => {
   try {
     const data = motoSchema.parse(req.body);
     const moto = await prisma.moto.create({
@@ -557,7 +572,7 @@ motosRouter.post('/', async (req, res, next) => {
 });
 
 // PUT /motos/:id
-motosRouter.put('/:id', async (req, res, next) => {
+motosRouter.put('/:id', requireMotosAction('editar'), async (req, res, next) => {
   try {
     const data = motoSchema.partial().parse(req.body);
     const moto = await prisma.moto.update({
@@ -572,7 +587,7 @@ motosRouter.put('/:id', async (req, res, next) => {
 });
 
 // DELETE /motos/:id
-motosRouter.delete('/:id', async (req, res, next) => {
+motosRouter.delete('/:id', requireMotosAction('excluir'), async (req, res, next) => {
   try {
     await prisma.moto.delete({ where: { id: Number(req.params.id) } });
     res.json({ ok: true });
@@ -592,7 +607,7 @@ motosRouter.get('/:id/detran-cartela', async (req, res, next) => {
 
 // POST /motos/:id/detran-cartela — salva todas as posições (upsert) + sync Bling
 // Body: { posicoes: [{posicao, tipo, status, idPeca?, etiqueta?}] }
-motosRouter.post('/:id/detran-cartela', async (req, res, next) => {
+motosRouter.post('/:id/detran-cartela', requireMotosAction('etiqueta'), async (req, res, next) => {
   try {
     const motoId = Number(req.params.id);
     const { posicoes } = req.body || {};
@@ -1363,7 +1378,7 @@ motosRouter.get('/contratos/:id', async (req, res, next) => {
 });
 
 // Criar contrato
-motosRouter.post('/contratos', async (req, res, next) => {
+motosRouter.post('/contratos', requireMotosAction('editar'), async (req, res, next) => {
   try {
     const dados = req.body?.dados || req.body || {};
     const titulo = req.body?.titulo || `Contrato - ${dados.nomeVendedor || 'Sem nome'} - ${dados.marcaModelo || 'Sem moto'}`;
@@ -1373,7 +1388,7 @@ motosRouter.post('/contratos', async (req, res, next) => {
 });
 
 // Atualizar contrato
-motosRouter.put('/contratos/:id', async (req, res, next) => {
+motosRouter.put('/contratos/:id', requireMotosAction('editar'), async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     const dados = req.body?.dados || req.body || {};
@@ -1384,7 +1399,7 @@ motosRouter.put('/contratos/:id', async (req, res, next) => {
 });
 
 // Deletar contrato
-motosRouter.delete('/contratos/:id', async (req, res, next) => {
+motosRouter.delete('/contratos/:id', requireMotosAction('editar'), async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     await prisma.contrato.delete({ where: { id } });

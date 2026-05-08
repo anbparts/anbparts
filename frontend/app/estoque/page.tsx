@@ -6,6 +6,7 @@ import { API_BASE } from '@/lib/api-base';
 import { useAuth } from '@/lib/auth';
 import { formatEtiquetaMotoLabel, printCaixaLabels, printSkuLabels } from '@/lib/estoque-label-print';
 import { compressFotoCapaFile } from '@/lib/image-compression';
+import { canProcessAction } from '@/lib/permissions';
 
 function fmt(v: number) {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -854,7 +855,7 @@ function DetranEtiquetaModal({ open, peca, onClose }: any) {
   );
 }
 
-function PecaDetalheModal({ open, peca, onClose, onSaved }: any) {
+function PecaDetalheModal({ open, peca, onClose, onSaved, canEditarPeca = false, canTrocarFotoCapa = false }: any) {
   const [editando, setEditando] = useState(false);
   const [form, setForm] = useState<any>({});
   const [saving, setSaving] = useState(false);
@@ -887,6 +888,10 @@ function PecaDetalheModal({ open, peca, onClose, onSaved }: any) {
   const fotoCapaDisplayName = fotoCapaNome || (fotoCapaArquivo ? 'foto-capa.jpg' : '');
 
   async function salvarDimensoes() {
+    if (!canEditarPeca) {
+      alert('Seu usuario nao tem permissao para editar pecas.');
+      return;
+    }
     setSaving(true);
     try {
       const API = API_BASE;
@@ -976,6 +981,10 @@ function PecaDetalheModal({ open, peca, onClose, onSaved }: any) {
     const file = event.target?.files?.[0];
     event.target.value = '';
     if (!file) return;
+    if (!canTrocarFotoCapa) {
+      alert('Seu usuario nao tem permissao para trocar foto capa.');
+      return;
+    }
 
     try {
       setUploadingFotoCapa(true);
@@ -1073,7 +1082,7 @@ function PecaDetalheModal({ open, peca, onClose, onSaved }: any) {
                       <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--gray-300)' }}>Nenhuma foto importada</div>
                     )}
                   </div>
-                  <button
+                  {canTrocarFotoCapa && <button
                     onClick={() => fotoInputRef.current?.click()}
                     disabled={uploadingFotoCapa}
                     style={{
@@ -1085,12 +1094,12 @@ function PecaDetalheModal({ open, peca, onClose, onSaved }: any) {
                     }}
                   >
                     {uploadingFotoCapa ? 'Importando...' : (fotoCapaArquivo ? 'Trocar Foto Capa' : 'Importar Foto Capa')}
-                  </button>
+                  </button>}
                 </div>
               </div>
             </div>
             <div style={{ padding: '0 22px 20px', display: 'flex', justifyContent: 'space-between' }}>
-              <button onClick={() => {
+              {canEditarPeca && <button onClick={() => {
             // Re-popula o form com os dados atuais da peça ao entrar em edição
             setForm({
               largura: peca.largura != null ? String(peca.largura) : '',
@@ -1103,6 +1112,7 @@ function PecaDetalheModal({ open, peca, onClose, onSaved }: any) {
             });
             setEditando(true);
           }} style={{ ...cs.btn, background: 'var(--gray-800)', color: '#fff' }}>✏️ Editar</button>
+              }
               <button onClick={onClose} style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink-soft)', borderColor: 'var(--border-strong)' }}>Fechar</button>
             </div>
           </>
@@ -1170,7 +1180,7 @@ function PecaDetalheModal({ open, peca, onClose, onSaved }: any) {
   );
 }
 
-function PecaActionsModal({ open, peca, onClose, onEdit, onSell, onDelete, onDevolucao }: any) {
+function PecaActionsModal({ open, peca, onClose, onEdit, onSell, onDelete, onDevolucao, canEditarPeca = false, canDevolucoes = false }: any) {
   if (!open || !peca) return null;
   const bloqueadaPrejuizo = isPrejuizoPeca(peca);
 
@@ -1191,26 +1201,31 @@ function PecaActionsModal({ open, peca, onClose, onEdit, onSell, onDelete, onDev
             </div>
           ) : (
             <>
-              <button onClick={onEdit} style={{ ...cs.btn, width: '100%', justifyContent: 'center', background: 'var(--white)', color: 'var(--ink)', borderColor: 'var(--border-strong)' }}>
+              {canEditarPeca && <button onClick={onEdit} style={{ ...cs.btn, width: '100%', justifyContent: 'center', background: 'var(--white)', color: 'var(--ink)', borderColor: 'var(--border-strong)' }}>
                 Editar
-              </button>
-              {peca.disponivel ? (
+              </button>}
+              {peca.disponivel && canEditarPeca ? (
                 <button onClick={onSell} style={{ ...cs.btn, width: '100%', justifyContent: 'center', background: 'var(--amber-light)', color: 'var(--amber)', borderColor: 'var(--amber-mid)' }}>
                   Vender
                 </button>
-              ) : (
+              ) : !peca.disponivel ? (
                 <>
                   <div style={{ fontSize: 12, color: 'var(--ink-muted)', textAlign: 'center' }}>
                     Esta peca ja esta vendida.
                   </div>
-                  <button onClick={onDevolucao} style={{ ...cs.btn, width: '100%', justifyContent: 'center', background: '#eff6ff', color: '#2563eb', borderColor: '#93c5fd' }}>
+                  {canDevolucoes && <button onClick={onDevolucao} style={{ ...cs.btn, width: '100%', justifyContent: 'center', background: '#eff6ff', color: '#2563eb', borderColor: '#93c5fd' }}>
                     📦 Devolução Venda
-                  </button>
+                  </button>}
                 </>
-              )}
-              <button onClick={onDelete} style={{ ...cs.btn, width: '100%', justifyContent: 'center', background: '#fff1f2', color: 'var(--red)', borderColor: '#fecdd3' }}>
+              ) : null}
+              {canEditarPeca && <button onClick={onDelete} style={{ ...cs.btn, width: '100%', justifyContent: 'center', background: '#fff1f2', color: 'var(--red)', borderColor: '#fecdd3' }}>
                 Deletar
-              </button>
+              </button>}
+              {!canEditarPeca && !canDevolucoes && (
+                <div style={{ fontSize: 12, color: 'var(--ink-muted)', textAlign: 'center' }}>
+                  Sem botoes liberados para esta peca.
+                </div>
+              )}
             </>
           )}
         </div>
@@ -2120,6 +2135,9 @@ function DevolucaoHistoricoModal({ motos, onClose }: any) {
 
 export default function EstoquePage() {
   const { user } = useAuth();
+  const canEditarPeca = canProcessAction(user, 'estoque', 'editar');
+  const canTrocarFotoCapa = canProcessAction(user, 'estoque', 'trocar_foto');
+  const canDevolucoes = canProcessAction(user, 'estoque', 'devolucoes');
   const colStorageKey = getColumnStorageKey(user?.username);
   const [data, setData] = useState<any>({ total: 0, totalDisp: 0, totalVend: 0, totalEtiquetas: 0, data: [] });
   const [exportando, setExportando] = useState(false);
@@ -2390,6 +2408,10 @@ export default function EstoquePage() {
   }, [caixaOptions]);
 
   async function handleSavePeca(formData: any) {
+    if (!canEditarPeca) {
+      alert('Seu usuario nao tem permissao para editar pecas.');
+      return;
+    }
     if (editPeca && isPrejuizoPeca(editPeca)) {
       alert('Essa peca esta em prejuizo e nao pode ser editada pela tela de estoque.');
       return;
@@ -2458,6 +2480,10 @@ export default function EstoquePage() {
   }
 
   async function handleVenda(formData: any) {
+    if (!canEditarPeca) {
+      alert('Seu usuario nao tem permissao para editar pecas.');
+      return;
+    }
     if (vendaPeca && isPrejuizoPeca(vendaPeca)) {
       alert('Essa peca esta em prejuizo e nao pode ser vendida pela tela de estoque.');
       return;
@@ -2469,6 +2495,10 @@ export default function EstoquePage() {
   }
 
   async function handleCancelSale(peca: any) {
+    if (!canEditarPeca) {
+      alert('Seu usuario nao tem permissao para editar pecas.');
+      return;
+    }
     await api.pecas.cancelarVenda(peca.id);
     setModal(false);
     setEditPeca(null);
@@ -2476,6 +2506,10 @@ export default function EstoquePage() {
   }
 
   async function handleMarkPrejuizo(payload: any) {
+    if (!canEditarPeca) {
+      alert('Seu usuario nao tem permissao para editar pecas.');
+      return;
+    }
     await api.pecas.marcarPrejuizo(payload.id, payload);
     setModal(false);
     setEditPeca(null);
@@ -2483,6 +2517,10 @@ export default function EstoquePage() {
   }
 
   async function handleDeletePeca(peca: any) {
+    if (!canEditarPeca) {
+      alert('Seu usuario nao tem permissao para editar pecas.');
+      return;
+    }
     if (isPrejuizoPeca(peca)) {
       alert('Pecas em prejuizo ficam bloqueadas para acoes na tela de estoque.');
       return;
@@ -2501,6 +2539,10 @@ export default function EstoquePage() {
   }
 
   async function handleDeleteSelecionadas() {
+    if (!canEditarPeca) {
+      alert('Seu usuario nao tem permissao para editar pecas.');
+      return;
+    }
     if (!isBruno) {
       alert('Apenas o usuario Bruno pode deletar pecas em massa.');
       return;
@@ -2921,13 +2963,13 @@ export default function EstoquePage() {
           >
             Impressao Caixa
           </button>
-          <button
+          {canDevolucoes && <button
             type="button"
             onClick={() => setDevolucaoHistoricoOpen(true)}
             style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink)', borderColor: 'var(--border)', padding: '7px 14px', fontSize: 13, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}
           >
             📦 Devoluções
-          </button>
+          </button>}
           {filters.motoId && (
             <button
               type="button"
@@ -2944,13 +2986,13 @@ export default function EstoquePage() {
           >
             ⚙ Colunas
           </button>
-          <button
+          {canEditarPeca && <button
             type="button"
             onClick={() => { setEditPeca(null); setModal(true); }}
             style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)', padding: '7px 14px', fontSize: 13, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}
           >
             + Nova peca
-          </button>
+          </button>}
         </div>
       </div>
       <div style={{ padding: pagePadding }}>
@@ -3119,7 +3161,7 @@ export default function EstoquePage() {
               <select style={{ ...cs.sel, width: isPhone ? '100%' : undefined }} value={String(filters.perPage)} onChange={(e) => setFilters({ ...filters, perPage: Number(e.target.value), page: 1 })}>
                 {pageSizeOptions.map((size) => <option key={size} value={size}>{size} por pagina</option>)}
               </select>
-              {isBruno && (
+              {isBruno && canEditarPeca && (
                 <button
                   disabled={!selectedPecaIds.length}
                   onClick={handleDeleteSelecionadas}
@@ -3484,7 +3526,7 @@ export default function EstoquePage() {
         </div>
       </div>
 
-      <PecaModal open={modal} onClose={() => { setModal(false); setEditPeca(null); }} onSave={handleSavePeca} onCancelSale={handleCancelSale} onMarkPrejuizo={handleMarkPrejuizo} peca={editPeca} motos={motos} viewportMode={viewportMode} />
+      <PecaModal open={modal && canEditarPeca} onClose={() => { setModal(false); setEditPeca(null); }} onSave={handleSavePeca} onCancelSale={handleCancelSale} onMarkPrejuizo={handleMarkPrejuizo} peca={editPeca} motos={motos} viewportMode={viewportMode} />
       <ImpressaoCaixaModal
         open={impressaoCaixaOpen}
         loading={loadingCaixas}
@@ -3513,7 +3555,7 @@ export default function EstoquePage() {
       />
       <VendaModal open={vendaModal} peca={vendaPeca} onClose={() => setVendaModal(false)} onConfirm={handleVenda} />
       <DetranEtiquetaModal open={Boolean(detranPeca)} peca={detranPeca} onClose={() => setDetranPeca(null)} />
-      <PecaDetalheModal open={Boolean(detalhePeca)} peca={detalhePeca} onClose={() => setDetalhePeca(null)} onSaved={() => { load(); }} />
+      <PecaDetalheModal open={Boolean(detalhePeca)} peca={detalhePeca} onClose={() => setDetalhePeca(null)} onSaved={() => { load(); }} canEditarPeca={canEditarPeca} canTrocarFotoCapa={canTrocarFotoCapa} />
       {etiquetaCartelaOpen && filters.motoId && (
         <EtiquetaCartelaModal
           motoId={Number(filters.motoId)}
@@ -3527,12 +3569,14 @@ export default function EstoquePage() {
         peca={actionPeca}
         onClose={() => setActionPeca(null)}
         onEdit={() => {
+          if (!canEditarPeca) return;
           if (isPrejuizoPeca(actionPeca)) return;
           setEditPeca(actionPeca);
           setActionPeca(null);
           setModal(true);
         }}
         onSell={() => {
+          if (!canEditarPeca) return;
           if (!actionPeca?.disponivel || isPrejuizoPeca(actionPeca)) return;
           setVendaPeca(actionPeca);
           setActionPeca(null);
@@ -3540,13 +3584,16 @@ export default function EstoquePage() {
         }}
         onDelete={() => handleDeletePeca(actionPeca)}
         onDevolucao={() => {
+          if (!canDevolucoes) return;
           setDevolucaoPeca(actionPeca);
           setActionPeca(null);
           setDevolucaoModal(true);
         }}
+        canEditarPeca={canEditarPeca}
+        canDevolucoes={canDevolucoes}
       />
       {/* Modal de Devolução */}
-      {devolucaoModal && devolucaoPeca && (
+      {canDevolucoes && devolucaoModal && devolucaoPeca && (
         <DevolucaoModal
           peca={devolucaoPeca}
           onClose={() => { setDevolucaoModal(false); setDevolucaoPeca(null); }}
@@ -3555,7 +3602,7 @@ export default function EstoquePage() {
       )}
 
       {/* Modal Histórico de Devoluções */}
-      {devolucaoHistoricoOpen && (
+      {canDevolucoes && devolucaoHistoricoOpen && (
         <DevolucaoHistoricoModal
           motos={motos}
           onClose={() => setDevolucaoHistoricoOpen(false)}

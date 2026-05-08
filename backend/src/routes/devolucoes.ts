@@ -3,8 +3,23 @@ import { prisma } from '../lib/prisma';
 
 export const devolucoesRouter = Router();
 
+function hasEstoqueAction(req: any, action: string) {
+  const user = req.authUser || {};
+  const username = String(user.username || '').trim().toLowerCase();
+  if (username === 'bruno' || user.isAdmin) return true;
+  const actions = user.permissions?.estoque;
+  return Array.isArray(actions) && actions.includes(action);
+}
+
+function requireEstoqueAction(action: string) {
+  return (req: any, res: any, next: any) => {
+    if (hasEstoqueAction(req, action)) return next();
+    return res.status(403).json({ ok: false, error: 'Seu usuario nao tem permissao para executar esta acao.' });
+  };
+}
+
 // ── POST /devolucoes — registrar devolução e reverter peça ao estoque ──────────
-devolucoesRouter.post('/', async (req, res, next) => {
+devolucoesRouter.post('/', requireEstoqueAction('devolucoes'), async (req, res, next) => {
   try {
     const {
       pecaId,
@@ -68,7 +83,7 @@ devolucoesRouter.post('/', async (req, res, next) => {
 });
 
 // ── GET /devolucoes — listar histórico com filtros ────────────────────────────
-devolucoesRouter.get('/', async (req, res, next) => {
+devolucoesRouter.get('/', requireEstoqueAction('devolucoes'), async (req, res, next) => {
   try {
     const {
       idPeca, descricao, motoId,

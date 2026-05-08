@@ -3,6 +3,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '@/lib/api';
 import EtiquetaCartelaModal from '../estoque/EtiquetaCartelaModal';
 import { API_BASE } from '@/lib/api-base';
+import { useAuth } from '@/lib/auth';
+import { canProcessAction } from '@/lib/permissions';
 const API = API_BASE;
 
 function fmt(v: number) {
@@ -1681,6 +1683,11 @@ function ContratosTab({ viewportMode }: { viewportMode: MotosViewportMode }) {
 
 // ── Página principal ───────────────────────────────────────────────────────────
 export default function MotosPage() {
+  const { user } = useAuth();
+  const canCriarMoto = canProcessAction(user, 'motos', 'criar');
+  const canEditarMoto = canProcessAction(user, 'motos', 'editar');
+  const canEtiquetaMoto = canProcessAction(user, 'motos', 'etiqueta');
+  const canExcluirMoto = canProcessAction(user, 'motos', 'excluir');
   const [abaAtiva, setAbaAtiva] = useState<'cadastro' | 'contratos'>('cadastro');
   const [motos, setMotos] = useState<any[]>([]);
   const [filtered, setFiltered] = useState<any[]>([]);
@@ -1782,6 +1789,8 @@ export default function MotosPage() {
   }, [search, motos]);
 
   async function handleSave(data: any) {
+    if (editing && !canEditarMoto) return alert('Seu usuario nao tem permissao para editar moto.');
+    if (!editing && !canCriarMoto) return alert('Seu usuario nao tem permissao para criar moto.');
     if (editing) await api.motos.update(editing.id, data);
     else await api.motos.create(data);
     setModal(false);
@@ -1790,6 +1799,7 @@ export default function MotosPage() {
   }
 
   async function handleDeleteMoto(moto: any) {
+    if (!canExcluirMoto) return alert('Seu usuario nao tem permissao para excluir moto.');
     if (!confirm(`Excluir ${moto.marca} ${moto.modelo}?`)) return;
     await api.motos.delete(moto.id);
     load();
@@ -1819,6 +1829,7 @@ export default function MotosPage() {
   }
 
   async function handleDetranStatusToggle(item: any, status: 'ativa' | 'baixada') {
+    if (!canEtiquetaMoto) return alert('Seu usuario nao tem permissao para alterar etiquetas da moto.');
     setDetranUpdatingId(item.id);
     try {
       const response = await api.motos.setDetranEtiquetaStatus(item.id, status);
@@ -1929,9 +1940,9 @@ export default function MotosPage() {
 
   function renderDetranButton(m: any, fullWidth = false) {
     return (
-      <button
-        onClick={() => openDetranModal(m)}
-        disabled={!m.temDetran}
+        <button
+          onClick={() => openDetranModal(m)}
+          disabled={!m.temDetran}
         style={{
           ...cs.btn,
           padding: fullWidth ? '8px 12px' : '5px 10px',
@@ -1954,34 +1965,34 @@ export default function MotosPage() {
   function renderActionButtons(m: any, stacked = false) {
     return (
       <div style={{ display: 'flex', gap: 8, flexDirection: stacked ? 'column' : 'row', width: stacked ? '100%' : undefined }}>
-        <button
+        {canEditarMoto && <button
           onClick={() => { setEditing(m); setModal(true); }}
           style={{ ...cs.btn, padding: stacked ? '8px 12px' : '5px 10px', fontSize: stacked ? 12 : 12, background: 'var(--white)', color: 'var(--ink-soft)', borderColor: 'var(--border)', width: stacked ? '100%' : undefined, justifyContent: 'center' }}
           title="Editar"
         >
           Editar
-        </button>
-        <button
+        </button>}
+        {canExcluirMoto && <button
           onClick={() => handleDeleteMoto(m)}
           style={{ ...cs.btn, padding: stacked ? '8px 12px' : '5px 10px', fontSize: 12, background: '#fff1f2', color: 'var(--red-light)', borderColor: '#fecdd3', width: stacked ? '100%' : undefined, justifyContent: 'center' }}
           title="Excluir"
         >
           Excluir
-        </button>
-        <button
+        </button>}
+        {canEditarMoto && <button
           onClick={() => openTextoModeloModal(m)}
           style={{ ...cs.btn, padding: stacked ? '8px 12px' : '5px 10px', fontSize: 12, background: '#eff6ff', color: '#3b82f6', borderColor: '#bfdbfe', width: stacked ? '100%' : undefined, justifyContent: 'center' }}
           title="Texto modelo para cadastro de peças"
         >
           📝 Texto Modelo
-        </button>
-        <button
+        </button>}
+        {canEtiquetaMoto && <button
           onClick={() => setEtiquetaMoto(m)}
           style={{ ...cs.btn, padding: stacked ? '8px 12px' : '5px 10px', fontSize: 12, background: '#1d4ed8', color: '#fff', borderColor: '#1d4ed8', width: stacked ? '100%' : undefined, justifyContent: 'center' }}
           title="Cartela de etiquetas Detran"
         >
           🏷 Etiqueta
-        </button>
+        </button>}
       </div>
     );
   }
@@ -1998,6 +2009,7 @@ export default function MotosPage() {
   }
 
   async function salvarTextoModelo() {
+    if (!canEditarMoto) return alert('Seu usuario nao tem permissao para editar moto.');
     if (!textoModeloModal) return;
     setSavingTexto(true);
     try {
@@ -2053,7 +2065,7 @@ export default function MotosPage() {
             </div>
             <div style={{ display: 'flex', gap: 8, width: controlStack ? '100%' : undefined, flexDirection: controlStack ? 'column' : 'row' }}>
               <input style={{ ...cs.input, width: controlStack ? '100%' : compactTable ? 320 : 420 }} placeholder="Buscar por ID, marca, modelo, placa, chassi ou renavam..." value={search} onChange={(e) => setSearch(e.target.value)} />
-              <button style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)', width: controlStack ? '100%' : undefined, justifyContent: 'center' }} onClick={() => { setEditing(null); setModal(true); }}>+ Nova moto</button>
+          {canCriarMoto && <button style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)', width: controlStack ? '100%' : undefined, justifyContent: 'center' }} onClick={() => { setEditing(null); setModal(true); }}>+ Nova moto</button>}
             </div>
           </div>
           {useCardList ? (
