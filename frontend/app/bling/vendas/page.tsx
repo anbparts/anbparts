@@ -1,6 +1,8 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { API_BASE } from '@/lib/api-base';
+import { useAuth } from '@/lib/auth';
+import { canProcessAction } from '@/lib/permissions';
 
 const API = API_BASE;
 
@@ -441,6 +443,7 @@ async function baixarSeparacaoPdf(relatorio: SeparacaoRelatorio) {
 }
 
 export default function VendasBlingPage() {
+  const { user } = useAuth();
   const [dataInicio, setDataInicio] = useState(() => defaultDateRange().dataInicio);
   const [dataFim, setDataFim] = useState(() => defaultDateRange().dataFim);
   const [buscando, setBuscando] = useState(false);
@@ -459,6 +462,8 @@ export default function VendasBlingPage() {
   const [erroPedidosManuais, setErroPedidosManuais] = useState('');
   const [defaults, setDefaults] = useState<Defaults>({ fretePadrao: 29.9, taxaPadraoPct: 17 });
   const [isPhone, setIsPhone] = useState(false);
+  const canAtualizarVendas = canProcessAction(user, 'bling_vendas', 'atualizar_vendas');
+  const canRelatorioSeparacao = canProcessAction(user, 'bling_vendas', 'relatorio_separacao');
 
   useEffect(() => {
     fetch(`${API}/bling/config-produtos`)
@@ -479,6 +484,10 @@ export default function VendasBlingPage() {
   }, []);
 
   async function buscarVendas() {
+    if (!canAtualizarVendas) {
+      alert('Seu usuario nao tem permissao para atualizar vendas.');
+      return;
+    }
     setBuscando(true);
     setBuscou(false);
     setItens([]);
@@ -518,6 +527,10 @@ export default function VendasBlingPage() {
   }
 
   async function buscarRelatorioSeparacao() {
+    if (!canRelatorioSeparacao) {
+      alert('Seu usuario nao tem permissao para gerar relatorio de separacao.');
+      return;
+    }
     setCarregandoSeparacao(true);
     setBuscouSeparacao(false);
     setRelatorioSeparacao(null);
@@ -544,7 +557,7 @@ export default function VendasBlingPage() {
   }
 
   async function gerarPdfSeparacao() {
-    if (!relatorioSeparacao || relatorioSeparacao.pedidos.length === 0) return;
+    if (!relatorioSeparacao || relatorioSeparacao.pedidos.length === 0 || !canRelatorioSeparacao) return;
     setGerandoPdf(true);
     try {
       await baixarSeparacaoPdf(relatorioSeparacao);
@@ -555,6 +568,7 @@ export default function VendasBlingPage() {
   }
 
   async function carregarPedidosManuais(force = false) {
+    if (!canRelatorioSeparacao) return;
     if (!force && pedidosManuais.length > 0) return;
 
     setCarregandoPedidosManuais(true);
@@ -576,6 +590,10 @@ export default function VendasBlingPage() {
   }
 
   async function toggleRelatorioManual() {
+    if (!canRelatorioSeparacao) {
+      alert('Seu usuario nao tem permissao para gerar relatorio de separacao.');
+      return;
+    }
     const nextOpen = !manualAberto;
     setManualAberto(nextOpen);
     if (nextOpen) {
@@ -596,6 +614,10 @@ export default function VendasBlingPage() {
   }
 
   async function buscarRelatorioSeparacaoManual() {
+    if (!canRelatorioSeparacao) {
+      alert('Seu usuario nao tem permissao para gerar relatorio de separacao.');
+      return;
+    }
     if (!pedidosManuaisSelecionados.length) {
       alert('Selecione ao menos um pedido para gerar o relatorio manual.');
       return;
@@ -661,6 +683,10 @@ export default function VendasBlingPage() {
   }
 
   async function baixarItem(idx: number) {
+    if (!canAtualizarVendas) {
+      alert('Seu usuario nao tem permissao para atualizar vendas.');
+      return;
+    }
     const item = itens[idx];
     if ((!item.pecaIds?.length && !item.pecaId) || !item._dataVenda) return;
 
@@ -691,6 +717,10 @@ export default function VendasBlingPage() {
   }
 
   async function aprovarCancelamento(idx: number) {
+    if (!canAtualizarVendas) {
+      alert('Seu usuario nao tem permissao para atualizar vendas.');
+      return;
+    }
     const item = itens[idx];
     if ((!item.pecaIds?.length && !item.pecaId)) return;
 
@@ -775,32 +805,38 @@ export default function VendasBlingPage() {
               <label style={s.label}>Data fim</label>
               <input style={{ ...s.input, width: isPhone ? '100%' : 160, minHeight: isPhone ? 42 : undefined }} type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} />
             </div>
-            <button style={{ ...s.btn, ...phoneButtonStyle, background: '#FF6900', color: '#fff', opacity: buscando ? 0.7 : 1 }} onClick={buscarVendas} disabled={buscando}>
-              {buscando ? 'Buscando...' : 'Buscar vendas'}
-            </button>
-            <button
-              type="button"
-              style={{ ...s.btn, ...phoneButtonStyle, background: 'var(--blue-500)', color: '#fff', opacity: carregandoSeparacao ? 0.7 : 1 }}
-              onClick={buscarRelatorioSeparacao}
-              disabled={carregandoSeparacao}
-            >
-              {carregandoSeparacao ? 'Carregando relatorio...' : 'Relatorio de Separacao'}
-            </button>
-            <button
-              type="button"
-              style={{ ...s.btn, ...phoneButtonStyle, background: manualAberto ? '#0f172a' : 'var(--white)', color: manualAberto ? '#fff' : 'var(--gray-800)', borderColor: '#cbd5e1', opacity: (carregandoPedidosManuais || carregandoSeparacao) ? 0.7 : 1 }}
-              onClick={toggleRelatorioManual}
-              disabled={carregandoPedidosManuais || carregandoSeparacao}
-            >
-              {carregandoPedidosManuais ? 'Carregando pedidos...' : 'Relatorio de Separacao - Manual'}
-            </button>
+            {canAtualizarVendas && (
+              <button style={{ ...s.btn, ...phoneButtonStyle, background: '#FF6900', color: '#fff', opacity: buscando ? 0.7 : 1 }} onClick={buscarVendas} disabled={buscando}>
+                {buscando ? 'Buscando...' : 'Buscar vendas'}
+              </button>
+            )}
+            {canRelatorioSeparacao && (
+              <button
+                type="button"
+                style={{ ...s.btn, ...phoneButtonStyle, background: 'var(--blue-500)', color: '#fff', opacity: carregandoSeparacao ? 0.7 : 1 }}
+                onClick={buscarRelatorioSeparacao}
+                disabled={carregandoSeparacao}
+              >
+                {carregandoSeparacao ? 'Carregando relatorio...' : 'Relatorio de Separacao'}
+              </button>
+            )}
+            {canRelatorioSeparacao && (
+              <button
+                type="button"
+                style={{ ...s.btn, ...phoneButtonStyle, background: manualAberto ? '#0f172a' : 'var(--white)', color: manualAberto ? '#fff' : 'var(--gray-800)', borderColor: '#cbd5e1', opacity: (carregandoPedidosManuais || carregandoSeparacao) ? 0.7 : 1 }}
+                onClick={toggleRelatorioManual}
+                disabled={carregandoPedidosManuais || carregandoSeparacao}
+              >
+                {carregandoPedidosManuais ? 'Carregando pedidos...' : 'Relatorio de Separacao - Manual'}
+              </button>
+            )}
           </div>
           <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 8 }}>
             A busca agora traz pedidos concluidos e cancelados. Frete padrao atual: {fmtMoney(defaults.fretePadrao)} · Taxa padrao: {fmtPercent(defaults.taxaPadraoPct)}
           </div>
         </div>
 
-        {manualAberto && (
+        {manualAberto && canRelatorioSeparacao && (
           <div style={{ ...s.card, padding: isPhone ? 16 : s.card.padding, borderColor: '#dbeafe', background: '#f8fbff' }}>
             <div style={{ display: isPhone ? 'grid' : 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: 14 }}>
               <div style={{ minWidth: 0 }}>
@@ -975,14 +1011,16 @@ export default function VendasBlingPage() {
                   Voce pode editar transportador e observacao interna antes de gerar o PDF.
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={gerarPdfSeparacao}
-                disabled={relatorioSeparacao.pedidos.length === 0 || gerandoPdf}
-                style={{ ...s.btn, ...phoneButtonStyle, background: '#0f172a', color: '#fff', opacity: relatorioSeparacao.pedidos.length === 0 || gerandoPdf ? 0.5 : 1 }}
-              >
-                {gerandoPdf ? 'Gerando PDF...' : 'Gerar PDF'}
-              </button>
+              {canRelatorioSeparacao && (
+                <button
+                  type="button"
+                  onClick={gerarPdfSeparacao}
+                  disabled={relatorioSeparacao.pedidos.length === 0 || gerandoPdf}
+                  style={{ ...s.btn, ...phoneButtonStyle, background: '#0f172a', color: '#fff', opacity: relatorioSeparacao.pedidos.length === 0 || gerandoPdf ? 0.5 : 1 }}
+                >
+                  {gerandoPdf ? 'Gerando PDF...' : 'Gerar PDF'}
+                </button>
+              )}
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10, marginBottom: 14 }}>
@@ -1187,15 +1225,17 @@ export default function VendasBlingPage() {
 
                   {item._erro && <div style={{ fontSize: 12, color: 'var(--red)', marginBottom: 8 }}>{item._erro}</div>}
 
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button
-                      onClick={() => aprovarCancelamento(realIdx)}
-                      disabled={item._aprovandoCancelamento}
-                      style={{ ...s.btn, background: '#b91c1c', color: '#fff', opacity: item._aprovandoCancelamento ? 0.6 : 1 }}
-                    >
-                      {item._aprovandoCancelamento ? 'Aplicando...' : 'Aprovar cancelamento'}
-                    </button>
-                  </div>
+                  {canAtualizarVendas && (
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button
+                        onClick={() => aprovarCancelamento(realIdx)}
+                        disabled={item._aprovandoCancelamento}
+                        style={{ ...s.btn, background: '#b91c1c', color: '#fff', opacity: item._aprovandoCancelamento ? 0.6 : 1 }}
+                      >
+                        {item._aprovandoCancelamento ? 'Aplicando...' : 'Aprovar cancelamento'}
+                      </button>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -1254,18 +1294,20 @@ export default function VendasBlingPage() {
 
                   {item._erro && <div style={{ fontSize: 12, color: 'var(--red)', marginBottom: 8 }}>{item._erro}</div>}
 
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button
-                      onClick={() => baixarItem(realIdx)}
-                      disabled={item._baixando || !item._dataVenda}
-                      style={{ ...s.btn, background: 'var(--green)', color: '#fff', opacity: (item._baixando || !item._dataVenda) ? 0.6 : 1 }}
-                    >
-                      {item._baixando ? 'Salvando...' : 'Confirmar baixa'}
-                    </button>
-                    <button onClick={() => updateItem(realIdx, 'jaVendida', true)} style={{ ...s.btn, background: 'var(--gray-100)', color: 'var(--gray-500)', border: '1px solid var(--border)' }}>
-                      Ignorar
-                    </button>
-                  </div>
+                  {canAtualizarVendas && (
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button
+                        onClick={() => baixarItem(realIdx)}
+                        disabled={item._baixando || !item._dataVenda}
+                        style={{ ...s.btn, background: 'var(--green)', color: '#fff', opacity: (item._baixando || !item._dataVenda) ? 0.6 : 1 }}
+                      >
+                        {item._baixando ? 'Salvando...' : 'Confirmar baixa'}
+                      </button>
+                      <button onClick={() => updateItem(realIdx, 'jaVendida', true)} style={{ ...s.btn, background: 'var(--gray-100)', color: 'var(--gray-500)', border: '1px solid var(--border)' }}>
+                        Ignorar
+                      </button>
+                    </div>
+                  )}
                 </div>
               );
             })}

@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { API_BASE } from '@/lib/api-base';
 import { compressFotoCapaFile } from '@/lib/image-compression';
+import { useAuth } from '@/lib/auth';
+import { canProcessAction } from '@/lib/permissions';
 
 const API = API_BASE;
 
@@ -143,6 +145,7 @@ function SortableTh({ column, sort, onSort }: { column: { key: string; label: st
 }
 
 export default function EtiquetasDetranPage() {
+  const { user } = useAuth();
   const [linhas, setLinhas] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [filtros, setFiltros] = useState({ sku: '', descricao: '', tipoEtiqueta: '', tipoPeca: '', etiqueta: '', status: '', qtdeEtiquetasSku: '' });
@@ -159,6 +162,8 @@ export default function EtiquetasDetranPage() {
   const [sort, setSort] = useState<SortState>({ key: 'sku', dir: 'asc' });
   const [pendenciasSort, setPendenciasSort] = useState<SortState>({ key: 'dataVenda', dir: 'desc' });
   const [isPhone, setIsPhone] = useState(false);
+  const canProcessarBaixa = canProcessAction(user, 'etiquetas_detran', 'processar_baixa');
+  const canProcessarDevolucao = canProcessAction(user, 'etiquetas_detran', 'processar_devolucao');
   const linhasOrdenadas = useMemo(() => sortRows(linhas, sort), [linhas, sort]);
   const pendenciasOrdenadas = useMemo(() => sortRows(pendencias, pendenciasSort), [pendencias, pendenciasSort]);
 
@@ -200,6 +205,10 @@ export default function EtiquetasDetranPage() {
   }
 
   async function abrirPendencias() {
+    if (!canProcessarBaixa) {
+      alert('Seu usuario nao tem permissao para processar baixa de etiquetas.');
+      return;
+    }
     setModalPendencias(true);
     setLoadingPendencias(true);
     try {
@@ -213,6 +222,10 @@ export default function EtiquetasDetranPage() {
   }
 
   function abrirModalBaixa(linha: any) {
+    if (!canProcessarBaixa) {
+      alert('Seu usuario nao tem permissao para processar baixa de etiquetas.');
+      return;
+    }
     setModalBaixa(linha);
     setComprovanteDataUrl(null);
     setComprovanteNome('');
@@ -240,7 +253,7 @@ export default function EtiquetasDetranPage() {
   }
 
   async function confirmarBaixaComComprovante() {
-    if (!modalBaixa) return;
+    if (!modalBaixa || !canProcessarBaixa) return;
     const linha = modalBaixa;
     const key = `${linha.pecaId}|${linha.etiqueta}`;
     setConfirmando(key);
@@ -273,9 +286,12 @@ export default function EtiquetasDetranPage() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, flexDirection: isPhone ? 'column' : 'row', width: isPhone ? '100%' : undefined }}>
+          {canProcessarBaixa && (
           <button style={{ ...s.btn, background: '#7c3aed', color: '#fff', width: isPhone ? '100%' : undefined }} onClick={abrirPendencias}>
             Pendencias Baixa
           </button>
+          )}
+          {canProcessarDevolucao && (
           <button style={{ ...s.btn, background: '#2563eb', color: '#fff', width: isPhone ? '100%' : undefined }} onClick={async () => {
             setPendenciasDevOpen(true);
             setLoadingPendenciasDev(true);
@@ -288,6 +304,7 @@ export default function EtiquetasDetranPage() {
           }}>
             Pendências Devolução
           </button>
+          )}
         </div>
       </div>
 
