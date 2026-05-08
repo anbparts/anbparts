@@ -5,8 +5,8 @@ import { usePathname } from 'next/navigation';
 import { LoginPage, useAuth } from '@/lib/auth';
 import { API_BASE } from '@/lib/api-base';
 import { GlobalSensitiveNumberMask } from '@/lib/company-values';
-import { canAccessPage } from '@/lib/permissions';
-import { getNavLabel, Sidebar, type SidebarMode } from './Sidebar';
+import { canAccessPage, isBruno } from '@/lib/permissions';
+import { getNavLabel, NAV, Sidebar, type SidebarMode } from './Sidebar';
 
 const DESKTOP_SIDEBAR_WIDTH = 252;
 const TABLET_RAIL_WIDTH = 88;
@@ -29,6 +29,237 @@ function ShellButtonIcon({ open }: { open: boolean }) {
       <path d="M4 12h16" />
       <path d="M4 17h16" />
     </svg>
+  );
+}
+
+function AccessBlockedPanel({
+  pathname,
+  user,
+  mode,
+}: {
+  pathname: string;
+  user: any;
+  mode: SidebarMode;
+}) {
+  const isDashboard = pathname === '/';
+  const isCompact = mode === 'phone';
+  const allowedPages = NAV
+    .flatMap((group) => {
+      if (group.requiresBruno && !isBruno(user) && !user?.isAdmin) return [];
+      return group.items;
+    })
+    .filter((item) => item.href !== '/' && canAccessPage(user, item.href))
+    .slice(0, 6);
+
+  return (
+    <div
+      style={{
+        flex: 1,
+        minHeight: '100%',
+        padding: isCompact ? 16 : 28,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: '#f8fafc',
+      }}
+    >
+      <section
+        style={{
+          width: '100%',
+          maxWidth: 920,
+          background: '#fff',
+          border: '1px solid #dbe3ef',
+          borderRadius: isCompact ? 16 : 20,
+          overflow: 'hidden',
+          boxShadow: '0 24px 60px rgba(15, 23, 42, 0.10)',
+        }}
+      >
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: isCompact ? '1fr' : 'minmax(0, 1fr) 260px',
+            gap: isCompact ? 0 : 24,
+          }}
+        >
+          <div style={{ padding: isCompact ? 22 : 32 }}>
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 10,
+                padding: '8px 11px',
+                borderRadius: 999,
+                background: '#ecfdf5',
+                color: '#047857',
+                fontSize: 12,
+                fontWeight: 800,
+                marginBottom: 18,
+              }}
+            >
+              <span
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: 999,
+                  background: '#10b981',
+                  display: 'inline-block',
+                }}
+              />
+              Acesso ativo
+            </div>
+
+            <h1
+              style={{
+                margin: 0,
+                fontFamily: 'Fraunces, serif',
+                fontSize: isCompact ? 30 : 42,
+                lineHeight: 1.05,
+                fontWeight: 700,
+                color: '#0f172a',
+              }}
+            >
+              {isDashboard ? 'SISTEMA ANB PARTS' : 'Acesso bloqueado'}
+            </h1>
+
+            <p
+              style={{
+                margin: '14px 0 0',
+                maxWidth: 620,
+                color: '#475569',
+                fontSize: isCompact ? 14 : 15,
+                lineHeight: 1.7,
+              }}
+            >
+              {isDashboard
+                ? 'Seu usuario entrou normalmente, mas o Dashboard nao esta liberado para este perfil.'
+                : 'Seu usuario nao tem permissao para acessar esta pagina.'}
+            </p>
+
+            <div
+              style={{
+                marginTop: 18,
+                padding: '14px 16px',
+                borderRadius: 14,
+                border: '1px solid #bfdbfe',
+                background: '#eff6ff',
+                color: '#1e3a8a',
+                fontSize: 13,
+                lineHeight: 1.6,
+                fontWeight: 600,
+              }}
+            >
+              Use o menu lateral para abrir as paginas liberadas ou solicite ao Bruno a permissao do Dashboard.
+            </div>
+
+            {allowedPages.length ? (
+              <div style={{ marginTop: 22 }}>
+                <div
+                  style={{
+                    fontSize: 11,
+                    textTransform: 'uppercase',
+                    color: '#64748b',
+                    fontWeight: 800,
+                    marginBottom: 10,
+                  }}
+                >
+                  Paginas liberadas
+                </div>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: isCompact ? '1fr' : 'repeat(auto-fit, minmax(160px, 1fr))',
+                    gap: 10,
+                  }}
+                >
+                  {allowedPages.map((item) => (
+                    <a
+                      key={item.href}
+                      href={item.href}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 12,
+                        padding: '12px 14px',
+                        borderRadius: 12,
+                        border: '1px solid #e2e8f0',
+                        color: '#0f172a',
+                        background: '#fff',
+                        textDecoration: 'none',
+                        fontSize: 13,
+                        fontWeight: 800,
+                      }}
+                    >
+                      <span>{item.label}</span>
+                      <span aria-hidden="true" style={{ color: '#2563eb' }}>›</span>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div
+                style={{
+                  marginTop: 22,
+                  padding: '14px 16px',
+                  borderRadius: 14,
+                  border: '1px solid #fed7aa',
+                  background: '#fff7ed',
+                  color: '#9a3412',
+                  fontSize: 13,
+                  lineHeight: 1.6,
+                  fontWeight: 700,
+                }}
+              >
+                Nenhuma pagina foi liberada para este usuario ainda.
+              </div>
+            )}
+          </div>
+
+          {!isCompact ? (
+            <aside
+              style={{
+                background: '#0f172a',
+                color: '#fff',
+                padding: 28,
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between',
+                gap: 24,
+              }}
+            >
+              <div>
+                <div
+                  style={{
+                    width: 56,
+                    height: 56,
+                    borderRadius: 16,
+                    background: '#1d4ed8',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontWeight: 900,
+                    fontSize: 20,
+                    marginBottom: 18,
+                  }}
+                >
+                  ANB
+                </div>
+                <div style={{ fontSize: 18, lineHeight: 1.3, fontWeight: 800 }}>
+                  Ambiente interno protegido
+                </div>
+                <div style={{ marginTop: 10, color: '#cbd5e1', fontSize: 13, lineHeight: 1.6 }}>
+                  Perfil de acesso aplicado para {user?.displayName || user?.username || 'usuario'}.
+                </div>
+              </div>
+
+              <div style={{ color: '#94a3b8', fontSize: 12, lineHeight: 1.6 }}>
+                Permissoes de pagina e processo sao controladas em Configuracoes.
+              </div>
+            </aside>
+          ) : null}
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -337,14 +568,7 @@ export function AuthWrapper({ children }: { children: React.ReactNode }) {
           }}
         >
           <GlobalSensitiveNumberMask>
-            {canOpenCurrentPage ? children : (
-              <div style={{ padding: 28 }}>
-                <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 14, padding: 22, maxWidth: 560 }}>
-                  <div style={{ fontSize: 18, fontWeight: 800, color: '#0f172a', marginBottom: 8 }}>Acesso bloqueado</div>
-                  <div style={{ fontSize: 14, color: '#64748b', lineHeight: 1.6 }}>Seu usuario nao tem permissao para acessar esta pagina.</div>
-                </div>
-              </div>
-            )}
+            {canOpenCurrentPage ? children : <AccessBlockedPanel pathname={pathname || '/'} user={user} mode={sidebarMode} />}
           </GlobalSensitiveNumberMask>
         </main>
       </div>
