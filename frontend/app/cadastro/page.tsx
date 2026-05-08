@@ -125,6 +125,12 @@ function normalizarListaSkus(value: string) {
     .filter(Boolean);
 }
 
+function clampPacote(value: number, fallback: number) {
+  const parsed = Math.floor(Number(value));
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.max(1, Math.min(100, parsed));
+}
+
 function normalizarLinhaCategoria(produto: any): CadastroCategoriaLinha {
   const encontradoNuvemshop = !!produto.encontradoNuvemshop;
   const semCategoria = !!produto.semCategoria;
@@ -269,7 +275,10 @@ export default function CadastroPage() {
   const [categoriaSkuProcessando, setCategoriaSkuProcessando] = useState('');
   const [categoriaResultado, setCategoriaResultado] = useState('');
   const [categoriaStatus, setCategoriaStatus] = useState('');
+  const [categoriaFase, setCategoriaFase] = useState('');
   const [categoriaProgresso, setCategoriaProgresso] = useState({ atual: 0, total: 0 });
+  const [categoriaPacoteIa, setCategoriaPacoteIa] = useState(20);
+  const [categoriaPacoteNuvemshop, setCategoriaPacoteNuvemshop] = useState(20);
   const [categoriasNuvemshop, setCategoriasNuvemshop] = useState<CategoriaNuvemshop[]>([]);
   const [categoriaSugestoes, setCategoriaSugestoes] = useState<Record<string, CadastroCategoriaSugestao>>({});
   const [viewportMode, setViewportMode] = useState<'phone' | 'tablet-portrait' | 'tablet-landscape' | 'desktop'>('desktop');
@@ -456,6 +465,7 @@ export default function CadastroPage() {
     setCategoriaSelecionados(new Set());
     setCategoriaSugestoes({});
     setCategoriaSkuProcessando('');
+    setCategoriaFase('');
     setCategoriaStatus('Buscando produtos na Nuvemshop...');
     setCategoriaProgresso({ atual: 0, total: 0 });
     try {
@@ -504,15 +514,22 @@ export default function CadastroPage() {
     setCategoriaProcessando(true);
     setCategoriaResultado('');
     setCategoriaSugestoes({});
+    setCategoriaFase('IA');
     setCategoriaProgresso({ atual: 0, total: alvo.length });
     const sugestoesMap: Record<string, CadastroCategoriaSugestao> = {};
+    const pacoteIa = clampPacote(categoriaPacoteIa, 20);
+    const pacoteNuvemshop = clampPacote(categoriaPacoteNuvemshop, 20);
 
     try {
-      const lotesIa = dividirEmLotes(alvo, 8);
+      const lotesIa = dividirEmLotes(alvo, pacoteIa);
       let analisados = 0;
-      for (const lote of lotesIa) {
-        setCategoriaSkuProcessando(lote[0]?.sku || '');
-        setCategoriaStatus(`IA analisando categorias (${analisados + 1}-${Math.min(analisados + lote.length, alvo.length)}/${alvo.length})...`);
+      for (let loteIndex = 0; loteIndex < lotesIa.length; loteIndex += 1) {
+        const lote = lotesIa[loteIndex];
+        const primeiroSku = lote[0]?.sku || '';
+        const ultimoSku = lote[lote.length - 1]?.sku || primeiroSku;
+        setCategoriaSkuProcessando('');
+        setCategoriaFase('IA');
+        setCategoriaStatus(`IA analisando lote ${loteIndex + 1}/${lotesIa.length}: ${lote.length} SKU(s) (${primeiroSku}${ultimoSku && ultimoSku !== primeiroSku ? ` ate ${ultimoSku}` : ''})`);
         const resp = await fetch(`${API}/nuvemshop/sugerir-ia`, {
           method: 'POST',
           credentials: 'include',
@@ -543,9 +560,15 @@ export default function CadastroPage() {
 
       let atualizados = 0;
       let erros = 0;
-      for (const lote of dividirEmLotes(aplicacoes, 20)) {
-        setCategoriaSkuProcessando(lote[0]?.sku || '');
-        setCategoriaStatus(`Aplicando na Nuvemshop (${atualizados + 1}-${Math.min(atualizados + lote.length, aplicacoes.length)}/${aplicacoes.length})...`);
+      const lotesNuvemshop = dividirEmLotes(aplicacoes, pacoteNuvemshop);
+      setCategoriaProgresso({ atual: 0, total: aplicacoes.length });
+      for (let loteIndex = 0; loteIndex < lotesNuvemshop.length; loteIndex += 1) {
+        const lote = lotesNuvemshop[loteIndex];
+        const primeiroSku = lote[0]?.sku || '';
+        const ultimoSku = lote[lote.length - 1]?.sku || primeiroSku;
+        setCategoriaSkuProcessando('');
+        setCategoriaFase('Nuvemshop');
+        setCategoriaStatus(`Nuvemshop aplicando lote ${loteIndex + 1}/${lotesNuvemshop.length}: ${lote.length} SKU(s) (${primeiroSku}${ultimoSku && ultimoSku !== primeiroSku ? ` ate ${ultimoSku}` : ''})`);
         const resp = await fetch(`${API}/nuvemshop/aplicar`, {
           method: 'POST',
           credentials: 'include',
@@ -573,13 +596,16 @@ export default function CadastroPage() {
           skusOk.forEach((sku) => next.delete(sku));
           return next;
         });
+        setCategoriaProgresso({ atual: Math.min(atualizados + erros, aplicacoes.length), total: aplicacoes.length });
       }
 
       setCategoriaResultado(`Processamento concluido: ${atualizados} SKU(s) atualizado(s), ${erros} com erro.`);
       setCategoriaStatus(`Categorias concluidas: ${atualizados} SKU(s) OK, ${erros} com erro.`);
+      setCategoriaFase('Concluido');
     } catch (e: any) {
       alert(e.message || 'Erro ao processar categorias');
       setCategoriaStatus('');
+      setCategoriaFase('');
     } finally {
       setCategoriaProcessando(false);
       setCategoriaSkuProcessando('');
@@ -1158,10 +1184,42 @@ Deseja forçar a exclusão mesmo assim?`);
   const motoSelecionada = motos.find((m) => String(m.id) === String(form.motoId));
   const formOk = camposOk(form);
   const fotoCapaDisplayName = finalizarFotoCapaNome || (finalizarFotoCapa ? 'foto-capa.jpg' : '');
+  const categoriaPercentual = categoriaProgresso.total > 0 ? Math.round((categoriaProgresso.atual / categoriaProgresso.total) * 100) : (categoriaBuscando || categoriaProcessando ? 12 : 100);
   const renderCategoriaConteudo = () => (
     <>
       <div style={{ ...s.card, padding: isPhone ? '14px' : '18px' }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 12 }}>Buscar SKUs para categoria</div>
+        <div style={{ display: isPhone ? 'grid' : 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 14, marginBottom: 12 }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-800)' }}>Buscar SKUs para categoria</div>
+            <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 3 }}>Pacotes configuram quantos registros vao em cada chamada.</div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr 1fr' : '120px 140px', gap: 8, minWidth: isPhone ? 0 : 270 }}>
+            <div>
+              <label style={s.label}>Pacote IA</label>
+              <input
+                type="number"
+                min={1}
+                max={100}
+                value={categoriaPacoteIa}
+                onChange={(e) => setCategoriaPacoteIa(clampPacote(Number(e.target.value), 20))}
+                disabled={categoriaProcessando || categoriaBuscando}
+                style={{ ...s.input, minHeight: 34 }}
+              />
+            </div>
+            <div>
+              <label style={s.label}>Pacote Nuvemshop</label>
+              <input
+                type="number"
+                min={1}
+                max={100}
+                value={categoriaPacoteNuvemshop}
+                onChange={(e) => setCategoriaPacoteNuvemshop(clampPacote(Number(e.target.value), 20))}
+                disabled={categoriaProcessando || categoriaBuscando}
+                style={{ ...s.input, minHeight: 34 }}
+              />
+            </div>
+          </div>
+        </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14, flexDirection: isPhone ? 'column' : 'row' }}>
           {(['data', 'skus'] as const).map((modo) => (
             <button key={modo} onClick={() => setCategoriaModo(modo)}
@@ -1193,15 +1251,25 @@ Deseja forçar a exclusão mesmo assim?`);
       </div>
 
       {categoriaStatus && (
-        <div style={{ ...s.card, padding: isPhone ? 12 : 14, borderColor: '#c4b5fd', background: '#faf5ff' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', marginBottom: 8 }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: '#5b21b6' }}>{categoriaStatus}</div>
+        <div style={{ ...s.card, padding: isPhone ? 12 : 14, borderColor: categoriaFase === 'Concluido' ? '#86efac' : '#c4b5fd', background: categoriaFase === 'Concluido' ? '#f0fdf4' : '#faf5ff' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: isPhone ? 'flex-start' : 'center', marginBottom: 8, flexDirection: isPhone ? 'column' : 'row' }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                {categoriaFase && <span style={s.badge(categoriaFase === 'Concluido' ? '#166534' : '#6d28d9', categoriaFase === 'Concluido' ? '#dcfce7' : '#ede9fe', categoriaFase === 'Concluido' ? '#86efac' : '#c4b5fd')}>{categoriaFase}</span>}
+                <span style={{ fontSize: 13, fontWeight: 800, color: categoriaFase === 'Concluido' ? '#166534' : '#5b21b6' }}>{categoriaStatus}</span>
+              </div>
+              {categoriaProcessando && (
+                <div style={{ marginTop: 6, fontSize: 12, color: '#6d28d9', fontWeight: 700 }}>
+                  Pacote IA: {clampPacote(categoriaPacoteIa, 20)} registro(s) | Pacote Nuvemshop: {clampPacote(categoriaPacoteNuvemshop, 20)} registro(s)
+                </div>
+              )}
+            </div>
             {categoriaProgresso.total > 0 && (
-              <div style={{ fontSize: 12, color: '#6d28d9', fontWeight: 700, whiteSpace: 'nowrap' }}>{categoriaProgresso.atual}/{categoriaProgresso.total}</div>
+              <div style={{ fontSize: 12, color: categoriaFase === 'Concluido' ? '#166534' : '#6d28d9', fontWeight: 800, whiteSpace: 'nowrap' }}>{categoriaProgresso.atual}/{categoriaProgresso.total} ({categoriaPercentual}%)</div>
             )}
           </div>
-          <div style={{ height: 8, borderRadius: 999, background: '#ede9fe', overflow: 'hidden' }}>
-            <div style={{ height: '100%', width: `${categoriaProgresso.total > 0 ? Math.round((categoriaProgresso.atual / categoriaProgresso.total) * 100) : (categoriaBuscando ? 12 : 100)}%`, background: '#7c3aed', transition: 'width .2s ease' }} />
+          <div style={{ height: 10, borderRadius: 999, background: categoriaFase === 'Concluido' ? '#dcfce7' : '#ede9fe', overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${categoriaPercentual}%`, background: categoriaFase === 'Concluido' ? '#22c55e' : '#7c3aed', transition: 'width .2s ease' }} />
           </div>
         </div>
       )}
@@ -1231,7 +1299,7 @@ Deseja forçar a exclusão mesmo assim?`);
               <button onClick={selecionarCategoriaPendentes} style={{ ...s.btn, background: 'var(--white)', border: '1px solid #c4b5fd', color: '#5b21b6', width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>Selecionar pendentes</button>
               <button onClick={() => setCategoriaSelecionados(new Set())} style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>Limpar selecao</button>
               <button onClick={processarCategoriasCadastro} disabled={!canProcessarCategoria || categoriaProcessando || categoriaSelecionados.size === 0} style={{ ...s.btn, background: '#7c3aed', color: '#fff', opacity: (!canProcessarCategoria || categoriaProcessando) ? 0.7 : 1, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>
-                {categoriaProcessando ? `Processando ${categoriaSkuProcessando || 'categorias'}...` : 'Processar categorias selecionadas'}
+                {categoriaProcessando ? `Processando ${categoriaFase || 'categorias'}...` : 'Processar categorias selecionadas'}
               </button>
             </div>
           </div>
@@ -1243,7 +1311,7 @@ Deseja forçar a exclusão mesmo assim?`);
               {categoriaLinhas.map((linha) => {
                 const sugestao = categoriaSugestoes[linha.sku];
                 return (
-                  <div key={linha.sku} style={{ border: linha.sku === categoriaSkuProcessando ? '2px solid #7c3aed' : '1px solid var(--border)', borderRadius: 12, padding: 12, background: linha.sku === categoriaSkuProcessando ? '#faf5ff' : (linha.temFlag ? 'var(--white)' : '#f8fafc'), display: 'grid', gap: 10, opacity: linha.temFlag || linha.sku === categoriaSkuProcessando ? 1 : 0.78 }}>
+                  <div key={linha.sku} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 12, background: linha.temFlag ? 'var(--white)' : '#f8fafc', display: 'grid', gap: 10, opacity: linha.temFlag ? 1 : 0.78 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
                       <div style={{ minWidth: 0 }}>
                         <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--blue-600)', fontWeight: 800 }}>{linha.sku}</div>
@@ -1280,7 +1348,7 @@ Deseja forçar a exclusão mesmo assim?`);
                     {categoriaLinhas.map((linha) => {
                       const sugestao = categoriaSugestoes[linha.sku];
                       return (
-                        <tr key={linha.sku} style={{ background: linha.sku === categoriaSkuProcessando ? '#faf5ff' : (linha.temFlag ? 'var(--white)' : '#f8fafc'), opacity: linha.temFlag || linha.sku === categoriaSkuProcessando ? 1 : 0.72, outline: linha.sku === categoriaSkuProcessando ? '2px solid #7c3aed' : 'none', outlineOffset: -2 }}>
+                        <tr key={linha.sku} style={{ background: linha.temFlag ? 'var(--white)' : '#f8fafc', opacity: linha.temFlag ? 1 : 0.72 }}>
                           <td style={{ ...s.td, textAlign: 'center' }}><input type="checkbox" checked={categoriaSelecionados.has(linha.sku)} disabled={!linha.temFlag} onChange={() => toggleCategoriaSelecionado(linha.sku)} /></td>
                           <td style={{ ...s.td, fontFamily: 'JetBrains Mono, monospace', color: 'var(--blue-600)', fontWeight: 700, whiteSpace: 'nowrap' }}>{linha.sku}</td>
                           <td style={{ ...s.td, maxWidth: 360 }}><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{linha.titulo}</div></td>
