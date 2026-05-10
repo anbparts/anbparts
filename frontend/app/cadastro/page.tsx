@@ -72,6 +72,7 @@ const FOTOS_SISTEMA_LABEL: Record<CadastroFotosSistema, string> = {
   ml: 'Mercado Livre',
   nuvemshop: 'Nuvemshop',
 };
+const CATEGORIA_PACOTES_STORAGE_KEY = 'anb.cadastro.categoria.pacotes';
 
 const EMPTY_FORM = {
   motoId: '', idPeca: '', descricao: '', descricaoPeca: '', precoVenda: '', sufixoTitulo: '',
@@ -279,6 +280,7 @@ export default function CadastroPage() {
   const [categoriaProgresso, setCategoriaProgresso] = useState({ atual: 0, total: 0 });
   const [categoriaPacoteIa, setCategoriaPacoteIa] = useState(20);
   const [categoriaPacoteNuvemshop, setCategoriaPacoteNuvemshop] = useState(20);
+  const [categoriaPacoteSalvoMsg, setCategoriaPacoteSalvoMsg] = useState('');
   const [categoriasNuvemshop, setCategoriasNuvemshop] = useState<CategoriaNuvemshop[]>([]);
   const [categoriaSugestoes, setCategoriaSugestoes] = useState<Record<string, CadastroCategoriaSugestao>>({});
   const [viewportMode, setViewportMode] = useState<'phone' | 'tablet-portrait' | 'tablet-landscape' | 'desktop'>('desktop');
@@ -302,6 +304,18 @@ export default function CadastroPage() {
       tabletPortraitMedia.removeEventListener('change', sync);
       tabletLandscapeMedia.removeEventListener('change', sync);
     };
+  }, []);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(CATEGORIA_PACOTES_STORAGE_KEY);
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      setCategoriaPacoteIa(clampPacote(Number(data?.ia), 20));
+      setCategoriaPacoteNuvemshop(clampPacote(Number(data?.nuvemshop), 20));
+    } catch {
+      // Se a configuracao local estiver corrompida, mantem o padrao.
+    }
   }, []);
 
   const isPhone = viewportMode === 'phone';
@@ -503,6 +517,16 @@ export default function CadastroPage() {
 
   function selecionarCategoriaPendentes() {
     setCategoriaSelecionados(new Set(categoriaLinhas.filter((linha) => linha.temFlag).map((linha) => linha.sku)));
+  }
+
+  function salvarPacotesCategoria() {
+    const ia = clampPacote(categoriaPacoteIa, 20);
+    const nuvemshop = clampPacote(categoriaPacoteNuvemshop, 20);
+    setCategoriaPacoteIa(ia);
+    setCategoriaPacoteNuvemshop(nuvemshop);
+    window.localStorage.setItem(CATEGORIA_PACOTES_STORAGE_KEY, JSON.stringify({ ia, nuvemshop }));
+    setCategoriaPacoteSalvoMsg('Configuracao salva');
+    window.setTimeout(() => setCategoriaPacoteSalvoMsg(''), 2500);
   }
 
   async function processarCategoriasCadastro() {
@@ -1193,7 +1217,7 @@ Deseja forçar a exclusão mesmo assim?`);
             <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-800)' }}>Buscar SKUs para categoria</div>
             <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 3 }}>Pacotes configuram quantos registros vao em cada chamada.</div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr 1fr' : '120px 140px', gap: 8, minWidth: isPhone ? 0 : 270 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr 1fr' : '120px 140px auto', gap: 8, minWidth: isPhone ? 0 : 390, alignItems: 'end' }}>
             <div>
               <label style={s.label}>Pacote IA</label>
               <input
@@ -1217,6 +1241,17 @@ Deseja forçar a exclusão mesmo assim?`);
                 disabled={categoriaProcessando || categoriaBuscando}
                 style={{ ...s.input, minHeight: 34 }}
               />
+            </div>
+            <div style={{ gridColumn: isPhone ? '1 / -1' : 'auto' }}>
+              <button
+                type="button"
+                onClick={salvarPacotesCategoria}
+                disabled={categoriaProcessando || categoriaBuscando}
+                style={{ ...s.btn, minHeight: 34, width: isPhone ? '100%' : undefined, justifyContent: 'center', background: '#0f172a', color: '#fff', opacity: (categoriaProcessando || categoriaBuscando) ? 0.65 : 1 }}
+              >
+                Salvar configuracao
+              </button>
+              {categoriaPacoteSalvoMsg && <div style={{ marginTop: 4, fontSize: 11, color: 'var(--green)', fontWeight: 800 }}>{categoriaPacoteSalvoMsg}</div>}
             </div>
           </div>
         </div>
