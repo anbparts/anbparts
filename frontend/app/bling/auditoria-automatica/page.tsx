@@ -29,6 +29,16 @@ type Resumo = {
   totalSemDivergencia?: number;
   porTipo?: Record<string, number>;
   progresso?: ProgressoExecucao | null;
+  pedidosAbertosIgnorados?: {
+    aplicado?: boolean;
+    dataInicio?: string;
+    dataFim?: string;
+    totalPedidosAbertos?: number;
+    totalSkusPedidosAbertos?: number;
+    totalDivergenciasIgnoradas?: number;
+    skusIgnorados?: string[];
+    erro?: string;
+  } | null;
 };
 type Divergencia = {
   sku: string; tipo: string; titulo: string; detalhe: string; estoqueAnb: number; estoqueBling: number; qtdTotalAnb: number; qtdVendidasAnb: number;
@@ -189,6 +199,7 @@ export default function AuditoriaAutomaticaPage() {
 
   const resumoAtual = useMemo(() => execucaoSelecionada?.resumo || config?.ultimaExecucao?.resumo || null, [config, execucaoSelecionada]);
   const progressoAtual = resumoAtual?.progresso || null;
+  const pedidosAbertosIgnoradosAtual = resumoAtual?.pedidosAbertosIgnorados || null;
   const totalParaProcessarAtual = Math.max(
     Number(progressoAtual?.totalParaProcessar || 0),
     Number(execucaoSelecionada?.totalSkus || 0),
@@ -436,6 +447,25 @@ export default function AuditoriaAutomaticaPage() {
                 </button>
               )}
             </div>
+            {pedidosAbertosIgnoradosAtual && (
+              <div style={{ marginTop: 12, background: pedidosAbertosIgnoradosAtual.erro ? '#fff7ed' : '#eff6ff', border: `1px solid ${pedidosAbertosIgnoradosAtual.erro ? '#fdba74' : '#bfdbfe'}`, borderRadius: 10, padding: '12px 14px' }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: pedidosAbertosIgnoradosAtual.erro ? 'var(--amber)' : 'var(--blue-500)', marginBottom: 4 }}>
+                  Pedidos em aberto ignorados na auditoria
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--gray-700)', lineHeight: 1.5 }}>
+                  {pedidosAbertosIgnoradosAtual.erro
+                    ? `Filtro nao aplicado: ${pedidosAbertosIgnoradosAtual.erro}`
+                    : `${pedidosAbertosIgnoradosAtual.totalDivergenciasIgnoradas || 0} divergencia(s) de estoque ignorada(s) por pedido aberto entre ${pedidosAbertosIgnoradosAtual.dataInicio || '-'} e ${pedidosAbertosIgnoradosAtual.dataFim || '-'}.`}
+                </div>
+                {!!pedidosAbertosIgnoradosAtual.skusIgnorados?.length && (
+                  <div style={{ marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {pedidosAbertosIgnoradosAtual.skusIgnorados.map((sku) => (
+                      <span key={sku} style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, background: 'var(--white)', border: '1px solid #bfdbfe', color: 'var(--blue-500)', borderRadius: 6, padding: '3px 7px' }}>{sku}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 

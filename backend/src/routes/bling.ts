@@ -3570,6 +3570,22 @@ function getTimezoneDateParts(date = new Date()) {
   };
 }
 
+function formatDateKey(date: Date) {
+  return date.toISOString().split('T')[0];
+}
+
+function getAuditoriaPedidosAbertosDateRange() {
+  const endKey = getTimezoneDateParts(new Date()).dateKey;
+  const end = new Date(`${endKey}T00:00:00Z`);
+  const start = new Date(end);
+  start.setUTCDate(start.getUTCDate() - 7);
+
+  return {
+    dataInicio: formatDateKey(start),
+    dataFim: formatDateKey(end),
+  };
+}
+
 function dateKeyToDayNumber(dateKey: string | null | undefined) {
   if (!dateKey || !/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return null;
   const value = Date.parse(`${dateKey}T00:00:00Z`);
@@ -3714,6 +3730,117 @@ function buildAuditoriaResumo(resultado: any) {
     porTipo,
     porMoto,
   };
+}
+
+async function collectSkusPedidosAbertosParaAuditoria() {
+  const { dataInicio, dataFim } = getAuditoriaPedidosAbertosDateRange();
+  const pedidosMeta = await listPedidos(dataInicio, dataFim);
+  const skus = new Set<string>();
+  const pedidosAbertos: Array<{ pedidoId: number; pedidoNum: string; dataVenda: string; skus: string[] }> = [];
+
+  for (const pedidoMeta of pedidosMeta) {
+    const pedidoId = Number(pedidoMeta?.id || 0);
+    if (!pedidoId) continue;
+
+    await sleep(120);
+    const detalhe = await blingReq(`/pedidos/vendas/${pedidoId}`) as any;
+    const pedido = detalhe?.data || {};
+    const situacaoDetalhe = classifyOrderSituation(pedido);
+    const situacao = resolveSituacaoPedidoAberto(pedidoMeta?.situacao, situacaoDetalhe);
+    if (!isSituacaoEmAberto(situacao)) continue;
+
+    const skusPedido = Array.from(new Set((pedido?.itens || [])
+      .map((item: any) => getBaseSku(String(item?.produto?.codigo || item?.codigo || item?.sku || '').trim()))
+      .filter(Boolean)));
+
+    skusPedido.forEach((sku) => skus.add(sku));
+    pedidosAbertos.push({
+      pedidoId,
+      pedidoNum: String(pedido?.numero || pedidoId || '').trim(),
+      dataVenda: String(pedido?.data || '').split('T')[0] || '',
+      skus: skusPedido,
+    });
+  }
+
+  return {
+    dataInicio,
+    dataFim,
+    pedidosAbertos,
+    skus,
+  };
+}
+
+async function aplicarFiltroPedidosAbertosAuditoria(resultado: any) {
+  const divergenciasOriginais = Array.isArray(resultado?.divergencias) ? resultado.divergencias : [];
+  if (!divergenciasOriginais.length) {
+    return {
+      resultado,
+      resumoPedidosAbertos: {
+        aplicado: false,
+        motivo: 'Sem divergencias para revisar',
+        totalDivergenciasIgnoradas: 0,
+        skusIgnorados: [],
+      },
+    };
+  }
+
+  try {
+    const consulta = await collectSkusPedidosAbertosParaAuditoria();
+    const tiposIgnoraveis = new Set(['estoque_anb_maior']);
+    const divergenciasIgnoradas: any[] = [];
+    const divergenciasMantidas = divergenciasOriginais.filter((divergencia: any) => {
+      const sku = getBaseSku(divergencia?.sku);
+      const deveIgnorar = !!sku && consulta.skus.has(sku) && tiposIgnoraveis.has(String(divergencia?.tipo || ''));
+      if (deveIgnorar) divergenciasIgnoradas.push(divergencia);
+      return !deveIgnorar;
+    });
+
+    const skusIgnorados = Array.from(new Set(divergenciasIgnoradas.map((item) => getBaseSku(item?.sku)).filter(Boolean))).sort();
+    const resultadoFiltrado = {
+      ...resultado,
+      totalDivergencias: divergenciasMantidas.length,
+      totalSemDivergencia: Number(resultado?.totalConsultados || 0) - divergenciasMantidas.length,
+      divergencias: divergenciasMantidas,
+      warnings: Array.isArray(resultado?.warnings) ? resultado.warnings : [],
+    };
+
+    return {
+      resultado: resultadoFiltrado,
+      resumoPedidosAbertos: {
+        aplicado: true,
+        dataInicio: consulta.dataInicio,
+        dataFim: consulta.dataFim,
+        totalPedidosAbertos: consulta.pedidosAbertos.length,
+        totalSkusPedidosAbertos: consulta.skus.size,
+        totalDivergenciasIgnoradas: divergenciasIgnoradas.length,
+        skusIgnorados,
+        pedidosAbertos: consulta.pedidosAbertos
+          .filter((pedido) => pedido.skus.some((sku) => skusIgnorados.includes(sku)))
+          .map((pedido) => ({
+            pedidoId: pedido.pedidoId,
+            pedidoNum: pedido.pedidoNum,
+            dataVenda: pedido.dataVenda,
+            skus: pedido.skus.filter((sku) => skusIgnorados.includes(sku)),
+          })),
+      },
+    };
+  } catch (error: any) {
+    return {
+      resultado: {
+        ...resultado,
+        warnings: [
+          ...(Array.isArray(resultado?.warnings) ? resultado.warnings : []),
+          `Filtro de pedidos abertos nao aplicado: ${error?.message || 'erro desconhecido'}`,
+        ],
+      },
+      resumoPedidosAbertos: {
+        aplicado: false,
+        erro: error?.message || String(error),
+        totalDivergenciasIgnoradas: 0,
+        skusIgnorados: [],
+      },
+    };
+  }
 }
 
 function applyLiveAuditoriaProgress<T extends { id?: number; status?: string; resumo?: any }>(execucao: T | null | undefined): T | null | undefined {
@@ -4040,7 +4167,7 @@ async function executeAuditoriaAutomatica(origem: 'manual' | 'auto' = 'manual') 
       });
     };
 
-    const resultado = await compareProdutosBlingCodes(local.codigos, {
+    const resultadoAuditoria = await compareProdutosBlingCodes(local.codigos, {
       localMap: local.localMap,
       localPecas: local.pecas,
       syncLocalizacao: true,
@@ -4055,6 +4182,7 @@ async function executeAuditoriaAutomatica(origem: 'manual' | 'auto' = 'manual') 
       traceSkus: traceSkuSet,
       onProgress: persistProgress,
     });
+    const { resultado, resumoPedidosAbertos } = await aplicarFiltroPedidosAbertosAuditoria(resultadoAuditoria);
     await persistProgress({
       totalParaProcessar: resultado.totalConsultados,
       totalProcessados: resultado.totalConsultados,
@@ -4064,6 +4192,7 @@ async function executeAuditoriaAutomatica(origem: 'manual' | 'auto' = 'manual') 
       ...buildAuditoriaResumo(resultado),
       progresso: progressSnapshot,
       traceSkusMonitorados: buildAuditoriaTraceResumo(local, resultado, traceSkuSet),
+      pedidosAbertosIgnorados: resumoPedidosAbertos,
     }));
     let emailEnviado = false;
     let emailErro: string | null = null;
