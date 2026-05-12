@@ -190,7 +190,7 @@ export function LoginPage({ onLogin }: { onLogin: (u: string, p: string) => Prom
       >
       <div
         style={{
-          maxWidth: isTabletPortrait ? 860 : isTablet ? 1180 : 1160,
+          maxWidth: isTabletPortrait ? 860 : isTablet ? 1180 : 1040,
           margin: '0 auto',
           minHeight: isPhone ? 'calc(100dvh - clamp(32px, 6vw, 56px))' : 'auto',
           display: 'grid',
@@ -199,7 +199,7 @@ export function LoginPage({ onLogin }: { onLogin: (u: string, p: string) => Prom
             : isTablet
             ? 'minmax(0, 0.95fr) minmax(460px, 0.88fr)'
             : 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))',
-          gap: isPhone ? 16 : isTabletPortrait ? 20 : isTablet ? 24 : 'clamp(16px, 3vw, 28px)',
+          gap: isPhone ? 16 : isTabletPortrait ? 20 : isTablet ? 24 : 'clamp(16px, 2.5vw, 24px)',
           alignItems: isSingleColumn ? 'stretch' : 'center',
         }}
       >
@@ -207,17 +207,17 @@ export function LoginPage({ onLogin }: { onLogin: (u: string, p: string) => Prom
           style={{
             order: 1,
             background: 'linear-gradient(155deg, #091425 0%, #132b4d 55%, #1d467c 100%)',
-            borderRadius: 28,
-            padding: isPhone ? '18px 18px 16px' : isTabletPortrait ? '24px 24px 22px' : isTablet ? '26px 24px 24px' : 'clamp(28px, 5vw, 48px)',
+            borderRadius: isPhone || isTabletPortrait || isTablet ? 28 : 22,
+            padding: isPhone ? '18px 18px 16px' : isTabletPortrait ? '24px 24px 22px' : isTablet ? '26px 24px 24px' : 'clamp(24px, 3.2vw, 34px)',
             color: '#fff',
             position: 'relative',
             overflow: 'hidden',
             boxShadow: '0 28px 60px rgba(15, 23, 42, 0.16)',
-            minHeight: isPhone || isTabletPortrait || isTablet ? 'auto' : 'min(720px, 100%)',
+            minHeight: isPhone || isTabletPortrait || isTablet ? 'auto' : 'min(610px, 100%)',
             display: 'flex',
             flexDirection: 'column',
             justifyContent: isPhone ? 'center' : 'flex-start',
-            gap: isPhone ? 0 : isTabletPortrait ? 16 : isTablet ? 18 : 28,
+            gap: isPhone ? 0 : isTabletPortrait ? 16 : isTablet ? 18 : 20,
           }}
         >
           <div
@@ -251,9 +251,9 @@ export function LoginPage({ onLogin }: { onLogin: (u: string, p: string) => Prom
                 gap: 12,
                 background: 'rgba(255,255,255,.08)',
                 border: '1px solid rgba(255,255,255,.10)',
-                borderRadius: 18,
-                padding: '12px 14px',
-                marginBottom: isPhone ? 0 : isTabletPortrait ? 4 : 28,
+                borderRadius: isPhone || isTabletPortrait || isTablet ? 18 : 14,
+                padding: isPhone || isTabletPortrait || isTablet ? '12px 14px' : '9px 11px',
+                marginBottom: isPhone ? 0 : isTabletPortrait ? 4 : isTablet ? 28 : 20,
                 backdropFilter: 'blur(8px)',
                 width: isSingleColumn ? '100%' : 'auto',
                 maxWidth: isTabletPortrait ? 460 : undefined,
@@ -264,9 +264,9 @@ export function LoginPage({ onLogin }: { onLogin: (u: string, p: string) => Prom
                 src="/logo.jpg"
                 alt="ANB Parts"
                 style={{
-                  width: 56,
-                  height: 56,
-                  borderRadius: 14,
+                  width: isPhone || isTabletPortrait || isTablet ? 56 : 46,
+                  height: isPhone || isTabletPortrait || isTablet ? 56 : 46,
+                  borderRadius: isPhone || isTabletPortrait || isTablet ? 14 : 12,
                   objectFit: 'cover',
                   background: '#fff',
                   flexShrink: 0,
@@ -275,7 +275,7 @@ export function LoginPage({ onLogin }: { onLogin: (u: string, p: string) => Prom
               <div>
                 <div
                   style={{
-                    fontSize: 12,
+                    fontSize: isPhone || isTabletPortrait || isTablet ? 12 : 10.5,
                     letterSpacing: '.12em',
                     textTransform: 'uppercase',
                     color: 'rgba(255,255,255,.62)',
@@ -284,7 +284,7 @@ export function LoginPage({ onLogin }: { onLogin: (u: string, p: string) => Prom
                 >
                   ANB Parts
                 </div>
-                <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.3px', marginTop: 2 }}>
+                <div style={{ fontSize: isPhone || isTabletPortrait || isTablet ? 18 : 15.5, fontWeight: 700, letterSpacing: '-0.3px', marginTop: 2 }}>
                   Sistema de gestao interna
                 </div>
               </div>
@@ -329,19 +329,19 @@ export function LoginPage({ onLogin }: { onLogin: (u: string, p: string) => Prom
             <div style={{ maxWidth: 520 }}>
               <div
                 style={{
-                  fontSize: 'clamp(31px, 4vw, 46px)',
+                  fontSize: 'clamp(28px, 3vw, 38px)',
                   lineHeight: 1.04,
                   fontWeight: 700,
                   letterSpacing: '-1.2px',
-                  marginBottom: 16,
+                  marginBottom: 12,
                 }}
               >
                 Operacao centralizada para equipe, estoque e vendas.
               </div>
               <div
                 style={{
-                  fontSize: 'clamp(14px, 1.7vw, 16px)',
-                  lineHeight: 1.8,
+                  fontSize: 'clamp(13px, 1.25vw, 14.5px)',
+                  lineHeight: 1.65,
                   color: 'rgba(255,255,255,.74)',
                 }}
               >
@@ -358,7 +358,7 @@ export function LoginPage({ onLogin }: { onLogin: (u: string, p: string) => Prom
               zIndex: 1,
               display: 'grid',
               gridTemplateColumns: isTablet ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fit, minmax(180px, 1fr))',
-              gap: isTablet ? 12 : 14,
+              gap: isTablet ? 12 : 10,
             }}
           >
             {highlights.map((item) => (
@@ -367,8 +367,8 @@ export function LoginPage({ onLogin }: { onLogin: (u: string, p: string) => Prom
                 style={{
                   background: 'rgba(255,255,255,.07)',
                   border: '1px solid rgba(255,255,255,.10)',
-                  borderRadius: 18,
-                  padding: '16px 16px 15px',
+                  borderRadius: 14,
+                  padding: '12px 13px',
                   backdropFilter: 'blur(10px)',
                 }}
               >
@@ -379,12 +379,12 @@ export function LoginPage({ onLogin }: { onLogin: (u: string, p: string) => Prom
                     letterSpacing: '.12em',
                     color: 'rgba(255,255,255,.56)',
                     fontFamily: "'JetBrains Mono', monospace",
-                    marginBottom: 8,
+                    marginBottom: 6,
                   }}
                 >
                   {item.label}
                 </div>
-                <div style={{ fontSize: 14, lineHeight: 1.6, color: 'rgba(255,255,255,.88)' }}>
+                <div style={{ fontSize: 12.5, lineHeight: 1.45, color: 'rgba(255,255,255,.88)' }}>
                   {item.text}
                 </div>
               </div>
@@ -405,16 +405,16 @@ export function LoginPage({ onLogin }: { onLogin: (u: string, p: string) => Prom
           <div
             style={{
               width: '100%',
-              maxWidth: isPhone ? 460 : isTabletPortrait ? 720 : isTablet ? 520 : 460,
+              maxWidth: isPhone ? 460 : isTabletPortrait ? 720 : isTablet ? 520 : 420,
               background: 'rgba(255,255,255,.92)',
               border: '1px solid rgba(148,163,184,.20)',
-              borderRadius: 28,
-              padding: isTabletPortrait ? '36px 34px 30px' : isTablet ? '34px 34px 30px' : 'clamp(24px, 4vw, 38px)',
+              borderRadius: isPhone || isTabletPortrait || isTablet ? 28 : 22,
+              padding: isTabletPortrait ? '36px 34px 30px' : isTablet ? '34px 34px 30px' : 'clamp(22px, 3vw, 30px)',
               boxShadow: '0 24px 50px rgba(15, 23, 42, 0.10)',
               margin: isTabletPortrait ? '0 auto' : undefined,
             }}
           >
-            <div style={{ marginBottom: 30 }}>
+            <div style={{ marginBottom: isPhone || isTabletPortrait || isTablet ? 30 : 22 }}>
               <div
                 style={{
                   fontSize: 12,
@@ -422,14 +422,14 @@ export function LoginPage({ onLogin }: { onLogin: (u: string, p: string) => Prom
                   textTransform: 'uppercase',
                   color: '#94a3b8',
                   fontFamily: "'JetBrains Mono', monospace",
-                  marginBottom: 10,
+                  marginBottom: isPhone || isTabletPortrait || isTablet ? 10 : 7,
                 }}
               >
                 Login seguro
               </div>
               <div
                 style={{
-                  fontSize: 'clamp(28px, 4vw, 34px)',
+                  fontSize: isPhone || isTabletPortrait || isTablet ? 'clamp(28px, 4vw, 34px)' : 'clamp(25px, 2.4vw, 30px)',
                   lineHeight: 1.08,
                   fontWeight: 700,
                   color: '#0f172a',
@@ -446,7 +446,7 @@ export function LoginPage({ onLogin }: { onLogin: (u: string, p: string) => Prom
 
             <form onSubmit={handleSubmit}>
               <div style={{ marginBottom: 16 }}>
-                <label style={{ fontSize: 12, fontWeight: 600, color: '#334155', display: 'block', marginBottom: 8 }}>
+                <label style={{ fontSize: 12, fontWeight: 600, color: '#334155', display: 'block', marginBottom: isPhone || isTabletPortrait || isTablet ? 8 : 6 }}>
                   Usuario
                 </label>
                 <input
@@ -462,9 +462,9 @@ export function LoginPage({ onLogin }: { onLogin: (u: string, p: string) => Prom
                     width: '100%',
                     background: '#fff',
                     border: '1px solid #dbe3ef',
-                    borderRadius: 14,
-                    padding: '14px 16px',
-                    fontSize: 16,
+                    borderRadius: isPhone || isTabletPortrait || isTablet ? 14 : 12,
+                    padding: isPhone || isTabletPortrait || isTablet ? '14px 16px' : '11px 13px',
+                    fontSize: isPhone || isTabletPortrait || isTablet ? 16 : 14,
                     lineHeight: 1.4,
                     outline: 'none',
                     color: '#0f172a',
@@ -474,7 +474,7 @@ export function LoginPage({ onLogin }: { onLogin: (u: string, p: string) => Prom
               </div>
 
               <div style={{ marginBottom: 22 }}>
-                <label style={{ fontSize: 12, fontWeight: 600, color: '#334155', display: 'block', marginBottom: 8 }}>
+                <label style={{ fontSize: 12, fontWeight: 600, color: '#334155', display: 'block', marginBottom: isPhone || isTabletPortrait || isTablet ? 8 : 6 }}>
                   Senha
                 </label>
                 <input
@@ -487,9 +487,9 @@ export function LoginPage({ onLogin }: { onLogin: (u: string, p: string) => Prom
                     width: '100%',
                     background: '#fff',
                     border: '1px solid #dbe3ef',
-                    borderRadius: 14,
-                    padding: '14px 16px',
-                    fontSize: 16,
+                    borderRadius: isPhone || isTabletPortrait || isTablet ? 14 : 12,
+                    padding: isPhone || isTabletPortrait || isTablet ? '14px 16px' : '11px 13px',
+                    fontSize: isPhone || isTabletPortrait || isTablet ? 16 : 14,
                     lineHeight: 1.4,
                     outline: 'none',
                     color: '#0f172a',
@@ -523,9 +523,9 @@ export function LoginPage({ onLogin }: { onLogin: (u: string, p: string) => Prom
                   background: '#1d4ed8',
                   color: '#fff',
                   border: 'none',
-                  borderRadius: 14,
-                  padding: '15px 20px',
-                  fontSize: 15,
+                  borderRadius: isPhone || isTabletPortrait || isTablet ? 14 : 12,
+                  padding: isPhone || isTabletPortrait || isTablet ? '15px 20px' : '12px 18px',
+                  fontSize: isPhone || isTabletPortrait || isTablet ? 15 : 14,
                   fontWeight: 700,
                   cursor: 'pointer',
                   opacity: loading || !user || !pass ? 0.65 : 1,
