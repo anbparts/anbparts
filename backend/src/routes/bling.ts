@@ -3749,9 +3749,9 @@ async function collectSkusPedidosAbertosParaAuditoria() {
     const situacao = resolveSituacaoPedidoAberto(pedidoMeta?.situacao, situacaoDetalhe);
     if (!isSituacaoEmAberto(situacao)) continue;
 
-    const skusPedido = Array.from(new Set((pedido?.itens || [])
+    const skusPedido: string[] = Array.from(new Set<string>((Array.isArray(pedido?.itens) ? pedido.itens : [])
       .map((item: any) => getBaseSku(String(item?.produto?.codigo || item?.codigo || item?.sku || '').trim()))
-      .filter(Boolean)));
+      .filter((sku: any): sku is string => typeof sku === 'string' && Boolean(sku))));
 
     skusPedido.forEach((sku) => skus.add(sku));
     pedidosAbertos.push({
@@ -3795,7 +3795,9 @@ async function aplicarFiltroPedidosAbertosAuditoria(resultado: any) {
       return !deveIgnorar;
     });
 
-    const skusIgnorados = Array.from(new Set(divergenciasIgnoradas.map((item) => getBaseSku(item?.sku)).filter(Boolean))).sort();
+    const skusIgnorados: string[] = Array.from(new Set<string>(divergenciasIgnoradas
+      .map((item) => getBaseSku(item?.sku))
+      .filter((sku: any): sku is string => typeof sku === 'string' && Boolean(sku)))).sort();
     const resultadoFiltrado = {
       ...resultado,
       totalDivergencias: divergenciasMantidas.length,
