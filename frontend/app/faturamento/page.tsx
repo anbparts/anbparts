@@ -22,6 +22,38 @@ function periodKey(ano: number, mes: number) {
   return `${ano}-${String(mes).padStart(2, '0')}`;
 }
 
+function marcaDaMoto(nome: any) {
+  const texto = String(nome || '').trim().replace(/\s+/g, ' ').toUpperCase();
+  if (!texto) return 'SEM MARCA';
+
+  const marcasCompostas = ['HARLEY DAVIDSON', 'ROYAL ENFIELD', 'MOTO GUZZI', 'MV AGUSTA'];
+  const composta = marcasCompostas.find((marca) => texto.startsWith(marca));
+  if (composta) return composta;
+
+  return texto.split(' ')[0] || 'SEM MARCA';
+}
+
+function consolidarEstoquePorPeriodo(rows: any[]) {
+  const acumulado = new Map<string, any>();
+
+  rows.forEach((row) => {
+    const ano = Number(row.ano);
+    const mes = Number(row.mes);
+    const key = row.key || periodKey(ano, mes);
+    const atual = acumulado.get(key) || { key, ano, mes, estoqueInicio: 0, vendido: 0, qtdVendida: 0, percentual: 0 };
+
+    atual.estoqueInicio += Number(row.estoqueInicio || 0);
+    atual.vendido += Number(row.vendido || 0);
+    atual.qtdVendida += Number(row.qtdVendida || 0);
+    atual.percentual = atual.estoqueInicio > 0 ? (atual.vendido / atual.estoqueInicio) * 100 : 0;
+    acumulado.set(key, atual);
+  });
+
+  return Array.from(acumulado.values()).sort((a, b) => (
+    a.ano !== b.ano ? a.ano - b.ano : a.mes - b.mes
+  ));
+}
+
 const cs: any = {
   topbar: {
     minHeight: 'var(--topbar-h)',
@@ -73,6 +105,7 @@ export default function FaturamentoMotoPage() {
   const [estoqueData, setEstoqueData] = useState<{ meses: string[]; porMoto: any[]; consolidado: any[] } | null>(null);
   const [estoqueLoading, setEstoqueLoading] = useState(false);
   const [estoqueMotoFilt, setEstoqueMotoFilt] = useState('todas');
+  const [estoqueMarcaFilt, setEstoqueMarcaFilt] = useState('todas');
   const [estoqueAnoFilt, setEstoqueAnoFilt] = useState(currentYear());
   const [estoqueMesFilt, setEstoqueMesFilt] = useState('');
   const { hidden } = useCompanyValueVisibility();
@@ -261,11 +294,16 @@ export default function FaturamentoMotoPage() {
         .filter((item) => item.receita > 0 || item.qtd > 0),
     }));
 
-  const estoqueConsolidadoFiltrado = (estoqueData?.consolidado || [])
-    .filter((c: any) => (!estoqueAnoFilt || String(c.ano) === estoqueAnoFilt) && (!estoqueMesFilt || String(c.mes) === estoqueMesFilt));
+  const estoquePorMotoBase = estoqueData?.porMoto || [];
+  const estoqueMarcas = Array.from(new Set(estoquePorMotoBase.map((p: any) => marcaDaMoto(p.moto)))).sort();
+  const estoqueMotosFiltradasPorMarca = Array.from(new Set(estoquePorMotoBase
+    .filter((p: any) => estoqueMarcaFilt === 'todas' || marcaDaMoto(p.moto) === estoqueMarcaFilt)
+    .map((p: any) => p.moto)
+  )).sort();
 
-  const estoquePorMotoFiltrado = (estoqueData?.porMoto || [])
+  const estoquePorMotoFiltrado = estoquePorMotoBase
     .filter((p: any) =>
+      (estoqueMarcaFilt === 'todas' || marcaDaMoto(p.moto) === estoqueMarcaFilt) &&
       (estoqueMotoFilt === 'todas' || p.moto === estoqueMotoFilt) &&
       (!estoqueAnoFilt || String(p.ano) === estoqueAnoFilt) &&
       (!estoqueMesFilt || String(p.mes) === estoqueMesFilt)
@@ -275,6 +313,23 @@ export default function FaturamentoMotoPage() {
       a.mes !== b.mes ? a.mes - b.mes :
       a.moto.localeCompare(b.moto)
     );
+
+  const estoqueConsolidadoFiltrado = estoqueMarcaFilt === 'todas' && estoqueMotoFilt === 'todas'
+    ? (estoqueData?.consolidado || [])
+        .filter((c: any) => (!estoqueAnoFilt || String(c.ano) === estoqueAnoFilt) && (!estoqueMesFilt || String(c.mes) === estoqueMesFilt))
+    : consolidarEstoquePorPeriodo(estoquePorMotoFiltrado);
+
+  const estoqueConsolidadoTitulo = estoqueMotoFilt !== 'todas'
+    ? `Consolidado - ${estoqueMotoFilt}`
+    : estoqueMarcaFilt !== 'todas'
+    ? `Consolidado - ${estoqueMarcaFilt}`
+    : 'Consolidado - Todas as Motos';
+
+  const estoqueDetalheTitulo = estoqueMotoFilt !== 'todas'
+    ? estoqueMotoFilt
+    : estoqueMarcaFilt !== 'todas'
+    ? `Detalhe por Moto - ${estoqueMarcaFilt}`
+    : 'Detalhe por Moto';
 
   const estoqueSelectStyle = {
     ...cs.sel,
@@ -314,21 +369,23 @@ export default function FaturamentoMotoPage() {
           ))}
         </div>
 
-        <div style={{ ...cs.card, marginBottom: 20 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: isCompact ? '14px 16px' : '14px 18px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', gap: 10 }}>
-            <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>Filtros</div>
-            <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(2, minmax(160px, 1fr))', gap: 8, width: isCompact ? '100%' : 'auto' }}>
-              <select style={{ ...cs.sel, width: isCompact ? '100%' : undefined }} value={filtMoto} onChange={(e) => setFiltMoto(e.target.value)}>
-                <option value="">Todas as motos</option>
-                {motos.map((moto) => <option key={moto} value={moto}>{moto}</option>)}
-              </select>
-              <select style={{ ...cs.sel, width: isCompact ? '100%' : undefined }} value={filtAno} onChange={(e) => setFiltAno(e.target.value)}>
-                <option value="">Todos os anos</option>
-                {anos.map((ano) => <option key={ano} value={ano}>{ano}</option>)}
-              </select>
+        {modo !== 'estoque' && (
+          <div style={{ ...cs.card, marginBottom: 20 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: isCompact ? '14px 16px' : '14px 18px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', gap: 10 }}>
+              <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>Filtros</div>
+              <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(2, minmax(160px, 1fr))', gap: 8, width: isCompact ? '100%' : 'auto' }}>
+                <select style={{ ...cs.sel, width: isCompact ? '100%' : undefined }} value={filtMoto} onChange={(e) => setFiltMoto(e.target.value)}>
+                  <option value="">Todas as motos</option>
+                  {motos.map((moto) => <option key={moto} value={moto}>{moto}</option>)}
+                </select>
+                <select style={{ ...cs.sel, width: isCompact ? '100%' : undefined }} value={filtAno} onChange={(e) => setFiltAno(e.target.value)}>
+                  <option value="">Todos os anos</option>
+                  {anos.map((ano) => <option key={ano} value={ano}>{ano}</option>)}
+                </select>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         {modo === 'grafico' ? (
           loading ? (
@@ -512,7 +569,7 @@ export default function FaturamentoMotoPage() {
           {/* Filtros */}
           <div style={{
             display: 'grid',
-            gridTemplateColumns: isPhone ? '1fr' : 'repeat(3, minmax(150px, max-content))',
+            gridTemplateColumns: isPhone ? '1fr' : 'repeat(4, minmax(150px, max-content))',
             gap: 10,
             marginBottom: 14,
             alignItems: 'center',
@@ -538,12 +595,22 @@ export default function FaturamentoMotoPage() {
               ))}
             </select>
             <select
+              value={estoqueMarcaFilt}
+              onChange={e => { setEstoqueMarcaFilt(e.target.value); setEstoqueMotoFilt('todas'); }}
+              style={estoqueSelectStyle}
+            >
+              <option value="todas">Todas as marcas</option>
+              {estoqueMarcas.map((marca) => (
+                <option key={marca} value={marca}>{marca}</option>
+              ))}
+            </select>
+            <select
               value={estoqueMotoFilt}
               onChange={e => setEstoqueMotoFilt(e.target.value)}
               style={estoqueSelectStyle}
             >
               <option value="todas">Todas as motos</option>
-              {Array.from(new Set((estoqueData?.porMoto || []).map((p: any) => p.moto))).sort().map(m => (
+              {estoqueMotosFiltradasPorMarca.map(m => (
                 <option key={String(m)} value={String(m)}>{String(m)}</option>
               ))}
             </select>
@@ -560,7 +627,7 @@ export default function FaturamentoMotoPage() {
               {isPhone && estoqueMotoFilt === 'todas' && (
                 <div style={cs.card}>
                   <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
-                    <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>Consolidado - Todas as Motos</div>
+                    <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>{estoqueConsolidadoTitulo}</div>
                     <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>% do valor de estoque vendido a cada mes</div>
                   </div>
                   <div style={{ display: 'grid', gap: 12, padding: 14 }}>
@@ -604,7 +671,7 @@ export default function FaturamentoMotoPage() {
               {estoqueMotoFilt === 'todas' && !isPhone && (
                 <div style={cs.card}>
                   <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
-                    <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>Consolidado — Todas as Motos</div>
+                    <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>{estoqueConsolidadoTitulo}</div>
                     <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>% do valor de estoque vendido a cada mês</div>
                   </div>
                   <div style={{ overflowX: 'auto' }}>
@@ -617,8 +684,7 @@ export default function FaturamentoMotoPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {estoqueData.consolidado
-                          .filter((c: any) => (!estoqueAnoFilt || String(c.ano) === estoqueAnoFilt) && (!estoqueMesFilt || String(c.mes) === estoqueMesFilt))
+                        {estoqueConsolidadoFiltrado
                           .map((c: any) => {
                             const pct = c.percentual;
                             const pctColor = pct >= 15 ? '#16a34a' : pct >= 7 ? '#d97706' : '#6b7280';
@@ -660,7 +726,7 @@ export default function FaturamentoMotoPage() {
                 <div style={cs.card}>
                   <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
                     <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>
-                      {estoqueMotoFilt === 'todas' ? 'Detalhe por Moto' : estoqueMotoFilt}
+                      {estoqueDetalheTitulo}
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>% do valor de estoque de cada moto vendido a cada mes</div>
                   </div>
@@ -708,7 +774,7 @@ export default function FaturamentoMotoPage() {
               <div style={{ ...cs.card, display: isPhone ? 'none' : undefined }}>
                 <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
                   <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>
-                    {estoqueMotoFilt === 'todas' ? 'Detalhe por Moto' : estoqueMotoFilt}
+                    {estoqueDetalheTitulo}
                   </div>
                   <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>% do valor de estoque de cada moto vendido a cada mês</div>
                 </div>
@@ -725,17 +791,7 @@ export default function FaturamentoMotoPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {estoqueData.porMoto
-                        .filter((p: any) =>
-                          (estoqueMotoFilt === 'todas' || p.moto === estoqueMotoFilt) &&
-                          (!estoqueAnoFilt || String(p.ano) === estoqueAnoFilt) &&
-                          (!estoqueMesFilt || String(p.mes) === estoqueMesFilt)
-                        )
-                        .sort((a: any, b: any) =>
-                          a.ano !== b.ano ? a.ano - b.ano :
-                          a.mes !== b.mes ? a.mes - b.mes :
-                          a.moto.localeCompare(b.moto)
-                        )
+                      {estoquePorMotoFiltrado
                         .map((p: any, i: number) => {
                           const pct = p.percentual;
                           const pctColor = pct >= 15 ? '#16a34a' : pct >= 7 ? '#d97706' : '#6b7280';
