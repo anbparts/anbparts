@@ -118,6 +118,8 @@ type SeparacaoManualPedido = {
   quantidadeItens: number;
 };
 
+const SEPARACAO_STATUS_KEY = 'anb:bling:vendas:separacao-pdfs';
+
 function calcularLiq(precoML: number, frete: number, taxaPct: number) {
   const taxaValor = parseFloat((precoML * taxaPct / 100).toFixed(2));
   const valorLiq = parseFloat((precoML - frete - taxaValor).toFixed(2));
@@ -460,6 +462,8 @@ export default function VendasBlingPage() {
   const [pedidosManuaisSelecionados, setPedidosManuaisSelecionados] = useState<number[]>([]);
   const [filtroPedidoManual, setFiltroPedidoManual] = useState('');
   const [erroPedidosManuais, setErroPedidosManuais] = useState('');
+  const [pedidosManuaisPeriodoKey, setPedidosManuaisPeriodoKey] = useState('');
+  const [separacoesGeradas, setSeparacoesGeradas] = useState<Record<string, string>>({});
   const [defaults, setDefaults] = useState<Defaults>({ fretePadrao: 29.9, taxaPadraoPct: 17 });
   const [isPhone, setIsPhone] = useState(false);
   const canAtualizarVendas = canProcessAction(user, 'bling_vendas', 'atualizar_vendas');
@@ -482,6 +486,45 @@ export default function VendasBlingPage() {
     media.addEventListener('change', update);
     return () => media.removeEventListener('change', update);
   }, []);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(SEPARACAO_STATUS_KEY);
+      if (raw) setSeparacoesGeradas(JSON.parse(raw) || {});
+    } catch {}
+  }, []);
+
+  function setPeriodoInicio(value: string) {
+    setDataInicio(value);
+    setPedidosManuais([]);
+    setPedidosManuaisSelecionados([]);
+    setPedidosManuaisPeriodoKey('');
+  }
+
+  function setPeriodoFim(value: string) {
+    setDataFim(value);
+    setPedidosManuais([]);
+    setPedidosManuaisSelecionados([]);
+    setPedidosManuaisPeriodoKey('');
+  }
+
+  function marcarPedidosComoSeparados(pedidos: SeparacaoPedido[]) {
+    const geradoEm = new Date().toISOString();
+    setSeparacoesGeradas((prev) => {
+      const next = { ...prev };
+      pedidos.forEach((pedido) => {
+        next[String(pedido.pedidoId)] = geradoEm;
+      });
+      try {
+        window.localStorage.setItem(SEPARACAO_STATUS_KEY, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  }
+
+  function pedidoSeparadoEm(pedidoId: number) {
+    return separacoesGeradas[String(pedidoId)] || '';
+  }
 
   async function buscarVendas() {
     if (!canAtualizarVendas) {
@@ -561,6 +604,7 @@ export default function VendasBlingPage() {
     setGerandoPdf(true);
     try {
       await baixarSeparacaoPdf(relatorioSeparacao);
+      marcarPedidosComoSeparados(relatorioSeparacao.pedidos);
     } catch (e: any) {
       alert(e?.message || 'Nao foi possivel gerar o PDF agora.');
     }
@@ -569,12 +613,16 @@ export default function VendasBlingPage() {
 
   async function carregarPedidosManuais(force = false) {
     if (!canRelatorioSeparacao) return;
-    if (!force && pedidosManuais.length > 0) return;
+    const periodoKey = `${dataInicio || ''}::${dataFim || ''}`;
+    if (!force && pedidosManuais.length > 0 && pedidosManuaisPeriodoKey === periodoKey) return;
 
     setCarregandoPedidosManuais(true);
     setErroPedidosManuais('');
     try {
-      const response = await fetch(`${API}/bling/relatorio-separacao-manual/pedidos`);
+      const params = new URLSearchParams();
+      if (dataInicio) params.set('dataInicio', dataInicio);
+      if (dataFim) params.set('dataFim', dataFim);
+      const response = await fetch(`${API}/bling/relatorio-separacao-manual/pedidos?${params.toString()}`);
       const data = await response.json();
       if (!response.ok || !data.ok) {
         setErroPedidosManuais(data.error || 'Nao foi possivel carregar os pedidos importados do ANB.');
@@ -582,6 +630,8 @@ export default function VendasBlingPage() {
       }
 
       setPedidosManuais(data.pedidos || []);
+      setPedidosManuaisSelecionados([]);
+      setPedidosManuaisPeriodoKey(periodoKey);
     } catch (e: any) {
       setErroPedidosManuais(e?.message || 'Nao foi possivel carregar os pedidos importados do ANB.');
     } finally {
@@ -630,7 +680,7 @@ export default function VendasBlingPage() {
       const response = await fetch(`${API}/bling/relatorio-separacao-manual`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pedidoIds: pedidosManuaisSelecionados }),
+        body: JSON.stringify({ pedidoIds: pedidosManuaisSelecionados, dataInicio, dataFim }),
       });
       const data = await response.json();
       if (!response.ok || !data.ok) {
@@ -765,6 +815,8 @@ export default function VendasBlingPage() {
       fmtDate(pedido.dataVenda || ''),
     ].some((value) => value.toLowerCase().includes(filtroPedidoManualNormalizado));
   });
+  const pedidosManuaisSeparados = pedidosManuaisFiltrados.filter((pedido) => pedidoSeparadoEm(pedido.pedidoId)).length;
+  const pedidosManuaisNaoSeparados = Math.max(0, pedidosManuaisFiltrados.length - pedidosManuaisSeparados);
   const pedidosManuaisSelecionadosSet = new Set(pedidosManuaisSelecionados);
   const todosPedidosManuaisVisiveisSelecionados = pedidosManuaisFiltrados.length > 0
     && pedidosManuaisFiltrados.every((pedido) => pedidosManuaisSelecionadosSet.has(pedido.pedidoId));
@@ -799,25 +851,15 @@ export default function VendasBlingPage() {
           <div style={{ display: isPhone ? 'grid' : 'flex', gridTemplateColumns: '1fr', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
             <div style={{ width: isPhone ? '100%' : undefined }}>
               <label style={s.label}>Data inicio</label>
-              <input style={{ ...s.input, width: isPhone ? '100%' : 160, minHeight: isPhone ? 42 : undefined }} type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} />
+              <input style={{ ...s.input, width: isPhone ? '100%' : 160, minHeight: isPhone ? 42 : undefined }} type="date" value={dataInicio} onChange={(e) => setPeriodoInicio(e.target.value)} />
             </div>
             <div style={{ width: isPhone ? '100%' : undefined }}>
               <label style={s.label}>Data fim</label>
-              <input style={{ ...s.input, width: isPhone ? '100%' : 160, minHeight: isPhone ? 42 : undefined }} type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} />
+              <input style={{ ...s.input, width: isPhone ? '100%' : 160, minHeight: isPhone ? 42 : undefined }} type="date" value={dataFim} onChange={(e) => setPeriodoFim(e.target.value)} />
             </div>
             {canAtualizarVendas && (
               <button style={{ ...s.btn, ...phoneButtonStyle, background: '#FF6900', color: '#fff', opacity: buscando ? 0.7 : 1 }} onClick={buscarVendas} disabled={buscando}>
                 {buscando ? 'Buscando...' : 'Buscar vendas'}
-              </button>
-            )}
-            {canRelatorioSeparacao && (
-              <button
-                type="button"
-                style={{ ...s.btn, ...phoneButtonStyle, background: 'var(--blue-500)', color: '#fff', opacity: carregandoSeparacao ? 0.7 : 1 }}
-                onClick={buscarRelatorioSeparacao}
-                disabled={carregandoSeparacao}
-              >
-                {carregandoSeparacao ? 'Carregando relatorio...' : 'Relatorio de Separacao'}
               </button>
             )}
             {canRelatorioSeparacao && (
@@ -842,7 +884,7 @@ export default function VendasBlingPage() {
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--gray-800)' }}>Relatorio de Separacao - Manual</div>
                 <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 4 }}>
-                  Selecione pedidos ja importados e salvos no ANB para montar a separacao manual.
+                  Listando pedidos criados de {fmtDate(dataInicio)} ate {fmtDate(dataFim)}.
                 </div>
               </div>
               <div style={{ display: isPhone ? 'grid' : 'flex', gridTemplateColumns: '1fr', gap: 8, flexWrap: 'wrap', width: isPhone ? '100%' : undefined }}>
@@ -896,7 +938,7 @@ export default function VendasBlingPage() {
                 placeholder="Buscar por pedido, ID ou data..."
               />
               <div style={{ fontSize: 12, color: 'var(--gray-500)' }}>
-                Exibindo {pedidosManuaisFiltrados.length} de {pedidosManuais.length} pedidos · {pedidosManuaisSelecionados.length} selecionado(s)
+                Exibindo {pedidosManuaisFiltrados.length} de {pedidosManuais.length} pedidos · {pedidosManuaisSelecionados.length} selecionado(s) · {pedidosManuaisNaoSeparados} nao separado(s) · {pedidosManuaisSeparados} separado(s)
               </div>
             </div>
 
@@ -919,6 +961,7 @@ export default function VendasBlingPage() {
                 <div style={{ maxHeight: 420, overflowY: 'auto', display: 'grid', gap: 10, padding: 12 }}>
                   {pedidosManuaisFiltrados.map((pedido) => {
                     const checked = pedidosManuaisSelecionadosSet.has(pedido.pedidoId);
+                    const separadoEm = pedidoSeparadoEm(pedido.pedidoId);
                     return (
                       <label
                         key={pedido.pedidoId}
@@ -935,7 +978,12 @@ export default function VendasBlingPage() {
                       >
                         <input type="checkbox" checked={checked} onChange={() => togglePedidoManual(pedido.pedidoId)} style={{ marginTop: 3, width: 18, height: 18 }} />
                         <div style={{ minWidth: 0 }}>
-                          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--blue-500)' }}>#{pedido.pedidoNum}</div>
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                            <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--blue-500)' }}>#{pedido.pedidoNum}</div>
+                            <span style={{ border: `1px solid ${separadoEm ? '#bbf7d0' : '#fed7aa'}`, background: separadoEm ? '#f0fdf4' : '#fff7ed', color: separadoEm ? '#15803d' : '#c2410c', borderRadius: 999, padding: '2px 8px', fontSize: 10.5, fontWeight: 800 }}>
+                              {separadoEm ? 'Separado' : 'Pendente'}
+                            </span>
+                          </div>
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 10 }}>
                             <div>
                               <div style={{ fontSize: 10.5, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '.6px' }}>ID Bling</div>
@@ -965,6 +1013,7 @@ export default function VendasBlingPage() {
                           { label: 'Pedido', width: '22%' },
                           { label: 'ID Bling', width: '18%' },
                           { label: 'Data da venda', width: '18%' },
+                          { label: 'Status', width: '14%' },
                           { label: 'Itens salvos no ANB', width: '20%' },
                         ].map((header, index) => (
                           <th
@@ -979,6 +1028,7 @@ export default function VendasBlingPage() {
                     <tbody>
                       {pedidosManuaisFiltrados.map((pedido) => {
                         const checked = pedidosManuaisSelecionadosSet.has(pedido.pedidoId);
+                        const separadoEm = pedidoSeparadoEm(pedido.pedidoId);
                         return (
                           <tr key={pedido.pedidoId} style={{ borderTop: '1px solid var(--gray-100)', background: checked ? '#eff6ff' : 'var(--white)' }}>
                             <td style={{ padding: '8px 10px', textAlign: 'center' }}>
@@ -987,6 +1037,12 @@ export default function VendasBlingPage() {
                             <td style={{ padding: '8px 10px', fontWeight: 700, color: 'var(--blue-500)' }}>#{pedido.pedidoNum}</td>
                             <td style={{ padding: '8px 10px', fontFamily: 'JetBrains Mono, monospace', color: 'var(--gray-700)' }}>{pedido.pedidoId}</td>
                             <td style={{ padding: '8px 10px', color: 'var(--gray-700)' }}>{fmtDate(pedido.dataVenda)}</td>
+                            <td style={{ padding: '8px 10px' }}>
+                              <span title={separadoEm ? `PDF gerado em ${fmtIsoDate(separadoEm)}` : 'Ainda sem PDF de separacao gerado'} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: `1px solid ${separadoEm ? '#bbf7d0' : '#fed7aa'}`, background: separadoEm ? '#f0fdf4' : '#fff7ed', color: separadoEm ? '#15803d' : '#c2410c', borderRadius: 999, padding: '3px 8px', fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap' }}>
+                                <span>{separadoEm ? '✓' : '○'}</span>
+                                {separadoEm ? 'Separado' : 'Pendente'}
+                              </span>
+                            </td>
                             <td style={{ padding: '8px 10px', color: 'var(--gray-800)' }}>{pedido.quantidadeItens}</td>
                           </tr>
                         );
@@ -1057,7 +1113,12 @@ export default function VendasBlingPage() {
                     <div style={{ padding: isPhone ? 12 : '12px 14px', borderBottom: '1px solid var(--border)' }}>
                       <div style={{ display: isPhone ? 'grid' : 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
                         <div style={{ flex: '0 1 300px', minWidth: isPhone ? 0 : 240, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-800)' }}>Pedido #{pedido.pedidoNum}</div>
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-800)' }}>Pedido #{pedido.pedidoNum}</div>
+                            <span style={{ border: `1px solid ${pedidoSeparadoEm(pedido.pedidoId) ? '#bbf7d0' : '#fed7aa'}`, background: pedidoSeparadoEm(pedido.pedidoId) ? '#f0fdf4' : '#fff7ed', color: pedidoSeparadoEm(pedido.pedidoId) ? '#15803d' : '#c2410c', borderRadius: 999, padding: '2px 8px', fontSize: 10.5, fontWeight: 800 }}>
+                              {pedidoSeparadoEm(pedido.pedidoId) ? 'Separado' : 'Pendente'}
+                            </span>
+                          </div>
                           <div style={{ fontSize: 11.5, color: 'var(--gray-500)', marginTop: 5 }}>
                             Data da venda: {fmtDate(pedido.dataVenda)}
                           </div>

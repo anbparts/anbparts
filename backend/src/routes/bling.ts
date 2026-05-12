@@ -5811,11 +5811,17 @@ async function buildRelatorioSeparacaoFromPedidoIds(
 
 blingRouter.get('/relatorio-separacao-manual/pedidos', async (req, res, next) => {
   try {
+    const dataInicio = String(req.query?.dataInicio || '').trim();
+    const dataFim = String(req.query?.dataFim || '').trim();
+    const dataVendaFilter: any = { not: null };
+    if (dataInicio) dataVendaFilter.gte = new Date(`${dataInicio}T00:00:00.000Z`);
+    if (dataFim) dataVendaFilter.lte = new Date(`${dataFim}T23:59:59.999Z`);
+
     const pecas = await prisma.peca.findMany({
       where: {
         blingPedidoId: { not: null },
         blingPedidoNum: { not: null },
-        dataVenda: { not: null },
+        dataVenda: dataVendaFilter,
         disponivel: false,
       },
       select: {
@@ -5887,12 +5893,15 @@ blingRouter.post('/relatorio-separacao-manual', async (req, res, next) => {
       return res.status(400).json({ ok: false, error: 'Selecione ao menos um pedido para o relatorio manual.' });
     }
 
+    const dataInicio = String(req.body?.dataInicio || '').trim();
+    const dataFim = String(req.body?.dataFim || '').trim();
+
     const relatorio = await buildRelatorioSeparacaoFromPedidoIds(pedidoIds, {
       onlyOpen: false,
       sortDirection: 'desc',
       filtros: {
-        dataInicio: '',
-        dataFim: '',
+        dataInicio,
+        dataFim,
         status: 'Manual',
       },
     });
