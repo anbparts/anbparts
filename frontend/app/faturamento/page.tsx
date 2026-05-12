@@ -99,7 +99,9 @@ export default function FaturamentoMotoPage() {
   const [data, setData] = useState<any[]>([]);
   const [skuPorMoto, setSkuPorMoto] = useState<Record<number, string[]>>({});
   const [filtMoto, setFiltMoto] = useState('');
+  const [filtMarca, setFiltMarca] = useState('');
   const [filtAno, setFiltAno] = useState(currentYear());
+  const [filtMes, setFiltMes] = useState('');
   const [loading, setLoading] = useState(true);
   const [modo, setModo] = useState<ViewMode>('grafico');
   const [estoqueData, setEstoqueData] = useState<{ meses: string[]; porMoto: any[]; consolidado: any[] } | null>(null);
@@ -147,12 +149,18 @@ export default function FaturamentoMotoPage() {
       .catch(() => setEstoqueLoading(false));
   }, [modo]);
 
-  const motos = Array.from(new Set(data.map((item: any) => item.moto))).sort();
+  const marcas = Array.from(new Set(data.map((item: any) => marcaDaMoto(item.moto)))).sort();
+  const motos = Array.from(new Set(data
+    .filter((item: any) => !filtMarca || marcaDaMoto(item.moto) === filtMarca)
+    .map((item: any) => item.moto)
+  )).sort();
   const anos = Array.from(new Set(data.map((item: any) => item.ano))).sort((a, b) => b - a);
 
   const filtered = data.filter((item) => (
+    (!filtMarca || marcaDaMoto(item.moto) === filtMarca) &&
     (!filtMoto || item.moto === filtMoto) &&
-    (!filtAno || item.ano === Number(filtAno))
+    (!filtAno || item.ano === Number(filtAno)) &&
+    (!filtMes || item.mes === Number(filtMes))
   ));
 
   const totalReceita = filtered.reduce((sum, item) => sum + Number(item.receitaLiq || item.receita || 0), 0);
@@ -373,7 +381,15 @@ export default function FaturamentoMotoPage() {
           <div style={{ ...cs.card, marginBottom: 20 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: isCompact ? '14px 16px' : '14px 18px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', gap: 10 }}>
               <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>Filtros</div>
-              <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(2, minmax(160px, 1fr))', gap: 8, width: isCompact ? '100%' : 'auto' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(4, minmax(150px, 1fr))', gap: 8, width: isCompact ? '100%' : 'auto' }}>
+                <select
+                  style={{ ...cs.sel, width: isCompact ? '100%' : undefined }}
+                  value={filtMarca}
+                  onChange={(e) => { setFiltMarca(e.target.value); setFiltMoto(''); }}
+                >
+                  <option value="">Todas as marcas</option>
+                  {marcas.map((marca) => <option key={marca} value={marca}>{marca}</option>)}
+                </select>
                 <select style={{ ...cs.sel, width: isCompact ? '100%' : undefined }} value={filtMoto} onChange={(e) => setFiltMoto(e.target.value)}>
                   <option value="">Todas as motos</option>
                   {motos.map((moto) => <option key={moto} value={moto}>{moto}</option>)}
@@ -381,6 +397,10 @@ export default function FaturamentoMotoPage() {
                 <select style={{ ...cs.sel, width: isCompact ? '100%' : undefined }} value={filtAno} onChange={(e) => setFiltAno(e.target.value)}>
                   <option value="">Todos os anos</option>
                   {anos.map((ano) => <option key={ano} value={ano}>{ano}</option>)}
+                </select>
+                <select style={{ ...cs.sel, width: isCompact ? '100%' : undefined }} value={filtMes} onChange={(e) => setFiltMes(e.target.value)}>
+                  <option value="">Todos os meses</option>
+                  {MESES.map((mes, index) => <option key={index + 1} value={String(index + 1)}>{mes}</option>)}
                 </select>
               </div>
             </div>
