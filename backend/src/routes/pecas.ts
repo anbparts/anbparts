@@ -332,7 +332,7 @@ pecasRouter.get('/', async (req, res, next) => {
     const searchText = String(search || '').trim();
     const skuText = normalizeIdPeca(String(sku || ''));
     const detranEtiquetaText = String(detranEtiquetaTexto || '').trim().toUpperCase();
-    const where: any = searchText ? {} : { emPrejuizo: false };
+    const where: any = (searchText || skuText) ? {} : { emPrejuizo: false };
     const andConditions: any[] = [];
     if (motoId) where.motoId = Number(motoId);
     if (marca) {
