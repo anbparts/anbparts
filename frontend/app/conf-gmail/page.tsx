@@ -43,6 +43,12 @@ export default function ConfGmailPage() {
     load();
     api.motos.list().then(setMotos).catch(() => {});
     carregarDriveConfig();
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('connected') === '1') {
+      setFeedback('OK - Google conectado e token atualizado!');
+      window.history.replaceState({}, '', '/conf-gmail');
+    }
   }, []);
 
   async function load() {
@@ -90,6 +96,32 @@ export default function ConfGmailPage() {
       setFeedback('OK - Configuracoes Gmail salvas!');
     } catch (e: any) { setFeedback(`Erro: ${e.message}`); }
     setSaving(false);
+  }
+
+  async function conectarGoogle() {
+    setSaving(true);
+    setFeedback('Salvando configuracao e abrindo conexao Google...');
+    try {
+      await api.detran.saveConfig({
+        gmailEmail, gmailClientId,
+        ...(gmailClientSecret ? { gmailClientSecret } : {}),
+        otpRemetente, otpAssunto, otpRegex,
+      });
+      setGmailClientSecret('');
+      setGmailRefreshToken('');
+      setPastasDrive([]);
+      await load();
+      await carregarDriveConfig();
+
+      setFeedback('Abrindo autorizacao do Google...');
+      const resp = await fetch(`${API}/google-drive/auth-url`, { credentials: 'include' });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || !data.url) throw new Error(data.error || `Erro ao gerar link Google (${resp.status})`);
+      window.location.href = data.url;
+    } catch (e: any) {
+      setFeedback(`Erro Google: ${e.message || e}`);
+      setSaving(false);
+    }
   }
 
   async function salvarDrive() {
@@ -148,7 +180,7 @@ export default function ConfGmailPage() {
           <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)' }}>Config. Gmail</div>
           <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>Configurações OAuth Google — Acesso e-mail e Google Drive</div>
         </div>
-        {feedback && <span style={{ fontSize: 12, color: feedback.startsWith('✓') ? 'var(--green)' : 'var(--red)', fontWeight: 600 }}>{feedback}</span>}
+        {feedback && <span style={{ fontSize: 12, color: feedback.startsWith('OK') || feedback.startsWith('Salvando') || feedback.startsWith('Abrindo') ? 'var(--green)' : 'var(--red)', fontWeight: 600 }}>{feedback}</span>}
       </div>
 
       <div style={{ padding: 28, display: 'grid', gap: 20, maxWidth: 860 }}>
@@ -206,6 +238,9 @@ export default function ConfGmailPage() {
             <div style={{ display: 'flex', gap: 10 }}>
               <button style={{ ...s.btn, background: 'var(--ink)', color: '#fff' }} onClick={salvarGmail} disabled={saving}>
                 {saving ? 'Salvando...' : 'Salvar configurações Gmail'}
+              </button>
+              <button style={{ ...s.btn, background: '#fff', color: 'var(--gray-800)', border: '1px solid var(--border)' }} onClick={conectarGoogle} disabled={saving || !gmailClientId}>
+                {saving ? 'Aguarde...' : 'Conectar Google / gerar token'}
               </button>
             </div>
           </div>

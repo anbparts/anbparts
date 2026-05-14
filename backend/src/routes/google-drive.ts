@@ -312,7 +312,7 @@ googleDriveRouter.get('/callback', async (req, res, next) => {
     const expiry = new Date(Date.now() + (data.expires_in || 3600) * 1000);
     await saveGoogleDriveOAuthTokens(data, cfg, expiry);
     const frontendUrl = process.env.FRONTEND_URL || 'https://sistema.anbparts.com.br';
-    res.redirect(`${frontendUrl}/conf-google-drive?connected=1`);
+    res.redirect(`${frontendUrl}/conf-gmail?connected=1`);
   } catch (e) { next(e); }
 });
 

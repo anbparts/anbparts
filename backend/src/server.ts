@@ -49,6 +49,7 @@ app.use('/etiquetas', etiquetasRouter);
 app.use('/faturamento', faturamentoRouter);
 app.use('/financeiro', financeiroRouter);
 app.use('/google', googleDriveRouter);
+app.use('/google-drive', googleDriveRouter);
 app.use('/import', importRouter);
 app.use('/inventario', inventarioRouter);
 app.use('/mercado-livre', mercadoLivreRouter);
