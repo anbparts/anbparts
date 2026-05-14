@@ -44,6 +44,7 @@ export const api = {
     get:    (id: number)    => req<any>(`/motos/${id}`),
     detranEtiquetas: (id: number) => req<any>(`/motos/${id}/detran-etiquetas`),
     anexos: (id: number) => req<any>(`/motos/${id}/anexos`),
+    anexo: (id: number, key: string) => req<any>(`/motos/${id}/anexos/${encodeURIComponent(key)}`),
     updateAnexos: (id: number, anexos: any, removidos?: string[]) => req<any>(`/motos/${id}/anexos`, {
       method: 'PUT',
       body: JSON.stringify({ anexos, removidos }),
@@ -144,6 +145,7 @@ export const api = {
   },
   empresa: {
     get: () => req<any>('/empresa'),
+    anexo: (key: string) => req<any>(`/empresa/anexos/${encodeURIComponent(key)}`),
     save: (data: any) => req<any>('/empresa', { method: 'POST', body: JSON.stringify(data) }),
   },
   detran: {

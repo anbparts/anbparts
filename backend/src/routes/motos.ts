@@ -92,6 +92,28 @@ function countMotoAnexos(value: unknown) {
   return Object.keys(normalizeMotoAnexos(value)).length;
 }
 
+function buildMotoAnexosResponse(moto: any, options?: { includeData?: boolean }) {
+  const anexos = normalizeMotoAnexos((moto as any).anexos);
+  const responseAnexos = Object.fromEntries(
+    Object.entries(anexos).map(([key, attachment]) => [
+      key,
+      {
+        name: attachment.name,
+        ...(options?.includeData ? { dataUrl: attachment.dataUrl } : {}),
+      },
+    ]),
+  );
+
+  return {
+    ok: true,
+    motoId: moto.id,
+    moto: `${moto.marca} ${moto.modelo}`,
+    ano: moto.ano,
+    anexos: responseAnexos,
+    total: Object.keys(anexos).length,
+  };
+}
+
 function normalizeDetranEtiqueta(value: unknown) {
   const text = String(value ?? '')
     .replace(/\s+/g, '')
@@ -468,16 +490,33 @@ motosRouter.get('/:id/anexos', async (req, res, next) => {
       return res.status(404).json({ error: 'Moto nao encontrada' });
     }
 
-    const anexos = normalizeMotoAnexos((moto as any).anexos);
+    res.json(buildMotoAnexosResponse(moto));
+  } catch (e) { next(e); }
+});
 
-    res.json({
-      ok: true,
-      motoId: moto.id,
-      moto: `${moto.marca} ${moto.modelo}`,
-      ano: moto.ano,
-      anexos,
-      total: Object.keys(anexos).length,
+// GET /motos/:id/anexos/:key
+motosRouter.get('/:id/anexos/:key', async (req, res, next) => {
+  try {
+    const motoId = Number(req.params.id);
+    const key = String(req.params.key || '').trim();
+    if (!Number.isInteger(motoId) || motoId <= 0) {
+      return res.status(400).json({ error: 'Moto invalida' });
+    }
+    if (!MOTO_ANEXO_KEYS.includes(key as typeof MOTO_ANEXO_KEYS[number])) {
+      return res.status(400).json({ error: 'Anexo invalido' });
+    }
+
+    const moto = await prisma.moto.findUnique({
+      where: { id: motoId },
+      select: { id: true, anexos: true },
     });
+    if (!moto) return res.status(404).json({ error: 'Moto nao encontrada' });
+
+    const anexos = normalizeMotoAnexos((moto as any).anexos);
+    const attachment = anexos[key];
+    if (!attachment) return res.status(404).json({ error: 'Anexo nao encontrado' });
+
+    res.json({ ok: true, key, name: attachment.name, dataUrl: attachment.dataUrl });
   } catch (e) { next(e); }
 });
 
@@ -532,14 +571,7 @@ motosRouter.put('/:id/anexos', requireMotosAction('editar'), async (req, res, ne
       },
     });
 
-    res.json({
-      ok: true,
-      motoId: moto.id,
-      moto: `${moto.marca} ${moto.modelo}`,
-      ano: moto.ano,
-      anexos: normalizeMotoAnexos((moto as any).anexos),
-      total: countMotoAnexos((moto as any).anexos),
-    });
+    res.json(buildMotoAnexosResponse(moto));
   } catch (e) { next(e); }
 });
 

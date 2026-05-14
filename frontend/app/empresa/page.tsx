@@ -2,6 +2,8 @@
 
 import { useEffect, useState, type ChangeEvent } from 'react';
 import { api } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
+import { canProcessAction } from '@/lib/permissions';
 
 const EMPRESA_ANEXO_FIELDS = [
   { key: 'cartaoCnpj', label: 'Cartao CNPJ' },
@@ -93,6 +95,19 @@ async function downloadDataUrl(dataUrl: string, fileName: string) {
   setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
 }
 
+async function downloadEmpresaAttachment(key: string, attachment: { name: string; dataUrl?: string } | null) {
+  if (!attachment) return;
+  if (attachment.dataUrl) {
+    await downloadDataUrl(attachment.dataUrl, attachment.name);
+    return;
+  }
+
+  const data = await api.empresa.anexo(key);
+  if (data?.dataUrl) {
+    await downloadDataUrl(data.dataUrl, data.name || attachment.name);
+  }
+}
+
 const EMPTY_FORM = {
   razaoSocial: '',
   cnpj: '',
@@ -101,8 +116,10 @@ const EMPTY_FORM = {
 };
 
 export default function EmpresaPage() {
+  const { user } = useAuth();
+  const canEdit = canProcessAction(user, 'empresa', 'editar');
   const [form, setForm] = useState(EMPTY_FORM);
-  const [anexos, setAnexos] = useState<Record<string, { name: string; dataUrl: string } | null>>({});
+  const [anexos, setAnexos] = useState<Record<string, { name: string; dataUrl?: string } | null>>({});
   const [changedKeys, setChangedKeys] = useState<string[]>([]);
   const [removedKeys, setRemovedKeys] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -110,7 +127,7 @@ export default function EmpresaPage() {
   const [feedback, setFeedback] = useState('');
   const [localError, setLocalError] = useState('');
   const [isPhone, setIsPhone] = useState(false);
-  const [extras, setExtras] = useState<Array<{ id: string; name: string; dataUrl: string } | null>>([]);
+  const [extras, setExtras] = useState<Array<{ id: string; name: string; dataUrl?: string } | null>>([]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -238,9 +255,9 @@ export default function EmpresaPage() {
           <div style={cs.title}>Empresa</div>
           <div style={cs.sub}>Cadastro da empresa e central de documentos</div>
         </div>
-        <button onClick={handleSave} disabled={loading || saving || Boolean(localError)} style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)', opacity: loading ? 0.7 : 1, padding: isPhone ? '8px 12px' : '8px 16px', fontSize: isPhone ? 12 : 13 }}>
+        {canEdit ? <button onClick={handleSave} disabled={loading || saving || Boolean(localError)} style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)', opacity: loading ? 0.7 : 1, padding: isPhone ? '8px 12px' : '8px 16px', fontSize: isPhone ? 12 : 13 }}>
           {saving ? 'Salvando...' : 'Salvar empresa'}
-        </button>
+        </button> : null}
       </div>
 
       <div style={{ padding: isPhone ? 14 : 28, display: 'grid', gap: 18 }}>
@@ -268,6 +285,7 @@ export default function EmpresaPage() {
                     <input
                       style={cs.fi}
                       value={form.razaoSocial}
+                      readOnly={!canEdit}
                       onChange={(e) => setForm((current) => ({ ...current, razaoSocial: e.target.value }))}
                       placeholder="Ex: ANB Parts Comercio de Pecas Ltda"
                     />
@@ -277,6 +295,7 @@ export default function EmpresaPage() {
                     <input
                       style={cs.fi}
                       value={form.cnpj}
+                      readOnly={!canEdit}
                       onChange={(e) => setForm((current) => ({ ...current, cnpj: e.target.value }))}
                       placeholder="00.000.000/0001-00"
                     />
@@ -286,6 +305,7 @@ export default function EmpresaPage() {
                     <input
                       style={cs.fi}
                       value={form.telefoneWhats}
+                      readOnly={!canEdit}
                       onChange={(e) => setForm((current) => ({ ...current, telefoneWhats: e.target.value }))}
                       placeholder="(11) 99999-9999"
                     />
@@ -295,6 +315,7 @@ export default function EmpresaPage() {
                     <textarea
                       style={{ ...cs.fi, minHeight: 84, resize: 'vertical' as const }}
                       value={form.enderecoCompleto}
+                      readOnly={!canEdit}
                       onChange={(e) => setForm((current) => ({ ...current, enderecoCompleto: e.target.value }))}
                       placeholder="Rua, numero, complemento, bairro, cidade, estado e CEP"
                     />
@@ -336,11 +357,11 @@ export default function EmpresaPage() {
                       <div style={{ fontSize: 12, color: attachment ? 'var(--ink)' : 'var(--ink-muted)', marginBottom: 10, wordBreak: 'break-word' }}>
                         {attachment ? attachment.name : 'Nenhum arquivo'}
                       </div>
-                      <input type="file" accept=".pdf,application/pdf,image/*,.heic,.heif" onChange={(event) => handleFileChange(field.key, event)} style={{ width: '100%', marginBottom: 10 }} />
+                      {canEdit ? <input type="file" accept=".pdf,application/pdf,image/*,.heic,.heif" onChange={(event) => handleFileChange(field.key, event)} style={{ width: '100%', marginBottom: 10 }} /> : null}
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8 }}>
                         <button
                           type="button"
-                          onClick={() => attachment && downloadDataUrl(attachment.dataUrl, attachment.name)}
+                          onClick={() => downloadEmpresaAttachment(field.key, attachment)}
                           disabled={!attachment}
                           style={{ ...cs.btn, width: '100%', justifyContent: 'center', padding: '8px 10px', fontSize: 12, border: '1px solid var(--border)', background: 'var(--white)', color: attachment ? 'var(--blue-500)' : 'var(--ink-muted)', cursor: attachment ? 'pointer' : 'not-allowed', opacity: attachment ? 1 : 0.7 }}
                         >
@@ -349,7 +370,7 @@ export default function EmpresaPage() {
                         <button
                           type="button"
                           onClick={() => clearFile(field.key)}
-                          disabled={!attachment}
+                          disabled={!attachment || !canEdit}
                           style={{ ...cs.btn, width: '100%', justifyContent: 'center', padding: '8px 10px', fontSize: 12, border: '1px solid #fecaca', background: '#fef2f2', color: attachment ? 'var(--red)' : 'var(--ink-muted)', cursor: attachment ? 'pointer' : 'not-allowed', opacity: attachment ? 1 : 0.7 }}
                         >
                           Remover
@@ -389,13 +410,13 @@ export default function EmpresaPage() {
                             )}
                           </td>
                           <td style={cs.td}>
-                            <input type="file" accept=".pdf,application/pdf,image/*,.heic,.heif" onChange={(event) => handleFileChange(field.key, event)} />
+                            {canEdit ? <input type="file" accept=".pdf,application/pdf,image/*,.heic,.heif" onChange={(event) => handleFileChange(field.key, event)} /> : <span style={{ color: 'var(--ink-muted)', fontSize: 12 }}>Sem permissao para editar</span>}
                           </td>
                           <td style={cs.td}>
                             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                               <button
                                 type="button"
-                                onClick={() => attachment && downloadDataUrl(attachment.dataUrl, attachment.name)}
+                                onClick={() => downloadEmpresaAttachment(field.key, attachment)}
                                 disabled={!attachment}
                                 style={{ ...cs.btn, padding: '6px 10px', fontSize: 11, border: '1px solid var(--border)', background: 'var(--white)', color: attachment ? 'var(--blue-500)' : 'var(--ink-muted)', cursor: attachment ? 'pointer' : 'not-allowed', opacity: attachment ? 1 : 0.7 }}
                               >
@@ -404,7 +425,7 @@ export default function EmpresaPage() {
                               <button
                                 type="button"
                                 onClick={() => clearFile(field.key)}
-                                disabled={!attachment}
+                                disabled={!attachment || !canEdit}
                                 style={{ ...cs.btn, padding: '6px 10px', fontSize: 11, border: '1px solid #fecaca', background: '#fef2f2', color: attachment ? 'var(--red)' : 'var(--ink-muted)', cursor: attachment ? 'pointer' : 'not-allowed', opacity: attachment ? 1 : 0.7 }}
                               >
                                 Remover
@@ -428,7 +449,7 @@ export default function EmpresaPage() {
               <div style={{ fontFamily: 'Fraunces, serif', fontSize: 16, fontWeight: 600 }}>Anexos Adicionais</div>
               <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>Adicione quantos arquivos quiser — documentos avulsos, contratos extras, comprovantes, etc.</div>
             </div>
-            <button
+            {canEdit ? <button
               type="button"
               onClick={() => {
                 const newId = `extra_${Date.now()}`;
@@ -437,7 +458,7 @@ export default function EmpresaPage() {
               style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)', fontSize: isPhone ? 12 : 13 }}
             >
               + Incluir anexo
-            </button>
+            </button> : null}
           </div>
 
           {extras.length === 0 ? (
@@ -457,7 +478,7 @@ export default function EmpresaPage() {
                       </div>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}>
-                      <input
+                      {canEdit ? <input
                         type="file"
                         accept=".pdf,application/pdf,image/*,.heic,.heif"
                         style={{ fontSize: 12, maxWidth: isPhone ? '100%' : 200 }}
@@ -476,23 +497,23 @@ export default function EmpresaPage() {
                           reader.readAsDataURL(file);
                           e.target.value = '';
                         }}
-                      />
-                      {extra.dataUrl && (
+                      /> : null}
+                      {extra.name && (
                         <button
                           type="button"
-                          onClick={() => downloadDataUrl(extra.dataUrl, extra.name)}
+                          onClick={() => downloadEmpresaAttachment(extra.id, extra)}
                           style={{ ...cs.btn, padding: '6px 10px', fontSize: 11, border: '1px solid var(--border)', background: 'var(--white)', color: 'var(--blue-500)' }}
                         >
                           Download
                         </button>
                       )}
-                      <button
+                      {canEdit ? <button
                         type="button"
                         onClick={() => setExtras((prev) => prev.filter((_, i) => i !== idx))}
                         style={{ ...cs.btn, padding: '6px 10px', fontSize: 11, border: '1px solid #fecaca', background: '#fef2f2', color: 'var(--red)' }}
                       >
                         Remover
-                      </button>
+                      </button> : null}
                     </div>
                   </div>
                 );

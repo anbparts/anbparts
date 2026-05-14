@@ -264,6 +264,20 @@ async function downloadDataUrl(dataUrl: string, fileName: string) {
   setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
 }
 
+async function downloadMotoAttachment(motoId: number, key: string, attachment: { name: string; dataUrl?: string } | null) {
+  if (!attachment) return;
+  if (!motoId) return;
+  if (attachment.dataUrl) {
+    await downloadDataUrl(attachment.dataUrl, attachment.name);
+    return;
+  }
+
+  const data = await api.motos.anexo(motoId, key);
+  if (data?.dataUrl) {
+    await downloadDataUrl(data.dataUrl, data.name || attachment.name);
+  }
+}
+
 const MOTO_ANEXO_FIELDS = [
   { key: 'nfeLeilao', label: 'NF-e Leilao' },
   { key: 'atpve', label: 'ATPV-e' },
@@ -700,7 +714,7 @@ function DetranModal({ open, moto, loading, data, updatingId, onToggleStatus, on
 }
 
 function AnexosMotoModal({ open, moto, loading, data, saving, onClose, onSave, viewportMode = 'desktop' }: any) {
-  const [form, setForm] = useState<Record<string, { name: string; dataUrl: string } | null>>({});
+  const [form, setForm] = useState<Record<string, { name: string; dataUrl?: string } | null>>({});
   const [changedKeys, setChangedKeys] = useState<string[]>([]);
   const [removedKeys, setRemovedKeys] = useState<string[]>([]);
   const [localError, setLocalError] = useState('');
@@ -790,7 +804,7 @@ function AnexosMotoModal({ open, moto, loading, data, saving, onClose, onSave, v
                     <div style={{ display: 'grid', gridTemplateColumns: modalIsPhone ? '1fr' : '1fr 1fr', gap: 8 }}>
                       <button
                         type="button"
-                        onClick={() => attachment && downloadDataUrl(attachment.dataUrl, attachment.name)}
+                        onClick={() => downloadMotoAttachment(moto?.id, field.key, attachment)}
                         disabled={!attachment}
                         style={{ ...cs.btn, width: '100%', justifyContent: 'center', padding: '8px 10px', fontSize: 12, border: '1px solid var(--border)', background: 'var(--white)', color: attachment ? 'var(--blue-500)' : 'var(--ink-muted)', cursor: attachment ? 'pointer' : 'not-allowed', opacity: attachment ? 1 : 0.7 }}
                       >
@@ -841,7 +855,7 @@ function AnexosMotoModal({ open, moto, loading, data, saving, onClose, onSave, v
                           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                             <button
                               type="button"
-                              onClick={() => attachment && downloadDataUrl(attachment.dataUrl, attachment.name)}
+                              onClick={() => downloadMotoAttachment(moto?.id, field.key, attachment)}
                               disabled={!attachment}
                               style={{ ...cs.btn, padding: '6px 10px', fontSize: 11, border: '1px solid var(--border)', background: 'var(--white)', color: attachment ? 'var(--blue-500)' : 'var(--ink-muted)', cursor: attachment ? 'pointer' : 'not-allowed', opacity: attachment ? 1 : 0.7 }}
                             >
@@ -1898,7 +1912,7 @@ export default function MotosPage() {
     setAnexosSaving(false);
   }
 
-  async function handleSaveAnexos(anexos: Record<string, { name: string; dataUrl: string } | null>, changed: string[] = [], removed: string[] = []) {
+  async function handleSaveAnexos(anexos: Record<string, { name: string; dataUrl?: string } | null>, changed: string[] = [], removed: string[] = []) {
     if (!anexosMoto) return;
     setAnexosSaving(true);
     try {

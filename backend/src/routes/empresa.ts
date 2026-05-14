@@ -60,15 +60,24 @@ function normalizeEmpresaAnexos(value: unknown) {
   return anexos;
 }
 
-function buildEmpresaResponse(config: any) {
+function buildEmpresaResponse(config: any, options?: { includeData?: boolean }) {
   const anexos = normalizeEmpresaAnexos(config?.empresaAnexos);
+  const responseAnexos = Object.fromEntries(
+    Object.entries(anexos).map(([key, attachment]) => [
+      key,
+      {
+        name: attachment.name,
+        ...(options?.includeData ? { dataUrl: attachment.dataUrl } : {}),
+      },
+    ]),
+  );
   return {
     ok: true,
     razaoSocial: normalizeText(config?.empresaRazaoSocial),
     cnpj: normalizeText(config?.empresaCnpj),
     enderecoCompleto: normalizeText(config?.empresaEnderecoCompleto),
     telefoneWhats: normalizeText(config?.empresaTelefoneWhats),
-    anexos,
+    anexos: responseAnexos,
     totalAnexos: Object.keys(anexos).length,
   };
 }
@@ -77,6 +86,23 @@ empresaRouter.get('/', async (_req, res, next) => {
   try {
     const config = await getConfiguracaoGeral();
     res.json(buildEmpresaResponse(config));
+  } catch (e) {
+    next(e);
+  }
+});
+
+empresaRouter.get('/anexos/:key', async (req, res, next) => {
+  try {
+    const key = normalizeText(req.params.key);
+    const isAllowedKey = EMPRESA_ANEXO_KEYS.includes(key as typeof EMPRESA_ANEXO_KEYS[number]) || /^extra_\d+$/.test(key);
+    if (!isAllowedKey) return res.status(400).json({ error: 'Anexo invalido' });
+
+    const config = await getConfiguracaoGeral();
+    const anexos = normalizeEmpresaAnexos(config?.empresaAnexos);
+    const attachment = anexos[key];
+    if (!attachment) return res.status(404).json({ error: 'Anexo nao encontrado' });
+
+    res.json({ ok: true, key, name: attachment.name, dataUrl: attachment.dataUrl });
   } catch (e) {
     next(e);
   }
