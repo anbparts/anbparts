@@ -8,11 +8,15 @@ export const empresaRouter = Router();
 const empresaPayloadSchema = z.object({
   razaoSocial: z.string().optional().nullable(),
   cnpj: z.string().optional().nullable(),
+  inscricaoEstadual: z.string().optional().nullable(),
+  inscricaoMunicipal: z.string().optional().nullable(),
   enderecoCompleto: z.string().optional().nullable(),
   telefoneWhats: z.string().optional().nullable(),
   anexos: z.record(z.any()).optional().default({}),
   removidos: z.array(z.string()).optional().default([]),
 });
+
+const EMPRESA_DADOS_KEY = '__dadosEmpresa';
 
 const EMPRESA_ANEXO_KEYS = [
   'cartaoCnpj',
@@ -60,8 +64,23 @@ function normalizeEmpresaAnexos(value: unknown) {
   return anexos;
 }
 
+function normalizeEmpresaDadosExtras(value: unknown) {
+  const source = value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+  const dados = source[EMPRESA_DADOS_KEY];
+  if (!dados || typeof dados !== 'object' || Array.isArray(dados)) {
+    return { inscricaoEstadual: '', inscricaoMunicipal: '' };
+  }
+  return {
+    inscricaoEstadual: normalizeText((dados as any).inscricaoEstadual),
+    inscricaoMunicipal: normalizeText((dados as any).inscricaoMunicipal),
+  };
+}
+
 function buildEmpresaResponse(config: any, options?: { includeData?: boolean }) {
   const anexos = normalizeEmpresaAnexos(config?.empresaAnexos);
+  const dadosExtras = normalizeEmpresaDadosExtras(config?.empresaAnexos);
   const responseAnexos = Object.fromEntries(
     Object.entries(anexos).map(([key, attachment]) => [
       key,
@@ -75,6 +94,8 @@ function buildEmpresaResponse(config: any, options?: { includeData?: boolean }) 
     ok: true,
     razaoSocial: normalizeText(config?.empresaRazaoSocial),
     cnpj: normalizeText(config?.empresaCnpj),
+    inscricaoEstadual: dadosExtras.inscricaoEstadual,
+    inscricaoMunicipal: dadosExtras.inscricaoMunicipal,
     enderecoCompleto: normalizeText(config?.empresaEnderecoCompleto),
     telefoneWhats: normalizeText(config?.empresaTelefoneWhats),
     anexos: responseAnexos,
@@ -121,6 +142,10 @@ empresaRouter.post('/', async (req, res, next) => {
       ...anexosAtuais,
       ...anexosAtualizados,
     } as Record<string, { name: string; dataUrl: string }>;
+    const dadosExtras = {
+      inscricaoEstadual: normalizeText(payload.inscricaoEstadual),
+      inscricaoMunicipal: normalizeText(payload.inscricaoMunicipal),
+    };
 
     for (const key of removidos) {
       delete anexos[key];
@@ -133,7 +158,10 @@ empresaRouter.post('/', async (req, res, next) => {
         empresaCnpj: normalizeText(payload.cnpj),
         empresaEnderecoCompleto: normalizeText(payload.enderecoCompleto),
         empresaTelefoneWhats: normalizeText(payload.telefoneWhats),
-        empresaAnexos: anexos,
+        empresaAnexos: {
+          ...anexos,
+          [EMPRESA_DADOS_KEY]: dadosExtras,
+        },
       },
     });
 
