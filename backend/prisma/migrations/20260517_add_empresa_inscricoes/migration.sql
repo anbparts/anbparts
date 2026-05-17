@@ -1,3 +1,2 @@
-﻿ALTER TABLE "ConfiguracaoGeral"
-ADD COLUMN "empresaInscricaoEstadual" TEXT NOT NULL DEFAULT '',
-ADD COLUMN "empresaInscricaoMunicipal" TEXT NOT NULL DEFAULT '';
+-- Rollback emergencial: sem alteracao de banco.
+-- Os campos de inscricao serao replanejados sem travar o deploy.

@@ -8,8 +8,6 @@ export const empresaRouter = Router();
 const empresaPayloadSchema = z.object({
   razaoSocial: z.string().optional().nullable(),
   cnpj: z.string().optional().nullable(),
-  inscricaoEstadual: z.string().optional().nullable(),
-  inscricaoMunicipal: z.string().optional().nullable(),
   enderecoCompleto: z.string().optional().nullable(),
   telefoneWhats: z.string().optional().nullable(),
   anexos: z.record(z.any()).optional().default({}),
@@ -77,8 +75,6 @@ function buildEmpresaResponse(config: any, options?: { includeData?: boolean }) 
     ok: true,
     razaoSocial: normalizeText(config?.empresaRazaoSocial),
     cnpj: normalizeText(config?.empresaCnpj),
-    inscricaoEstadual: normalizeText(config?.empresaInscricaoEstadual),
-    inscricaoMunicipal: normalizeText(config?.empresaInscricaoMunicipal),
     enderecoCompleto: normalizeText(config?.empresaEnderecoCompleto),
     telefoneWhats: normalizeText(config?.empresaTelefoneWhats),
     anexos: responseAnexos,
@@ -135,8 +131,6 @@ empresaRouter.post('/', async (req, res, next) => {
       data: {
         empresaRazaoSocial: normalizeText(payload.razaoSocial),
         empresaCnpj: normalizeText(payload.cnpj),
-        empresaInscricaoEstadual: normalizeText(payload.inscricaoEstadual),
-        empresaInscricaoMunicipal: normalizeText(payload.inscricaoMunicipal),
         empresaEnderecoCompleto: normalizeText(payload.enderecoCompleto),
         empresaTelefoneWhats: normalizeText(payload.telefoneWhats),
         empresaAnexos: anexos,
