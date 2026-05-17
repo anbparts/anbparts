@@ -515,21 +515,36 @@ pecasRouter.get('/', async (req, res, next) => {
 
 pecasRouter.get('/caixas', async (_req, res, next) => {
   try {
-    const pecas = await prisma.peca.findMany({
-      where: {
-        disponivel: true,
-        emPrejuizo: false,
-      },
-      select: {
-        idPeca: true,
-        localizacao: true,
-      },
-      orderBy: {
-        localizacao: 'asc',
-      },
-    });
+    const [pecas, preCadastros] = await Promise.all([
+      prisma.peca.findMany({
+        where: {
+          disponivel: true,
+          emPrejuizo: false,
+        },
+        select: {
+          idPeca: true,
+          localizacao: true,
+        },
+        orderBy: {
+          localizacao: 'asc',
+        },
+      }),
+      prisma.cadastroPeca.findMany({
+        where: {
+          status: 'pre_cadastro',
+          localizacao: { not: null },
+        },
+        select: {
+          idPeca: true,
+          localizacao: true,
+        },
+        orderBy: {
+          localizacao: 'asc',
+        },
+      }),
+    ]);
 
-    const counters = new Map<string, { totalPecas: number; skus: Set<string> }>();
+    const counters = new Map<string, { totalPecas: number; totalEstoque: number; totalPreCadastro: number; skus: Set<string> }>();
     let semLocalizacaoCount = 0;
     const semLocalizacaoSkus = new Set<string>();
 
@@ -542,8 +557,21 @@ pecasRouter.get('/caixas', async (_req, res, next) => {
         continue;
       }
 
-      const current = counters.get(caixa) || { totalPecas: 0, skus: new Set<string>() };
+      const current = counters.get(caixa) || { totalPecas: 0, totalEstoque: 0, totalPreCadastro: 0, skus: new Set<string>() };
       current.totalPecas += 1;
+      current.totalEstoque += 1;
+      if (skuBase) current.skus.add(skuBase);
+      counters.set(caixa, current);
+    }
+
+    for (const cadastro of preCadastros) {
+      const caixa = normalizePecaLocalizacao(cadastro.localizacao);
+      if (!caixa) continue;
+
+      const skuBase = String(cadastro.idPeca || '').replace(/-\d+$/, '');
+      const current = counters.get(caixa) || { totalPecas: 0, totalEstoque: 0, totalPreCadastro: 0, skus: new Set<string>() };
+      current.totalPecas += 1;
+      current.totalPreCadastro += 1;
       if (skuBase) current.skus.add(skuBase);
       counters.set(caixa, current);
     }
@@ -552,6 +580,8 @@ pecasRouter.get('/caixas', async (_req, res, next) => {
       .map(([caixa, summary]) => ({
         caixa,
         totalPecas: summary.totalPecas,
+        totalEstoque: summary.totalEstoque,
+        totalPreCadastro: summary.totalPreCadastro,
         totalSkus: summary.skus.size,
       }))
       .sort((a, b) => a.caixa.localeCompare(b.caixa, 'pt-BR', { numeric: true, sensitivity: 'base' }));
@@ -560,6 +590,8 @@ pecasRouter.get('/caixas', async (_req, res, next) => {
       data.unshift({
         caixa: CAIXA_SEM_LOCALIZACAO,
         totalPecas: semLocalizacaoCount,
+        totalEstoque: semLocalizacaoCount,
+        totalPreCadastro: 0,
         totalSkus: semLocalizacaoSkus.size,
       });
     }

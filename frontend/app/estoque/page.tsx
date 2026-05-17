@@ -108,6 +108,8 @@ type CaixaFilterOption = {
   caixa: string;
   totalPecas: number;
   totalSkus?: number;
+  totalEstoque?: number;
+  totalPreCadastro?: number;
 };
 
 const COL_ALL = ['motoId','idPeca','moto','descricao','localizacao','cadastro','precoML','valorLiq','valorFrete','valorTaxas','dataVenda','blingPedidoNum','detranEtiqueta','detranStatus','status'] as const;
