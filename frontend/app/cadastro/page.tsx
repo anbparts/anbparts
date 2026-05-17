@@ -950,6 +950,7 @@ export default function CadastroPage() {
     setEditItem(item);
     setForm({
       motoId: String(item.motoId), idPeca: item.idPeca, descricao: item.descricao,
+      descricaoPecaTitulo: item.descricao || '', sufixoTitulo: '',
       descricaoPeca: item.descricaoPeca || '', precoVenda: String(item.precoVenda),
       condicao: item.condicao,
       peso: item.peso != null ? String(item.peso) : '',
