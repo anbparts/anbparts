@@ -1693,28 +1693,39 @@ Deseja forçar a exclusão mesmo assim?`);
               })}
             </div>
           ) : (
-            <div style={{ overflowX: 'auto', maxWidth: '100%', paddingBottom: 6 }}>
-              <table style={{ width: '100%', minWidth: isTabletLandscape ? 1080 : 1160, borderCollapse: 'collapse', tableLayout: 'fixed' as const }}>
-                <thead><tr>{['ID Peça', 'Descrição', 'Moto', 'Data Pré-Cadastro', 'Preço', 'Estoque', 'Pré-Cadastro', 'Cadastro', 'Ações'].map(h => <th key={h} style={{ ...s.th, width: h === 'Descrição' ? 220 : h === 'Moto' ? 230 : h === 'Ações' ? 190 : h === 'Data Pré-Cadastro' ? 140 : h === 'Estoque' ? 90 : h.includes('Cadastro') ? 130 : 110 }}>{h}</th>)}</tr></thead>
+            <div style={{ maxWidth: '100%', overflow: 'hidden' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' as const }}>
+                <colgroup>
+                  <col style={{ width: '10%' }} />
+                  <col style={{ width: '18%' }} />
+                  <col style={{ width: '18%' }} />
+                  <col style={{ width: '12%' }} />
+                  <col style={{ width: '9%' }} />
+                  <col style={{ width: '6%' }} />
+                  <col style={{ width: '9%' }} />
+                  <col style={{ width: '8%' }} />
+                  <col style={{ width: '10%' }} />
+                </colgroup>
+                <thead><tr>{['ID Peça', 'Descrição', 'Moto', 'Data Pré-Cadastro', 'Preço', 'Estoque', 'Pré-Cadastro', 'Cadastro', 'Ações'].map(h => <th key={h} style={{ ...s.th, padding: '9px 6px', fontSize: 10.5, overflow: 'hidden', textOverflow: 'ellipsis' }}>{h}</th>)}</tr></thead>
                 <tbody>
                   {data.data.map((item) => {
                     const cadastOk = item.status === 'cadastrado';
                     return (
                       <tr key={item.id}>
-                        <td style={{ ...s.td, fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--blue-600)', whiteSpace: 'nowrap' as const }}>{item.idPeca}</td>
-                        <td style={s.td}><div title={item.descricao} style={{ whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.descricao}</div></td>
-                        <td style={{ ...s.td, fontSize: 12 }}><div title={`${item.moto?.marca || ''} ${item.moto?.modelo || ''}`} style={{ whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.moto?.marca} {item.moto?.modelo}</div></td>
-                        <td style={{ ...s.td, whiteSpace: 'nowrap' as const, fontSize: 12 }}>{formatDateBr(item.createdAt)}</td>
-                        <td style={s.td}>R$ {Number(item.precoVenda).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                        <td style={s.td}>{item.estoque}</td>
-                        <td style={s.td}>
+                        <td style={{ ...s.td, padding: '10px 6px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--blue-600)', whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.idPeca}</td>
+                        <td style={{ ...s.td, padding: '10px 6px' }}><div title={item.descricao} style={{ whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.descricao}</div></td>
+                        <td style={{ ...s.td, padding: '10px 6px', fontSize: 12 }}><div title={`${item.moto?.marca || ''} ${item.moto?.modelo || ''}`} style={{ whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.moto?.marca} {item.moto?.modelo}</div></td>
+                        <td style={{ ...s.td, padding: '10px 6px', whiteSpace: 'nowrap' as const, fontSize: 12 }}>{formatDateBr(item.createdAt)}</td>
+                        <td style={{ ...s.td, padding: '10px 6px', whiteSpace: 'nowrap' as const }}>R$ {Number(item.precoVenda).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                        <td style={{ ...s.td, padding: '10px 6px' }}>{item.estoque}</td>
+                        <td style={{ ...s.td, padding: '10px 6px' }}>
                           {cadastOk
                             ? <span style={s.badge('#2563eb', '#eff6ff', '#bfdbfe')}>✓ OK</span>
                             : canEditarPreCadastro
                               ? <button onClick={() => openEditar(item)} style={{ ...s.badge('var(--green)', '#f0fdf4', '#86efac'), cursor: 'pointer' }}>✓ OK</button>
                               : <span style={s.badge('var(--green)', '#f0fdf4', '#86efac')}>✓ OK</span>}
                         </td>
-                        <td style={s.td}>
+                        <td style={{ ...s.td, padding: '10px 6px' }}>
                           {cadastOk ? (
                             <span style={s.badge('#2563eb', '#eff6ff', '#bfdbfe')}>✓ OK</span>
                           ) : (
@@ -1724,25 +1735,25 @@ Deseja forçar a exclusão mesmo assim?`);
                             </button> : <span style={s.badge('#dc2626', '#fef2f2', '#fecaca')}>Pendente</span>
                           )}
                         </td>
-                        <td style={{ ...s.td, width: 190 }}>
-                          <div style={{ display: 'grid', gridTemplateColumns: isBruno ? '1fr 1fr' : '1fr', gap: 6, alignItems: 'center', minWidth: 160 }}>
+                        <td style={{ ...s.td, padding: '10px 6px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 5, alignItems: 'center' }}>
                             <button
-                              style={{ ...s.btn, fontSize: 11, padding: '5px 8px', background: '#eff6ff', border: '1px solid #bfdbfe', color: '#2563eb', opacity: imprimindoItemId === item.id ? 0.7 : 1, justifyContent: 'center' }}
+                              style={{ ...s.btn, fontSize: 10.5, padding: '4px 6px', background: '#eff6ff', border: '1px solid #bfdbfe', color: '#2563eb', opacity: imprimindoItemId === item.id ? 0.7 : 1, justifyContent: 'center', minWidth: 0 }}
                               onClick={() => imprimirEtiquetasCadastro(item)}
                               disabled={imprimindoItemId === item.id}
                             >
                               {imprimindoItemId === item.id ? 'Imprimindo...' : 'Impressão'}
                             </button>
                             {!cadastOk && canEditarPreCadastro && (
-                              <button style={{ ...s.btn, fontSize: 11, padding: '5px 8px', background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', justifyContent: 'center' }} onClick={() => openEditar(item)}>Editar</button>
+                              <button style={{ ...s.btn, fontSize: 10.5, padding: '4px 6px', background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', justifyContent: 'center', minWidth: 0 }} onClick={() => openEditar(item)}>Editar</button>
                             )}
                             {isBruno && (
                               <button
-                                style={{ ...s.btn, gridColumn: '1 / -1', fontSize: 11, padding: '5px 8px', background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', opacity: eliminandoLinhaId === item.id ? 0.7 : 1, justifyContent: 'center' }}
+                                style={{ ...s.btn, fontSize: 10.5, padding: '4px 6px', background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', opacity: eliminandoLinhaId === item.id ? 0.7 : 1, justifyContent: 'center', minWidth: 0 }}
                                 onClick={() => eliminarLinhaCadastro(item)}
                                 disabled={eliminandoLinhaId === item.id}
                               >
-                                {eliminandoLinhaId === item.id ? 'Eliminando...' : 'Eliminar linha'}
+                                {eliminandoLinhaId === item.id ? '...' : 'Eliminar'}
                               </button>
                             )}
                           </div>
