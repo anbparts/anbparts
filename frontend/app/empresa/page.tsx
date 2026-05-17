@@ -111,6 +111,8 @@ async function downloadEmpresaAttachment(key: string, attachment: { name: string
 const EMPTY_FORM = {
   razaoSocial: '',
   cnpj: '',
+  inscricaoEstadual: '',
+  inscricaoMunicipal: '',
   enderecoCompleto: '',
   telefoneWhats: '',
 };
@@ -151,6 +153,8 @@ export default function EmpresaPage() {
         setForm({
           razaoSocial: data.razaoSocial || '',
           cnpj: data.cnpj || '',
+          inscricaoEstadual: data.inscricaoEstadual || '',
+          inscricaoMunicipal: data.inscricaoMunicipal || '',
           enderecoCompleto: data.enderecoCompleto || '',
           telefoneWhats: data.telefoneWhats || '',
         });
@@ -231,6 +235,8 @@ export default function EmpresaPage() {
       setForm({
         razaoSocial: response.razaoSocial || '',
         cnpj: response.cnpj || '',
+        inscricaoEstadual: response.inscricaoEstadual || '',
+        inscricaoMunicipal: response.inscricaoMunicipal || '',
         enderecoCompleto: response.enderecoCompleto || '',
         telefoneWhats: response.telefoneWhats || '',
       });
@@ -246,6 +252,35 @@ export default function EmpresaPage() {
     }
   }
 
+  async function copiarDadosEmpresa() {
+    const texto = [
+      `Razão Social: ${form.razaoSocial || ''}`,
+      `CNPJ: ${form.cnpj || ''}`,
+      `Inscrição Estadual: ${form.inscricaoEstadual || ''}`,
+      `Inscrição Municipal: ${form.inscricaoMunicipal || ''}`,
+      `WhatsApp: ${form.telefoneWhats || ''}`,
+      `Endereço Completo: ${form.enderecoCompleto || ''}`,
+    ].join('\n');
+
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(texto);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = texto;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        textarea.remove();
+      }
+      setFeedback('Dados da empresa copiados.');
+    } catch {
+      setFeedback('Erro ao copiar dados da empresa');
+    }
+  }
+
   const totalAnexos = Object.keys(anexos || {}).length;
 
   return (
@@ -255,9 +290,14 @@ export default function EmpresaPage() {
           <div style={cs.title}>Empresa</div>
           <div style={cs.sub}>Cadastro da empresa e central de documentos</div>
         </div>
-        {canEdit ? <button onClick={handleSave} disabled={loading || saving || Boolean(localError)} style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)', opacity: loading ? 0.7 : 1, padding: isPhone ? '8px 12px' : '8px 16px', fontSize: isPhone ? 12 : 13 }}>
-          {saving ? 'Salvando...' : 'Salvar empresa'}
-        </button> : null}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <button onClick={copiarDadosEmpresa} disabled={loading} style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink)', border: '1px solid var(--border)', opacity: loading ? 0.7 : 1, padding: isPhone ? '8px 12px' : '8px 16px', fontSize: isPhone ? 12 : 13 }}>
+            Copiar Dados Empresa
+          </button>
+          {canEdit ? <button onClick={handleSave} disabled={loading || saving || Boolean(localError)} style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)', opacity: loading ? 0.7 : 1, padding: isPhone ? '8px 12px' : '8px 16px', fontSize: isPhone ? 12 : 13 }}>
+            {saving ? 'Salvando...' : 'Salvar empresa'}
+          </button> : null}
+        </div>
       </div>
 
       <div style={{ padding: isPhone ? 14 : 28, display: 'grid', gap: 18 }}>
@@ -308,6 +348,26 @@ export default function EmpresaPage() {
                       readOnly={!canEdit}
                       onChange={(e) => setForm((current) => ({ ...current, telefoneWhats: e.target.value }))}
                       placeholder="(11) 99999-9999"
+                    />
+                  </div>
+                  <div>
+                    <label style={cs.fl}>Inscrição Estadual</label>
+                    <input
+                      style={cs.fi}
+                      value={form.inscricaoEstadual}
+                      readOnly={!canEdit}
+                      onChange={(e) => setForm((current) => ({ ...current, inscricaoEstadual: e.target.value }))}
+                      placeholder="Ex: 000.000.000.000"
+                    />
+                  </div>
+                  <div>
+                    <label style={cs.fl}>Inscrição Municipal</label>
+                    <input
+                      style={cs.fi}
+                      value={form.inscricaoMunicipal}
+                      readOnly={!canEdit}
+                      onChange={(e) => setForm((current) => ({ ...current, inscricaoMunicipal: e.target.value }))}
+                      placeholder="Ex: 000000"
                     />
                   </div>
                   <div style={{ gridColumn: isPhone ? 'auto' : '1 / -1' }}>

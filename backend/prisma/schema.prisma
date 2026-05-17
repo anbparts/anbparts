@@ -247,6 +247,8 @@ model ConfiguracaoGeral {
   mercadoLivrePerguntasUltimaLeituraEm DateTime?
   empresaRazaoSocial        String   @default("")
   empresaCnpj               String   @default("")
+  empresaInscricaoEstadual  String   @default("")
+  empresaInscricaoMunicipal String   @default("")
   empresaEnderecoCompleto   String   @default("")
   empresaTelefoneWhats      String   @default("")
   empresaAnexos             Json     @default("{}")
