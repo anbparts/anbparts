@@ -1624,7 +1624,7 @@ Deseja forçar a exclusão mesmo assim?`);
           </div>
         </div>
 
-        <div style={s.card}>
+        <div style={{ ...s.card, overflow: 'hidden', maxWidth: '100%' }}>
           <div style={{ fontSize: 12, color: 'var(--gray-400)', marginBottom: 14 }}>{data.total} registro(s){somentePendentes ? ' (pendentes)' : ''}</div>
           {loading ? <div style={{ textAlign: 'center', padding: 32, color: 'var(--gray-400)' }}>Carregando...</div> :
             data.data.length === 0 ? <div style={{ textAlign: 'center', padding: 32, color: 'var(--gray-400)' }}>Nenhum cadastro encontrado.</div> : isPhone ? (
@@ -1692,17 +1692,17 @@ Deseja forçar a exclusão mesmo assim?`);
               })}
             </div>
           ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead><tr>{['ID Peça', 'Descrição', 'Moto', 'Data Pré-Cadastro', 'Preço', 'Estoque', 'Pré-Cadastro', 'Cadastro', 'Ações'].map(h => <th key={h} style={s.th}>{h}</th>)}</tr></thead>
+            <div style={{ overflowX: 'auto', maxWidth: '100%', paddingBottom: 6 }}>
+              <table style={{ width: '100%', minWidth: isTabletLandscape ? 1080 : 1160, borderCollapse: 'collapse', tableLayout: 'fixed' as const }}>
+                <thead><tr>{['ID Peça', 'Descrição', 'Moto', 'Data Pré-Cadastro', 'Preço', 'Estoque', 'Pré-Cadastro', 'Cadastro', 'Ações'].map(h => <th key={h} style={{ ...s.th, width: h === 'Descrição' ? 220 : h === 'Moto' ? 230 : h === 'Ações' ? 190 : h === 'Data Pré-Cadastro' ? 140 : h === 'Estoque' ? 90 : h.includes('Cadastro') ? 130 : 110 }}>{h}</th>)}</tr></thead>
                 <tbody>
                   {data.data.map((item) => {
                     const cadastOk = item.status === 'cadastrado';
                     return (
                       <tr key={item.id}>
                         <td style={{ ...s.td, fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--blue-600)', whiteSpace: 'nowrap' as const }}>{item.idPeca}</td>
-                        <td style={{ ...s.td, maxWidth: 240 }}><div style={{ whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.descricao}</div></td>
-                        <td style={{ ...s.td, whiteSpace: 'nowrap' as const, fontSize: 12 }}>{item.moto?.marca} {item.moto?.modelo}</td>
+                        <td style={s.td}><div title={item.descricao} style={{ whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.descricao}</div></td>
+                        <td style={{ ...s.td, fontSize: 12 }}><div title={`${item.moto?.marca || ''} ${item.moto?.modelo || ''}`} style={{ whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.moto?.marca} {item.moto?.modelo}</div></td>
                         <td style={{ ...s.td, whiteSpace: 'nowrap' as const, fontSize: 12 }}>{formatDateBr(item.createdAt)}</td>
                         <td style={s.td}>R$ {Number(item.precoVenda).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
                         <td style={s.td}>{item.estoque}</td>
@@ -1723,21 +1723,21 @@ Deseja forçar a exclusão mesmo assim?`);
                             </button> : <span style={s.badge('#dc2626', '#fef2f2', '#fecaca')}>Pendente</span>
                           )}
                         </td>
-                        <td style={s.td}>
-                          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' as const }}>
+                        <td style={{ ...s.td, width: 190 }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: isBruno ? '1fr 1fr' : '1fr', gap: 6, alignItems: 'center', minWidth: 160 }}>
                             <button
-                              style={{ ...s.btn, fontSize: 11, padding: '4px 10px', background: '#eff6ff', border: '1px solid #bfdbfe', color: '#2563eb', opacity: imprimindoItemId === item.id ? 0.7 : 1 }}
+                              style={{ ...s.btn, fontSize: 11, padding: '5px 8px', background: '#eff6ff', border: '1px solid #bfdbfe', color: '#2563eb', opacity: imprimindoItemId === item.id ? 0.7 : 1, justifyContent: 'center' }}
                               onClick={() => imprimirEtiquetasCadastro(item)}
                               disabled={imprimindoItemId === item.id}
                             >
                               {imprimindoItemId === item.id ? 'Imprimindo...' : 'Impressão'}
                             </button>
                             {!cadastOk && canEditarPreCadastro && (
-                              <button style={{ ...s.btn, fontSize: 11, padding: '4px 10px', background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)' }} onClick={() => openEditar(item)}>Editar</button>
+                              <button style={{ ...s.btn, fontSize: 11, padding: '5px 8px', background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', justifyContent: 'center' }} onClick={() => openEditar(item)}>Editar</button>
                             )}
                             {isBruno && (
                               <button
-                                style={{ ...s.btn, fontSize: 11, padding: '4px 10px', background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', opacity: eliminandoLinhaId === item.id ? 0.7 : 1 }}
+                                style={{ ...s.btn, gridColumn: '1 / -1', fontSize: 11, padding: '5px 8px', background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', opacity: eliminandoLinhaId === item.id ? 0.7 : 1, justifyContent: 'center' }}
                                 onClick={() => eliminarLinhaCadastro(item)}
                                 disabled={eliminandoLinhaId === item.id}
                               >
@@ -1871,8 +1871,8 @@ Deseja forçar a exclusão mesmo assim?`);
 
       {/* MODAL PRÉ-CADASTRO */}
       {modal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 200, display: 'flex', alignItems: isPhone ? 'stretch' : 'flex-start', justifyContent: 'center', padding: isPhone ? 0 : isTabletLandscape ? '16px' : '20px 16px', overflowY: isPhone ? 'hidden' : 'auto' }}>
-          <div style={{ background: 'var(--white)', borderRadius: isPhone ? 0 : 14, width: '100%', maxWidth: isPhone ? undefined : isMobile ? 680 : 1100, boxShadow: '0 20px 60px rgba(0,0,0,0.2)', marginBottom: isPhone ? 0 : 20, display: 'flex', flexDirection: 'column', maxHeight: isPhone ? '100dvh' : undefined, minHeight: isPhone ? '100dvh' : undefined }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 200, display: 'flex', alignItems: isPhone ? 'stretch' : 'flex-start', justifyContent: 'center', padding: isPhone ? 0 : isTabletLandscape ? '12px' : '20px 16px', overflowY: 'hidden' }}>
+          <div style={{ background: 'var(--white)', borderRadius: isPhone ? 0 : 14, width: '100%', maxWidth: isPhone ? undefined : isMobile ? 680 : 1100, boxShadow: '0 20px 60px rgba(0,0,0,0.2)', marginBottom: isPhone ? 0 : 20, display: 'flex', flexDirection: 'column', maxHeight: isPhone ? '100dvh' : isTabletLandscape ? 'calc(100dvh - 24px)' : 'calc(100dvh - 40px)', minHeight: isPhone ? '100dvh' : undefined, overflow: 'hidden' }}>
 
             {/* Header */}
             <div style={{ padding: isPhone ? '14px 14px 12px' : '12px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
@@ -1881,10 +1881,10 @@ Deseja forçar a exclusão mesmo assim?`);
             </div>
 
             {/* Corpo */}
-            <div style={{ flex: 1, overflowY: 'auto', display: isPhone ? 'block' : 'grid', gridTemplateColumns: isPhone ? undefined : isMobile ? '1fr' : '1fr 1fr', gap: 0 }}>
+            <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: isPhone ? 'block' : 'grid', gridTemplateColumns: isPhone ? undefined : isMobile ? '1fr' : 'minmax(0, 1fr) minmax(0, 1fr)', alignItems: 'stretch', gap: 0 }}>
 
               {/* COLUNA ESQUERDA — campos do produto */}
-              <div style={{ padding: isPhone ? '12px 14px' : '10px 14px', display: 'grid', gap: isPhone ? 8 : 5, borderRight: (!isPhone && !isMobile) ? '1px solid var(--border)' : 'none', borderBottom: isMobile && !isPhone ? '1px solid var(--border)' : 'none' }}>
+              <div style={{ padding: isPhone ? '12px 14px' : '10px 14px', display: 'grid', alignContent: 'start', gap: isPhone ? 8 : 5, borderRight: (!isPhone && !isMobile) ? '1px solid var(--border)' : 'none', borderBottom: isMobile && !isPhone ? '1px solid var(--border)' : 'none', overflowY: 'auto', minHeight: 0 }}>
 
                 <div>
                   <label style={s.label}>Moto *</label>
@@ -2090,13 +2090,13 @@ Deseja forçar a exclusão mesmo assim?`);
               </div>
 
               {/* COLUNA DIREITA — checklist + descrição */}
-              <div style={{ padding: isPhone ? '0 14px 12px' : '10px 14px', display: 'flex', flexDirection: 'column' as const, gap: isPhone ? 8 : 5 }}>
+              <div style={{ padding: isPhone ? '0 14px 12px' : '10px 14px', display: 'flex', flexDirection: 'column' as const, gap: isPhone ? 8 : 5, overflowY: 'auto', minHeight: 0 }}>
 
                 <ChecklistValidacao form={form} />
 
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column' as const }}>
+                <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' as const }}>
                   <label style={s.label}>Descrição da Peça (corpo do anúncio)</label>
-                  <div style={{ border: '1px solid var(--border)', borderRadius: 7, overflow: 'hidden', flex: 1, display: 'flex', flexDirection: 'column' as const }}>
+                  <div style={{ border: '1px solid var(--border)', borderRadius: 7, overflow: 'hidden', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' as const }}>
                     <div style={{ display: 'flex', gap: 4, padding: '6px 10px', background: '#f8fafc', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
                       {[{ label: 'B', cmd: 'bold', style: { fontWeight: 700 } }, { label: 'I', cmd: 'italic', style: { fontStyle: 'italic' } }, { label: 'U', cmd: 'underline', style: { textDecoration: 'underline' } }].map(({ label, cmd, style }) => (
                         <button key={cmd} type="button"
@@ -2110,7 +2110,7 @@ Deseja forçar a exclusão mesmo assim?`);
                       ref={descricaoPecaEditorRef}
                       contentEditable
                       suppressContentEditableWarning
-                      style={{ ...s.input, flex: 1, minHeight: isPhone ? 200 : 220, borderRadius: 0, border: 'none', overflowY: 'auto', whiteSpace: 'pre-wrap', outline: 'none' }}
+                      style={{ ...s.input, flex: '1 1 auto', minHeight: isPhone ? 200 : 220, maxHeight: isPhone ? 320 : isTabletLandscape ? 'calc(100dvh - 210px)' : 'calc(100dvh - 260px)', borderRadius: 0, border: 'none', overflowY: 'auto', whiteSpace: 'pre-wrap', outline: 'none' }}
                       onInput={(e) => setForm((p: any) => ({ ...p, descricaoPeca: (e.target as HTMLDivElement).innerHTML }))}
                     />
                   </div>
