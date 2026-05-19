@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { sendDetranBaixaEmailIfNeeded } from '../lib/detran-alert';
 import { compressDataUrlImage, normalizeImageFileName } from '../lib/image';
+import { cancelarVendaComDevolucaoEtiqueta } from '../lib/cancelamento-venda';
 import { z } from 'zod';
 
 export const pecasRouter = Router();
@@ -743,29 +744,23 @@ pecasRouter.patch('/:id/foto-capa', requireEstoqueAction('trocar_foto'), async (
 // PATCH /pecas/:id/cancelar-venda
 pecasRouter.patch('/:id/cancelar-venda', requireEstoqueAction('editar'), async (req, res, next) => {
   try {
-    const current = await prisma.peca.findUnique({
-      where: { id: Number(req.params.id) },
-      select: { id: true, precoML: true, valorFrete: true, valorTaxas: true }
-    });
-    if (!current) return res.status(404).json({ error: 'Peca nao encontrada' });
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ error: 'Peca invalida' });
+    }
 
-    const financials = calculatePecaFinancialValues(current);
-    const peca = await prisma.peca.update({
-      where: { id: Number(req.params.id) },
-      data: {
-        disponivel: true,
-        emPrejuizo: false,
-        dataVenda: null,
-        blingPedidoId: null,
-        blingPedidoNum: null,
-        precoML: financials.precoML,
-        valorFrete: financials.valorFrete,
-        valorTaxas: financials.valorTaxas,
-        valorLiq: financials.valorLiq,
-      }
+    const result = await cancelarVendaComDevolucaoEtiqueta([id], {
+      observacoes: 'Cancelamento de venda registrado pela tela Estoque.',
+      resolveFinancials: (peca) => calculatePecaFinancialValues(peca),
     });
+    const peca = result.pecas[0];
+    if (!peca) return res.status(404).json({ error: 'Peca nao encontrada' });
 
-    res.json(peca);
+    res.json({
+      ...peca,
+      devolucaoCriada: result.devolucoesCriadas > 0,
+      etiquetaPendenteCriada: result.etiquetasPendentes > 0,
+    });
   } catch (e) { next(e); }
 });
 

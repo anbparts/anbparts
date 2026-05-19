@@ -16,6 +16,7 @@ import {
 } from '../lib/email';
 import { sendDetranBaixaEmailIfNeeded } from '../lib/detran-alert';
 import { downloadImageAsDataUrl } from '../lib/image';
+import { cancelarVendaComDevolucaoEtiqueta } from '../lib/cancelamento-venda';
 import { getMercadoLivreItemPermalink } from '../lib/mercado-livre';
 import { getNuvemshopStatusBySkus, buildNuvemshopCatalogMap, NuvemshopAnuncioStatus } from '../lib/nuvemshop';
 
@@ -6470,24 +6471,21 @@ blingRouter.post('/aprovar-cancelamento', async (req, res, next) => {
     const precoML = toNumber(peca.precoML);
     const financials = calculateFinancials(precoML, defaults.fretePadrao, defaults.taxaPadraoPct);
 
-    await prisma.peca.updateMany({
-      where: { id: { in: ids } },
-      data: {
-        disponivel: true,
-        emPrejuizo: false,
-        dataVenda: null,
-        blingPedidoId: null,
-        blingPedidoNum: null,
+    const result = await cancelarVendaComDevolucaoEtiqueta(ids, {
+      observacoes: 'Cancelamento de venda aprovado pela tela Vendas Bling.',
+      resolveFinancials: () => ({
         valorFrete: defaults.fretePadrao,
         valorTaxas: financials.taxaValor,
         valorLiq: financials.valorLiq,
-      },
+      }),
     });
 
     res.json({
       ok: true,
       ids,
       defaults,
+      devolucoesCriadas: result.devolucoesCriadas,
+      etiquetasPendentes: result.etiquetasPendentes,
     });
   } catch (e) {
     next(e);
