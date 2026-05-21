@@ -267,8 +267,9 @@ function ActionIconButton({ onClick, disabled = false, title = 'Acoes da peca' }
   );
 }
 
-function StatusLinkButton({ disponivel, link }: { disponivel: boolean; link: string | null | undefined }) {
+function StatusLinkButton({ disponivel, link, pendente = false }: { disponivel: boolean; link: string | null | undefined; pendente?: boolean }) {
   const enabled = hasMercadoLivreLink(link);
+  const label = pendente ? 'Pendente' : disponivel ? 'Estoque' : 'Vendido';
 
   const sharedStyle: any = {
     padding: '2px 8px',
@@ -276,18 +277,18 @@ function StatusLinkButton({ disponivel, link }: { disponivel: boolean; link: str
     fontSize: 11,
     fontFamily: 'Geist Mono, monospace',
     border: '1px solid',
-    background: disponivel ? 'var(--sage-light)' : 'var(--gray-100)',
-    color: disponivel ? 'var(--sage)' : 'var(--ink-muted)',
-    borderColor: disponivel ? 'var(--sage-mid)' : 'var(--border)',
+    background: pendente ? '#fffbeb' : disponivel ? 'var(--sage-light)' : 'var(--gray-100)',
+    color: pendente ? '#b45309' : disponivel ? 'var(--sage)' : 'var(--ink-muted)',
+    borderColor: pendente ? '#fcd34d' : disponivel ? 'var(--sage-mid)' : 'var(--border)',
   };
 
-  if (!enabled) {
+  if (pendente || !enabled) {
     return (
       <span
-        title="Link do anuncio Mercado Livre ainda nao sincronizado"
+        title={pendente ? 'Aguardando nova etiqueta Detran para voltar ao estoque disponivel' : 'Link do anuncio Mercado Livre ainda nao sincronizado'}
         style={sharedStyle}
       >
-        {disponivel ? 'Estoque' : 'Vendido'}
+        {label}
       </span>
     );
   }
@@ -301,7 +302,7 @@ function StatusLinkButton({ disponivel, link }: { disponivel: boolean; link: str
         cursor: 'pointer',
       }}
     >
-      {disponivel ? 'Estoque' : 'Vendido'}
+      {label}
     </button>
   );
 }
@@ -1185,6 +1186,7 @@ function PecaDetalheModal({ open, peca, onClose, onSaved, canEditarPeca = false,
 function PecaActionsModal({ open, peca, onClose, onEdit, onSell, onDelete, onDevolucao, canEditarPeca = false, canDevolucoes = false }: any) {
   if (!open || !peca) return null;
   const bloqueadaPrejuizo = isPrejuizoPeca(peca);
+  const pendenteEtiqueta = Boolean(peca.etiquetaPendente);
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 230, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }} onClick={onClose}>
@@ -1203,10 +1205,15 @@ function PecaActionsModal({ open, peca, onClose, onEdit, onSell, onDelete, onDev
             </div>
           ) : (
             <>
+              {pendenteEtiqueta && (
+                <div style={{ padding: 14, borderRadius: 12, background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', fontSize: 12.5, lineHeight: 1.6 }}>
+                  Esta peca esta aguardando nova etiqueta Detran. Cadastre a etiqueta em Etiquetas Detran &gt; Pendencias Devolucao para liberar a venda.
+                </div>
+              )}
               {canEditarPeca && <button onClick={onEdit} style={{ ...cs.btn, width: '100%', justifyContent: 'center', background: 'var(--white)', color: 'var(--ink)', borderColor: 'var(--border-strong)' }}>
                 Editar
               </button>}
-              {peca.disponivel && canEditarPeca ? (
+              {peca.disponivel && canEditarPeca && !pendenteEtiqueta ? (
                 <button onClick={onSell} style={{ ...cs.btn, width: '100%', justifyContent: 'center', background: 'var(--amber-light)', color: 'var(--amber)', borderColor: 'var(--amber-mid)' }}>
                   Vender
                 </button>
@@ -2491,6 +2498,10 @@ export default function EstoquePage() {
       alert('Essa peca esta em prejuizo e nao pode ser vendida pela tela de estoque.');
       return;
     }
+    if (vendaPeca?.etiquetaPendente) {
+      alert('Essa peca esta com etiqueta pendente. Cadastre a nova etiqueta em Etiquetas Detran > Pendencias Devolucao antes de vender.');
+      return;
+    }
     await api.pecas.vender(vendaPeca.id, formData);
     setVendaModal(false);
     setVendaPeca(null);
@@ -2709,7 +2720,7 @@ export default function EstoquePage() {
         'ID Peca': p.idPeca,
         'Descricao': p.descricao,
         'Moto': p.moto ? `${p.moto.marca} ${p.moto.modelo}` : '',
-        'Status': p.emPrejuizo ? 'Prejuizo' : p.disponivel ? 'Em estoque' : 'Vendida',
+        'Status': p.emPrejuizo ? 'Prejuizo' : p.etiquetaPendente ? 'Pendente etiqueta' : p.disponivel ? 'Em estoque' : 'Vendida',
         'Localizacao': p.localizacao || '',
         'Numero de Peca': p.numeroPeca || '',
         'Preco ML': Number(p.precoML) || 0,
@@ -3334,7 +3345,7 @@ export default function EstoquePage() {
                         {bloqueadaPrejuizo ? (
                           <PrejuizoBadge />
                         ) : (
-                          <StatusLinkButton disponivel={Boolean(p.disponivel)} link={p.mercadoLivreLink} />
+                          <StatusLinkButton disponivel={Boolean(p.disponivel)} link={p.mercadoLivreLink} pendente={Boolean(p.etiquetaPendente)} />
                         )}
                         {hasDetranEtiqueta(p.detranEtiqueta) ? (
                           <button
@@ -3499,7 +3510,7 @@ export default function EstoquePage() {
                             {isPrejuizoPeca(p) ? (
                               <PrejuizoBadge />
                             ) : (
-                              <StatusLinkButton disponivel={Boolean(p.disponivel)} link={p.mercadoLivreLink} />
+                              <StatusLinkButton disponivel={Boolean(p.disponivel)} link={p.mercadoLivreLink} pendente={Boolean(p.etiquetaPendente)} />
                             )}
                           </td>}
                           <td style={{ ...cs.td, padding: denseTablePadding, textAlign: 'center' }}>
@@ -3582,7 +3593,7 @@ export default function EstoquePage() {
         }}
         onSell={() => {
           if (!canEditarPeca) return;
-          if (!actionPeca?.disponivel || isPrejuizoPeca(actionPeca)) return;
+          if (!actionPeca?.disponivel || isPrejuizoPeca(actionPeca) || actionPeca?.etiquetaPendente) return;
           setVendaPeca(actionPeca);
           setActionPeca(null);
           setVendaModal(true);

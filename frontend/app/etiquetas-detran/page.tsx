@@ -115,6 +115,10 @@ function sortIndicator(sort: SortState, key: string) {
   return sort.dir === 'asc' ? '^' : 'v';
 }
 
+function getBaseSkuFromIdPeca(idPeca: unknown) {
+  return String(idPeca || '').trim().toUpperCase().replace(/-\d+$/, '');
+}
+
 function SortableTh({ column, sort, onSort }: { column: { key: string; label: string }; sort: SortState; onSort: (key: string) => void }) {
   return (
     <th style={s.th}>
@@ -159,6 +163,8 @@ export default function EtiquetasDetranPage() {
   const [pendenciasDevOpen, setPendenciasDevOpen] = useState(false);
   const [pendenciasDev, setPendenciasDev] = useState<any[]>([]);
   const [loadingPendenciasDev, setLoadingPendenciasDev] = useState(false);
+  const [novasEtiquetasDev, setNovasEtiquetasDev] = useState<Record<number, string>>({});
+  const [salvandoPendenciaDev, setSalvandoPendenciaDev] = useState<number | null>(null);
   const [sort, setSort] = useState<SortState>({ key: 'sku', dir: 'asc' });
   const [pendenciasSort, setPendenciasSort] = useState<SortState>({ key: 'dataVenda', dir: 'desc' });
   const [isPhone, setIsPhone] = useState(false);
@@ -276,6 +282,68 @@ export default function EtiquetasDetranPage() {
     setConfirmando(null);
   }
 
+  async function salvarNovaEtiquetaDevolucao(peca: any) {
+    if (!canProcessarDevolucao) {
+      alert('Seu usuario nao tem permissao para processar devolucao de etiquetas.');
+      return;
+    }
+
+    const novaEtiqueta = String(novasEtiquetasDev[peca.id] || '').trim().toUpperCase();
+    if (!novaEtiqueta) {
+      alert('Informe a nova etiqueta Detran.');
+      return;
+    }
+
+    setSalvandoPendenciaDev(peca.id);
+    try {
+      const resp = await fetch(`${API}/devolucoes/pendentes-etiqueta/${peca.id}/nova-etiqueta`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ detranEtiqueta: novaEtiqueta }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || data?.ok === false) {
+        throw new Error(data?.error || 'Erro ao salvar nova etiqueta');
+      }
+
+      let avisoBling = '';
+      try {
+        const blingResp = await fetch(`${API}/cadastro/sync-bling-peca`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sku: getBaseSkuFromIdPeca(peca.idPeca),
+            detranEtiqueta: novaEtiqueta,
+            concatDetranEtiquetasVariacoes: true,
+          }),
+        });
+        const blingData = await blingResp.json().catch(() => ({}));
+        if (!blingResp.ok || blingData?.ok === false) {
+          avisoBling = blingData?.error || 'Falha ao sincronizar etiqueta no Bling.';
+        }
+      } catch (e: any) {
+        avisoBling = e?.message || 'Falha ao sincronizar etiqueta no Bling.';
+      }
+
+      setPendenciasDev((prev) => prev.filter((item) => item.id !== peca.id));
+      setNovasEtiquetasDev((prev) => {
+        const next = { ...prev };
+        delete next[peca.id];
+        return next;
+      });
+      await buscar();
+
+      if (avisoBling) {
+        alert(`Etiqueta salva no ANB, mas o Bling nao sincronizou: ${avisoBling}`);
+      }
+    } catch (e: any) {
+      alert(e?.message || 'Erro ao salvar nova etiqueta');
+    }
+    setSalvandoPendenciaDev(null);
+  }
+
   return (
     <>
       <div style={{ ...s.topbar, height: isPhone ? 'auto' : 'var(--topbar-h)', minHeight: 'var(--topbar-h)', padding: isPhone ? '12px 14px' : '0 28px', alignItems: isPhone ? 'stretch' : 'center', flexDirection: isPhone ? 'column' : 'row' }}>
@@ -295,6 +363,7 @@ export default function EtiquetasDetranPage() {
           <button style={{ ...s.btn, background: '#2563eb', color: '#fff', width: isPhone ? '100%' : undefined }} onClick={async () => {
             setPendenciasDevOpen(true);
             setLoadingPendenciasDev(true);
+            setNovasEtiquetasDev({});
             try {
               const resp = await fetch(`${API}/devolucoes/pendentes-etiqueta`, { credentials: 'include' });
               const data = await resp.json();
@@ -624,7 +693,7 @@ export default function EtiquetasDetranPage() {
       {/* Modal Pendências Devolução */}
       {pendenciasDevOpen && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 500, display: 'flex', alignItems: isPhone ? 'stretch' : 'center', justifyContent: 'center', padding: isPhone ? 0 : 24, backdropFilter: 'blur(2px)' }}>
-          <div style={{ background: 'var(--white)', borderRadius: isPhone ? 0 : 14, width: '100%', maxWidth: isPhone ? undefined : 700, maxHeight: isPhone ? '100dvh' : '85vh', minHeight: isPhone ? '100dvh' : undefined, display: 'flex', flexDirection: 'column', boxShadow: isPhone ? 'none' : '0 16px 40px rgba(0,0,0,.15)', overflow: 'hidden' }}>
+          <div style={{ background: 'var(--white)', borderRadius: isPhone ? 0 : 14, width: '100%', maxWidth: isPhone ? undefined : 980, maxHeight: isPhone ? '100dvh' : '85vh', minHeight: isPhone ? '100dvh' : undefined, display: 'flex', flexDirection: 'column', boxShadow: isPhone ? 'none' : '0 16px 40px rgba(0,0,0,.15)', overflow: 'hidden' }}>
             <div style={{ padding: isPhone ? '14px' : '16px 22px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
               <div>
                 <div style={{ fontFamily: 'Fraunces, serif', fontSize: 16, fontWeight: 600 }}>Pendências Devolução — Etiqueta Detran</div>
@@ -635,7 +704,7 @@ export default function EtiquetasDetranPage() {
               <button onClick={() => setPendenciasDevOpen(false)}
                 style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', fontSize: 16 }}>✕</button>
             </div>
-            <div style={{ overflowY: 'auto', flex: 1 }}>
+            <div style={{ overflowY: 'auto', overflowX: 'auto', flex: 1 }}>
               {loadingPendenciasDev ? (
                 <div style={{ padding: 32, textAlign: 'center', color: 'var(--ink-muted)' }}>Buscando...</div>
               ) : pendenciasDev.length === 0 ? (
@@ -668,6 +737,23 @@ export default function EtiquetasDetranPage() {
                             <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11.5 }}>{ult?.pedidoBlingNum || '—'}</div>
                           </div>
                         </div>
+                        <div style={{ display: 'grid', gap: 8 }}>
+                          <input
+                            style={{ ...s.input, width: '100%', boxSizing: 'border-box', textTransform: 'uppercase' }}
+                            placeholder="Nova etiqueta Detran"
+                            value={novasEtiquetasDev[p.id] || ''}
+                            onChange={(e) => setNovasEtiquetasDev((prev) => ({ ...prev, [p.id]: e.target.value.toUpperCase() }))}
+                            disabled={salvandoPendenciaDev === p.id}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => salvarNovaEtiquetaDevolucao(p)}
+                            disabled={salvandoPendenciaDev === p.id || !String(novasEtiquetasDev[p.id] || '').trim()}
+                            style={{ ...s.btn, width: '100%', background: '#16a34a', color: '#fff', opacity: salvandoPendenciaDev === p.id || !String(novasEtiquetasDev[p.id] || '').trim() ? 0.65 : 1 }}
+                          >
+                            {salvandoPendenciaDev === p.id ? 'Salvando...' : 'Salvar nova etiqueta'}
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
@@ -676,7 +762,7 @@ export default function EtiquetasDetranPage() {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                   <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
                     <tr>
-                      {['SKU', 'Descrição', 'Moto', 'Etiqueta Anterior', 'Pedido', 'Data Devolução'].map(h => (
+                      {['SKU', 'Descrição', 'Moto', 'Etiqueta Anterior', 'Pedido', 'Data Devolução', 'Nova Etiqueta', 'Acao'].map(h => (
                         <th key={h} style={{ padding: '9px 12px', textAlign: 'left', fontWeight: 600, fontSize: 11, color: 'var(--ink-soft)', whiteSpace: 'nowrap' }}>{h}</th>
                       ))}
                     </tr>
@@ -696,6 +782,25 @@ export default function EtiquetasDetranPage() {
                           </td>
                           <td style={{ padding: '8px 12px', fontFamily: 'Geist Mono, monospace', fontSize: 11 }}>{ult?.pedidoBlingNum || '—'}</td>
                           <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>{ult?.dataDevolucao ? new Date(ult.dataDevolucao).toLocaleDateString('pt-BR') : '—'}</td>
+                          <td style={{ padding: '8px 12px', minWidth: 150 }}>
+                            <input
+                              style={{ ...s.input, width: '100%', boxSizing: 'border-box', textTransform: 'uppercase' }}
+                              placeholder="Nova etiqueta"
+                              value={novasEtiquetasDev[p.id] || ''}
+                              onChange={(e) => setNovasEtiquetasDev((prev) => ({ ...prev, [p.id]: e.target.value.toUpperCase() }))}
+                              disabled={salvandoPendenciaDev === p.id}
+                            />
+                          </td>
+                          <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>
+                            <button
+                              type="button"
+                              onClick={() => salvarNovaEtiquetaDevolucao(p)}
+                              disabled={salvandoPendenciaDev === p.id || !String(novasEtiquetasDev[p.id] || '').trim()}
+                              style={{ ...s.btn, padding: '6px 12px', background: '#16a34a', color: '#fff', opacity: salvandoPendenciaDev === p.id || !String(novasEtiquetasDev[p.id] || '').trim() ? 0.65 : 1 }}
+                            >
+                              {salvandoPendenciaDev === p.id ? 'Salvando...' : 'Salvar'}
+                            </button>
+                          </td>
                         </tr>
                       );
                     })}

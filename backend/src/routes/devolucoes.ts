@@ -11,11 +11,26 @@ function hasEstoqueAction(req: any, action: string) {
   return Array.isArray(actions) && actions.includes(action);
 }
 
+function hasEtiquetasDetranAction(req: any, action: string) {
+  const user = req.authUser || {};
+  const username = String(user.username || '').trim().toLowerCase();
+  if (username === 'bruno' || user.isAdmin) return true;
+  const actions = user.permissions?.etiquetas_detran;
+  return Array.isArray(actions) && actions.includes(action);
+}
+
 function requireEstoqueAction(action: string) {
   return (req: any, res: any, next: any) => {
     if (hasEstoqueAction(req, action)) return next();
     return res.status(403).json({ ok: false, error: 'Seu usuario nao tem permissao para executar esta acao.' });
   };
+}
+
+function requirePendenciaEtiquetaAction(req: any, res: any, next: any) {
+  if (hasEstoqueAction(req, 'devolucoes') || hasEtiquetasDetranAction(req, 'processar_devolucao')) {
+    return next();
+  }
+  return res.status(403).json({ ok: false, error: 'Seu usuario nao tem permissao para executar esta acao.' });
 }
 
 // ── POST /devolucoes — registrar devolução e reverter peça ao estoque ──────────
@@ -157,5 +172,63 @@ devolucoesRouter.get('/pendentes-etiqueta', async (_req, res, next) => {
       orderBy: { idPeca: 'asc' },
     });
     res.json({ ok: true, total: pecas.length, pecas });
+  } catch (e) { next(e); }
+});
+
+// -- POST /devolucoes/pendentes-etiqueta/:pecaId/nova-etiqueta
+// Finaliza a pendencia de devolucao cadastrando uma nova etiqueta Detran.
+devolucoesRouter.post('/pendentes-etiqueta/:pecaId/nova-etiqueta', requirePendenciaEtiquetaAction, async (req, res, next) => {
+  try {
+    const pecaId = Number(req.params.pecaId);
+    const novaEtiqueta = String(req.body?.detranEtiqueta || req.body?.novaEtiqueta || '').trim().toUpperCase();
+
+    if (!Number.isFinite(pecaId) || pecaId <= 0) {
+      return res.status(400).json({ ok: false, error: 'pecaId invalido' });
+    }
+    if (!novaEtiqueta) {
+      return res.status(400).json({ ok: false, error: 'Nova etiqueta obrigatoria' });
+    }
+
+    const peca = await prisma.peca.findUnique({
+      where: { id: pecaId },
+      select: {
+        id: true,
+        idPeca: true,
+        etiquetaPendente: true,
+        disponivel: true,
+        detranEtiqueta: true,
+      },
+    });
+
+    if (!peca) return res.status(404).json({ ok: false, error: 'Peca nao encontrada' });
+    if (!peca.etiquetaPendente) {
+      return res.status(400).json({ ok: false, error: 'Peca nao possui pendencia de etiqueta' });
+    }
+
+    const etiquetaEmUso = await prisma.peca.findFirst({
+      where: {
+        id: { not: peca.id },
+        detranEtiqueta: { equals: novaEtiqueta, mode: 'insensitive' },
+      },
+      select: { idPeca: true },
+    });
+
+    if (etiquetaEmUso) {
+      return res.status(409).json({ ok: false, error: `Etiqueta ja esta cadastrada no SKU ${etiquetaEmUso.idPeca}` });
+    }
+
+    const atualizada = await prisma.peca.update({
+      where: { id: peca.id },
+      data: {
+        disponivel: true,
+        detranEtiqueta: novaEtiqueta,
+        detranStatus: null,
+        detranBaixada: false,
+        detranBaixadaAt: null,
+        etiquetaPendente: false,
+      },
+    });
+
+    res.json({ ok: true, peca: atualizada });
   } catch (e) { next(e); }
 });
