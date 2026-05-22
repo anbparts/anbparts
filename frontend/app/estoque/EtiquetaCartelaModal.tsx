@@ -183,7 +183,7 @@ export default function EtiquetaCartelaModal({ motoId, motoLabel, onClose, onSav
           const atual = novasPosicoes[idx];
 
           if (atual.skuId && atual.skuId !== peca.idPeca) continue;
-          if (!atual.skuId && atual.status) continue;
+          if (!atual.skuId && atual.status === 'Inexistente') continue;
           if (atual.skuDescricao) continue; // já resolvido no description-fill step
 
           const cadastroFallback = cadastroByIdPeca[peca.idPeca];
@@ -212,7 +212,7 @@ export default function EtiquetaCartelaModal({ motoId, motoLabel, onClose, onSav
           const atual = novasPosicoes[idx];
 
           if (atual.skuId && atual.skuId !== cadastro.idPeca) continue;
-          if (!atual.skuId && atual.status) continue;
+          if (!atual.skuId && atual.status === 'Inexistente') continue;
           if (atual.skuDescricao) continue; // já resolvido no description-fill step
 
           novasPosicoes[idx] = {
