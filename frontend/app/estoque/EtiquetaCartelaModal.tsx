@@ -184,6 +184,7 @@ export default function EtiquetaCartelaModal({ motoId, motoLabel, onClose, onSav
 
           if (atual.skuId && atual.skuId !== peca.idPeca) continue;
           if (!atual.skuId && atual.status) continue;
+          if (atual.skuDescricao) continue; // já resolvido no description-fill step
 
           const cadastroFallback = cadastroByIdPeca[peca.idPeca];
           novasPosicoes[idx] = {
@@ -212,13 +213,14 @@ export default function EtiquetaCartelaModal({ motoId, motoLabel, onClose, onSav
 
           if (atual.skuId && atual.skuId !== cadastro.idPeca) continue;
           if (!atual.skuId && atual.status) continue;
+          if (atual.skuDescricao) continue; // já resolvido no description-fill step
 
           novasPosicoes[idx] = {
             status: atual.status || '',
             skuId: atual.skuId || cadastro.idPeca,
             skuDescricao: atual.skuDescricao || cadastro.descricao || '',
             skuDisponivel: null,
-            skuPreCadastro: !atual.skuId,
+            skuPreCadastro: true,
           };
 
           if (!prefixoEncontrado) prefixoEncontrado = etiquetaInfo.prefixo;
