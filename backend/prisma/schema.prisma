@@ -24,6 +24,7 @@ model Moto {
   descricaoModelo   String?  @db.Text
   etiquetaSkuLabel  String?  // Abreviação para etiqueta SKU (ex: "HD ULTRA")
   sufixoTitulo      String?  // Sufixo do título do anúncio (ex: "YAMAHA CROSSER 2024")
+  detranCartelaId   String?  // Prefixo/ID da cartela Detran (ex: "SP22102017701")
   anexos            Json     @default("{}")
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt

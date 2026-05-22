@@ -63,6 +63,7 @@ type PosicaoState = {
   skuId: string; // idPeca
   skuDescricao: string;
   skuDisponivel: boolean | null;
+  skuPreCadastro?: boolean;
 };
 
 type Props = {
@@ -108,6 +109,7 @@ export default function EtiquetaCartelaModal({ motoId, motoLabel, onClose, onSav
         skuId: '',
         skuDescricao: '',
         skuDisponivel: null,
+        skuPreCadastro: false,
       }));
       let prefixoEncontrado = '';
       setSkusRemovidos({});
@@ -116,6 +118,9 @@ export default function EtiquetaCartelaModal({ motoId, motoLabel, onClose, onSav
       const respCartela = await fetch(`${API}/motos/${motoId}/detran-cartela`, { credentials: 'include' });
       const dataCartela = await respCartela.json();
       const posicoesSalvas: any[] = dataCartela.posicoes || [];
+
+      // Prefixo salvo na moto tem prioridade
+      if (dataCartela.cartelaId) prefixoEncontrado = dataCartela.cartelaId;
 
       if (posicoesSalvas.length > 0) {
         for (const pos of posicoesSalvas) {
@@ -128,32 +133,49 @@ export default function EtiquetaCartelaModal({ motoId, motoLabel, onClose, onSav
           novasPosicoes[idx] = {
             status: normalizeStatusValue(pos.status),
             skuId: pos.idPeca || '',
-            skuDescricao: '', // vamos buscar abaixo
+            skuDescricao: '',
             skuDisponivel: null,
+            skuPreCadastro: false,
           };
         }
       }
 
-      // 2. Complementa com dados das peças (descrição e disponível) + fallback para motos sem histórico
-      const respPecas = await fetch(`${API}/pecas?motoId=${motoId}&per=500&page=1`, { credentials: 'include' });
+      // 2. Busca peças e pré-cadastros em paralelo
+      const [respPecas, respCadastros] = await Promise.all([
+        fetch(`${API}/pecas?motoId=${motoId}&per=500&page=1`, { credentials: 'include' }),
+        fetch(`${API}/cadastro?motoId=${motoId}&per=500&page=1`, { credentials: 'include' }),
+      ]);
       const dataPecas = await respPecas.json();
+      const dataCadastros = await respCadastros.json();
       const pecas: any[] = dataPecas.data || [];
+      const cadastros: any[] = dataCadastros.data || [];
       const pecaByIdPeca: Record<string, any> = {};
       for (const p of pecas) pecaByIdPeca[p.idPeca] = p;
+      const cadastroByIdPeca: Record<string, any> = {};
+      for (const c of cadastros) cadastroByIdPeca[c.idPeca] = c;
 
       // Preenche descrição/disponível nos que têm SKU
       for (let i = 0; i < novasPosicoes.length; i++) {
         const pos = novasPosicoes[i];
-        if (pos.skuId && pecaByIdPeca[pos.skuId]) {
+        if (!pos.skuId) continue;
+        if (pecaByIdPeca[pos.skuId]) {
           novasPosicoes[i] = {
             ...pos,
             skuDescricao: pecaByIdPeca[pos.skuId].descricao || '',
             skuDisponivel: pecaByIdPeca[pos.skuId].disponivel,
+            skuPreCadastro: false,
+          };
+        } else if (cadastroByIdPeca[pos.skuId]) {
+          novasPosicoes[i] = {
+            ...pos,
+            skuDescricao: cadastroByIdPeca[pos.skuId].descricao || '',
+            skuDisponivel: null,
+            skuPreCadastro: true,
           };
         }
       }
 
-      // Fallback: se não tem histórico, tenta inferir pelo detranEtiqueta das peças
+      // Fallback: infere pelo detranEtiqueta das peças
       for (const peca of pecas) {
         const etiquetas = splitDetranEtiquetas(peca.detranEtiqueta);
         if (!etiquetas.length) continue;
@@ -173,6 +195,34 @@ export default function EtiquetaCartelaModal({ motoId, motoLabel, onClose, onSav
             skuId: atual.skuId || peca.idPeca,
             skuDescricao: atual.skuDescricao || peca.descricao || '',
             skuDisponivel: atual.skuDisponivel ?? peca.disponivel,
+            skuPreCadastro: false,
+          };
+
+          if (!prefixoEncontrado) prefixoEncontrado = etiquetaInfo.prefixo;
+        }
+      }
+
+      // Fallback: infere pelo detranEtiqueta dos pré-cadastros
+      for (const cadastro of cadastros) {
+        const etiquetas = splitDetranEtiquetas(cadastro.detranEtiqueta);
+        if (!etiquetas.length) continue;
+
+        for (const etiquetaAtual of etiquetas) {
+          const etiquetaInfo = parseEtiquetaPosicao(etiquetaAtual);
+          if (!etiquetaInfo) continue;
+
+          const idx = etiquetaInfo.posicao - 1;
+          const atual = novasPosicoes[idx];
+
+          if (atual.skuId && atual.skuId !== cadastro.idPeca) continue;
+          if (!atual.skuId && atual.status) continue;
+
+          novasPosicoes[idx] = {
+            status: atual.status || '',
+            skuId: atual.skuId || cadastro.idPeca,
+            skuDescricao: atual.skuDescricao || cadastro.descricao || '',
+            skuDisponivel: null,
+            skuPreCadastro: !atual.skuId,
           };
 
           if (!prefixoEncontrado) prefixoEncontrado = etiquetaInfo.prefixo;
@@ -220,9 +270,17 @@ export default function EtiquetaCartelaModal({ motoId, motoLabel, onClose, onSav
     try {
       const params = new URLSearchParams({ motoId: String(motoId), per: '100', page: '1' });
       if (texto.trim()) params.set('search', texto.trim());
-      const resp = await fetch(`${API}/pecas?${params}`, { credentials: 'include' });
-      const data = await resp.json();
-      setBuscaResultados(data.data || []);
+      const [respPecas, respCadastros] = await Promise.all([
+        fetch(`${API}/pecas?${params}`, { credentials: 'include' }),
+        fetch(`${API}/cadastro?${params}`, { credentials: 'include' }),
+      ]);
+      const dataPecas = await respPecas.json();
+      const dataCadastros = await respCadastros.json();
+      const pecas = (dataPecas.data || []).map((p: any) => ({ ...p, _preCadastro: false }));
+      const cadastros = (dataCadastros.data || []).map((c: any) => ({ ...c, _preCadastro: true }));
+      const pecaIds = new Set(pecas.map((p: any) => p.idPeca));
+      const cadastrosSemDuplica = cadastros.filter((c: any) => !pecaIds.has(c.idPeca));
+      setBuscaResultados([...pecas, ...cadastrosSemDuplica]);
     } catch { setBuscaResultados([]); }
     setBuscandoPecas(false);
   }
@@ -239,7 +297,8 @@ export default function EtiquetaCartelaModal({ motoId, motoLabel, onClose, onSav
       ...p,
       skuId: peca.idPeca,
       skuDescricao: peca.descricao || '',
-      skuDisponivel: peca.disponivel,
+      skuDisponivel: peca._preCadastro ? null : peca.disponivel,
+      skuPreCadastro: Boolean(peca._preCadastro),
     } : p));
     setBuscaAberta(null);
   }
@@ -295,7 +354,7 @@ export default function EtiquetaCartelaModal({ motoId, motoLabel, onClose, onSav
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ posicoes: posicoesParaSalvar }),
+        body: JSON.stringify({ posicoes: posicoesParaSalvar, cartelaId }),
       });
       const data = await resp.json();
       if (!data.ok) throw new Error(data.error || 'Erro ao salvar');
@@ -408,14 +467,14 @@ export default function EtiquetaCartelaModal({ motoId, motoLabel, onClose, onSav
                           ) : buscaResultados.length === 0 ? (
                             <div style={{ padding: '12px', fontSize: 12, color: 'var(--gray-400)' }}>Nenhuma peça encontrada</div>
                           ) : buscaResultados.map((peca: any) => (
-                            <button key={peca.id} type="button" onClick={() => selecionarSku(idx, peca)}
+                            <button key={peca.id ?? peca.idPeca} type="button" onClick={() => selecionarSku(idx, peca)}
                               style={{ width: '100%', textAlign: 'left', padding: '10px 12px', cursor: 'pointer', border: 'none', borderBottom: '1px solid var(--gray-100)', background: 'var(--white)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                               <span style={{ minWidth: 0 }}>
                                 <span style={{ display: 'block', fontFamily: 'Geist Mono, monospace', fontSize: 11, fontWeight: 700, color: 'var(--blue-500)' }}>{peca.idPeca}</span>
                                 <span style={{ display: 'block', fontSize: 11.5, color: 'var(--gray-600)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{peca.descricao}</span>
                               </span>
-                              <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 7px', borderRadius: 999, background: peca.disponivel ? '#f0fdf4' : '#fef2f2', color: peca.disponivel ? '#16a34a' : '#dc2626', flexShrink: 0 }}>
-                                {peca.disponivel ? 'Estoque' : 'Vendida'}
+                              <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 7px', borderRadius: 999, background: peca._preCadastro ? '#fffbeb' : peca.disponivel ? '#f0fdf4' : '#fef2f2', color: peca._preCadastro ? '#92400e' : peca.disponivel ? '#16a34a' : '#dc2626', flexShrink: 0 }}>
+                                {peca._preCadastro ? 'Pré-cadastro' : peca.disponivel ? 'Estoque' : 'Vendida'}
                               </span>
                             </button>
                           ))}
@@ -429,8 +488,8 @@ export default function EtiquetaCartelaModal({ motoId, motoLabel, onClose, onSav
                             <span style={{ display: 'block', fontFamily: 'Geist Mono, monospace', fontSize: 12, fontWeight: 700, color: 'var(--blue-500)' }}>{pos.skuId}</span>
                             <span style={{ display: 'block', fontSize: 11.5, color: 'var(--gray-600)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pos.skuDescricao}</span>
                           </span>
-                          <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 7px', borderRadius: 999, background: pos.skuDisponivel ? '#f0fdf4' : '#fef2f2', color: pos.skuDisponivel ? '#16a34a' : '#dc2626', flexShrink: 0 }}>
-                            {pos.skuDisponivel ? 'Estoque' : 'Vendida'}
+                          <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 7px', borderRadius: 999, background: pos.skuPreCadastro ? '#fffbeb' : pos.skuDisponivel ? '#f0fdf4' : '#fef2f2', color: pos.skuPreCadastro ? '#92400e' : pos.skuDisponivel ? '#16a34a' : '#dc2626', flexShrink: 0 }}>
+                            {pos.skuPreCadastro ? 'Pré-cad.' : pos.skuDisponivel ? 'Estoque' : 'Vendida'}
                           </span>
                         </span>
                       </button>
@@ -517,7 +576,7 @@ export default function EtiquetaCartelaModal({ motoId, motoLabel, onClose, onSav
                             ) : buscaResultados.length === 0 ? (
                               <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--gray-400)' }}>Nenhuma peça encontrada</div>
                             ) : buscaResultados.map((peca: any) => (
-                              <div key={peca.id} onClick={() => selecionarSku(idx, peca)}
+                              <div key={peca.id ?? peca.idPeca} onClick={() => selecionarSku(idx, peca)}
                                 style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid var(--gray-100)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}
                                 onMouseEnter={e => (e.currentTarget.style.background = '#f0f9ff')}
                                 onMouseLeave={e => (e.currentTarget.style.background = 'var(--white)')}>
@@ -525,8 +584,8 @@ export default function EtiquetaCartelaModal({ motoId, motoLabel, onClose, onSav
                                   <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11, fontWeight: 600, color: 'var(--blue-500)' }}>{peca.idPeca}</div>
                                   <div style={{ fontSize: 11, color: 'var(--gray-600)', marginTop: 1 }}>{peca.descricao}</div>
                                 </div>
-                                <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 6px', borderRadius: 4, background: peca.disponivel ? '#f0fdf4' : '#fef2f2', color: peca.disponivel ? '#16a34a' : '#dc2626', flexShrink: 0 }}>
-                                  {peca.disponivel ? 'Estoque' : 'Vendida'}
+                                <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 6px', borderRadius: 4, background: peca._preCadastro ? '#fffbeb' : peca.disponivel ? '#f0fdf4' : '#fef2f2', color: peca._preCadastro ? '#92400e' : peca.disponivel ? '#16a34a' : '#dc2626', flexShrink: 0 }}>
+                                  {peca._preCadastro ? 'Pré-cadastro' : peca.disponivel ? 'Estoque' : 'Vendida'}
                                 </span>
                               </div>
                             ))}
@@ -538,8 +597,8 @@ export default function EtiquetaCartelaModal({ motoId, motoLabel, onClose, onSav
                             <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11, fontWeight: 600, color: 'var(--blue-500)' }}>{pos.skuId}</div>
                             <div style={{ fontSize: 11, color: 'var(--gray-500)', marginTop: 1, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pos.skuDescricao}</div>
                           </div>
-                          <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: pos.skuDisponivel ? '#f0fdf4' : '#fef2f2', color: pos.skuDisponivel ? '#16a34a' : '#dc2626', flexShrink: 0 }}>
-                            {pos.skuDisponivel ? 'Est.' : 'Vend.'}
+                          <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: pos.skuPreCadastro ? '#fffbeb' : pos.skuDisponivel ? '#f0fdf4' : '#fef2f2', color: pos.skuPreCadastro ? '#92400e' : pos.skuDisponivel ? '#16a34a' : '#dc2626', flexShrink: 0 }}>
+                            {pos.skuPreCadastro ? 'Pré-cad.' : pos.skuDisponivel ? 'Est.' : 'Vend.'}
                           </span>
                         </div>
                       ) : (

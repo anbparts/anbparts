@@ -629,11 +629,15 @@ motosRouter.delete('/:id', requireMotosAction('excluir'), async (req, res, next)
 // GET /motos/:id/detran-cartela — carrega posições salvas
 motosRouter.get('/:id/detran-cartela', async (req, res, next) => {
   try {
-    const posicoes = await prisma.motoDetranPosicao.findMany({
-      where: { motoId: Number(req.params.id) },
-      orderBy: { posicao: 'asc' },
-    });
-    res.json({ ok: true, posicoes });
+    const motoIdNum = Number(req.params.id);
+    const [posicoes, moto] = await Promise.all([
+      prisma.motoDetranPosicao.findMany({
+        where: { motoId: motoIdNum },
+        orderBy: { posicao: 'asc' },
+      }),
+      prisma.moto.findUnique({ where: { id: motoIdNum }, select: { detranCartelaId: true } }),
+    ]);
+    res.json({ ok: true, posicoes, cartelaId: moto?.detranCartelaId || null });
   } catch (e) { next(e); }
 });
 
@@ -642,7 +646,7 @@ motosRouter.get('/:id/detran-cartela', async (req, res, next) => {
 motosRouter.post('/:id/detran-cartela', requireMotosAction('etiqueta'), async (req, res, next) => {
   try {
     const motoId = Number(req.params.id);
-    const { posicoes } = req.body || {};
+    const { posicoes, cartelaId } = req.body || {};
     if (!Array.isArray(posicoes)) return res.status(400).json({ error: 'posicoes obrigatorio' });
 
     const resultados: any[] = [];
@@ -706,6 +710,12 @@ motosRouter.post('/:id/detran-cartela', requireMotosAction('etiqueta'), async (r
         },
       });
 
+      // Atualiza CadastroPeca (pré-cadastro) com as mesmas etiquetas
+      await prisma.cadastroPeca.updateMany({
+        where: { idPeca: sku },
+        data: { detranEtiqueta: ehRemocao ? null : etiquetasConcat },
+      });
+
       // Sync Bling (uma vez por SKU base)
       if (!skusSyncados.has(baseSku + '_bling')) {
         skusSyncados.add(baseSku + '_bling');
@@ -719,6 +729,14 @@ motosRouter.post('/:id/detran-cartela', requireMotosAction('etiqueta'), async (r
       if (!pos.idPeca) {
         resultados.push({ posicao: pos.posicao, ok: true, semSku: true });
       }
+    }
+
+    // Salva o ID da cartela na moto se fornecido
+    if (typeof cartelaId === 'string') {
+      await prisma.moto.update({
+        where: { id: motoId },
+        data: { detranCartelaId: cartelaId.trim().toUpperCase() || null },
+      });
     }
 
     res.json({ ok: true, resultados, total: posicoes.length });
