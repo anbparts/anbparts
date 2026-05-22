@@ -102,6 +102,7 @@ export async function cancelarVendaComDevolucaoEtiqueta(ids: number[], options: 
             dataVenda: peca.dataVenda || null,
             dataDevolucao: new Date(),
             etiquetasDetran: peca.detranEtiqueta || null,
+            etiquetaBaixada: peca.detranBaixada || false,
             nfVendaNumero: null,
             nfDevolucaoNumero: null,
             observacoes: options.observacoes || 'Cancelamento de venda registrado no sistema.',

@@ -726,7 +726,9 @@ export default function EtiquetasDetranPage() {
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                           <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 8 }}>
                             <div style={{ fontSize: 10, color: 'var(--gray-500)', marginBottom: 3 }}>Etiqueta anterior</div>
-                            <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11.5 }}>{ult?.etiquetasDetran || '—'}</div>
+                            {ult?.etiquetasDetran
+                              ? <span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11, padding: '2px 5px', borderRadius: 5, ...(ult.etiquetaBaixada ? { background: '#fef2f2', color: '#dc2626' } : { background: '#fef3c7', color: '#92400e' }) }}>{ult.etiquetasDetran}</span>
+                              : <div style={{ fontSize: 11.5 }}>—</div>}
                           </div>
                           <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 8 }}>
                             <div style={{ fontSize: 10, color: 'var(--gray-500)', marginBottom: 3 }}>Devolução</div>
@@ -777,7 +779,7 @@ export default function EtiquetasDetranPage() {
                           <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>{p.moto?.marca} {p.moto?.modelo}</td>
                           <td style={{ padding: '8px 12px', fontFamily: 'Geist Mono, monospace', fontSize: 11 }}>
                             {ult?.etiquetasDetran
-                              ? <span style={{ background: '#fef3c7', color: '#92400e', padding: '2px 6px', borderRadius: 6 }}>{ult.etiquetasDetran}</span>
+                              ? <span style={{ padding: '2px 6px', borderRadius: 6, ...(ult.etiquetaBaixada ? { background: '#fef2f2', color: '#dc2626' } : { background: '#fef3c7', color: '#92400e' }) }}>{ult.etiquetasDetran}</span>
                               : '—'}
                           </td>
                           <td style={{ padding: '8px 12px', fontFamily: 'Geist Mono, monospace', fontSize: 11 }}>{ult?.pedidoBlingNum || '—'}</td>

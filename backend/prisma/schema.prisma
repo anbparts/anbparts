@@ -495,6 +495,7 @@ model HistoricoDevolucao {
   dataVenda         DateTime?
   dataDevolucao     DateTime
   etiquetasDetran   String?
+  etiquetaBaixada   Boolean   @default(false)
   nfVendaNumero     String?
   nfDevolucaoNumero String?
   observacoes       String?   @db.Text

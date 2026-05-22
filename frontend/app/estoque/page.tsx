@@ -2074,7 +2074,9 @@ function DevolucaoHistoricoModal({ motos, onClose }: any) {
                     </div>
                     <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 8 }}>
                       <div style={{ fontSize: 10, color: 'var(--ink-muted)', marginBottom: 3 }}>Etiqueta</div>
-                      <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.etiquetasDetran || '—'}</div>
+                      {d.etiquetasDetran
+                        ? <span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11, padding: '2px 5px', borderRadius: 5, ...(d.etiquetaBaixada ? { background: '#fef2f2', color: '#dc2626' } : { background: '#ecfdf5', color: '#065f46' }) }}>{d.etiquetasDetran}</span>
+                        : <div style={{ fontSize: 11.5, color: 'var(--ink-muted)' }}>—</div>}
                     </div>
                   </div>
                   {(d.nfVendaNumero || d.nfDevolucaoNumero || d.observacoes) && (
@@ -2112,7 +2114,7 @@ function DevolucaoHistoricoModal({ motos, onClose }: any) {
                     <td style={{ padding: '8px 12px', whiteSpace: 'nowrap', fontWeight: 600 }}>{fmtDate(d.dataDevolucao)}</td>
                     <td style={{ padding: '8px 12px', fontFamily: 'Geist Mono, monospace', fontSize: 11 }}>
                       {d.etiquetasDetran
-                        ? <span style={{ background: '#ecfdf5', color: '#065f46', padding: '2px 6px', borderRadius: 6, border: '1px solid #a7f3d0' }}>{d.etiquetasDetran}</span>
+                        ? <span style={{ padding: '2px 6px', borderRadius: 6, ...(d.etiquetaBaixada ? { background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' } : { background: '#ecfdf5', color: '#065f46', border: '1px solid #a7f3d0' }) }}>{d.etiquetasDetran}</span>
                         : <span style={{ color: 'var(--ink-muted)' }}>—</span>}
                     </td>
                     <td style={{ padding: '8px 12px', fontFamily: 'Geist Mono, monospace', fontSize: 11 }}>{d.nfVendaNumero || '—'}</td>
