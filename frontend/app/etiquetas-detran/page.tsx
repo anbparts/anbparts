@@ -446,15 +446,22 @@ export default function EtiquetasDetranPage() {
                 const etqColors = TIPO_ETQ_COLORS[linha.tipoEtiqueta] || { bg: '#f1f5f9', color: '#64748b' };
                 const stColors = STATUS_COLORS[linha.status] || STATUS_COLORS['-'];
                 return (
-                  <div key={`${linha.pecaId}-${linha.etiqueta}`} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 12, background: 'var(--white)', display: 'grid', gap: 10 }}>
+                  <div key={`${linha.fromHistorico ? 'h' : 'p'}-${linha.pecaId}-${linha.etiqueta}`} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 12, background: linha.fromHistorico ? '#fffbeb' : 'var(--white)', display: 'grid', gap: 10 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
                       <div style={{ minWidth: 0 }}>
                         <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 12, fontWeight: 700, color: '#2563eb' }}>{linha.sku}</div>
                         <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-800)', marginTop: 3, lineHeight: 1.25 }}>{linha.descricao || '-'}</div>
                       </div>
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 999, background: stColors.bg, color: stColors.color, flexShrink: 0 }}>
-                        {linha.status || '-'}
-                      </span>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-end', flexShrink: 0 }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 999, background: stColors.bg, color: stColors.color }}>
+                          {linha.status || '-'}
+                        </span>
+                        {linha.fromHistorico && (
+                          <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 5, background: '#fef3c7', color: '#92400e' }}>
+                            Devolução
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                       <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 8 }}>
@@ -495,7 +502,7 @@ export default function EtiquetasDetranPage() {
                   const etqColors = TIPO_ETQ_COLORS[linha.tipoEtiqueta] || { bg: '#f1f5f9', color: '#64748b' };
                   const stColors = STATUS_COLORS[linha.status] || STATUS_COLORS['-'];
                   return (
-                    <tr key={`${linha.pecaId}-${linha.etiqueta}`} style={{ background: i % 2 === 0 ? 'var(--white)' : 'var(--gray-50)' }}>
+                    <tr key={`${linha.fromHistorico ? 'h' : 'p'}-${linha.pecaId}-${linha.etiqueta}`} style={{ background: linha.fromHistorico ? '#fffbeb' : (i % 2 === 0 ? 'var(--white)' : 'var(--gray-50)') }}>
                       <td style={{ ...s.td, fontFamily: 'Geist Mono, monospace', fontWeight: 600 }}>{linha.sku}</td>
                       <td style={{ ...s.td, maxWidth: 320 }}>{linha.descricao || '-'}</td>
                       <td style={s.td}>
@@ -506,9 +513,16 @@ export default function EtiquetasDetranPage() {
                       <td style={s.td}>{linha.tipoPeca || '-'}</td>
                       <td style={{ ...s.td, fontFamily: 'Geist Mono, monospace', fontSize: 12 }}>{linha.etiqueta}</td>
                       <td style={s.td}>
-                        <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 5, background: stColors.bg, color: stColors.color }}>
-                          {linha.status || '-'}
-                        </span>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-start' }}>
+                          <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 5, background: stColors.bg, color: stColors.color }}>
+                            {linha.status || '-'}
+                          </span>
+                          {linha.fromHistorico && (
+                            <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 5, background: '#fef3c7', color: '#92400e' }}>
+                              Devolução
+                            </span>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );

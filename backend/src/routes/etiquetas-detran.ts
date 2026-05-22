@@ -202,33 +202,41 @@ etiquetasDetranRouter.get('/', async (req, res, next) => {
     const { sku, descricao, tipoEtiqueta, tipoPeca, etiqueta, status, qtdeEtiquetasSku } = req.query as any;
     const detranBaixadaFilter = parseDetranStatusFilter(status);
 
-    const pecas = await prisma.peca.findMany({
-      where: {
-        detranEtiqueta: { not: null },
-        ...(sku ? { idPeca: { contains: String(sku), mode: 'insensitive' } } : {}),
-        ...(descricao ? { descricao: { contains: String(descricao), mode: 'insensitive' } } : {}),
-        ...(detranBaixadaFilter !== null ? { detranBaixada: detranBaixadaFilter } : {}),
-      },
-      select: {
-        id: true,
-        idPeca: true,
-        descricao: true,
-        detranEtiqueta: true,
-        detranStatus: true,
-        detranBaixada: true,
-        detranBaixadaAt: true,
-        disponivel: true,
-        blingPedidoId: true,
-        blingPedidoNum: true,
-        dataVenda: true,
-        motoId: true,
-      },
-      orderBy: { idPeca: 'asc' },
-    });
+    const [pecas, historicoRows] = await Promise.all([
+      prisma.peca.findMany({
+        where: {
+          detranEtiqueta: { not: null },
+          ...(sku ? { idPeca: { contains: String(sku), mode: 'insensitive' } } : {}),
+          ...(descricao ? { descricao: { contains: String(descricao), mode: 'insensitive' } } : {}),
+          ...(detranBaixadaFilter !== null ? { detranBaixada: detranBaixadaFilter } : {}),
+        },
+        select: {
+          id: true, idPeca: true, descricao: true, detranEtiqueta: true,
+          detranStatus: true, detranBaixada: true, detranBaixadaAt: true,
+          disponivel: true, blingPedidoId: true, blingPedidoNum: true,
+          dataVenda: true, motoId: true,
+        },
+        orderBy: { idPeca: 'asc' },
+      }),
+      prisma.historicoDevolucao.findMany({
+        where: {
+          etiquetasDetran: { not: null },
+          ...(sku ? { idPeca: { contains: String(sku), mode: 'insensitive' } } : {}),
+          ...(descricao ? { descricao: { contains: String(descricao), mode: 'insensitive' } } : {}),
+          ...(detranBaixadaFilter !== null ? { etiquetaBaixada: detranBaixadaFilter } : {}),
+        },
+        select: {
+          pecaId: true, idPeca: true, descricao: true, motoId: true,
+          etiquetasDetran: true, etiquetaBaixada: true,
+          pedidoBlingId: true, pedidoBlingNum: true, dataVenda: true,
+        },
+        orderBy: { dataDevolucao: 'desc' },
+      }),
+    ]);
 
-    const motoIds = [...new Set(pecas.map((p) => p.motoId))];
+    const allMotoIds = [...new Set([...pecas.map((p) => p.motoId), ...historicoRows.map((h) => h.motoId)])];
     const posicoes = await prisma.motoDetranPosicao.findMany({
-      where: { motoId: { in: motoIds }, idPeca: { not: null } },
+      where: { motoId: { in: allMotoIds }, idPeca: { not: null } },
       select: { motoId: true, idPeca: true, etiqueta: true, tipo: true },
     });
 
@@ -240,6 +248,8 @@ etiquetasDetranRouter.get('/', async (req, res, next) => {
     }
 
     const linhas: any[] = [];
+    const activeEtiquetas = new Set<string>();
+
     for (const peca of pecas) {
       const etiquetas = splitEtiquetas(peca.detranEtiqueta);
       const quantidadeEtiquetasSku = etiquetas.length;
@@ -247,6 +257,7 @@ etiquetasDetranRouter.get('/', async (req, res, next) => {
       if (qtdeEtiquetasSku === 'multiplas' && quantidadeEtiquetasSku <= 1) continue;
 
       for (const etq of etiquetas) {
+        activeEtiquetas.add(etq.toUpperCase());
         const cartelaTipo = cartelaMap.get(`${peca.motoId}|${peca.idPeca}|${etq}`);
         const tipoEtq = cartelaTipo ? 'Cartela' : 'Avulsa';
         const tipoPecaVal = cartelaTipo || 'Avulsa';
@@ -256,21 +267,49 @@ etiquetasDetranRouter.get('/', async (req, res, next) => {
         if (!textIncludes(etq, etiqueta)) continue;
 
         linhas.push({
-          pecaId: peca.id,
-          sku: peca.idPeca,
-          descricao: peca.descricao,
-          tipoEtiqueta: tipoEtq,
-          tipoPeca: tipoPecaVal,
-          etiqueta: etq,
+          pecaId: peca.id, sku: peca.idPeca, descricao: peca.descricao,
+          tipoEtiqueta: tipoEtq, tipoPeca: tipoPecaVal, etiqueta: etq,
           qtdeEtiquetasSku: quantidadeEtiquetasSku,
           status: getDetranStatusLabel(peca.detranBaixada),
-          detranStatus: peca.detranStatus || null,
-          detranBaixada: peca.detranBaixada,
-          detranBaixadaAt: peca.detranBaixadaAt,
-          disponivel: peca.disponivel,
-          blingPedidoId: peca.blingPedidoId,
-          blingPedidoNum: peca.blingPedidoNum,
-          dataVenda: peca.dataVenda,
+          detranStatus: peca.detranStatus || null, detranBaixada: peca.detranBaixada,
+          detranBaixadaAt: peca.detranBaixadaAt, disponivel: peca.disponivel,
+          blingPedidoId: peca.blingPedidoId, blingPedidoNum: peca.blingPedidoNum,
+          dataVenda: peca.dataVenda, fromHistorico: false,
+        });
+      }
+    }
+
+    // Etiquetas do histórico de devoluções que não estão mais ativas em nenhuma peça
+    const seenHistorico = new Set<string>();
+    for (const row of historicoRows) {
+      const etqs = splitEtiquetas(row.etiquetasDetran);
+      const quantidadeEtiquetasSku = etqs.length;
+      if (qtdeEtiquetasSku === 'unica' && quantidadeEtiquetasSku !== 1) continue;
+      if (qtdeEtiquetasSku === 'multiplas' && quantidadeEtiquetasSku <= 1) continue;
+
+      for (const etq of etqs) {
+        const key = etq.toUpperCase();
+        if (activeEtiquetas.has(key) || seenHistorico.has(key)) continue;
+        seenHistorico.add(key);
+
+        if (!textIncludes(etq, etiqueta)) continue;
+
+        const cartelaTipo = cartelaMap.get(`${row.motoId}|${row.idPeca}|${etq}`);
+        const tipoEtq = cartelaTipo ? 'Cartela' : 'Avulsa';
+        const tipoPecaVal = cartelaTipo || 'Avulsa';
+
+        if (!textIncludes(tipoEtq, tipoEtiqueta)) continue;
+        if (!textIncludes(tipoPecaVal, tipoPeca)) continue;
+
+        linhas.push({
+          pecaId: row.pecaId, sku: row.idPeca, descricao: row.descricao,
+          tipoEtiqueta: tipoEtq, tipoPeca: tipoPecaVal, etiqueta: etq,
+          qtdeEtiquetasSku: quantidadeEtiquetasSku,
+          status: getDetranStatusLabel(row.etiquetaBaixada),
+          detranStatus: null, detranBaixada: row.etiquetaBaixada,
+          detranBaixadaAt: null, disponivel: null,
+          blingPedidoId: row.pedidoBlingId || null, blingPedidoNum: row.pedidoBlingNum || null,
+          dataVenda: row.dataVenda, fromHistorico: true,
         });
       }
     }
