@@ -155,23 +155,18 @@ export default function EtiquetaCartelaModal({ motoId, motoLabel, onClose, onSav
       for (const c of cadastros) cadastroByIdPeca[c.idPeca] = c;
 
       // Preenche descrição/disponível nos que têm SKU
+      // Prioridade: Peca em estoque > CadastroPeca > Peca vendida
       for (let i = 0; i < novasPosicoes.length; i++) {
         const pos = novasPosicoes[i];
         if (!pos.skuId) continue;
-        if (pecaByIdPeca[pos.skuId]) {
-          novasPosicoes[i] = {
-            ...pos,
-            skuDescricao: pecaByIdPeca[pos.skuId].descricao || '',
-            skuDisponivel: pecaByIdPeca[pos.skuId].disponivel,
-            skuPreCadastro: false,
-          };
-        } else if (cadastroByIdPeca[pos.skuId]) {
-          novasPosicoes[i] = {
-            ...pos,
-            skuDescricao: cadastroByIdPeca[pos.skuId].descricao || '',
-            skuDisponivel: null,
-            skuPreCadastro: true,
-          };
+        const peca = pecaByIdPeca[pos.skuId];
+        const cadastro = cadastroByIdPeca[pos.skuId];
+        if (peca && peca.disponivel) {
+          novasPosicoes[i] = { ...pos, skuDescricao: peca.descricao || '', skuDisponivel: true, skuPreCadastro: false };
+        } else if (cadastro) {
+          novasPosicoes[i] = { ...pos, skuDescricao: cadastro.descricao || peca?.descricao || '', skuDisponivel: null, skuPreCadastro: true };
+        } else if (peca) {
+          novasPosicoes[i] = { ...pos, skuDescricao: peca.descricao || '', skuDisponivel: false, skuPreCadastro: false };
         }
       }
 
@@ -190,12 +185,13 @@ export default function EtiquetaCartelaModal({ motoId, motoLabel, onClose, onSav
           if (atual.skuId && atual.skuId !== peca.idPeca) continue;
           if (!atual.skuId && atual.status) continue;
 
+          const cadastroFallback = cadastroByIdPeca[peca.idPeca];
           novasPosicoes[idx] = {
             status: atual.status || normalizeStatusValue(peca.detranStatus),
             skuId: atual.skuId || peca.idPeca,
-            skuDescricao: atual.skuDescricao || peca.descricao || '',
-            skuDisponivel: atual.skuDisponivel ?? peca.disponivel,
-            skuPreCadastro: false,
+            skuDescricao: atual.skuDescricao || cadastroFallback?.descricao || peca.descricao || '',
+            skuDisponivel: peca.disponivel ? true : (cadastroFallback ? null : (atual.skuDisponivel ?? false)),
+            skuPreCadastro: Boolean(!peca.disponivel && cadastroFallback),
           };
 
           if (!prefixoEncontrado) prefixoEncontrado = etiquetaInfo.prefixo;
