@@ -12,6 +12,10 @@ type CancelamentoOptions = {
   resolveFinancials?: (peca: any) => FinancialUpdate;
 };
 
+function splitEtiquetas(value: string | null | undefined): string[] {
+  return String(value || '').split('/').map(e => e.trim()).filter(Boolean);
+}
+
 function normalizeIds(ids: number[]) {
   return Array.from(new Set(ids.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0)));
 }
@@ -40,10 +44,7 @@ function hasVendaParaCancelar(peca: any) {
 }
 
 async function historicoDevolucaoJaExiste(tx: any, peca: any) {
-  const where: any = {
-    pecaId: peca.id,
-    etiquetasDetran: peca.detranEtiqueta || null,
-  };
+  const where: any = { pecaId: peca.id };
 
   if (peca.blingPedidoId || peca.blingPedidoNum) {
     where.OR = [
@@ -86,28 +87,36 @@ export async function cancelarVendaComDevolucaoEtiqueta(ids: number[], options: 
       const deveReporEtiqueta = vendaCancelavel && precisaReporEtiqueta;
 
       if (deveReporEtiqueta && !(await historicoDevolucaoJaExiste(tx, peca))) {
-        await tx.historicoDevolucao.create({
-          data: {
-            pecaId: peca.id,
-            idPeca: peca.idPeca,
-            descricao: peca.descricao,
-            motoId: peca.motoId,
-            motoNome: buildMotoNome(peca.moto),
-            pedidoBlingId: peca.blingPedidoId || null,
-            pedidoBlingNum: peca.blingPedidoNum || null,
-            valorLiq: peca.valorLiq,
-            valorFrete: peca.valorFrete,
-            valorTaxas: peca.valorTaxas,
-            precoML: peca.precoML,
-            dataVenda: peca.dataVenda || null,
-            dataDevolucao: new Date(),
-            etiquetasDetran: peca.detranEtiqueta || null,
-            etiquetaBaixada: peca.detranBaixada || false,
-            nfVendaNumero: null,
-            nfDevolucaoNumero: null,
-            observacoes: options.observacoes || 'Cancelamento de venda registrado no sistema.',
-          },
-        });
+        const baseHistorico = {
+          pecaId: peca.id,
+          idPeca: peca.idPeca,
+          descricao: peca.descricao,
+          motoId: peca.motoId,
+          motoNome: buildMotoNome(peca.moto),
+          pedidoBlingId: peca.blingPedidoId || null,
+          pedidoBlingNum: peca.blingPedidoNum || null,
+          valorLiq: peca.valorLiq,
+          valorFrete: peca.valorFrete,
+          valorTaxas: peca.valorTaxas,
+          precoML: peca.precoML,
+          dataVenda: peca.dataVenda || null,
+          dataDevolucao: new Date(),
+          nfVendaNumero: null,
+          nfDevolucaoNumero: null,
+          observacoes: options.observacoes || 'Cancelamento de venda registrado no sistema.',
+        };
+        const etqs = splitEtiquetas(peca.detranEtiqueta);
+        if (etqs.length > 0) {
+          for (const etq of etqs) {
+            await tx.historicoDevolucao.create({
+              data: { ...baseHistorico, etiquetasDetran: etq, etiquetaBaixada: peca.detranBaixada || false },
+            });
+          }
+        } else {
+          await tx.historicoDevolucao.create({
+            data: { ...baseHistorico, etiquetasDetran: null, etiquetaBaixada: false },
+          });
+        }
         devolucoesCriadas += 1;
       }
 

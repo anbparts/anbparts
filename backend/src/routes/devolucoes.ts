@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
+import { syncDetranEtiquetaBling } from '../lib/sync-bling-detran';
 
 export const devolucoesRouter = Router();
 
@@ -54,29 +55,40 @@ devolucoesRouter.post('/', requireEstoqueAction('devolucoes'), async (req, res, 
     if (!peca) return res.status(404).json({ error: 'Peca nao encontrada' });
     if (peca.disponivel) return res.status(400).json({ error: 'Peca ja esta em estoque' });
 
-    // Registrar histórico de devolução
-    const devolucao = await prisma.historicoDevolucao.create({
-      data: {
-        pecaId:            peca.id,
-        idPeca:            peca.idPeca,
-        descricao:         peca.descricao,
-        motoId:            peca.motoId,
-        motoNome:          `${peca.moto.marca} ${peca.moto.modelo}${peca.moto.ano ? ' ' + peca.moto.ano : ''}`,
-        pedidoBlingId:     peca.blingPedidoId  || null,
-        pedidoBlingNum:    peca.blingPedidoNum || null,
-        valorLiq:          peca.valorLiq,
-        valorFrete:        peca.valorFrete,
-        valorTaxas:        peca.valorTaxas,
-        precoML:           peca.precoML,
-        dataVenda:         peca.dataVenda      || null,
-        dataDevolucao:     dataDevolucao ? new Date(dataDevolucao) : new Date(),
-        etiquetasDetran:   peca.detranEtiqueta || null,
-        etiquetaBaixada:   peca.detranBaixada  || false,
-        nfVendaNumero:     nfVendaNumero       || null,
-        nfDevolucaoNumero: nfDevolucaoNumero   || null,
-        observacoes:       observacoes         || null,
-      },
-    });
+    // Registrar histórico de devolução — 1 linha por etiqueta
+    const baseHistorico = {
+      pecaId:            peca.id,
+      idPeca:            peca.idPeca,
+      descricao:         peca.descricao,
+      motoId:            peca.motoId,
+      motoNome:          `${peca.moto.marca} ${peca.moto.modelo}${peca.moto.ano ? ' ' + peca.moto.ano : ''}`,
+      pedidoBlingId:     peca.blingPedidoId  || null,
+      pedidoBlingNum:    peca.blingPedidoNum || null,
+      valorLiq:          peca.valorLiq,
+      valorFrete:        peca.valorFrete,
+      valorTaxas:        peca.valorTaxas,
+      precoML:           peca.precoML,
+      dataVenda:         peca.dataVenda      || null,
+      dataDevolucao:     dataDevolucao ? new Date(dataDevolucao) : new Date(),
+      nfVendaNumero:     nfVendaNumero       || null,
+      nfDevolucaoNumero: nfDevolucaoNumero   || null,
+      observacoes:       observacoes         || null,
+    };
+    const etqs = (peca.detranEtiqueta || '').split('/').map((e: string) => e.trim()).filter(Boolean);
+    let primeiroId: number | null = null;
+    if (etqs.length > 0) {
+      for (const etq of etqs) {
+        const dev = await prisma.historicoDevolucao.create({
+          data: { ...baseHistorico, etiquetasDetran: etq, etiquetaBaixada: peca.detranBaixada || false },
+        });
+        if (primeiroId === null) primeiroId = dev.id;
+      }
+    } else {
+      const dev = await prisma.historicoDevolucao.create({
+        data: { ...baseHistorico, etiquetasDetran: null, etiquetaBaixada: false },
+      });
+      primeiroId = dev.id;
+    }
 
     // Reverter peça ao estoque — limpar dados de venda e etiqueta
     await prisma.peca.update({
@@ -94,7 +106,7 @@ devolucoesRouter.post('/', requireEstoqueAction('devolucoes'), async (req, res, 
       },
     });
 
-    res.json({ ok: true, devolucaoId: devolucao.id });
+    res.json({ ok: true, devolucaoId: primeiroId });
   } catch (e) { next(e); }
 });
 
@@ -229,6 +241,8 @@ devolucoesRouter.post('/pendentes-etiqueta/:pecaId/nova-etiqueta', requirePenden
         etiquetaPendente: false,
       },
     });
+
+    await syncDetranEtiquetaBling(peca.idPeca);
 
     res.json({ ok: true, peca: atualizada });
   } catch (e) { next(e); }
