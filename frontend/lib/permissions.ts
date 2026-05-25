@@ -1,4 +1,4 @@
-import type { LoggedUser } from './auth';
+﻿import type { LoggedUser } from './auth';
 
 export type AppAction = { key: string; label: string; description?: string };
 export type AppPagePermission = { key: string; label: string; href: string; actions: AppAction[] };
@@ -36,6 +36,7 @@ export const PAGE_KEY_BY_HREF: Record<string, string> = {
   '/conf-gerais': 'conf_gerais',
   '/config-ml': 'conf_ml',
   '/conf-nuvemshop': 'conf_nuvemshop',
+  '/conf-auditoria': 'conf_auditoria',
   '/conf-gmail': 'conf_gmail',
   '/conf-google-drive': 'conf_google_drive',
 };

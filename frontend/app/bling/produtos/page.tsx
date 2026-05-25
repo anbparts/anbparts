@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 import { useEffect, useState } from 'react';
 import { API_BASE } from '@/lib/api-base';
 import { api } from '@/lib/api';
@@ -304,6 +304,7 @@ export default function BlingProdutosPage() {
   const [csvCarregando, setCsvCarregando] = useState(false);
   const [csvComparando, setCsvComparando] = useState(false);
   const [csvComparacao, setCsvComparacao] = useState<CsvComparacao | null>(null);
+  const [showDocModal, setShowDocModal] = useState(false);
 
   async function carregarCsv(files: File[]) {
     setCsvCarregando(true);
@@ -913,11 +914,16 @@ export default function BlingProdutosPage() {
           <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)', letterSpacing: '-0.3px' }}>Produtos Bling</div>
           <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>Revise e confirme a importacao de novos produtos</div>
         </div>
-        {buscou && pendentes.length > 0 && (
-          <button onClick={importarTodos} style={{ ...s.btn, background: 'var(--green)', color: '#fff' }}>
-            Importar todos com moto ({pendentes.length})
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {buscou && pendentes.length > 0 && (
+            <button onClick={importarTodos} style={{ ...s.btn, background: 'var(--green)', color: '#fff' }}>
+              Importar todos com moto ({pendentes.length})
+            </button>
+          )}
+          <button onClick={() => setShowDocModal(true)} style={{ ...s.btn, background: 'var(--white)', color: 'var(--gray-600)', border: '1px solid var(--border)' }}>
+            📄 Documentacao
           </button>
-        )}
+        </div>
       </div>
 
       <div style={{ padding: 28 }}>
@@ -1759,6 +1765,202 @@ export default function BlingProdutosPage() {
         </div>
       )}
     </>
+
+    {/* ========== MODAL DE DOCUMENTAÇÃO ========== */}
+    {showDocModal && (
+      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', overflowY: 'auto', padding: '32px 16px' }} onClick={() => setShowDocModal(false)}>
+        <div style={{ background: 'var(--white)', borderRadius: 14, width: '100%', maxWidth: 860, boxShadow: '0 8px 40px rgba(0,0,0,0.18)', position: 'relative' }} onClick={e => e.stopPropagation()}>
+          {/* Header */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 26px 16px', borderBottom: '1px solid var(--border)' }}>
+            <div>
+              <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--gray-800)' }}>📄 Documentacao — Produtos Bling</div>
+              <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 3 }}>Descricao detalhada de todos os botoes e funcionalidades desta pagina</div>
+            </div>
+            <button onClick={() => setShowDocModal(false)} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+          </div>
+
+          {/* Body */}
+          <div style={{ padding: '22px 26px', display: 'flex', flexDirection: 'column', gap: 24 }}>
+
+            {/* SECAO 1 — Busca e Importacao */}
+            <section>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 12 }}>Busca e Importacao</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+
+                <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <span style={{ background: '#FF6900', color: '#fff', borderRadius: 6, padding: '2px 10px', fontSize: 12, fontWeight: 600 }}>Buscar produtos</span>
+                  </div>
+                  <div style={{ fontSize: 13, color: 'var(--gray-700)', lineHeight: 1.6 }}>
+                    Consulta os produtos ativos no Bling dentro do intervalo de datas de inclusao informado. Filtra apenas itens com prefixo de moto valido no codigo (SKU). Exibe uma lista de itens ainda nao importados para o sistema ANB (jaExiste = false) e itens ja existentes. Ao buscar, cada linha mostra preco de venda, frete, taxa percentual e valor liquido calculados automaticamente.
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 6 }}>Campos: Data inclusao inicio · Data inclusao fim · Moto padrao (fallback para SKUs sem prefixo reconhecido) · Frete padrao · Taxa padrao %</div>
+                </div>
+
+                <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <span style={{ background: 'var(--green)', color: '#fff', borderRadius: 6, padding: '2px 10px', fontSize: 12, fontWeight: 600 }}>Importar todos com moto (N)</span>
+                    <span style={{ fontSize: 11, color: 'var(--gray-400)' }}>Topbar — aparece apos busca</span>
+                  </div>
+                  <div style={{ fontSize: 13, color: 'var(--gray-700)', lineHeight: 1.6 }}>
+                    Importa em lote todos os itens pendentes que ja tem uma moto associada (motoId preenchido). Processa cada item sequencialmente, exibindo progresso em tempo real. Itens sem moto nao sao incluidos neste lote. Ao concluir, exibe o total de importados e eventuais erros.
+                  </div>
+                </div>
+
+                <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <span style={{ background: 'var(--blue-500, #3b82f6)', color: '#fff', borderRadius: 6, padding: '2px 10px', fontSize: 12, fontWeight: 600 }}>Importar</span>
+                    <span style={{ fontSize: 11, color: 'var(--gray-400)' }}>Por linha — apenas itens nao importados</span>
+                  </div>
+                  <div style={{ fontSize: 13, color: 'var(--gray-700)', lineHeight: 1.6 }}>
+                    Importa um unico produto para o sistema ANB. Requer que a moto esteja selecionada na linha. Ao importar, cria a peca no banco local com os dados do Bling (SKU, nome, preco, peso, dimensoes, localizacao, numero da peca, link ML). Exibe confirmacao verde na linha apos sucesso.
+                  </div>
+                </div>
+
+                <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <span style={{ background: 'var(--gray-200)', color: 'var(--gray-700)', borderRadius: 6, padding: '2px 10px', fontSize: 12, fontWeight: 600 }}>Ignorar</span>
+                    <span style={{ fontSize: 11, color: 'var(--gray-400)' }}>Por linha</span>
+                  </div>
+                  <div style={{ fontSize: 13, color: 'var(--gray-700)', lineHeight: 1.6 }}>
+                    Marca o item como ignorado na listagem atual. O produto nao e excluido do Bling, apenas removido da visualizacao da sessao de busca. Util para produtos que nao devem ser importados agora (ex: duplicatas, sem relevancia).
+                  </div>
+                </div>
+
+                <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <span style={{ background: 'var(--white)', color: 'var(--gray-700)', border: '1px solid var(--border)', borderRadius: 6, padding: '2px 10px', fontSize: 12, fontWeight: 600 }}>Selecionar Moto</span>
+                    <span style={{ fontSize: 11, color: 'var(--gray-400)' }}>Popup por linha</span>
+                  </div>
+                  <div style={{ fontSize: 13, color: 'var(--gray-700)', lineHeight: 1.6 }}>
+                    Abre um popup de selecao de moto para o item da linha. Permite buscar por nome ou prefixo. Apos selecionar, o campo moto da linha e preenchido e o item fica pronto para importar. Necessario quando o SKU nao tem prefixo reconhecido automaticamente.
+                  </div>
+                </div>
+
+              </div>
+            </section>
+
+            {/* SECAO 2 — Configuracao Manual */}
+            <section>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 12 }}>Configuracao Manual</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+
+                <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <span style={{ background: 'var(--gray-200)', color: 'var(--gray-700)', borderRadius: 6, padding: '2px 10px', fontSize: 12, fontWeight: 600 }}>Salvar config manual</span>
+                  </div>
+                  <div style={{ fontSize: 13, color: 'var(--gray-700)', lineHeight: 1.6 }}>
+                    Salva no banco as configuracoes de processamento em lote para a consulta manual: <strong>Tamanho do lote</strong> (quantos SKUs por requisicao ao Bling) e <strong>Pausa entre lotes</strong> (milissegundos de espera entre cada lote). Estas configuracoes afetam o botao "Sincronizar Informacoes Bling".
+                  </div>
+                </div>
+
+              </div>
+            </section>
+
+            {/* SECAO 3 — Sincronizacao e Atualizacoes em Massa */}
+            <section>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 12 }}>Sincronizacao e Atualizacoes em Massa</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+
+                <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <span style={{ background: 'var(--blue-500, #3b82f6)', color: '#fff', borderRadius: 6, padding: '2px 10px', fontSize: 12, fontWeight: 600 }}>Sincronizar Informacoes Bling</span>
+                  </div>
+                  <div style={{ fontSize: 13, color: 'var(--gray-700)', lineHeight: 1.6 }}>
+                    Consulta todos os produtos ANB no Bling em lotes e compara as informacoes entre os dois sistemas. Identifica divergencias de estoque, preco, descricao e status de anuncio ML. Exibe um relatorio detalhado com cada divergencia encontrada, incluindo estoque ANB vs Bling e descricao de ambos os lados. Usa as configuracoes de tamanho de lote e pausa definidas em "Salvar config manual".
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 6 }}>Filtros: lista de SKUs especificos (opcional) · Filtrar por motos (popup de selecao)</div>
+                </div>
+
+                <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <span style={{ background: 'var(--amber)', color: '#fff', borderRadius: 6, padding: '2px 10px', fontSize: 12, fontWeight: 600 }}>Atualizar Link ML</span>
+                  </div>
+                  <div style={{ fontSize: 13, color: 'var(--gray-700)', lineHeight: 1.6 }}>
+                    Sincroniza os links do Mercado Livre das pecas ANB a partir do Bling (fonte de verdade). Consulta o campo de link ML de cada produto no Bling e atualiza no banco ANB. Processa em lotes fixos de <strong>20 SKUs</strong> com pausa entre lotes. Exibe progresso em tempo real (lote atual / total de lotes, pecas atualizadas). Ao final, exibe o total de pecas com link ML atualizado.
+                  </div>
+                </div>
+
+                <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <span style={{ background: '#7c3aed', color: '#fff', borderRadius: 6, padding: '2px 10px', fontSize: 12, fontWeight: 600 }}>Atualizar Localizacao</span>
+                    <span style={{ fontSize: 11, color: 'var(--gray-400)' }}>Abre modal</span>
+                  </div>
+                  <div style={{ fontSize: 13, color: 'var(--gray-700)', lineHeight: 1.6 }}>
+                    Abre um modal para atualizar a localizacao fisica (endereco de armazenamento) das pecas em massa. Define um valor "De" (localizacao atual) e um valor "Para" (nova localizacao). Atualiza simultaneamente no banco ANB e no Bling todos os produtos que possuem exatamente a localizacao informada em "De". Operacao em lote — afeta todos os SKUs com aquela localizacao.
+                  </div>
+                </div>
+
+                <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <span style={{ background: '#0f766e', color: '#fff', borderRadius: 6, padding: '2px 10px', fontSize: 12, fontWeight: 600 }}>Atualizar Foto Capa</span>
+                    <span style={{ fontSize: 11, color: 'var(--amber)' }}>Apenas Bruno</span>
+                  </div>
+                  <div style={{ fontSize: 13, color: 'var(--gray-700)', lineHeight: 1.6 }}>
+                    Puxa a foto principal (capa) de cada produto do Bling e atualiza no banco ANB. Processa em lotes de <strong>ate 5 SKUs por lote</strong>. Exibe progresso detalhado: lote atual, total de lotes, SKUs processados, SKUs atualizados. Ao final, relatorio completo com: atualizados com sucesso, sem imagem no Bling, sem peca local no ANB, e erros. Restrito ao usuario Bruno.
+                  </div>
+                </div>
+
+                <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <span style={{ background: '#1d4ed8', color: '#fff', borderRadius: 6, padding: '2px 10px', fontSize: 12, fontWeight: 600 }}>Atualizar Bling</span>
+                    <span style={{ fontSize: 11, color: 'var(--amber)' }}>Apenas Bruno</span>
+                    <span style={{ fontSize: 11, color: 'var(--gray-400)' }}>Abre modal</span>
+                  </div>
+                  <div style={{ fontSize: 13, color: 'var(--gray-700)', lineHeight: 1.6 }}>
+                    Abre um modal para enviar dados do ANB para o Bling (direcao ANB → Bling). Informe os SKUs desejados (um por linha). Os seguintes campos sao atualizados no Bling para cada SKU: <strong>nome, preco ML, peso, dimensoes (largura/altura/profundidade), localizacao, etiqueta Detran, numero da peca</strong>. Valores fixos aplicados: unidade = UN · NCM = 87141000. Exibe resultado com total de atualizados e erros por SKU. Restrito ao usuario Bruno.
+                  </div>
+                </div>
+
+                <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <span style={{ background: '#6d28d9', color: '#fff', borderRadius: 6, padding: '2px 10px', fontSize: 12, fontWeight: 600 }}>Recomprimir Fotos Banco</span>
+                    <span style={{ fontSize: 11, color: 'var(--amber)' }}>Apenas Bruno</span>
+                  </div>
+                  <div style={{ fontSize: 13, color: 'var(--gray-700)', lineHeight: 1.6 }}>
+                    Recomprime todas as fotos armazenadas no banco ANB que ultrapassam <strong>150 KB</strong>. Processa em lote, exibindo progresso em tempo real. Ao final, exibe o total de fotos recomprimidas e economias de espaco. Operacao pesada — nao interromper durante o processo. Restrito ao usuario Bruno.
+                  </div>
+                </div>
+
+              </div>
+            </section>
+
+            {/* SECAO 4 — Comparacao CSV */}
+            <section>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 12 }}>Comparacao CSV</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+
+                <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <span style={{ background: 'var(--blue-500, #3b82f6)', color: '#fff', borderRadius: 6, padding: '2px 10px', fontSize: 12, fontWeight: 600 }}>Comparar CSV</span>
+                  </div>
+                  <div style={{ fontSize: 13, color: 'var(--gray-700)', lineHeight: 1.6 }}>
+                    Compara um arquivo CSV exportado do Bling com a base ANB. O CSV deve ser carregado via drag-and-drop ou selecao de arquivo. Suporta multiplos arquivos simultaneamente (merge automatico por ID ou codigo). Exibe divergencias de estoque, preco, descricao e situacao entre o arquivo e o ANB. Filtros: escopo ANB (todos / com estoque / sem estoque) · escopo do arquivo (todos / estoque maior que zero / estoque igual a zero).
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 6 }}>Formato esperado: CSV separado por ponto-e-virgula com colunas id, codigo, descricao, situacao, estoque, preco.</div>
+                </div>
+
+                <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <span style={{ background: 'var(--gray-200)', color: 'var(--gray-700)', borderRadius: 6, padding: '2px 10px', fontSize: 12, fontWeight: 600 }}>Limpar arquivos</span>
+                  </div>
+                  <div style={{ fontSize: 13, color: 'var(--gray-700)', lineHeight: 1.6 }}>
+                    Remove todos os arquivos CSV carregados na sessao atual e limpa o resultado da comparacao. Nao afeta nenhum dado no banco ou no Bling — apenas limpa o estado local da tela.
+                  </div>
+                </div>
+
+              </div>
+            </section>
+
+          </div>
+
+          {/* Footer */}
+          <div style={{ padding: '14px 26px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end' }}>
+            <button onClick={() => setShowDocModal(false)} style={{ ...s.btn, background: 'var(--gray-100)', color: 'var(--gray-700)', border: '1px solid var(--border)' }}>Fechar</button>
+          </div>
+        </div>
+      </div>
+    )}
     </>
   );
 }

@@ -1,4 +1,4 @@
-export type AppAction = {
+﻿export type AppAction = {
   key: string;
   label: string;
   description?: string;
@@ -62,6 +62,7 @@ export const APP_PERMISSION_CATALOG: AppPagePermission[] = [
   { key: 'bling_relatorio', label: 'Relatorio de Vendas', href: '/bling/relatorio-vendas', actions: [] },
   { key: 'bling_produtos', label: 'Produtos Bling', href: '/bling/produtos', actions: [{ key: 'auditar', label: 'Auditar produtos' }] },
   { key: 'bling_auditoria', label: 'Auditoria Automatica', href: '/bling/auditoria-automatica', actions: [{ key: 'executar', label: 'Executar auditoria' }] },
+  { key: 'conf_auditoria', label: 'Conf. Auditoria Automatica', href: '/conf-auditoria', actions: [{ key: 'editar', label: 'Editar configuracao' }] },
   { key: 'mercado_livre_perguntas', label: 'Perguntas ML', href: '/mercado-livre/perguntas', actions: [{ key: 'responder', label: 'Responder pergunta' }] },
   { key: 'nuvemshop_produtos', label: 'Produtos Nuvemshop', href: '/nuvemshop/produtos', actions: [
     { key: 'analisar_ia', label: 'Analisar com IA' },
@@ -76,9 +77,9 @@ export const APP_PERMISSION_CATALOG: AppPagePermission[] = [
   { key: 'conf_emails', label: 'Conf. E-mails', href: '/configuracoes-gerais', actions: [{ key: 'editar', label: 'Editar configuracao' }] },
   { key: 'conf_produtos_bling', label: 'Conf. Produtos Bling', href: '/bling/config-produtos', actions: [{ key: 'editar', label: 'Editar configuracao' }] },
   { key: 'conf_gerais', label: 'Conf. Gerais', href: '/conf-gerais', actions: [{ key: 'editar', label: 'Editar configuracao' }] },
-  { key: 'conf_ml', label: 'Config. ML', href: '/config-ml', actions: [{ key: 'editar', label: 'Editar configuracao' }] },
+  { key: 'conf_ml', label: 'Conf. ML', href: '/config-ml', actions: [{ key: 'editar', label: 'Editar configuracao' }] },
   { key: 'conf_nuvemshop', label: 'Conf. Nuvemshop', href: '/conf-nuvemshop', actions: [{ key: 'editar', label: 'Editar configuracao' }] },
-  { key: 'conf_gmail', label: 'Config. Gmail', href: '/conf-gmail', actions: [{ key: 'editar', label: 'Editar configuracao' }] },
+  { key: 'conf_gmail', label: 'Conf. Google', href: '/conf-gmail', actions: [{ key: 'editar', label: 'Editar configuracao' }] },
   { key: 'conf_google_drive', label: 'Config. Google Drive', href: '/conf-google-drive', actions: [{ key: 'editar', label: 'Editar configuracao' }] },
 ];
 
