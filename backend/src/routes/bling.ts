@@ -4849,52 +4849,78 @@ blingRouter.post('/atualizar-link-ml-skus', async (req, res, next) => {
       return res.status(400).json({ error: 'Mercado Livre nao conectado para atualizar links' });
     }
 
-    // Busca pecas dos SKUs informados que estao disponiveis e tem item ML
+    // Busca TODAS as pecas disponiveis dos SKUs (com ou sem ML ID já salvo)
     const whereOr = skus.flatMap((sku) => [
       { idPeca: sku },
       { idPeca: { startsWith: `${sku}-` } },
     ]);
     const pecas = await prisma.peca.findMany({
-      where: {
-        AND: [
-          { OR: whereOr },
-          { disponivel: true },
-          { mercadoLivreItemId: { not: null } },
-        ],
-      },
-      select: { id: true, mercadoLivreItemId: true, mercadoLivreLink: true },
+      where: { AND: [{ OR: whereOr }, { disponivel: true }] },
+      select: { id: true, idPeca: true, mercadoLivreItemId: true, mercadoLivreLink: true },
     });
 
-    const rowsByItemId = new Map<string, Array<{ id: number; mercadoLivreLink: string | null }>>();
-    for (const peca of pecas) {
-      const itemId = normalizeMercadoLivreItemCode(peca.mercadoLivreItemId);
-      if (!itemId) continue;
-      const current = rowsByItemId.get(itemId) || [];
-      current.push({ id: Number(peca.id), mercadoLivreLink: String(peca.mercadoLivreLink || '').trim() || null });
-      rowsByItemId.set(itemId, current);
-    }
-
-    const itemIds = Array.from(rowsByItemId.keys());
     let totalAtualizadas = 0;
     let totalSemPermalink = 0;
 
-    await processInBatches(itemIds, 10, 200, async (batch) => {
-      await mapWithConcurrency(batch, 4, async (itemId) => {
-        const permalink = await getMercadoLivreItemPermalink(itemId);
-        if (!permalink) { totalSemPermalink += 1; return null; }
-        const targetRows = rowsByItemId.get(itemId) || [];
-        const idsToUpdate = targetRows
-          .filter((row) => (String(row.mercadoLivreLink || '').trim() || null) !== permalink)
-          .map((row) => row.id);
-        if (idsToUpdate.length) {
-          await prisma.peca.updateMany({ where: { id: { in: idsToUpdate } }, data: { mercadoLivreLink: permalink } });
-          totalAtualizadas += idsToUpdate.length;
-        }
-        return null;
-      });
-    });
+    // Bling é a fonte de verdade: busca o ID atual do anúncio ML para todos os SKUs
+    const skusBase = Array.from(new Set(pecas.map((p) => getBaseSku(p.idPeca)).filter(Boolean)));
+    const produtosByCode = await findBlingProductsByCodes(skusBase);
 
-    res.json({ ok: true, totalPecas: pecas.length, totalItensMl: itemIds.length, totalAtualizadas, totalSemPermalink });
+    // Agrupa peças por SKU base para facilitar atualização
+    const pecasBySkuBase = new Map<string, typeof pecas>();
+    for (const peca of pecas) {
+      const base = getBaseSku(peca.idPeca);
+      if (!base) continue;
+      const arr = pecasBySkuBase.get(base) || [];
+      arr.push(peca);
+      pecasBySkuBase.set(base, arr);
+    }
+
+    for (const [skuBase, produto] of produtosByCode.entries()) {
+      if (!produto?.id) continue;
+
+      const detail = await fetchBlingProductDetailById(Number(produto.id));
+      const lojaRows = await fetchProdutoLojaLinksByProductId(Number(produto.id));
+
+      // ID do anúncio atual no Bling
+      const itemIdBling = resolveBlingMercadoLivreItemId(produto, detail, lojaRows);
+
+      const pecasDeste = pecasBySkuBase.get(skuBase) || [];
+      if (!pecasDeste.length) continue;
+
+      if (itemIdBling) {
+        // Tem anúncio no Bling: atualiza mercadoLivreItemId + permalink
+        const permalink = await getMercadoLivreItemPermalink(itemIdBling)
+          || `https://produto.mercadolivre.com.br/${itemIdBling}`;
+
+        const ids = pecasDeste.map((p) => Number(p.id));
+        await prisma.peca.updateMany({
+          where: { id: { in: ids } },
+          data: { mercadoLivreItemId: itemIdBling, mercadoLivreLink: permalink },
+        });
+        totalAtualizadas += ids.length;
+      } else {
+        // Bling não retornou ID ML: usa o ID já salvo no ANB só pra atualizar o permalink
+        for (const peca of pecasDeste) {
+          const itemIdAnb = normalizeMercadoLivreItemCode(peca.mercadoLivreItemId);
+          if (!itemIdAnb) { totalSemPermalink += 1; continue; }
+
+          const permalink = await getMercadoLivreItemPermalink(itemIdAnb);
+          if (!permalink) { totalSemPermalink += 1; continue; }
+
+          const currentLink = String(peca.mercadoLivreLink || '').trim() || null;
+          if (currentLink !== permalink) {
+            await prisma.peca.update({
+              where: { id: Number(peca.id) },
+              data: { mercadoLivreLink: permalink },
+            });
+            totalAtualizadas += 1;
+          }
+        }
+      }
+    }
+
+    res.json({ ok: true, totalPecas: pecas.length, totalAtualizadas, totalSemPermalink });
   } catch (e) {
     next(e);
   }
