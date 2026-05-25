@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 import { useEffect, useRef, useState } from 'react';
 import { API_BASE } from '@/lib/api-base';
 
@@ -373,6 +373,104 @@ export default function EtiquetaCartelaModal({ motoId, motoLabel, onClose, onSav
   const preenchidas = posicoes.filter(p => p.skuId).length;
   const comStatus = posicoes.filter(p => p.status).length;
 
+  async function gerarPdf() {
+    const jsPDFModule = await import('jspdf');
+    const jsPDF = jsPDFModule.default;
+    const autoTableModule = await import('jspdf-autotable');
+    const autoTable = autoTableModule.default;
+
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+
+    // Cabeçalho
+    doc.setFontSize(15);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(15, 23, 42);
+    doc.text(`Cartela Etiqueta Detran: ${cartelaId || '(sem ID)'}`, 14, 18);
+
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 116, 139);
+    doc.text(
+      `Moto: ${motoLabel}  ·  ${preenchidas} SKU(s) vinculados  ·  ${comStatus} com status  ·  Gerado em ${new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })}`,
+      14, 25
+    );
+    doc.setTextColor(0, 0, 0);
+
+    const rows = DETRAN_TIPOS.map((tipo, idx) => {
+      const pos = posicoes[idx];
+      const etiqueta = gerarEtiqueta(idx + 1) || '—';
+      const status = pos.status || '—';
+      const sku = pos.skuId || '—';
+      const descricao = pos.skuDescricao || '—';
+      const situacao = pos.skuId
+        ? (pos.skuPreCadastro ? 'Pre-cadastro' : pos.skuDisponivel ? 'Estoque' : 'Vendida')
+        : '—';
+      return [etiqueta, tipo, status, sku, descricao, situacao];
+    });
+
+    autoTable(doc, {
+      startY: 30,
+      head: [['Etiqueta', 'Tipo de Peca', 'Status', 'SKU', 'Descricao', 'Situacao']],
+      body: rows,
+      styles: {
+        fontSize: 8,
+        cellPadding: { top: 3, right: 4, bottom: 3, left: 4 },
+        font: 'helvetica',
+        textColor: [15, 23, 42],
+        lineColor: [226, 232, 240],
+        lineWidth: 0.2,
+      },
+      headStyles: {
+        fillColor: [30, 58, 138],
+        textColor: [255, 255, 255],
+        fontStyle: 'bold',
+        fontSize: 8,
+        halign: 'left',
+      },
+      alternateRowStyles: {
+        fillColor: [248, 250, 252],
+      },
+      columnStyles: {
+        0: { fontStyle: 'bold', cellWidth: 46 },   // Etiqueta
+        1: { cellWidth: 50 },                       // Tipo de Peca
+        2: { cellWidth: 30, halign: 'center' },     // Status
+        3: { cellWidth: 34, font: 'courier', fontSize: 7.5 }, // SKU (monospace)
+        4: { cellWidth: 'auto' },                   // Descricao
+        5: { cellWidth: 28, halign: 'center' },     // Situacao
+      },
+      didParseCell: (data) => {
+        if (data.section !== 'body') return;
+        // Coluna Status — colorir por valor
+        if (data.column.index === 2) {
+          const val = String(data.cell.text[0] || '');
+          if (val === 'Inexistente') {
+            data.cell.styles.fillColor = [254, 226, 226];
+            data.cell.styles.textColor = [185, 28, 28];
+          } else if (val === 'Sucata') {
+            data.cell.styles.fillColor = [255, 237, 213];
+            data.cell.styles.textColor = [154, 52, 18];
+          } else if (val === 'Reutilizavel') {
+            data.cell.styles.fillColor = [220, 252, 231];
+            data.cell.styles.textColor = [21, 128, 61];
+          }
+        }
+        // Coluna Situacao — colorir por valor
+        if (data.column.index === 5) {
+          const val = String(data.cell.text[0] || '');
+          if (val === 'Estoque') {
+            data.cell.styles.textColor = [21, 128, 61];
+          } else if (val === 'Vendida') {
+            data.cell.styles.textColor = [185, 28, 28];
+          } else if (val === 'Pre-cadastro') {
+            data.cell.styles.textColor = [146, 64, 14];
+          }
+        }
+      },
+    });
+
+    doc.save(`cartela-${cartelaId || 'sem-id'}_${motoLabel.replace(/\s+/g, '_')}.pdf`);
+  }
+
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.5)', zIndex: 400, display: 'flex', alignItems: 'stretch', justifyContent: isPhone ? 'center' : 'flex-end' }}>
       <div style={{ background: 'var(--white)', width: '100%', maxWidth: isPhone ? undefined : 900, height: isPhone ? '100dvh' : undefined, display: 'flex', flexDirection: 'column', boxShadow: isPhone ? 'none' : '-8px 0 32px rgba(0,0,0,.12)', overflow: 'hidden' }}>
@@ -631,6 +729,10 @@ export default function EtiquetaCartelaModal({ motoId, motoLabel, onClose, onSav
             {preenchidas} SKU(s) vinculados · {comStatus} com status definido
           </div>
           <div style={{ display: 'flex', gap: 8, flexDirection: isPhone ? 'column-reverse' : 'row', width: isPhone ? '100%' : undefined }}>
+            <button onClick={gerarPdf}
+              style={{ padding: '8px 16px', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', border: '1px solid var(--border)', background: 'var(--white)', color: 'var(--gray-700)', fontFamily: 'Inter, sans-serif', width: isPhone ? '100%' : undefined, display: 'flex', alignItems: 'center', gap: 6 }}>
+              📄 Baixar PDF
+            </button>
             <button onClick={onClose}
               style={{ padding: '8px 18px', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', border: '1px solid var(--border)', background: 'var(--white)', color: 'var(--gray-600)', fontFamily: 'Inter, sans-serif', width: isPhone ? '100%' : undefined }}>
               Cancelar
