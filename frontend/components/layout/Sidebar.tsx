@@ -78,14 +78,15 @@ export const NAV: NavGroup[] = [
   {
     section: 'Configuracoes',
     items: [
-      { href: '/configuracoes', icon: 'key-round', label: 'Configuracoes' },
+      { href: '/configuracoes', icon: 'key-round', label: 'Conf. Perfil' },
       { href: '/bling', icon: 'plug', label: 'Conf. Conexao Bling' },
       { href: '/configuracoes-gerais', icon: 'mail', label: 'Conf. E-mails' },
       { href: '/bling/config-produtos', icon: 'sliders', label: 'Conf. Produtos Bling' },
       { href: '/conf-gerais', icon: 'settings', label: 'Conf. Gerais' },
-      { href: '/config-ml', icon: 'store', label: 'Config. ML' },
+      { href: '/config-ml', icon: 'store', label: 'Conf. ML' },
       { href: '/conf-nuvemshop', icon: 'cloud', label: 'Conf. Nuvemshop' },
-      { href: '/conf-gmail', icon: 'mail', label: 'Config. Gmail' },
+      { href: '/conf-gmail', icon: 'mail', label: 'Conf. Google' },
+      { href: '/conf-auditoria', icon: 'radar', label: 'Conf. Auditoria Automatica' },
     ],
   },
 ];

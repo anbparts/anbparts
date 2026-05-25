@@ -79,7 +79,6 @@ const clampProgress = (value: number, total: number) => Math.max(0, Math.min(tot
 export default function AuditoriaAutomaticaPage() {
   const [viewportMode, setViewportMode] = useState<AuditoriaViewportMode>('desktop');
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [executando, setExecutando] = useState(false);
   const [deletingExecutionId, setDeletingExecutionId] = useState<number | null>(null);
   const [clearingHistory, setClearingHistory] = useState(false);
@@ -87,15 +86,6 @@ export default function AuditoriaAutomaticaPage() {
   const [config, setConfig] = useState<Config | null>(null);
   const [execucoes, setExecucoes] = useState<Execucao[]>([]);
   const [execucaoSelecionada, setExecucaoSelecionada] = useState<Execucao | null>(null);
-  const [auditoriaAtiva, setAuditoriaAtiva] = useState(false);
-  const [auditoriaHorario, setAuditoriaHorario] = useState('03:00');
-  const [auditoriaEscopo, setAuditoriaEscopo] = useState<AuditoriaEscopo>('full');
-  const [auditoriaTamanhoLote, setAuditoriaTamanhoLote] = useState('100');
-  const [auditoriaPausaMs, setAuditoriaPausaMs] = useState('400');
-  const [auditoriaLinkMlAtiva, setAuditoriaLinkMlAtiva] = useState(false);
-  const [auditoriaLinkMlHorario, setAuditoriaLinkMlHorario] = useState('05:00');
-  const [auditoriaLinkMlIntervaloDias, setAuditoriaLinkMlIntervaloDias] = useState('1');
-  const [executandoLinkMl, setExecutandoLinkMl] = useState(false);
 
 
   async function loadConfig() {
@@ -103,15 +93,6 @@ export default function AuditoriaAutomaticaPage() {
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Erro ao carregar configuracao');
     setConfig(data);
-    setAuditoriaAtiva(!!data.auditoriaAtiva);
-    setAuditoriaHorario(data.auditoriaHorario || '03:00');
-    setAuditoriaEscopo((data.auditoriaEscopo || 'full') as AuditoriaEscopo);
-    setAuditoriaTamanhoLote(String(data.auditoriaTamanhoLote || 100));
-    setAuditoriaPausaMs(String(data.auditoriaPausaMs || 400));
-    setAuditoriaLinkMlAtiva(!!data.auditoriaLinkMlAtiva);
-    setAuditoriaLinkMlHorario(data.auditoriaLinkMlHorario || '05:00');
-    setAuditoriaLinkMlIntervaloDias(String(data.auditoriaLinkMlIntervaloDias || 1));
-
   }
 
   async function loadExecucaoDetalhe(id: number) {
@@ -222,56 +203,9 @@ export default function AuditoriaAutomaticaPage() {
   const isTabletLandscape = viewportMode === 'tablet-landscape';
   const pagePadding = isPhone ? 14 : isTabletPortrait || isTabletLandscape ? 18 : 28;
   const topbarPadding = isPhone ? '12px 14px' : isTabletPortrait || isTabletLandscape ? '14px 18px' : '0 28px';
-  const configGridColumns = isPhone ? '1fr' : isTabletPortrait ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fit, minmax(180px, 1fr))';
   const statusGridColumns = isPhone ? 'repeat(2, minmax(0, 1fr))' : isTabletPortrait ? 'repeat(3, minmax(0, 1fr))' : 'repeat(auto-fit, minmax(160px, 1fr))';
   const executionColumns = isPhone || isTabletPortrait ? '1fr' : isTabletLandscape ? '320px minmax(0, 1fr)' : 'minmax(280px, 360px) minmax(0, 1fr)';
   const emailGridColumns = isPhone ? '1fr' : 'repeat(auto-fit, minmax(220px, 1fr))';
-
-  async function salvarConfiguracao() {
-    setSaving(true);
-    try {
-      const response = await fetch(`${API}/bling/auditoria-automatica/config`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          auditoriaAtiva,
-          auditoriaHorario,
-          auditoriaEscopo,
-          auditoriaTamanhoLote: Number(auditoriaTamanhoLote) || 100,
-          auditoriaPausaMs: Number(auditoriaPausaMs) || 0,
-          auditoriaLinkMlAtiva,
-          auditoriaLinkMlHorario,
-          auditoriaLinkMlIntervaloDias: Number(auditoriaLinkMlIntervaloDias) || 1,
-        }),
-      });
-      const data = await response.json();
-      if (!response.ok) return alert(data.error || 'Erro ao salvar a configuracao');
-      await loadConfig();
-      alert('Configuracoes salvas.');
-    } catch (e: any) {
-      alert(`Erro ao salvar: ${e.message}`);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function executarLinkMlAgora() {
-    setExecutandoLinkMl(true);
-    try {
-      const response = await fetch(`${API}/bling/auditoria-automatica/link-ml/executar`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      });
-      const data = await response.json();
-      if (!response.ok) return alert(data.error || 'Erro ao executar a rotina de Link ML');
-      await loadConfig();
-      alert(`Rotina de Link ML concluida. ${data.totalAtualizadas || 0} peca(s) atualizada(s).`);
-    } catch (e: any) {
-      alert(`Erro ao executar rotina de Link ML: ${e.message}`);
-    } finally {
-      setExecutandoLinkMl(false);
-    }
-  }
 
   async function executarAgora() {
     setExecutando(true);
@@ -334,56 +268,16 @@ export default function AuditoriaAutomaticaPage() {
           <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>Valida divergencias de estoque, mantem DETRAN/localizacao na full e roda o Link ML em rotina separada</div>
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', width: isPhone ? '100%' : undefined }}>
-          <button style={{ ...s.btn, background: 'var(--gray-100)', color: 'var(--gray-700)', border: '1px solid var(--border)' }} onClick={salvarConfiguracao} disabled={saving}>{saving ? 'Salvando...' : 'Salvar configuracoes'}</button>
+          <Link href="/conf-auditoria" style={{ ...s.btnGhost }}>Conf. Auditoria</Link>
           <button style={{ ...s.btn, background: 'var(--blue-500)', color: '#fff', opacity: executando ? 0.6 : 1 }} onClick={executarAgora} disabled={executando || !!config?.executandoAgora}>{executando || config?.executandoAgora ? 'Executando...' : 'Executar agora'}</button>
         </div>
       </div>
 
       <div style={{ padding: pagePadding }}>
-        <div style={s.card}>
-          <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 8 }}>Configuracao da Rotina de Validacao / Detran / Localizacao</div>
-          <div style={{ fontSize: 12, color: 'var(--gray-400)', marginBottom: 16 }}>Defina quando a rotina principal vai rodar, como a base sera filtrada e com qual cadencia os lotes serao enviados para o Bling. O link do ML nao e mais atualizado aqui.</div>
-          <div style={{ display: 'grid', gridTemplateColumns: configGridColumns, gap: 12, marginBottom: 16 }}>
-            <div><label style={s.label}>Rotina ativa</label><select style={{ ...s.input, width: '100%', cursor: 'pointer' }} value={auditoriaAtiva ? '1' : '0'} onChange={(e) => setAuditoriaAtiva(e.target.value === '1')}><option value="1">Ativa</option><option value="0">Pausada</option></select></div>
-            <div><label style={s.label}>Horario da execucao</label><input style={{ ...s.input, width: '100%' }} type="time" value={auditoriaHorario} onChange={(e) => setAuditoriaHorario(e.target.value)} /></div>
-            <div><label style={s.label}>Escopo da auditoria</label><select style={{ ...s.input, width: '100%', cursor: 'pointer' }} value={auditoriaEscopo} onChange={(e) => setAuditoriaEscopo(e.target.value as AuditoriaEscopo)}>{ESCOPOS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></div>
-            <div><label style={s.label}>Tamanho do lote</label><input style={{ ...s.input, width: '100%' }} type="number" min="10" max="500" value={auditoriaTamanhoLote} onChange={(e) => setAuditoriaTamanhoLote(e.target.value)} /></div>
-            <div><label style={s.label}>Pausa entre lotes (ms)</label><input style={{ ...s.input, width: '100%' }} type="number" min="0" max="15000" value={auditoriaPausaMs} onChange={(e) => setAuditoriaPausaMs(e.target.value)} /></div>
-          </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>{ESCOPOS.map((item) => <div key={item.value} style={{ padding: '7px 10px', borderRadius: 999, border: `1px solid ${auditoriaEscopo === item.value ? '#93c5fd' : 'var(--border)'}`, background: auditoriaEscopo === item.value ? '#eff6ff' : 'var(--gray-50)', color: auditoriaEscopo === item.value ? 'var(--blue-500)' : 'var(--gray-700)', fontSize: 12, fontWeight: 600 }}>{item.label}</div>)}</div>
-          <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>{ESCOPOS.find((item) => item.value === auditoriaEscopo)?.detail}</div>
-        </div>
-
-        <div style={s.card}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
-            <div>
-              <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 6 }}>Configuracao da Rotina de Link ML</div>
-              <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>Essa rotina usa o item ID do Mercado Livre salvo nas pecas com estoque e atualiza o permalink em horario separado, sem misturar com a full.</div>
-            </div>
-            <button
-              style={{ ...s.btn, background: 'var(--blue-500)', color: '#fff', opacity: executandoLinkMl ? 0.6 : 1 }}
-              onClick={executarLinkMlAgora}
-              disabled={executandoLinkMl || !!config?.auditoriaLinkMlExecutandoAgora}
-            >
-              {executandoLinkMl || config?.auditoriaLinkMlExecutandoAgora ? 'Atualizando links...' : 'Atualizar links ML agora'}
-            </button>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: configGridColumns, gap: 12, marginBottom: 16 }}>
-            <div><label style={s.label}>Rotina ativa</label><select style={{ ...s.input, width: '100%', cursor: 'pointer' }} value={auditoriaLinkMlAtiva ? '1' : '0'} onChange={(e) => setAuditoriaLinkMlAtiva(e.target.value === '1')}><option value="1">Ativa</option><option value="0">Pausada</option></select></div>
-            <div><label style={s.label}>Intervalo (dias)</label><input style={{ ...s.input, width: '100%' }} type="number" min="1" max="365" value={auditoriaLinkMlIntervaloDias} onChange={(e) => setAuditoriaLinkMlIntervaloDias(e.target.value)} /></div>
-            <div><label style={s.label}>Horario da execucao</label><input style={{ ...s.input, width: '100%' }} type="time" value={auditoriaLinkMlHorario} onChange={(e) => setAuditoriaLinkMlHorario(e.target.value)} /></div>
-          </div>
-          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-            <div style={{ fontSize: 12, color: 'var(--gray-700)' }}><strong>Status:</strong> <span style={{ color: auditoriaLinkMlAtiva ? 'var(--green)' : 'var(--amber)' }}>{auditoriaLinkMlAtiva ? 'Ativa' : 'Pausada'}</span></div>
-            <div style={{ fontSize: 12, color: 'var(--gray-700)' }}><strong>Ultima execucao:</strong> {fmtDateTime(config?.auditoriaLinkMlUltimaExecucaoEm || null)}</div>
-            <div style={{ fontSize: 12, color: 'var(--gray-700)' }}><strong>Executando agora:</strong> <span style={{ color: config?.auditoriaLinkMlExecutandoAgora ? 'var(--blue-500)' : 'var(--gray-700)' }}>{config?.auditoriaLinkMlExecutandoAgora ? 'Sim' : 'Nao'}</span></div>
-          </div>
-        </div>
-
         <div style={{ display: 'grid', gridTemplateColumns: statusGridColumns, gap: 12, marginBottom: 12 }}>
           {[
-            { label: 'Status', value: auditoriaAtiva ? 'Ativa' : 'Pausada', color: auditoriaAtiva ? 'var(--green)' : 'var(--amber)' },
-            { label: 'Horario', value: auditoriaHorario || '-', color: 'var(--gray-700)' },
+            { label: 'Status', value: config?.auditoriaAtiva ? 'Ativa' : 'Pausada', color: config?.auditoriaAtiva ? 'var(--green)' : 'var(--amber)' },
+            { label: 'Horario', value: config?.auditoriaHorario || '-', color: 'var(--gray-700)' },
             { label: 'Escopo', value: escopoLabel(config?.auditoriaEscopo), color: 'var(--gray-700)' },
             { label: 'Ultima execucao', value: fmtDateTime(config?.ultimaExecucao?.startedAt || config?.auditoriaUltimaExecucaoEm || null), color: 'var(--gray-700)' },
             { label: 'Ultimas divergencias', value: config?.ultimaExecucao?.totalDivergencias ?? 0, color: (config?.ultimaExecucao?.totalDivergencias || 0) > 0 ? 'var(--red)' : 'var(--green)' },
