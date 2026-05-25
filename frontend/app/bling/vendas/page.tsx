@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 import { useEffect, useState } from 'react';
 import { API_BASE } from '@/lib/api-base';
 import { useAuth } from '@/lib/auth';
@@ -821,7 +821,7 @@ export default function VendasBlingPage() {
   const todosPedidosManuaisVisiveisSelecionados = pedidosManuaisFiltrados.length > 0
     && pedidosManuaisFiltrados.every((pedido) => pedidosManuaisSelecionadosSet.has(pedido.pedidoId));
   const tituloRelatorioSeparacao = relatorioSeparacaoModo === 'manual'
-    ? 'Relatorio de Separacao - Manual'
+    ? 'Relatorio de Separacao - PDF'
     : 'Relatorio de Separacao';
   const mensagemVaziaSeparacao = relatorioSeparacaoModo === 'manual'
     ? 'Nenhum pedido selecionado gerou itens para separacao.'
@@ -869,7 +869,7 @@ export default function VendasBlingPage() {
                 onClick={toggleRelatorioManual}
                 disabled={carregandoPedidosManuais || carregandoSeparacao}
               >
-                {carregandoPedidosManuais ? 'Carregando pedidos...' : 'Relatorio de Separacao - Manual'}
+                {carregandoPedidosManuais ? 'Carregando pedidos...' : 'Relatorio de Separacao - PDF'}
               </button>
             )}
           </div>
@@ -882,7 +882,7 @@ export default function VendasBlingPage() {
           <div style={{ ...s.card, padding: isPhone ? 16 : s.card.padding, borderColor: '#dbeafe', background: '#f8fbff' }}>
             <div style={{ display: isPhone ? 'grid' : 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: 14 }}>
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--gray-800)' }}>Relatorio de Separacao - Manual</div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--gray-800)' }}>Relatorio de Separacao - PDF</div>
                 <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 4 }}>
                   Listando pedidos criados de {fmtDate(dataInicio)} ate {fmtDate(dataFim)}.
                 </div>
