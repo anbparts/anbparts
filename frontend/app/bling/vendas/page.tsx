@@ -400,22 +400,6 @@ async function baixarSeparacaoPdf(relatorio: SeparacaoRelatorio) {
         4: { cellWidth: 50 },
         5: { cellWidth: 48 },
       },
-      didParseCell: (data: any) => {
-        if (data.section === 'body' && data.column.index === 4) {
-          const value = String(data.cell.raw || '').trim();
-          if (value && value !== '-') {
-            data.cell.styles.textColor = [13, 71, 161];
-            data.cell.styles.fontStyle = 'bold';
-          }
-        }
-        if (data.section === 'body' && data.column.index === 5) {
-          const value = String(data.cell.raw || '').trim();
-          if (value === 'ENVIAR FOTO DA ETIQUETA DETRAN') {
-            data.cell.styles.textColor = [217, 119, 6];
-            data.cell.styles.fontStyle = 'bold';
-          }
-        }
-      },
     });
 
     y = ((doc as any).lastAutoTable?.finalY || y) + 4;
