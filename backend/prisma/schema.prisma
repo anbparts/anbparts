@@ -1,4 +1,4 @@
-generator client {
+﻿generator client {
   provider = "prisma-client-js"
 }
 
@@ -511,6 +511,75 @@ model HistoricoDevolucao {
   @@index([dataVenda])
   @@index([pedidoBlingNum])
 }
+
+// ─── WM ARMAZENAGEM ───────────────────────────────────────────────────────────
+
+model StorageArea {
+  id          Int               @id @default(autoincrement())
+  nome        String            @unique
+  descricao   String?
+  ativo       Boolean           @default(true)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  posicoes    StoragePosition[]
+}
+
+model StoragePosition {
+  id        Int                     @id @default(autoincrement())
+  areaId    Int
+  nome      String
+  ativo     Boolean                 @default(true)
+  createdAt DateTime                @default(now())
+  updatedAt DateTime                @updatedAt
+  area      StorageArea             @relation(fields: [areaId], references: [id], onDelete: Cascade)
+  detalhes  StoragePositionDetail[]
+
+  @@unique([areaId, nome])
+  @@index([areaId])
+}
+
+model StoragePositionDetail {
+  id        Int                  @id @default(autoincrement())
+  posicaoId Int
+  nome      String
+  ativo     Boolean              @default(true)
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+  posicao   StoragePosition      @relation(fields: [posicaoId], references: [id], onDelete: Cascade)
+  alocacoes BoxStorageLocation[]
+  historicosOrigem  BoxStorageHistory[] @relation("HistoryFrom")
+  historicosDestino BoxStorageHistory[] @relation("HistoryTo")
+
+  @@unique([posicaoId, nome])
+  @@index([posicaoId])
+}
+
+model BoxStorageLocation {
+  id          Int                   @id @default(autoincrement())
+  localizacao String                @unique
+  detailId    Int
+  updatedAt   DateTime              @updatedAt
+  detail      StoragePositionDetail @relation(fields: [detailId], references: [id])
+
+  @@index([detailId])
+}
+
+model BoxStorageHistory {
+  id           Int                    @id @default(autoincrement())
+  localizacao  String
+  fromDetailId Int?
+  toDetailId   Int
+  changedBy    String?
+  observacao   String?
+  changedAt    DateTime               @default(now())
+  fromDetail   StoragePositionDetail? @relation("HistoryFrom", fields: [fromDetailId], references: [id])
+  toDetail     StoragePositionDetail  @relation("HistoryTo", fields: [toDetailId], references: [id])
+
+  @@index([localizacao])
+  @@index([changedAt])
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 
 model AppUser {
   id           Int      @id @default(autoincrement())

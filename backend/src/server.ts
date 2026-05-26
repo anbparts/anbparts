@@ -1,6 +1,7 @@
-import 'dotenv/config';
+﻿import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import { armazenagemRouter } from './routes/armazenagem';
 import { authRouter } from './routes/auth';
 import { blingRouter, startBlingAuditoriaScheduler } from './routes/bling';
 import { cadastroRouter } from './routes/cadastro';
@@ -37,6 +38,7 @@ app.get('/health', (_, res) => res.json({ ok: true, ts: new Date() }));
 app.use('/auth', authRouter);
 app.use(authMiddleware);
 
+app.use('/armazenagem', armazenagemRouter);
 app.use('/bling', blingRouter);
 app.use('/cadastro', cadastroRouter);
 app.use('/configuracoes-gerais', configuracoesGeraisRouter);

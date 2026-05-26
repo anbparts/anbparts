@@ -69,6 +69,7 @@ export const APP_PERMISSION_CATALOG: AppPagePermission[] = [
     { key: 'aplicar', label: 'Aplicar na Nuvemshop' },
   ] },
   { key: 'detran', label: 'Detran', href: '/detran', actions: [{ key: 'executar', label: 'Executar Detran' }] },
+  { key: 'armazenagem', label: 'Armazenagem', href: '/armazenagem', actions: [{ key: 'editar', label: 'Editar estrutura e alocacoes' }] },
   { key: 'configuracoes', label: 'Configuracoes', href: '/configuracoes', actions: [
     { key: 'usuarios', label: 'Gerenciar usuarios' },
     { key: 'permissoes', label: 'Gerenciar permissoes' },

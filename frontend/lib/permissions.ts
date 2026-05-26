@@ -29,6 +29,7 @@ export const PAGE_KEY_BY_HREF: Record<string, string> = {
   '/detran/peca-avulsa': 'detran',
   '/detran/execucoes': 'detran',
   '/detran/logs': 'detran',
+  '/armazenagem': 'armazenagem',
   '/configuracoes': 'configuracoes',
   '/bling': 'conf_bling',
   '/configuracoes-gerais': 'conf_emails',

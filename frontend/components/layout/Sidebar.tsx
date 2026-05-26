@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -73,6 +73,12 @@ export const NAV: NavGroup[] = [
       { href: '/detran/peca-avulsa', icon: 'tag', label: 'Peca Avulsa (POC)' },
       { href: '/detran/execucoes', icon: 'playbook', label: 'Execucoes' },
       { href: '/detran/logs', icon: 'terminal', label: 'Logs' },
+    ],
+  },
+  {
+    section: 'Operacoes',
+    items: [
+      { href: '/armazenagem', icon: 'warehouse', label: 'Armazenagem' },
     ],
   },
   {
