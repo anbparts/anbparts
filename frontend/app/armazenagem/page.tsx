@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 import { useEffect, useRef, useState } from 'react';
 import { API_BASE } from '@/lib/api-base';
 
@@ -64,13 +64,18 @@ export default function ArmazenagemPage() {
   async function carregar() {
     setLoading(true);
     try {
-      const [e, c] = await Promise.all([
-        fetch(`${API}/armazenagem/estrutura`, { credentials: 'include' }).then(r => r.json()),
-        fetch(`${API}/armazenagem/caixas`, { credentials: 'include' }).then(r => r.json()),
+      const [re, rc] = await Promise.all([
+        fetch(`${API}/armazenagem/estrutura`, { credentials: 'include' }),
+        fetch(`${API}/armazenagem/caixas`, { credentials: 'include' }),
       ]);
+      if (!re.ok) throw new Error(`Erro ao carregar estrutura (status ${re.status})`);
+      if (!rc.ok) throw new Error(`Erro ao carregar caixas (status ${rc.status})`);
+      const [e, c] = await Promise.all([re.json(), rc.json()]);
       setEstrutura(Array.isArray(e) ? e : []);
       setCaixas(Array.isArray(c) ? c : []);
-    } catch { }
+    } catch (err: any) {
+      console.error('Armazenagem carregar:', err);
+    }
     setLoading(false);
   }
 
@@ -112,13 +117,20 @@ export default function ArmazenagemPage() {
     setSalvando(true);
     try {
       const { tipo, parentId, editando } = modalCriar;
+      let r: Response;
       if (editando) {
         const url = tipo === 'area' ? `/armazenagem/areas/${editando.id}` : tipo === 'posicao' ? `/armazenagem/posicoes/${editando.id}` : `/armazenagem/detalhes/${editando.id}`;
-        await fetch(`${API}${url}`, { method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nome: modalNome.trim(), descricao: modalDesc.trim() || null }) });
+        r = await fetch(`${API}${url}`, { method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nome: modalNome.trim(), descricao: modalDesc.trim() || null }) });
       } else {
         const url = tipo === 'area' ? '/armazenagem/areas' : tipo === 'posicao' ? '/armazenagem/posicoes' : '/armazenagem/detalhes';
         const body = tipo === 'area' ? { nome: modalNome.trim(), descricao: modalDesc.trim() || null } : tipo === 'posicao' ? { areaId: parentId, nome: modalNome.trim() } : { posicaoId: parentId, nome: modalNome.trim() };
-        await fetch(`${API}${url}`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        r = await fetch(`${API}${url}`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      }
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok || data.ok === false) {
+        alert(data.error || `Erro ao salvar (status ${r.status})`);
+        setSalvando(false);
+        return;
       }
       setModalCriar(null);
       await carregar();
