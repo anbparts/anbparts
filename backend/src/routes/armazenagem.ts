@@ -1,4 +1,4 @@
-﻿import { Router } from 'express';
+import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma';
 
@@ -80,7 +80,7 @@ armazenagemRouter.post('/areas', async (req, res, next) => {
   try {
     const { nome, descricao } = z.object({
       nome: z.string().trim().min(1),
-      descricao: z.string().trim().optional(),
+      descricao: z.string().trim().nullable().optional(),
     }).parse(req.body);
 
     const area = await prisma.storageArea.create({
