@@ -515,13 +515,17 @@ model HistoricoDevolucao {
 // ─── WM ARMAZENAGEM ───────────────────────────────────────────────────────────
 
 model StorageArea {
-  id          Int               @id @default(autoincrement())
-  nome        String            @unique
-  descricao   String?
-  ativo       Boolean           @default(true)
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
-  posicoes    StoragePosition[]
+  id           Int               @id @default(autoincrement())
+  nome         String            @unique
+  descricao    String?
+  ativo        Boolean           @default(true)
+  posX         Float?
+  posZ         Float?
+  largura      Float?
+  profundidade Float?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  posicoes     StoragePosition[]
 }
 
 model StoragePosition {
@@ -529,6 +533,8 @@ model StoragePosition {
   areaId    Int
   nome      String
   ativo     Boolean                 @default(true)
+  posX      Float?
+  posZ      Float?
   createdAt DateTime                @default(now())
   updatedAt DateTime                @updatedAt
   area      StorageArea             @relation(fields: [areaId], references: [id], onDelete: Cascade)

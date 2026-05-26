@@ -52,12 +52,18 @@ armazenagemRouter.get('/estrutura', async (_req, res, next) => {
       id: area.id,
       nome: area.nome,
       descricao: area.descricao,
+      posX: area.posX ?? null,
+      posZ: area.posZ ?? null,
+      largura: area.largura ?? null,
+      profundidade: area.profundidade ?? null,
       totalCaixas: area.posicoes.reduce((s, p) =>
         s + p.detalhes.reduce((sd, d) => sd + (countByDetail.get(d.id) || 0), 0), 0),
       posicoes: area.posicoes.map((pos) => ({
         id: pos.id,
         nome: pos.nome,
         areaId: pos.areaId,
+        posX: pos.posX ?? null,
+        posZ: pos.posZ ?? null,
         totalCaixas: pos.detalhes.reduce((s, d) => s + (countByDetail.get(d.id) || 0), 0),
         detalhes: pos.detalhes.map((det) => ({
           id: det.id,
@@ -94,9 +100,13 @@ armazenagemRouter.post('/areas', async (req, res, next) => {
 armazenagemRouter.patch('/areas/:id', async (req, res, next) => {
   try {
     const id = Number(req.params.id);
-    const { nome, descricao } = z.object({
+    const { nome, descricao, posX, posZ, largura, profundidade } = z.object({
       nome: z.string().trim().min(1).optional(),
       descricao: z.string().trim().nullable().optional(),
+      posX: z.number().nullable().optional(),
+      posZ: z.number().nullable().optional(),
+      largura: z.number().positive().nullable().optional(),
+      profundidade: z.number().positive().nullable().optional(),
     }).parse(req.body);
 
     const area = await prisma.storageArea.update({
@@ -104,6 +114,10 @@ armazenagemRouter.patch('/areas/:id', async (req, res, next) => {
       data: {
         ...(nome !== undefined && { nome }),
         ...(descricao !== undefined && { descricao }),
+        ...(posX !== undefined && { posX }),
+        ...(posZ !== undefined && { posZ }),
+        ...(largura !== undefined && { largura }),
+        ...(profundidade !== undefined && { profundidade }),
       },
     });
     res.json({ ok: true, area });
@@ -148,8 +162,19 @@ armazenagemRouter.post('/posicoes', async (req, res, next) => {
 armazenagemRouter.patch('/posicoes/:id', async (req, res, next) => {
   try {
     const id = Number(req.params.id);
-    const { nome } = z.object({ nome: z.string().trim().min(1) }).parse(req.body);
-    const posicao = await prisma.storagePosition.update({ where: { id }, data: { nome } });
+    const { nome, posX, posZ } = z.object({
+      nome: z.string().trim().min(1).optional(),
+      posX: z.number().nullable().optional(),
+      posZ: z.number().nullable().optional(),
+    }).parse(req.body);
+    const posicao = await prisma.storagePosition.update({
+      where: { id },
+      data: {
+        ...(nome !== undefined && { nome }),
+        ...(posX !== undefined && { posX }),
+        ...(posZ !== undefined && { posZ }),
+      },
+    });
     res.json({ ok: true, posicao });
   } catch (e) { next(e); }
 });

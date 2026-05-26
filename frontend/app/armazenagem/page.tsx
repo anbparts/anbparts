@@ -1,6 +1,9 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { API_BASE } from '@/lib/api-base';
+
+const Warehouse3DView = dynamic(() => import('./Warehouse3DView'), { ssr: false });
 
 const API = API_BASE;
 
@@ -13,8 +16,8 @@ const s: any = {
 };
 
 type Detalhe = { id: number; nome: string; posicaoId: number; totalCaixas: number; caixas: string[] };
-type Posicao = { id: number; nome: string; areaId: number; totalCaixas: number; detalhes: Detalhe[] };
-type Area = { id: number; nome: string; descricao: string | null; totalCaixas: number; posicoes: Posicao[] };
+type Posicao = { id: number; nome: string; areaId: number; totalCaixas: number; posX: number | null; posZ: number | null; detalhes: Detalhe[] };
+type Area = { id: number; nome: string; descricao: string | null; totalCaixas: number; posX: number | null; posZ: number | null; largura: number | null; profundidade: number | null; posicoes: Posicao[] };
 
 type Caixa = {
   localizacao: string;
@@ -48,6 +51,7 @@ export default function ArmazenagemPage() {
   const [modalNome, setModalNome] = useState('');
   const [modalDesc, setModalDesc] = useState('');
   const [salvando, setSalvando] = useState(false);
+  const [modal3D, setModal3D] = useState(false);
 
   // Modal alocar caixa
   const [modalAlocar, setModalAlocar] = useState<{ detailId: number; detailLabel: string } | null>(null);
@@ -210,6 +214,13 @@ export default function ArmazenagemPage() {
           <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>Gestao de localizacao fisica das caixas (WM)</div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            onClick={() => setModal3D(true)}
+            disabled={estrutura.length === 0}
+            style={{ ...s.btn, background: '#1d4ed8', color: '#fff', opacity: estrutura.length === 0 ? 0.4 : 1 }}
+          >
+            🏭 Vista 3D
+          </button>
           <button onClick={() => setModalCriar({ tipo: 'area' })} style={{ ...s.btn, background: 'var(--gray-800)', color: '#fff' }}>
             + Espaco
           </button>
@@ -573,6 +584,14 @@ export default function ArmazenagemPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── MODAL 3D ─────────────────────────────────────────────────────────── */}
+      {modal3D && (
+        <Warehouse3DView
+          areas={estrutura}
+          onClose={() => setModal3D(false)}
+        />
       )}
     </>
   );
