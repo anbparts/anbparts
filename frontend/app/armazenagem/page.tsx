@@ -230,7 +230,31 @@ export default function ArmazenagemPage() {
               </button>
             </div>
           ) : (
-            <div style={{ padding: '12px 8px' }}>
+            <div>
+              {/* Botões expandir/comprimir */}
+              <div style={{ display: 'flex', gap: 6, padding: '10px 10px 4px', borderBottom: '1px solid var(--border)' }}>
+                <button
+                  onClick={() => {
+                    const allAreaIds = new Set(estrutura.map(a => a.id));
+                    const allPosIds = new Set(estrutura.flatMap(a => a.posicoes.map(p => p.id)));
+                    setExpandedAreas(allAreaIds);
+                    setExpandedPosicoes(allPosIds);
+                  }}
+                  style={{ ...s.btn, flex: 1, justifyContent: 'center', background: 'var(--white)', color: 'var(--gray-600)', border: '1px solid var(--border)', fontSize: 11, padding: '5px 8px' }}
+                >
+                  ▾ Expandir tudo
+                </button>
+                <button
+                  onClick={() => {
+                    setExpandedAreas(new Set());
+                    setExpandedPosicoes(new Set());
+                  }}
+                  style={{ ...s.btn, flex: 1, justifyContent: 'center', background: 'var(--white)', color: 'var(--gray-600)', border: '1px solid var(--border)', fontSize: 11, padding: '5px 8px' }}
+                >
+                  ▸ Comprimir tudo
+                </button>
+              </div>
+              <div style={{ padding: '12px 8px' }}>
               {estrutura.map(area => {
                 const areaExpanded = expandedAreas.has(area.id);
                 const isAreaSel = selected?.tipo === 'area' && selected.id === area.id;
@@ -292,6 +316,7 @@ export default function ArmazenagemPage() {
                   </div>
                 );
               })}
+              </div>
             </div>
           )}
         </div>
