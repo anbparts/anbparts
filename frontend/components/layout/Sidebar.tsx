@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -181,6 +181,7 @@ function SidebarIcon({ name, active, size = 16 }: { name: string; active: boolea
     playbook: <svg {...common}><path d="M5 4h10a3 3 0 0 1 3 3v13H8a3 3 0 0 0-3 3V4Z" /><path d="M8 8h7" /><path d="M8 12h7" /><path d="M8 16h4" /></svg>,
     terminal: <svg {...common}><path d="m4 17 6-5-6-5" /><path d="M12 19h8" /></svg>,
     'key-round': <svg {...common}><circle cx="8" cy="15" r="4" /><path d="M12 15h8" /><path d="M16 11v8" /></svg>,
+    warehouse: <svg {...common}><path d="M22 8.35V20a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8.35A2 2 0 0 1 3.26 6.5l8-3.2a2 2 0 0 1 1.48 0l8 3.2A2 2 0 0 1 22 8.35Z" /><path d="M6 18h12" /><path d="M6 14h12" /><path d="M6 10h12" /></svg>,
   };
 
   return icons[name] || <span style={{ width: 16, height: 16 }} />;
