@@ -5831,6 +5831,23 @@ async function buildRelatorioSeparacaoFromPedidoIds(
   const reservedVendaPecaIds = new Set<number>();
   const sortFactor = options.sortDirection === 'desc' ? -1 : 1;
 
+  // Busca WM (Armazenagem) para todas as localizações das peças de uma vez
+  const todasLocalizacoesPecas = Array.from(new Set(
+    todasPecas.map((p: any) => String(p.localizacao || '').trim()).filter(Boolean),
+  ));
+  const wmAlocacoes = todasLocalizacoesPecas.length
+    ? await prisma.boxStorageLocation.findMany({
+        where: { localizacao: { in: todasLocalizacoesPecas } },
+        include: { detail: { include: { posicao: { include: { area: true } } } } },
+      })
+    : [];
+  const wmByLocalizacao = new Map<string, string>(
+    wmAlocacoes.map((a: any) => [
+      a.localizacao,
+      `${a.detail.posicao.area.nome} › ${a.detail.posicao.nome} › ${a.detail.nome}`,
+    ]),
+  );
+
   const pedidosOrdenados = [...pedidosRaw].sort((a, b) => {
     const dateDiff = new Date(a.dataVenda || 0).getTime() - new Date(b.dataVenda || 0).getTime();
     if (dateDiff) return dateDiff * sortFactor;
@@ -5922,6 +5939,14 @@ async function buildRelatorioSeparacaoFromPedidoIds(
       if (detranRelatorio) totaisGerais.totalEtiquetasDetran += 1;
       if (!localizacaoConfere) totaisGerais.totalLocalizacoesDivergentes += 1;
 
+      // Endereço WM: une os endereços únicos de cada localização selecionada
+      const enderecosWM = Array.from(new Set(
+        localizacoesAnb
+          .map((loc) => wmByLocalizacao.get(loc))
+          .filter((e): e is string => Boolean(e)),
+      ));
+      const enderecoWM = enderecosWM.join(' / ') || null;
+
       itens.push({
         lineKey: item.lineKey,
         skuBase: item.baseSku || getBaseSku(pecaReferencia?.idPeca || item.skuBling || item.idBling),
@@ -5933,6 +5958,7 @@ async function buildRelatorioSeparacaoFromPedidoIds(
         localizacaoBling,
         localizacaoAnb,
         localizacaoConfere,
+        enderecoWM,
         detranRelatorio,
         etiquetasDetranDisponiveis,
         pecaIdParaFoto: pecasSelecionadas[0]?.id || pecaReferencia?.id || null,

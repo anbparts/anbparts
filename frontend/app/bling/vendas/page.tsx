@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 import { useEffect, useState } from 'react';
 import { API_BASE } from '@/lib/api-base';
 import { useAuth } from '@/lib/auth';
@@ -73,6 +73,7 @@ type SeparacaoItem = {
   localizacaoBling: string | null;
   localizacaoAnb: string | null;
   localizacaoConfere: boolean;
+  enderecoWM: string | null;
   detranRelatorio: string;
   etiquetasDetranDisponiveis: string[];
   pecaIdParaFoto?: number | null;
@@ -365,12 +366,13 @@ async function baixarSeparacaoPdf(relatorio: SeparacaoRelatorio) {
     autoTable(doc, {
       startY: y,
       margin: { left: marginX, right: marginX },
-      head: [['SKU', 'DESCRICAO', 'QTD', 'LOCALIZACAO', 'ETIQUETA DETRAN']],
+      head: [['SKU', 'DESCRICAO', 'QTD', 'LOCALIZACAO', 'ARMAZENAGEM', 'ETIQUETA DETRAN']],
       body: pedido.itens.map((item) => [
         item.skuSistema || '-',
         item.descricao || '-',
         String(item.quantidade || ''),
         item.localizacaoAnb || '-',
+        item.enderecoWM || '-',
         item.detranRelatorio || '-',
       ]),
       theme: 'grid',
@@ -391,14 +393,22 @@ async function baixarSeparacaoPdf(relatorio: SeparacaoRelatorio) {
         fontSize: 6,
       },
       columnStyles: {
-        0: { cellWidth: 28 },
-        1: { cellWidth: 130 },
+        0: { cellWidth: 22 },
+        1: { cellWidth: 105 },
         2: { cellWidth: 10, halign: 'center' },
-        3: { cellWidth: 48 },
-        4: { cellWidth: 52 },
+        3: { cellWidth: 38 },
+        4: { cellWidth: 50 },
+        5: { cellWidth: 48 },
       },
       didParseCell: (data: any) => {
         if (data.section === 'body' && data.column.index === 4) {
+          const value = String(data.cell.raw || '').trim();
+          if (value && value !== '-') {
+            data.cell.styles.textColor = [13, 71, 161];
+            data.cell.styles.fontStyle = 'bold';
+          }
+        }
+        if (data.section === 'body' && data.column.index === 5) {
           const value = String(data.cell.raw || '').trim();
           if (value === 'ENVIAR FOTO DA ETIQUETA DETRAN') {
             data.cell.styles.textColor = [217, 119, 6];
@@ -1177,6 +1187,12 @@ export default function VendasBlingPage() {
                                   </div>
                                 )}
                               </div>
+                              {item.enderecoWM && (
+                                <div>
+                                  <div style={{ fontSize: 10.5, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '.6px' }}>Armazenagem</div>
+                                  <div style={{ fontSize: 12, color: '#1d4ed8', fontWeight: 600 }}>{item.enderecoWM}</div>
+                                </div>
+                              )}
                               <div>
                                 <div style={{ fontSize: 10.5, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '.6px' }}>Etiqueta Detran</div>
                                 <div style={{ fontSize: 12, color: item.detranRelatorio === 'ENVIAR FOTO DA ETIQUETA DETRAN' ? 'var(--amber)' : 'var(--gray-800)', fontWeight: item.detranRelatorio ? 800 : 500 }}>
@@ -1190,15 +1206,16 @@ export default function VendasBlingPage() {
                     )}
 
                     <div style={{ overflowX: 'auto', display: isPhone ? 'none' : undefined }}>
-                      <table style={{ width: '100%', minWidth: 760, borderCollapse: 'collapse', fontSize: 12.5 }}>
+                      <table style={{ width: '100%', minWidth: 920, borderCollapse: 'collapse', fontSize: 12.5 }}>
                         <thead style={{ background: 'var(--gray-50)' }}>
                           <tr>
                             {[
-                              { label: 'SKU', width: '16%' },
+                              { label: 'SKU', width: '13%' },
                               { label: 'Descricao', width: 'auto' },
-                              { label: 'Qtd', width: 56 },
-                              { label: 'Localizacao', width: '22%' },
-                              { label: 'Etiqueta Detran', width: '22%' },
+                              { label: 'Qtd', width: 50 },
+                              { label: 'Localizacao', width: '14%' },
+                              { label: 'Armazenagem', width: '18%' },
+                              { label: 'Etiqueta Detran', width: '18%' },
                             ].map((header) => (
                               <th key={header.label} style={{ padding: '8px 10px', width: header.width, textAlign: 'left', fontFamily: 'JetBrains Mono, monospace', fontSize: 9.5, letterSpacing: '.7px', textTransform: 'uppercase', color: 'var(--gray-400)', fontWeight: 500, borderBottom: '1px solid var(--border)' }}>
                                 {header.label}
@@ -1211,7 +1228,7 @@ export default function VendasBlingPage() {
                             <tr key={item.lineKey} style={{ borderTop: '1px solid var(--gray-100)', background: 'var(--white)' }}>
                               <td style={{ padding: '8px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 11.5, color: 'var(--blue-500)', fontWeight: 700 }}>{item.skuSistema || '-'}</td>
                               <td style={{ padding: '8px 10px', color: 'var(--gray-800)', lineHeight: 1.4 }}>{item.descricao || '-'}</td>
-                              <td style={{ padding: '8px 10px', width: 56, fontFamily: 'JetBrains Mono, monospace', fontSize: 11.5, color: 'var(--gray-700)' }}>{item.quantidade}</td>
+                              <td style={{ padding: '8px 10px', width: 50, fontFamily: 'JetBrains Mono, monospace', fontSize: 11.5, color: 'var(--gray-700)' }}>{item.quantidade}</td>
                               <td style={{ padding: '8px 10px', color: 'var(--gray-700)' }}>
                                 <div>{item.localizacaoAnb || '-'}</div>
                                 {!item.localizacaoConfere && (
@@ -1219,6 +1236,9 @@ export default function VendasBlingPage() {
                                     Divergente da localizacao do Bling
                                   </div>
                                 )}
+                              </td>
+                              <td style={{ padding: '8px 10px', color: item.enderecoWM ? '#1d4ed8' : 'var(--gray-400)', fontWeight: item.enderecoWM ? 600 : 400, fontSize: 11.5 }}>
+                                {item.enderecoWM || '-'}
                               </td>
                               <td style={{ padding: '8px 10px', color: item.detranRelatorio === 'ENVIAR FOTO DA ETIQUETA DETRAN' ? 'var(--amber)' : 'var(--gray-800)', fontWeight: item.detranRelatorio ? 700 : 500 }}>
                                 {item.detranRelatorio || '-'}
