@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { API_BASE } from '@/lib/api-base';
 
-const Warehouse3DView = dynamic(() => import('./Warehouse3DView'), { ssr: false });
+const WarehousePlanView = dynamic(() => import('./WarehousePlanView'), { ssr: false });
 
 const API = API_BASE;
 
@@ -219,7 +219,7 @@ export default function ArmazenagemPage() {
             disabled={estrutura.length === 0}
             style={{ ...s.btn, background: '#1d4ed8', color: '#fff', opacity: estrutura.length === 0 ? 0.4 : 1 }}
           >
-            🏭 Vista 3D
+            🗺️ Planta Baixa
           </button>
           <button onClick={() => setModalCriar({ tipo: 'area' })} style={{ ...s.btn, background: 'var(--gray-800)', color: '#fff' }}>
             + Espaco
@@ -588,7 +588,7 @@ export default function ArmazenagemPage() {
 
       {/* ── MODAL 3D ─────────────────────────────────────────────────────────── */}
       {modal3D && (
-        <Warehouse3DView
+        <WarehousePlanView
           areas={estrutura}
           onClose={() => setModal3D(false)}
         />
