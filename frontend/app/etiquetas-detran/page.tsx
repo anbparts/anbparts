@@ -736,6 +736,10 @@ export default function EtiquetasDetranPage() {
                           <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 12, fontWeight: 700, color: '#2563eb' }}>{p.idPeca}</div>
                           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-800)', marginTop: 3, lineHeight: 1.25 }}>{p.descricao}</div>
                           <div style={{ fontSize: 11.5, color: 'var(--gray-500)', marginTop: 4 }}>{p.moto?.marca} {p.moto?.modelo}</div>
+                          <div style={{ display: 'flex', gap: 10, marginTop: 4, flexWrap: 'wrap' }}>
+                            {p.moto?.renavam && <span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11, color: 'var(--gray-600)' }}>RENAVAM: {p.moto.renavam}</span>}
+                            {p.moto?.placa && <span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11, color: 'var(--gray-600)' }}>PLACA: {p.moto.placa}</span>}
+                          </div>
                         </div>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                           <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 8 }}>
@@ -778,7 +782,7 @@ export default function EtiquetasDetranPage() {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                   <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
                     <tr>
-                      {['SKU', 'Descrição', 'Moto', 'Etiqueta Anterior', 'Pedido', 'Data Devolução', 'Nova Etiqueta', 'Acao'].map(h => (
+                      {['SKU', 'Descrição', 'Moto', 'Renavam', 'Placa', 'Etiqueta Anterior', 'Pedido', 'Data Devolução', 'Nova Etiqueta', 'Acao'].map(h => (
                         <th key={h} style={{ padding: '9px 12px', textAlign: 'left', fontWeight: 600, fontSize: 11, color: 'var(--ink-soft)', whiteSpace: 'nowrap' }}>{h}</th>
                       ))}
                     </tr>
@@ -791,6 +795,8 @@ export default function EtiquetasDetranPage() {
                           <td style={{ padding: '8px 12px', fontFamily: 'Geist Mono, monospace', fontWeight: 600, color: '#2563eb' }}>{p.idPeca}</td>
                           <td style={{ padding: '8px 12px', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.descricao}</td>
                           <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>{p.moto?.marca} {p.moto?.modelo}</td>
+                          <td style={{ padding: '8px 12px', fontFamily: 'Geist Mono, monospace', fontSize: 11, whiteSpace: 'nowrap' }}>{p.moto?.renavam || '—'}</td>
+                          <td style={{ padding: '8px 12px', fontFamily: 'Geist Mono, monospace', fontSize: 11, whiteSpace: 'nowrap' }}>{p.moto?.placa || '—'}</td>
                           <td style={{ padding: '8px 12px', fontFamily: 'Geist Mono, monospace', fontSize: 11 }}>
                             {ult?.etiquetasDetran
                               ? <span style={{ padding: '2px 6px', borderRadius: 6, ...(ult.etiquetaBaixada ? { background: '#fef2f2', color: '#dc2626' } : { background: '#fef3c7', color: '#92400e' }) }}>{ult.etiquetasDetran}</span>

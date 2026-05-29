@@ -175,7 +175,7 @@ devolucoesRouter.get('/pendentes-etiqueta', async (_req, res, next) => {
       select: {
         id: true, idPeca: true, descricao: true, motoId: true,
         localizacao: true, cadastro: true,
-        moto: { select: { marca: true, modelo: true, ano: true } },
+        moto: { select: { marca: true, modelo: true, ano: true, renavam: true, placa: true } },
         devolucoes: {
           orderBy: { dataDevolucao: 'desc' },
           take: 1,
