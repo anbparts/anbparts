@@ -796,8 +796,7 @@ export default function EtiquetasDetranPage() {
                       </div>
                     );
                   })}
-                  </tbody>
-                </table>
+                </div>
               )}
             </div>
           </div>
