@@ -726,106 +726,76 @@ export default function EtiquetasDetranPage() {
                   <div style={{ fontSize: 28, marginBottom: 8 }}>✅</div>
                   <div>Nenhuma pendência de etiqueta por devolução</div>
                 </div>
-              ) : isPhone ? (
-                <div style={{ padding: 12, display: 'grid', gap: 10, background: '#f8fafc' }}>
+              ) : (
+                <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 12, background: '#f8fafc' }}>
                   {pendenciasDev.map((p: any) => {
                     const ult = p.devolucoes?.[0];
+                    const isSaving = salvandoPendenciaDev === p.id;
+                    const canSave = !isSaving && !!String(novasEtiquetasDev[p.id] || '').trim();
                     return (
-                      <div key={p.id} style={{ border: '1px solid var(--border)', borderRadius: 12, background: 'var(--white)', padding: 12, display: 'grid', gap: 10 }}>
-                        <div>
-                          <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 12, fontWeight: 700, color: '#2563eb' }}>{p.idPeca}</div>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-800)', marginTop: 3, lineHeight: 1.25 }}>{p.descricao}</div>
-                          <div style={{ fontSize: 11.5, color: 'var(--gray-500)', marginTop: 4 }}>{p.moto?.marca} {p.moto?.modelo}</div>
-                          <div style={{ display: 'flex', gap: 10, marginTop: 4, flexWrap: 'wrap' }}>
-                            {p.moto?.renavam && <span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11, color: 'var(--gray-600)' }}>RENAVAM: {p.moto.renavam}</span>}
-                            {p.moto?.placa && <span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11, color: 'var(--gray-600)' }}>PLACA: {p.moto.placa}</span>}
+                      <div key={p.id} style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,.05)' }}>
+
+                        {/* ── Linha 1: SKU + Descrição ── */}
+                        <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'flex-start', gap: 12, borderBottom: '1px solid var(--border)', background: 'var(--gray-50)' }}>
+                          <span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 13, fontWeight: 700, color: '#2563eb', flexShrink: 0, marginTop: 1 }}>{p.idPeca}</span>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-800)', lineHeight: 1.4 }}>{p.descricao}</span>
+                        </div>
+
+                        {/* ── Linha 2: Moto | Renavam | Placa ── */}
+                        <div style={{ padding: '10px 16px', display: 'grid', gridTemplateColumns: isPhone ? '1fr 1fr' : '2fr 1.2fr 1fr', gap: 12, borderBottom: '1px solid var(--border)' }}>
+                          <div>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 3 }}>Moto</div>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-700)' }}>{p.moto?.marca} {p.moto?.modelo}</div>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 3 }}>Renavam</div>
+                            <div style={{ fontSize: 12, fontFamily: 'Geist Mono, monospace', color: 'var(--gray-700)' }}>{p.moto?.renavam || '—'}</div>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 3 }}>Placa</div>
+                            <div style={{ fontSize: 12, fontFamily: 'Geist Mono, monospace', color: 'var(--gray-700)' }}>{p.moto?.placa || '—'}</div>
                           </div>
                         </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                          <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 8 }}>
-                            <div style={{ fontSize: 10, color: 'var(--gray-500)', marginBottom: 3 }}>Etiqueta anterior</div>
+
+                        {/* ── Linha 3: Etiqueta Anterior | Pedido | Data Devolução ── */}
+                        <div style={{ padding: '10px 16px', display: 'grid', gridTemplateColumns: isPhone ? '1fr 1fr' : '2fr 1.2fr 1fr', gap: 12, borderBottom: '1px solid var(--border)' }}>
+                          <div>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 3 }}>Etiqueta Anterior</div>
                             {ult?.etiquetasDetran
-                              ? <span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11, padding: '2px 5px', borderRadius: 5, ...(ult.etiquetaBaixada ? { background: '#fef2f2', color: '#dc2626' } : { background: '#fef3c7', color: '#92400e' }) }}>{ult.etiquetasDetran}</span>
-                              : <div style={{ fontSize: 11.5 }}>—</div>}
+                              ? <span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 12, padding: '2px 7px', borderRadius: 6, display: 'inline-block', ...(ult.etiquetaBaixada ? { background: '#fef2f2', color: '#dc2626' } : { background: '#fef3c7', color: '#92400e' }) }}>{ult.etiquetasDetran}</span>
+                              : <span style={{ fontSize: 12, color: 'var(--ink-muted)' }}>—</span>}
                           </div>
-                          <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 8 }}>
-                            <div style={{ fontSize: 10, color: 'var(--gray-500)', marginBottom: 3 }}>Devolução</div>
-                            <div style={{ fontSize: 11.5 }}>{ult?.dataDevolucao ? new Date(ult.dataDevolucao).toLocaleDateString('pt-BR') : '—'}</div>
+                          <div>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 3 }}>Pedido</div>
+                            <div style={{ fontSize: 12, fontFamily: 'Geist Mono, monospace', color: 'var(--gray-700)' }}>{ult?.pedidoBlingNum || '—'}</div>
                           </div>
-                          <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 8, gridColumn: 'span 2' }}>
-                            <div style={{ fontSize: 10, color: 'var(--gray-500)', marginBottom: 3 }}>Pedido</div>
-                            <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11.5 }}>{ult?.pedidoBlingNum || '—'}</div>
+                          <div>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 3 }}>Data Devolução</div>
+                            <div style={{ fontSize: 12, color: 'var(--gray-700)' }}>{ult?.dataDevolucao ? new Date(ult.dataDevolucao).toLocaleDateString('pt-BR') : '—'}</div>
                           </div>
                         </div>
-                        <div style={{ display: 'grid', gap: 8 }}>
+
+                        {/* ── Linha 4: Nova etiqueta + botão ── */}
+                        <div style={{ padding: '12px 16px', display: 'flex', gap: 10, alignItems: 'center' }}>
                           <input
-                            style={{ ...s.input, width: '100%', boxSizing: 'border-box', textTransform: 'uppercase' }}
+                            style={{ ...s.input, flex: 1, textTransform: 'uppercase', letterSpacing: '.05em' }}
                             placeholder="Nova etiqueta Detran"
                             value={novasEtiquetasDev[p.id] || ''}
                             onChange={(e) => setNovasEtiquetasDev((prev) => ({ ...prev, [p.id]: e.target.value.toUpperCase() }))}
-                            disabled={salvandoPendenciaDev === p.id}
+                            disabled={isSaving}
                           />
                           <button
                             type="button"
                             onClick={() => salvarNovaEtiquetaDevolucao(p)}
-                            disabled={salvandoPendenciaDev === p.id || !String(novasEtiquetasDev[p.id] || '').trim()}
-                            style={{ ...s.btn, width: '100%', background: '#16a34a', color: '#fff', opacity: salvandoPendenciaDev === p.id || !String(novasEtiquetasDev[p.id] || '').trim() ? 0.65 : 1 }}
+                            disabled={!canSave}
+                            style={{ ...s.btn, background: '#16a34a', color: '#fff', padding: '8px 20px', flexShrink: 0, opacity: canSave ? 1 : 0.5 }}
                           >
-                            {salvandoPendenciaDev === p.id ? 'Salvando...' : 'Salvar nova etiqueta'}
+                            {isSaving ? 'Salvando...' : 'Salvar'}
                           </button>
                         </div>
                       </div>
                     );
                   })}
-                </div>
-              ) : (
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                  <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
-                    <tr>
-                      {['SKU', 'Descrição', 'Moto', 'Renavam', 'Placa', 'Etiqueta Anterior', 'Pedido', 'Data Devolução', 'Nova Etiqueta', 'Acao'].map(h => (
-                        <th key={h} style={{ padding: '9px 12px', textAlign: 'left', fontWeight: 600, fontSize: 11, color: 'var(--ink-soft)', whiteSpace: 'nowrap' }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pendenciasDev.map((p: any) => {
-                      const ult = p.devolucoes?.[0];
-                      return (
-                        <tr key={p.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                          <td style={{ padding: '8px 12px', fontFamily: 'Geist Mono, monospace', fontWeight: 600, color: '#2563eb' }}>{p.idPeca}</td>
-                          <td style={{ padding: '8px 12px', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.descricao}</td>
-                          <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>{p.moto?.marca} {p.moto?.modelo}</td>
-                          <td style={{ padding: '8px 12px', fontFamily: 'Geist Mono, monospace', fontSize: 11, whiteSpace: 'nowrap' }}>{p.moto?.renavam || '—'}</td>
-                          <td style={{ padding: '8px 12px', fontFamily: 'Geist Mono, monospace', fontSize: 11, whiteSpace: 'nowrap' }}>{p.moto?.placa || '—'}</td>
-                          <td style={{ padding: '8px 12px', fontFamily: 'Geist Mono, monospace', fontSize: 11 }}>
-                            {ult?.etiquetasDetran
-                              ? <span style={{ padding: '2px 6px', borderRadius: 6, ...(ult.etiquetaBaixada ? { background: '#fef2f2', color: '#dc2626' } : { background: '#fef3c7', color: '#92400e' }) }}>{ult.etiquetasDetran}</span>
-                              : '—'}
-                          </td>
-                          <td style={{ padding: '8px 12px', fontFamily: 'Geist Mono, monospace', fontSize: 11 }}>{ult?.pedidoBlingNum || '—'}</td>
-                          <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>{ult?.dataDevolucao ? new Date(ult.dataDevolucao).toLocaleDateString('pt-BR') : '—'}</td>
-                          <td style={{ padding: '8px 12px', minWidth: 150 }}>
-                            <input
-                              style={{ ...s.input, width: '100%', boxSizing: 'border-box', textTransform: 'uppercase' }}
-                              placeholder="Nova etiqueta"
-                              value={novasEtiquetasDev[p.id] || ''}
-                              onChange={(e) => setNovasEtiquetasDev((prev) => ({ ...prev, [p.id]: e.target.value.toUpperCase() }))}
-                              disabled={salvandoPendenciaDev === p.id}
-                            />
-                          </td>
-                          <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>
-                            <button
-                              type="button"
-                              onClick={() => salvarNovaEtiquetaDevolucao(p)}
-                              disabled={salvandoPendenciaDev === p.id || !String(novasEtiquetasDev[p.id] || '').trim()}
-                              style={{ ...s.btn, padding: '6px 12px', background: '#16a34a', color: '#fff', opacity: salvandoPendenciaDev === p.id || !String(novasEtiquetasDev[p.id] || '').trim() ? 0.65 : 1 }}
-                            >
-                              {salvandoPendenciaDev === p.id ? 'Salvando...' : 'Salvar'}
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
                   </tbody>
                 </table>
               )}
