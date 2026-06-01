@@ -281,6 +281,7 @@ async function downloadMotoAttachment(motoId: number, key: string, attachment: {
 const MOTO_ANEXO_FIELDS = [
   { key: 'nfeLeilao', label: 'NF-e Leilao' },
   { key: 'atpve', label: 'ATPV-e' },
+  { key: 'reciboLeilao', label: 'Recibo Leilao' },
   { key: 'baixaDetran', label: 'Baixa Detran' },
   { key: 'registroDetran', label: 'Registro Detran' },
   { key: 'laudoTecnicoEtiquetas', label: 'Laudo Tecnico Etiquetas' },

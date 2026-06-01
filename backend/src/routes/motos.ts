@@ -50,6 +50,7 @@ const motoAnexosSchema = z.object({
 const MOTO_ANEXO_KEYS = [
   'nfeLeilao',
   'atpve',
+  'reciboLeilao',
   'baixaDetran',
   'registroDetran',
   'laudoTecnicoEtiquetas',
