@@ -924,6 +924,43 @@ pecasRouter.get('/:id', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// POST /pecas/migrar-caixa — move todas as peças de uma caixa origem para destino (novo nome ou caixa existente)
+pecasRouter.post('/migrar-caixa', requireEstoqueAction('editar'), async (req, res, next) => {
+  try {
+    const origem  = String(req.body?.origem  || '').trim();
+    const destino = String(req.body?.destino || '').trim();
+
+    if (!origem)  return res.status(400).json({ ok: false, error: 'Caixa origem obrigatoria' });
+    if (!destino) return res.status(400).json({ ok: false, error: 'Caixa destino obrigatoria' });
+    if (origem.toLowerCase() === destino.toLowerCase()) {
+      return res.status(400).json({ ok: false, error: 'Origem e destino nao podem ser iguais' });
+    }
+
+    // Busca pecas afetadas para obter SKU bases (necessario para sync Bling)
+    const pecasAfetadas = await prisma.peca.findMany({
+      where: { localizacao: { equals: origem, mode: 'insensitive' } },
+      select: { idPeca: true },
+    });
+
+    if (!pecasAfetadas.length) {
+      return res.status(404).json({ ok: false, error: `Nenhuma peca encontrada na caixa "${origem}"` });
+    }
+
+    // SKU bases unicos (remove sufixo -N) para retorno ao frontend (sync Bling)
+    const skuBases = [...new Set(
+      pecasAfetadas.map((p) => p.idPeca.replace(/-\d+$/, '').toUpperCase())
+    )];
+
+    // Atualiza todas as pecas em lote
+    const result = await prisma.peca.updateMany({
+      where: { localizacao: { equals: origem, mode: 'insensitive' } },
+      data: { localizacao: destino },
+    });
+
+    res.json({ ok: true, total: result.count, skuBases });
+  } catch (e) { next(e); }
+});
+
 pecasRouter.post('/bulk-delete', requireEstoqueAction('editar'), async (req, res, next) => {
   try {
     if (!isBrunoAuthUser(req)) {

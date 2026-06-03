@@ -829,6 +829,222 @@ function ImpressaoCaixaModal({
   );
 }
 
+function AtualizarCaixaModal({
+  open,
+  loading,
+  saving,
+  options,
+  viewportMode,
+  onClose,
+  onConfirm,
+}: {
+  open: boolean;
+  loading: boolean;
+  saving: boolean;
+  options: CaixaFilterOption[];
+  viewportMode: EstoqueViewportMode;
+  onClose: () => void;
+  onConfirm: (origem: string, destino: string) => void;
+}) {
+  const [origemSel, setOrigemSel] = useState('');
+  const [destinoModo, setDestinoModo] = useState<'existente' | 'nova'>('existente');
+  const [destinoExistente, setDestinoExistente] = useState('');
+  const [destinoNova, setDestinoNova] = useState('');
+  const [searchOrigem, setSearchOrigem] = useState('');
+  const [searchDestino, setSearchDestino] = useState('');
+
+  // reset ao fechar
+  const prevOpen = open;
+  if (!open && prevOpen) { /* handled by effect */ }
+
+  const isPhone = viewportMode === 'phone';
+  const isTabletPortrait = viewportMode === 'tablet-portrait';
+  const compact = isPhone || isTabletPortrait;
+
+  const origemFiltradas = options.filter((o) =>
+    !searchOrigem || normalizeFilterText(o.caixa).includes(normalizeFilterText(searchOrigem))
+  );
+  const destinoFiltradas = options.filter((o) =>
+    o.caixa !== origemSel &&
+    (!searchDestino || normalizeFilterText(o.caixa).includes(normalizeFilterText(searchDestino)))
+  );
+
+  const destino = destinoModo === 'existente' ? destinoExistente : destinoNova.trim();
+  const origemInfo = options.find((o) => o.caixa === origemSel);
+  const canConfirm = !!origemSel && !!destino && !saving;
+
+  function handleClose() {
+    setOrigemSel('');
+    setDestinoExistente('');
+    setDestinoNova('');
+    setSearchOrigem('');
+    setSearchDestino('');
+    setDestinoModo('existente');
+    onClose();
+  }
+
+  if (!open) return null;
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 260, display: 'flex', alignItems: compact ? 'stretch' : 'center', justifyContent: 'center', padding: compact ? 0 : 24, backdropFilter: 'blur(2px)' }}>
+      <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: compact ? 0 : 18, width: '100%', maxWidth: 820, maxHeight: compact ? '100dvh' : '90vh', minHeight: compact ? '100dvh' : undefined, overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 18px 40px rgba(0,0,0,.12)' }}>
+
+        {/* Header */}
+        <div style={{ padding: compact ? '16px 16px 12px' : '20px 24px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexShrink: 0 }}>
+          <div>
+            <div style={{ fontFamily: 'Fraunces, serif', fontSize: compact ? 17 : 18, fontWeight: 600 }}>Atualizar Caixa</div>
+            <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 4 }}>Migre todos os SKUs de uma caixa para outra (existente ou nova).</div>
+          </div>
+          <button onClick={handleClose} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', flexShrink: 0, fontSize: 14 }}>✕</button>
+        </div>
+
+        {/* Body */}
+        <div style={{ flex: 1, overflow: 'auto', display: 'grid', gridTemplateColumns: compact ? '1fr' : '1fr 1fr', gap: 0 }}>
+
+          {/* ── Coluna Origem ── */}
+          <div style={{ padding: compact ? '14px 16px' : '18px 20px', borderRight: compact ? 'none' : '1px solid var(--border)', borderBottom: compact ? '1px solid var(--border)' : 'none', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 2 }}>1. Caixa Origem</div>
+              <div style={{ fontSize: 11.5, color: 'var(--ink-muted)' }}>Selecione exatamente 1 caixa para migrar.</div>
+            </div>
+            <input
+              style={{ ...cs.fi, marginTop: 0 }}
+              placeholder="Buscar caixa..."
+              value={searchOrigem}
+              onChange={(e) => setSearchOrigem(e.target.value)}
+            />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: compact ? 200 : 280, overflow: 'auto' }}>
+              {loading ? (
+                <div style={{ padding: 12, color: 'var(--ink-muted)', fontSize: 13 }}>Carregando caixas...</div>
+              ) : origemFiltradas.length === 0 ? (
+                <div style={{ padding: 12, color: 'var(--ink-muted)', fontSize: 13 }}>Nenhuma caixa encontrada.</div>
+              ) : origemFiltradas.map((option) => {
+                const checked = origemSel === option.caixa;
+                return (
+                  <label key={option.caixa} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '10px 12px', borderRadius: 10, border: checked ? '1px solid var(--blue-500)' : '1px solid var(--border)', background: checked ? '#eff6ff' : 'var(--white)', cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="origem"
+                      checked={checked}
+                      onChange={() => { setOrigemSel(option.caixa); if (destinoExistente === option.caixa) setDestinoExistente(''); }}
+                      style={{ marginTop: 2, cursor: 'pointer' }}
+                    />
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-800)', overflowWrap: 'anywhere' }}>{displayCaixaLabel(option.caixa)}</div>
+                      <div style={{ fontSize: 11, color: 'var(--gray-500)', marginTop: 2 }}>{option.totalPecas} peca(s)</div>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* ── Coluna Destino ── */}
+          <div style={{ padding: compact ? '14px 16px' : '18px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 2 }}>2. Caixa Destino</div>
+              <div style={{ fontSize: 11.5, color: 'var(--ink-muted)' }}>Escolha uma caixa existente ou crie uma nova.</div>
+            </div>
+
+            {/* Tabs */}
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button
+                type="button"
+                onClick={() => setDestinoModo('existente')}
+                style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid', fontSize: 12, fontWeight: 600, cursor: 'pointer', background: destinoModo === 'existente' ? 'var(--blue-500)' : 'var(--white)', color: destinoModo === 'existente' ? '#fff' : 'var(--gray-600)', borderColor: destinoModo === 'existente' ? 'var(--blue-500)' : 'var(--border)' }}
+              >
+                Caixa existente
+              </button>
+              <button
+                type="button"
+                onClick={() => setDestinoModo('nova')}
+                style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid', fontSize: 12, fontWeight: 600, cursor: 'pointer', background: destinoModo === 'nova' ? 'var(--blue-500)' : 'var(--white)', color: destinoModo === 'nova' ? '#fff' : 'var(--gray-600)', borderColor: destinoModo === 'nova' ? 'var(--blue-500)' : 'var(--border)' }}
+              >
+                Nova caixa
+              </button>
+            </div>
+
+            {destinoModo === 'existente' ? (
+              <>
+                <input
+                  style={{ ...cs.fi, marginTop: 0 }}
+                  placeholder="Buscar caixa..."
+                  value={searchDestino}
+                  onChange={(e) => setSearchDestino(e.target.value)}
+                />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: compact ? 200 : 210, overflow: 'auto' }}>
+                  {!origemSel ? (
+                    <div style={{ padding: 12, color: 'var(--ink-muted)', fontSize: 13 }}>Selecione a caixa origem primeiro.</div>
+                  ) : loading ? (
+                    <div style={{ padding: 12, color: 'var(--ink-muted)', fontSize: 13 }}>Carregando...</div>
+                  ) : destinoFiltradas.length === 0 ? (
+                    <div style={{ padding: 12, color: 'var(--ink-muted)', fontSize: 13 }}>Nenhuma outra caixa encontrada.</div>
+                  ) : destinoFiltradas.map((option) => {
+                    const checked = destinoExistente === option.caixa;
+                    return (
+                      <label key={option.caixa} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '10px 12px', borderRadius: 10, border: checked ? '1px solid #16a34a' : '1px solid var(--border)', background: checked ? '#f0fdf4' : 'var(--white)', cursor: 'pointer' }}>
+                        <input
+                          type="radio"
+                          name="destino"
+                          checked={checked}
+                          onChange={() => setDestinoExistente(option.caixa)}
+                          style={{ marginTop: 2, cursor: 'pointer' }}
+                        />
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-800)', overflowWrap: 'anywhere' }}>{displayCaixaLabel(option.caixa)}</div>
+                          <div style={{ fontSize: 11, color: 'var(--gray-500)', marginTop: 2 }}>{option.totalPecas} peca(s)</div>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              </>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-600)' }}>Nome da nova caixa</label>
+                <input
+                  style={{ ...cs.fi, marginTop: 0 }}
+                  placeholder="Ex: CAIXA_HD_15"
+                  value={destinoNova}
+                  onChange={(e) => setDestinoNova(e.target.value)}
+                  autoFocus
+                />
+                {destinoNova.trim() && options.some((o) => o.caixa.toLowerCase() === destinoNova.trim().toLowerCase()) && (
+                  <div style={{ fontSize: 11.5, color: '#b45309', background: '#fef3c7', border: '1px solid #fde68a', borderRadius: 6, padding: '6px 10px' }}>
+                    ⚠️ Já existe uma caixa com este nome. Se confirmar, as peças serão mescladas.
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding: compact ? '12px 16px calc(12px + env(safe-area-inset-bottom))' : '14px 24px 18px', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: compact ? 'column-reverse' : 'row', gap: 10, alignItems: compact ? 'stretch' : 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+          {/* Sumário */}
+          <div style={{ fontSize: 12.5, color: origemSel && destino ? 'var(--gray-700)' : 'var(--ink-muted)' }}>
+            {origemSel && destino ? (
+              <span>Mover <strong>{origemInfo?.totalPecas ?? '?'} peca(s)</strong> de <strong>{displayCaixaLabel(origemSel)}</strong> → <strong>{destino}</strong></span>
+            ) : (
+              'Selecione origem e destino para continuar.'
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexDirection: compact ? 'column-reverse' : 'row' }}>
+            <button onClick={handleClose} style={{ ...cs.btn, background: 'var(--white)', color: 'var(--gray-700)', borderColor: 'var(--border)' }}>Cancelar</button>
+            <button
+              onClick={() => canConfirm && onConfirm(origemSel, destino)}
+              disabled={!canConfirm}
+              style={{ ...cs.btn, background: canConfirm ? '#16a34a' : 'var(--gray-300)', color: '#fff', opacity: canConfirm ? 1 : 0.7, borderColor: canConfirm ? '#16a34a' : 'var(--gray-300)' }}
+            >
+              {saving ? 'Migrando...' : 'Confirmar migração'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DetranEtiquetaModal({ open, peca, onClose }: any) {
   if (!open || !peca) return null;
 
@@ -2172,6 +2388,8 @@ export default function EstoquePage() {
   const [caixasSelecionadasImpressao, setCaixasSelecionadasImpressao] = useState<string[]>([]);
   const [buscaCaixaImpressao, setBuscaCaixaImpressao] = useState('');
   const [imprimindoCaixas, setImprimindoCaixas] = useState(false);
+  const [atualizarCaixaOpen, setAtualizarCaixaOpen] = useState(false);
+  const [atualizandoCaixa, setAtualizandoCaixa] = useState(false);
   const [imprimindoSkus, setImprimindoSkus] = useState(false);
   const [copySkuOpen, setCopySkuOpen] = useState(false);
   const [copySkuPreview, setCopySkuPreview] = useState<any>(null);
@@ -2869,6 +3087,37 @@ export default function EstoquePage() {
     setImprimindoCaixas(false);
   }
 
+  async function handleAtualizarCaixa(origem: string, destino: string) {
+    if (!canEditarPeca) return alert('Seu usuario nao tem permissao para editar pecas.');
+    setAtualizandoCaixa(true);
+    try {
+      const resp = await fetch(`${API_BASE}/pecas/migrar-caixa`, {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ origem, destino }),
+      });
+      const data = await resp.json();
+      if (!data.ok) throw new Error(data.error || 'Erro ao migrar caixa');
+
+      // Sync Bling em paralelo para cada SKU base afetado
+      const skuBases: string[] = data.skuBases || [];
+      await Promise.all(skuBases.map((sku) =>
+        fetch(`${API_BASE}/cadastro/sync-bling-peca`, {
+          method: 'POST', credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sku, localizacao: destino }),
+        }).catch(() => { /* silencioso — falha no Bling nao impede a migração */ })
+      ));
+
+      setAtualizarCaixaOpen(false);
+      await Promise.all([loadPecas(), loadCaixas()]);
+      alert(`Migração concluída: ${data.total} peca(s) movida(s) de "${origem}" para "${destino}".`);
+    } catch (e: any) {
+      alert(`Erro ao atualizar caixa: ${e.message}`);
+    }
+    setAtualizandoCaixa(false);
+  }
+
   async function handleImprimirSkus() {
     if (!selectedPecas.length) {
       alert('Selecione as pecas desejadas para imprimir as etiquetas SKU.');
@@ -2980,6 +3229,13 @@ export default function EstoquePage() {
             style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink)', borderColor: 'var(--border)', padding: '7px 14px', fontSize: 13, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}
           >
             Impressao Caixa
+          </button>}
+          {canEditarPeca && <button
+            type="button"
+            onClick={() => setAtualizarCaixaOpen(true)}
+            style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink)', borderColor: 'var(--border)', padding: '7px 14px', fontSize: 13, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}
+          >
+            📦 Atualizar Caixa
           </button>}
           {canDevolucoes && <button
             type="button"
@@ -3559,6 +3815,15 @@ export default function EstoquePage() {
         onToggleCaixa={toggleCaixaImpressao}
         onSelectVisible={selectVisibleCaixasImpressao}
         onClearSelection={() => setCaixasSelecionadasImpressao([])}
+      />
+      <AtualizarCaixaModal
+        open={atualizarCaixaOpen && canEditarPeca}
+        loading={loadingCaixas}
+        saving={atualizandoCaixa}
+        options={caixaOptions}
+        viewportMode={viewportMode}
+        onClose={() => setAtualizarCaixaOpen(false)}
+        onConfirm={handleAtualizarCaixa}
       />
       <CopySkuModal
         open={copySkuOpen}
