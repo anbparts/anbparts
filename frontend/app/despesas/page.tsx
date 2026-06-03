@@ -464,6 +464,27 @@ export default function DespesasPage() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
+  function copiarDespesa(item: any) {
+    const dataOrigem = item.data ? dateKey(item.data) : today();
+    const novaData = addMonthsToInputDate(dataOrigem, 1);
+    setEditingDespesaId(null);
+    setOrigemForm('manual');
+    setForm({
+      data: novaData,
+      detalhes: item.detalhes || '',
+      categoria: item.categoria || 'Outros',
+      valor: String(Number(item.valor || 0)),
+      recorrenciaTipo: 'nenhuma',
+      recorrenciaAte: '',
+      chavePix: '',
+      codigoBarras: '',
+      observacao: '',
+      anexo: null,
+    });
+    setShowForm(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
   function toggleFormVisibility() {
     if (showForm) {
       setShowForm(false);
@@ -1282,6 +1303,11 @@ export default function DespesasPage() {
                           style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--blue-500)', fontSize: 12, fontWeight: 700 }}>
                           Editar
                         </button>
+                        <button type="button" onClick={() => copiarDespesa(item)}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#16a34a', fontSize: 14, padding: '2px 4px', borderRadius: 4 }}
+                          title="Copiar para mês seguinte">
+                          ⧉
+                        </button>
                         <button onClick={() => solicitarExclusao(item)}
                           style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-muted)', fontSize: 14 }}>
                           ×
@@ -1355,8 +1381,13 @@ export default function DespesasPage() {
                               title="Editar">
                               Editar
                             </button>
+                            <button type="button" onClick={() => copiarDespesa(item)}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#16a34a', fontSize: 15, padding: '2px 4px', borderRadius: 4 }}
+                              title="Copiar para mês seguinte">
+                              ⧉
+                            </button>
                             <button onClick={() => solicitarExclusao(item)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-muted)', fontSize: 14, padding: '2px 6px', borderRadius: 4 }} title="Excluir">
-                              x
+                              ×
                             </button>
                           </div>
                         </td>
