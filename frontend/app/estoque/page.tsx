@@ -3228,7 +3228,7 @@ export default function EstoquePage() {
             onClick={openImpressaoCaixaModal}
             style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink)', borderColor: 'var(--border)', padding: '7px 14px', fontSize: 13, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}
           >
-            Impressao Caixa
+            🖨️ Impressao Caixa
           </button>}
           {canEditarPeca && <button
             type="button"
@@ -3242,7 +3242,7 @@ export default function EstoquePage() {
             onClick={() => setDevolucaoHistoricoOpen(true)}
             style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink)', borderColor: 'var(--border)', padding: '7px 14px', fontSize: 13, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}
           >
-            📦 Devoluções
+            ↩️ Devoluções
           </button>}
           {filters.motoId && (
             <button
