@@ -150,7 +150,9 @@ export function buildQuestionEmailSubject(title: any, fallback: string, question
 export async function sendResendEmail(args: SendResendEmailArgs) {
   const apiKey = String(args.apiKey || '').trim();
   const from = String(args.from || '').trim();
-  const recipients = Array.isArray(args.to) ? args.to : [args.to];
+  const recipients = Array.isArray(args.to)
+    ? args.to
+    : String(args.to || '').split(/[,;]/).map((s) => s.trim()).filter(Boolean);
   const to = recipients.map((item) => String(item || '').trim()).filter(Boolean);
   const subject = String(args.subject || '').trim();
 
