@@ -1488,100 +1488,116 @@ motosRouter.get('/:id/pdf-vistoria', async (req, res, next) => {
     const pdf = await new Promise<Buffer>((resolve, reject) => {
       const doc = new PDFDocument({
         size: 'A4',
-        margins: { top: 50, bottom: 50, left: 50, right: 50 },
+        margins: { top: 40, bottom: 40, left: 50, right: 50 },
         info: { Title: `Vistoria - ${moto.marca} ${moto.modelo}`, Author: 'ANB Parts' },
+        autoFirstPage: false,
       });
+      doc.addPage();
       const chunks: Buffer[] = [];
       doc.on('data', (c: Buffer) => chunks.push(c));
       doc.on('end',  () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
 
-      const PW      = 595.28 - 100;
-      const BLUE    = '#1d4ed8';
-      const DARK    = '#1e293b';
-      const GRAY    = '#64748b';
-      const BLACK   = '#0f172a';
-      const LINE    = '#e2e8f0';
-      const STRIPE1 = '#f8fafc';
+      const L      = 50;
+      const T      = 40;
+      const PW     = 495.28;   // 595.28 - 2×50
+      const PAGE_H = 841.89;
+      const BLUE   = '#1d4ed8';
+      const DARK   = '#1e293b';
+      const GRAY   = '#64748b';
+      const BLACK  = '#0f172a';
+      const LINE   = '#e2e8f0';
+      const STRIPE = '#f1f5f9';
 
-      // ── Página 1: capa + dados ──────────────────────────────────────────────
-      doc.rect(50, 50, PW, 56).fill(BLUE);
-      doc.fontSize(16).font('Helvetica-Bold').fillColor('#ffffff')
-        .text(`${moto.marca} ${moto.modelo}`.toUpperCase(), 62, 60, { width: PW - 24 });
-      doc.fontSize(8.5).font('Helvetica').fillColor('rgba(255,255,255,0.75)')
-        .text(`Ficha de Vistoria  •  Gerado em ${new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`, 62, 82, { width: PW - 24 });
+      let y = T;
 
-      // Seção identificação
-      let y = 122;
-      doc.fontSize(7.5).font('Helvetica-Bold').fillColor(BLUE).text('IDENTIFICAÇÃO DO VEÍCULO', 50, y, { characterSpacing: 1.2 });
-      y += 14;
-      doc.rect(50, y, PW, 1).fill(LINE);
-      y += 8;
+      // ── Cabeçalho compacto ──────────────────────────────────────────────────
+      const HDR_H = 28;
+      doc.rect(L, y, PW, HDR_H).fill(BLUE);
+      const titulo = `${moto.marca} ${moto.modelo}${moto.ano ? ' — ' + moto.ano : ''}`.toUpperCase();
+      const dataGerado = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+      doc.fontSize(12).font('Helvetica-Bold').fillColor('#fff')
+        .text(titulo, L + 8, y + 8, { width: PW - 120 });
+      doc.fontSize(7).font('Helvetica').fillColor('rgba(255,255,255,0.65)')
+        .text(`Vistoria  •  ${dataGerado}`, L + PW - 110, y + 11, { width: 104, align: 'right' });
+      y += HDR_H + 6;
 
-      const infoRows: [string, string | null | undefined][] = [
-        ['Marca',          moto.marca],
-        ['Modelo',         moto.modelo],
-        ['Ano',            moto.ano ? String(moto.ano) : null],
-        ['Cor',            moto.cor],
-        ['Placa',          moto.placa],
-        ['Chassi (VIN)',   moto.chassi],
-        ['Renavam',        moto.renavam],
-        ['Data compra',    moto.dataCompra ? new Date(moto.dataCompra).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : null],
-        ['Valor compra',   moto.precoCompra ? `R$ ${Number(moto.precoCompra).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : null],
-        ['Origem compra',  moto.origemCompra],
-        ['Etiqueta SKU',   moto.etiquetaSkuLabel],
-        ['Cartela Detran', moto.detranCartelaId],
+      // ── Dados em 2 colunas ──────────────────────────────────────────────────
+      const infoFields: [string, string][] = [
+        ['Marca',        moto.marca || '—'],
+        ['Modelo',       moto.modelo || '—'],
+        ['Ano',          moto.ano ? String(moto.ano) : '—'],
+        ['Cor',          moto.cor || '—'],
+        ['Placa',        moto.placa || '—'],
+        ['Chassi (VIN)', moto.chassi || '—'],
+        ['Renavam',      moto.renavam || '—'],
+        ['Data compra',  moto.dataCompra ? new Date(moto.dataCompra).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '—'],
+        ['Origem',       moto.origemCompra || '—'],
       ];
 
-      infoRows.filter(([, v]) => v).forEach(([label, value], i) => {
-        const rowH = 22;
-        doc.rect(50, y, PW, rowH).fill(i % 2 === 0 ? STRIPE1 : '#ffffff');
-        doc.fontSize(8.5).font('Helvetica-Bold').fillColor(GRAY).text(label, 58, y + 6, { width: 115 });
-        doc.fontSize(8.5).font('Helvetica').fillColor(BLACK).text(String(value ?? '—'), 178, y + 6, { width: PW - 128 });
-        y += rowH;
-      });
+      const INFO_COLS   = 2;
+      const INFO_COL_W  = (PW - 8) / INFO_COLS;
+      const LABEL_W     = 62;
+      const INFO_ROW_H  = 15;
+      const numInfoRows = Math.ceil(infoFields.length / INFO_COLS);
 
-      // Observações
-      if (moto.observacoes) {
-        y += 16;
-        doc.fontSize(7.5).font('Helvetica-Bold').fillColor(BLUE).text('OBSERVAÇÕES', 50, y, { characterSpacing: 1.2 });
-        y += 13;
-        doc.rect(50, y, PW, 1).fill(LINE);
-        y += 8;
-        doc.fontSize(8.5).font('Helvetica').fillColor(GRAY)
-          .text(moto.observacoes, 50, y, { width: PW, align: 'justify', lineGap: 2 });
+      for (let row = 0; row < numInfoRows; row++) {
+        const rowY = y + row * INFO_ROW_H;
+        doc.rect(L, rowY, PW, INFO_ROW_H).fill(row % 2 === 0 ? STRIPE : '#ffffff');
+        for (let col = 0; col < INFO_COLS; col++) {
+          const fieldIdx = row * INFO_COLS + col;
+          const field = infoFields[fieldIdx];
+          if (!field) continue;
+          const cx = L + col * (INFO_COL_W + 8);
+          doc.fontSize(7).font('Helvetica-Bold').fillColor(GRAY)
+            .text(field[0], cx + 4, rowY + 4, { width: LABEL_W });
+          doc.fontSize(7).font('Helvetica').fillColor(BLACK)
+            .text(field[1], cx + 4 + LABEL_W, rowY + 4, { width: INFO_COL_W - LABEL_W - 8 });
+        }
       }
+      y += numInfoRows * INFO_ROW_H + 5;
 
-      // ── Páginas de fotos (2 por página) ─────────────────────────────────────
-      const MAX_PHOTO_H = 336;
-      let slot = 0; // 0 = topo da página, 1 = meio da página
+      // Linha divisória
+      doc.rect(L, y, PW, 1).fill(LINE);
+      y += 5;
 
-      for (const { key, label } of FOTO_FIELDS) {
-        const attachment = anexos[key];
-        if (!attachment?.dataUrl) continue;
-        const buf = dataUrlToBuffer(attachment.dataUrl);
-        if (!buf) continue;
+      // ── Grade de fotos — tudo numa página ──────────────────────────────────
+      const fotoList = FOTO_FIELDS
+        .map(f => ({ label: f.label, buf: anexos[f.key]?.dataUrl ? dataUrlToBuffer(anexos[f.key]!.dataUrl!) : null }))
+        .filter((f): f is { label: string; buf: Buffer } => f.buf !== null);
 
-        if (slot === 0) {
-          doc.addPage();
+      if (fotoList.length > 0) {
+        const FOTO_COLS   = 3;
+        const FOTO_GAP    = 5;
+        const LABEL_BAR_H = 13;
+        const ROW_GAP     = 5;
+        const CELL_W      = (PW - (FOTO_COLS - 1) * FOTO_GAP) / FOTO_COLS;
+        const numFotoRows = Math.ceil(fotoList.length / FOTO_COLS);
+        const availableH  = (PAGE_H - T) - y;                                            // espaço até margem inferior
+        const PHOTO_H     = (availableH - numFotoRows * LABEL_BAR_H - (numFotoRows - 1) * ROW_GAP) / numFotoRows;
+
+        for (let i = 0; i < fotoList.length; i++) {
+          const { label, buf } = fotoList[i];
+          const col   = i % FOTO_COLS;
+          const row   = Math.floor(i / FOTO_COLS);
+          const cellX = L + col * (CELL_W + FOTO_GAP);
+          const cellY = y + row * (LABEL_BAR_H + PHOTO_H + ROW_GAP);
+
+          doc.rect(cellX, cellY, CELL_W, LABEL_BAR_H).fill(DARK);
+          doc.fontSize(6).font('Helvetica-Bold').fillColor('#fff')
+            .text(label.toUpperCase(), cellX + 4, cellY + 4, { width: CELL_W - 8, characterSpacing: 0.4 });
+
+          try {
+            doc.image(buf, cellX, cellY + LABEL_BAR_H, {
+              width: CELL_W, height: PHOTO_H,
+              fit: [CELL_W, PHOTO_H],
+              align: 'center', valign: 'center',
+            });
+          } catch {
+            doc.fontSize(6.5).font('Helvetica').fillColor(GRAY)
+              .text('[Imagem não suportada]', cellX + 4, cellY + LABEL_BAR_H + 6);
+          }
         }
-
-        const yImg = slot === 0 ? 50 : 50 + MAX_PHOTO_H + 46;
-
-        // Barra do label
-        doc.rect(50, yImg, PW, 22).fill(DARK);
-        doc.fontSize(8).font('Helvetica-Bold').fillColor('#ffffff')
-          .text(label.toUpperCase(), 60, yImg + 7, { characterSpacing: 0.8 });
-
-        // Foto
-        try {
-          doc.image(buf, 50, yImg + 24, { width: PW, height: MAX_PHOTO_H, fit: [PW, MAX_PHOTO_H], align: 'center', valign: 'center' });
-        } catch {
-          doc.fontSize(8.5).font('Helvetica').fillColor(GRAY)
-            .text('[Imagem não suportada]', 50, yImg + 36);
-        }
-
-        slot = slot === 0 ? 1 : 0;
       }
 
       doc.end();
