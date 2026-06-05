@@ -108,6 +108,33 @@ async function downloadEmpresaAttachment(key: string, attachment: { name: string
   }
 }
 
+type ContaBancaria = {
+  banco: string;
+  agencia: string;
+  conta: string;
+  cnpj: string;
+  titular: string;
+};
+
+const EMPTY_CONTA: ContaBancaria = { banco: '', agencia: '', conta: '', cnpj: '', titular: '' };
+
+const DEFAULT_CONTAS: ContaBancaria[] = [
+  { banco: '323 – Mercado Pago S.A.', agencia: '0001', conta: '1928335729-2', cnpj: '60.100.111/0001-00', titular: 'ANB PARTS LTDA' },
+  { banco: '077 – Banco Inter S.A.',  agencia: '0001', conta: '43554117-0',   cnpj: '60.100.111/0001-00', titular: 'ANB PARTS LTDA' },
+];
+
+function getBankColor(banco: string): string {
+  const b = banco.toLowerCase();
+  if (b.includes('mercado pago')) return '#00b956';
+  if (b.includes('inter'))        return '#ff6900';
+  if (b.includes('itau') || b.includes('itaú')) return '#ff8c00';
+  if (b.includes('bradesco'))     return '#cc0000';
+  if (b.includes('santander'))    return '#ec0000';
+  if (b.includes('caixa'))        return '#005ca9';
+  if (b.includes('nubank') || b.includes('nu ')) return '#820ad1';
+  return '#2563eb';
+}
+
 const EMPTY_FORM = {
   razaoSocial: '',
   cnpj: '',
@@ -130,6 +157,8 @@ export default function EmpresaPage() {
   const [localError, setLocalError] = useState('');
   const [isPhone, setIsPhone] = useState(false);
   const [extras, setExtras] = useState<Array<{ id: string; name: string; dataUrl?: string } | null>>([]);
+  const [contasBancarias, setContasBancarias] = useState<ContaBancaria[]>([]);
+  const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -165,6 +194,11 @@ export default function EmpresaPage() {
           const extrasKeys = Object.keys(loadedAnexos).filter((k) => /^extra_\d+$/.test(k));
           extrasKeys.sort((a, b) => Number(a.split('_')[1]) - Number(b.split('_')[1]));
           setExtras(extrasKeys.map((k) => ({ id: k, name: loadedAnexos[k]?.name || '', dataUrl: loadedAnexos[k]?.dataUrl || '' })));
+          // Carregar contas bancárias (usa defaults se ainda não há dados no banco)
+          const savedContas: ContaBancaria[] = Array.isArray(data.contasBancarias) && data.contasBancarias.length > 0
+            ? data.contasBancarias
+            : DEFAULT_CONTAS;
+          setContasBancarias(savedContas);
         }
       } catch (error: any) {
         if (!active) return;
@@ -231,7 +265,7 @@ export default function EmpresaPage() {
       const extrasRemovidos = extras
         .filter((e) => e === null)
         .map((_, i) => `extra_${i}`);
-      const response = await api.empresa.save({ ...form, anexos: { ...anexosAlterados, ...extrasPayload }, removidos: [...removedKeys, ...extrasRemovidos] });
+      const response = await api.empresa.save({ ...form, contasBancarias, anexos: { ...anexosAlterados, ...extrasPayload }, removidos: [...removedKeys, ...extrasRemovidos] });
       setForm({
         razaoSocial: response.razaoSocial || '',
         cnpj: response.cnpj || '',
@@ -241,6 +275,7 @@ export default function EmpresaPage() {
         telefoneWhats: response.telefoneWhats || '',
       });
       setAnexos(response.anexos || {});
+      if (Array.isArray(response.contasBancarias)) setContasBancarias(response.contasBancarias);
       setChangedKeys([]);
       setRemovedKeys([]);
       setLocalError('');
@@ -393,6 +428,132 @@ export default function EmpresaPage() {
                 ) : null}
               </>
             )}
+          </div>
+        </div>
+
+        {/* ── Dados Bancários ── */}
+        <div style={cs.card}>
+          <div style={{ padding: isPhone ? '14px' : '16px 18px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+            <div>
+              <div style={{ fontFamily: 'Fraunces, serif', fontSize: 16, fontWeight: 600 }}>Dados Bancários</div>
+              <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 4 }}>Contas bancárias da empresa para recebimentos e transferências</div>
+            </div>
+            {canEdit && (
+              <button
+                type="button"
+                onClick={() => setContasBancarias((prev) => [...prev, { ...EMPTY_CONTA }])}
+                style={{ ...cs.btn, background: 'var(--ink)', color: '#fff', fontSize: 12, padding: '6px 14px' }}
+              >
+                + Conta
+              </button>
+            )}
+          </div>
+
+          <div style={{ padding: isPhone ? 14 : 18, display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fill, minmax(320px, 1fr))', gap: 14 }}>
+            {contasBancarias.length === 0 && !canEdit && (
+              <div style={{ color: 'var(--ink-muted)', fontSize: 13, padding: '8px 0' }}>Nenhuma conta bancária cadastrada.</div>
+            )}
+            {contasBancarias.map((conta, idx) => {
+              const color = getBankColor(conta.banco);
+              const isCopied = copiedIdx === idx;
+
+              async function copiarConta() {
+                const texto = [
+                  `Banco: ${conta.banco}`,
+                  `Agência: ${conta.agencia}`,
+                  `Conta: ${conta.conta}`,
+                  `CNPJ: ${conta.cnpj}`,
+                  `Titular: ${conta.titular}`,
+                ].join('\n');
+                try {
+                  if (navigator.clipboard?.writeText) {
+                    await navigator.clipboard.writeText(texto);
+                  } else {
+                    const ta = document.createElement('textarea');
+                    ta.value = texto;
+                    ta.style.position = 'fixed';
+                    ta.style.opacity = '0';
+                    document.body.appendChild(ta);
+                    ta.select();
+                    document.execCommand('copy');
+                    ta.remove();
+                  }
+                  setCopiedIdx(idx);
+                  setTimeout(() => setCopiedIdx(null), 2000);
+                } catch { /* silencioso */ }
+              }
+
+              function updateConta(field: keyof ContaBancaria, value: string) {
+                setContasBancarias((prev) => prev.map((c, i) => i === idx ? { ...c, [field]: value } : c));
+              }
+
+              return (
+                <div key={idx} style={{ border: `1px solid var(--border)`, borderRadius: 12, overflow: 'hidden', background: 'var(--white)', boxShadow: '0 1px 4px rgba(0,0,0,.05)' }}>
+                  {/* Cabeçalho do card */}
+                  <div style={{ background: color, padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#fff', lineHeight: 1.3, flex: 1, minWidth: 0 }}>
+                      {canEdit ? (
+                        <input
+                          value={conta.banco}
+                          onChange={(e) => updateConta('banco', e.target.value)}
+                          placeholder="Ex: 323 – Mercado Pago S.A."
+                          style={{ background: 'rgba(255,255,255,.18)', border: '1px solid rgba(255,255,255,.35)', borderRadius: 6, padding: '4px 8px', fontSize: 12, fontWeight: 700, color: '#fff', width: '100%', outline: 'none' }}
+                        />
+                      ) : (
+                        <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{conta.banco || '—'}</span>
+                      )}
+                    </div>
+                    {canEdit && (
+                      <button
+                        type="button"
+                        title="Remover conta"
+                        onClick={() => setContasBancarias((prev) => prev.filter((_, i) => i !== idx))}
+                        style={{ background: 'rgba(255,255,255,.2)', border: 'none', borderRadius: 6, width: 26, height: 26, cursor: 'pointer', color: '#fff', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Campos */}
+                  <div style={{ padding: '14px 16px', display: 'grid', gap: 10 }}>
+                    {([
+                      { field: 'agencia' as const, label: 'Agência' },
+                      { field: 'conta'   as const, label: 'Conta' },
+                      { field: 'cnpj'    as const, label: 'CNPJ' },
+                      { field: 'titular' as const, label: 'Titular' },
+                    ]).map(({ field, label }) => (
+                      <div key={field} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: '.5px', width: 52, flexShrink: 0 }}>{label}</span>
+                        {canEdit ? (
+                          <input
+                            value={conta[field]}
+                            onChange={(e) => updateConta(field, e.target.value)}
+                            placeholder={field === 'agencia' ? '0001' : field === 'cnpj' ? '00.000.000/0001-00' : ''}
+                            style={{ ...cs.fi, marginTop: 0, flex: 1, fontFamily: ['conta', 'agencia', 'cnpj'].includes(field) ? 'Geist Mono, monospace' : 'Geist, sans-serif', fontSize: 13, padding: '5px 8px' }}
+                          />
+                        ) : (
+                          <span style={{ fontSize: 13, fontFamily: ['conta', 'agencia', 'cnpj'].includes(field) ? 'Geist Mono, monospace' : 'Geist, sans-serif', color: 'var(--gray-800)', fontWeight: field === 'titular' ? 600 : 500 }}>
+                            {conta[field] || '—'}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Footer */}
+                  <div style={{ padding: '10px 16px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end' }}>
+                    <button
+                      type="button"
+                      onClick={copiarConta}
+                      style={{ ...cs.btn, padding: '6px 14px', fontSize: 12, background: isCopied ? '#f0fdf4' : 'var(--gray-50)', color: isCopied ? '#16a34a' : 'var(--ink-soft)', border: `1px solid ${isCopied ? '#86efac' : 'var(--border)'}`, fontWeight: 600, transition: 'all .15s' }}
+                    >
+                      {isCopied ? '✓ Copiado!' : '📋 Copiar dados'}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
 

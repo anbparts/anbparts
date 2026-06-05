@@ -5,6 +5,14 @@ import { getConfiguracaoGeral } from '../lib/configuracoes-gerais';
 
 export const empresaRouter = Router();
 
+const contaBancariaSchema = z.object({
+  banco:    z.string().default(''),
+  agencia:  z.string().default(''),
+  conta:    z.string().default(''),
+  cnpj:     z.string().default(''),
+  titular:  z.string().default(''),
+});
+
 const empresaPayloadSchema = z.object({
   razaoSocial: z.string().optional().nullable(),
   cnpj: z.string().optional().nullable(),
@@ -12,11 +20,13 @@ const empresaPayloadSchema = z.object({
   inscricaoMunicipal: z.string().optional().nullable(),
   enderecoCompleto: z.string().optional().nullable(),
   telefoneWhats: z.string().optional().nullable(),
+  contasBancarias: z.array(contaBancariaSchema).optional().default([]),
   anexos: z.record(z.any()).optional().default({}),
   removidos: z.array(z.string()).optional().default([]),
 });
 
-const EMPRESA_DADOS_KEY = '__dadosEmpresa';
+const EMPRESA_DADOS_KEY          = '__dadosEmpresa';
+const EMPRESA_BANCARIOS_KEY      = '__dadosBancarios';
 
 const EMPRESA_ANEXO_KEYS = [
   'cartaoCnpj',
@@ -64,6 +74,21 @@ function normalizeEmpresaAnexos(value: unknown) {
   return anexos;
 }
 
+function normalizeContasBancarias(value: unknown): Array<{ banco: string; agencia: string; conta: string; cnpj: string; titular: string }> {
+  const source = value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+  const raw = source[EMPRESA_BANCARIOS_KEY];
+  if (!Array.isArray(raw)) return [];
+  return raw.map((item: any) => ({
+    banco:   normalizeText(item?.banco),
+    agencia: normalizeText(item?.agencia),
+    conta:   normalizeText(item?.conta),
+    cnpj:    normalizeText(item?.cnpj),
+    titular: normalizeText(item?.titular),
+  }));
+}
+
 function normalizeEmpresaDadosExtras(value: unknown) {
   const source = value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -81,6 +106,7 @@ function normalizeEmpresaDadosExtras(value: unknown) {
 function buildEmpresaResponse(config: any, options?: { includeData?: boolean }) {
   const anexos = normalizeEmpresaAnexos(config?.empresaAnexos);
   const dadosExtras = normalizeEmpresaDadosExtras(config?.empresaAnexos);
+  const contasBancarias = normalizeContasBancarias(config?.empresaAnexos);
   const responseAnexos = Object.fromEntries(
     Object.entries(anexos).map(([key, attachment]) => [
       key,
@@ -98,6 +124,7 @@ function buildEmpresaResponse(config: any, options?: { includeData?: boolean }) 
     inscricaoMunicipal: dadosExtras.inscricaoMunicipal,
     enderecoCompleto: normalizeText(config?.empresaEnderecoCompleto),
     telefoneWhats: normalizeText(config?.empresaTelefoneWhats),
+    contasBancarias,
     anexos: responseAnexos,
     totalAnexos: Object.keys(anexos).length,
   };
@@ -147,6 +174,14 @@ empresaRouter.post('/', async (req, res, next) => {
       inscricaoMunicipal: normalizeText(payload.inscricaoMunicipal),
     };
 
+    const dadosBancarios = (payload.contasBancarias || []).map((c) => ({
+      banco:   normalizeText(c.banco),
+      agencia: normalizeText(c.agencia),
+      conta:   normalizeText(c.conta),
+      cnpj:    normalizeText(c.cnpj),
+      titular: normalizeText(c.titular),
+    }));
+
     for (const key of removidos) {
       delete anexos[key];
     }
@@ -160,7 +195,8 @@ empresaRouter.post('/', async (req, res, next) => {
         empresaTelefoneWhats: normalizeText(payload.telefoneWhats),
         empresaAnexos: {
           ...anexos,
-          [EMPRESA_DADOS_KEY]: dadosExtras,
+          [EMPRESA_DADOS_KEY]:     dadosExtras,
+          [EMPRESA_BANCARIOS_KEY]: dadosBancarios,
         },
       },
     });
