@@ -1458,6 +1458,146 @@ motosRouter.delete('/contratos/:id', requireMotosAction('contratos'), async (req
   } catch (e) { next(e); }
 });
 
+// ── GET /motos/:id/pdf-vistoria — Ficha de vistoria da moto com fotos ──────────
+motosRouter.get('/:id/pdf-vistoria', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'ID invalido' });
+
+    const moto = await prisma.moto.findUnique({ where: { id } });
+    if (!moto) return res.status(404).json({ error: 'Moto nao encontrada' });
+
+    const FOTO_FIELDS = [
+      { key: 'fotoDianteira',       label: 'Foto Dianteira' },
+      { key: 'fotoTraseira',        label: 'Foto Traseira' },
+      { key: 'fotoLateralDireita',  label: 'Foto Lateral Direita' },
+      { key: 'fotoLateralEsquerda', label: 'Foto Lateral Esquerda' },
+      { key: 'fotoPainel',          label: 'Foto Painel' },
+      { key: 'fotoChassi',          label: 'Foto Chassi' },
+      { key: 'fotoNumeroMotor',     label: 'Numero do Motor' },
+    ];
+
+    const anexos = normalizeMotoAnexos(moto.anexos);
+
+    function dataUrlToBuffer(dataUrl: string): Buffer | null {
+      const match = dataUrl.match(/^data:[^;]+;base64,(.+)$/s);
+      if (!match) return null;
+      try { return Buffer.from(match[1], 'base64'); } catch { return null; }
+    }
+
+    const pdf = await new Promise<Buffer>((resolve, reject) => {
+      const doc = new PDFDocument({
+        size: 'A4',
+        margins: { top: 50, bottom: 50, left: 50, right: 50 },
+        info: { Title: `Vistoria - ${moto.marca} ${moto.modelo}`, Author: 'ANB Parts' },
+      });
+      const chunks: Buffer[] = [];
+      doc.on('data', (c: Buffer) => chunks.push(c));
+      doc.on('end',  () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
+
+      const PW      = 595.28 - 100;
+      const BLUE    = '#1d4ed8';
+      const DARK    = '#1e293b';
+      const GRAY    = '#64748b';
+      const BLACK   = '#0f172a';
+      const LINE    = '#e2e8f0';
+      const STRIPE1 = '#f8fafc';
+
+      // ── Página 1: capa + dados ──────────────────────────────────────────────
+      doc.rect(50, 50, PW, 56).fill(BLUE);
+      doc.fontSize(16).font('Helvetica-Bold').fillColor('#ffffff')
+        .text(`${moto.marca} ${moto.modelo}`.toUpperCase(), 62, 60, { width: PW - 24 });
+      doc.fontSize(8.5).font('Helvetica').fillColor('rgba(255,255,255,0.75)')
+        .text(`Ficha de Vistoria  •  Gerado em ${new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`, 62, 82, { width: PW - 24 });
+
+      // Seção identificação
+      let y = 122;
+      doc.fontSize(7.5).font('Helvetica-Bold').fillColor(BLUE).text('IDENTIFICAÇÃO DO VEÍCULO', 50, y, { characterSpacing: 1.2 });
+      y += 14;
+      doc.rect(50, y, PW, 1).fill(LINE);
+      y += 8;
+
+      const infoRows: [string, string | null | undefined][] = [
+        ['Marca',          moto.marca],
+        ['Modelo',         moto.modelo],
+        ['Ano',            moto.ano ? String(moto.ano) : null],
+        ['Cor',            moto.cor],
+        ['Placa',          moto.placa],
+        ['Chassi (VIN)',   moto.chassi],
+        ['Renavam',        moto.renavam],
+        ['Data compra',    moto.dataCompra ? new Date(moto.dataCompra).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : null],
+        ['Valor compra',   moto.precoCompra ? `R$ ${Number(moto.precoCompra).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : null],
+        ['Origem compra',  moto.origemCompra],
+        ['Etiqueta SKU',   moto.etiquetaSkuLabel],
+        ['Cartela Detran', moto.detranCartelaId],
+      ];
+
+      infoRows.filter(([, v]) => v).forEach(([label, value], i) => {
+        const rowH = 22;
+        doc.rect(50, y, PW, rowH).fill(i % 2 === 0 ? STRIPE1 : '#ffffff');
+        doc.fontSize(8.5).font('Helvetica-Bold').fillColor(GRAY).text(label, 58, y + 6, { width: 115 });
+        doc.fontSize(8.5).font('Helvetica').fillColor(BLACK).text(String(value ?? '—'), 178, y + 6, { width: PW - 128 });
+        y += rowH;
+      });
+
+      // Observações
+      if (moto.observacoes) {
+        y += 16;
+        doc.fontSize(7.5).font('Helvetica-Bold').fillColor(BLUE).text('OBSERVAÇÕES', 50, y, { characterSpacing: 1.2 });
+        y += 13;
+        doc.rect(50, y, PW, 1).fill(LINE);
+        y += 8;
+        doc.fontSize(8.5).font('Helvetica').fillColor(GRAY)
+          .text(moto.observacoes, 50, y, { width: PW, align: 'justify', lineGap: 2 });
+      }
+
+      // ── Páginas de fotos (2 por página) ─────────────────────────────────────
+      const MAX_PHOTO_H = 336;
+      let slot = 0; // 0 = topo da página, 1 = meio da página
+
+      for (const { key, label } of FOTO_FIELDS) {
+        const attachment = anexos[key];
+        if (!attachment?.dataUrl) continue;
+        const buf = dataUrlToBuffer(attachment.dataUrl);
+        if (!buf) continue;
+
+        if (slot === 0) {
+          doc.addPage();
+        }
+
+        const yImg = slot === 0 ? 50 : 50 + MAX_PHOTO_H + 46;
+
+        // Barra do label
+        doc.rect(50, yImg, PW, 22).fill(DARK);
+        doc.fontSize(8).font('Helvetica-Bold').fillColor('#ffffff')
+          .text(label.toUpperCase(), 60, yImg + 7, { characterSpacing: 0.8 });
+
+        // Foto
+        try {
+          doc.image(buf, 50, yImg + 24, { width: PW, height: MAX_PHOTO_H, fit: [PW, MAX_PHOTO_H], align: 'center', valign: 'center' });
+        } catch {
+          doc.fontSize(8.5).font('Helvetica').fillColor(GRAY)
+            .text('[Imagem não suportada]', 50, yImg + 36);
+        }
+
+        slot = slot === 0 ? 1 : 0;
+      }
+
+      doc.end();
+    });
+
+    const fileName = `vistoria-${moto.marca}-${moto.modelo}-${moto.id}.pdf`
+      .normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-zA-Z0-9_.-]/g, '-').replace(/-+/g, '-')
+      .toLowerCase();
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.send(pdf);
+  } catch (e) { next(e); }
+});
+
 // Gerar PDF de um contrato salvo
 motosRouter.get('/contratos/:id/pdf', requireMotosAction('contratos'), async (req, res, next) => {
   try {

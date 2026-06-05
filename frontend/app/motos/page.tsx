@@ -719,6 +719,26 @@ function AnexosMotoModal({ open, moto, loading, data, saving, onClose, onSave, v
   const [changedKeys, setChangedKeys] = useState<string[]>([]);
   const [removedKeys, setRemovedKeys] = useState<string[]>([]);
   const [localError, setLocalError] = useState('');
+  const [gerandoPdf, setGerandoPdf] = useState(false);
+
+  async function handleGerarPdfVistoria() {
+    if (!moto?.id) return;
+    setGerandoPdf(true);
+    try {
+      const resp = await fetch(`${API}/motos/${moto.id}/pdf-vistoria`, { credentials: 'include' });
+      if (!resp.ok) throw new Error('Erro ao gerar PDF');
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `vistoria-${(moto.marca || '').toLowerCase()}-${(moto.modelo || '').toLowerCase()}-${moto.id}.pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    } catch (err: any) {
+      alert(err.message || 'Erro ao gerar PDF de vistoria');
+    }
+    setGerandoPdf(false);
+  }
 
   useEffect(() => {
     if (!open) return;
@@ -781,7 +801,19 @@ function AnexosMotoModal({ open, moto, loading, data, saving, onClose, onSave, v
               {moto ? `ID ${moto.id} - ${moto.marca} ${moto.modelo}` : 'Moto selecionada'}
             </div>
           </div>
-          <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', flexShrink: 0 }}>X</button>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
+            <button
+              type="button"
+              onClick={handleGerarPdfVistoria}
+              disabled={gerandoPdf || !moto?.id}
+              title="Gerar PDF de vistoria"
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, border: '1px solid #bfdbfe', background: gerandoPdf ? '#eff6ff' : '#eff6ff', color: '#1d4ed8', cursor: gerandoPdf ? 'wait' : 'pointer', fontSize: 12, fontWeight: 600, opacity: gerandoPdf ? 0.7 : 1 }}
+            >
+              <span style={{ fontSize: 15 }}>📄</span>
+              {gerandoPdf ? 'Gerando...' : modalIsPhone ? '' : 'PDF Vistoria'}
+            </button>
+            <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer' }}>X</button>
+          </div>
         </div>
         <div style={{ padding: modalIsPhone ? 14 : 24, overflowY: 'auto', maxHeight: modalIsPhone ? 'calc(100dvh - 140px)' : 'calc(92vh - 140px)' }}>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
