@@ -2656,20 +2656,38 @@ export default function EstoquePage() {
         const API = API_BASE;
         const baseSku = String(editPeca.idPeca || '').replace(/-\d+$/, '');
 
-        // Sincroniza precoML e/ou descricao com o Bling (mesmo padrão do sync-bling-peca das dimensões)
-        try {
-          const syncBody: any = { sku: baseSku };
-          if (precoMudou) syncBody.precoML = formData.precoML;
-          if (descricaoMudou) syncBody.descricao = formData.descricao;
-          const blingResp = await fetch(`${API}/cadastro/sync-bling-peca`, {
-            method: 'POST', credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(syncBody),
-          });
-          const blingData = await blingResp.json();
-          if (!blingData.ok) console.warn('[sync-bling] Aviso:', blingData.error);
-        } catch (e: any) {
-          console.warn('[sync-bling] Erro ao sincronizar com Bling:', e.message);
+        if (precoMudou) {
+          // Sincroniza precoML com Bling + Mercado Livre + Nuvemshop
+          try {
+            const syncResp = await fetch(`${API}/cadastro/sync-preco-plataformas`, {
+              method: 'POST', credentials: 'include',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ sku: baseSku, precoML: formData.precoML }),
+            });
+            const syncData = await syncResp.json();
+            const r = syncData.resultados || {};
+            const falhas = [
+              !r.bling?.ok    && `Bling: ${r.bling?.error    || 'falha'}`,
+              !r.ml?.ok       && `ML: ${r.ml?.error          || 'falha'}`,
+              !r.nuvemshop?.ok && `Nuvemshop: ${r.nuvemshop?.error || 'falha'}`,
+            ].filter(Boolean);
+            if (falhas.length) {
+              alert(`Preço salvo no ANB, mas houve falha ao sincronizar:\n\n${falhas.join('\n')}`);
+            }
+          } catch (e: any) {
+            alert(`Preço salvo no ANB, mas erro ao sincronizar plataformas: ${e.message}`);
+          }
+        } else if (descricaoMudou) {
+          // Só descrição mudou — continua usando sync-bling-peca
+          try {
+            await fetch(`${API}/cadastro/sync-bling-peca`, {
+              method: 'POST', credentials: 'include',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ sku: baseSku, descricao: formData.descricao }),
+            });
+          } catch (e: any) {
+            console.warn('[sync-bling] Erro ao sincronizar descricao:', e.message);
+          }
         }
 
         // Se o preço mudou, replica para todas as variações em estoque (disponivel=true) no ANB

@@ -84,7 +84,7 @@ nuvemshopRouter.post('/testar-conexao', async (_req, res, next) => {
 
 type NuvemReqOptions = RequestInit & { timeoutMs?: number };
 
-async function nuvemReq<T = unknown>(path: string, options: NuvemReqOptions = {}): Promise<T> {
+export async function nuvemReq<T = unknown>(path: string, options: NuvemReqOptions = {}): Promise<T> {
   const cfg = await getConfig();
   const accessToken = cfg.nuvemshopAccessToken;
   const storeId = cfg.nuvemshopStoreId;
@@ -142,7 +142,7 @@ function produtoContemSku(produto: any, sku: string) {
   return variants.some((variant: any) => String(variant?.sku || '').trim().toUpperCase() === alvo);
 }
 
-async function buscarProdutoNuvemshopPorSku(sku: string, modoConfiavel: boolean) {
+export async function buscarProdutoNuvemshopPorSku(sku: string, modoConfiavel: boolean) {
   const tentativas = modoConfiavel ? 4 : 1;
   const perPage = modoConfiavel ? 20 : 5;
   let ultimoErro: any = null;

@@ -3,6 +3,8 @@ import { prisma } from '../lib/prisma';
 import { compressDataUrlImage, normalizeImageFileName } from '../lib/image';
 import { buscarCadastroFotos, buscarCadastroFotosAnb, buscarCadastroFotosDrive, enviarCadastroFotosManual, processarCadastroFotos, verificarCadastroFotoSku } from '../lib/fotos-cadastro';
 import { blingReq, fetchProdutoLojaLinksByProductId, resolveBlingMercadoLivreItemId, resolveBlingMercadoLivreLinkWithFallback } from './bling';
+import { mercadoLivreReq } from '../lib/mercado-livre';
+import { nuvemReq, buscarProdutoNuvemshopPorSku } from './nuvemshop';
 
 export const cadastroRouter = Router();
 
@@ -1097,6 +1099,117 @@ cadastroRouter.post('/sync-bling-peca', async (req, res, next) => {
     console.error('[sync-bling-peca] Erro:', e?.message);
     res.status(400).json({ ok: false, error: e?.message });
   }
+});
+
+// ── POST /cadastro/sync-preco-plataformas ─────────────────────────────────────
+// Sincroniza precoML com Bling, Mercado Livre e Nuvemshop.
+// Body: { sku, precoML }
+// Retorna: { ok, resultados: { bling, ml, nuvemshop } } — resultado individual por plataforma.
+cadastroRouter.post('/sync-preco-plataformas', async (req, res, next) => {
+  try {
+    const sku     = String(req.body?.sku || '').trim().toUpperCase();
+    const precoML = Number(req.body?.precoML);
+
+    if (!sku)                                         return res.status(400).json({ ok: false, error: 'sku obrigatorio' });
+    if (!Number.isFinite(precoML) || precoML < 0)    return res.status(400).json({ ok: false, error: 'precoML invalido' });
+
+    const baseSku = getBaseSku(sku);
+    const BLING_READONLY = ['id', 'dataCriacao', 'dataAlteracao', 'imagemURL', 'imagens', 'depositos', 'variacoes', 'estrutura', 'categorias', 'anexos'];
+
+    type PlataformaResultado = { ok: boolean; error?: string };
+    const resultados: Record<string, PlataformaResultado> = {};
+
+    // ── 1. Bling ──────────────────────────────────────────────────────────────
+    try {
+      // Resolve blingProdutoId via CadastroPeca ou busca no Bling
+      let blingProdutoId: string | null = null;
+      const cadastro = await prisma.cadastroPeca.findFirst({
+        where: { idPeca: { equals: baseSku, mode: 'insensitive' } },
+        select: { blingProdutoId: true },
+      });
+      if (cadastro?.blingProdutoId) {
+        blingProdutoId = cadastro.blingProdutoId;
+      } else {
+        const blingSearch = await blingReq(`/produtos?criterio=2&tipo=P&codigo=${encodeURIComponent(baseSku)}&pagina=1&limite=5`);
+        const found = (blingSearch?.data || []).find((p: any) => String(p.codigo || '').toUpperCase() === baseSku);
+        if (found) blingProdutoId = String(found.id);
+      }
+
+      if (!blingProdutoId) {
+        resultados.bling = { ok: false, error: 'Produto nao encontrado no Bling' };
+      } else {
+        const blingAtual = await blingReq(`/produtos/${blingProdutoId}`);
+        const b = blingAtual?.data;
+        if (!b) throw new Error('Produto nao carregado do Bling');
+        const payload: any = { ...b };
+        for (const f of BLING_READONLY) delete payload[f];
+        payload.preco        = precoML;
+        payload.unidade      = 'UN';
+        payload.tipoProducao = 'T';
+        payload.tributacao   = { ...(b.tributacao || {}), ncm: '87141000', cest: '01.076.00' };
+        await blingReq(`/produtos/${blingProdutoId}`, { method: 'PUT', body: JSON.stringify(payload) });
+        resultados.bling = { ok: true };
+      }
+    } catch (e: any) {
+      resultados.bling = { ok: false, error: e?.message || 'Erro desconhecido' };
+    }
+
+    // ── 2. Mercado Livre ──────────────────────────────────────────────────────
+    try {
+      const pecaComML = await prisma.peca.findFirst({
+        where: {
+          OR: [
+            { idPeca: { equals: baseSku, mode: 'insensitive' } },
+            { idPeca: { startsWith: `${baseSku}-`, mode: 'insensitive' } },
+          ],
+          mercadoLivreItemId: { not: null },
+        },
+        select: { mercadoLivreItemId: true },
+      });
+      const mlItemId = pecaComML?.mercadoLivreItemId;
+      if (!mlItemId) {
+        resultados.ml = { ok: false, error: 'Anuncio ML nao encontrado para este SKU' };
+      } else {
+        await mercadoLivreReq(`/items/${encodeURIComponent(mlItemId)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ price: precoML }),
+        });
+        resultados.ml = { ok: true };
+      }
+    } catch (e: any) {
+      resultados.ml = { ok: false, error: e?.message || 'Erro desconhecido' };
+    }
+
+    // ── 3. Nuvemshop ──────────────────────────────────────────────────────────
+    try {
+      const produto = await buscarProdutoNuvemshopPorSku(baseSku, true);
+      if (!produto) {
+        resultados.nuvemshop = { ok: false, error: 'Produto nao encontrado no Nuvemshop' };
+      } else {
+        const variants: any[] = produto.variants || [];
+        const variant = variants.find((v: any) =>
+          String(v.sku || '').trim().toUpperCase() === baseSku
+        );
+        if (!variant) {
+          resultados.nuvemshop = { ok: false, error: 'Variante com SKU nao encontrada no Nuvemshop' };
+        } else {
+          await nuvemReq(`/products/${produto.id}/variants/${variant.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ price: precoML.toFixed(2) }),
+          });
+          resultados.nuvemshop = { ok: true };
+        }
+      }
+    } catch (e: any) {
+      resultados.nuvemshop = { ok: false, error: e?.message || 'Erro desconhecido' };
+    }
+
+    const todosOk = Object.values(resultados).every(r => r.ok);
+    console.log(`[sync-preco-plataformas] SKU ${baseSku} preço R$${precoML}:`, JSON.stringify(resultados));
+    res.json({ ok: todosOk, resultados });
+  } catch (e) { next(e); }
 });
 
 // DELETE /cadastro/:id
