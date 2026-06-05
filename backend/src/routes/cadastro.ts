@@ -1171,7 +1171,7 @@ cadastroRouter.post('/sync-preco-plataformas', async (req, res, next) => {
         resultados.ml = { ok: false, error: 'Anuncio ML nao encontrado para este SKU' };
       } else {
         await mercadoLivreReq(`/items/${encodeURIComponent(mlItemId)}`, {
-          method: 'PATCH',
+          method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ price: precoML }),
         });
