@@ -18,20 +18,10 @@ const s: any = {
 };
 
 export default function ConfGmailPage() {
-  const [meta, setMeta] = useState<any>(null);
   const [motos, setMotos] = useState<any[]>([]);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState('');
   const [driveMeta, setDriveMeta] = useState<any>(null);
-
-  // Gmail fields
-  const [gmailEmail, setGmailEmail] = useState('');
-  const [gmailClientId, setGmailClientId] = useState('');
-  const [gmailClientSecret, setGmailClientSecret] = useState('');
-  const [gmailRefreshToken, setGmailRefreshToken] = useState('');
-  const [otpRemetente, setOtpRemetente] = useState('detran.sisdev@sp.gov.br');
-  const [otpAssunto, setOtpAssunto] = useState('[DETRAN-SISDEV] Codigo de Verificacao');
-  const [otpRegex, setOtpRegex] = useState('([A-Z0-9]{4,10})\\s+e seu codigo de verificacao');
 
   // Credenciais OAuth Google Drive (bloco novo)
   const [driveClientId, setDriveClientId] = useState('');
@@ -49,7 +39,6 @@ export default function ConfGmailPage() {
   const [pastasDrive, setPastasDrive] = useState<any[]>([]);
 
   useEffect(() => {
-    load();
     api.motos.list().then(setMotos).catch(() => {});
     carregarDriveConfig();
 
@@ -59,19 +48,6 @@ export default function ConfGmailPage() {
       window.history.replaceState({}, '', '/conf-gmail');
     }
   }, []);
-
-  async function load() {
-    try {
-      const response = await api.detran.getConfig();
-      const config = response.config || {};
-      setMeta(config);
-      setGmailEmail(config.gmailEmail || '');
-      setGmailClientId(config.gmailClientId || '');
-      setOtpRemetente(config.otpRemetente || 'detran.sisdev@sp.gov.br');
-      setOtpAssunto(config.otpAssunto || '[DETRAN-SISDEV] Codigo de Verificacao');
-      setOtpRegex(config.otpRegex || '([A-Z0-9]{4,10})\\s+e seu codigo de verificacao');
-    } catch {}
-  }
 
   async function carregarDriveConfig() {
     try {
@@ -88,53 +64,6 @@ export default function ConfGmailPage() {
     } catch {}
   }
 
-  async function salvarGmail() {
-    setSaving(true);
-    setFeedback('');
-    try {
-      await api.detran.saveConfig({
-        gmailEmail, gmailClientId,
-        ...(gmailClientSecret ? { gmailClientSecret } : {}),
-        ...(gmailRefreshToken ? { gmailRefreshToken } : {}),
-        otpRemetente, otpAssunto, otpRegex,
-      });
-      setGmailClientSecret('');
-      setGmailRefreshToken('');
-      setPastasDrive([]);
-      await load();
-      await carregarDriveConfig();
-      setFeedback('OK - Configuracoes Gmail salvas!');
-      setFeedback('✓ Configurações Gmail salvas!');
-      setFeedback('OK - Configuracoes Gmail salvas!');
-    } catch (e: any) { setFeedback(`Erro: ${e.message}`); }
-    setSaving(false);
-  }
-
-  async function conectarGoogle() {
-    setSaving(true);
-    setFeedback('Salvando configuracao e abrindo conexao Google...');
-    try {
-      await api.detran.saveConfig({
-        gmailEmail, gmailClientId,
-        ...(gmailClientSecret ? { gmailClientSecret } : {}),
-        otpRemetente, otpAssunto, otpRegex,
-      });
-      setGmailClientSecret('');
-      setGmailRefreshToken('');
-      setPastasDrive([]);
-      await load();
-      await carregarDriveConfig();
-
-      setFeedback('Abrindo autorizacao do Google...');
-      const resp = await fetch(`${API}/google-drive/auth-url`, { credentials: 'include' });
-      const data = await resp.json().catch(() => ({}));
-      if (!resp.ok || !data.url) throw new Error(data.error || `Erro ao gerar link Google (${resp.status})`);
-      window.location.href = data.url;
-    } catch (e: any) {
-      setFeedback(`Erro Google: ${e.message || e}`);
-      setSaving(false);
-    }
-  }
 
   async function salvarDrive() {
     setSaving(true);
@@ -189,76 +118,15 @@ export default function ConfGmailPage() {
     <>
       <div style={s.topbar}>
         <div>
-          <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)' }}>Config. Gmail</div>
-          <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>Configurações OAuth Google — Acesso e-mail e Google Drive</div>
+          <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)' }}>Conf. Google</div>
+          <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>Credenciais OAuth Google e configuração do Google Drive</div>
         </div>
         {feedback && <span style={{ fontSize: 12, color: feedback.startsWith('OK') || feedback.startsWith('Salvando') || feedback.startsWith('Abrindo') ? 'var(--green)' : 'var(--red)', fontWeight: 600 }}>{feedback}</span>}
       </div>
 
       <div style={{ padding: 28, display: 'grid', gap: 20, maxWidth: 860 }}>
 
-        {/* BLOCO 1 — Configuração Acesso e-mail */}
-        <div style={s.card}>
-          <div style={s.sectionHead}>
-            <div style={s.sectionTitle}>📧 Configuração Acesso e-mail</div>
-            <div style={s.sectionSub}>OAuth Google para leitura do código OTP do SISDEV e acesso ao Google Drive</div>
-          </div>
-          <div style={{ padding: 20 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 16 }}>
-              <div>
-                <label style={s.label}>Email monitorado</label>
-                <input style={s.input} value={gmailEmail} onChange={e => setGmailEmail(e.target.value)} placeholder="bruno@gmail.com" />
-              </div>
-              <div>
-                <label style={s.label}>Gmail Client ID</label>
-                <input style={s.input} value={gmailClientId} onChange={e => setGmailClientId(e.target.value)} placeholder="OAuth Client ID do projeto Google" />
-              </div>
-              <div>
-                <label style={s.label}>Gmail Client Secret</label>
-                <input style={s.input} type="password" value={gmailClientSecret} onChange={e => setGmailClientSecret(e.target.value)} placeholder={meta?.hasGmailClientSecret ? 'Já configurado — preencha só para trocar' : 'Client Secret do OAuth'} />
-              </div>
-              <div>
-                <label style={s.label}>Gmail Refresh Token</label>
-                <input style={s.input} type="password" value={gmailRefreshToken} onChange={e => setGmailRefreshToken(e.target.value)} placeholder={meta?.hasGmailRefreshToken ? 'Já configurado — preencha só para trocar' : 'Refresh Token do Gmail OAuth'} />
-              </div>
-              <div>
-                <label style={s.label}>Remetente esperado</label>
-                <input style={s.input} value={otpRemetente} onChange={e => setOtpRemetente(e.target.value)} />
-              </div>
-              <div>
-                <label style={s.label}>Assunto esperado</label>
-                <input style={s.input} value={otpAssunto} onChange={e => setOtpAssunto(e.target.value)} />
-              </div>
-              <div style={{ gridColumn: '1 / -1' }}>
-                <label style={s.label}>Regex do código OTP</label>
-                <input style={s.input} value={otpRegex} onChange={e => setOtpRegex(e.target.value)} />
-              </div>
-            </div>
-
-            {/* Status e indicadores */}
-            <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' as const }}>
-              {[
-                { label: 'Client Secret', ok: meta?.hasGmailClientSecret },
-                { label: 'Refresh Token', ok: meta?.hasGmailRefreshToken },
-              ].map(item => (
-                <span key={item.label} style={{ fontSize: 12, padding: '3px 10px', borderRadius: 6, background: item.ok ? '#f0fdf4' : '#f1f5f9', color: item.ok ? '#16a34a' : 'var(--gray-400)', border: `1px solid ${item.ok ? '#86efac' : 'var(--border)'}` }}>
-                  {item.ok ? '✓' : '○'} {item.label}
-                </span>
-              ))}
-            </div>
-
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button style={{ ...s.btn, background: 'var(--ink)', color: '#fff' }} onClick={salvarGmail} disabled={saving}>
-                {saving ? 'Salvando...' : 'Salvar configurações Gmail'}
-              </button>
-              <button style={{ ...s.btn, background: '#fff', color: 'var(--gray-800)', border: '1px solid var(--border)' }} onClick={conectarGoogle} disabled={saving || !gmailClientId}>
-                {saving ? 'Aguarde...' : 'Conectar Google / gerar token'}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* BLOCO 1.5 — Credenciais OAuth Google Drive */}
+        {/* BLOCO 1 — Credenciais OAuth Google Drive */}
         <div style={s.card}>
           <div style={s.sectionHead}>
             <div style={s.sectionTitle}>🔑 Credenciais OAuth Google Drive</div>

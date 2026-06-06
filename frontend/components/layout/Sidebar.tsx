@@ -2,8 +2,8 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { isDetranAllowedUser, type DetranAuthUser } from '@/lib/detran-access';
 import { canAccessPage, isBruno } from '@/lib/permissions';
+import type { LoggedUser } from '@/lib/auth';
 
 type NavItem = {
   href: string;
@@ -66,16 +66,6 @@ export const NAV: NavGroup[] = [
     ],
   },
   {
-    section: 'Detran',
-    requiresBruno: true,
-    items: [
-      { href: '/detran', icon: 'shield', label: 'Painel Detran' },
-      { href: '/detran/peca-avulsa', icon: 'tag', label: 'Peca Avulsa (POC)' },
-      { href: '/detran/execucoes', icon: 'playbook', label: 'Execucoes' },
-      { href: '/detran/logs', icon: 'terminal', label: 'Logs' },
-    ],
-  },
-  {
     section: 'Operacoes',
     items: [
       { href: '/armazenagem', icon: 'warehouse', label: 'Armazenagem' },
@@ -102,11 +92,11 @@ function isNavActive(path: string, href: string) {
   return path === href || path.startsWith(`${href}/`);
 }
 
-function getActiveHref(path: string, authUser?: DetranAuthUser) {
+function getActiveHref(path: string, authUser?: LoggedUser | null | undefined) {
   let bestMatch = '/';
 
   for (const group of NAV) {
-    if (group.requiresBruno && !isDetranAllowedUser(authUser)) continue;
+    if (group.requiresBruno && !isBruno(authUser as any)) continue;
     for (const item of group.items) {
       if (!canAccessPage(authUser as any, item.href)) continue;
       if (!isNavActive(path, item.href)) continue;
@@ -119,11 +109,11 @@ function getActiveHref(path: string, authUser?: DetranAuthUser) {
   return bestMatch;
 }
 
-export function getNavLabel(path: string, authUser?: DetranAuthUser) {
+export function getNavLabel(path: string, authUser?: LoggedUser | null | undefined) {
   const activeHref = getActiveHref(path, authUser);
 
   for (const group of NAV) {
-    if (group.requiresBruno && !isDetranAllowedUser(authUser)) continue;
+    if (group.requiresBruno && !isBruno(authUser as any)) continue;
     for (const item of group.items) {
       if (!canAccessPage(authUser as any, item.href)) continue;
       if (item.href === activeHref) {
@@ -214,7 +204,7 @@ function ControlIcon({ name }: { name: 'menu' | 'close' | 'collapse' | 'expand' 
 type SidebarProps = {
   onLogout?: () => void;
   user?: string;
-  authUser?: DetranAuthUser;
+  authUser?: LoggedUser | null | undefined;
   mode?: SidebarMode;
   open?: boolean;
   onClose?: () => void;
@@ -234,7 +224,7 @@ export function Sidebar({
   const router = useRouter();
   const activeHref = getActiveHref(path, authUser);
   const visibleNav = NAV
-    .filter((group) => !group.requiresBruno || isDetranAllowedUser(authUser))
+    .filter((group) => !group.requiresBruno || isBruno(authUser as any))
     .map((group) => ({
       ...group,
       items: group.items.filter((item) => item.href === '/configuracoes' ? isBruno(authUser as any) : canAccessPage(authUser as any, item.href)),

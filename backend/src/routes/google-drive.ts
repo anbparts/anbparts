@@ -5,7 +5,6 @@ export const googleDriveRouter = Router();
 
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const GOOGLE_DRIVE_URL = 'https://www.googleapis.com/drive/v3';
-const DEFAULT_DETRAN_CONFIG_SLUG = 'default';
 const GOOGLE_OAUTH_SCOPES = [
   'https://www.googleapis.com/auth/drive.readonly',
   'https://www.googleapis.com/auth/gmail.readonly',
@@ -116,22 +115,6 @@ async function saveGoogleDriveOAuthTokens(data: any, cfg: any, expiry: Date) {
     },
   });
 
-  if (refreshToken) {
-    await prisma.detranConfig.upsert({
-      where: { slug: DEFAULT_DETRAN_CONFIG_SLUG },
-      update: {
-        gmailClientId: normalizeText(cfg.googleDriveClientId),
-        gmailClientSecret: normalizeText(cfg.googleDriveClientSecret),
-        gmailRefreshToken: refreshToken,
-      },
-      create: {
-        slug: DEFAULT_DETRAN_CONFIG_SLUG,
-        gmailClientId: normalizeText(cfg.googleDriveClientId),
-        gmailClientSecret: normalizeText(cfg.googleDriveClientSecret),
-        gmailRefreshToken: refreshToken,
-      },
-    });
-  }
 }
 
 async function driveFetch(cfg: any, path: string) {

@@ -1,4 +1,4 @@
-﻿import type { LoggedUser } from './auth';
+import type { LoggedUser } from './auth';
 
 export type AppAction = { key: string; label: string; description?: string };
 export type AppPagePermission = { key: string; label: string; href: string; actions: AppAction[] };
@@ -25,10 +25,6 @@ export const PAGE_KEY_BY_HREF: Record<string, string> = {
   '/bling/auditoria-automatica': 'bling_auditoria',
   '/mercado-livre/perguntas': 'mercado_livre_perguntas',
   '/nuvemshop/produtos': 'nuvemshop_produtos',
-  '/detran': 'detran',
-  '/detran/peca-avulsa': 'detran',
-  '/detran/execucoes': 'detran',
-  '/detran/logs': 'detran',
   '/armazenagem': 'armazenagem',
   '/configuracoes': 'configuracoes',
   '/bling': 'conf_bling',
