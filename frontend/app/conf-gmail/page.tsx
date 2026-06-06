@@ -33,6 +33,15 @@ export default function ConfGmailPage() {
   const [otpAssunto, setOtpAssunto] = useState('[DETRAN-SISDEV] Codigo de Verificacao');
   const [otpRegex, setOtpRegex] = useState('([A-Z0-9]{4,10})\\s+e seu codigo de verificacao');
 
+  // Credenciais OAuth Google Drive (bloco novo)
+  const [driveClientId, setDriveClientId] = useState('');
+  const [driveClientSecret, setDriveClientSecret] = useState('');
+  const [driveRefreshToken, setDriveRefreshToken] = useState('');
+  const [driveClientSecretConfigured, setDriveClientSecretConfigured] = useState(false);
+  const [driveRefreshTokenConfigured, setDriveRefreshTokenConfigured] = useState(false);
+  const [savingDriveCreds, setSavingDriveCreds] = useState(false);
+  const [driveCredsMsg, setDriveCredsMsg] = useState('');
+
   // Drive fields
   const [rootFolderId, setRootFolderId] = useState('');
   const [motoDirs, setMotoDirs] = useState<Record<string, string>>({});
@@ -70,6 +79,9 @@ export default function ConfGmailPage() {
       const data = await resp.json();
       if (data.ok) {
         setDriveMeta(data);
+        setDriveClientId(data.clientId || '');
+        setDriveClientSecretConfigured(!!data.clientSecretConfigured);
+        setDriveRefreshTokenConfigured(!!data.refreshTokenConfigured);
         setRootFolderId(data.rootFolderId || '');
         setMotoDirs(data.motoDirs || {});
       }
@@ -242,6 +254,69 @@ export default function ConfGmailPage() {
               <button style={{ ...s.btn, background: '#fff', color: 'var(--gray-800)', border: '1px solid var(--border)' }} onClick={conectarGoogle} disabled={saving || !gmailClientId}>
                 {saving ? 'Aguarde...' : 'Conectar Google / gerar token'}
               </button>
+            </div>
+          </div>
+        </div>
+
+        {/* BLOCO 1.5 — Credenciais OAuth Google Drive */}
+        <div style={s.card}>
+          <div style={s.sectionHead}>
+            <div style={s.sectionTitle}>🔑 Credenciais OAuth Google Drive</div>
+            <div style={s.sectionSub}>Client ID, Client Secret e Refresh Token para acesso ao Google Drive</div>
+          </div>
+          <div style={{ padding: 20 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 16 }}>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <label style={s.label}>Client ID</label>
+                <input style={s.input} value={driveClientId} onChange={e => setDriveClientId(e.target.value)} placeholder="Ex: 937053908914-kkbp1gal8btl25jan30..." />
+              </div>
+              <div>
+                <label style={s.label}>
+                  Client Secret
+                  {driveClientSecretConfigured && !driveClientSecret && <span style={{ marginLeft: 6, fontSize: 10, color: '#16a34a', fontWeight: 700 }}>● Configurado</span>}
+                </label>
+                <input style={s.input} type="password" value={driveClientSecret} onChange={e => setDriveClientSecret(e.target.value)}
+                  placeholder={driveClientSecretConfigured ? 'Em branco = manter atual' : 'Cole o Client Secret'} />
+              </div>
+              <div>
+                <label style={s.label}>
+                  Refresh Token
+                  {driveRefreshTokenConfigured && !driveRefreshToken && <span style={{ marginLeft: 6, fontSize: 10, color: '#16a34a', fontWeight: 700 }}>● Configurado</span>}
+                </label>
+                <input style={s.input} type="password" value={driveRefreshToken} onChange={e => setDriveRefreshToken(e.target.value)}
+                  placeholder={driveRefreshTokenConfigured ? 'Em branco = manter atual' : 'Cole o Refresh Token'} />
+              </div>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--gray-400)', marginBottom: 14 }}>
+              Gere em <strong>developers.google.com/oauthplayground</strong> com o scope <code>https://www.googleapis.com/auth/drive</code>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <button style={{ ...s.btn, background: 'var(--ink)', color: '#fff' }} disabled={savingDriveCreds} onClick={async () => {
+                setSavingDriveCreds(true);
+                setDriveCredsMsg('');
+                try {
+                  const body: any = { clientId: driveClientId };
+                  if (driveClientSecret) body.clientSecret = driveClientSecret;
+                  if (driveRefreshToken) body.refreshToken = driveRefreshToken;
+                  const resp = await fetch(`${API}/google-drive/config`, {
+                    method: 'POST', credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                  });
+                  const data = await resp.json();
+                  if (!data.ok) throw new Error(data.error || 'Erro ao salvar');
+                  setDriveClientSecret('');
+                  setDriveRefreshToken('');
+                  await carregarDriveConfig();
+                  setDriveCredsMsg('✓ Credenciais salvas com sucesso!');
+                } catch (e: any) {
+                  setDriveCredsMsg(`Erro: ${e.message}`);
+                }
+                setSavingDriveCreds(false);
+              }}>
+                {savingDriveCreds ? 'Salvando...' : 'Salvar credenciais Drive'}
+              </button>
+              {driveCredsMsg && <span style={{ fontSize: 12, color: driveCredsMsg.startsWith('✓') ? '#16a34a' : '#dc2626' }}>{driveCredsMsg}</span>}
             </div>
           </div>
         </div>
