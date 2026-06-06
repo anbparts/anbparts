@@ -11,23 +11,34 @@ const s: any = {
   label: { fontSize: 11, fontWeight: 600, color: 'var(--gray-500)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', marginBottom: 6, display: 'block' },
   input: { width: '100%', background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 11px', fontSize: 13, outline: 'none', color: 'var(--gray-800)', boxSizing: 'border-box' as const },
   btn: { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer' as const, border: '1px solid transparent', fontFamily: 'Inter, sans-serif' },
-  h3: { fontSize: 14, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 12 },
+  h3: { fontSize: 14, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 4 },
+  sub: { fontSize: 12, color: 'var(--gray-400)', marginBottom: 16 },
   p: { fontSize: 13, color: 'var(--gray-500)', lineHeight: 1.7, marginBottom: 10 },
 };
+
+function ConfiguredBadge() {
+  return <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#16a34a' }}>● Configurado</span>;
+}
 
 export default function ConfGoogleDrivePage() {
   const [config, setConfig] = useState<any>(null);
   const [motos, setMotos] = useState<any[]>([]);
   const [pastasDrive, setPastasDrive] = useState<any[]>([]);
+  const [motoDirs, setMotoDirs] = useState<Record<string, string>>({});
+
+  // Bloco 1 — Credenciais OAuth
   const [clientId, setClientId] = useState('');
   const [clientSecret, setClientSecret] = useState('');
   const [refreshToken, setRefreshToken] = useState('');
-  const [rootFolderId, setRootFolderId] = useState('');
-  const [refreshTokenConfigured, setRefreshTokenConfigured] = useState(false);
   const [clientSecretConfigured, setClientSecretConfigured] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [refreshTokenConfigured, setRefreshTokenConfigured] = useState(false);
+  const [savingCreds, setSavingCreds] = useState(false);
+  const [credsMsg, setCredsMsg] = useState('');
+
+  // Bloco 2 — Acesso Fotos Drive
+  const [rootFolderId, setRootFolderId] = useState('');
+  const [savingDrive, setSavingDrive] = useState(false);
   const [loadingPastas, setLoadingPastas] = useState(false);
-  const [motoDirs, setMotoDirs] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -52,24 +63,41 @@ export default function ConfGoogleDrivePage() {
   }
 
   async function salvarCredenciais() {
-    setSaving(true);
+    setSavingCreds(true);
+    setCredsMsg('');
+    try {
+      const body: any = { clientId };
+      if (clientSecret) body.clientSecret = clientSecret;
+      if (refreshToken) body.refreshToken = refreshToken;
+      const resp = await fetch(`${API}/google-drive/config`, {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await resp.json();
+      if (!data.ok) throw new Error(data.error || 'Erro ao salvar');
+      setClientSecret('');
+      setRefreshToken('');
+      setCredsMsg('Salvo com sucesso.');
+      await carregarConfig();
+    } catch (e: any) {
+      setCredsMsg(e.message || 'Erro ao salvar');
+    }
+    setSavingCreds(false);
+  }
+
+  async function salvarDrive() {
+    setSavingDrive(true);
     try {
       await fetch(`${API}/google-drive/config`, {
         method: 'POST', credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          clientId,
-          ...(clientSecret    ? { clientSecret }    : {}),
-          ...(refreshToken    ? { refreshToken }    : {}),
-          rootFolderId,
-        }),
+        body: JSON.stringify({ rootFolderId }),
       });
-      setClientSecret('');
-      setRefreshToken('');
       await carregarConfig();
-      alert('Credenciais salvas!');
+      alert('Configuração salva!');
     } catch {}
-    setSaving(false);
+    setSavingDrive(false);
   }
 
   async function conectar() {
@@ -97,7 +125,7 @@ export default function ConfGoogleDrivePage() {
   }
 
   async function salvarDirs() {
-    setSaving(true);
+    setSavingDrive(true);
     try {
       await fetch(`${API}/google-drive/config`, {
         method: 'POST', credentials: 'include',
@@ -106,7 +134,7 @@ export default function ConfGoogleDrivePage() {
       });
       alert('Diretórios salvos!');
     } catch {}
-    setSaving(false);
+    setSavingDrive(false);
   }
 
   const connected = config?.connected;
@@ -125,44 +153,65 @@ export default function ConfGoogleDrivePage() {
 
       <div style={{ padding: 28, maxWidth: 760 }}>
 
-        {/* Credenciais */}
+        {/* ── BLOCO 1: Credenciais OAuth ── */}
         <div style={s.card}>
-          <div style={s.h3}>Credenciais OAuth</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
+          <div style={s.h3}>🔑 Credenciais OAuth Google</div>
+          <div style={s.sub}>Client ID, Client Secret e Refresh Token do projeto no Google Cloud Console</div>
+
+          <div style={{ display: 'grid', gap: 14 }}>
             <div>
               <label style={s.label}>Client ID</label>
-              <input style={s.input} value={clientId} onChange={e => setClientId(e.target.value)} placeholder="Client ID do Google" />
+              <input style={s.input} value={clientId} onChange={e => setClientId(e.target.value)}
+                placeholder="Ex: 937053908914-kkbp1gal8btl25jan30..." />
             </div>
             <div>
               <label style={s.label}>
                 Client Secret
-                {clientSecretConfigured && !clientSecret && <span style={{ marginLeft: 6, fontSize: 10, color: '#16a34a', fontWeight: 700 }}>● Configurado</span>}
+                {clientSecretConfigured && !clientSecret && <ConfiguredBadge />}
               </label>
-              <input style={s.input} type="password" value={clientSecret} onChange={e => setClientSecret(e.target.value)} placeholder={clientSecretConfigured ? '(em branco = manter atual)' : 'Cole o Client Secret'} />
+              <input style={s.input} type="password" value={clientSecret} onChange={e => setClientSecret(e.target.value)}
+                placeholder={clientSecretConfigured ? '(em branco = manter atual)' : 'Cole o Client Secret'} />
+            </div>
+            <div>
+              <label style={s.label}>
+                Refresh Token
+                {refreshTokenConfigured && !refreshToken && <ConfiguredBadge />}
+              </label>
+              <input style={s.input} type="password" value={refreshToken} onChange={e => setRefreshToken(e.target.value)}
+                placeholder={refreshTokenConfigured ? '(em branco = manter atual)' : 'Cole o Refresh Token'} />
+              <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 5 }}>
+                Gere em <strong>developers.google.com/oauthplayground</strong> com scope <code>https://www.googleapis.com/auth/drive</code>
+              </div>
             </div>
           </div>
-          <div style={{ marginBottom: 14 }}>
-            <label style={s.label}>
-              Refresh Token
-              {refreshTokenConfigured && !refreshToken && <span style={{ marginLeft: 6, fontSize: 10, color: '#16a34a', fontWeight: 700 }}>● Configurado</span>}
-            </label>
-            <input style={s.input} type="password" value={refreshToken} onChange={e => setRefreshToken(e.target.value)}
-              placeholder={refreshTokenConfigured ? '(em branco = manter atual)' : 'Cole o Refresh Token gerado no OAuth Playground'} />
-            <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 4 }}>
-              Gere em <strong>developers.google.com/oauthplayground</strong> com o scope <code>https://www.googleapis.com/auth/drive</code>
-            </div>
+
+          <div style={{ marginTop: 18, display: 'flex', alignItems: 'center', gap: 12 }}>
+            <button style={{ ...s.btn, background: 'var(--blue-500)', color: '#fff' }} onClick={salvarCredenciais} disabled={savingCreds}>
+              {savingCreds ? 'Salvando...' : 'Salvar credenciais'}
+            </button>
+            {credsMsg && (
+              <span style={{ fontSize: 12, color: credsMsg.includes('sucesso') ? '#16a34a' : '#dc2626' }}>{credsMsg}</span>
+            )}
           </div>
-          <div style={{ marginBottom: 14 }}>
-            <label style={s.label}>ID da Pasta Raiz das Motos (Google Drive)</label>
+        </div>
+
+        {/* ── BLOCO 2: Configuração Acesso Fotos Drive ── */}
+        <div style={s.card}>
+          <div style={s.h3}>📁 Configuração Acesso Fotos Drive</div>
+          <div style={s.sub}>Pasta raiz e conexão OAuth com o Google Drive</div>
+
+          <div style={{ marginBottom: 16 }}>
+            <label style={s.label}>ID da Pasta Raiz das Motos</label>
             <input style={s.input} value={rootFolderId} onChange={e => setRootFolderId(e.target.value)}
               placeholder="Ex: 10ZKdaibBMvPfNiE0-xvXR7QeiK0qaTvG" />
             <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 4 }}>
-              Extraia o ID do link do Drive: drive.google.com/drive/folders/<strong>ID_AQUI</strong>
+              Extraia o ID do link: drive.google.com/drive/folders/<strong>ID_AQUI</strong>
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 10 }}>
-            <button style={{ ...s.btn, background: 'var(--blue-500)', color: '#fff' }} onClick={salvarCredenciais} disabled={saving}>
-              {saving ? 'Salvando...' : 'Salvar'}
+
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <button style={{ ...s.btn, background: 'var(--blue-500)', color: '#fff' }} onClick={salvarDrive} disabled={savingDrive}>
+              {savingDrive ? 'Salvando...' : 'Salvar'}
             </button>
             {config?.clientId && !connected && (
               <button style={{ ...s.btn, background: '#4285f4', color: '#fff' }} onClick={conectar}>
@@ -177,20 +226,23 @@ export default function ConfGoogleDrivePage() {
           </div>
         </div>
 
-        {/* Mapeamento de motos */}
+        {/* ── BLOCO 3: Mapeamento por Moto ── */}
         {connected && (
           <div style={s.card}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <div style={s.h3}>Mapeamento de Pastas por Moto</div>
+              <div>
+                <div style={s.h3}>🗂️ Mapeamento de Pastas por Moto</div>
+                <div style={s.sub}>Associe a pasta do Drive correspondente a cada moto</div>
+              </div>
               <button style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-700)', fontSize: 12 }}
                 onClick={listarPastas} disabled={loadingPastas}>
-                {loadingPastas ? '⏳ Carregando...' : '🔄 Listar pastas do Drive'}
+                {loadingPastas ? '⏳ Carregando...' : '🔄 Listar pastas'}
               </button>
             </div>
             <p style={s.p}>
               {pastasDrive.length > 0
                 ? 'Selecione a pasta do Drive correspondente a cada moto.'
-                : 'Clique em "Listar pastas do Drive" para carregar as pastas disponíveis e mapear cada moto.'}
+                : 'Clique em "Listar pastas" para carregar as pastas disponíveis.'}
             </p>
             <div style={{ display: 'grid', gap: 10, marginBottom: 16 }}>
               {motos.map(m => (
@@ -215,8 +267,8 @@ export default function ConfGoogleDrivePage() {
               ))}
             </div>
             {pastasDrive.length > 0 && (
-              <button style={{ ...s.btn, background: 'var(--ink)', color: '#fff' }} onClick={salvarDirs} disabled={saving}>
-                {saving ? 'Salvando...' : 'Salvar mapeamento'}
+              <button style={{ ...s.btn, background: 'var(--ink)', color: '#fff' }} onClick={salvarDirs} disabled={savingDrive}>
+                {savingDrive ? 'Salvando...' : 'Salvar mapeamento'}
               </button>
             )}
           </div>
