@@ -15,24 +15,15 @@ function normalizeText(value: any) {
   return String(value || '').trim();
 }
 
-// Credenciais OAuth ficam na DetranConfig (gmailClientId, gmailClientSecret, gmailRefreshToken)
-// Configurações do Drive (rootFolderId, motoDirs, accessToken cache) ficam na ConfiguracaoGeral
+// Credenciais OAuth ficam em ConfiguracaoGeral (googleDriveClientId/Secret/RefreshToken)
 async function getConfig() {
   let cfg = await prisma.configuracaoGeral.findFirst();
   if (!cfg) cfg = await prisma.configuracaoGeral.create({ data: {} });
-
-  const detranCfg = await prisma.detranConfig.findFirst();
-
-  // Usa credenciais do DetranConfig como fonte principal (mesmas do Gmail)
-  const clientId = detranCfg?.gmailClientId || cfg.googleDriveClientId || '';
-  const clientSecret = detranCfg?.gmailClientSecret || cfg.googleDriveClientSecret || '';
-  const refreshToken = detranCfg?.gmailRefreshToken || cfg.googleDriveRefreshToken || '';
-
   return {
     ...cfg,
-    googleDriveClientId: clientId,
-    googleDriveClientSecret: clientSecret,
-    googleDriveRefreshToken: refreshToken,
+    googleDriveClientId:     String(cfg.googleDriveClientId     || ''),
+    googleDriveClientSecret: String(cfg.googleDriveClientSecret || ''),
+    googleDriveRefreshToken: String(cfg.googleDriveRefreshToken || ''),
   };
 }
 
@@ -239,6 +230,8 @@ googleDriveRouter.get('/config', async (_req, res, next) => {
     res.json({
       ok: true,
       clientId: cfg.googleDriveClientId || '',
+      clientSecretConfigured: !!cfg.googleDriveClientSecret,
+      refreshTokenConfigured: !!cfg.googleDriveRefreshToken,
       connected,
       connectionError,
       rootFolderId: cfg.googleDriveRootFolderId || '',
@@ -250,13 +243,14 @@ googleDriveRouter.get('/config', async (_req, res, next) => {
 // POST /google-drive/config
 googleDriveRouter.post('/config', async (req, res, next) => {
   try {
-    const { clientId, clientSecret, rootFolderId, motoDirs } = req.body || {};
+    const { clientId, clientSecret, refreshToken, rootFolderId, motoDirs } = req.body || {};
     const data: any = {};
-    if (clientId !== undefined) data.googleDriveClientId = String(clientId).trim();
+    if (clientId     !== undefined) data.googleDriveClientId     = String(clientId).trim();
     if (clientSecret !== undefined) data.googleDriveClientSecret = String(clientSecret).trim();
+    if (refreshToken !== undefined) data.googleDriveRefreshToken = String(refreshToken).trim();
     if (rootFolderId !== undefined) data.googleDriveRootFolderId = String(rootFolderId).trim();
-    if (motoDirs !== undefined) data.googleDriveMotoDirs = motoDirs;
-    if (clientId !== undefined || clientSecret !== undefined) {
+    if (motoDirs     !== undefined) data.googleDriveMotoDirs     = motoDirs;
+    if (clientId !== undefined || clientSecret !== undefined || refreshToken !== undefined) {
       data.googleDriveAccessToken = '';
       data.googleDriveTokenExpiry = null;
     }

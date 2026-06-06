@@ -87,12 +87,11 @@ async function getConfiguracaoGeral() {
 
 async function getGoogleDriveConfig() {
   const cfg = await getConfiguracaoGeral();
-  const detranCfg = await prisma.detranConfig.findFirst();
   return {
     ...cfg,
-    googleDriveClientId: detranCfg?.gmailClientId || cfg.googleDriveClientId || '',
-    googleDriveClientSecret: detranCfg?.gmailClientSecret || cfg.googleDriveClientSecret || '',
-    googleDriveRefreshToken: detranCfg?.gmailRefreshToken || cfg.googleDriveRefreshToken || '',
+    googleDriveClientId:     String(cfg.googleDriveClientId     || ''),
+    googleDriveClientSecret: String(cfg.googleDriveClientSecret || ''),
+    googleDriveRefreshToken: String(cfg.googleDriveRefreshToken || ''),
   };
 }
 
