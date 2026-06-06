@@ -42,6 +42,23 @@ export default function ArmazenagemPage() {
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<SelectedNode | null>(null);
 
+  // Viewport
+  const [isPhone, setIsPhone]   = useState(false);
+  const [isTablet, setIsTablet] = useState(false);
+  // Mobile: qual painel está visível (tree ou content)
+  const [mobilePanel, setMobilePanel] = useState<'tree' | 'content'>('tree');
+
+  useEffect(() => {
+    const update = () => {
+      const w = window.innerWidth;
+      setIsPhone(w < 640);
+      setIsTablet(w >= 640 && w < 1024);
+    };
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, []);
+
   // Expansão da árvore
   const [expandedAreas, setExpandedAreas] = useState<Set<number>>(new Set());
   const [expandedPosicoes, setExpandedPosicoes] = useState<Set<number>>(new Set());
@@ -205,32 +222,46 @@ export default function ArmazenagemPage() {
 
   // ── RENDER ─────────────────────────────────────────────────────────────────
 
+  // Quando seleciona item no mobile, vai para o painel de conteúdo
+  function selectNode(node: SelectedNode) {
+    setSelected(node);
+    if (isPhone) setMobilePanel('content');
+  }
+
   return (
     <>
       {/* Topbar */}
-      <div style={s.topbar}>
+      <div style={{ ...s.topbar, height: isPhone ? 'auto' : 'var(--topbar-h)', minHeight: 'var(--topbar-h)', padding: isPhone ? '12px 14px' : '0 28px', flexDirection: isPhone ? 'column' : 'row', alignItems: isPhone ? 'stretch' : 'center', gap: isPhone ? 8 : 0 }}>
         <div>
           <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--gray-800)', letterSpacing: '-0.3px' }}>Armazenagem</div>
           <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>Gestao de localizacao fisica das caixas (WM)</div>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {isPhone && (
+            <button
+              onClick={() => setMobilePanel(mobilePanel === 'tree' ? 'content' : 'tree')}
+              style={{ ...s.btn, flex: 1, justifyContent: 'center', background: '#f1f5f9', color: 'var(--gray-700)', border: '1px solid var(--border)', fontSize: 12 }}
+            >
+              {mobilePanel === 'tree' ? '📋 Ver conteúdo' : '🌲 Ver árvore'}
+            </button>
+          )}
           <button
             onClick={() => setModal3D(true)}
             disabled={estrutura.length === 0}
-            style={{ ...s.btn, background: '#1d4ed8', color: '#fff', opacity: estrutura.length === 0 ? 0.4 : 1 }}
+            style={{ ...s.btn, flex: isPhone ? 1 : undefined, justifyContent: isPhone ? 'center' : undefined, background: '#1d4ed8', color: '#fff', opacity: estrutura.length === 0 ? 0.4 : 1 }}
           >
             🗺️ Planta Baixa
           </button>
-          <button onClick={() => setModalCriar({ tipo: 'area' })} style={{ ...s.btn, background: 'var(--gray-800)', color: '#fff' }}>
+          <button onClick={() => setModalCriar({ tipo: 'area' })} style={{ ...s.btn, flex: isPhone ? 1 : undefined, justifyContent: isPhone ? 'center' : undefined, background: 'var(--gray-800)', color: '#fff' }}>
             + Espaco
           </button>
         </div>
       </div>
 
-      <div style={{ display: 'flex', height: 'calc(100vh - var(--topbar-h))', overflow: 'hidden' }}>
+      <div style={{ display: 'flex', height: `calc(100dvh - ${isPhone ? '116px' : 'var(--topbar-h)'})`, overflow: 'hidden' }}>
 
         {/* ── PAINEL ESQUERDO — Árvore ─────────────────────────────────────── */}
-        <div style={{ width: 320, borderRight: '1px solid var(--border)', overflowY: 'auto', background: '#f8fafc', flexShrink: 0 }}>
+        <div style={{ width: isPhone ? '100%' : isTablet ? 260 : 320, borderRight: isPhone ? 'none' : '1px solid var(--border)', overflowY: 'auto', background: '#f8fafc', flexShrink: 0, display: isPhone && mobilePanel !== 'tree' ? 'none' : 'block' }}>
           {loading ? (
             <div style={{ padding: 24, color: 'var(--gray-400)', fontSize: 13 }}>Carregando...</div>
           ) : estrutura.length === 0 ? (
@@ -274,7 +305,7 @@ export default function ArmazenagemPage() {
                     {/* Área */}
                     <div
                       style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '7px 8px', borderRadius: 8, cursor: 'pointer', background: isAreaSel ? '#dbeafe' : 'transparent', marginBottom: 2 }}
-                      onClick={() => { setSelected({ tipo: 'area', id: area.id }); setExpandedAreas(prev => { const s = new Set(prev); s.has(area.id) ? s.delete(area.id) : s.add(area.id); return s; }); }}
+                      onClick={() => { selectNode({ tipo: 'area', id: area.id }); setExpandedAreas(prev => { const s = new Set(prev); s.has(area.id) ? s.delete(area.id) : s.add(area.id); return s; }); }}
                     >
                       <span style={{ fontSize: 12, color: 'var(--gray-400)', width: 14 }}>{areaExpanded ? '▾' : '▸'}</span>
                       <span style={{ fontSize: 13, fontWeight: 700, color: isAreaSel ? '#1d4ed8' : 'var(--gray-800)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -293,7 +324,7 @@ export default function ArmazenagemPage() {
                         <div key={pos.id} style={{ marginLeft: 18 }}>
                           <div
                             style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '6px 8px', borderRadius: 8, cursor: 'pointer', background: isPosSel ? '#dbeafe' : 'transparent', marginBottom: 2 }}
-                            onClick={() => { setSelected({ tipo: 'posicao', id: pos.id }); setExpandedPosicoes(prev => { const s = new Set(prev); s.has(pos.id) ? s.delete(pos.id) : s.add(pos.id); return s; }); }}
+                            onClick={() => { selectNode({ tipo: 'posicao', id: pos.id }); setExpandedPosicoes(prev => { const s = new Set(prev); s.has(pos.id) ? s.delete(pos.id) : s.add(pos.id); return s; }); }}
                           >
                             <span style={{ fontSize: 11, color: 'var(--gray-400)', width: 14 }}>{posExpanded ? '▾' : '▸'}</span>
                             <span style={{ fontSize: 12.5, fontWeight: 600, color: isPosSel ? '#1d4ed8' : 'var(--gray-700)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -311,7 +342,7 @@ export default function ArmazenagemPage() {
                               <div key={det.id} style={{ marginLeft: 18 }}>
                                 <div
                                   style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 8px', borderRadius: 8, cursor: 'pointer', background: isDetSel ? '#dbeafe' : 'transparent', marginBottom: 2 }}
-                                  onClick={() => setSelected({ tipo: 'detalhe', id: det.id })}
+                                  onClick={() => selectNode({ tipo: 'detalhe', id: det.id })}
                                 >
                                   <span style={{ fontSize: 12, color: isDetSel ? '#1d4ed8' : 'var(--gray-500)', flex: 1 }}>• {det.nome}</span>
                                   {det.totalCaixas > 0 && (
@@ -333,7 +364,16 @@ export default function ArmazenagemPage() {
         </div>
 
         {/* ── PAINEL DIREITO — Contexto ─────────────────────────────────────── */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: 24 }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: isPhone ? 14 : 24, display: isPhone && mobilePanel !== 'content' ? 'none' : 'block' }}>
+          {/* Botão Voltar no mobile */}
+          {isPhone && (
+            <button
+              onClick={() => setMobilePanel('tree')}
+              style={{ ...s.btn, background: '#f1f5f9', color: 'var(--gray-700)', border: '1px solid var(--border)', fontSize: 12, marginBottom: 16, width: '100%', justifyContent: 'center' }}
+            >
+              ← Voltar à árvore
+            </button>
+          )}
           {!selected && (
             <div style={{ color: 'var(--gray-400)', fontSize: 13, marginTop: 40, textAlign: 'center' }}>
               <div style={{ fontSize: 32, marginBottom: 12 }}>🏭</div>
@@ -354,12 +394,12 @@ export default function ArmazenagemPage() {
                 </div>
 
                 {/* Header do detalhe */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
                   <div>
                     <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--gray-800)' }}>{det.nome}</div>
                     <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 3 }}>{caixasNoDetalhe.length} caixa(s) alocada(s)</div>
                   </div>
-                  <div style={{ display: 'flex', gap: 8 }}>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     <button onClick={() => setModalCriar({ tipo: 'detalhe', parentId: det.posicaoId, editando: { id: det.id, nome: det.nome } })} style={{ ...s.btn, background: 'var(--white)', color: 'var(--gray-700)', border: '1px solid var(--border)', fontSize: 12 }}>Renomear</button>
                     <button onClick={() => excluir('detalhe', det.id, det.nome)} style={{ ...s.btn, background: '#fff5f5', color: '#dc2626', border: '1px solid #fecaca', fontSize: 12 }}>Excluir</button>
                     <button onClick={() => { setModalAlocar({ detailId: det.id, detailLabel: `${posicao?.nome} › ${det.nome}` }); setBuscaCaixa(''); }} style={{ ...s.btn, background: '#1d4ed8', color: '#fff', fontSize: 12 }}>+ Alocar caixa</button>
@@ -413,7 +453,7 @@ export default function ArmazenagemPage() {
                       Nenhum detalhe criado. Adicione niveis como N0, N1, Solto, Chao...
                     </div>
                   ) : pos.detalhes.map(d => (
-                    <div key={d.id} onClick={() => setSelected({ tipo: 'detalhe', id: d.id })} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '12px 16px', background: 'var(--white)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
+                    <div key={d.id} onClick={() => selectNode({ tipo: 'detalhe', id: d.id })} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '12px 16px', background: 'var(--white)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
                       <div style={{ fontWeight: 600, color: 'var(--gray-800)' }}>• {d.nome}</div>
                       <span style={{ fontSize: 11, fontWeight: 700, background: d.totalCaixas > 0 ? '#dcfce7' : '#f1f5f9', color: d.totalCaixas > 0 ? '#15803d' : 'var(--gray-400)', borderRadius: 99, padding: '2px 10px' }}>
                         {d.totalCaixas} caixa{d.totalCaixas !== 1 ? 's' : ''}
@@ -446,7 +486,7 @@ export default function ArmazenagemPage() {
                     Nenhuma posicao criada. Adicione Rack 1, Prateleira 1, Mezanino...
                   </div>
                 ) : area.posicoes.map(p => (
-                  <div key={p.id} onClick={() => { setSelected({ tipo: 'posicao', id: p.id }); setExpandedPosicoes(prev => { const s = new Set(prev); s.add(p.id); return s; }); }} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '12px 16px', background: 'var(--white)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
+                  <div key={p.id} onClick={() => { selectNode({ tipo: 'posicao', id: p.id }); setExpandedPosicoes(prev => { const s = new Set(prev); s.add(p.id); return s; }); }} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '12px 16px', background: 'var(--white)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
                     <div style={{ fontWeight: 600, color: 'var(--gray-800)' }}>🗄️ {p.nome}</div>
                     <span style={{ fontSize: 11, fontWeight: 700, background: p.totalCaixas > 0 ? '#dbeafe' : '#f1f5f9', color: p.totalCaixas > 0 ? '#1d4ed8' : 'var(--gray-400)', borderRadius: 99, padding: '2px 10px' }}>
                       {p.totalCaixas} caixa{p.totalCaixas !== 1 ? 's' : ''}
@@ -474,8 +514,8 @@ export default function ArmazenagemPage() {
 
       {/* ── MODAL CRIAR / EDITAR ─────────────────────────────────────────────── */}
       {modalCriar && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setModalCriar(null)}>
-          <div style={{ background: 'var(--white)', borderRadius: 14, padding: 28, width: '100%', maxWidth: 420, boxShadow: '0 8px 32px rgba(0,0,0,0.18)' }} onClick={e => e.stopPropagation()}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 200, display: 'flex', alignItems: isPhone ? 'flex-end' : 'center', justifyContent: 'center', padding: isPhone ? 0 : 16 }} onClick={() => setModalCriar(null)}>
+          <div style={{ background: 'var(--white)', borderRadius: isPhone ? '14px 14px 0 0' : 14, padding: isPhone ? '24px 20px 32px' : 28, width: '100%', maxWidth: isPhone ? undefined : 420, boxShadow: '0 8px 32px rgba(0,0,0,0.18)' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 20 }}>
               {modalCriar.editando ? 'Renomear' : '+'} {modalCriar.tipo === 'area' ? 'Espaco de Armazenagem' : modalCriar.tipo === 'posicao' ? 'Posicao' : 'Detalhe'}
             </div>
@@ -508,8 +548,8 @@ export default function ArmazenagemPage() {
 
       {/* ── MODAL ALOCAR CAIXA ───────────────────────────────────────────────── */}
       {modalAlocar && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setModalAlocar(null)}>
-          <div style={{ background: 'var(--white)', borderRadius: 14, width: '100%', maxWidth: 500, maxHeight: '80vh', display: 'flex', flexDirection: 'column', boxShadow: '0 8px 32px rgba(0,0,0,0.18)' }} onClick={e => e.stopPropagation()}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 200, display: 'flex', alignItems: isPhone ? 'stretch' : 'center', justifyContent: 'center', padding: isPhone ? 0 : 16 }} onClick={() => setModalAlocar(null)}>
+          <div style={{ background: 'var(--white)', borderRadius: isPhone ? 0 : 14, width: '100%', maxWidth: isPhone ? undefined : 500, maxHeight: isPhone ? '100dvh' : '80vh', minHeight: isPhone ? '100dvh' : undefined, display: 'flex', flexDirection: 'column', boxShadow: '0 8px 32px rgba(0,0,0,0.18)' }} onClick={e => e.stopPropagation()}>
             <div style={{ padding: '20px 24px 14px', borderBottom: '1px solid var(--border)' }}>
               <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 4 }}>Alocar caixa em {modalAlocar.detailLabel}</div>
               <div style={{ fontSize: 12, color: 'var(--gray-400)', marginBottom: 12 }}>{caixasNaoAlocadas.length} caixa(s) sem localizacao WM</div>
@@ -548,8 +588,8 @@ export default function ArmazenagemPage() {
 
       {/* ── MODAL HISTÓRICO ──────────────────────────────────────────────────── */}
       {modalHistorico && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setModalHistorico(null)}>
-          <div style={{ background: 'var(--white)', borderRadius: 14, width: '100%', maxWidth: 540, maxHeight: '80vh', display: 'flex', flexDirection: 'column', boxShadow: '0 8px 32px rgba(0,0,0,0.18)' }} onClick={e => e.stopPropagation()}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 200, display: 'flex', alignItems: isPhone ? 'stretch' : 'center', justifyContent: 'center', padding: isPhone ? 0 : 16 }} onClick={() => setModalHistorico(null)}>
+          <div style={{ background: 'var(--white)', borderRadius: isPhone ? 0 : 14, width: '100%', maxWidth: isPhone ? undefined : 540, maxHeight: isPhone ? '100dvh' : '80vh', minHeight: isPhone ? '100dvh' : undefined, display: 'flex', flexDirection: 'column', boxShadow: '0 8px 32px rgba(0,0,0,0.18)' }} onClick={e => e.stopPropagation()}>
             <div style={{ padding: '20px 24px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div>
                 <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--gray-800)' }}>Historico de movimentacao</div>
