@@ -1,3 +1,4 @@
+// @ts-nocheck — módulo Detran desativado, mantido apenas para não perder o histórico
 import { promises as fs } from 'fs';
 import path from 'path';
 import { Prisma } from '@prisma/client';

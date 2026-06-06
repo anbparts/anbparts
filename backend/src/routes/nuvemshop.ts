@@ -822,11 +822,11 @@ nuvemshopRouter.post('/upload-imagens-drive', async (req, res, next) => {
     if (!produtoId) return res.status(400).json({ ok: false, error: 'produtoId obrigatorio' });
     if (!Array.isArray(fileIds) || !fileIds.length) return res.status(400).json({ ok: false, error: 'fileIds obrigatorio' });
 
-    // Busca credenciais OAuth do DetranConfig (mesmo padrão de google-drive.ts)
-    const detranCfg = await prisma.detranConfig.findFirst();
-    const clientId = detranCfg?.gmailClientId || '';
-    const clientSecret = detranCfg?.gmailClientSecret || '';
-    const refreshToken = detranCfg?.gmailRefreshToken || '';
+    // Busca credenciais OAuth do ConfiguracaoGeral
+    const gCfg = await prisma.configuracaoGeral.findFirst();
+    const clientId = gCfg?.googleDriveClientId || '';
+    const clientSecret = gCfg?.googleDriveClientSecret || '';
+    const refreshToken = gCfg?.googleDriveRefreshToken || '';
 
     if (!refreshToken) return res.status(401).json({ ok: false, error: 'Google Drive não configurado — configure em Config. Gmail' });
 

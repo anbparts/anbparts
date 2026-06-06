@@ -1,3 +1,4 @@
+// @ts-nocheck — módulo Detran desativado, mantido apenas para não perder o histórico
 import { randomUUID } from 'crypto';
 import { Router } from 'express';
 import fs from 'fs/promises';
