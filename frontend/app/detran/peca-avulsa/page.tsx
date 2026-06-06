@@ -1,3 +1,4 @@
+﻿// @ts-nocheck — módulo Detran desativado
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -168,3 +169,4 @@ export default function DetranPecaAvulsaPage() {
     </>
   );
 }
+

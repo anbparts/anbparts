@@ -1,3 +1,4 @@
+﻿// @ts-nocheck — módulo Detran desativado
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
@@ -328,3 +329,4 @@ export default function DetranConfiguracoesPage() {
     </>
   );
 }
+

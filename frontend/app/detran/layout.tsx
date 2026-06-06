@@ -1,3 +1,4 @@
+﻿// @ts-nocheck — módulo Detran desativado
 'use client';
 
 import Link from 'next/link';
@@ -165,3 +166,4 @@ export default function DetranLayout({ children }: { children: React.ReactNode }
 
   return <>{children}</>;
 }
+
