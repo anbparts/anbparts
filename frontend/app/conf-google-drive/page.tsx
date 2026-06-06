@@ -21,7 +21,10 @@ export default function ConfGoogleDrivePage() {
   const [pastasDrive, setPastasDrive] = useState<any[]>([]);
   const [clientId, setClientId] = useState('');
   const [clientSecret, setClientSecret] = useState('');
+  const [refreshToken, setRefreshToken] = useState('');
   const [rootFolderId, setRootFolderId] = useState('');
+  const [refreshTokenConfigured, setRefreshTokenConfigured] = useState(false);
+  const [clientSecretConfigured, setClientSecretConfigured] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loadingPastas, setLoadingPastas] = useState(false);
   const [motoDirs, setMotoDirs] = useState<Record<string, string>>({});
@@ -42,6 +45,8 @@ export default function ConfGoogleDrivePage() {
         setClientId(data.clientId || '');
         setRootFolderId(data.rootFolderId || '');
         setMotoDirs(data.motoDirs || {});
+        setClientSecretConfigured(!!data.clientSecretConfigured);
+        setRefreshTokenConfigured(!!data.refreshTokenConfigured);
       }
     } catch {}
   }
@@ -54,10 +59,13 @@ export default function ConfGoogleDrivePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           clientId,
-          ...(clientSecret ? { clientSecret } : {}),
+          ...(clientSecret    ? { clientSecret }    : {}),
+          ...(refreshToken    ? { refreshToken }    : {}),
           rootFolderId,
         }),
       });
+      setClientSecret('');
+      setRefreshToken('');
       await carregarConfig();
       alert('Credenciais salvas!');
     } catch {}
@@ -126,8 +134,22 @@ export default function ConfGoogleDrivePage() {
               <input style={s.input} value={clientId} onChange={e => setClientId(e.target.value)} placeholder="Client ID do Google" />
             </div>
             <div>
-              <label style={s.label}>Client Secret</label>
-              <input style={s.input} type="password" value={clientSecret} onChange={e => setClientSecret(e.target.value)} placeholder="Deixe em branco para manter atual" />
+              <label style={s.label}>
+                Client Secret
+                {clientSecretConfigured && !clientSecret && <span style={{ marginLeft: 6, fontSize: 10, color: '#16a34a', fontWeight: 700 }}>● Configurado</span>}
+              </label>
+              <input style={s.input} type="password" value={clientSecret} onChange={e => setClientSecret(e.target.value)} placeholder={clientSecretConfigured ? '(em branco = manter atual)' : 'Cole o Client Secret'} />
+            </div>
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            <label style={s.label}>
+              Refresh Token
+              {refreshTokenConfigured && !refreshToken && <span style={{ marginLeft: 6, fontSize: 10, color: '#16a34a', fontWeight: 700 }}>● Configurado</span>}
+            </label>
+            <input style={s.input} type="password" value={refreshToken} onChange={e => setRefreshToken(e.target.value)}
+              placeholder={refreshTokenConfigured ? '(em branco = manter atual)' : 'Cole o Refresh Token gerado no OAuth Playground'} />
+            <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 4 }}>
+              Gere em <strong>developers.google.com/oauthplayground</strong> com o scope <code>https://www.googleapis.com/auth/drive</code>
             </div>
           </div>
           <div style={{ marginBottom: 14 }}>

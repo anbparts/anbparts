@@ -107,11 +107,6 @@ export default function ConfiguracoesPage() {
   const [msg, setMsg] = useState('');
   const [isPhone, setIsPhone] = useState(false);
 
-  // Google Drive
-  const [driveForm, setDriveForm] = useState({ clientId: '', clientSecret: '', refreshToken: '' });
-  const [driveStatus, setDriveStatus] = useState({ clientSecretConfigured: false, refreshTokenConfigured: false, connected: false, connectionError: '' });
-  const [driveSaving, setDriveSaving] = useState(false);
-  const [driveMsg, setDriveMsg] = useState('');
 
   const selecionado = useMemo(() => usuarios.find((item) => item.id === selecionadoId) || null, [usuarios, selecionadoId]);
   const isNovo = !selecionado;
@@ -126,47 +121,7 @@ export default function ConfiguracoesPage() {
 
   useEffect(() => {
     carregar();
-    carregarDrive();
   }, []);
-
-  async function carregarDrive() {
-    try {
-      const resp = await fetch(`${API}/google-drive/config`, { credentials: 'include' });
-      const data = await resp.json();
-      if (data.ok) {
-        setDriveForm((prev) => ({ ...prev, clientId: data.clientId || '' }));
-        setDriveStatus({
-          clientSecretConfigured: !!data.clientSecretConfigured,
-          refreshTokenConfigured: !!data.refreshTokenConfigured,
-          connected: !!data.connected,
-          connectionError: data.connectionError || '',
-        });
-      }
-    } catch { /* silencioso */ }
-  }
-
-  async function salvarDrive() {
-    setDriveSaving(true);
-    setDriveMsg('');
-    try {
-      const body: any = { clientId: driveForm.clientId };
-      if (driveForm.clientSecret) body.clientSecret = driveForm.clientSecret;
-      if (driveForm.refreshToken) body.refreshToken = driveForm.refreshToken;
-      const resp = await fetch(`${API}/google-drive/config`, {
-        method: 'POST', credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      const data = await resp.json();
-      if (!data.ok) throw new Error(data.error || 'Erro ao salvar');
-      setDriveForm((prev) => ({ ...prev, clientSecret: '', refreshToken: '' }));
-      setDriveMsg('Google Drive salvo com sucesso.');
-      await carregarDrive();
-    } catch (e: any) {
-      setDriveMsg(e.message || 'Erro ao salvar Google Drive');
-    }
-    setDriveSaving(false);
-  }
 
   async function carregar() {
     setLoading(true);
@@ -468,82 +423,6 @@ export default function ConfiguracoesPage() {
         </div>
       </div>
 
-      {/* ── Google Drive ── */}
-      <div style={{ padding: isPhone ? '0 14px 24px' : '0 22px 32px' }}>
-        <div style={{ ...s.card, maxWidth: 620 }}>
-          <div style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: 15, fontWeight: 900, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 8 }}>
-              🗂️ Google Drive
-              {driveStatus.connected
-                ? <span style={{ fontSize: 11, fontWeight: 700, color: '#16a34a', background: '#f0fdf4', border: '1px solid #86efac', padding: '2px 8px', borderRadius: 99 }}>Conectado</span>
-                : <span style={{ fontSize: 11, fontWeight: 700, color: '#dc2626', background: '#fef2f2', border: '1px solid #fecaca', padding: '2px 8px', borderRadius: 99 }}>Desconectado</span>
-              }
-            </div>
-            <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>Credenciais OAuth para acesso às pastas de fotos</div>
-            {driveStatus.connectionError && <div style={{ fontSize: 12, color: '#dc2626', marginTop: 6 }}>{driveStatus.connectionError}</div>}
-          </div>
-
-          <div style={{ display: 'grid', gap: 14 }}>
-            <div>
-              <label style={s.label}>Google Client ID</label>
-              <input
-                style={s.input}
-                value={driveForm.clientId}
-                onChange={(e) => setDriveForm((p) => ({ ...p, clientId: e.target.value }))}
-                placeholder="Ex: 937053908914-kkbp1..."
-              />
-            </div>
-            <div>
-              <label style={s.label}>
-                Google Client Secret
-                {driveStatus.clientSecretConfigured && !driveForm.clientSecret && (
-                  <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: '#16a34a' }}>● Configurado</span>
-                )}
-              </label>
-              <input
-                style={s.input}
-                type="password"
-                value={driveForm.clientSecret}
-                onChange={(e) => setDriveForm((p) => ({ ...p, clientSecret: e.target.value }))}
-                placeholder={driveStatus.clientSecretConfigured ? '(deixe em branco para manter)' : 'Cole o Client Secret'}
-              />
-            </div>
-            <div>
-              <label style={s.label}>
-                Google Refresh Token
-                {driveStatus.refreshTokenConfigured && !driveForm.refreshToken && (
-                  <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: '#16a34a' }}>● Configurado</span>
-                )}
-              </label>
-              <input
-                style={s.input}
-                type="password"
-                value={driveForm.refreshToken}
-                onChange={(e) => setDriveForm((p) => ({ ...p, refreshToken: e.target.value }))}
-                placeholder={driveStatus.refreshTokenConfigured ? '(deixe em branco para manter)' : 'Cole o Refresh Token'}
-              />
-              <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>
-                Gere em developers.google.com/oauthplayground com o scope https://www.googleapis.com/auth/drive
-              </div>
-            </div>
-          </div>
-
-          <div style={{ marginTop: 18, display: 'flex', alignItems: 'center', gap: 12 }}>
-            <button
-              onClick={salvarDrive}
-              disabled={driveSaving}
-              style={{ ...s.btn, background: '#0f172a', color: '#fff', opacity: driveSaving ? 0.7 : 1 }}
-            >
-              {driveSaving ? 'Salvando...' : 'Salvar Google Drive'}
-            </button>
-            {driveMsg && (
-              <span style={{ fontSize: 12, color: driveMsg.includes('sucesso') ? '#16a34a' : '#dc2626' }}>
-                {driveMsg}
-              </span>
-            )}
-          </div>
-        </div>
-      </div>
     </>
   );
 }
