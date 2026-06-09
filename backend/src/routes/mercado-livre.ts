@@ -1821,13 +1821,15 @@ async function resolveQuestionContext(question: any) {
       })
     : null;
 
-  const nomeCliente = normalizeText(
-    question?.from?.nickname
+  const nomeCompleto = normalizeText(
+    [user?.first_name, user?.last_name].filter(Boolean).join(' ')
     || question?.from?.name
-    || [user?.first_name, user?.last_name].filter(Boolean).join(' ')
-    || user?.nickname
     || '',
   );
+  const nickname = normalizeText(user?.nickname || question?.from?.nickname || '');
+  const nomeCliente = nomeCompleto && nickname
+    ? `${nomeCompleto} (${nickname})`
+    : nomeCompleto || nickname;
 
   return {
     item,
