@@ -2018,7 +2018,7 @@ function buildPerguntasEmailHtml(perguntas: any[]) {
       ${renderEmailBadge(`Pergunta #${escapeHtml(pergunta.questionId)}`, { tone: 'warning', mono: true })}
       ${renderEmailBadge(escapeHtml(formatDateTimePtBr(pergunta.dataPergunta)), { tone: 'neutral' })}
     </div>
-    <div style="font-size:18px;line-height:1.4;font-weight:700;color:#0f172a;margin-bottom:12px;">${escapeHtml(pergunta.idPeca || pergunta.sku || pergunta.tituloAnuncio || 'Sem identificacao')}</div>
+    <div style="font-size:18px;line-height:1.4;font-weight:700;color:#0f172a;margin-bottom:12px;">${escapeHtml(pergunta.sku || pergunta.tituloAnuncio || 'Sem identificacao')}</div>
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:14px;">
       ${detailRow('Cliente', escapeHtml(pergunta.nomeCliente || 'Nao identificado'))}
       ${(() => { const city = normalizeText((pergunta.raw as any)?.user?.address?.city); const state = normalizeText((pergunta.raw as any)?.user?.address?.state).replace(/^BR-/i, ''); const loc = city && state ? `${city} - ${state}` : city || state; return loc ? detailRow('Localização', escapeHtml(loc)) : ''; })()}
