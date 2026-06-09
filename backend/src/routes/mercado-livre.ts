@@ -1812,7 +1812,6 @@ async function resolveQuestionContext(question: any) {
     getMercadoLivreItem(itemId),
     fromId ? getMercadoLivreUser(fromId) : Promise.resolve(null),
   ]);
-  if (user) console.log('[ml-user-debug]', JSON.stringify(user));
 
   const sku = getItemSku(item);
   const peca = sku
@@ -1822,15 +1821,13 @@ async function resolveQuestionContext(question: any) {
       })
     : null;
 
-  const nomeCompleto = normalizeText(
-    [user?.first_name, user?.last_name].filter(Boolean).join(' ')
+  const nomeCliente = normalizeText(
+    user?.nickname
+    || question?.from?.nickname
     || question?.from?.name
+    || [user?.first_name, user?.last_name].filter(Boolean).join(' ')
     || '',
   );
-  const nickname = normalizeText(user?.nickname || question?.from?.nickname || '');
-  const nomeCliente = nomeCompleto && nickname
-    ? `${nomeCompleto} (${nickname})`
-    : nomeCompleto || nickname;
 
   return {
     item,
@@ -2024,6 +2021,7 @@ function buildPerguntasEmailHtml(perguntas: any[]) {
     <div style="font-size:18px;line-height:1.4;font-weight:700;color:#0f172a;margin-bottom:12px;">${escapeHtml(pergunta.idPeca || pergunta.sku || pergunta.tituloAnuncio || 'Sem identificacao')}</div>
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:14px;">
       ${detailRow('Cliente', escapeHtml(pergunta.nomeCliente || 'Nao identificado'))}
+      ${(() => { const city = normalizeText((pergunta.raw as any)?.user?.address?.city); const state = normalizeText((pergunta.raw as any)?.user?.address?.state).replace(/^BR-/i, ''); const loc = city && state ? `${city} - ${state}` : city || state; return loc ? detailRow('Localização', escapeHtml(loc)) : ''; })()}
       ${detailRow('Produto', escapeHtml(pergunta.descricao || pergunta.tituloAnuncio || 'Sem descricao'))}
       ${detailRow('SKU', escapeHtml(pergunta.sku || '-'), true)}
       ${detailRow('Nº de Peça', escapeHtml(pergunta.idPeca || '-'), true)}
@@ -2050,9 +2048,14 @@ function buildPerguntasEmailText(perguntas: any[]) {
     'ALERTA ANB Parts',
     'Perguntas recebidas no Mercado Livre aguardando resposta',
     '',
-    ...perguntas.flatMap((pergunta) => ([
+    ...perguntas.flatMap((pergunta) => {
+      const city = normalizeText((pergunta.raw as any)?.user?.address?.city);
+      const state = normalizeText((pergunta.raw as any)?.user?.address?.state).replace(/^BR-/i, '');
+      const loc = city && state ? `${city} - ${state}` : city || state;
+      return [
       `Pergunta #${pergunta.questionId}`,
       `Cliente: ${pergunta.nomeCliente || 'Nao identificado'}`,
+      ...(loc ? [`Localização: ${loc}`] : []),
       `Produto: ${pergunta.descricao || pergunta.tituloAnuncio || 'Sem descricao'}`,
       `SKU: ${pergunta.sku || '-'}`,
       `Nº de Peça: ${pergunta.idPeca || '-'}`,
@@ -2061,7 +2064,8 @@ function buildPerguntasEmailText(perguntas: any[]) {
       `Recebida em: ${formatDateTimePtBr(pergunta.dataPergunta)}`,
       `Mensagem: ${pergunta.texto || ''}`,
       '',
-    ])),
+      ]};
+    }),
   ].join('\n');
 }
 
@@ -2214,17 +2218,6 @@ mercadoLivreRouter.get('/categoria-predictor', async (req, res, next) => {
   }
 });
 
-mercadoLivreRouter.get('/debug-user', async (_req, res, next) => {
-  try {
-    const row = await prisma.mercadoLivrePergunta.findFirst({
-      orderBy: { createdAt: 'desc' },
-      select: { questionId: true, nomeCliente: true, raw: true },
-    });
-    res.json({ questionId: row?.questionId, nomeCliente: row?.nomeCliente, rawUser: (row?.raw as any)?.user ?? null });
-  } catch (e) {
-    next(e);
-  }
-});
 
 mercadoLivreRouter.get('/config', async (_req, res, next) => {
   try {

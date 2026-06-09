@@ -66,6 +66,13 @@ function questionStatusStyle(status: string | null | undefined) {
   return { bg: '#f8fafc', color: '#475569', border: '#e2e8f0' };
 }
 
+function formatLocalizacao(raw: any) {
+  const city = String(raw?.user?.address?.city || '').trim();
+  const state = String(raw?.user?.address?.state || '').trim().replace(/^BR-/i, '');
+  if (city && state) return `${city} - ${state}`;
+  return city || state || '-';
+}
+
 function useLayoutMode() {
   const [mode, setMode] = useState<LayoutMode>('desktop');
 
@@ -162,10 +169,10 @@ export default function MercadoLivrePerguntasPage() {
   const metaColumns = isPhone
     ? 'repeat(2, minmax(0, 1fr))'
     : isTabletPortrait
-    ? 'repeat(2, minmax(0, 1fr))'
+    ? 'repeat(3, minmax(0, 1fr))'
     : isTabletLandscape
     ? 'repeat(3, minmax(0, 1fr))'
-    : 'repeat(5, minmax(0, 1fr))';
+    : 'repeat(6, minmax(0, 1fr))';
   const contentColumns = isDesktop
     ? 'minmax(0, 0.94fr) minmax(340px, 0.88fr)'
     : isTabletLandscape
@@ -509,6 +516,7 @@ export default function MercadoLivrePerguntasPage() {
                     >
                       {[
                         { label: 'Cliente', value: pergunta.nomeCliente || '-' },
+                        { label: 'Localização', value: formatLocalizacao(pergunta.raw) },
                         { label: 'SKU', value: pergunta.sku || '-' },
                         { label: 'Nº de Peça', value: pergunta.idPeca || '-' },
                         { label: 'Item ML', value: pergunta.itemId || '-' },
