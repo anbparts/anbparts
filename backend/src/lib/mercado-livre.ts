@@ -382,8 +382,10 @@ function buildPerguntasEmailHtml(perguntas: any[]) {
       <div style="font-size:18px;line-height:1.4;font-weight:700;color:#0f172a;margin-bottom:12px;">${escapeHtml(item.descricao || item.tituloAnuncio || 'Pergunta Mercado Livre')}</div>
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:14px;">
         ${detailRow('Cliente', escapeHtml(item.nomeCliente || '-'))}
-        ${detailRow('SKU / ID Peca', escapeHtml(item.idPeca || item.sku || '-'), { mono: true })}
+        ${detailRow('SKU', escapeHtml(item.sku || '-'), { mono: true })}
+        ${detailRow('Nº de Peça', escapeHtml(item.idPeca || '-'), { mono: true })}
         ${detailRow('Item ML', escapeHtml(item.itemId || '-'), { mono: true })}
+        ${item.linkAnuncio ? detailRow('Anúncio', `<a href="${escapeHtml(item.linkAnuncio)}" style="color:#3b82f6;text-decoration:underline;" target="_blank">Ver anúncio no Mercado Livre</a>`) : ''}
       </table>
       <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:14px 16px;">
         <div style="font-size:11px;line-height:1.4;letter-spacing:.08em;text-transform:uppercase;color:#64748b;margin-bottom:8px;">Pergunta</div>
@@ -408,8 +410,10 @@ function buildPerguntasEmailText(perguntas: any[]) {
     ...perguntas.flatMap((item) => [
       `Pergunta #${item.questionId}`,
       `Cliente: ${item.nomeCliente || '-'}`,
-      `SKU / ID Peca: ${item.idPeca || item.sku || '-'}`,
+      `SKU: ${item.sku || '-'}`,
+      `Nº de Peça: ${item.idPeca || '-'}`,
       `Item ML: ${item.itemId || '-'}`,
+      `Anuncio: ${item.linkAnuncio || '-'}`,
       `Data: ${item.dataPergunta ? new Date(item.dataPergunta).toLocaleString('pt-BR') : '-'}`,
       `Pergunta: ${item.texto || ''}`,
       '',

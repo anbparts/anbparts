@@ -161,9 +161,11 @@ export default function MercadoLivrePerguntasPage() {
   const stackCardHeader = isPhone || isTabletPortrait;
   const metaColumns = isPhone
     ? 'repeat(2, minmax(0, 1fr))'
-    : isTabletPortrait || isTabletLandscape
+    : isTabletPortrait
     ? 'repeat(2, minmax(0, 1fr))'
-    : 'repeat(4, minmax(0, 1fr))';
+    : isTabletLandscape
+    ? 'repeat(3, minmax(0, 1fr))'
+    : 'repeat(5, minmax(0, 1fr))';
   const contentColumns = isDesktop
     ? 'minmax(0, 0.94fr) minmax(340px, 0.88fr)'
     : isTabletLandscape
@@ -507,8 +509,9 @@ export default function MercadoLivrePerguntasPage() {
                     >
                       {[
                         { label: 'Cliente', value: pergunta.nomeCliente || '-' },
+                        { label: 'SKU', value: pergunta.sku || '-' },
+                        { label: 'Nº de Peça', value: pergunta.idPeca || '-' },
                         { label: 'Item ML', value: pergunta.itemId || '-' },
-                        { label: 'SKU / ID peca', value: pergunta.idPeca || pergunta.sku || '-' },
                         { label: 'Recebida em', value: formatDateTime(pergunta.dataPergunta) },
                       ].map((item) => (
                         <div
