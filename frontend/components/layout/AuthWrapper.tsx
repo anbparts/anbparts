@@ -377,8 +377,10 @@ function NotificationsBox({ sidebarOffset, inline }: { sidebarOffset: number; in
       {open ? (
         <div
           style={{
-            ...(inline ? { position: 'absolute', top: '100%', right: 0, marginTop: 10, zIndex: 200 } : { marginTop: 10 }),
-            width: 'min(360px, calc(100vw - 24px))',
+            ...(inline
+              ? { position: 'fixed', top: 68, right: 12, left: 12, zIndex: 200 }
+              : { marginTop: 10 }),
+            width: inline ? 'auto' : 'min(360px, calc(100vw - 24px))',
             maxHeight: 'min(520px, calc(100vh - 80px))',
             overflow: 'hidden',
             borderRadius: 16,
