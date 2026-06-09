@@ -2022,8 +2022,10 @@ function buildPerguntasEmailHtml(perguntas: any[]) {
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:14px;">
       ${detailRow('Cliente', escapeHtml(pergunta.nomeCliente || 'Nao identificado'))}
       ${detailRow('Produto', escapeHtml(pergunta.descricao || pergunta.tituloAnuncio || 'Sem descricao'))}
-      ${detailRow('SKU / ID Peca', escapeHtml(pergunta.idPeca || pergunta.sku || '-'), true)}
+      ${detailRow('SKU', escapeHtml(pergunta.sku || '-'), true)}
+      ${detailRow('Nº de Peça', escapeHtml(pergunta.idPeca || '-'), true)}
       ${detailRow('Item ML', escapeHtml(pergunta.itemId || '-'), true)}
+      ${pergunta.linkAnuncio ? detailRow('Anúncio', `<a href="${escapeHtml(pergunta.linkAnuncio)}" style="color:#3b82f6;text-decoration:underline;" target="_blank">Ver anúncio no Mercado Livre</a>`) : ''}
     </table>
     <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:14px 16px;">
       <div style="font-size:11px;line-height:1.4;letter-spacing:.08em;text-transform:uppercase;color:#64748b;margin-bottom:8px;">Mensagem completa</div>
@@ -2049,8 +2051,10 @@ function buildPerguntasEmailText(perguntas: any[]) {
       `Pergunta #${pergunta.questionId}`,
       `Cliente: ${pergunta.nomeCliente || 'Nao identificado'}`,
       `Produto: ${pergunta.descricao || pergunta.tituloAnuncio || 'Sem descricao'}`,
-      `SKU / ID Peca: ${pergunta.idPeca || pergunta.sku || '-'}`,
+      `SKU: ${pergunta.sku || '-'}`,
+      `Nº de Peça: ${pergunta.idPeca || '-'}`,
       `Item ML: ${pergunta.itemId || '-'}`,
+      `Anuncio: ${pergunta.linkAnuncio || '-'}`,
       `Recebida em: ${formatDateTimePtBr(pergunta.dataPergunta)}`,
       `Mensagem: ${pergunta.texto || ''}`,
       '',
