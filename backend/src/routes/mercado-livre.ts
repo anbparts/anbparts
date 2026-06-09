@@ -1817,7 +1817,7 @@ async function resolveQuestionContext(question: any) {
   const peca = sku
     ? await prisma.peca.findFirst({
         where: { idPeca: { equals: sku, mode: 'insensitive' } },
-        select: { id: true, idPeca: true, descricao: true, motoId: true },
+        select: { id: true, idPeca: true, numeroPeca: true, descricao: true, motoId: true },
       })
     : null;
 
@@ -1862,7 +1862,7 @@ async function upsertMercadoLivrePergunta(question: any) {
     clienteId: normalizeText(question?.from?.id) || null,
     nomeCliente: context.nomeCliente || null,
     sku: context.sku || null,
-    idPeca: context.peca?.idPeca || context.sku || null,
+    idPeca: context.peca?.numeroPeca || null,
     pecaId: context.peca?.id || null,
     descricao: descricao || null,
     tituloAnuncio: itemTitle || null,
