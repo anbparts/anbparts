@@ -2064,7 +2064,7 @@ function buildPerguntasEmailText(perguntas: any[]) {
       `Recebida em: ${formatDateTimePtBr(pergunta.dataPergunta)}`,
       `Mensagem: ${pergunta.texto || ''}`,
       '',
-      ]};
+      ];
     }),
   ].join('\n');
 }
