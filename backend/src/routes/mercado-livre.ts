@@ -2214,6 +2214,18 @@ mercadoLivreRouter.get('/categoria-predictor', async (req, res, next) => {
   }
 });
 
+mercadoLivreRouter.get('/debug-user', async (_req, res, next) => {
+  try {
+    const row = await prisma.mercadoLivrePergunta.findFirst({
+      orderBy: { createdAt: 'desc' },
+      select: { questionId: true, nomeCliente: true, raw: true },
+    });
+    res.json({ questionId: row?.questionId, nomeCliente: row?.nomeCliente, rawUser: (row?.raw as any)?.user ?? null });
+  } catch (e) {
+    next(e);
+  }
+});
+
 mercadoLivreRouter.get('/config', async (_req, res, next) => {
   try {
     const config = await getMercadoLivreConfig();
