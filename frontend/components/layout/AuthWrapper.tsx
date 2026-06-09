@@ -274,7 +274,7 @@ type NotificationItem = {
   read: boolean;
 };
 
-function NotificationsBox({ sidebarOffset }: { sidebarOffset: number }) {
+function NotificationsBox({ sidebarOffset, inline }: { sidebarOffset: number; inline?: boolean }) {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<NotificationItem[]>([]);
   const [unread, setUnread] = useState(0);
@@ -321,7 +321,7 @@ function NotificationsBox({ sidebarOffset }: { sidebarOffset: number }) {
   const left = sidebarOffset > 0 ? Math.max(12, sidebarOffset - 62) : 64;
 
   return (
-    <div style={{ position: 'fixed', top: 18, left, zIndex: 140 }}>
+    <div style={inline ? { position: 'relative', flexShrink: 0 } : { position: 'fixed', top: 18, left, zIndex: 140 }}>
       <button
         type="button"
         onClick={() => {
@@ -377,7 +377,7 @@ function NotificationsBox({ sidebarOffset }: { sidebarOffset: number }) {
       {open ? (
         <div
           style={{
-            marginTop: 10,
+            ...(inline ? { position: 'absolute', top: '100%', right: 0, marginTop: 10, zIndex: 200 } : { marginTop: 10 }),
             width: 'min(360px, calc(100vw - 24px))',
             maxHeight: 'min(520px, calc(100vh - 80px))',
             overflow: 'hidden',
@@ -595,7 +595,7 @@ export function AuthWrapper({ children }: { children: React.ReactNode }) {
         onClose={() => setSidebarOpen(false)}
         onToggle={() => setSidebarOpen((value) => !value)}
       />
-      <NotificationsBox sidebarOffset={sidebarOffset} />
+      {!headerVisible && <NotificationsBox sidebarOffset={sidebarOffset} />}
 
       <div
         style={{
@@ -676,6 +676,8 @@ export function AuthWrapper({ children }: { children: React.ReactNode }) {
                 </div>
               </div>
             </div>
+
+            <NotificationsBox sidebarOffset={0} inline />
 
             <div
               title={user?.displayName || user?.username || ''}
