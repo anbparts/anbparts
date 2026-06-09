@@ -462,7 +462,7 @@ export default function MercadoLivrePerguntasPage() {
                             overflowWrap: 'anywhere',
                           }}
                         >
-                          {pergunta.idPeca || pergunta.sku || pergunta.tituloAnuncio || 'Sem identificacao'}
+                          {pergunta.sku || pergunta.tituloAnuncio || 'Sem identificacao'}
                         </div>
 
                         <div

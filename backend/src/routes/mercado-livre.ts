@@ -1812,6 +1812,7 @@ async function resolveQuestionContext(question: any) {
     getMercadoLivreItem(itemId),
     fromId ? getMercadoLivreUser(fromId) : Promise.resolve(null),
   ]);
+  if (user) console.log('[ml-user-debug]', JSON.stringify(user));
 
   const sku = getItemSku(item);
   const peca = sku
