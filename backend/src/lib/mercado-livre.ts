@@ -239,7 +239,7 @@ async function resolveQuestionContext(question: any, itemCache: Map<string, any>
   const peca = sku
     ? await prisma.peca.findFirst({
         where: { idPeca: sku },
-        select: { id: true, idPeca: true, descricao: true },
+        select: { id: true, idPeca: true, numeroPeca: true, descricao: true },
       })
     : null;
 
@@ -248,7 +248,7 @@ async function resolveQuestionContext(question: any, itemCache: Map<string, any>
     nomeCliente: nomeCliente || null,
     clienteId: clienteId || null,
     sku: sku || null,
-    idPeca: peca?.idPeca || sku || null,
+    idPeca: peca?.numeroPeca || null,
     pecaId: peca?.id || null,
     descricao: peca?.descricao || normalizeText(item?.title) || null,
     tituloAnuncio: normalizeText(item?.title) || null,
