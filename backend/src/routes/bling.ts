@@ -6096,6 +6096,54 @@ blingRouter.post('/relatorio-separacao-manual', async (req, res, next) => {
   }
 });
 
+blingRouter.post('/pedido-separacao', async (req, res, next) => {
+  try {
+    const pedidoIds = Array.isArray(req.body?.pedidoIds)
+      ? req.body.pedidoIds.map((id: any) => BigInt(Number(id || 0))).filter((id) => id > 0n)
+      : [];
+    if (!pedidoIds.length) return res.status(400).json({ ok: false, error: 'pedidoIds obrigatorio' });
+
+    await prisma.$transaction(
+      pedidoIds.map((pedidoId) =>
+        prisma.blingPedidoSeparacao.upsert({
+          where: { pedidoId },
+          create: { pedidoId, separadoEm: new Date() },
+          update: { separadoEm: new Date() },
+        })
+      )
+    );
+
+    res.json({ ok: true });
+  } catch (e) {
+    next(e);
+  }
+});
+
+blingRouter.get('/pedido-separacao', async (req, res, next) => {
+  try {
+    const raw = String(req.query?.pedidoIds || '').trim();
+    const pedidoIds = raw
+      .split(',')
+      .map((s) => BigInt(Number(s.trim()) || 0))
+      .filter((id) => id > 0n);
+
+    if (!pedidoIds.length) return res.json({ ok: true, separacoes: {} });
+
+    const rows = await prisma.blingPedidoSeparacao.findMany({
+      where: { pedidoId: { in: pedidoIds } },
+    });
+
+    const separacoes: Record<string, string> = {};
+    for (const row of rows) {
+      separacoes[String(row.pedidoId)] = row.separadoEm.toISOString();
+    }
+
+    res.json({ ok: true, separacoes });
+  } catch (e) {
+    next(e);
+  }
+});
+
 blingRouter.get('/relatorio-separacao', async (req, res, next) => {
   try {
     const dataInicio = String(req.query?.dataInicio || '').trim();

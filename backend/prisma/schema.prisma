@@ -542,3 +542,8 @@ model AppNotificationRead {
   @@unique([username, type, itemKey])
   @@index([username, type])
 }
+
+model BlingPedidoSeparacao {
+  pedidoId   BigInt   @id
+  separadoEm DateTime @default(now())
+}

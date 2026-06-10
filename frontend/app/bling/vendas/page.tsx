@@ -514,6 +514,16 @@ export default function VendasBlingPage() {
       } catch {}
       return next;
     });
+    // Persistir no backend para ser visível em qualquer dispositivo
+    const pedidoIds = pedidos.map((p) => p.pedidoId).filter(Boolean);
+    if (pedidoIds.length) {
+      fetch(`${API}/bling/pedido-separacao`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pedidoIds }),
+      }).catch(() => {});
+    }
   }
 
   function pedidoSeparadoEm(pedidoId: number) {
@@ -623,9 +633,39 @@ export default function VendasBlingPage() {
         return;
       }
 
-      setPedidosManuais(data.pedidos || []);
+      const pedidos: SeparacaoManualPedido[] = data.pedidos || [];
+      setPedidosManuais(pedidos);
       setPedidosManuaisSelecionados([]);
       setPedidosManuaisPeriodoKey(periodoKey);
+
+      // Buscar status de separação do backend e mesclar com localStorage
+      if (pedidos.length) {
+        const ids = pedidos.map((p) => p.pedidoId).join(',');
+        fetch(`${API}/bling/pedido-separacao?pedidoIds=${ids}`, { credentials: 'include' })
+          .then((r) => r.json())
+          .then((statusData) => {
+            if (statusData?.ok && statusData.separacoes) {
+              setSeparacoesGeradas((prev) => {
+                const merged = { ...prev, ...statusData.separacoes };
+                try { window.localStorage.setItem(SEPARACAO_STATUS_KEY, JSON.stringify(merged)); } catch {}
+
+                // Migração única: se localStorage tem pedidos que o banco ainda não conhece, envia para o backend
+                const idsNoLocalStorage = Object.keys(prev).filter((id) => prev[id] && !statusData.separacoes[id]);
+                if (idsNoLocalStorage.length) {
+                  fetch(`${API}/bling/pedido-separacao`, {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ pedidoIds: idsNoLocalStorage.map(Number) }),
+                  }).catch(() => {});
+                }
+
+                return merged;
+              });
+            }
+          })
+          .catch(() => {});
+      }
     } catch (e: any) {
       setErroPedidosManuais(e?.message || 'Nao foi possivel carregar os pedidos importados do ANB.');
     } finally {
