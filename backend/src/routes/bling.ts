@@ -6098,13 +6098,13 @@ blingRouter.post('/relatorio-separacao-manual', async (req, res, next) => {
 
 blingRouter.post('/pedido-separacao', async (req, res, next) => {
   try {
-    const pedidoIds = Array.isArray(req.body?.pedidoIds)
-      ? req.body.pedidoIds.map((id: any) => BigInt(Number(id || 0))).filter((id) => id > 0n)
+    const pedidoIds: bigint[] = Array.isArray(req.body?.pedidoIds)
+      ? req.body.pedidoIds.map((id: any) => BigInt(Number(id || 0))).filter((id: bigint) => id > 0n)
       : [];
     if (!pedidoIds.length) return res.status(400).json({ ok: false, error: 'pedidoIds obrigatorio' });
 
     await prisma.$transaction(
-      pedidoIds.map((pedidoId) =>
+      pedidoIds.map((pedidoId: bigint) =>
         prisma.blingPedidoSeparacao.upsert({
           where: { pedidoId },
           create: { pedidoId, separadoEm: new Date() },
