@@ -33,6 +33,18 @@ const TIPO_ETQ_COLORS: Record<string, { bg: string; color: string }> = {
   Avulsa: { bg: '#faf5ff', color: '#7c3aed' },
 };
 
+const DETRAN_TIPOS = [
+  'Balança', 'Banco', 'Bengala direita', 'Bengala esquerda', 'Bloco do motor',
+  'Cabeçote', 'Carburador', 'Carenagem direita', 'Carenagem esquerda',
+  'Carenagem frontal', 'Carenagem traseira', 'Estribo', 'Farol',
+  'Guidão / semi-guidão', 'Lanterna', 'Mesa', 'Módulo de injeção/CDI',
+  'Motor de arranque', 'Painel', 'Para-lama dianteiro', 'Para-lama traseiro',
+  'Pedaleira direita', 'Pedaleira esquerda', 'Retrovisor direito',
+  'Retrovisor esquerdo', 'Roda dianteira', 'Roda traseira', 'Tanque',
+  'Cardã', 'Cavalete lateral', 'Corpo de injeção', 'Diferencial',
+  'Escapamento', 'Radiador',
+];
+
 const MAIN_COLUMNS = [
   { key: 'sku', label: 'SKU' },
   { key: 'descricao', label: 'Descricao SKU' },
@@ -167,6 +179,9 @@ export default function EtiquetasDetranPage() {
   const [novasEtiquetasDev, setNovasEtiquetasDev] = useState<Record<number, string>>({});
   const [salvandoPendenciaDev, setSalvandoPendenciaDev] = useState<number | null>(null);
   const [sort, setSort] = useState<SortState>({ key: 'sku', dir: 'asc' });
+  const [editTipoPeca, setEditTipoPeca] = useState<{ pecaId: number; isPreCadastro: boolean; currentTipo: string; etiqueta: string; sku: string } | null>(null);
+  const [editTipoSelecionado, setEditTipoSelecionado] = useState('');
+  const [salvandoTipo, setSalvandoTipo] = useState(false);
   const [pendenciasSort, setPendenciasSort] = useState<SortState>({ key: 'dataVenda', dir: 'desc' });
   const [isPhone, setIsPhone] = useState(false);
   const canProcessarBaixa = canProcessAction(user, 'etiquetas_detran', 'processar_baixa');
@@ -209,6 +224,26 @@ export default function EtiquetasDetranPage() {
       setLinhas([]);
     }
     setLoading(false);
+  }
+
+  async function salvarTipoPeca() {
+    if (!editTipoPeca || !editTipoSelecionado) return;
+    setSalvandoTipo(true);
+    try {
+      const resp = await fetch(`${API}/etiquetas-detran/${editTipoPeca.pecaId}/tipo-peca`, {
+        method: 'PATCH', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tipoPeca: editTipoSelecionado, isPreCadastro: editTipoPeca.isPreCadastro }),
+      });
+      if (!resp.ok) throw new Error('Erro ao salvar');
+      setLinhas((prev) => prev.map((l) =>
+        l.pecaId === editTipoPeca.pecaId && l.etiqueta === editTipoPeca.etiqueta
+          ? { ...l, tipoPeca: editTipoSelecionado }
+          : l
+      ));
+      setEditTipoPeca(null);
+    } catch (e: any) { alert(e.message || 'Erro ao salvar'); }
+    setSalvandoTipo(false);
   }
 
   async function abrirPendencias() {
@@ -472,7 +507,14 @@ export default function EtiquetasDetranPage() {
                       </div>
                       <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 8 }}>
                         <div style={{ fontSize: 10, color: 'var(--gray-500)', marginBottom: 3 }}>Peça</div>
-                        <div style={{ fontSize: 11.5, color: 'var(--gray-700)' }}>{linha.tipoPeca || '-'}</div>
+                        {linha.tipoEtiqueta === 'Avulsa' ? (
+                          <button type="button" onClick={() => { setEditTipoPeca({ pecaId: linha.pecaId, isPreCadastro: !!linha.isPreCadastro, currentTipo: linha.tipoPeca || '', etiqueta: linha.etiqueta, sku: linha.sku }); setEditTipoSelecionado(DETRAN_TIPOS.includes(linha.tipoPeca) ? linha.tipoPeca : ''); }}
+                            style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 11.5, color: '#7c3aed', textDecoration: 'underline', textAlign: 'left', fontFamily: 'inherit' }}>
+                            {linha.tipoPeca || 'Definir tipo ✏️'}
+                          </button>
+                        ) : (
+                          <div style={{ fontSize: 11.5, color: 'var(--gray-700)' }}>{linha.tipoPeca || '-'}</div>
+                        )}
                       </div>
                     </div>
                     <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 8 }}>
@@ -512,7 +554,14 @@ export default function EtiquetasDetranPage() {
                           {linha.tipoEtiqueta}
                         </span>
                       </td>
-                      <td style={s.td}>{linha.tipoPeca || '-'}</td>
+                      <td style={s.td}>
+                        {linha.tipoEtiqueta === 'Avulsa' ? (
+                          <button type="button" onClick={() => { setEditTipoPeca({ pecaId: linha.pecaId, isPreCadastro: !!linha.isPreCadastro, currentTipo: linha.tipoPeca || '', etiqueta: linha.etiqueta, sku: linha.sku }); setEditTipoSelecionado(DETRAN_TIPOS.includes(linha.tipoPeca) ? linha.tipoPeca : ''); }}
+                            style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 13, color: '#7c3aed', textDecoration: 'underline', textAlign: 'left', fontFamily: 'inherit' }}>
+                            {linha.tipoPeca || 'Definir tipo ✏️'}
+                          </button>
+                        ) : (linha.tipoPeca || '-')}
+                      </td>
                       <td style={{ ...s.td, fontFamily: 'Geist Mono, monospace', fontSize: 12 }}>{linha.etiqueta}</td>
                       <td style={s.td}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-start' }}>
@@ -535,6 +584,44 @@ export default function EtiquetasDetranPage() {
           )}
         </div>
       </div>
+
+      {/* Modal editar Tipo de Peça (avulsa) */}
+      {editTipoPeca && (
+        <div onClick={() => setEditTipoPeca(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background: 'var(--white)', borderRadius: 14, width: '100%', maxWidth: 420, boxShadow: '0 20px 60px rgba(0,0,0,0.2)', padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--gray-800)' }}>Editar Tipo de Peça</div>
+              <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 4 }}>
+                <span style={{ fontFamily: 'Geist Mono, monospace', fontWeight: 600 }}>{editTipoPeca.sku}</span>
+                {' · '}{editTipoPeca.etiqueta}
+              </div>
+            </div>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-600)', display: 'block', marginBottom: 6 }}>Tipo de Peça</label>
+              <select
+                style={{ ...s.select, width: '100%', boxSizing: 'border-box' as const }}
+                value={editTipoSelecionado}
+                onChange={e => setEditTipoSelecionado(e.target.value)}
+              >
+                <option value="">Selecione...</option>
+                {DETRAN_TIPOS.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={() => setEditTipoPeca(null)}
+                style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', fontSize: 13 }}>
+                Cancelar
+              </button>
+              <button onClick={salvarTipoPeca} disabled={!editTipoSelecionado || salvandoTipo}
+                style={{ ...s.btn, background: '#7c3aed', color: '#fff', fontSize: 13, opacity: (!editTipoSelecionado || salvandoTipo) ? 0.6 : 1 }}>
+                {salvandoTipo ? 'Salvando...' : 'Salvar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {modalPendencias && (
         <div onClick={() => setModalPendencias(false)}

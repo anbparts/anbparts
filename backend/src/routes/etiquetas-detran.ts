@@ -5,6 +5,18 @@ import { blingReq } from './bling';
 export const etiquetasDetranRouter = Router();
 const prisma = new PrismaClient();
 
+const DETRAN_TIPOS = [
+  'Balança', 'Banco', 'Bengala direita', 'Bengala esquerda', 'Bloco do motor',
+  'Cabeçote', 'Carburador', 'Carenagem direita', 'Carenagem esquerda',
+  'Carenagem frontal', 'Carenagem traseira', 'Estribo', 'Farol',
+  'Guidão / semi-guidão', 'Lanterna', 'Mesa', 'Módulo de injeção/CDI',
+  'Motor de arranque', 'Painel', 'Para-lama dianteiro', 'Para-lama traseiro',
+  'Pedaleira direita', 'Pedaleira esquerda', 'Retrovisor direito',
+  'Retrovisor esquerdo', 'Roda dianteira', 'Roda traseira', 'Tanque',
+  'Cardã', 'Cavalete lateral', 'Corpo de injeção', 'Diferencial',
+  'Escapamento', 'Radiador',
+];
+
 type BlingVendaRef = {
   pedidoId?: string | null;
   pedidoNum?: string | null;
@@ -219,7 +231,7 @@ etiquetasDetranRouter.get('/', async (req, res, next) => {
           id: true, idPeca: true, descricao: true, detranEtiqueta: true,
           detranStatus: true, detranBaixada: true, detranBaixadaAt: true,
           disponivel: true, blingPedidoId: true, blingPedidoNum: true,
-          dataVenda: true, motoId: true,
+          dataVenda: true, motoId: true, tipoPecaAvulsa: true,
         },
         orderBy: { idPeca: 'asc' },
       }),
@@ -277,8 +289,14 @@ etiquetasDetranRouter.get('/', async (req, res, next) => {
       for (const etq of etiquetas) {
         activeEtiquetas.add(etq.toUpperCase());
         const cartelaTipo = cartelaMap.get(`${peca.motoId}|${peca.idPeca}|${etq}`);
-        const tipoEtq = cartelaTipo ? 'Cartela' : 'Avulsa';
-        const tipoPecaVal = cartelaTipo || 'Avulsa';
+        const matchCartela = etq.match(/^(.*?)(\d{3})$/);
+        const posicaoCartela = matchCartela ? Number(matchCartela[2]) : 0;
+        const isCartelaEtq = posicaoCartela >= 1 && posicaoCartela <= 34;
+        const tipoEtq = (cartelaTipo || isCartelaEtq) ? 'Cartela' : 'Avulsa';
+        const tipoPecaVal = cartelaTipo
+          || (isCartelaEtq ? DETRAN_TIPOS[posicaoCartela - 1] : null)
+          || (peca as any).tipoPecaAvulsa
+          || 'Avulsa';
 
         if (!textIncludes(tipoEtq, tipoEtiqueta)) continue;
         if (!textIncludes(tipoPecaVal, tipoPeca)) continue;
@@ -292,7 +310,7 @@ etiquetasDetranRouter.get('/', async (req, res, next) => {
           detranStatus: peca.detranStatus || null, detranBaixada: peca.detranBaixada,
           detranBaixadaAt: peca.detranBaixadaAt, disponivel: peca.disponivel,
           blingPedidoId: peca.blingPedidoId, blingPedidoNum: peca.blingPedidoNum,
-          dataVenda: peca.dataVenda, fromHistorico: false,
+          dataVenda: peca.dataVenda, fromHistorico: false, isPreCadastro: false,
         });
       }
     }
@@ -313,8 +331,13 @@ etiquetasDetranRouter.get('/', async (req, res, next) => {
         if (!textIncludes(etq, etiqueta)) continue;
 
         const cartelaTipo = cartelaMap.get(`${row.motoId}|${row.idPeca}|${etq}`);
-        const tipoEtq = cartelaTipo ? 'Cartela' : 'Avulsa';
-        const tipoPecaVal = cartelaTipo || 'Avulsa';
+        const matchCartelaH = etq.match(/^(.*?)(\d{3})$/);
+        const posicaoCartelaH = matchCartelaH ? Number(matchCartelaH[2]) : 0;
+        const isCartelaEtqH = posicaoCartelaH >= 1 && posicaoCartelaH <= 34;
+        const tipoEtq = (cartelaTipo || isCartelaEtqH) ? 'Cartela' : 'Avulsa';
+        const tipoPecaVal = cartelaTipo
+          || (isCartelaEtqH ? DETRAN_TIPOS[posicaoCartelaH - 1] : null)
+          || 'Avulsa';
 
         if (!textIncludes(tipoEtq, tipoEtiqueta)) continue;
         if (!textIncludes(tipoPecaVal, tipoPeca)) continue;
@@ -344,7 +367,10 @@ etiquetasDetranRouter.get('/', async (req, res, next) => {
         const posicao = matchCartela ? Number(matchCartela[2]) : 0;
         const isCartela = posicao >= 1 && posicao <= 34;
         const cartelaTipo = isCartela ? cartelaMap.get(`${pc.motoId}|${pc.idPeca}|${etq}`) : undefined;
-        const tipoPecaVal = cartelaTipo || pc.tipoPecaAvulsa || (isCartela ? null : 'Avulsa');
+        const tipoPecaVal = cartelaTipo
+          || (isCartela ? DETRAN_TIPOS[posicao - 1] : null)
+          || pc.tipoPecaAvulsa
+          || 'Avulsa';
         const tipoEtq = isCartela ? 'Cartela' : 'Avulsa';
 
         if (!textIncludes(tipoEtq, tipoEtiqueta)) continue;
@@ -486,6 +512,23 @@ etiquetasDetranRouter.post('/:pecaId/confirmar-baixa', async (req, res, next) =>
       },
     });
 
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+// PATCH /etiquetas-detran/:pecaId/tipo-peca
+etiquetasDetranRouter.patch('/:pecaId/tipo-peca', async (req, res, next) => {
+  try {
+    const pecaId = Number(req.params.pecaId);
+    const { tipoPeca, isPreCadastro } = req.body as { tipoPeca: string; isPreCadastro?: boolean };
+    if (!tipoPeca || !DETRAN_TIPOS.includes(tipoPeca)) {
+      return res.status(400).json({ error: 'Tipo de peça inválido' });
+    }
+    if (isPreCadastro) {
+      await prisma.cadastroPeca.update({ where: { id: pecaId }, data: { tipoPecaAvulsa: tipoPeca } });
+    } else {
+      await prisma.peca.update({ where: { id: pecaId }, data: { tipoPecaAvulsa: tipoPeca } });
+    }
     res.json({ ok: true });
   } catch (e) { next(e); }
 });
