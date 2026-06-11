@@ -488,9 +488,14 @@ cadastroRouter.get('/proximo-id/:motoId', async (req, res, next) => {
 // POST /cadastro - criar pré-cadastro e enviar ao Bling
 cadastroRouter.post('/', requireCadastroAction('criar_pre_cadastro'), async (req, res, next) => {
   try {
-    const { motoId, idPeca, descricao, descricaoPeca, precoVenda, condicao, peso, largura, altura, profundidade, numeroPeca, detranEtiqueta, localizacao, estoque, categoriaMLId, categoriaMLNome, urlRef } = req.body;
+    const { motoId, idPeca, descricao, descricaoPeca, precoVenda, condicao, peso, largura, altura, profundidade, numeroPeca, detranEtiqueta, tipoPecaAvulsa, localizacao, estoque, categoriaMLId, categoriaMLNome, urlRef } = req.body;
 
     if (!motoId || !idPeca || !descricao) return res.status(400).json({ error: 'motoId, idPeca e descricao sao obrigatorios' });
+    if (!String(idPeca || '').trim()) return res.status(400).json({ error: 'SKU (idPeca) é obrigatorio' });
+    if (peso == null || peso === '' || isNaN(Number(peso))) return res.status(400).json({ error: 'Peso é obrigatorio' });
+    if (largura == null || largura === '' || isNaN(Number(largura))) return res.status(400).json({ error: 'Largura é obrigatoria' });
+    if (altura == null || altura === '' || isNaN(Number(altura))) return res.status(400).json({ error: 'Altura é obrigatoria' });
+    if (profundidade == null || profundidade === '' || isNaN(Number(profundidade))) return res.status(400).json({ error: 'Profundidade é obrigatoria' });
     const detranValidationMessage = getDetranEtiquetasValidationMessage(detranEtiqueta, estoque);
     if (detranValidationMessage) return res.status(400).json({ error: detranValidationMessage });
 
@@ -511,6 +516,7 @@ cadastroRouter.post('/', requireCadastroAction('criar_pre_cadastro'), async (req
         profundidade: profundidade != null ? Number(profundidade) : null,
         numeroPeca: numeroPeca ? String(numeroPeca).trim() : null,
         detranEtiqueta: detranEtiqueta ? String(detranEtiqueta).trim() : null,
+        tipoPecaAvulsa: tipoPecaAvulsa ? String(tipoPecaAvulsa).trim() : null,
         localizacao: localizacao ? String(localizacao).trim() : null,
         estoque: Number(estoque) || 1,
         categoriaMLId: categoriaMLId || null,
@@ -810,7 +816,7 @@ cadastroRouter.put('/:id', requireCadastroAction('editar_pre_cadastro'), async (
     if (!atual) return res.status(404).json({ error: 'Não encontrado' });
     if (atual.status === 'cadastrado') return res.status(400).json({ error: 'Cadastro já finalizado — não é possível editar' });
 
-    const { descricao, descricaoPeca, precoVenda, condicao, peso, largura, altura, profundidade, numeroPeca, detranEtiqueta, localizacao, estoque, categoriaMLId, categoriaMLNome, urlRef } = req.body;
+    const { descricao, descricaoPeca, precoVenda, condicao, peso, largura, altura, profundidade, numeroPeca, detranEtiqueta, tipoPecaAvulsa, localizacao, estoque, categoriaMLId, categoriaMLNome, urlRef } = req.body;
     const estoqueEfetivo = estoque !== undefined ? Number(estoque) : Number(atual.estoque);
     const detranEtiquetaEfetiva = detranEtiqueta !== undefined ? detranEtiqueta : atual.detranEtiqueta;
     const detranValidationMessage = getDetranEtiquetasValidationMessage(detranEtiquetaEfetiva, estoqueEfetivo);
@@ -826,6 +832,7 @@ cadastroRouter.put('/:id', requireCadastroAction('editar_pre_cadastro'), async (
     if (profundidade !== undefined) data.profundidade = profundidade != null ? Number(profundidade) : null;
     if (numeroPeca !== undefined) data.numeroPeca = numeroPeca || null;
     if (detranEtiqueta !== undefined) data.detranEtiqueta = detranEtiqueta || null;
+    if (tipoPecaAvulsa !== undefined) data.tipoPecaAvulsa = tipoPecaAvulsa || null;
     if (localizacao !== undefined) data.localizacao = localizacao || null;
     if (estoque !== undefined) data.estoque = Number(estoque);
     if (categoriaMLId !== undefined) data.categoriaMLId = categoriaMLId || null;

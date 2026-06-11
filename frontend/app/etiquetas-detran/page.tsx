@@ -24,6 +24,7 @@ const s: any = {
 const STATUS_COLORS: Record<string, { bg: string; color: string }> = {
   Ativa: { bg: '#ecfdf3', color: '#16a34a' },
   Baixada: { bg: '#fef2f2', color: '#dc2626' },
+  'Pré-Cadastro': { bg: '#eff6ff', color: '#2563eb' },
   '-': { bg: '#f1f5f9', color: '#94a3b8' },
 };
 
@@ -420,6 +421,7 @@ export default function EtiquetasDetranPage() {
                 <option value="">Todos</option>
                 <option value="Ativa">Ativa</option>
                 <option value="Baixada">Baixada</option>
+                <option value="pre-cadastro">Pré-Cadastro</option>
               </select>
             </div>
             <div>

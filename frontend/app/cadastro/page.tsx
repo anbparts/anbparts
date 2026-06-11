@@ -20,11 +20,32 @@ const s: any = {
   td: { fontSize: 13, color: 'var(--gray-700)', padding: '10px 12px', borderBottom: '1px solid var(--border)', verticalAlign: 'middle' as const },
 };
 
+const DETRAN_TIPOS = [
+  'Balança', 'Banco', 'Bengala direita', 'Bengala esquerda', 'Bloco do motor',
+  'Cabeçote', 'Carburador', 'Carenagem direita', 'Carenagem esquerda',
+  'Carenagem frontal', 'Carenagem traseira', 'Estribo', 'Farol',
+  'Guidão / semi-guidão', 'Lanterna', 'Mesa', 'Módulo de injeção/CDI',
+  'Motor de arranque', 'Painel', 'Para-lama dianteiro', 'Para-lama traseiro',
+  'Pedaleira direita', 'Pedaleira esquerda', 'Retrovisor direito',
+  'Retrovisor esquerdo', 'Roda dianteira', 'Roda traseira', 'Tanque',
+  'Cardã', 'Cavalete lateral', 'Corpo de injeção', 'Diferencial',
+  'Escapamento', 'Radiador',
+];
+
+function parseEtiquetaCartela(etq: string) {
+  const normalized = etq.replace(/\s+/g, '').toUpperCase();
+  const match = normalized.match(/^(.*?)(\d{3})$/);
+  if (!match) return null;
+  const pos = Number(match[2]);
+  if (pos < 1 || pos > 34) return null;
+  return { tipo: DETRAN_TIPOS[pos - 1], posicao: pos };
+}
+
 type CadastroPeca = {
   id: number; motoId: number; idPeca: string; descricao: string;
   descricaoPeca?: string; precoVenda: number; condicao: string;
   peso?: number; largura?: number; altura?: number; profundidade?: number;
-  numeroPeca?: string; detranEtiqueta?: string; localizacao?: string;
+  numeroPeca?: string; detranEtiqueta?: string; tipoPecaAvulsa?: string; localizacao?: string;
   estoque: number; categoriaMLId?: string; categoriaMLNome?: string;
   urlRef?: string; fotoCapa?: string; fotoCapaNome?: string; status: string; blingProdutoId?: string;
   createdAt?: string;
@@ -77,7 +98,7 @@ const CATEGORIA_PACOTES_STORAGE_KEY = 'anb.cadastro.categoria.pacotes';
 const EMPTY_FORM = {
   motoId: '', idPeca: '', descricao: '', descricaoPeca: '', precoVenda: '', sufixoTitulo: '',
   condicao: 'usado', peso: '', largura: '', altura: '', profundidade: '',
-  numeroPeca: '', detranEtiqueta: '', localizacao: '', estoque: '1',
+  numeroPeca: '', detranEtiqueta: '', tipoPecaAvulsa: '', localizacao: '', estoque: '1',
   categoriaMLId: '', categoriaMLNome: '', urlRef: '', fotoCapa: '', fotoCapaNome: '',
 };
 
@@ -958,7 +979,7 @@ export default function CadastroPage() {
       altura: item.altura != null ? String(item.altura) : '',
       profundidade: item.profundidade != null ? String(item.profundidade) : '',
       numeroPeca: item.numeroPeca || '', detranEtiqueta: item.detranEtiqueta || '',
-      localizacao: item.localizacao || '', estoque: String(item.estoque),
+      tipoPecaAvulsa: item.tipoPecaAvulsa || '', localizacao: item.localizacao || '', estoque: String(item.estoque),
       categoriaMLId: item.categoriaMLId || '', categoriaMLNome: item.categoriaMLNome || '',
       urlRef: item.urlRef || '', fotoCapa: item.fotoCapa || '', fotoCapaNome: item.fotoCapaNome || '',
     });
@@ -1056,6 +1077,11 @@ export default function CadastroPage() {
     if (editItem && !canEditarPreCadastro) return alert('Seu usuario nao tem permissao para editar pre-cadastro.');
     if (!editItem && !canCriarPreCadastro) return alert('Seu usuario nao tem permissao para criar pre-cadastro.');
     if (!form.motoId || !form.idPeca || !form.descricao) return alert('Moto, ID da Peça e Descrição são obrigatórios');
+    if (!form.peso || !form.largura || !form.altura || !form.profundidade) return alert('Dimensões e Peso são obrigatórios');
+    // Validar Tipo de Peça para etiquetas avulsas
+    const etiquetasValidas = etiquetas.filter(e => e.trim());
+    const possuiAvulsa = etiquetasValidas.some(e => !parseEtiquetaCartela(e));
+    if (possuiAvulsa && !form.tipoPecaAvulsa) return alert('Selecione o Tipo de Peça para a etiqueta avulsa');
     const detranResumo = getDetranEtiquetasResumo(etiquetas, form.estoque);
     if (detranResumo.possuiAlguma && detranResumo.faltantes > 0) {
       return alert(`Falta o preenchimento de ${detranResumo.faltantes} etiqueta(s) Detran ainda para bater com o estoque (${detranResumo.qtdEstoque}).`);
@@ -1078,6 +1104,7 @@ export default function CadastroPage() {
         localizacao: form.localizacao || null, estoque: Number(form.estoque) || 1,
         categoriaMLId: form.categoriaMLId || null, categoriaMLNome: form.categoriaMLNome || null,
         urlRef: form.urlRef || null,
+        tipoPecaAvulsa: form.tipoPecaAvulsa || null,
       };
       const url = editItem ? `${API}/cadastro/${editItem.id}` : `${API}/cadastro`;
       const method = editItem ? 'PUT' : 'POST';
@@ -2037,6 +2064,25 @@ Deseja forçar a exclusão mesmo assim?`);
                     }
                     return null;
                   })()}
+                  {/* Tipo de Peça para etiquetas avulsas */}
+                  {etiquetas.some(e => e.trim() && !parseEtiquetaCartela(e)) && (
+                    <div style={{ marginTop: 8 }}>
+                      <label style={{ ...s.label, marginBottom: 4 }}>
+                        Tipo de Peça <span style={{ color: '#dc2626' }}>*</span>
+                        <span style={{ fontSize: 11, color: 'var(--gray-500)', marginLeft: 6, fontWeight: 400 }}>(etiqueta avulsa)</span>
+                      </label>
+                      <select
+                        style={{ ...s.input }}
+                        value={form.tipoPecaAvulsa || ''}
+                        onChange={(e) => setForm((p: any) => ({ ...p, tipoPecaAvulsa: e.target.value }))}
+                      >
+                        <option value="">Selecione o tipo de peça...</option>
+                        {DETRAN_TIPOS.map((tipo) => (
+                          <option key={tipo} value={tipo}>{tipo}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -2235,6 +2281,20 @@ Deseja forçar a exclusão mesmo assim?`);
                   <div>
                     <div style={{ fontSize: 11, color: 'var(--gray-500)', textTransform: 'uppercase' as const, letterSpacing: '0.04em', marginBottom: 3 }}>Etiquetas Detran</div>
                     <div style={{ fontSize: 13, fontWeight: 500 }}>{String(previewBling.detranEtiqueta || '-')}</div>
+                    {/* Mostrar tipo de peça por etiqueta */}
+                    {previewBling.detranEtiqueta && (() => {
+                      const etqs = String(previewBling.detranEtiqueta).split('/').map((e: string) => e.trim()).filter(Boolean);
+                      const linhas: React.ReactNode[] = [];
+                      etqs.forEach((etq: string) => {
+                        const cartela = parseEtiquetaCartela(etq);
+                        if (cartela) {
+                          linhas.push(<div key={etq} style={{ fontSize: 11, color: '#16a34a', marginTop: 3 }}>↳ {etq}: {cartela.tipo} (posição {cartela.posicao})</div>);
+                        } else if (itemFinalizar?.tipoPecaAvulsa) {
+                          linhas.push(<div key={etq} style={{ fontSize: 11, color: '#7c3aed', marginTop: 3 }}>↳ {etq}: {itemFinalizar.tipoPecaAvulsa} (avulsa)</div>);
+                        }
+                      });
+                      return linhas.length > 0 ? <div style={{ marginTop: 4 }}>{linhas}</div> : null;
+                    })()}
                   </div>
 
                   <div style={{ background: '#f8fafc', border: '1px solid var(--border)', borderRadius: 8, padding: '12px 14px' }}>

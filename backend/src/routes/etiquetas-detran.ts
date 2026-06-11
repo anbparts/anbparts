@@ -43,6 +43,10 @@ function parseDetranStatusFilter(value: unknown) {
   return null;
 }
 
+function isPreCadastroFilter(value: unknown) {
+  return String(value || '').trim().toLowerCase() === 'pre-cadastro';
+}
+
 function firstText(...values: any[]) {
   for (const value of values) {
     const text = String(value ?? '').trim();
@@ -200,10 +204,11 @@ async function loadBlingVendaInfo(ref: BlingVendaRef) {
 etiquetasDetranRouter.get('/', async (req, res, next) => {
   try {
     const { sku, descricao, tipoEtiqueta, tipoPeca, etiqueta, status, qtdeEtiquetasSku } = req.query as any;
-    const detranBaixadaFilter = parseDetranStatusFilter(status);
+    const soPreCadastro = isPreCadastroFilter(status);
+    const detranBaixadaFilter = soPreCadastro ? null : parseDetranStatusFilter(status);
 
-    const [pecas, historicoRows] = await Promise.all([
-      prisma.peca.findMany({
+    const [pecas, historicoRows, preCadastros] = await Promise.all([
+      soPreCadastro ? Promise.resolve([]) : prisma.peca.findMany({
         where: {
           detranEtiqueta: { not: null },
           ...(sku ? { idPeca: { contains: String(sku), mode: 'insensitive' } } : {}),
@@ -218,7 +223,7 @@ etiquetasDetranRouter.get('/', async (req, res, next) => {
         },
         orderBy: { idPeca: 'asc' },
       }),
-      prisma.historicoDevolucao.findMany({
+      soPreCadastro ? Promise.resolve([]) : prisma.historicoDevolucao.findMany({
         where: {
           etiquetasDetran: { not: null },
           ...(sku ? { idPeca: { contains: String(sku), mode: 'insensitive' } } : {}),
@@ -232,6 +237,19 @@ etiquetasDetranRouter.get('/', async (req, res, next) => {
         },
         orderBy: { dataDevolucao: 'desc' },
       }),
+      (!status || soPreCadastro) ? prisma.cadastroPeca.findMany({
+        where: {
+          status: 'pre_cadastro',
+          detranEtiqueta: { not: null },
+          ...(sku ? { idPeca: { contains: String(sku), mode: 'insensitive' } } : {}),
+          ...(descricao ? { descricao: { contains: String(descricao), mode: 'insensitive' } } : {}),
+        },
+        select: {
+          id: true, idPeca: true, descricao: true, motoId: true,
+          detranEtiqueta: true, tipoPecaAvulsa: true, createdAt: true,
+        },
+        orderBy: { idPeca: 'asc' },
+      }) : Promise.resolve([]),
     ]);
 
     const allMotoIds = [...new Set([...pecas.map((p) => p.motoId), ...historicoRows.map((h) => h.motoId)])];
@@ -310,6 +328,37 @@ etiquetasDetranRouter.get('/', async (req, res, next) => {
           detranBaixadaAt: null, disponivel: null,
           blingPedidoId: row.pedidoBlingId || null, blingPedidoNum: row.pedidoBlingNum || null,
           dataVenda: row.dataVenda, fromHistorico: true,
+        });
+      }
+    }
+
+    // Pré-cadastros com etiqueta
+    for (const pc of preCadastros) {
+      const etqs = splitEtiquetas(pc.detranEtiqueta);
+      const quantidadeEtiquetasSku = etqs.length;
+      if (qtdeEtiquetasSku === 'unica' && quantidadeEtiquetasSku !== 1) continue;
+      if (qtdeEtiquetasSku === 'multiplas' && quantidadeEtiquetasSku <= 1) continue;
+
+      for (const etq of etqs) {
+        const matchCartela = etq.match(/^(.*?)(\d{3})$/);
+        const posicao = matchCartela ? Number(matchCartela[2]) : 0;
+        const isCartela = posicao >= 1 && posicao <= 34;
+        const cartelaTipo = isCartela ? cartelaMap.get(`${pc.motoId}|${pc.idPeca}|${etq}`) : undefined;
+        const tipoPecaVal = cartelaTipo || pc.tipoPecaAvulsa || (isCartela ? null : 'Avulsa');
+        const tipoEtq = isCartela ? 'Cartela' : 'Avulsa';
+
+        if (!textIncludes(tipoEtq, tipoEtiqueta)) continue;
+        if (tipoPeca && !textIncludes(tipoPecaVal || '', tipoPeca)) continue;
+        if (!textIncludes(etq, etiqueta)) continue;
+
+        linhas.push({
+          pecaId: pc.id, sku: pc.idPeca, descricao: pc.descricao,
+          tipoEtiqueta: tipoEtq, tipoPeca: tipoPecaVal || '-',
+          etiqueta: etq, qtdeEtiquetasSku: quantidadeEtiquetasSku,
+          status: 'Pré-Cadastro',
+          detranStatus: null, detranBaixada: false, detranBaixadaAt: null,
+          disponivel: null, blingPedidoId: null, blingPedidoNum: null,
+          dataVenda: null, fromHistorico: false, isPreCadastro: true,
         });
       }
     }
