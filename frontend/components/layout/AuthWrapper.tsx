@@ -442,6 +442,12 @@ export function AuthWrapper({ children }: { children: React.ReactNode }) {
   const [sidebarMode, setSidebarMode] = useState<SidebarMode>('desktop');
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
+  useEffect(() => {
+    if (authed && typeof window !== 'undefined') {
+      window.scrollTo(0, 0);
+    }
+  }, [authed]);
+
   useLayoutEffect(() => {
     if (!authed || typeof window === 'undefined') return undefined;
 
