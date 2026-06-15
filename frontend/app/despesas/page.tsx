@@ -397,6 +397,7 @@ export default function DespesasPage() {
   const [filtroStatus, setFiltroStatus] = useState('');
   const [filtroAno, setFiltroAno] = useState(currentYear());
   const [filtroMes, setFiltroMes] = useState(currentMonth());
+  const [filtroDescricao, setFiltroDescricao] = useState('');
   const [selectedRowIds, setSelectedRowIds] = useState<number[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [origemForm, setOrigemForm] = useState<'manual' | 'arquivo'>('manual');
@@ -527,7 +528,9 @@ export default function DespesasPage() {
   const filtradas = rows.filter((item) => {
     const ano = Number(dateKey(item.data).slice(0, 4));
     const mes = Number(dateKey(item.data).slice(5, 7));
-    return (!filtroCategoria || item.categoria === filtroCategoria)
+    const descOk = !filtroDescricao || (item.detalhes || '').toLowerCase().includes(filtroDescricao.toLowerCase());
+    return descOk
+      && (!filtroCategoria || item.categoria === filtroCategoria)
       && (!filtroStatus || item.statusPagamento === filtroStatus)
       && (!filtroAno || ano === Number(filtroAno))
       && (!filtroMes || mes === Number(filtroMes));
@@ -1225,6 +1228,12 @@ export default function DespesasPage() {
                   </button>
                 </>
               )}
+              <input
+                style={{ ...inputStyle, width: 180 }}
+                placeholder="Buscar descrição..."
+                value={filtroDescricao}
+                onChange={(e) => setFiltroDescricao(e.target.value)}
+              />
               <select style={{ ...inputStyle, width: 'auto', cursor: 'pointer' }} value={filtroAno} onChange={(e) => setFiltroAno(e.target.value)}>
                 <option value="">Todos os anos</option>
                 {anos.map((ano) => <option key={ano} value={ano}>{ano}</option>)}
