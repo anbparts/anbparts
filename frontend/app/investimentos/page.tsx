@@ -269,7 +269,7 @@ export default function InvestimentosPage() {
   const totalFiltro = filtradas.reduce((sum, item) => sum + Number(item.valor || 0), 0);
 
   const porSocioMap = new Map<string, number>();
-  rows.forEach((item) => {
+  filtradas.forEach((item) => {
     const socio = item.socio || 'Outros';
     porSocioMap.set(socio, (porSocioMap.get(socio) || 0) + Number(item.valor || 0));
   });
@@ -279,7 +279,7 @@ export default function InvestimentosPage() {
       label,
       value,
       color: SOCIO_COLORS[label],
-      note: `${(totalGeral ? (value / totalGeral) * 100 : 0).toFixed(1).replace('.', ',')}%`,
+      note: `${(totalFiltro ? (value / totalFiltro) * 100 : 0).toFixed(1).replace('.', ',')}%`,
     }))
     .sort((a, b) => b.value - a.value);
 
@@ -617,7 +617,7 @@ export default function InvestimentosPage() {
             <div style={{ display: 'grid', gap: 18 }}>
               <div style={{ display: 'grid', gridTemplateColumns: chartColumns, gap: 18 }}>
                 <ChartPanel title="Participacao dos socios" subtitle="Quanto cada socio representa no capital investido." accent="#2563eb">
-                  <DonutChart items={sociosChart} totalLabel="Investido" totalDisplay={fmt(totalGeral)} valueFormatter={fmt} emptyText="Sem investimentos para distribuir." />
+                  <DonutChart items={sociosChart} totalLabel="Investido" totalDisplay={fmt(totalFiltro)} valueFormatter={fmt} emptyText="Sem investimentos para distribuir." />
                 </ChartPanel>
                 <ChartPanel title="Tipos de aportes" subtitle="Quantidade, valor e peso de cada tipo padronizado dentro do filtro atual." accent="#16a34a">
                   <HorizontalBarChart items={rankingTipos} valueFormatter={fmt} emptyText="Sem aportes para comparar." />

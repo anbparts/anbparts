@@ -88,8 +88,8 @@ export function ViewModeSwitch({
   });
 
   const allButtons: { mode: ViewMode; label: string }[] = [
-    { mode: 'grafico',   label: 'Grafico' },
     { mode: 'relatorio', label: 'Relatorio' },
+    { mode: 'grafico',   label: 'Grafico' },
     { mode: 'estoque',   label: '% Estoque' },
   ];
   const buttons = modes ? allButtons.filter(b => modes.includes(b.mode)) : allButtons.filter(b => b.mode !== 'estoque');

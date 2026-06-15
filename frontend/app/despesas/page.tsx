@@ -406,7 +406,7 @@ export default function DespesasPage() {
   const [solicitandoRelatorioMp, setSolicitandoRelatorioMp] = useState(false);
   const [analisandoCsvMp, setAnalisandoCsvMp] = useState(false);
   const [importandoCsvMp, setImportandoCsvMp] = useState(false);
-  const [modo, setModo] = useState<ViewMode>('grafico');
+  const [modo, setModo] = useState<ViewMode>('relatorio');
   const [pagamentoDespesa, setPagamentoDespesa] = useState<any | null>(null);
   const [deletePrompt, setDeletePrompt] = useState<{ despesa: any; futureCount: number } | null>(null);
   const [mercadoPagoAte, setMercadoPagoAte] = useState(today());
