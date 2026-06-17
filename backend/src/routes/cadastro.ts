@@ -1,10 +1,20 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { compressDataUrlImage, normalizeImageFileName } from '../lib/image';
-import { buscarCadastroFotos, buscarCadastroFotosAnb, buscarCadastroFotosDrive, enviarCadastroFotosManual, processarCadastroFotos, verificarCadastroFotoSku } from '../lib/fotos-cadastro';
+import { buscarCadastroFotos, buscarCadastroFotosAnb, buscarCadastroFotosDrive, enviarCadastroFotosManual, processarCadastroFotos, verificarCadastroFotoSku, verificarFotosCadastroPeca } from '../lib/fotos-cadastro';
 import { blingReq, fetchProdutoLojaLinksByProductId, resolveBlingMercadoLivreItemId, resolveBlingMercadoLivreLinkWithFallback } from './bling';
 import { mercadoLivreReq } from '../lib/mercado-livre';
 import { nuvemReq, buscarProdutoNuvemshopPorSku } from './nuvemshop';
+
+const CAMPOS_COMPLETOS_WHERE = {
+  peso: { not: null as null },
+  largura: { not: null as null },
+  altura: { not: null as null },
+  profundidade: { not: null as null },
+  numeroPeca: { not: null as null },
+  localizacao: { not: null as null },
+  precoVenda: { gt: 0 },
+} as const;
 
 export const cadastroRouter = Router();
 
@@ -380,7 +390,7 @@ async function enviarParaBling(cadastro: any) {
 // GET /cadastro
 cadastroRouter.get('/', async (req, res, next) => {
   try {
-    const { status, motoId, search, semDimensoes, semNumeroPeca, page = '1', per = '200', somentePendentes } = req.query as any;
+    const { status, motoId, search, semDimensoes, comDimensoes, preCadastroCompleto, semNumeroPeca, page = '1', per = '200', somentePendentes } = req.query as any;
     const where: any = {};
 
     if (somentePendentes === 'true') {
@@ -398,6 +408,20 @@ cadastroRouter.get('/', async (req, res, next) => {
     }
     if (semDimensoes === 'true') {
       where.OR = [...(where.OR || []), { largura: null }, { largura: 0 }, { altura: null }, { altura: 0 }, { profundidade: null }, { profundidade: 0 }];
+    }
+    if (comDimensoes === 'true') {
+      where.AND = [...(where.AND || []),
+        { peso: { not: null } }, { largura: { not: null } },
+        { altura: { not: null } }, { profundidade: { not: null } },
+      ];
+    }
+    if (preCadastroCompleto === 'true') {
+      where.AND = [...(where.AND || []),
+        { peso: { not: null } }, { largura: { not: null } },
+        { altura: { not: null } }, { profundidade: { not: null } },
+        { numeroPeca: { not: null } }, { localizacao: { not: null } },
+        { precoVenda: { gt: 0 } }, { fotoCadastroVerificada: true },
+      ];
     }
     if (semNumeroPeca === 'true') where.numeroPeca = null;
 
@@ -492,10 +516,6 @@ cadastroRouter.post('/', requireCadastroAction('criar_pre_cadastro'), async (req
 
     if (!motoId || !idPeca || !descricao) return res.status(400).json({ error: 'motoId, idPeca e descricao sao obrigatorios' });
     if (!String(idPeca || '').trim()) return res.status(400).json({ error: 'SKU (idPeca) é obrigatorio' });
-    if (peso == null || peso === '' || isNaN(Number(peso))) return res.status(400).json({ error: 'Peso é obrigatorio' });
-    if (largura == null || largura === '' || isNaN(Number(largura))) return res.status(400).json({ error: 'Largura é obrigatoria' });
-    if (altura == null || altura === '' || isNaN(Number(altura))) return res.status(400).json({ error: 'Altura é obrigatoria' });
-    if (profundidade == null || profundidade === '' || isNaN(Number(profundidade))) return res.status(400).json({ error: 'Profundidade é obrigatoria' });
     const detranValidationMessage = getDetranEtiquetasValidationMessage(detranEtiqueta, estoque);
     if (detranValidationMessage) return res.status(400).json({ error: detranValidationMessage });
 
@@ -1427,3 +1447,84 @@ cadastroRouter.post('/atualizar-bling-lote', async (req, res, next) => {
     res.json({ ok: true, total: resultados.length, atualizados: ok, erros, resultados });
   } catch (e) { next(e); }
 });
+
+// POST /cadastro/verificar-fotos-drive
+// Verifica fotos no Drive para todos os pré-cadastros com campos completos e atualiza fotoCadastroVerificada
+cadastroRouter.post('/verificar-fotos-drive', async (req, res, next) => {
+  try {
+    const preCadastros = await prisma.cadastroPeca.findMany({
+      where: { status: { not: 'cadastrado' }, ...CAMPOS_COMPLETOS_WHERE },
+      select: { id: true, motoId: true, idPeca: true, fotoCadastroVerificada: true },
+    });
+
+    const resultados: { sku: string; temFoto: boolean; qtdFotos: number }[] = [];
+
+    for (const pc of preCadastros) {
+      try {
+        const qtd = await verificarFotosCadastroPeca(pc.motoId, pc.idPeca);
+        const temFoto = qtd >= 2;
+        if (temFoto !== pc.fotoCadastroVerificada) {
+          await prisma.cadastroPeca.update({ where: { id: pc.id }, data: { fotoCadastroVerificada: temFoto } });
+        }
+        resultados.push({ sku: pc.idPeca, temFoto, qtdFotos: qtd });
+      } catch {
+        resultados.push({ sku: pc.idPeca, temFoto: false, qtdFotos: 0 });
+      }
+      await new Promise(r => setTimeout(r, 200)); // evitar throttle Drive API
+    }
+
+    res.json({ ok: true, total: preCadastros.length, resultados });
+  } catch (e) { next(e); }
+});
+
+// ── Cron: verificação de fotos de pré-cadastros toda madrugada às 01:00 (Sao Paulo) ──
+const CADASTRO_DRIVE_SCHEDULER_INTERVAL_MS = 60 * 1000;
+let cadastroDriveSchedulerRunning = false;
+let cadastroDriveSchedulerLastKey = '';
+
+function msUntilNextMinuteCadastro() {
+  const now = new Date();
+  return ((60 - now.getSeconds()) * 1000) - now.getMilliseconds() + 250;
+}
+
+function getCurrentSaoPauloTimeKey() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  }).formatToParts(new Date());
+  const get = (t: string) => parts.find(p => p.type === t)?.value || '';
+  return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}`;
+}
+
+async function tickCadastroDriveScheduler() {
+  if (cadastroDriveSchedulerRunning) return;
+  const timeKey = getCurrentSaoPauloTimeKey();
+  if (!timeKey.endsWith('01:00')) return;
+  if (cadastroDriveSchedulerLastKey === timeKey) return;
+  cadastroDriveSchedulerLastKey = timeKey;
+  cadastroDriveSchedulerRunning = true;
+  try {
+    const preCadastros = await prisma.cadastroPeca.findMany({
+      where: { status: { not: 'cadastrado' }, ...CAMPOS_COMPLETOS_WHERE },
+      select: { id: true, motoId: true, idPeca: true, fotoCadastroVerificada: true },
+    });
+    for (const pc of preCadastros) {
+      try {
+        const qtd = await verificarFotosCadastroPeca(pc.motoId, pc.idPeca);
+        const temFoto = qtd >= 2;
+        if (temFoto !== pc.fotoCadastroVerificada) {
+          await prisma.cadastroPeca.update({ where: { id: pc.id }, data: { fotoCadastroVerificada: temFoto } });
+        }
+      } catch { /* ignora erros individuais */ }
+      await new Promise(r => setTimeout(r, 300));
+    }
+  } finally {
+    cadastroDriveSchedulerRunning = false;
+  }
+}
+
+setTimeout(() => {
+  tickCadastroDriveScheduler().catch(() => {});
+  setInterval(() => tickCadastroDriveScheduler().catch(() => {}), CADASTRO_DRIVE_SCHEDULER_INTERVAL_MS);
+}, msUntilNextMinuteCadastro());

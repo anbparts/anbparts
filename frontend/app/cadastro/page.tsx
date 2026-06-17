@@ -258,7 +258,8 @@ export default function CadastroPage() {
   const [data, setData] = useState<{ total: number; data: CadastroPeca[] }>({ total: 0, data: [] });
   const [loading, setLoading] = useState(true);
   const [somentePendentes, setSomentePendentes] = useState(true);
-  const [filters, setFilters] = useState({ motoId: '', search: '', semDimensoes: '' });
+  const [filters, setFilters] = useState({ motoId: '', search: '', semDimensoes: '', comDimensoes: '', preCadastroCompleto: '' });
+  const [verificandoFotos, setVerificandoFotos] = useState(false);
   const [searchInput, setSearchInput] = useState('');
   const [paginaCadastro, setPaginaCadastro] = useState<'sku' | 'fotos' | 'categoria'>('sku');
   const hoje = new Date().toISOString().slice(0, 10);
@@ -415,6 +416,15 @@ export default function CadastroPage() {
     } catch { }
   }
 
+  async function verificarFotosDriveEFiltrar() {
+    setVerificandoFotos(true);
+    try {
+      await fetch(`${API}/cadastro/verificar-fotos-drive`, { method: 'POST', credentials: 'include' });
+      setFilters(prev => ({ ...prev, preCadastroCompleto: 'true', semDimensoes: '', comDimensoes: '' }));
+    } catch { alert('Erro ao verificar fotos no Drive'); }
+    setVerificandoFotos(false);
+  }
+
   async function loadCadastros() {
     setLoading(true);
     try {
@@ -423,6 +433,8 @@ export default function CadastroPage() {
       if (filters.motoId) params.set('motoId', filters.motoId);
       if (filters.search) params.set('search', filters.search);
       if (filters.semDimensoes) params.set('semDimensoes', filters.semDimensoes);
+      if (filters.comDimensoes) params.set('comDimensoes', filters.comDimensoes);
+      if (filters.preCadastroCompleto) params.set('preCadastroCompleto', filters.preCadastroCompleto);
       params.set('per', '200');
       const d = await fetch(`${API}/cadastro?${params}`, { credentials: 'include' }).then(r => r.json());
       const linhas = Array.isArray(d?.data) ? [...d.data].sort((a: CadastroPeca, b: CadastroPeca) => {
@@ -1077,7 +1089,6 @@ export default function CadastroPage() {
     if (editItem && !canEditarPreCadastro) return alert('Seu usuario nao tem permissao para editar pre-cadastro.');
     if (!editItem && !canCriarPreCadastro) return alert('Seu usuario nao tem permissao para criar pre-cadastro.');
     if (!form.motoId || !form.idPeca || !form.descricao) return alert('Moto, ID da Peça e Descrição são obrigatórios');
-    if (!form.peso || !form.largura || !form.altura || !form.profundidade) return alert('Dimensões e Peso são obrigatórios');
     // Validar Tipo de Peça para etiquetas avulsas
     const etiquetasValidas = etiquetas.filter(e => e.trim());
     const possuiAvulsa = etiquetasValidas.some(e => !parseEtiquetaCartela(e));
@@ -1650,9 +1661,18 @@ Deseja forçar a exclusão mesmo assim?`);
             <input style={{ ...s.input, width: isPhone ? '100%' : 200 }} placeholder="Buscar ID ou descrição..." value={searchInput} onChange={(e) => setSearchInput(e.target.value)} />
             <button
               style={{ ...s.btn, fontSize: 12, background: filters.semDimensoes === 'true' ? '#f59e0b' : 'var(--white)', color: filters.semDimensoes === 'true' ? '#fff' : 'var(--gray-600)', border: `1px solid ${filters.semDimensoes === 'true' ? '#f59e0b' : 'var(--border)'}`, width: isPhone ? '100%' : undefined }}
-              onClick={() => setFilters((prev) => ({ ...prev, semDimensoes: prev.semDimensoes === 'true' ? '' : 'true' }))}
+              onClick={() => setFilters((prev) => ({ ...prev, semDimensoes: prev.semDimensoes === 'true' ? '' : 'true', comDimensoes: '', preCadastroCompleto: '' }))}
             >📐 Sem dimensões</button>
-            <button style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', fontSize: 12, width: isPhone ? '100%' : undefined }} onClick={() => { setSearchInput(''); setFilters({ motoId: '', search: '', semDimensoes: '' }); }}>Limpar</button>
+            <button
+              style={{ ...s.btn, fontSize: 12, background: filters.comDimensoes === 'true' ? '#10b981' : 'var(--white)', color: filters.comDimensoes === 'true' ? '#fff' : 'var(--gray-600)', border: `1px solid ${filters.comDimensoes === 'true' ? '#10b981' : 'var(--border)'}`, width: isPhone ? '100%' : undefined }}
+              onClick={() => setFilters((prev) => ({ ...prev, comDimensoes: prev.comDimensoes === 'true' ? '' : 'true', semDimensoes: '', preCadastroCompleto: '' }))}
+            >📐 Com dimensões</button>
+            <button
+              style={{ ...s.btn, fontSize: 12, background: filters.preCadastroCompleto === 'true' ? '#6366f1' : 'var(--white)', color: filters.preCadastroCompleto === 'true' ? '#fff' : 'var(--gray-600)', border: `1px solid ${filters.preCadastroCompleto === 'true' ? '#6366f1' : 'var(--border)'}`, width: isPhone ? '100%' : undefined, opacity: verificandoFotos ? 0.6 : 1 }}
+              onClick={verificarFotosDriveEFiltrar}
+              disabled={verificandoFotos}
+            >{verificandoFotos ? '⏳ Verificando...' : '✅ Pré-cadastro completo'}</button>
+            <button style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', fontSize: 12, width: isPhone ? '100%' : undefined }} onClick={() => { setSearchInput(''); setFilters({ motoId: '', search: '', semDimensoes: '', comDimensoes: '', preCadastroCompleto: '' }); }}>Limpar</button>
           </div>
         </div>
 

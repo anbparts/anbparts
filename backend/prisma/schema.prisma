@@ -105,7 +105,8 @@ model CadastroPeca {
   profundidade     Decimal? @db.Decimal(10, 2)
   numeroPeca       String?
   detranEtiqueta   String?
-  tipoPecaAvulsa   String?
+  tipoPecaAvulsa       String?
+  fotoCadastroVerificada Boolean @default(false)
   localizacao      String?
   estoque          Int      @default(1)
   categoriaMLId    String?
@@ -262,8 +263,9 @@ model ConfiguracaoGeral {
   googleDriveAccessToken    String   @default("")
   googleDriveRefreshToken   String   @default("")
   googleDriveTokenExpiry    DateTime?
-  googleDriveRootFolderId   String   @default("") // ID da pasta raiz das motos
-  googleDriveMotoDirs       Json     @default("{}") // { motoId: "folderId da pasta da moto" }
+  googleDriveRootFolderId        String   @default("") // ID da pasta raiz das motos
+  googleDriveMotoDirs            Json     @default("{}") // { motoId: "folderId da pasta da moto" }
+  googleDrivePreCadastroPastaId  String   @default("") // ID da pasta raiz dos pré-cadastros
   createdAt                 DateTime @default(now())
   updatedAt                 DateTime @updatedAt
 }

@@ -1,0 +1,1 @@
+ALTER TABLE "CadastroPeca" ADD COLUMN IF NOT EXISTS "fotoCadastroVerificada" BOOLEAN NOT NULL DEFAULT false;

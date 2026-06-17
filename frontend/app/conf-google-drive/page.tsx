@@ -40,6 +40,10 @@ export default function ConfGoogleDrivePage() {
   const [savingDrive, setSavingDrive] = useState(false);
   const [loadingPastas, setLoadingPastas] = useState(false);
 
+  // Bloco 4 — Pasta Pré-Cadastro
+  const [preCadastroPastaId, setPreCadastroPastaId] = useState('');
+  const [savingPreCadastro, setSavingPreCadastro] = useState(false);
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('connected') === '1') window.history.replaceState({}, '', '/conf-google-drive');
@@ -58,6 +62,7 @@ export default function ConfGoogleDrivePage() {
         setMotoDirs(data.motoDirs || {});
         setClientSecretConfigured(!!data.clientSecretConfigured);
         setRefreshTokenConfigured(!!data.refreshTokenConfigured);
+        setPreCadastroPastaId(data.preCadastroPastaId || '');
       }
     } catch {}
   }
@@ -122,6 +127,20 @@ export default function ConfGoogleDrivePage() {
       else alert(data.error || 'Erro ao listar pastas');
     } catch (e: any) { alert(e.message); }
     setLoadingPastas(false);
+  }
+
+  async function salvarPreCadastro() {
+    setSavingPreCadastro(true);
+    try {
+      await fetch(`${API}/google-drive/config`, {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preCadastroPastaId }),
+      });
+      await carregarConfig();
+      alert('Pasta do pré-cadastro salva!');
+    } catch {}
+    setSavingPreCadastro(false);
   }
 
   async function salvarDirs() {
@@ -224,6 +243,28 @@ export default function ConfGoogleDrivePage() {
               </button>
             )}
           </div>
+        </div>
+
+        {/* ── BLOCO 4: Pasta Pré-Cadastro ── */}
+        <div style={s.card}>
+          <div style={s.h3}>📂 Pasta do Pré-Cadastro</div>
+          <div style={s.sub}>Pasta raiz do Drive usada para verificar fotos do pré-cadastro completo</div>
+
+          <div style={{ marginBottom: 16 }}>
+            <label style={s.label}>
+              ID da Pasta Raiz do Pré-Cadastro
+              {preCadastroPastaId && <ConfiguredBadge />}
+            </label>
+            <input style={s.input} value={preCadastroPastaId} onChange={e => setPreCadastroPastaId(e.target.value)}
+              placeholder="Ex: 1aBcDeFgHiJkLmNoPqRsT..." />
+            <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 4 }}>
+              Dentro desta pasta, cada SKU deve ter uma subpasta cujo nome começa com o código do SKU (ex: HD04_0008 - MÓDULO CDI ECU)
+            </div>
+          </div>
+
+          <button style={{ ...s.btn, background: 'var(--blue-500)', color: '#fff' }} onClick={salvarPreCadastro} disabled={savingPreCadastro}>
+            {savingPreCadastro ? 'Salvando...' : 'Salvar'}
+          </button>
         </div>
 
         {/* ── BLOCO 3: Mapeamento por Moto ── */}

@@ -923,3 +923,33 @@ export async function enviarCadastroFotosManual(input: {
   const resultados = await uploadMercadoLivreDrive(itemId, fotosLimitadas);
   return { ok: true, sistema, sku, enviadas: resultados.filter((item) => item.ok).length, resultados };
 }
+
+async function contarFotosPreCadastroPastaRaiz(sku: string): Promise<number> {
+  const cfg = await getConfiguracaoGeral();
+  const pastaRaizId = normalizeText((cfg as any).googleDrivePreCadastroPastaId);
+  if (!pastaRaizId) return 0;
+  const skuUpper = normalizeSku(sku);
+  const pastas = await listDriveFiles(
+    `'${escapeDriveQueryValue(pastaRaizId)}' in parents and mimeType = 'application/vnd.google-apps.folder' and name contains '${escapeDriveQueryValue(skuUpper)}' and trashed = false`,
+    'files(id,name)',
+    { pageSize: '50' },
+  );
+  const pasta = pastas.find((p: any) => normalizeText(p.name).toUpperCase().startsWith(skuUpper));
+  if (!pasta) return 0;
+  const fotos = await listDriveFiles(
+    `'${escapeDriveQueryValue(pasta.id)}' in parents and mimeType contains 'image/' and trashed = false`,
+    'files(id)',
+    { pageSize: '10' },
+  );
+  return fotos.length;
+}
+
+export async function verificarFotosCadastroPeca(motoId: number, sku: string): Promise<number> {
+  const [driveResult, preCadastroCount] = await Promise.allSettled([
+    buscarFotosDriveSku(motoId, sku),
+    contarFotosPreCadastroPastaRaiz(sku),
+  ]);
+  const motoCount = driveResult.status === 'fulfilled' ? driveResult.value.fotos.length : 0;
+  const preCount  = preCadastroCount.status === 'fulfilled' ? preCadastroCount.value : 0;
+  return Math.max(motoCount, preCount);
+}

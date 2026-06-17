@@ -219,6 +219,7 @@ googleDriveRouter.get('/config', async (_req, res, next) => {
       connectionError,
       rootFolderId: cfg.googleDriveRootFolderId || '',
       motoDirs: cfg.googleDriveMotoDirs || {},
+      preCadastroPastaId: (cfg as any).googleDrivePreCadastroPastaId || '',
     });
   } catch (e) { next(e); }
 });
@@ -226,13 +227,14 @@ googleDriveRouter.get('/config', async (_req, res, next) => {
 // POST /google-drive/config
 googleDriveRouter.post('/config', async (req, res, next) => {
   try {
-    const { clientId, clientSecret, refreshToken, rootFolderId, motoDirs } = req.body || {};
+    const { clientId, clientSecret, refreshToken, rootFolderId, motoDirs, preCadastroPastaId } = req.body || {};
     const data: any = {};
-    if (clientId     !== undefined) data.googleDriveClientId     = String(clientId).trim();
-    if (clientSecret !== undefined) data.googleDriveClientSecret = String(clientSecret).trim();
-    if (refreshToken !== undefined) data.googleDriveRefreshToken = String(refreshToken).trim();
-    if (rootFolderId !== undefined) data.googleDriveRootFolderId = String(rootFolderId).trim();
-    if (motoDirs     !== undefined) data.googleDriveMotoDirs     = motoDirs;
+    if (clientId            !== undefined) data.googleDriveClientId               = String(clientId).trim();
+    if (clientSecret        !== undefined) data.googleDriveClientSecret           = String(clientSecret).trim();
+    if (refreshToken        !== undefined) data.googleDriveRefreshToken           = String(refreshToken).trim();
+    if (rootFolderId        !== undefined) data.googleDriveRootFolderId           = String(rootFolderId).trim();
+    if (motoDirs            !== undefined) data.googleDriveMotoDirs               = motoDirs;
+    if (preCadastroPastaId  !== undefined) data.googleDrivePreCadastroPastaId    = String(preCadastroPastaId).trim();
     if (clientId !== undefined || clientSecret !== undefined || refreshToken !== undefined) {
       data.googleDriveAccessToken = '';
       data.googleDriveTokenExpiry = null;

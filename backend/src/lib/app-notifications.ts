@@ -103,7 +103,17 @@ async function collectMlQuestions(limit: number) {
 
 async function collectPreCadastros(limit: number) {
   const rows = await prisma.cadastroPeca.findMany({
-    where: { status: { not: 'cadastrado' } },
+    where: {
+      status: { not: 'cadastrado' },
+      fotoCadastroVerificada: true,
+      peso: { not: null },
+      largura: { not: null },
+      altura: { not: null },
+      profundidade: { not: null },
+      numeroPeca: { not: null },
+      localizacao: { not: null },
+      precoVenda: { gt: 0 },
+    },
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     take: limit,
     include: { moto: { select: { marca: true, modelo: true, ano: true } } },
