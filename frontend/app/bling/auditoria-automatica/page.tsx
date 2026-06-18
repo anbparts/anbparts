@@ -44,6 +44,7 @@ type Divergencia = {
   sku: string; tipo: string; titulo: string; detalhe: string; estoqueAnb: number; estoqueBling: number; qtdTotalAnb: number; qtdVendidasAnb: number;
   qtdPrejuizoAnb?: number; idsPecaPrejuizo?: string[]; motivosPrejuizo?: string[]; descricaoAnb: string | null; descricaoBling: string | null; moto: string | null;
   statusMercadoLivre?: string | null; statusMercadoLivreAtivo?: boolean | null;
+  estoqueNuvemshop?: number | null; statusNuvemshop?: string | null;
 };
 type Execucao = {
   id: number; origem: string; status: string; startedAt: string; finishedAt?: string | null; totalSkus: number; totalDivergencias: number; totalSemDivergencia: number;
@@ -488,6 +489,10 @@ export default function AuditoriaAutomaticaPage() {
                             { label: 'Vendidas no ANB', value: item.qtdVendidasAnb, color: 'var(--gray-700)' },
                             { label: 'Em prejuizo no ANB', value: item.qtdPrejuizoAnb || 0, color: item.qtdPrejuizoAnb ? '#b91c1c' : 'var(--gray-700)' },
                             { label: 'Status ML', value: item.statusMercadoLivre || 'Nao identificado', color: item.statusMercadoLivreAtivo === false ? 'var(--red)' : 'var(--gray-700)' },
+                            ...(item.statusNuvemshop != null ? [
+                              { label: 'Total Nuvemshop', value: item.estoqueNuvemshop ?? 0, color: 'var(--gray-700)' },
+                              { label: 'Status Nuvemshop', value: item.statusNuvemshop, color: item.statusNuvemshop === 'Ativo' ? '#16a34a' : item.statusNuvemshop === 'Pausado' ? '#b91c1c' : 'var(--gray-500)' },
+                            ] : []),
                           ].map((metric) => (
                             <div key={`${item.sku}-${metric.label}`} style={{ background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
                               <div style={s.label}>{metric.label}</div>

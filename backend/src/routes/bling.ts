@@ -3218,7 +3218,16 @@ async function compareProdutosBlingCodes(
     }
 
     await emitProgress({ totalProcessados: totalParaProcessar, fase: 'Concluido' });
-  
+
+    // Injeta dados Nuvemshop em todas as divergências para exibição no email/tela
+    if (options?.nuvemshopAtiva) {
+      for (const div of divergencias) {
+        const ns = nuvemshopStatusMap.get(div.sku);
+        div.estoqueNuvemshop = ns?.estoqueNuvemshop ?? null;
+        div.statusNuvemshop = ns ? (ns.publicado ? 'Ativo' : 'Pausado') : 'Nao encontrado';
+      }
+    }
+
     return {
       ok: true,
       totalConsultados: codigos.length,
@@ -4070,6 +4079,8 @@ function renderAuditoriaEmailHtmlClean(resultado: any, executedAt: Date | string
         ${renderAuditoriaMetricCard('Vendidas no ANB', item?.qtdVendidasAnb ?? 0)}
         ${renderAuditoriaMetricCard('Em prejuizo', item?.qtdPrejuizoAnb ?? 0, item?.qtdPrejuizoAnb ? '#b91c1c' : '#1f2937')}
         ${renderAuditoriaMetricCard('Status ML', item?.statusMercadoLivre || 'Nao identificado', statusColor)}
+        ${item?.statusNuvemshop != null ? renderAuditoriaMetricCard('Total Nuvemshop', item?.estoqueNuvemshop ?? 0) : ''}
+        ${item?.statusNuvemshop != null ? renderAuditoriaMetricCard('Status Nuvemshop', item.statusNuvemshop, item.statusNuvemshop === 'Ativo' ? '#16a34a' : item.statusNuvemshop === 'Pausado' ? '#dc2626' : '#64748b') : ''}
       </div>
     `, { accentColor: borderColor, marginBottom: 18 });
   }).join('');
