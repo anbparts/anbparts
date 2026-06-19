@@ -321,6 +321,24 @@ function Modal({ open, title, onClose, onSave, moto, viewportMode = 'desktop' }:
   const [form, setForm] = useState(empty);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
+  const [gerandoFolhaCapa, setGerandoFolhaCapa] = useState(false);
+
+  async function handleGerarFolhaCapa() {
+    if (!moto?.id) return;
+    setGerandoFolhaCapa(true);
+    try {
+      const resp = await fetch(`${API}/motos/${moto.id}/pdf-folha-capa`, { credentials: 'include' });
+      if (!resp.ok) throw new Error('Erro ao gerar PDF');
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `folha-capa-${(moto.marca || '').toLowerCase()}-${moto.id}.pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    } catch (e: any) { alert(e.message || 'Erro ao gerar Folha de Capa'); }
+    setGerandoFolhaCapa(false);
+  }
 
   useEffect(() => {
     if (moto) {
@@ -427,9 +445,18 @@ function Modal({ open, title, onClose, onSave, moto, viewportMode = 'desktop' }:
           </div>
           {err && <div style={{ fontSize: 12, color: 'var(--red)', marginTop: 4 }}>! {err}</div>}
         </div>
-        <div style={{ padding: modalFooterPadding, display: 'flex', gap: 8, justifyContent: 'flex-end', borderTop: '1px solid var(--border)', flexDirection: modalIsPhone ? 'column-reverse' : 'row' }}>
-          <button onClick={onClose} style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink-soft)', borderColor: 'var(--border-strong)', width: modalIsPhone ? '100%' : undefined, justifyContent: 'center' }}>Cancelar</button>
-          <button onClick={save} disabled={saving} style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)', width: modalIsPhone ? '100%' : undefined, justifyContent: 'center' }}>{saving ? 'Salvando...' : 'Salvar moto'}</button>
+        <div style={{ padding: modalFooterPadding, display: 'flex', gap: 8, justifyContent: 'space-between', borderTop: '1px solid var(--border)', flexDirection: modalIsPhone ? 'column-reverse' : 'row', alignItems: 'center' }}>
+          <div>
+            {moto?.id && (
+              <button onClick={handleGerarFolhaCapa} disabled={gerandoFolhaCapa} style={{ ...cs.btn, background: '#ecfdf5', color: '#065f46', borderColor: '#d1fae5', justifyContent: 'center', width: modalIsPhone ? '100%' : undefined }}>
+                🗂️ {gerandoFolhaCapa ? 'Gerando...' : 'Folha de Capa'}
+              </button>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexDirection: modalIsPhone ? 'column-reverse' : 'row', width: modalIsPhone ? '100%' : undefined }}>
+            <button onClick={onClose} style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink-soft)', borderColor: 'var(--border-strong)', width: modalIsPhone ? '100%' : undefined, justifyContent: 'center' }}>Cancelar</button>
+            <button onClick={save} disabled={saving} style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)', width: modalIsPhone ? '100%' : undefined, justifyContent: 'center' }}>{saving ? 'Salvando...' : 'Salvar moto'}</button>
+          </div>
         </div>
       </div>
     </div>
