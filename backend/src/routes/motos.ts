@@ -4,8 +4,7 @@ import { z } from 'zod';
 import { syncDetranEtiquetaBling } from '../lib/sync-bling-detran';
 import PDFDocument from 'pdfkit';
 import { getConfiguracaoGeral } from '../lib/configuracoes-gerais';
-import path from 'path';
-import fs from 'fs';
+import { LOGO_BASE64 } from '../assets/logo-base64';
 
 export const motosRouter = Router();
 
@@ -1648,66 +1647,74 @@ motosRouter.get('/:id/pdf-folha-capa', async (req, res, next) => {
       if (pref?.prefixo) codigoInterno = String(pref.prefixo).toUpperCase();
     } catch { /* usa fallback #id */ }
 
-    const logoPath = path.join(__dirname, '../assets/logo.jpg');
-    const logoExists = fs.existsSync(logoPath);
+    const logoBuffer = Buffer.from(LOGO_BASE64, 'base64');
 
     const pdf = await new Promise<Buffer>((resolve, reject) => {
       const doc = new PDFDocument({
         size: 'A4',
-        margins: { top: 60, bottom: 60, left: 70, right: 70 },
+        margins: { top: 0, bottom: 0, left: 0, right: 0 },
         info: { Title: `Folha de Capa - ${moto.marca} ${moto.modelo}`, Author: 'ANB Parts' },
+        autoFirstPage: false,
       });
+      doc.addPage();
       const chunks: Buffer[] = [];
       doc.on('data', (c: Buffer) => chunks.push(c));
       doc.on('end',  () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
 
-      const PW = 455.28; // 595.28 - 2*70
-      const L  = 70;
-      let y    = 60;
-
-      // ── Logo + Título ──────────────────────────────────────────────────────
-      if (logoExists) {
-        doc.image(logoPath, L, y, { height: 60, fit: [60, 60] });
-      }
-      doc.font('Helvetica-Bold').fontSize(36).fillColor('#0f172a')
-        .text('FOLHA DE CAPA', logoExists ? L + 72 : L, y + 10, { width: PW - (logoExists ? 72 : 0) });
-      y += 80;
-
-      // ── Linha divisória ──────────────────────────────────────────────────
-      doc.moveTo(L, y).lineTo(L + PW, y).dash(4, { space: 2 }).strokeColor('#94a3b8').stroke().undash();
-      y += 36;
-
-      // ── Campos centralizados ─────────────────────────────────────────────
-      const CW = PW;
+      const PAGE_W = 595.28;
+      const L = 56;           // margem esquerda
+      const R = 56;           // margem direita
+      const PW = PAGE_W - L - R; // largura útil = 483.28
       const BOLD = 'Helvetica-Bold';
       const REG  = 'Helvetica';
       const DARK = '#0f172a';
-      const FS   = 16;
-      const LS   = 30; // line spacing
+      let y = 52;
 
+      // ── Logo + Título ──────────────────────────────────────────────────────
+      const LOGO_H = 64;
+      const LOGO_W = 64;
+      doc.image(logoBuffer, L, y, { fit: [LOGO_W, LOGO_H] });
+
+      doc.font(BOLD).fontSize(34).fillColor(DARK)
+        .text('FOLHA DE CAPA', L + LOGO_W + 14, y + 14, { width: PW - LOGO_W - 14, lineBreak: false });
+      y += LOGO_H + 18;
+
+      // ── Linha pontilhada (mesma largura do template) ──────────────────────
+      const dashLen = 300;
+      const dashX   = (PAGE_W - dashLen) / 2;
+      doc.moveTo(dashX, y).lineTo(dashX + dashLen, y)
+        .dash(3, { space: 3 }).strokeColor('#94a3b8').lineWidth(0.8).stroke().undash();
+      y += 30;
+
+      // ── Função para linha centralizada com label bold + valor regular ──────
       function linha(label: string, valor: string) {
-        const labelW = doc.font(BOLD).fontSize(FS).widthOfString(`${label}: `);
-        const totalW = labelW + doc.font(REG).fontSize(FS).widthOfString(valor);
-        const startX = L + (CW - totalW) / 2;
+        const fullLabel = `${label}: `;
+        const labelW = doc.font(BOLD).fontSize(15).widthOfString(fullLabel);
+        const valW   = doc.font(REG).fontSize(15).widthOfString(valor);
+        const totalW = labelW + valW;
+        const startX = (PAGE_W - totalW) / 2;
 
-        doc.font(BOLD).fontSize(FS).fillColor(DARK)
-          .text(`${label}: `, startX, y, { continued: true, lineBreak: false });
-        doc.font(REG).fontSize(FS).fillColor(DARK)
-          .text(valor, { lineBreak: false });
-        y += LS;
+        doc.font(BOLD).fontSize(15).fillColor(DARK)
+          .text(fullLabel, startX, y, { width: labelW + 1, lineBreak: false });
+        doc.font(REG).fontSize(15).fillColor(DARK)
+          .text(valor, startX + labelW, y, { width: valW + 2, lineBreak: false });
+        y += 26;
       }
 
+      // Grupo 1 — Identificação
       linha('Marca',  moto.marca  || '—');
       linha('Modelo', moto.modelo || '—');
       linha('Ano',    moto.ano    ? String(moto.ano) : '—');
-      y += 16;
+      y += 18;
 
-      linha('Placa',  moto.placa  || '—');
-      linha('Chassi', moto.chassi || '—');
+      // Grupo 2 — Documentação
+      linha('Placa',   moto.placa   || '—');
+      linha('Chassi',  moto.chassi  || '—');
       linha('Renavan', moto.renavam || '—');
-      y += 16;
+      y += 18;
 
+      // Grupo 3 — Interno
       linha('Código de Identificação Interno', codigoInterno);
       linha('Origem da Compra', moto.origemCompra || '—');
 
