@@ -1839,11 +1839,21 @@ export default function MotosPage() {
   const [anexosLoading, setAnexosLoading] = useState(false);
   const [anexosSaving, setAnexosSaving] = useState(false);
 
+  const [prefixoMap, setPrefixoMap] = useState<Record<number, string>>({});
+
   const load = useCallback(async () => {
     setLoading(true);
-    const data = await api.motos.list();
+    const [data, blingCfg] = await Promise.all([
+      api.motos.list(),
+      fetch(`${API}/bling/config`, { credentials: 'include' }).then(r => r.ok ? r.json() : { prefixos: [] }).catch(() => ({ prefixos: [] })),
+    ]);
     setMotos(data);
     setFiltered(data);
+    const map: Record<number, string> = {};
+    for (const p of (blingCfg?.prefixos || [])) {
+      if (p.motoId && p.prefixo) map[Number(p.motoId)] = String(p.prefixo).toUpperCase();
+    }
+    setPrefixoMap(map);
     setLoading(false);
   }, []);
 
@@ -2265,7 +2275,14 @@ export default function MotosPage() {
                     </tr>
                   ) : filtered.map((m) => (
                     <tr key={m.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                      <td style={{ ...cs.td, padding: tablePadding }}><span style={{ fontFamily: 'Geist Mono, monospace', fontSize: compactTable ? 11.5 : 12, color: 'var(--ink-muted)' }}>#{m.id}</span></td>
+                      <td style={{ ...cs.td, padding: tablePadding }}>
+                        <span style={{ fontFamily: 'Geist Mono, monospace', fontSize: compactTable ? 11.5 : 12, color: 'var(--ink-muted)' }}>#{m.id}</span>
+                        {prefixoMap[m.id] && (
+                          <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 10, fontWeight: 700, color: 'var(--blue-600)', background: 'var(--blue-50)', border: '1px solid var(--blue-200)', borderRadius: 4, padding: '1px 5px', marginTop: 3, display: 'inline-block', letterSpacing: '0.5px' }}>
+                            {prefixoMap[m.id]}
+                          </div>
+                        )}
+                      </td>
                       <td style={{ ...cs.td, padding: tablePadding, color: 'var(--ink-muted)', fontSize: compactTable ? 11.5 : 12 }}>{m.marca}</td>
                       <td style={{ ...cs.td, padding: tablePadding }}><strong>{m.modelo}</strong></td>
                       <td style={{ ...cs.td, padding: tablePadding, fontFamily: 'Geist Mono, monospace', fontSize: compactTable ? 11.5 : 12 }}>{m.ano || '--'}</td>
