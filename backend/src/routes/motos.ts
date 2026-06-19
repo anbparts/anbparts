@@ -4,6 +4,8 @@ import { z } from 'zod';
 import { syncDetranEtiquetaBling } from '../lib/sync-bling-detran';
 import PDFDocument from 'pdfkit';
 import { getConfiguracaoGeral } from '../lib/configuracoes-gerais';
+import path from 'path';
+import fs from 'fs';
 
 export const motosRouter = Router();
 
@@ -1622,6 +1624,101 @@ motosRouter.get('/contratos/:id/pdf', requireMotosAction('contratos'), async (re
     if (!contrato) { res.status(404).json({ error: 'Contrato não encontrado' }); return; }
     const pdf = await gerarPdfContrato(contrato.dados as Record<string, any>);
     const fileName = nomeArquivoContratoPdf(contrato.dados as Record<string, any>, id, contrato.criadoEm);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.send(pdf);
+  } catch (e) { next(e); }
+});
+
+// ── GET /motos/:id/pdf-folha-capa — Folha de Capa da moto ──────────────────────
+motosRouter.get('/:id/pdf-folha-capa', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'ID invalido' });
+
+    const moto = await prisma.moto.findUnique({ where: { id } });
+    if (!moto) return res.status(404).json({ error: 'Moto nao encontrada' });
+
+    // Busca prefixo interno (ex: HD04, BM03)
+    let codigoInterno = `#${id}`;
+    try {
+      const blingCfg = await prisma.blingConfig.findFirst();
+      const prefixos: any[] = Array.isArray((blingCfg as any)?.prefixos) ? (blingCfg as any).prefixos : [];
+      const pref = prefixos.find((p: any) => Number(p.motoId) === id);
+      if (pref?.prefixo) codigoInterno = String(pref.prefixo).toUpperCase();
+    } catch { /* usa fallback #id */ }
+
+    const logoPath = path.join(__dirname, '../assets/logo.jpg');
+    const logoExists = fs.existsSync(logoPath);
+
+    const pdf = await new Promise<Buffer>((resolve, reject) => {
+      const doc = new PDFDocument({
+        size: 'A4',
+        margins: { top: 60, bottom: 60, left: 70, right: 70 },
+        info: { Title: `Folha de Capa - ${moto.marca} ${moto.modelo}`, Author: 'ANB Parts' },
+      });
+      const chunks: Buffer[] = [];
+      doc.on('data', (c: Buffer) => chunks.push(c));
+      doc.on('end',  () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
+
+      const PW = 455.28; // 595.28 - 2*70
+      const L  = 70;
+      let y    = 60;
+
+      // ── Logo + Título ──────────────────────────────────────────────────────
+      if (logoExists) {
+        doc.image(logoPath, L, y, { height: 60, fit: [60, 60] });
+      }
+      doc.font('Helvetica-Bold').fontSize(36).fillColor('#0f172a')
+        .text('FOLHA DE CAPA', logoExists ? L + 72 : L, y + 10, { width: PW - (logoExists ? 72 : 0) });
+      y += 80;
+
+      // ── Linha divisória ──────────────────────────────────────────────────
+      doc.moveTo(L, y).lineTo(L + PW, y).dash(4, { space: 2 }).strokeColor('#94a3b8').stroke().undash();
+      y += 36;
+
+      // ── Campos centralizados ─────────────────────────────────────────────
+      const CW = PW;
+      const BOLD = 'Helvetica-Bold';
+      const REG  = 'Helvetica';
+      const DARK = '#0f172a';
+      const FS   = 16;
+      const LS   = 30; // line spacing
+
+      function linha(label: string, valor: string) {
+        const labelW = doc.font(BOLD).fontSize(FS).widthOfString(`${label}: `);
+        const totalW = labelW + doc.font(REG).fontSize(FS).widthOfString(valor);
+        const startX = L + (CW - totalW) / 2;
+
+        doc.font(BOLD).fontSize(FS).fillColor(DARK)
+          .text(`${label}: `, startX, y, { continued: true, lineBreak: false });
+        doc.font(REG).fontSize(FS).fillColor(DARK)
+          .text(valor, { lineBreak: false });
+        y += LS;
+      }
+
+      linha('Marca',  moto.marca  || '—');
+      linha('Modelo', moto.modelo || '—');
+      linha('Ano',    moto.ano    ? String(moto.ano) : '—');
+      y += 16;
+
+      linha('Placa',  moto.placa  || '—');
+      linha('Chassi', moto.chassi || '—');
+      linha('Renavan', moto.renavam || '—');
+      y += 16;
+
+      linha('Código de Identificação Interno', codigoInterno);
+      linha('Origem da Compra', moto.origemCompra || '—');
+
+      doc.end();
+    });
+
+    const fileName = `folha-capa-${moto.marca}-${moto.modelo}-${id}.pdf`
+      .normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-zA-Z0-9_.-]/g, '-').replace(/-+/g, '-')
+      .toLowerCase();
+
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
     res.send(pdf);

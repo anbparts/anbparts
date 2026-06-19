@@ -720,6 +720,26 @@ function AnexosMotoModal({ open, moto, loading, data, saving, onClose, onSave, v
   const [removedKeys, setRemovedKeys] = useState<string[]>([]);
   const [localError, setLocalError] = useState('');
   const [gerandoPdf, setGerandoPdf] = useState(false);
+  const [gerandoFolhaCapa, setGerandoFolhaCapa] = useState(false);
+
+  async function handleGerarFolhaCapa() {
+    if (!moto?.id) return;
+    setGerandoFolhaCapa(true);
+    try {
+      const resp = await fetch(`${API}/motos/${moto.id}/pdf-folha-capa`, { credentials: 'include' });
+      if (!resp.ok) throw new Error('Erro ao gerar PDF');
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `folha-capa-${(moto.marca || '').toLowerCase()}-${(moto.modelo || '').toLowerCase()}-${moto.id}.pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    } catch (err: any) {
+      alert(err.message || 'Erro ao gerar Folha de Capa');
+    }
+    setGerandoFolhaCapa(false);
+  }
 
   async function handleGerarPdfVistoria() {
     if (!moto?.id) return;
@@ -804,10 +824,20 @@ function AnexosMotoModal({ open, moto, loading, data, saving, onClose, onSave, v
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
             <button
               type="button"
+              onClick={handleGerarFolhaCapa}
+              disabled={gerandoFolhaCapa || !moto?.id}
+              title="Gerar Folha de Capa"
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, border: '1px solid #d1fae5', background: '#ecfdf5', color: '#065f46', cursor: gerandoFolhaCapa ? 'wait' : 'pointer', fontSize: 12, fontWeight: 600, opacity: gerandoFolhaCapa ? 0.7 : 1 }}
+            >
+              <span style={{ fontSize: 15 }}>🗂️</span>
+              {gerandoFolhaCapa ? 'Gerando...' : modalIsPhone ? '' : 'Folha de Capa'}
+            </button>
+            <button
+              type="button"
               onClick={handleGerarPdfVistoria}
               disabled={gerandoPdf || !moto?.id}
               title="Gerar PDF de vistoria"
-              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, border: '1px solid #bfdbfe', background: gerandoPdf ? '#eff6ff' : '#eff6ff', color: '#1d4ed8', cursor: gerandoPdf ? 'wait' : 'pointer', fontSize: 12, fontWeight: 600, opacity: gerandoPdf ? 0.7 : 1 }}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, border: '1px solid #bfdbfe', background: '#eff6ff', color: '#1d4ed8', cursor: gerandoPdf ? 'wait' : 'pointer', fontSize: 12, fontWeight: 600, opacity: gerandoPdf ? 0.7 : 1 }}
             >
               <span style={{ fontSize: 15 }}>📄</span>
               {gerandoPdf ? 'Gerando...' : modalIsPhone ? '' : 'PDF Vistoria'}
