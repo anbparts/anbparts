@@ -1663,56 +1663,55 @@ motosRouter.get('/:id/pdf-folha-capa', async (req, res, next) => {
       doc.on('error', reject);
 
       const PAGE_W = 595.28;
-      const L = 56;           // margem esquerda
-      const R = 56;           // margem direita
-      const PW = PAGE_W - L - R; // largura útil = 483.28
+      const L = 72;           // margem esquerda (1 inch, igual ao template Word)
+      const R = 72;           // margem direita
+      const PW = PAGE_W - L - R; // largura útil = 451.28
       const BOLD = 'Helvetica-Bold';
       const REG  = 'Helvetica';
       const DARK = '#0f172a';
-      let y = 52;
+      let y = 72;  // margem superior 1 inch
 
       // ── Logo + Título ──────────────────────────────────────────────────────
-      const LOGO_H = 64;
-      const LOGO_W = 64;
-      doc.image(logoBuffer, L, y, { fit: [LOGO_W, LOGO_H] });
+      const LOGO_SIZE = 91;  // ~1.27 inches, igual ao template Word (1166813 EMU)
+      doc.image(logoBuffer, L, y, { fit: [LOGO_SIZE, LOGO_SIZE] });
 
-      doc.font(BOLD).fontSize(34).fillColor(DARK)
-        .text('FOLHA DE CAPA', L + LOGO_W + 14, y + 14, { width: PW - LOGO_W - 14, lineBreak: false });
-      y += LOGO_H + 18;
+      doc.font(BOLD).fontSize(35).fillColor(DARK)
+        .text('FOLHA DE CAPA', L + LOGO_SIZE + 16, y + (LOGO_SIZE / 2) - 20, { width: PW - LOGO_SIZE - 16, lineBreak: false });
+      y += LOGO_SIZE + 18;
 
-      // ── Linha pontilhada (mesma largura do template) ──────────────────────
-      const dashLen = 300;
-      const dashX   = (PAGE_W - dashLen) / 2;
-      doc.moveTo(dashX, y).lineTo(dashX + dashLen, y)
-        .dash(3, { space: 3 }).strokeColor('#94a3b8').lineWidth(0.8).stroke().undash();
-      y += 30;
+      // ── Separador de traços (igual ao template Word) ──────────────────────
+      const dashText = '-----------------------------------------------------------------------';
+      doc.font(BOLD).fontSize(12).fillColor(DARK);
+      const dashW = doc.widthOfString(dashText);
+      doc.text(dashText, (PAGE_W - dashW) / 2, y, { width: dashW + 2, lineBreak: false });
+      y += 32;
 
       // ── Função para linha centralizada com label bold + valor regular ──────
       function linha(label: string, valor: string) {
         const fullLabel = `${label}: `;
-        const labelW = doc.font(BOLD).fontSize(15).widthOfString(fullLabel);
-        const valW   = doc.font(REG).fontSize(15).widthOfString(valor);
+        const labelW = doc.font(BOLD).fontSize(21).widthOfString(fullLabel);
+        const valW   = doc.font(REG).fontSize(21).widthOfString(valor);
         const totalW = labelW + valW;
         const startX = (PAGE_W - totalW) / 2;
 
-        doc.font(BOLD).fontSize(15).fillColor(DARK)
+        doc.font(BOLD).fontSize(21).fillColor(DARK)
           .text(fullLabel, startX, y, { width: labelW + 1, lineBreak: false });
-        doc.font(REG).fontSize(15).fillColor(DARK)
+        doc.font(REG).fontSize(21).fillColor(DARK)
           .text(valor, startX + labelW, y, { width: valW + 2, lineBreak: false });
-        y += 26;
+        y += 32;
       }
 
       // Grupo 1 — Identificação
       linha('Marca',  moto.marca  || '—');
       linha('Modelo', moto.modelo || '—');
       linha('Ano',    moto.ano    ? String(moto.ano) : '—');
-      y += 18;
+      y += 32;
 
       // Grupo 2 — Documentação
       linha('Placa',   moto.placa   || '—');
       linha('Chassi',  moto.chassi  || '—');
       linha('Renavan', moto.renavam || '—');
-      y += 18;
+      y += 32;
 
       // Grupo 3 — Interno
       linha('Código de Identificação Interno', codigoInterno);
