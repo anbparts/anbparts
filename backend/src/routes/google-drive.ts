@@ -6,7 +6,7 @@ export const googleDriveRouter = Router();
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const GOOGLE_DRIVE_URL = 'https://www.googleapis.com/drive/v3';
 const GOOGLE_OAUTH_SCOPES = [
-  'https://www.googleapis.com/auth/drive.readonly',
+  'https://www.googleapis.com/auth/drive',
   'https://www.googleapis.com/auth/gmail.readonly',
 ];
 
@@ -144,6 +144,46 @@ async function driveGet(cfg: any, path: string): Promise<any> {
     throw createGoogleDriveError(getGoogleApiErrorMessage(data, `Google Drive ${resp.status}`), resp.status);
   }
   return data;
+}
+
+async function drivePostJson(cfg: any, path: string, body: any): Promise<any> {
+  const execute = (token: string) => fetch(`${GOOGLE_DRIVE_URL}${path}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  let token = await getValidToken(cfg);
+  if (!token) throw createGoogleDriveError('Google Drive não conectado.', 401);
+
+  let resp = await execute(token);
+  if (resp.status === 401 || resp.status === 403) {
+    await clearCachedGoogleDriveToken();
+    token = await getValidToken({ ...cfg, googleDriveAccessToken: '', googleDriveTokenExpiry: null }, { forceRefresh: true });
+    if (token) resp = await execute(token);
+  }
+
+  const data = await resp.json().catch(() => ({})) as any;
+  if (!resp.ok) throw createGoogleDriveError(getGoogleApiErrorMessage(data, `Google Drive ${resp.status}`), resp.status);
+  return data;
+}
+
+export async function criarPastaPreCadastro(idPeca: string, descricao: string): Promise<string | null> {
+  try {
+    const cfg = await getConfig();
+    const pastaRaizId = String((cfg as any).googleDrivePreCadastroPastaId || '').trim();
+    if (!pastaRaizId) return null;
+
+    const nomePasta = `${idPeca} - ${descricao}`;
+    const data = await drivePostJson(cfg, buildDrivePath('/files', { fields: 'id,name' }), {
+      name: nomePasta,
+      mimeType: 'application/vnd.google-apps.folder',
+      parents: [pastaRaizId],
+    });
+    return data.id || null;
+  } catch {
+    return null;
+  }
 }
 
 async function listDriveFiles(cfg: any, q: string, fields: string, extraParams: Record<string, string> = {}) {

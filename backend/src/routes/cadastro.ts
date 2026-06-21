@@ -3,6 +3,7 @@ import { prisma } from '../lib/prisma';
 import { compressDataUrlImage, normalizeImageFileName } from '../lib/image';
 import { buscarCadastroFotos, buscarCadastroFotosAnb, buscarCadastroFotosDrive, enviarCadastroFotosManual, processarCadastroFotos, verificarCadastroFotoSku, verificarFotosCadastroPeca } from '../lib/fotos-cadastro';
 import { blingReq, fetchProdutoLojaLinksByProductId, resolveBlingMercadoLivreItemId, resolveBlingMercadoLivreLinkWithFallback } from './bling';
+import { criarPastaPreCadastro } from './google-drive';
 import { mercadoLivreReq } from '../lib/mercado-livre';
 import { nuvemReq, buscarProdutoNuvemshopPorSku } from './nuvemshop';
 
@@ -551,6 +552,8 @@ cadastroRouter.post('/', requireCadastroAction('criar_pre_cadastro'), async (req
     try {
       const blingProdutoId = await enviarParaBling(record);
       const updated = await prisma.cadastroPeca.update({ where: { id: record.id }, data: { blingProdutoId } });
+      // Cria pasta no Drive automaticamente (fire-and-forget — não bloqueia a resposta)
+      criarPastaPreCadastro(record.idPeca, record.descricao).catch(() => null);
       res.status(201).json({ ...updated, _blingOk: true });
     } catch (blingErr: any) {
       await prisma.cadastroPeca.delete({ where: { id: record.id } }).catch(() => null);
