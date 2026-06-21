@@ -352,6 +352,10 @@ export default function CadastroPage() {
 
   const [modal, setModal] = useState(false);
   const [editItem, setEditItem] = useState<CadastroPeca | null>(null);
+  const [modalConfig, setModalConfig] = useState(false);
+  const [configMotoIdDefault, setConfigMotoIdDefault] = useState<string>('');
+  const [configMotoIdDraft, setConfigMotoIdDraft] = useState('');
+  const [savingConfig, setSavingConfig] = useState(false);
   const [form, setForm] = useState<any>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [excluindo, setExcluindo] = useState(false);
@@ -402,9 +406,10 @@ export default function CadastroPage() {
 
   async function loadSupportData() {
     try {
-      const [resp, catResp] = await Promise.all([
+      const [resp, catResp, cfgResp] = await Promise.all([
         fetch(`${API}/cadastro/opcoes`, { credentials: 'include' }),
         fetch(`${API}/nuvemshop/categorias`, { credentials: 'include' }).catch(() => null),
+        api.cadastroConfig.get().catch(() => null),
       ]);
       const d = await resp.json();
       setMotos(Array.isArray(d?.motos) ? d.motos : []);
@@ -412,6 +417,9 @@ export default function CadastroPage() {
       if (catResp) {
         const catData = await readApiResponse(catResp, 'Erro ao carregar categorias').catch(() => null);
         if (catData?.ok) setCategoriasNuvemshop(Array.isArray(catData.categorias) ? catData.categorias : []);
+      }
+      if (cfgResp?.cadastroMotoIdDefault != null) {
+        setConfigMotoIdDefault(String(cfgResp.cadastroMotoIdDefault));
       }
     } catch { }
   }
@@ -968,13 +976,31 @@ export default function CadastroPage() {
 
   async function openNovo() {
     if (!canCriarPreCadastro) return alert('Seu usuario nao tem permissao para criar pre-cadastro.');
-    // Moto default = a de ID mais alto (última adicionada)
-    const motoOrdenada = [...motos].sort((a, b) => b.id - a.id);
-    const motoId = motoOrdenada[0]?.id ? String(motoOrdenada[0].id) : '';
+    // Usa moto configurada como default; fallback para a de ID mais alto
+    const motoConfigurada = configMotoIdDefault && motos.some(m => String(m.id) === configMotoIdDefault)
+      ? configMotoIdDefault
+      : (() => { const s = [...motos].sort((a, b) => b.id - a.id); return s[0]?.id ? String(s[0].id) : ''; })();
+    const motoId = motoConfigurada;
     const form0 = { ...EMPTY_FORM, motoId };
     setForm(form0); setEditItem(null); setCategorias([]); setEtiquetas(['']); setFotoPreviewOpen(false);
     if (motoId) await carregarProximoId(motoId, form0);
     setModal(true);
+  }
+
+  function openConfig() {
+    setConfigMotoIdDraft(configMotoIdDefault);
+    setModalConfig(true);
+  }
+
+  async function salvarConfig() {
+    setSavingConfig(true);
+    try {
+      const valor = configMotoIdDraft ? Number(configMotoIdDraft) : null;
+      await api.cadastroConfig.save(valor);
+      setConfigMotoIdDefault(configMotoIdDraft);
+      setModalConfig(false);
+    } catch { alert('Erro ao salvar configuração.'); }
+    finally { setSavingConfig(false); }
   }
 
   async function openEditar(item: CadastroPeca) {
@@ -1480,8 +1506,13 @@ Deseja forçar a exclusão mesmo assim?`);
               </button>
             ))}
           </div>
-          {paginaCadastro === 'sku' && canCriarPreCadastro && (
-            <button style={{ ...s.btn, background: 'var(--gray-800)', color: '#fff', fontSize: isPhone ? 12 : 12.5, padding: isPhone ? '7px 12px' : '7px 14px' }} onClick={openNovo}>+ Novo Pré-cadastro</button>
+          {paginaCadastro === 'sku' && (
+            <div style={{ display: 'flex', gap: 6 }}>
+              {canCriarPreCadastro && (
+                <button style={{ ...s.btn, background: 'var(--gray-800)', color: '#fff', fontSize: isPhone ? 12 : 12.5, padding: isPhone ? '7px 12px' : '7px 14px' }} onClick={openNovo}>+ Novo Pré-cadastro</button>
+              )}
+              <button style={{ ...s.btn, background: 'var(--white)', color: 'var(--ink-soft)', border: '1px solid var(--border)', fontSize: isPhone ? 12 : 12.5, padding: isPhone ? '7px 10px' : '7px 12px' }} onClick={openConfig}>⚙️ Configuração</button>
+            </div>
           )}
         </div>
       </div>
@@ -2416,6 +2447,35 @@ Deseja forçar a exclusão mesmo assim?`);
                 style={{ ...s.btn, background: 'var(--green)', color: '#fff', opacity: (!canCriarProdutoBling || confirmando || !previewBling || loadingPreview) ? 0.7 : 1, width: isPhone ? '100%' : undefined, justifyContent: 'center', minHeight: isPhone ? 42 : undefined }}>
                 {confirmando ? 'Lançando...' : '✓ Confirmar e Lançar no Estoque'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* MODAL CONFIGURAÇÃO */}
+      {modalConfig && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <div style={{ background: 'var(--white)', borderRadius: 14, width: '100%', maxWidth: 420, boxShadow: '0 20px 60px rgba(0,0,0,0.2)', overflow: 'hidden' }}>
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ fontWeight: 600, fontSize: 15 }}>⚙️ Configuração — Pré-Cadastro</div>
+              <button onClick={() => setModalConfig(false)} style={{ width: 28, height: 28, borderRadius: 7, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', fontSize: 15 }}>×</button>
+            </div>
+            <div style={{ padding: '20px' }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', marginBottom: 6 }}>Moto padrão no novo pré-cadastro</div>
+              <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginBottom: 10 }}>Será pré-selecionada ao clicar em "+ Novo Pré-cadastro".</div>
+              <select
+                value={configMotoIdDraft}
+                onChange={e => setConfigMotoIdDraft(e.target.value)}
+                style={{ width: '100%', background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 10px', fontSize: 13, fontFamily: 'Geist, sans-serif', outline: 'none', color: 'var(--ink)' }}
+              >
+                <option value="">— Sem padrão (usa última moto) —</option>
+                {[...motos].sort((a, b) => a.id - b.id).map(m => (
+                  <option key={m.id} value={String(m.id)}>ID {m.id} — {m.marca} {m.modelo} {m.ano ? `(${m.ano})` : ''}</option>
+                ))}
+              </select>
+            </div>
+            <div style={{ padding: '12px 20px 16px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button onClick={() => setModalConfig(false)} style={{ ...s.btn, background: 'var(--white)', color: 'var(--ink-soft)', border: '1px solid var(--border)' }}>Cancelar</button>
+              <button onClick={salvarConfig} disabled={savingConfig} style={{ ...s.btn, background: 'var(--gray-800)', color: '#fff', opacity: savingConfig ? 0.7 : 1 }}>{savingConfig ? 'Salvando...' : 'Salvar'}</button>
             </div>
           </div>
         </div>

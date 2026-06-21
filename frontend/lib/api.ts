@@ -194,6 +194,13 @@ export const api = {
       body: JSON.stringify(data),
     }),
   },
+  cadastroConfig: {
+    get: () => req<{ cadastroMotoIdDefault: number | null }>('/cadastro/config'),
+    save: (cadastroMotoIdDefault: number | null) => req<any>('/cadastro/config', {
+      method: 'POST',
+      body: JSON.stringify({ cadastroMotoIdDefault }),
+    }),
+  },
   import: {
     motos: (data: any[]) => req<any>('/import/motos', { method: 'POST', body: JSON.stringify(data) }),
     pecas: (data: any[]) => req<any>('/import/pecas', { method: 'POST', body: JSON.stringify(data) }),

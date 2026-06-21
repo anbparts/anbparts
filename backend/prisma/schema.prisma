@@ -266,6 +266,7 @@ model ConfiguracaoGeral {
   googleDriveRootFolderId        String   @default("") // ID da pasta raiz das motos
   googleDriveMotoDirs            Json     @default("{}") // { motoId: "folderId da pasta da moto" }
   googleDrivePreCadastroPastaId  String   @default("") // ID da pasta raiz dos pré-cadastros
+  cadastroMotoIdDefault     Int?              // Moto pré-selecionada ao abrir novo pré-cadastro
   createdAt                 DateTime @default(now())
   updatedAt                 DateTime @updatedAt
 }

@@ -1527,6 +1527,30 @@ async function tickCadastroDriveScheduler() {
   }
 }
 
+// GET /cadastro/config — configurações globais do módulo de cadastro
+cadastroRouter.get('/config', async (_req, res, next) => {
+  try {
+    let cfg = await prisma.configuracaoGeral.findFirst();
+    if (!cfg) cfg = await prisma.configuracaoGeral.create({ data: {} });
+    res.json({ cadastroMotoIdDefault: (cfg as any).cadastroMotoIdDefault ?? null });
+  } catch (e) { next(e); }
+});
+
+// POST /cadastro/config — salva configurações globais do módulo de cadastro
+cadastroRouter.post('/config', async (req, res, next) => {
+  try {
+    const { cadastroMotoIdDefault } = req.body || {};
+    const data: any = {};
+    if (cadastroMotoIdDefault !== undefined) {
+      data.cadastroMotoIdDefault = cadastroMotoIdDefault === null || cadastroMotoIdDefault === ''
+        ? null
+        : Number(cadastroMotoIdDefault);
+    }
+    await prisma.configuracaoGeral.updateMany({ data });
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
 setTimeout(() => {
   tickCadastroDriveScheduler().catch(() => {});
   setInterval(() => tickCadastroDriveScheduler().catch(() => {}), CADASTRO_DRIVE_SCHEDULER_INTERVAL_MS);
