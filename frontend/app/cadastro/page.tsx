@@ -1976,10 +1976,10 @@ Deseja forçar a exclusão mesmo assim?`);
             </div>
 
             {/* Corpo */}
-            <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: isPhone ? 'block' : 'grid', gridTemplateColumns: isPhone ? undefined : isMobile ? '1fr' : 'minmax(0, 1fr) minmax(0, 1fr)', alignItems: 'stretch', gap: 0 }}>
+            <div style={{ flex: 1, minHeight: 0, overflowY: isPhone ? 'auto' : 'hidden', display: isPhone ? 'block' : 'grid', gridTemplateColumns: isPhone ? undefined : isMobile ? '1fr' : 'minmax(0, 1fr) minmax(0, 1fr)', alignItems: 'stretch', gap: 0 }}>
 
               {/* COLUNA ESQUERDA — campos do produto */}
-              <div style={{ padding: isPhone ? '12px 14px' : '10px 14px', display: 'grid', alignContent: 'start', gap: isPhone ? 8 : 5, borderRight: (!isPhone && !isMobile) ? '1px solid var(--border)' : 'none', borderBottom: isMobile && !isPhone ? '1px solid var(--border)' : 'none', overflowY: 'auto', minHeight: 0 }}>
+              <div style={{ padding: isPhone ? '12px 14px' : '10px 14px', display: 'grid', alignContent: 'start', gap: isPhone ? 8 : 5, borderRight: (!isPhone && !isMobile) ? '1px solid var(--border)' : 'none', borderBottom: isPhone ? '1px solid var(--border)' : isMobile ? '1px solid var(--border)' : 'none', overflowY: isPhone ? 'visible' : 'auto', minHeight: isPhone ? undefined : 0 }}>
 
                 <div>
                   <label style={s.label}>Moto *</label>
@@ -2204,7 +2204,7 @@ Deseja forçar a exclusão mesmo assim?`);
               </div>
 
               {/* COLUNA DIREITA — checklist + descrição */}
-              <div style={{ padding: isPhone ? '0 14px 12px' : '10px 14px', display: 'flex', flexDirection: 'column' as const, gap: isPhone ? 8 : 5, overflowY: 'auto', minHeight: 0 }}>
+              <div style={{ padding: isPhone ? '12px 14px 16px' : '10px 14px', display: 'flex', flexDirection: 'column' as const, gap: isPhone ? 8 : 5, overflowY: isPhone ? 'visible' : 'auto', minHeight: isPhone ? undefined : 0 }}>
 
                 <ChecklistValidacao form={form} />
 
