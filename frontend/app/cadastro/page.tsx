@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { API_BASE } from '@/lib/api-base';
+import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { formatEtiquetaMotoLabel, printSkuLabels } from '@/lib/estoque-label-print';
 import { compressFotoCapaFile } from '@/lib/image-compression';
