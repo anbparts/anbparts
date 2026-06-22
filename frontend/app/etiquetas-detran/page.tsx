@@ -887,7 +887,9 @@ export default function EtiquetasDetranPage() {
                     || (l.anbSku || '').toLowerCase().includes(txt)
                     || (l.anbDescricao || '').toLowerCase().includes(txt)
                     || (l.detranModelo || '').toLowerCase().includes(txt)
-                    || (l.detranPlaca || '').toLowerCase().includes(txt);
+                    || (l.detranPlaca || '').toLowerCase().includes(txt)
+                    || (l.motoPrefixo || '').toLowerCase().includes(txt)
+                    || String(l.motoAnbId || '').includes(txt);
                 }
                 return true;
               });
@@ -931,14 +933,14 @@ export default function EtiquetasDetranPage() {
                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                       <thead>
                         <tr>
-                          {['Etiqueta DETRAN', 'Situação', 'SKU ANB', 'Descrição ANB', 'Status ANB', 'Desc. DETRAN', 'Modelo', 'Placa'].map(col => (
+                          {['Etiqueta DETRAN', 'Situação', 'ID Moto', 'Prefixo', 'SKU ANB', 'Descrição ANB', 'Status ANB', 'Desc. DETRAN', 'Modelo', 'Placa'].map(col => (
                             <th key={col} style={s.th}>{col}</th>
                           ))}
                         </tr>
                       </thead>
                       <tbody>
                         {filtradas.length === 0 ? (
-                          <tr><td colSpan={8} style={{ ...s.td, textAlign: 'center', padding: 40, color: 'var(--gray-400)' }}>Nenhum resultado</td></tr>
+                          <tr><td colSpan={10} style={{ ...s.td, textAlign: 'center', padding: 40, color: 'var(--gray-400)' }}>Nenhum resultado</td></tr>
                         ) : filtradas.map((l: any, i: number) => {
                           const sit = SIT_CONFIG[l.situacao] || SIT_CONFIG.ok;
                           return (
@@ -949,6 +951,8 @@ export default function EtiquetasDetranPage() {
                                   {sit.label}{l.detalhe ? ` — ${l.detalhe}` : ''}
                                 </span>
                               </td>
+                              <td style={{ ...s.td, fontFamily: 'Geist Mono, monospace', fontSize: 12 }}>{l.motoAnbId || '-'}</td>
+                              <td style={{ ...s.td, fontFamily: 'Geist Mono, monospace', fontSize: 11, whiteSpace: 'nowrap' }}>{l.motoPrefixo || '-'}</td>
                               <td style={{ ...s.td, fontFamily: 'Geist Mono, monospace', fontSize: 12 }}>{l.anbSku || '-'}</td>
                               <td style={{ ...s.td, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.anbDescricao || '-'}</td>
                               <td style={s.td}>

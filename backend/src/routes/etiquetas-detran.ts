@@ -509,11 +509,11 @@ etiquetasDetranRouter.post('/validar', async (req, res, next) => {
     const [pecas, historico, preCadastros] = await Promise.all([
       prisma.peca.findMany({
         where: { detranEtiqueta: { not: null } },
-        select: { id: true, idPeca: true, descricao: true, detranEtiqueta: true, detranBaixada: true },
+        select: { id: true, idPeca: true, descricao: true, detranEtiqueta: true, detranBaixada: true, motoId: true },
       }),
       prisma.historicoDevolucao.findMany({
         where: { etiquetasDetran: { not: null } },
-        select: { pecaId: true, idPeca: true, descricao: true, etiquetasDetran: true, etiquetaBaixada: true },
+        select: { pecaId: true, idPeca: true, descricao: true, etiquetasDetran: true, etiquetaBaixada: true, motoId: true },
       }),
       prisma.cadastroPeca.findMany({
         where: { status: 'pre_cadastro', detranEtiqueta: { not: null } },
@@ -521,30 +521,45 @@ etiquetasDetranRouter.post('/validar', async (req, res, next) => {
       }),
     ]);
 
-    type AnbEntry = { sku: string; descricao: string; baixada: boolean; fonte: string };
+    type AnbEntry = { sku: string; descricao: string; baixada: boolean; fonte: string; motoId: number | null };
     const anbMap = new Map<string, AnbEntry>();
 
     for (const p of pecas) {
       for (const etq of splitEtiquetas(p.detranEtiqueta)) {
-        anbMap.set(etq.toUpperCase(), { sku: p.idPeca, descricao: p.descricao, baixada: p.detranBaixada, fonte: 'peca' });
+        anbMap.set(etq.toUpperCase(), { sku: p.idPeca, descricao: p.descricao, baixada: p.detranBaixada, fonte: 'peca', motoId: p.motoId });
       }
     }
     for (const h of historico) {
       for (const etq of splitEtiquetas(h.etiquetasDetran)) {
         const key = etq.toUpperCase();
-        if (!anbMap.has(key)) anbMap.set(key, { sku: h.idPeca, descricao: h.descricao, baixada: h.etiquetaBaixada ?? false, fonte: 'historico' });
+        if (!anbMap.has(key)) anbMap.set(key, { sku: h.idPeca, descricao: h.descricao, baixada: h.etiquetaBaixada ?? false, fonte: 'historico', motoId: h.motoId });
       }
     }
     for (const pc of preCadastros) {
       for (const etq of splitEtiquetas(pc.detranEtiqueta)) {
         const key = etq.toUpperCase();
-        if (!anbMap.has(key)) anbMap.set(key, { sku: pc.idPeca, descricao: pc.descricao, baixada: false, fonte: 'pre_cadastro' });
+        if (!anbMap.has(key)) anbMap.set(key, { sku: pc.idPeca, descricao: pc.descricao, baixada: false, fonte: 'pre_cadastro', motoId: null });
       }
+    }
+
+    // Busca motos pela placa do DETRAN e pelo motoId do ANB
+    const detranPlacas = [...detranMap.values()].map(r => r.placa).filter((p): p is string => !!p);
+    const anbMotoIds = [...anbMap.values()].map(e => e.motoId).filter((id): id is number => id != null);
+    const motos = await prisma.moto.findMany({
+      where: { OR: [{ placa: { in: detranPlacas, mode: 'insensitive' } }, { id: { in: anbMotoIds } }] },
+      select: { id: true, placa: true, detranCartelaId: true, modelo: true, marca: true },
+    });
+    const motoByPlaca = new Map<string, typeof motos[0]>();
+    const motoById = new Map<number, typeof motos[0]>();
+    for (const m of motos) {
+      if (m.placa) motoByPlaca.set(m.placa.toUpperCase(), m);
+      motoById.set(m.id, m);
     }
 
     type Linha = {
       etiqueta: string; situacao: 'ok' | 'so_detran' | 'so_anb' | 'divergencia'; detalhe?: string;
       anbSku?: string; anbDescricao?: string; anbStatus?: string; anbFonte?: string;
+      motoAnbId?: number; motoPrefixo?: string; motoModelo?: string;
       detranDescricao?: string; detranSaldo?: number; detranModelo?: string; detranPlaca?: string;
     };
 
@@ -554,7 +569,11 @@ etiquetasDetranRouter.post('/validar', async (req, res, next) => {
       const anb = anbMap.get(etq);
       const saldo = Number(row.saldo ?? 1);
       const detranAtivo = saldo > 0;
-      const base = { etiqueta: etq, detranDescricao: row.descricao, detranSaldo: saldo, detranModelo: row.modelo, detranPlaca: row.placa };
+      const motoFromPlaca = row.placa ? motoByPlaca.get(row.placa.toUpperCase()) : undefined;
+      const motoFromAnb = anb?.motoId ? motoById.get(anb.motoId) : undefined;
+      const moto = motoFromPlaca || motoFromAnb;
+      const motoFields = moto ? { motoAnbId: moto.id, motoPrefixo: moto.detranCartelaId ?? undefined, motoModelo: [moto.marca, moto.modelo].filter(Boolean).join(' ') } : {};
+      const base = { etiqueta: etq, detranDescricao: row.descricao, detranSaldo: saldo, detranModelo: row.modelo, detranPlaca: row.placa, ...motoFields };
 
       if (!anb) {
         linhas.push({ ...base, situacao: 'so_detran' });
@@ -570,7 +589,9 @@ etiquetasDetranRouter.post('/validar', async (req, res, next) => {
 
     for (const [etq, anb] of anbMap) {
       if (!detranMap.has(etq) && !anb.baixada) {
-        linhas.push({ etiqueta: etq, situacao: 'so_anb', anbSku: anb.sku, anbDescricao: anb.descricao, anbStatus: anb.fonte === 'pre_cadastro' ? 'Pré-Cadastro' : 'Ativa', anbFonte: anb.fonte });
+        const moto = anb.motoId ? motoById.get(anb.motoId) : undefined;
+        const motoFields = moto ? { motoAnbId: moto.id, motoPrefixo: moto.detranCartelaId ?? undefined, motoModelo: [moto.marca, moto.modelo].filter(Boolean).join(' ') } : {};
+        linhas.push({ etiqueta: etq, situacao: 'so_anb', anbSku: anb.sku, anbDescricao: anb.descricao, anbStatus: anb.fonte === 'pre_cadastro' ? 'Pré-Cadastro' : 'Ativa', anbFonte: anb.fonte, ...motoFields });
       }
     }
 
