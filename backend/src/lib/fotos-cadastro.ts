@@ -303,18 +303,45 @@ async function listarImagensNuvemshop(produtoId: number | string | null) {
   return Array.isArray(imagens) ? imagens : [];
 }
 
+async function resizeForNuvemshop(buffer: Buffer): Promise<string> {
+  try {
+    const jimpModule: any = await import('jimp');
+    const Jimp = jimpModule?.Jimp || jimpModule?.default?.Jimp || jimpModule?.default || jimpModule;
+    if (!Jimp?.read && !Jimp?.fromBuffer) return buffer.toString('base64');
+    const image = Jimp.fromBuffer ? await Jimp.fromBuffer(buffer) : await Jimp.read(buffer);
+    const MAX = 1280;
+    const w = Number(image?.bitmap?.width || 0);
+    const h = Number(image?.bitmap?.height || 0);
+    if (w > MAX || h > MAX) {
+      if (w >= h) image.resize({ w: MAX });
+      else image.resize({ h: MAX });
+    }
+    const out = Buffer.from(await image.getBuffer('image/jpeg', { quality: 82 }));
+    return out.toString('base64');
+  } catch {
+    return buffer.toString('base64');
+  }
+}
+
 async function uploadNuvemshopDrive(produtoId: number | string, fotos: DriveFoto[], imagensAtuais: number) {
   const fotosParaEnviar = imagensAtuais > 0 ? fotos.slice(1) : fotos;
-  let proximaPosicao = (await listarImagensNuvemshop(produtoId)).reduce((max, img) => Math.max(max, Number(img?.position || 0) || 0), 0) + 1;
+  let proximaPosicao = imagensAtuais + 1;
+  try {
+    const imagens = await listarImagensNuvemshop(produtoId);
+    proximaPosicao = imagens.reduce((max, img) => Math.max(max, Number(img?.position || 0) || 0), 0) + 1;
+  } catch {
+    // Falha ao listar imagens existentes — usa estimativa baseada no contador recebido
+  }
   const resultados: any[] = [];
 
   for (const foto of fotosParaEnviar) {
     try {
       const downloaded = await downloadDriveFoto(foto);
+      const base64 = await resizeForNuvemshop(downloaded.buffer);
       const data = await nuvemReq<any>(`/products/${encodeURIComponent(String(produtoId))}/images`, {
         method: 'POST',
         body: JSON.stringify({
-          attachment: downloaded.base64,
+          attachment: base64,
           filename: foto.nome || 'foto.jpg',
           position: proximaPosicao,
         }),
@@ -331,15 +358,24 @@ async function uploadNuvemshopDrive(produtoId: number | string, fotos: DriveFoto
 }
 
 async function uploadNuvemshopManual(produtoId: number | string, fotos: ManualFoto[]) {
-  let proximaPosicao = (await listarImagensNuvemshop(produtoId)).reduce((max, img) => Math.max(max, Number(img?.position || 0) || 0), 0) + 1;
+  let proximaPosicao = 1;
+  try {
+    const imagens = await listarImagensNuvemshop(produtoId);
+    proximaPosicao = imagens.reduce((max, img) => Math.max(max, Number(img?.position || 0) || 0), 0) + 1;
+  } catch {
+    // Falha ao listar imagens existentes — começa da posição 1
+  }
   const resultados: any[] = [];
 
   for (const foto of fotos) {
     try {
+      const rawBase64 = manualFotoToBase64(foto);
+      const rawBuffer = Buffer.from(rawBase64, 'base64');
+      const base64 = await resizeForNuvemshop(rawBuffer);
       const data = await nuvemReq<any>(`/products/${encodeURIComponent(String(produtoId))}/images`, {
         method: 'POST',
         body: JSON.stringify({
-          attachment: manualFotoToBase64(foto),
+          attachment: base64,
           filename: foto.nome || 'foto.jpg',
           position: proximaPosicao,
         }),
