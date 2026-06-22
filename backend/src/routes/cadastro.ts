@@ -513,7 +513,7 @@ cadastroRouter.get('/proximo-id/:motoId', async (req, res, next) => {
 // POST /cadastro - criar pré-cadastro e enviar ao Bling
 cadastroRouter.post('/', requireCadastroAction('criar_pre_cadastro'), async (req, res, next) => {
   try {
-    const { motoId, idPeca, descricao, descricaoPeca, precoVenda, condicao, peso, largura, altura, profundidade, numeroPeca, detranEtiqueta, tipoPecaAvulsa, localizacao, estoque, categoriaMLId, categoriaMLNome, urlRef } = req.body;
+    const { motoId, idPeca, descricao, descricaoPecaTitulo, descricaoPeca, precoVenda, condicao, peso, largura, altura, profundidade, numeroPeca, detranEtiqueta, tipoPecaAvulsa, localizacao, estoque, categoriaMLId, categoriaMLNome, urlRef } = req.body;
 
     if (!motoId || !idPeca || !descricao) return res.status(400).json({ error: 'motoId, idPeca e descricao sao obrigatorios' });
     if (!String(idPeca || '').trim()) return res.status(400).json({ error: 'SKU (idPeca) é obrigatorio' });
@@ -553,7 +553,8 @@ cadastroRouter.post('/', requireCadastroAction('criar_pre_cadastro'), async (req
       const blingProdutoId = await enviarParaBling(record);
       const updated = await prisma.cadastroPeca.update({ where: { id: record.id }, data: { blingProdutoId } });
       // Cria pasta no Drive automaticamente (fire-and-forget — não bloqueia a resposta)
-      criarPastaPreCadastro(record.idPeca, record.descricao).catch(() => null);
+      const nomePasta = String(descricaoPecaTitulo || record.descricao).trim().slice(0, 60);
+      criarPastaPreCadastro(record.idPeca, nomePasta).catch(() => null);
       res.status(201).json({ ...updated, _blingOk: true });
     } catch (blingErr: any) {
       await prisma.cadastroPeca.delete({ where: { id: record.id } }).catch(() => null);

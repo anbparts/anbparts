@@ -1131,6 +1131,7 @@ export default function CadastroPage() {
     try {
       const body = {
         motoId: Number(form.motoId), idPeca: form.idPeca, descricao: form.descricao,
+        descricaoPecaTitulo: form.descricaoPecaTitulo || form.descricao,
         descricaoPeca: form.descricaoPeca || null, precoVenda: Number(form.precoVenda) || 0,
         condicao: form.condicao,
         peso: form.peso ? Number(form.peso) : null, largura: form.largura ? Number(form.largura) : null,
