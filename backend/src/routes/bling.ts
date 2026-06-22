@@ -19,6 +19,7 @@ import { downloadImageAsDataUrl } from '../lib/image';
 import { cancelarVendaComDevolucaoEtiqueta } from '../lib/cancelamento-venda';
 import { getMercadoLivreItemPermalink } from '../lib/mercado-livre';
 import { getNuvemshopStatusBySkus, buildNuvemshopCatalogMap, NuvemshopAnuncioStatus } from '../lib/nuvemshop';
+import { spDayStart, spDayEnd } from '../lib/timezone';
 
 export const blingRouter = Router();
 
@@ -1227,15 +1228,8 @@ async function resolveBlingDetranEtiqueta(produto: any, detail?: any) {
   }
 }
 
-function parseDateStart(date: string) {
-  const [year, month, day] = String(date || '').split('-').map(Number);
-  return new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
-}
-
-function parseDateEnd(date: string) {
-  const [year, month, day] = String(date || '').split('-').map(Number);
-  return new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999));
-}
+function parseDateStart(date: string) { return spDayStart(date); }
+function parseDateEnd(date: string)   { return spDayEnd(date); }
 
 function formatDateOnly(value: Date | string | null | undefined) {
   if (!value) return '';
@@ -6009,8 +6003,8 @@ blingRouter.get('/relatorio-separacao-manual/pedidos', async (req, res, next) =>
     const dataInicio = String(req.query?.dataInicio || '').trim();
     const dataFim = String(req.query?.dataFim || '').trim();
     const dataVendaFilter: any = { not: null };
-    if (dataInicio) dataVendaFilter.gte = new Date(`${dataInicio}T00:00:00.000Z`);
-    if (dataFim) dataVendaFilter.lte = new Date(`${dataFim}T23:59:59.999Z`);
+    if (dataInicio) dataVendaFilter.gte = spDayStart(dataInicio);
+    if (dataFim) dataVendaFilter.lte = spDayEnd(dataFim);
 
     const pecas = await prisma.peca.findMany({
       where: {

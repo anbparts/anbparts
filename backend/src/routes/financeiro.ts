@@ -4,6 +4,7 @@ import { getConfiguracaoGeral, saveConfiguracaoGeral } from '../lib/configuracoe
 import { sendDespesasDoDiaEmailIfNeeded } from '../lib/despesas-alert';
 import { z } from 'zod';
 import { randomUUID } from 'crypto';
+import { spDayStart } from '../lib/timezone';
 
 export const financeiroRouter = Router();
 
@@ -122,7 +123,7 @@ function normalizeAttachment(value: any) {
 function parseDateOnlyInput(value: any) {
   const text = String(value || '').trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return new Date(text);
-  return new Date(`${text}T00:00:00.000Z`);
+  return spDayStart(text);
 }
 
 function addDaysUtc(date: Date, days: number) {

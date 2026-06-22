@@ -4,6 +4,7 @@ import { sendDetranBaixaEmailIfNeeded } from '../lib/detran-alert';
 import { compressDataUrlImage, normalizeImageFileName } from '../lib/image';
 import { cancelarVendaComDevolucaoEtiqueta } from '../lib/cancelamento-venda';
 import { z } from 'zod';
+import { spDayStart, spDayEnd } from '../lib/timezone';
 
 export const pecasRouter = Router();
 
@@ -220,15 +221,8 @@ async function suggestIdPecaForMoto(motoId: number) {
   };
 }
 
-function parseDateStart(date: string) {
-  const [year, month, day] = date.split('-').map(Number);
-  return new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
-}
-
-function parseDateEnd(date: string) {
-  const [year, month, day] = date.split('-').map(Number);
-  return new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999));
-}
+function parseDateStart(date: string) { return spDayStart(date); }
+function parseDateEnd(date: string)   { return spDayEnd(date); }
 
 function roundMoney(value: number) {
   return parseFloat(value.toFixed(2));

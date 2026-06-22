@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { syncDetranEtiquetaBling } from '../lib/sync-bling-detran';
+import { spDayStart, spDayEnd } from '../lib/timezone';
 
 export const devolucoesRouter = Router();
 
@@ -135,14 +136,14 @@ devolucoesRouter.get('/', requireEstoqueAction('devolucoes'), async (req, res, n
 
     if (dataVendaDe || dataVendaAte) {
       where.dataVenda = {
-        ...(dataVendaDe  ? { gte: new Date(dataVendaDe  + 'T00:00:00.000Z') } : {}),
-        ...(dataVendaAte ? { lte: new Date(dataVendaAte + 'T23:59:59.999Z') } : {}),
+        ...(dataVendaDe  ? { gte: spDayStart(dataVendaDe)  } : {}),
+        ...(dataVendaAte ? { lte: spDayEnd(dataVendaAte)   } : {}),
       };
     }
     if (dataDevolucaoDe || dataDevolucaoAte) {
       where.dataDevolucao = {
-        ...(dataDevolucaoDe  ? { gte: new Date(dataDevolucaoDe  + 'T00:00:00.000Z') } : {}),
-        ...(dataDevolucaoAte ? { lte: new Date(dataDevolucaoAte + 'T23:59:59.999Z') } : {}),
+        ...(dataDevolucaoDe  ? { gte: spDayStart(dataDevolucaoDe)  } : {}),
+        ...(dataDevolucaoAte ? { lte: spDayEnd(dataDevolucaoAte)   } : {}),
       };
     }
 

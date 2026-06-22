@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'crypto';
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma';
+import { spDateKey } from '../lib/timezone';
 import {
   DEFAULT_MERCADO_LIVRE_PERGUNTAS_EMAIL_TITULO,
   DEFAULT_RESEND_FROM,
@@ -2824,8 +2825,7 @@ mercadoLivreRouter.get('/visitas-hoje', async (req, res, next) => {
 
     const activeSellerId = normalizeText(config.sellerId);
 
-    const hoje = new Date();
-    const dateFrom = hoje.toISOString().split('T')[0]; // YYYY-MM-DD
+    const dateFrom = spDateKey(); // YYYY-MM-DD no fuso de São Paulo
     const dateTo = dateFrom;
 
     // Busca visitas do dia agrupadas por item
