@@ -493,6 +493,100 @@ etiquetasDetranRouter.get('/pendencias-baixa', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// POST /etiquetas-detran/validar
+etiquetasDetranRouter.post('/validar', async (req, res, next) => {
+  try {
+    type DetranRow = { etiqueta: string; descricao?: string; saldo?: number; modelo?: string; placa?: string; chassis?: string; dtEntrada?: string };
+    const linhasDetran: DetranRow[] = Array.isArray(req.body?.linhasDetran) ? req.body.linhasDetran : [];
+    if (!linhasDetran.length) return res.status(400).json({ ok: false, error: 'Nenhuma linha do DETRAN enviada.' });
+
+    const detranMap = new Map<string, DetranRow>();
+    for (const row of linhasDetran) {
+      const etq = String(row.etiqueta || '').trim().toUpperCase();
+      if (etq) detranMap.set(etq, row);
+    }
+
+    const [pecas, historico, preCadastros] = await Promise.all([
+      prisma.peca.findMany({
+        where: { detranEtiqueta: { not: null } },
+        select: { id: true, idPeca: true, descricao: true, detranEtiqueta: true, detranBaixada: true },
+      }),
+      prisma.historicoDevolucao.findMany({
+        where: { etiquetasDetran: { not: null } },
+        select: { pecaId: true, idPeca: true, descricao: true, etiquetasDetran: true, etiquetaBaixada: true },
+      }),
+      prisma.cadastroPeca.findMany({
+        where: { status: 'pre_cadastro', detranEtiqueta: { not: null } },
+        select: { id: true, idPeca: true, descricao: true, detranEtiqueta: true },
+      }),
+    ]);
+
+    type AnbEntry = { sku: string; descricao: string; baixada: boolean; fonte: string };
+    const anbMap = new Map<string, AnbEntry>();
+
+    for (const p of pecas) {
+      for (const etq of splitEtiquetas(p.detranEtiqueta)) {
+        anbMap.set(etq.toUpperCase(), { sku: p.idPeca, descricao: p.descricao, baixada: p.detranBaixada, fonte: 'peca' });
+      }
+    }
+    for (const h of historico) {
+      for (const etq of splitEtiquetas(h.etiquetasDetran)) {
+        const key = etq.toUpperCase();
+        if (!anbMap.has(key)) anbMap.set(key, { sku: h.idPeca, descricao: h.descricao, baixada: h.etiquetaBaixada ?? false, fonte: 'historico' });
+      }
+    }
+    for (const pc of preCadastros) {
+      for (const etq of splitEtiquetas(pc.detranEtiqueta)) {
+        const key = etq.toUpperCase();
+        if (!anbMap.has(key)) anbMap.set(key, { sku: pc.idPeca, descricao: pc.descricao, baixada: false, fonte: 'pre_cadastro' });
+      }
+    }
+
+    type Linha = {
+      etiqueta: string; situacao: 'ok' | 'so_detran' | 'so_anb' | 'divergencia'; detalhe?: string;
+      anbSku?: string; anbDescricao?: string; anbStatus?: string; anbFonte?: string;
+      detranDescricao?: string; detranSaldo?: number; detranModelo?: string; detranPlaca?: string;
+    };
+
+    const linhas: Linha[] = [];
+
+    for (const [etq, row] of detranMap) {
+      const anb = anbMap.get(etq);
+      const saldo = Number(row.saldo ?? 1);
+      const detranAtivo = saldo > 0;
+      const base = { etiqueta: etq, detranDescricao: row.descricao, detranSaldo: saldo, detranModelo: row.modelo, detranPlaca: row.placa };
+
+      if (!anb) {
+        linhas.push({ ...base, situacao: 'so_detran' });
+      } else {
+        const anbStatus = anb.baixada ? 'Baixada' : anb.fonte === 'pre_cadastro' ? 'Pré-Cadastro' : 'Ativa';
+        if (detranAtivo === !anb.baixada) {
+          linhas.push({ ...base, situacao: 'ok', anbSku: anb.sku, anbDescricao: anb.descricao, anbStatus, anbFonte: anb.fonte });
+        } else {
+          linhas.push({ ...base, situacao: 'divergencia', detalhe: detranAtivo ? 'DETRAN ativo / ANB baixada' : 'DETRAN sem saldo / ANB ativa', anbSku: anb.sku, anbDescricao: anb.descricao, anbStatus, anbFonte: anb.fonte });
+        }
+      }
+    }
+
+    for (const [etq, anb] of anbMap) {
+      if (!detranMap.has(etq) && !anb.baixada) {
+        linhas.push({ etiqueta: etq, situacao: 'so_anb', anbSku: anb.sku, anbDescricao: anb.descricao, anbStatus: anb.fonte === 'pre_cadastro' ? 'Pré-Cadastro' : 'Ativa', anbFonte: anb.fonte });
+      }
+    }
+
+    const resumo = {
+      totalDetran: detranMap.size,
+      totalAnb: anbMap.size,
+      ok: linhas.filter(l => l.situacao === 'ok').length,
+      soDetran: linhas.filter(l => l.situacao === 'so_detran').length,
+      soAnb: linhas.filter(l => l.situacao === 'so_anb').length,
+      divergencias: linhas.filter(l => l.situacao === 'divergencia').length,
+    };
+
+    res.json({ ok: true, resumo, linhas });
+  } catch (e) { next(e); }
+});
+
 // POST /etiquetas-detran/:pecaId/confirmar-baixa
 etiquetasDetranRouter.post('/:pecaId/confirmar-baixa', async (req, res, next) => {
   try {
