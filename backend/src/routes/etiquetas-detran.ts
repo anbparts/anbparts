@@ -543,18 +543,29 @@ etiquetasDetranRouter.post('/validar', async (req, res, next) => {
     }
 
     // Busca motos pela placa do DETRAN e pelo motoId do ANB
-    const detranPlacas = [...detranMap.values()].map(r => r.placa).filter((p): p is string => !!p);
+    // Normaliza placas: strip espaços/hifens, uppercase — para casar com o cadastro ANB
+    const normPlaca = (s: string) => s.toUpperCase().replace(/[\s\-]/g, '').trim();
+    const detranPlacasRaw = [...detranMap.values()].map(r => r.placa).filter((p): p is string => !!p);
     const anbMotoIds = [...anbMap.values()].map(e => e.motoId).filter((id): id is number => id != null);
-    const motos = await prisma.moto.findMany({
-      where: { OR: [{ placa: { in: detranPlacas, mode: 'insensitive' } }, { id: { in: anbMotoIds } }] },
+    // Prisma não suporta mode:'insensitive' com 'in', então traz todas as motos necessárias
+    // por id (exato) e filtra por placa em JS após normalizar ambos os lados
+    const motosRaw = await prisma.moto.findMany({
+      where: {
+        OR: [
+          ...(anbMotoIds.length ? [{ id: { in: anbMotoIds } }] : []),
+          ...(detranPlacasRaw.length ? [{ placa: { not: null } }] : []),
+        ],
+      },
       select: { id: true, placa: true, detranCartelaId: true, modelo: true, marca: true },
     });
-    const motoByPlaca = new Map<string, typeof motos[0]>();
-    const motoById = new Map<number, typeof motos[0]>();
-    for (const m of motos) {
-      if (m.placa) motoByPlaca.set(m.placa.toUpperCase(), m);
+    const motoByPlaca = new Map<string, typeof motosRaw[0]>();
+    const motoById = new Map<number, typeof motosRaw[0]>();
+    const detranPlacasNorm = new Set(detranPlacasRaw.map(normPlaca));
+    for (const m of motosRaw) {
+      if (m.placa && detranPlacasNorm.has(normPlaca(m.placa))) motoByPlaca.set(normPlaca(m.placa), m);
       motoById.set(m.id, m);
     }
+    const motos = motosRaw; // alias mantido para tipo
 
     type Linha = {
       etiqueta: string; situacao: 'ok' | 'so_detran' | 'so_anb' | 'divergencia'; detalhe?: string;
@@ -569,7 +580,7 @@ etiquetasDetranRouter.post('/validar', async (req, res, next) => {
       const anb = anbMap.get(etq);
       const saldo = Number(row.saldo ?? 1);
       const detranAtivo = saldo > 0;
-      const motoFromPlaca = row.placa ? motoByPlaca.get(row.placa.toUpperCase()) : undefined;
+      const motoFromPlaca = row.placa ? motoByPlaca.get(normPlaca(row.placa)) : undefined;
       const motoFromAnb = anb?.motoId ? motoById.get(anb.motoId) : undefined;
       const moto = motoFromPlaca || motoFromAnb;
       const motoFields = moto ? { motoAnbId: moto.id, motoPrefixo: moto.detranCartelaId ?? undefined, motoModelo: [moto.marca, moto.modelo].filter(Boolean).join(' ') } : {};

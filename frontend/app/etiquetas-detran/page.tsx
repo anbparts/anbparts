@@ -933,34 +933,39 @@ export default function EtiquetasDetranPage() {
                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                       <thead>
                         <tr>
-                          {['Etiqueta DETRAN', 'Situação', 'ID Moto', 'Prefixo', 'SKU ANB', 'Descrição ANB', 'Status ANB', 'Desc. DETRAN', 'Modelo', 'Placa'].map(col => (
+                          {['Etiqueta DETRAN', 'Situação', 'Moto ANB', 'SKU ANB', 'Descrição ANB', 'Status ANB', 'Placa DETRAN'].map(col => (
                             <th key={col} style={s.th}>{col}</th>
                           ))}
                         </tr>
                       </thead>
                       <tbody>
                         {filtradas.length === 0 ? (
-                          <tr><td colSpan={10} style={{ ...s.td, textAlign: 'center', padding: 40, color: 'var(--gray-400)' }}>Nenhum resultado</td></tr>
+                          <tr><td colSpan={7} style={{ ...s.td, textAlign: 'center', padding: 40, color: 'var(--gray-400)' }}>Nenhum resultado</td></tr>
                         ) : filtradas.map((l: any, i: number) => {
                           const sit = SIT_CONFIG[l.situacao] || SIT_CONFIG.ok;
                           return (
                             <tr key={i} style={{ background: i % 2 === 0 ? 'var(--white)' : 'var(--gray-50)' }}>
-                              <td style={{ ...s.td, fontFamily: 'Geist Mono, monospace', fontSize: 11.5 }}>{l.etiqueta}</td>
-                              <td style={s.td}>
+                              <td style={{ ...s.td, fontFamily: 'Geist Mono, monospace', fontSize: 11.5, whiteSpace: 'nowrap' }}>{l.etiqueta}</td>
+                              <td style={{ ...s.td, whiteSpace: 'nowrap' }}>
                                 <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 999, background: sit.bg, color: sit.color, whiteSpace: 'nowrap' }}>
-                                  {sit.label}{l.detalhe ? ` — ${l.detalhe}` : ''}
+                                  {sit.label}
                                 </span>
+                                {l.detalhe && <div style={{ fontSize: 10, color: 'var(--gray-400)', marginTop: 2 }}>{l.detalhe}</div>}
                               </td>
-                              <td style={{ ...s.td, fontFamily: 'Geist Mono, monospace', fontSize: 12 }}>{l.motoAnbId || '-'}</td>
-                              <td style={{ ...s.td, fontFamily: 'Geist Mono, monospace', fontSize: 11, whiteSpace: 'nowrap' }}>{l.motoPrefixo || '-'}</td>
-                              <td style={{ ...s.td, fontFamily: 'Geist Mono, monospace', fontSize: 12 }}>{l.anbSku || '-'}</td>
-                              <td style={{ ...s.td, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.anbDescricao || '-'}</td>
+                              <td style={{ ...s.td, fontSize: 12 }}>
+                                {l.motoAnbId ? (
+                                  <div>
+                                    <div style={{ fontWeight: 600, color: 'var(--gray-700)' }}>#{l.motoAnbId}</div>
+                                    {l.motoPrefixo && <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 10, color: 'var(--gray-400)', marginTop: 1 }}>{l.motoPrefixo}</div>}
+                                  </div>
+                                ) : '-'}
+                              </td>
+                              <td style={{ ...s.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, whiteSpace: 'nowrap' }}>{l.anbSku || '-'}</td>
+                              <td style={{ ...s.td, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12 }} title={l.anbDescricao || ''}>{l.anbDescricao || '-'}</td>
                               <td style={s.td}>
-                                {l.anbStatus ? <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 7px', borderRadius: 999, ...((STATUS_COLORS as any)[l.anbStatus] || STATUS_COLORS['-']) }}>{l.anbStatus}</span> : '-'}
+                                {l.anbStatus ? <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 7px', borderRadius: 999, whiteSpace: 'nowrap', ...((STATUS_COLORS as any)[l.anbStatus] || STATUS_COLORS['-']) }}>{l.anbStatus}</span> : '-'}
                               </td>
-                              <td style={{ ...s.td, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12 }}>{l.detranDescricao || '-'}</td>
-                              <td style={{ ...s.td, fontSize: 12 }}>{l.detranModelo || '-'}</td>
-                              <td style={{ ...s.td, fontFamily: 'Geist Mono, monospace', fontSize: 12 }}>{l.detranPlaca || '-'}</td>
+                              <td style={{ ...s.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, whiteSpace: 'nowrap' }}>{l.detranPlaca || '-'}</td>
                             </tr>
                           );
                         })}
