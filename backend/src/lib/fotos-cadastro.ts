@@ -325,32 +325,43 @@ async function resizeForNuvemshop(buffer: Buffer): Promise<string> {
 
 async function uploadNuvemshopDrive(produtoId: number | string, fotos: DriveFoto[], imagensAtuais: number) {
   const fotosParaEnviar = imagensAtuais > 0 ? fotos.slice(1) : fotos;
-  let proximaPosicao = imagensAtuais + 1;
-  try {
-    const imagens = await listarImagensNuvemshop(produtoId);
-    proximaPosicao = imagens.reduce((max, img) => Math.max(max, Number(img?.position || 0) || 0), 0) + 1;
-  } catch {
-    // Falha ao listar imagens existentes — usa estimativa baseada no contador recebido
-  }
-  const resultados: any[] = [];
+  const proximaPosicaoBase = imagensAtuais + 1;
 
-  for (const foto of fotosParaEnviar) {
+  // Download + resize all photos in parallel to avoid sequential Drive latency
+  const downloads = await Promise.all(
+    fotosParaEnviar.map(async (foto) => {
+      try {
+        const downloaded = await downloadDriveFoto(foto);
+        const base64 = await resizeForNuvemshop(downloaded.buffer);
+        return { foto, base64, ok: true as const, error: '' };
+      } catch (e: any) {
+        return { foto, base64: '', ok: false as const, error: e?.message || String(e) };
+      }
+    }),
+  );
+
+  const resultados: any[] = [];
+  let proximaPosicao = proximaPosicaoBase;
+
+  for (const dl of downloads) {
+    if (!dl.ok) {
+      resultados.push({ sistema: 'nuvemshop', nome: dl.foto.nome, ok: false, error: dl.error });
+      continue;
+    }
     try {
-      const downloaded = await downloadDriveFoto(foto);
-      const base64 = await resizeForNuvemshop(downloaded.buffer);
       const data = await nuvemReq<any>(`/products/${encodeURIComponent(String(produtoId))}/images`, {
         method: 'POST',
         body: JSON.stringify({
-          attachment: base64,
-          filename: foto.nome || 'foto.jpg',
+          attachment: dl.base64,
+          filename: dl.foto.nome || 'foto.jpg',
           position: proximaPosicao,
         }),
       });
-      resultados.push({ sistema: 'nuvemshop', nome: foto.nome, ok: true, id: data?.id, position: proximaPosicao });
+      resultados.push({ sistema: 'nuvemshop', nome: dl.foto.nome, ok: true, id: data?.id, position: proximaPosicao });
       proximaPosicao++;
       await pauseUploadBatch(resultados.length - 1);
     } catch (e: any) {
-      resultados.push({ sistema: 'nuvemshop', nome: foto.nome, ok: false, error: e?.message || String(e) });
+      resultados.push({ sistema: 'nuvemshop', nome: dl.foto.nome, ok: false, error: e?.message || String(e) });
     }
   }
 
