@@ -370,24 +370,6 @@ export default function EtiquetasDetranPage() {
     setConfirmando(null);
   }
 
-  async function baixarComprovante(linha: any) {
-    try {
-      const resp = await fetch(`${API}/etiquetas-detran/${linha.pecaId}/comprovante`, { credentials: 'include' });
-      if (!resp.ok) throw new Error();
-      const blob = await resp.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = linha.comprovanteNome || `comprovante-baixa-${linha.pecaId}`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch {
-      alert('Nao foi possivel baixar o comprovante desta baixa.');
-    }
-  }
-
   async function salvarNovaEtiquetaDevolucao(peca: any) {
     if (!canProcessarDevolucao) {
       alert('Seu usuario nao tem permissao para processar devolucao de etiquetas.');
@@ -564,16 +546,9 @@ export default function EtiquetasDetranPage() {
                         <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-800)', marginTop: 3, lineHeight: 1.25 }}>{linha.descricao || '-'}</div>
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-end', flexShrink: 0 }}>
-                        {linha.status === 'Baixada' && linha.temComprovante && !linha.fromHistorico ? (
-                          <button type="button" onClick={() => baixarComprovante(linha)} title="Baixar comprovante da baixa"
-                            style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 999, background: stColors.bg, color: stColors.color, border: 'none', cursor: 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4, textDecoration: 'underline' }}>
-                            {linha.status} ⬇
-                          </button>
-                        ) : (
-                          <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 999, background: stColors.bg, color: stColors.color }}>
-                            {linha.status || '-'}
-                          </span>
-                        )}
+                        <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 999, background: stColors.bg, color: stColors.color }}>
+                          {linha.status || '-'}
+                        </span>
                         {linha.fromHistorico && (
                           <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 5, background: '#fef3c7', color: '#92400e' }}>
                             Devolução
@@ -646,16 +621,9 @@ export default function EtiquetasDetranPage() {
                       <td style={{ ...s.td, fontFamily: 'Geist Mono, monospace', fontSize: 12 }}>{linha.etiqueta}</td>
                       <td style={s.td}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-start' }}>
-                          {linha.status === 'Baixada' && linha.temComprovante && !linha.fromHistorico ? (
-                            <button type="button" onClick={() => baixarComprovante(linha)} title="Baixar comprovante da baixa"
-                              style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 5, background: stColors.bg, color: stColors.color, border: 'none', cursor: 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4, textDecoration: 'underline' }}>
-                              {linha.status} ⬇
-                            </button>
-                          ) : (
-                            <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 5, background: stColors.bg, color: stColors.color }}>
-                              {linha.status || '-'}
-                            </span>
-                          )}
+                          <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 5, background: stColors.bg, color: stColors.color }}>
+                            {linha.status || '-'}
+                          </span>
                           {linha.fromHistorico && (
                             <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 5, background: '#fef3c7', color: '#92400e' }}>
                               Devolução
