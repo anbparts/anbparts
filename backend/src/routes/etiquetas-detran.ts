@@ -230,6 +230,7 @@ etiquetasDetranRouter.get('/', async (req, res, next) => {
         select: {
           id: true, idPeca: true, descricao: true, detranEtiqueta: true,
           detranStatus: true, detranBaixada: true, detranBaixadaAt: true,
+          detranComprovanteNome: true,
           disponivel: true, blingPedidoId: true, blingPedidoNum: true,
           dataVenda: true, motoId: true, tipoPecaAvulsa: true,
         },
@@ -309,6 +310,8 @@ etiquetasDetranRouter.get('/', async (req, res, next) => {
           status: getDetranStatusLabel(peca.detranBaixada),
           detranStatus: peca.detranStatus || null, detranBaixada: peca.detranBaixada,
           detranBaixadaAt: peca.detranBaixadaAt, disponivel: peca.disponivel,
+          temComprovante: !!peca.detranComprovanteNome,
+          comprovanteNome: peca.detranComprovanteNome || null,
           blingPedidoId: peca.blingPedidoId, blingPedidoNum: peca.blingPedidoNum,
           dataVenda: peca.dataVenda, fromHistorico: false, isPreCadastro: false,
         });
@@ -639,6 +642,37 @@ etiquetasDetranRouter.post('/:pecaId/confirmar-baixa', async (req, res, next) =>
     });
 
     res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+// GET /etiquetas-detran/:pecaId/comprovante  -> download do comprovante anexado na baixa
+etiquetasDetranRouter.get('/:pecaId/comprovante', async (req, res, next) => {
+  try {
+    const pecaId = Number(req.params.pecaId);
+    const peca = await prisma.peca.findUnique({
+      where: { id: pecaId },
+      select: { detranComprovanteNome: true, detranComprovanteArquivo: true },
+    });
+    if (!peca || !peca.detranComprovanteArquivo) {
+      return res.status(404).json({ ok: false, error: 'Comprovante nao encontrado' });
+    }
+
+    // Arquivo salvo como data URL: data:<mime>;base64,<dados>
+    const match = /^data:([^;,]+)?(?:;base64)?,(.*)$/s.exec(peca.detranComprovanteArquivo);
+    if (!match) {
+      return res.status(422).json({ ok: false, error: 'Comprovante em formato invalido' });
+    }
+    const mime = match[1] || 'application/octet-stream';
+    const isBase64 = /;base64,/.test(peca.detranComprovanteArquivo);
+    const buffer = isBase64
+      ? Buffer.from(match[2], 'base64')
+      : Buffer.from(decodeURIComponent(match[2]), 'utf-8');
+
+    const nome = peca.detranComprovanteNome || `comprovante-baixa-${pecaId}`;
+    res.setHeader('Content-Type', mime);
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(nome)}`);
+    res.setHeader('Content-Length', String(buffer.length));
+    res.send(buffer);
   } catch (e) { next(e); }
 });
 
