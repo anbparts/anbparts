@@ -117,6 +117,8 @@ export const api = {
     },
     despesas: {
       list: () => req<any[]>('/financeiro/despesas'),
+      getAnexo: (id: number) => req<{ nome: string | null; dataUrl: string }>(`/financeiro/despesas/${id}/anexo`),
+      getComprovante: (id: number) => req<{ nome: string | null; dataUrl: string }>(`/financeiro/despesas/${id}/comprovante`),
       create: (data: any) => req<any>('/financeiro/despesas', { method: 'POST', body: JSON.stringify(data) }),
       update: (id: number, data: any) => req<any>(`/financeiro/despesas/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
       setStatus: (id: number, data: any) => req<any>(`/financeiro/despesas/${id}/status`, { method: 'PATCH', body: JSON.stringify(data) }),

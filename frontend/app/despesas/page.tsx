@@ -193,12 +193,28 @@ function InfoPill({ label, title }: { label: string; title: string }) {
   );
 }
 
-function FileButton({ label, dataUrl, fileName }: { label: string; dataUrl?: string | null; fileName?: string | null }) {
-  if (!dataUrl) return <span style={{ color: 'var(--gray-300)' }}>-</span>;
+function FileButton({ label, despesaId, tipo, fileName }: { label: string; despesaId: number; tipo: 'anexo' | 'comprovante'; fileName?: string | null }) {
+  const [loading, setLoading] = useState(false);
+  if (!fileName) return <span style={{ color: 'var(--gray-300)' }}>-</span>;
+  async function handleDownload() {
+    if (loading) return;
+    setLoading(true);
+    try {
+      const data = tipo === 'anexo'
+        ? await api.financeiro.despesas.getAnexo(despesaId)
+        : await api.financeiro.despesas.getComprovante(despesaId);
+      if (data?.dataUrl) downloadDataUrl(data.dataUrl, fileName || `${label}.pdf`);
+    } catch {
+      alert('Nao foi possivel baixar o arquivo.');
+    } finally {
+      setLoading(false);
+    }
+  }
   return (
     <button
       type="button"
-      onClick={() => downloadDataUrl(dataUrl, fileName || `${label}.pdf`)}
+      onClick={handleDownload}
+      disabled={loading}
       style={{
         border: '1px solid var(--border)',
         background: 'var(--white)',
@@ -207,10 +223,11 @@ function FileButton({ label, dataUrl, fileName }: { label: string; dataUrl?: str
         padding: '4px 9px',
         fontSize: 11,
         fontWeight: 700,
-        cursor: 'pointer',
+        cursor: loading ? 'default' : 'pointer',
+        opacity: loading ? 0.6 : 1,
       }}
     >
-      {label}
+      {loading ? '...' : label}
     </button>
   );
 }
@@ -427,11 +444,15 @@ export default function DespesasPage() {
     chavePix: '',
     codigoBarras: '',
     observacao: '',
-    anexo: null as { name: string; dataUrl: string } | null,
+    anexo: null as { name: string; dataUrl: string } | null | undefined,
   });
+  // Nome do anexo já existente ao editar (a lista não traz mais o base64).
+  // form.anexo === undefined => "não mexeu no anexo" (backend preserva o atual).
+  const [editAnexoNome, setEditAnexoNome] = useState<string | null>(null);
 
   function resetManualForm() {
     setEditingDespesaId(null);
+    setEditAnexoNome(null);
     setForm({
       data: today(),
       detalhes: '',
@@ -448,6 +469,7 @@ export default function DespesasPage() {
 
   function startEditDespesa(item: any) {
     setEditingDespesaId(Number(item.id));
+    setEditAnexoNome(item.anexoNome || null);
     setOrigemForm('manual');
     setForm({
       data: item.data ? dateKey(item.data) : today(),
@@ -459,7 +481,8 @@ export default function DespesasPage() {
       chavePix: item.chavePix || '',
       codigoBarras: item.codigoBarras || '',
       observacao: item.observacao || '',
-      anexo: item.anexoArquivo ? { name: item.anexoNome || 'anexo', dataUrl: item.anexoArquivo } : null,
+      // undefined = não alterar o anexo na edição; o base64 não vem mais na lista.
+      anexo: undefined,
     });
     setShowForm(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -469,6 +492,7 @@ export default function DespesasPage() {
     const dataOrigem = item.data ? dateKey(item.data) : today();
     const novaData = addMonthsToInputDate(dataOrigem, 1);
     setEditingDespesaId(null);
+    setEditAnexoNome(null);
     setOrigemForm('manual');
     setForm({
       data: novaData,
@@ -594,7 +618,7 @@ export default function DespesasPage() {
     if (!form.detalhes || !form.valor) return;
     setSaving(true);
     try {
-      const payload = {
+      const payload: any = {
         data: form.data,
         detalhes: form.detalhes,
         categoria: form.categoria,
@@ -604,8 +628,10 @@ export default function DespesasPage() {
         chavePix: form.chavePix || null,
         codigoBarras: form.codigoBarras || null,
         observacao: form.observacao || null,
-        anexo: form.anexo,
       };
+      // Só envia anexo quando o usuário escolheu/alterou o arquivo.
+      // Em edição sem trocar o anexo, form.anexo === undefined => omitido => backend preserva o atual.
+      if (form.anexo !== undefined) payload.anexo = form.anexo;
       if (editingDespesaId) {
         await api.financeiro.despesas.update(editingDespesaId, payload);
         alert('Despesa atualizada.');
@@ -973,7 +999,7 @@ export default function DespesasPage() {
                   <div>
                     <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>PDF da despesa</div>
                     <input type="file" accept=".pdf" onChange={handleAnexoChange} />
-                    <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 6 }}>{form.anexo?.name || 'Nenhum arquivo selecionado'}</div>
+                    <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 6 }}>{form.anexo?.name || (form.anexo === undefined && editAnexoNome ? `${editAnexoNome} (atual)` : 'Nenhum arquivo selecionado')}</div>
                   </div>
                 </div>
                 {form.recorrenciaTipo !== 'nenhuma' && (
@@ -1304,8 +1330,8 @@ export default function DespesasPage() {
                         {item.codigoBarras ? <InfoPill label="Barras" title={item.codigoBarras} /> : null}
                         {item.observacao ? <InfoPill label="Obs" title={item.observacao} /> : null}
                         {item.recorrenciaTipo ? <InfoPill label={recurrenceLabel(item.recorrenciaTipo)} title={`Recorrente ate ${formatDateBr(item.recorrenciaFim)}`} /> : null}
-                        <FileButton label="PDF" dataUrl={item.anexoArquivo} fileName={item.anexoNome} />
-                        <FileButton label="Comp." dataUrl={item.comprovanteArquivo} fileName={item.comprovanteNome} />
+                        <FileButton label="PDF" despesaId={item.id} tipo="anexo" fileName={item.anexoNome} />
+                        <FileButton label="Comp." despesaId={item.id} tipo="comprovante" fileName={item.comprovanteNome} />
                       </div>
                       <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
                         <button type="button" onClick={() => startEditDespesa(item)}
@@ -1372,10 +1398,10 @@ export default function DespesasPage() {
                           </div>
                         </td>
                         <td style={{ padding: '9px 16px' }}>
-                          <FileButton label="PDF" dataUrl={item.anexoArquivo} fileName={item.anexoNome} />
+                          <FileButton label="PDF" despesaId={item.id} tipo="anexo" fileName={item.anexoNome} />
                         </td>
                         <td style={{ padding: '9px 16px' }}>
-                          <FileButton label="Comp." dataUrl={item.comprovanteArquivo} fileName={item.comprovanteNome} />
+                          <FileButton label="Comp." despesaId={item.id} tipo="comprovante" fileName={item.comprovanteNome} />
                         </td>
                         <td style={{ padding: '9px 16px' }}>
                           <StatusBadge status={item.statusPagamento} onClick={() => setPagamentoDespesa(item)} />

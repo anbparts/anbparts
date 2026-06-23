@@ -335,10 +335,50 @@ export function startFinanceiroSchedulers() {
 // DESPESAS
 financeiroRouter.get('/despesas', async (_req, res, next) => {
   try {
+    // Lista NAO traz o base64 dos anexos (anexoArquivo/comprovanteArquivo) — so metadados.
+    // Os arquivos sao baixados sob demanda em /despesas/:id/anexo e /despesas/:id/comprovante.
     const rows = await prisma.despesa.findMany({
       orderBy: [{ data: 'desc' }, { id: 'desc' }],
+      select: {
+        id: true, data: true, detalhes: true, categoria: true, valor: true,
+        importOrigem: true, importChave: true, importArquivo: true,
+        recorrenciaSerieId: true, recorrenciaTipo: true, recorrenciaFim: true, recorrenciaGerada: true,
+        statusPagamento: true, dataPagamento: true, chavePix: true, codigoBarras: true, observacao: true,
+        anexoNome: true, comprovanteNome: true, createdAt: true,
+        // anexoArquivo e comprovanteArquivo (base64) ficam de fora — baixados sob demanda.
+      },
     });
     res.json(rows.map(mapDespesaRow));
+  } catch (e) {
+    next(e);
+  }
+});
+
+// GET /financeiro/despesas/:id/anexo — baixa o anexo (PDF) sob demanda
+financeiroRouter.get('/despesas/:id/anexo', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const row = await prisma.despesa.findUnique({
+      where: { id },
+      select: { anexoNome: true, anexoArquivo: true },
+    });
+    if (!row || !row.anexoArquivo) return res.status(404).json({ error: 'Anexo nao encontrado' });
+    res.json({ nome: row.anexoNome, dataUrl: row.anexoArquivo });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// GET /financeiro/despesas/:id/comprovante — baixa o comprovante sob demanda
+financeiroRouter.get('/despesas/:id/comprovante', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const row = await prisma.despesa.findUnique({
+      where: { id },
+      select: { comprovanteNome: true, comprovanteArquivo: true },
+    });
+    if (!row || !row.comprovanteArquivo) return res.status(404).json({ error: 'Comprovante nao encontrado' });
+    res.json({ nome: row.comprovanteNome, dataUrl: row.comprovanteArquivo });
   } catch (e) {
     next(e);
   }
