@@ -264,17 +264,27 @@ async function downloadDataUrl(dataUrl: string, fileName: string) {
   setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
 }
 
-async function downloadMotoAttachment(motoId: number, key: string, attachment: { name: string; dataUrl?: string } | null) {
+function buildAnexoFileName(prefixo: string | undefined, label: string, originalName: string) {
+  const ext = originalName.includes('.') ? '.' + originalName.split('.').pop() : '';
+  if (!prefixo) return originalName;
+  return `${prefixo}_${label}${ext}`;
+}
+
+async function downloadMotoAttachment(motoId: number, key: string, attachment: { name: string; dataUrl?: string } | null, prefixo?: string, label?: string) {
   if (!attachment) return;
   if (!motoId) return;
+  const finalName = (prefixo && label) ? buildAnexoFileName(prefixo, label, attachment.name) : attachment.name;
   if (attachment.dataUrl) {
-    await downloadDataUrl(attachment.dataUrl, attachment.name);
+    await downloadDataUrl(attachment.dataUrl, finalName);
     return;
   }
 
-  const data = await api.motos.anexo(motoId, key);
+  const data = await api.motos.anexo(motoId, key, label);
   if (data?.dataUrl) {
-    await downloadDataUrl(data.dataUrl, data.name || attachment.name);
+    const srcName = data.name || attachment.name;
+    // Prioriza o nome calculado no backend (prefixo confiavel); senao, monta no front; senao, nome original.
+    const finalName = data.downloadName || ((prefixo && label) ? buildAnexoFileName(prefixo, label, srcName) : srcName);
+    await downloadDataUrl(data.dataUrl, finalName);
   }
 }
 
@@ -741,7 +751,7 @@ function DetranModal({ open, moto, loading, data, updatingId, onToggleStatus, on
   );
 }
 
-function AnexosMotoModal({ open, moto, loading, data, saving, onClose, onSave, viewportMode = 'desktop' }: any) {
+function AnexosMotoModal({ open, moto, prefixo, loading, data, saving, onClose, onSave, viewportMode = 'desktop' }: any) {
   const [form, setForm] = useState<Record<string, { name: string; dataUrl?: string } | null>>({});
   const [changedKeys, setChangedKeys] = useState<string[]>([]);
   const [removedKeys, setRemovedKeys] = useState<string[]>([]);
@@ -894,7 +904,7 @@ function AnexosMotoModal({ open, moto, loading, data, saving, onClose, onSave, v
                     <div style={{ display: 'grid', gridTemplateColumns: modalIsPhone ? '1fr' : '1fr 1fr', gap: 8 }}>
                       <button
                         type="button"
-                        onClick={() => downloadMotoAttachment(moto?.id, field.key, attachment)}
+                        onClick={() => downloadMotoAttachment(moto?.id, field.key, attachment, prefixo, field.label)}
                         disabled={!attachment}
                         style={{ ...cs.btn, width: '100%', justifyContent: 'center', padding: '8px 10px', fontSize: 12, border: '1px solid var(--border)', background: 'var(--white)', color: attachment ? 'var(--blue-500)' : 'var(--ink-muted)', cursor: attachment ? 'pointer' : 'not-allowed', opacity: attachment ? 1 : 0.7 }}
                       >
@@ -945,7 +955,7 @@ function AnexosMotoModal({ open, moto, loading, data, saving, onClose, onSave, v
                           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                             <button
                               type="button"
-                              onClick={() => downloadMotoAttachment(moto?.id, field.key, attachment)}
+                              onClick={() => downloadMotoAttachment(moto?.id, field.key, attachment, prefixo, field.label)}
                               disabled={!attachment}
                               style={{ ...cs.btn, padding: '6px 10px', fontSize: 11, border: '1px solid var(--border)', background: 'var(--white)', color: attachment ? 'var(--blue-500)' : 'var(--ink-muted)', cursor: attachment ? 'pointer' : 'not-allowed', opacity: attachment ? 1 : 0.7 }}
                             >
@@ -2320,7 +2330,7 @@ export default function MotosPage() {
         </div>
       </div>
       <Modal open={modal} title={editing ? 'Editar moto' : 'Nova moto'} onClose={() => { setModal(false); setEditing(null); }} onSave={handleSave} moto={editing} viewportMode={viewportMode} />
-      <AnexosMotoModal open={anexosModalOpen} moto={anexosMoto} loading={anexosLoading} data={anexosData} saving={anexosSaving} onSave={handleSaveAnexos} onClose={closeAnexosModal} viewportMode={viewportMode} />
+      <AnexosMotoModal open={anexosModalOpen} moto={anexosMoto} prefixo={prefixoMap[anexosMoto?.id]} loading={anexosLoading} data={anexosData} saving={anexosSaving} onSave={handleSaveAnexos} onClose={closeAnexosModal} viewportMode={viewportMode} />
       <DetranModal open={detranModalOpen} moto={detranMoto} loading={detranLoading} data={detranData} updatingId={detranUpdatingId} onToggleStatus={handleDetranStatusToggle} onClose={closeDetranModal} viewportMode={viewportMode} />
 
       {/* Modal Texto Modelo */}

@@ -44,7 +44,7 @@ export const api = {
     get:    (id: number)    => req<any>(`/motos/${id}`),
     detranEtiquetas: (id: number) => req<any>(`/motos/${id}/detran-etiquetas`),
     anexos: (id: number) => req<any>(`/motos/${id}/anexos`),
-    anexo: (id: number, key: string) => req<any>(`/motos/${id}/anexos/${encodeURIComponent(key)}`),
+    anexo: (id: number, key: string, label?: string) => req<any>(`/motos/${id}/anexos/${encodeURIComponent(key)}${label ? `?label=${encodeURIComponent(label)}` : ''}`),
     updateAnexos: (id: number, anexos: any, removidos?: string[]) => req<any>(`/motos/${id}/anexos`, {
       method: 'PUT',
       body: JSON.stringify({ anexos, removidos }),

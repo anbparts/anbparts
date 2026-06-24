@@ -508,6 +508,32 @@ motosRouter.get('/:id/anexos', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// Remove caracteres invalidos para nome de arquivo e pontos finais (ex.: rotulo "Foto Lateral Dir.").
+function sanitizeAnexoFilenamePart(value: string): string {
+  return String(value || '').replace(/[\\/:*?"<>|]/g, '').replace(/\.+$/, '').trim();
+}
+
+// Monta o nome de download renomeado: PREFIXO_Rotulo.ext.
+// Prefixo vem do Bling (confiavel no backend); rotulo vem do front; extensao do arquivo original.
+// Sem prefixo ou sem rotulo, devolve o nome original (nunca quebra o download).
+async function buildAnexoDownloadName(motoId: number, label: string, originalName: string): Promise<string> {
+  const cleanLabel = sanitizeAnexoFilenamePart(label);
+  if (!cleanLabel) return originalName;
+
+  let prefixo = '';
+  try {
+    const cfg = await prisma.blingConfig.findFirst({ select: { prefixos: true } });
+    const prefixos = Array.isArray(cfg?.prefixos) ? (cfg!.prefixos as any[]) : [];
+    const match = prefixos.find((p) => Number(p?.motoId) === motoId && p?.prefixo);
+    if (match) prefixo = String(match.prefixo).toUpperCase().trim();
+  } catch { /* sem config: cai no nome original */ }
+  if (!prefixo) return originalName;
+
+  const dot = originalName.lastIndexOf('.');
+  const ext = dot > 0 ? originalName.slice(dot) : '';
+  return `${prefixo}_${cleanLabel}${ext}`;
+}
+
 // GET /motos/:id/anexos/:key
 motosRouter.get('/:id/anexos/:key', async (req, res, next) => {
   try {
@@ -530,7 +556,11 @@ motosRouter.get('/:id/anexos/:key', async (req, res, next) => {
     const attachment = anexos[key];
     if (!attachment) return res.status(404).json({ error: 'Anexo nao encontrado' });
 
-    res.json({ ok: true, key, name: attachment.name, dataUrl: attachment.dataUrl });
+    // Nome de download renomeado, calculado no servidor (prefixo confiavel).
+    const label = String((req.query as any).label || '').trim();
+    const downloadName = await buildAnexoDownloadName(motoId, label, attachment.name);
+
+    res.json({ ok: true, key, name: attachment.name, downloadName, dataUrl: attachment.dataUrl });
   } catch (e) { next(e); }
 });
 
