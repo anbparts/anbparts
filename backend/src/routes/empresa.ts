@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma';
 import { getConfiguracaoGeral } from '../lib/configuracoes-gerais';
+import { compressPdfDataUrl, expandPdfDataUrl } from '../lib/pdf-compression';
 
 export const empresaRouter = Router();
 
@@ -138,10 +139,36 @@ function buildEmpresaResponse(config: any, anexos: Record<string, { name: string
   };
 }
 
+// Zipa em segundo plano os PDFs CRUS da empresa (chamado ao abrir a pagina Empresa). Best-effort, idempotente.
+async function zipEmpresaPdfsCrusEmBackground() {
+  try {
+    const rows = await prisma.$queryRaw<{ chave: string; prefixo: string }[]>`
+      SELECT "chave", left("arquivo", 48) AS prefixo FROM "EmpresaAnexo"
+    `;
+    for (const item of rows) {
+      if (!/^data:application\/pdf;base64,/.test(item.prefixo)) continue; // so PDF cru
+      const full = await prisma.$queryRaw<{ arquivo: string }[]>`
+        SELECT "arquivo" FROM "EmpresaAnexo" WHERE "chave" = ${item.chave}
+      `;
+      if (!full.length) continue;
+      const comprimido = await compressPdfDataUrl(full[0].arquivo);
+      if (comprimido !== full[0].arquivo) {
+        await prisma.$executeRaw`
+          UPDATE "EmpresaAnexo" SET "arquivo" = ${comprimido}, "updatedAt" = now() WHERE "chave" = ${item.chave}
+        `;
+      }
+    }
+  } catch { /* nao quebra o request */ }
+}
+
 empresaRouter.get('/', async (_req, res, next) => {
   try {
     const config = await getConfiguracaoGeral();
     const anexos = await loadEmpresaAnexosNomes();
+
+    // Em segundo plano, zipa os PDFs crus da empresa (idempotente; nao bloqueia a resposta).
+    void zipEmpresaPdfsCrusEmBackground();
+
     res.json(buildEmpresaResponse(config, anexos));
   } catch (e) {
     next(e);
@@ -159,7 +186,9 @@ empresaRouter.get('/anexos/:key', async (req, res, next) => {
     `;
     if (!rows.length) return res.status(404).json({ error: 'Anexo nao encontrado' });
 
-    res.json({ ok: true, key, name: rows[0].nome, dataUrl: rows[0].arquivo });
+    // Se o PDF estiver comprimido (Brotli), descomprime pro original antes de entregar.
+    const dataUrl = await expandPdfDataUrl(rows[0].arquivo);
+    res.json({ ok: true, key, name: rows[0].nome, dataUrl });
   } catch (e) {
     next(e);
   }
@@ -174,11 +203,12 @@ empresaRouter.post('/', async (req, res, next) => {
       ? payload.removidos.filter((key) => EMPRESA_ANEXO_KEYS.includes(key as typeof EMPRESA_ANEXO_KEYS[number]) || /^extra_\d+$/.test(key))
       : [];
 
-    // Upsert dos anexos enviados (cada um na sua linha) — só os que vieram com arquivo novo.
+    // Upsert dos anexos enviados (cada um na sua linha) — PDFs entram zipados (x-pdf-br); imagens intactas.
     for (const [key, attachment] of Object.entries(anexosAtualizados)) {
+      const dataUrl = await compressPdfDataUrl(attachment.dataUrl);
       await prisma.$executeRaw`
         INSERT INTO "EmpresaAnexo" ("chave", "nome", "arquivo", "updatedAt")
-        VALUES (${key}, ${attachment.name}, ${attachment.dataUrl}, now())
+        VALUES (${key}, ${attachment.name}, ${dataUrl}, now())
         ON CONFLICT ("chave") DO UPDATE
           SET "nome" = EXCLUDED."nome", "arquivo" = EXCLUDED."arquivo", "updatedAt" = now()
       `;
