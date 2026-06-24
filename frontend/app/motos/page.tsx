@@ -1,6 +1,7 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '@/lib/api';
+import { compressMotoFotoFile } from '@/lib/image-compression';
 import EtiquetaCartelaModal from '../estoque/EtiquetaCartelaModal';
 import { API_BASE } from '@/lib/api-base';
 import { useAuth } from '@/lib/auth';
@@ -264,6 +265,9 @@ async function downloadDataUrl(dataUrl: string, fileName: string) {
   setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
 }
 
+// Acima deste tamanho, a foto e recomprimida para ~1MB no download (e o banco e atualizado).
+const MOTO_FOTO_RECOMPRESS_THRESHOLD = Math.round(1.15 * 1024 * 1024);
+
 function buildAnexoFileName(prefixo: string | undefined, label: string, originalName: string) {
   const ext = originalName.includes('.') ? '.' + originalName.split('.').pop() : '';
   if (!prefixo) return originalName;
@@ -280,12 +284,28 @@ async function downloadMotoAttachment(motoId: number, key: string, attachment: {
   }
 
   const data = await api.motos.anexo(motoId, key, label);
-  if (data?.dataUrl) {
-    const srcName = data.name || attachment.name;
-    // Prioriza o nome calculado no backend (prefixo confiavel); senao, monta no front; senao, nome original.
-    const finalName = data.downloadName || ((prefixo && label) ? buildAnexoFileName(prefixo, label, srcName) : srcName);
-    await downloadDataUrl(data.dataUrl, finalName);
-  }
+  if (!data?.dataUrl) return;
+
+  const srcName = data.name || attachment.name;
+  // Prioriza o nome calculado no backend (prefixo confiavel); senao, monta no front; senao, nome original.
+  const finalName = data.downloadName || ((prefixo && label) ? buildAnexoFileName(prefixo, label, srcName) : srcName);
+
+  // Se for imagem grande (>~1,15MB), comprime para ~1MB, ATUALIZA o banco e baixa a versao comprimida.
+  // Imagens ja pequenas baixam sem mexer (evita perda de qualidade e gravacao desnecessaria).
+  let urlParaBaixar = data.dataUrl;
+  try {
+    const file = dataUrlToFile(data.dataUrl, srcName);
+    if (file.type.startsWith('image/') && file.size > MOTO_FOTO_RECOMPRESS_THRESHOLD) {
+      const result = await compressMotoFotoFile(file);
+      if (result.compressed && result.dataUrl) {
+        urlParaBaixar = result.dataUrl;
+        // Atualiza SO essa foto no banco, em segundo plano (best-effort): nao bloqueia o download e ignora erro.
+        api.motos.replaceAnexo(motoId, key, { name: result.fileName, dataUrl: result.dataUrl }).catch(() => {});
+      }
+    }
+  } catch { /* compressao falhou: baixa o original mesmo assim */ }
+
+  await downloadDataUrl(urlParaBaixar, finalName);
 }
 
 const MOTO_ANEXO_FIELDS = [
@@ -819,9 +839,18 @@ function AnexosMotoModal({ open, moto, prefixo, loading, data, saving, onClose, 
       event.target.value = '';
       return;
     }
-    const dataUrl = await fileToDataUrl(file);
+    // Fotos (imagens) sao comprimidas para ~1 MB; PDFs/documentos seguem sem alteracao.
+    let name = file.name;
+    let dataUrl: string;
+    if (file.type.startsWith('image/')) {
+      const result = await compressMotoFotoFile(file);
+      dataUrl = result.dataUrl;
+      name = result.fileName;
+    } else {
+      dataUrl = await fileToDataUrl(file);
+    }
     setLocalError('');
-    setForm((current) => ({ ...current, [key]: { name: file.name, dataUrl } }));
+    setForm((current) => ({ ...current, [key]: { name, dataUrl } }));
     setChangedKeys((current) => Array.from(new Set([...current, key])));
     setRemovedKeys((current) => current.filter((item) => item !== key));
     event.target.value = '';

@@ -52,6 +52,88 @@ function normalizeImageFileName(fileName: string, extension: string) {
   return `${baseName}.${safeExtension}`;
 }
 
+// Alvo para fotos de moto (vistoria/anexos): ~1 MB, mantendo boa resolucao.
+const MOTO_FOTO_TARGET_BYTES = 1024 * 1024;
+
+export async function compressMotoFotoFile(file: File) {
+  const originalDataUrl = await readFileAsDataUrl(file);
+
+  // Nao mexe em PDFs nem em nao-imagens (ex.: documentos anexados).
+  if (!file.type.startsWith('image/') || file.type === 'image/svg+xml') {
+    return {
+      dataUrl: originalDataUrl,
+      fileName: file.name,
+      originalBytes: file.size,
+      bytes: file.size,
+      compressed: false,
+    };
+  }
+
+  try {
+    const image = await loadImage(originalDataUrl);
+    const attempts = [
+      { max: 2560, quality: 0.82 },
+      { max: 2200, quality: 0.78 },
+      { max: 1920, quality: 0.74 },
+      { max: 1600, quality: 0.70 },
+      { max: 1400, quality: 0.64 },
+      { max: 1200, quality: 0.58 },
+    ];
+    let bestBlob: Blob | null = null;
+
+    for (let index = 0; index < attempts.length; index += 1) {
+      const attempt = attempts[index];
+      const scale = Math.min(1, attempt.max / Math.max(image.width, image.height));
+      const width = Math.max(1, Math.round(image.width * scale));
+      const height = Math.max(1, Math.round(image.height * scale));
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+
+      if (!context) {
+        throw new Error('Nao foi possivel compactar a imagem');
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+      context.fillStyle = '#fff';
+      context.fillRect(0, 0, width, height);
+      context.drawImage(image, 0, 0, width, height);
+
+      const blob = await canvasToJpegBlob(canvas, attempt.quality);
+      bestBlob = blob;
+
+      if (blob.size <= MOTO_FOTO_TARGET_BYTES) {
+        return {
+          dataUrl: await blobToDataUrl(blob),
+          fileName: normalizeImageFileName(file.name, 'jpg'),
+          originalBytes: file.size,
+          bytes: blob.size,
+          compressed: true,
+        };
+      }
+    }
+
+    // Nenhuma tentativa bateu o alvo: usa a menor (mais comprimida).
+    if (bestBlob) {
+      return {
+        dataUrl: await blobToDataUrl(bestBlob),
+        fileName: normalizeImageFileName(file.name, 'jpg'),
+        originalBytes: file.size,
+        bytes: bestBlob.size,
+        compressed: true,
+      };
+    }
+  } catch {}
+
+  return {
+    dataUrl: originalDataUrl,
+    fileName: file.name,
+    originalBytes: file.size,
+    bytes: file.size,
+    compressed: false,
+  };
+}
+
 export async function compressFotoCapaFile(file: File) {
   const originalDataUrl = await readFileAsDataUrl(file);
 

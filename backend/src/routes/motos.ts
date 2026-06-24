@@ -564,6 +564,34 @@ motosRouter.get('/:id/anexos/:key', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// PATCH /motos/:id/anexos/:key — substitui UM anexo (usado na recompressao via download).
+// Usa jsonb_set para atualizar so essa chave, SEM carregar os demais anexos no Node (leve).
+motosRouter.patch('/:id/anexos/:key', requireMotosAction('editar'), async (req, res, next) => {
+  try {
+    const motoId = Number(req.params.id);
+    const key = String(req.params.key || '').trim();
+    if (!Number.isInteger(motoId) || motoId <= 0) {
+      return res.status(400).json({ error: 'Moto invalida' });
+    }
+    if (!MOTO_ANEXO_KEYS.includes(key as typeof MOTO_ANEXO_KEYS[number])) {
+      return res.status(400).json({ error: 'Anexo invalido' });
+    }
+    const { name, dataUrl } = (req.body || {}) as { name?: string; dataUrl?: string };
+    if (!name || !dataUrl) {
+      return res.status(400).json({ error: 'Anexo invalido' });
+    }
+
+    const value = JSON.stringify({ name: String(name), dataUrl: String(dataUrl) });
+    const updated = await prisma.$executeRaw`
+      UPDATE "Moto"
+      SET anexos = jsonb_set(COALESCE("anexos", '{}'::jsonb), ARRAY[${key}]::text[], ${value}::jsonb, true)
+      WHERE id = ${motoId}
+    `;
+    if (!updated) return res.status(404).json({ error: 'Moto nao encontrada' });
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
 // PUT /motos/:id/anexos
 motosRouter.put('/:id/anexos', requireMotosAction('editar'), async (req, res, next) => {
   try {
