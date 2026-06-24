@@ -14,7 +14,8 @@ const brotliCompressAsync = promisify(zlib.brotliCompress);
 const brotliDecompressAsync = promisify(zlib.brotliDecompress);
 
 // Comprime (Brotli, lossless) o conteudo de um dataUrl de PDF, marcando o mime como x-pdf-br.
-// So comprime se reduzir de fato (>5%); senao devolve o original. Nao-PDF (imagens etc.) passam intactos.
+// PADRONIZACAO: TODO PDF e armazenado como x-pdf-br, comprimindo ou nao (sem filtro de ganho).
+// Nao-PDF (imagens etc.) e ja-comprimidos (x-pdf-br) passam intactos.
 async function compressPdfDataUrl(dataUrl: string): Promise<string> {
   const match = /^data:application\/pdf;base64,(.*)$/s.exec(dataUrl || '');
   if (!match) return dataUrl;
@@ -26,7 +27,6 @@ async function compressPdfDataUrl(dataUrl: string): Promise<string> {
       [zlib.constants.BROTLI_PARAM_SIZE_HINT]: raw.length,
     },
   });
-  if (compressed.length >= raw.length * 0.95) return dataUrl;
   return `data:application/x-pdf-br;base64,${compressed.toString('base64')}`;
 }
 
