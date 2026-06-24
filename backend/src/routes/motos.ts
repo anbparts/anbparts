@@ -5,8 +5,38 @@ import { syncDetranEtiquetaBling } from '../lib/sync-bling-detran';
 import PDFDocument from 'pdfkit';
 import { getConfiguracaoGeral } from '../lib/configuracoes-gerais';
 import { LOGO_BASE64 } from '../assets/logo-base64';
+import zlib from 'zlib';
+import { promisify } from 'util';
 
 export const motosRouter = Router();
+
+const brotliCompressAsync = promisify(zlib.brotliCompress);
+const brotliDecompressAsync = promisify(zlib.brotliDecompress);
+
+// Comprime (Brotli, lossless) o conteudo de um dataUrl de PDF, marcando o mime como x-pdf-br.
+// So comprime se reduzir de fato (>5%); senao devolve o original. Nao-PDF (imagens etc.) passam intactos.
+async function compressPdfDataUrl(dataUrl: string): Promise<string> {
+  const match = /^data:application\/pdf;base64,(.*)$/s.exec(dataUrl || '');
+  if (!match) return dataUrl;
+  const raw = Buffer.from(match[1], 'base64');
+  if (!raw.length) return dataUrl;
+  const compressed = await brotliCompressAsync(raw, {
+    params: {
+      [zlib.constants.BROTLI_PARAM_QUALITY]: 9,
+      [zlib.constants.BROTLI_PARAM_SIZE_HINT]: raw.length,
+    },
+  });
+  if (compressed.length >= raw.length * 0.95) return dataUrl;
+  return `data:application/x-pdf-br;base64,${compressed.toString('base64')}`;
+}
+
+// Descomprime de volta pro PDF original quando o anexo esta no formato x-pdf-br.
+async function expandPdfDataUrl(dataUrl: string): Promise<string> {
+  const match = /^data:application\/x-pdf-br;base64,(.*)$/s.exec(dataUrl || '');
+  if (!match) return dataUrl;
+  const raw = await brotliDecompressAsync(Buffer.from(match[1], 'base64'));
+  return `data:application/pdf;base64,${raw.toString('base64')}`;
+}
 
 function hasMotosAction(req: any, action: string) {
   const user = req.authUser || {};
@@ -560,7 +590,10 @@ motosRouter.get('/:id/anexos/:key', async (req, res, next) => {
     const label = String((req.query as any).label || '').trim();
     const downloadName = await buildAnexoDownloadName(motoId, label, attachment.name);
 
-    res.json({ ok: true, key, name: attachment.name, downloadName, dataUrl: attachment.dataUrl });
+    // Se o PDF estiver comprimido (Brotli), descomprime pro original antes de entregar.
+    const dataUrl = await expandPdfDataUrl(attachment.dataUrl);
+
+    res.json({ ok: true, key, name: attachment.name, downloadName, dataUrl });
   } catch (e) { next(e); }
 });
 
@@ -622,9 +655,15 @@ motosRouter.put('/:id/anexos', requireMotosAction('editar'), async (req, res, ne
       ? payload.removidos.filter((key) => MOTO_ANEXO_KEYS.includes(key as typeof MOTO_ANEXO_KEYS[number]))
       : [];
 
+    // Comprime (Brotli, lossless) os PDFs recem-enviados antes de salvar. Imagens passam intactas.
+    const anexosAtualizadosComp: Record<string, { name: string; dataUrl: string }> = {};
+    for (const [key, att] of Object.entries(anexosAtualizados)) {
+      anexosAtualizadosComp[key] = { name: att.name, dataUrl: await compressPdfDataUrl(att.dataUrl) };
+    }
+
     const anexos = {
       ...anexosAtuais,
-      ...anexosAtualizados,
+      ...anexosAtualizadosComp,
     } as Record<string, { name: string; dataUrl: string }>;
 
     for (const key of removidos) {
