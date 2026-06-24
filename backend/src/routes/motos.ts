@@ -38,6 +38,77 @@ async function expandPdfDataUrl(dataUrl: string): Promise<string> {
   return `data:application/pdf;base64,${raw.toString('base64')}`;
 }
 
+// ── Tabela dedicada MotoAnexo (1 linha por anexo) — operacoes via SQL puro (nao depende do client Prisma) ──
+
+// Lista anexos de uma moto SEM o base64: so nome + inicio do dataUrl (pra saber tipo/compressao). Leve.
+async function listMotoAnexosLeve(motoId: number) {
+  return prisma.$queryRaw<{ chave: string; nome: string; prefixo: string }[]>`
+    SELECT "chave", "nome", left("arquivo", 48) AS prefixo
+    FROM "MotoAnexo" WHERE "motoId" = ${motoId}
+  `;
+}
+
+// Carrega o arquivo (dataUrl completo) de UM anexo.
+async function getMotoAnexoArquivo(motoId: number, chave: string) {
+  const rows = await prisma.$queryRaw<{ nome: string; arquivo: string }[]>`
+    SELECT "nome", "arquivo" FROM "MotoAnexo" WHERE "motoId" = ${motoId} AND "chave" = ${chave}
+  `;
+  return rows[0] || null;
+}
+
+// Carrega so as FOTOS de uma moto (chaves 'foto%') em mapa { chave: { name, dataUrl } }. Usado na vistoria.
+// Nao carrega os PDFs/editais (grandes e que nao entram na vistoria) — evita spike de memoria.
+async function getMotoFotos(motoId: number): Promise<Record<string, { name: string; dataUrl: string }>> {
+  const rows = await prisma.$queryRaw<{ chave: string; nome: string; arquivo: string }[]>`
+    SELECT "chave", "nome", "arquivo" FROM "MotoAnexo" WHERE "motoId" = ${motoId} AND "chave" LIKE 'foto%'
+  `;
+  const out: Record<string, { name: string; dataUrl: string }> = {};
+  for (const r of rows) out[String(r.chave)] = { name: String(r.nome), dataUrl: String(r.arquivo) };
+  return out;
+}
+
+// Grava/atualiza UM anexo.
+async function upsertMotoAnexo(motoId: number, chave: string, nome: string, arquivo: string) {
+  await prisma.$executeRaw`
+    INSERT INTO "MotoAnexo" ("motoId", "chave", "nome", "arquivo", "updatedAt")
+    VALUES (${motoId}, ${chave}, ${nome}, ${arquivo}, now())
+    ON CONFLICT ("motoId", "chave") DO UPDATE
+      SET "nome" = EXCLUDED."nome", "arquivo" = EXCLUDED."arquivo", "updatedAt" = now()
+  `;
+}
+
+async function deleteMotoAnexo(motoId: number, chave: string) {
+  await prisma.$executeRaw`DELETE FROM "MotoAnexo" WHERE "motoId" = ${motoId} AND "chave" = ${chave}`;
+}
+
+// Monta o mapa de nomes (sem base64) a partir da lista leve, filtrando chaves validas.
+function anexosNomesFromLista(lista: { chave: string; nome: string }[]): Record<string, { name: string }> {
+  const out: Record<string, { name: string }> = {};
+  for (const item of lista) {
+    const key = String(item.chave);
+    if (MOTO_ANEXO_KEYS.includes(key as typeof MOTO_ANEXO_KEYS[number])) {
+      out[key] = { name: String(item.nome) };
+    }
+  }
+  return out;
+}
+
+// Zipa em segundo plano os PDFs CRUS de uma moto (chamado ao abrir os Anexos). Best-effort, idempotente.
+async function zipMotoPdfsCrusEmBackground(motoId: number) {
+  try {
+    const lista = await listMotoAnexosLeve(motoId);
+    for (const item of lista) {
+      if (!/^data:application\/pdf;base64,/.test(item.prefixo)) continue; // so PDF cru
+      const full = await getMotoAnexoArquivo(motoId, item.chave);
+      if (!full) continue;
+      const comprimido = await compressPdfDataUrl(full.arquivo);
+      if (comprimido !== full.arquivo) {
+        await upsertMotoAnexo(motoId, item.chave, full.nome, comprimido);
+      }
+    }
+  } catch { /* nao quebra o request */ }
+}
+
 function hasMotosAction(req: any, action: string) {
   const user = req.authUser || {};
   const username = String(user.username || '').trim().toLowerCase();
@@ -124,16 +195,9 @@ function countMotoAnexos(value: unknown) {
   return Object.keys(normalizeMotoAnexos(value)).length;
 }
 
-function buildMotoAnexosResponse(moto: any, options?: { includeData?: boolean }) {
-  const anexos = normalizeMotoAnexos((moto as any).anexos);
+function buildMotoAnexosResponse(moto: any, anexosNomes: Record<string, { name: string }>) {
   const responseAnexos = Object.fromEntries(
-    Object.entries(anexos).map(([key, attachment]) => [
-      key,
-      {
-        name: attachment.name,
-        ...(options?.includeData ? { dataUrl: attachment.dataUrl } : {}),
-      },
-    ]),
+    Object.entries(anexosNomes).map(([key, attachment]) => [key, { name: attachment.name }]),
   );
 
   return {
@@ -142,7 +206,7 @@ function buildMotoAnexosResponse(moto: any, options?: { includeData?: boolean })
     moto: `${moto.marca} ${moto.modelo}`,
     ano: moto.ano,
     anexos: responseAnexos,
-    total: Object.keys(anexos).length,
+    total: Object.keys(anexosNomes).length,
   };
 }
 
@@ -281,13 +345,11 @@ motosRouter.get('/', async (req, res, next) => {
           detranBaixada: true,
         },
       }),
-      // Conta os anexos de cada moto SEM carregar o base64 (jsonb_object_keys).
+      // Conta os anexos de cada moto direto na tabela dedicada (sem carregar base64).
       // Se falhar por qualquer motivo, retorna [] e o indicador de anexos fica 0 — a lista continua funcionando.
       prisma.$queryRaw<{ id: number; total: number }[]>`
-        SELECT id, CASE WHEN jsonb_typeof("anexos") = 'object'
-          THEN (SELECT count(*)::int FROM jsonb_object_keys("anexos"))
-          ELSE 0 END AS total
-        FROM "Moto"
+        SELECT "motoId" AS id, count(*)::int AS total
+        FROM "MotoAnexo" GROUP BY "motoId"
       `.catch(() => [] as { id: number; total: number }[]),
     ]);
 
@@ -521,20 +583,21 @@ motosRouter.get('/:id/anexos', async (req, res, next) => {
 
     const moto = await prisma.moto.findUnique({
       where: { id: motoId },
-      select: {
-        id: true,
-        marca: true,
-        modelo: true,
-        ano: true,
-        anexos: true,
-      },
+      select: { id: true, marca: true, modelo: true, ano: true },
     });
 
     if (!moto) {
       return res.status(404).json({ error: 'Moto nao encontrada' });
     }
 
-    res.json(buildMotoAnexosResponse(moto));
+    // Lista leve (nome + prefixo, SEM base64) a partir da tabela dedicada.
+    const lista = await listMotoAnexosLeve(motoId);
+    const anexosNomes = anexosNomesFromLista(lista);
+
+    // Em segundo plano, zipa os PDFs crus desta moto (idempotente; nao bloqueia a resposta).
+    void zipMotoPdfsCrusEmBackground(motoId);
+
+    res.json(buildMotoAnexosResponse(moto, anexosNomes));
   } catch (e) { next(e); }
 });
 
@@ -576,24 +639,17 @@ motosRouter.get('/:id/anexos/:key', async (req, res, next) => {
       return res.status(400).json({ error: 'Anexo invalido' });
     }
 
-    const moto = await prisma.moto.findUnique({
-      where: { id: motoId },
-      select: { id: true, anexos: true },
-    });
-    if (!moto) return res.status(404).json({ error: 'Moto nao encontrada' });
-
-    const anexos = normalizeMotoAnexos((moto as any).anexos);
-    const attachment = anexos[key];
+    const attachment = await getMotoAnexoArquivo(motoId, key);
     if (!attachment) return res.status(404).json({ error: 'Anexo nao encontrado' });
 
     // Nome de download renomeado, calculado no servidor (prefixo confiavel).
     const label = String((req.query as any).label || '').trim();
-    const downloadName = await buildAnexoDownloadName(motoId, label, attachment.name);
+    const downloadName = await buildAnexoDownloadName(motoId, label, attachment.nome);
 
     // Se o PDF estiver comprimido (Brotli), descomprime pro original antes de entregar.
-    const dataUrl = await expandPdfDataUrl(attachment.dataUrl);
+    const dataUrl = await expandPdfDataUrl(attachment.arquivo);
 
-    res.json({ ok: true, key, name: attachment.name, downloadName, dataUrl });
+    res.json({ ok: true, key, name: attachment.nome, downloadName, dataUrl });
   } catch (e) { next(e); }
 });
 
@@ -614,13 +670,7 @@ motosRouter.patch('/:id/anexos/:key', requireMotosAction('editar'), async (req, 
       return res.status(400).json({ error: 'Anexo invalido' });
     }
 
-    const value = JSON.stringify({ name: String(name), dataUrl: String(dataUrl) });
-    const updated = await prisma.$executeRaw`
-      UPDATE "Moto"
-      SET anexos = jsonb_set(COALESCE("anexos", '{}'::jsonb), ARRAY[${key}]::text[], ${value}::jsonb, true)
-      WHERE id = ${motoId}
-    `;
-    if (!updated) return res.status(404).json({ error: 'Moto nao encontrada' });
+    await upsertMotoAnexo(motoId, key, String(name), String(dataUrl));
     res.json({ ok: true });
   } catch (e) { next(e); }
 });
@@ -634,55 +684,32 @@ motosRouter.put('/:id/anexos', requireMotosAction('editar'), async (req, res, ne
     }
 
     const payload = motoAnexosSchema.parse(req.body || {});
-    const motoAtual = await prisma.moto.findUnique({
+    const moto = await prisma.moto.findUnique({
       where: { id: motoId },
-      select: {
-        id: true,
-        marca: true,
-        modelo: true,
-        ano: true,
-        anexos: true,
-      },
+      select: { id: true, marca: true, modelo: true, ano: true },
     });
 
-    if (!motoAtual) {
+    if (!moto) {
       return res.status(404).json({ error: 'Moto nao encontrada' });
     }
 
-    const anexosAtuais = normalizeMotoAnexos((motoAtual as any).anexos);
     const anexosAtualizados = normalizeMotoAnexos(payload.anexos);
     const removidos = Array.isArray(payload.removidos)
       ? payload.removidos.filter((key) => MOTO_ANEXO_KEYS.includes(key as typeof MOTO_ANEXO_KEYS[number]))
       : [];
 
-    // Comprime (Brotli, lossless) os PDFs recem-enviados antes de salvar. Imagens passam intactas.
-    const anexosAtualizadosComp: Record<string, { name: string; dataUrl: string }> = {};
+    // Upsert dos anexos enviados na tabela (comprime PDFs; imagens passam intactas).
     for (const [key, att] of Object.entries(anexosAtualizados)) {
-      anexosAtualizadosComp[key] = { name: att.name, dataUrl: await compressPdfDataUrl(att.dataUrl) };
+      const dataUrl = await compressPdfDataUrl(att.dataUrl);
+      await upsertMotoAnexo(motoId, key, att.name, dataUrl);
     }
-
-    const anexos = {
-      ...anexosAtuais,
-      ...anexosAtualizadosComp,
-    } as Record<string, { name: string; dataUrl: string }>;
-
+    // Remove os marcados.
     for (const key of removidos) {
-      delete anexos[key];
+      await deleteMotoAnexo(motoId, key);
     }
 
-    const moto = await prisma.moto.update({
-      where: { id: motoId },
-      data: { anexos },
-      select: {
-        id: true,
-        marca: true,
-        modelo: true,
-        ano: true,
-        anexos: true,
-      },
-    });
-
-    res.json(buildMotoAnexosResponse(moto));
+    const lista = await listMotoAnexosLeve(motoId);
+    res.json(buildMotoAnexosResponse(moto, anexosNomesFromLista(lista)));
   } catch (e) { next(e); }
 });
 
@@ -1587,7 +1614,8 @@ motosRouter.get('/:id/pdf-vistoria', async (req, res, next) => {
       { key: 'fotoNumeroMotor',     label: 'Numero do Motor' },
     ];
 
-    const anexos = normalizeMotoAnexos(moto.anexos);
+    // Fotos da vistoria vem da tabela dedicada MotoAnexo (sao imagens, nao comprimidas).
+    const anexos = await getMotoFotos(id);
 
     function dataUrlToBuffer(dataUrl: string): Buffer | null {
       const match = dataUrl.match(/^data:[^;]+;base64,(.+)$/s);

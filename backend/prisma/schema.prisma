@@ -280,6 +280,19 @@ model EmpresaAnexo {
   updatedAt DateTime @default(now()) @updatedAt
 }
 
+// Anexos das motos em tabela dedicada (1 linha por anexo), fora do JSON Moto.anexos.
+// Permite checar/zipar um anexo sem carregar todos os outros. PDFs ficam comprimidos (Brotli).
+model MotoAnexo {
+  motoId    Int
+  chave     String
+  nome      String
+  arquivo   String   @db.Text
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@id([motoId, chave])
+  @@index([motoId])
+}
+
 model MercadoLivreConfig {
   id           Int      @id @default(autoincrement())
   clientId     String   @default("")
