@@ -5,6 +5,8 @@ import { sendDespesasDoDiaEmailIfNeeded } from '../lib/despesas-alert';
 import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import { spDayStart } from '../lib/timezone';
+import { compressPdfDataUrl, expandPdfDataUrl } from '../lib/pdf-compression';
+import { compressDataUrlImage } from '../lib/image';
 
 export const financeiroRouter = Router();
 
@@ -173,6 +175,24 @@ function mapAttachmentFields(prefix: 'anexo' | 'comprovante', attachment: Return
     [`${prefix}Nome`]: attachment?.name || null,
     [`${prefix}Arquivo`]: attachment?.dataUrl || null,
   };
+}
+
+// Comprime um anexo de despesa antes de salvar:
+//  - Imagem  -> reduz pra pequena (igual foto capa, ~150 KB) via jimp.
+//  - PDF     -> zip Brotli lossless (x-pdf-br).
+//  - Outros  -> passam intactos.
+async function compressAttachment(att: ReturnType<typeof normalizeAttachment>) {
+  if (!att) return att;
+  let dataUrl = att.dataUrl;
+  if (/^data:image\//i.test(dataUrl)) {
+    try {
+      const result = await compressDataUrlImage(dataUrl, 'o anexo da despesa');
+      dataUrl = result.dataUrl;
+    } catch { /* formato nao suportado: mantem o original */ }
+  } else {
+    dataUrl = await compressPdfDataUrl(dataUrl);
+  }
+  return { name: att.name, dataUrl };
 }
 
 function roundMoney(value: number) {
@@ -348,6 +368,7 @@ financeiroRouter.get('/despesas', async (_req, res, next) => {
         // anexoArquivo e comprovanteArquivo (base64) ficam de fora — baixados sob demanda.
       },
     });
+
     res.json(rows.map(mapDespesaRow));
   } catch (e) {
     next(e);
@@ -363,7 +384,7 @@ financeiroRouter.get('/despesas/:id/anexo', async (req, res, next) => {
       select: { anexoNome: true, anexoArquivo: true },
     });
     if (!row || !row.anexoArquivo) return res.status(404).json({ error: 'Anexo nao encontrado' });
-    res.json({ nome: row.anexoNome, dataUrl: row.anexoArquivo });
+    res.json({ nome: row.anexoNome, dataUrl: await expandPdfDataUrl(row.anexoArquivo) });
   } catch (e) {
     next(e);
   }
@@ -378,7 +399,7 @@ financeiroRouter.get('/despesas/:id/comprovante', async (req, res, next) => {
       select: { comprovanteNome: true, comprovanteArquivo: true },
     });
     if (!row || !row.comprovanteArquivo) return res.status(404).json({ error: 'Comprovante nao encontrado' });
-    res.json({ nome: row.comprovanteNome, dataUrl: row.comprovanteArquivo });
+    res.json({ nome: row.comprovanteNome, dataUrl: await expandPdfDataUrl(row.comprovanteArquivo) });
   } catch (e) {
     next(e);
   }
@@ -387,7 +408,7 @@ financeiroRouter.get('/despesas/:id/comprovante', async (req, res, next) => {
 financeiroRouter.post('/despesas', async (req, res, next) => {
   try {
     const payload = despesaCreateSchema.parse(req.body || {});
-    const anexo = normalizeAttachment(payload.anexo);
+    const anexo = await compressAttachment(normalizeAttachment(payload.anexo));
     const statusPagamento = payload.statusPagamento || 'pendente';
     const recorrenciaTipo = payload.recorrenciaTipo === 'nenhuma' ? null : payload.recorrenciaTipo;
     const recorrenciaAte = recorrenciaTipo && payload.recorrenciaAte ? parseDateOnlyInput(payload.recorrenciaAte) : null;
@@ -436,7 +457,7 @@ financeiroRouter.put('/despesas/:id', async (req, res, next) => {
     const current = await prisma.despesa.findUnique({ where: { id } });
     if (!current) return res.status(404).json({ error: 'Despesa nao encontrada' });
 
-    const anexo = payload.anexo !== undefined ? normalizeAttachment(payload.anexo) : undefined;
+    const anexo = payload.anexo !== undefined ? await compressAttachment(normalizeAttachment(payload.anexo)) : undefined;
     const statusPagamento = payload.statusPagamento ?? current.statusPagamento;
     const dataPagamento = statusPagamento === 'pago'
       ? (
@@ -475,7 +496,7 @@ financeiroRouter.patch('/despesas/:id/status', async (req, res, next) => {
     const current = await prisma.despesa.findUnique({ where: { id } });
     if (!current) return res.status(404).json({ error: 'Despesa nao encontrada' });
 
-    const comprovante = normalizeAttachment(payload.comprovante);
+    const comprovante = await compressAttachment(normalizeAttachment(payload.comprovante));
     const row = await prisma.despesa.update({
       where: { id },
       data: payload.statusPagamento === 'pago'

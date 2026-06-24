@@ -997,8 +997,8 @@ export default function DespesasPage() {
                     <input style={{ ...inputStyle, width: '100%' }} placeholder="Opcional" value={form.observacao} onChange={(e) => setForm((value) => ({ ...value, observacao: e.target.value }))} />
                   </div>
                   <div>
-                    <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>PDF da despesa</div>
-                    <input type="file" accept=".pdf" onChange={handleAnexoChange} />
+                    <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Anexo da despesa (PDF ou imagem)</div>
+                    <input type="file" accept=".pdf,image/*" onChange={handleAnexoChange} />
                     <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 6 }}>{form.anexo?.name || (form.anexo === undefined && editAnexoNome ? `${editAnexoNome} (atual)` : 'Nenhum arquivo selecionado')}</div>
                   </div>
                 </div>
