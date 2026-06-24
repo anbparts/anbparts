@@ -103,18 +103,26 @@ function normalizeEmpresaDadosExtras(value: unknown) {
   };
 }
 
-function buildEmpresaResponse(config: any, options?: { includeData?: boolean }) {
-  const anexos = normalizeEmpresaAnexos(config?.empresaAnexos);
+// Carrega só os NOMES dos anexos da tabela dedicada (sem o base64 — leve).
+async function loadEmpresaAnexosNomes(): Promise<Record<string, { name: string }>> {
+  const rows = await prisma.$queryRaw<{ chave: string; nome: string }[]>`
+    SELECT "chave", "nome" FROM "EmpresaAnexo"
+  `;
+  const anexos: Record<string, { name: string }> = {};
+  for (const row of rows) {
+    const key = String(row.chave);
+    if (EMPRESA_ANEXO_KEYS.includes(key as typeof EMPRESA_ANEXO_KEYS[number]) || /^extra_\d+$/.test(key)) {
+      anexos[key] = { name: String(row.nome) };
+    }
+  }
+  return anexos;
+}
+
+function buildEmpresaResponse(config: any, anexos: Record<string, { name: string }>) {
   const dadosExtras = normalizeEmpresaDadosExtras(config?.empresaAnexos);
   const contasBancarias = normalizeContasBancarias(config?.empresaAnexos);
   const responseAnexos = Object.fromEntries(
-    Object.entries(anexos).map(([key, attachment]) => [
-      key,
-      {
-        name: attachment.name,
-        ...(options?.includeData ? { dataUrl: attachment.dataUrl } : {}),
-      },
-    ]),
+    Object.entries(anexos).map(([key, attachment]) => [key, { name: attachment.name }]),
   );
   return {
     ok: true,
@@ -133,7 +141,8 @@ function buildEmpresaResponse(config: any, options?: { includeData?: boolean }) 
 empresaRouter.get('/', async (_req, res, next) => {
   try {
     const config = await getConfiguracaoGeral();
-    res.json(buildEmpresaResponse(config));
+    const anexos = await loadEmpresaAnexosNomes();
+    res.json(buildEmpresaResponse(config, anexos));
   } catch (e) {
     next(e);
   }
@@ -145,12 +154,12 @@ empresaRouter.get('/anexos/:key', async (req, res, next) => {
     const isAllowedKey = EMPRESA_ANEXO_KEYS.includes(key as typeof EMPRESA_ANEXO_KEYS[number]) || /^extra_\d+$/.test(key);
     if (!isAllowedKey) return res.status(400).json({ error: 'Anexo invalido' });
 
-    const config = await getConfiguracaoGeral();
-    const anexos = normalizeEmpresaAnexos(config?.empresaAnexos);
-    const attachment = anexos[key];
-    if (!attachment) return res.status(404).json({ error: 'Anexo nao encontrado' });
+    const rows = await prisma.$queryRaw<{ nome: string; arquivo: string }[]>`
+      SELECT "nome", "arquivo" FROM "EmpresaAnexo" WHERE "chave" = ${key}
+    `;
+    if (!rows.length) return res.status(404).json({ error: 'Anexo nao encontrado' });
 
-    res.json({ ok: true, key, name: attachment.name, dataUrl: attachment.dataUrl });
+    res.json({ ok: true, key, name: rows[0].nome, dataUrl: rows[0].arquivo });
   } catch (e) {
     next(e);
   }
@@ -160,15 +169,25 @@ empresaRouter.post('/', async (req, res, next) => {
   try {
     const current = await getConfiguracaoGeral();
     const payload = empresaPayloadSchema.parse(req.body || {});
-    const anexosAtuais = normalizeEmpresaAnexos(current?.empresaAnexos);
     const anexosAtualizados = normalizeEmpresaAnexos(payload.anexos);
     const removidos = Array.isArray(payload.removidos)
       ? payload.removidos.filter((key) => EMPRESA_ANEXO_KEYS.includes(key as typeof EMPRESA_ANEXO_KEYS[number]) || /^extra_\d+$/.test(key))
       : [];
-    const anexos = {
-      ...anexosAtuais,
-      ...anexosAtualizados,
-    } as Record<string, { name: string; dataUrl: string }>;
+
+    // Upsert dos anexos enviados (cada um na sua linha) — só os que vieram com arquivo novo.
+    for (const [key, attachment] of Object.entries(anexosAtualizados)) {
+      await prisma.$executeRaw`
+        INSERT INTO "EmpresaAnexo" ("chave", "nome", "arquivo", "updatedAt")
+        VALUES (${key}, ${attachment.name}, ${attachment.dataUrl}, now())
+        ON CONFLICT ("chave") DO UPDATE
+          SET "nome" = EXCLUDED."nome", "arquivo" = EXCLUDED."arquivo", "updatedAt" = now()
+      `;
+    }
+    // Remove os anexos marcados.
+    for (const key of removidos) {
+      await prisma.$executeRaw`DELETE FROM "EmpresaAnexo" WHERE "chave" = ${key}`;
+    }
+
     const dadosExtras = {
       inscricaoEstadual: normalizeText(payload.inscricaoEstadual),
       inscricaoMunicipal: normalizeText(payload.inscricaoMunicipal),
@@ -182,10 +201,7 @@ empresaRouter.post('/', async (req, res, next) => {
       titular: normalizeText(c.titular),
     }));
 
-    for (const key of removidos) {
-      delete anexos[key];
-    }
-
+    // empresaAnexos guarda APENAS os metadados pequenos (sem base64) — os documentos vão pra EmpresaAnexo.
     const updated = await prisma.configuracaoGeral.update({
       where: { id: current.id },
       data: {
@@ -194,14 +210,14 @@ empresaRouter.post('/', async (req, res, next) => {
         empresaEnderecoCompleto: normalizeText(payload.enderecoCompleto),
         empresaTelefoneWhats: normalizeText(payload.telefoneWhats),
         empresaAnexos: {
-          ...anexos,
           [EMPRESA_DADOS_KEY]:     dadosExtras,
           [EMPRESA_BANCARIOS_KEY]: dadosBancarios,
         },
       },
     });
 
-    res.json(buildEmpresaResponse(updated));
+    const anexos = await loadEmpresaAnexosNomes();
+    res.json(buildEmpresaResponse(updated, anexos));
   } catch (e) {
     next(e);
   }

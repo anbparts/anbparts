@@ -271,6 +271,15 @@ model ConfiguracaoGeral {
   updatedAt                 DateTime @updatedAt
 }
 
+// Anexos da empresa em tabela dedicada (1 linha por documento), fora da ConfiguracaoGeral
+// que os schedulers reescrevem o tempo todo — evita o bloat de reescrever 13MB de base64 a cada update.
+model EmpresaAnexo {
+  chave     String   @id
+  nome      String
+  arquivo   String   @db.Text
+  updatedAt DateTime @default(now()) @updatedAt
+}
+
 model MercadoLivreConfig {
   id           Int      @id @default(autoincrement())
   clientId     String   @default("")
