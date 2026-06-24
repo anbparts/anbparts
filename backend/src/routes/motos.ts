@@ -191,7 +191,7 @@ const CONTRATO_DETALHES_MOTO_CATEGORIAS = [
 // GET /motos
 motosRouter.get('/', async (req, res, next) => {
   try {
-    const [motos, totalRelacionadasRows, disponiveisRows, vendidasRows, detranRows] = await Promise.all([
+    const [motos, totalRelacionadasRows, disponiveisRows, vendidasRows, detranRows, anexosCountRows] = await Promise.all([
       prisma.moto.findMany({
         select: {
           id: true,
@@ -209,7 +209,7 @@ motosRouter.get('/', async (req, res, next) => {
           observacoes: true,
           descricaoModelo: true,
           etiquetaSkuLabel: true,
-          anexos: true,
+          // anexos (Json com base64) NAO entra aqui — contamos via query separada abaixo.
         },
         orderBy: { id: 'asc' }
       }),
@@ -251,7 +251,19 @@ motosRouter.get('/', async (req, res, next) => {
           detranBaixada: true,
         },
       }),
+      // Conta os anexos de cada moto SEM carregar o base64 (jsonb_object_keys).
+      // Se falhar por qualquer motivo, retorna [] e o indicador de anexos fica 0 — a lista continua funcionando.
+      prisma.$queryRaw<{ id: number; total: number }[]>`
+        SELECT id, CASE WHEN jsonb_typeof("anexos") = 'object'
+          THEN (SELECT count(*)::int FROM jsonb_object_keys("anexos"))
+          ELSE 0 END AS total
+        FROM "Moto"
+      `.catch(() => [] as { id: number; total: number }[]),
     ]);
+
+    const anexosCountByMoto = new Map<number, number>(
+      (anexosCountRows as { id: number; total: number }[]).map((r) => [Number(r.id), Number(r.total)]),
+    );
 
     const totalRelacionadasByMoto = new Map<number, number>();
     for (const row of totalRelacionadasRows) {
@@ -295,7 +307,7 @@ motosRouter.get('/', async (req, res, next) => {
       const disponiveis = disponiveisByMoto.get(m.id) || { qtd: 0, precoML: 0, valorLiq: 0 };
       const vendidas = vendidasByMoto.get(m.id) || { qtd: 0, precoML: 0, valorLiq: 0 };
       const detran = detranByMoto.get(m.id) || { total: 0, ativas: 0, baixadas: 0 };
-      const anexosCount = countMotoAnexos((m as any).anexos);
+      const anexosCount = anexosCountByMoto.get(m.id) || 0;
 
       // Receita = Preço ML das vendidas (valor bruto)
       const receita = vendidas.precoML;
