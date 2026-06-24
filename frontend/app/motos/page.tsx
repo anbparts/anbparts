@@ -277,8 +277,8 @@ function buildAnexoFileName(prefixo: string | undefined, label: string, original
 async function downloadMotoAttachment(motoId: number, key: string, attachment: { name: string; dataUrl?: string } | null, prefixo?: string, label?: string) {
   if (!attachment) return;
   if (!motoId) return;
-  const finalName = (prefixo && label) ? buildAnexoFileName(prefixo, label, attachment.name) : attachment.name;
   if (attachment.dataUrl) {
+    const finalName = (prefixo && label) ? buildAnexoFileName(prefixo, label, attachment.name) : attachment.name;
     await downloadDataUrl(attachment.dataUrl, finalName);
     return;
   }
