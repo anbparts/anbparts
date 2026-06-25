@@ -75,6 +75,7 @@ export const NAV: NavGroup[] = [
     section: 'Configuracoes',
     items: [
       { href: '/configuracoes', icon: 'key-round', label: 'Conf. Perfil' },
+      { href: '/conf-meta', icon: 'message-circle', label: 'Conf. Meta' },
       { href: '/bling', icon: 'plug', label: 'Conf. Conexao Bling' },
       { href: '/configuracoes-gerais', icon: 'mail', label: 'Conf. E-mails' },
       { href: '/bling/config-produtos', icon: 'sliders', label: 'Conf. Produtos Bling' },
@@ -227,7 +228,7 @@ export function Sidebar({
     .filter((group) => !group.requiresBruno || isBruno(authUser as any))
     .map((group) => ({
       ...group,
-      items: group.items.filter((item) => item.href === '/configuracoes' ? isBruno(authUser as any) : canAccessPage(authUser as any, item.href)),
+      items: group.items.filter((item) => (item.href === '/configuracoes' || item.href === '/conf-meta') ? isBruno(authUser as any) : canAccessPage(authUser as any, item.href)),
     }))
     .filter((group) => group.items.length > 0);
   const isDrawer = mode === 'phone' || mode === 'tablet-portrait';

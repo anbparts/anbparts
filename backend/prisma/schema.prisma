@@ -254,6 +254,11 @@ model ConfiguracaoGeral {
   limpezaFotosPecaDias Int @default(30)
   limpezaFotosPecaUltimaExecucaoChave String?
   limpezaFotosPecaUltimaExecucaoEm DateTime?
+  whatsappToken String @default("")
+  whatsappPhoneNumberId String @default("")
+  whatsappWabaId String @default("")
+  whatsappTemplateNome String @default("")
+  whatsappAtivo Boolean @default(false)
   empresaRazaoSocial        String   @default("")
   empresaCnpj               String   @default("")
   empresaEnderecoCompleto   String   @default("")

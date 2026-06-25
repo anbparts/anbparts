@@ -187,6 +187,12 @@ export const api = {
     }),
     visitasHoje: () => req<any>('/mercado-livre/visitas-hoje'),
   },
+  confMeta: {
+    get: () => req<any>('/conf-meta'),
+    save: (data: any) => req<any>('/conf-meta', { method: 'POST', body: JSON.stringify(data) }),
+    templates: () => req<any>('/conf-meta/templates'),
+    testar: (data: any) => req<any>('/conf-meta/testar', { method: 'POST', body: JSON.stringify(data) }),
+  },
   bling: {
     relatorioVendas: (params?: Record<string, any>) => {
       const qs = params ? '?' + new URLSearchParams(params).toString() : '';

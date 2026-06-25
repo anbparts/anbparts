@@ -27,6 +27,7 @@ export const PAGE_KEY_BY_HREF: Record<string, string> = {
   '/nuvemshop/produtos': 'nuvemshop_produtos',
   '/armazenagem': 'armazenagem',
   '/configuracoes': 'configuracoes',
+  '/conf-meta': 'conf_meta',
   '/bling': 'conf_bling',
   '/configuracoes-gerais': 'conf_emails',
   '/bling/config-produtos': 'conf_produtos_bling',
