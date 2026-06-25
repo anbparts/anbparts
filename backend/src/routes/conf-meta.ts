@@ -31,6 +31,9 @@ confMetaRouter.get('/', async (req, res, next) => {
       whatsappWabaId: cfg.wabaId,
       whatsappTemplateNome: cfg.templateNome,
       whatsappAtivo: cfg.ativo,
+      whatsappFotosPendentesAtivo: cfg.fotosPendentesAtivo,
+      whatsappFotosPendentesIntervaloHoras: cfg.fotosPendentesIntervaloHoras,
+      whatsappFotosPendentesUltimaExecucaoEm: cfg.fotosPendentesUltimaEm,
     });
   } catch (e) {
     next(e);
@@ -43,6 +46,8 @@ const saveSchema = z.object({
   whatsappWabaId: z.string().optional().default(''),
   whatsappTemplateNome: z.string().optional().default(''),
   whatsappAtivo: z.boolean().optional().default(false),
+  whatsappFotosPendentesAtivo: z.boolean().optional().default(false),
+  whatsappFotosPendentesIntervaloHoras: z.number().optional().default(1),
 });
 
 // POST /conf-meta — salva (token so e gravado quando vem preenchido).

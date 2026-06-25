@@ -24,6 +24,7 @@ import { nuvemshopRouter } from './routes/nuvemshop';
 import { pecasRouter, startLimpezaFotosPecaScheduler } from './routes/pecas';
 import { authMiddleware } from './middlewares/auth';
 import { errorMiddleware } from './middlewares/error';
+import { startFotosPendentesWhatsappScheduler } from './lib/fotos-pendentes-whatsapp';
 
 const app = express();
 
@@ -68,5 +69,6 @@ app.listen(port, () => {
   startFinanceiroSchedulers();
   startMercadoLivreScheduler();
   startLimpezaFotosPecaScheduler();
+  startFotosPendentesWhatsappScheduler();
   console.log(`ANB Backend rodando na porta ${port}`);
 });

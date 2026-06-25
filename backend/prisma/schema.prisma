@@ -259,6 +259,9 @@ model ConfiguracaoGeral {
   whatsappWabaId String @default("")
   whatsappTemplateNome String @default("")
   whatsappAtivo Boolean @default(false)
+  whatsappFotosPendentesAtivo Boolean @default(false)
+  whatsappFotosPendentesIntervaloHoras Int @default(1)
+  whatsappFotosPendentesUltimaExecucaoEm DateTime?
   empresaRazaoSocial        String   @default("")
   empresaCnpj               String   @default("")
   empresaEnderecoCompleto   String   @default("")
@@ -579,6 +582,12 @@ model AppNotificationRead {
 
   @@unique([username, type, itemKey])
   @@index([username, type])
+}
+
+model FotoPendenteNotificada {
+  id           Int      @id @default(autoincrement())
+  sku          String   @unique
+  notificadaEm DateTime @default(now())
 }
 
 model BlingPedidoSeparacao {

@@ -199,6 +199,47 @@ async function listDriveFiles(q: string, fields: string, extraParams: Record<str
   return files;
 }
 
+// ===== Varredura das pastas pendentes de tratamento de imagem (alerta WhatsApp) =====
+// Uma pasta esta "tratada" quando ja tem alguma foto com nome no padrao (Capa, 01..NN);
+// se tem 2+ fotos e NENHUMA no padrao, ainda esta crua (nomes "WhatsApp Image ...").
+function ehNomeFotoTratada(nome: string) {
+  const base = normalizeText(nome).replace(/\.[^.]+$/, '').trim();
+  if (!base) return false;
+  return /capa/i.test(base) || /^\d{1,2}$/.test(base);
+}
+
+function extrairSkuDaPasta(nome: string) {
+  const n = normalizeText(nome);
+  const m = n.match(/^([A-Za-z0-9]+_\d+)/);
+  if (m) return m[1].toUpperCase();
+  return n.split(/\s*[-–—]\s*/)[0].trim().toUpperCase();
+}
+
+export type PastaPendenteTratamento = { sku: string; nome: string; totalFotos: number };
+
+export async function listarPastasPendentesTratamento(): Promise<PastaPendenteTratamento[]> {
+  const cfg = await getGoogleDriveConfig();
+  const pastaRaizId = normalizeText((cfg as any).googleDrivePreCadastroPastaId);
+  if (!pastaRaizId) return [];
+
+  const pastas = await listDriveFiles(
+    `'${escapeDriveQueryValue(pastaRaizId)}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+    'files(id,name)',
+  );
+
+  const pendentes: PastaPendenteTratamento[] = [];
+  for (const pasta of pastas) {
+    const fotos = await listDriveFiles(
+      `'${escapeDriveQueryValue(pasta.id)}' in parents and mimeType contains 'image/' and trashed = false`,
+      'files(id,name)',
+    );
+    if (fotos.length < 2) continue;                       // precisa de 2+ fotos
+    if (fotos.some((f: any) => ehNomeFotoTratada(f.name))) continue; // ja tratada
+    pendentes.push({ sku: extrairSkuDaPasta(pasta.name), nome: normalizeText(pasta.name), totalFotos: fotos.length });
+  }
+  return pendentes;
+}
+
 async function buscarFotosDriveSku(motoId: number, sku: string) {
   const cfg = await getGoogleDriveConfig();
   const motoDirs = (cfg.googleDriveMotoDirs as any) || {};

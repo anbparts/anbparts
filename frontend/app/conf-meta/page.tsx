@@ -29,6 +29,11 @@ export default function ConfMetaPage() {
   const [templateNome, setTemplateNome] = useState('');
   const [ativo, setAtivo] = useState(false);
 
+  // Rotina de fotos pendentes
+  const [fotosAtivo, setFotosAtivo] = useState(false);
+  const [fotosIntervalo, setFotosIntervalo] = useState('1');
+  const [fotosUltimaEm, setFotosUltimaEm] = useState<string | null>(null);
+
   // Bloco de teste
   const [templates, setTemplates] = useState<TemplateInfo[]>([]);
   const [templatesLoading, setTemplatesLoading] = useState(false);
@@ -49,6 +54,9 @@ export default function ConfMetaPage() {
     setWabaId(data.whatsappWabaId || '');
     setTemplateNome(data.whatsappTemplateNome || '');
     setAtivo(!!data.whatsappAtivo);
+    setFotosAtivo(!!data.whatsappFotosPendentesAtivo);
+    setFotosIntervalo(String(data.whatsappFotosPendentesIntervaloHoras || 1));
+    setFotosUltimaEm(data.whatsappFotosPendentesUltimaExecucaoEm || null);
   }
 
   useEffect(() => {
@@ -67,6 +75,8 @@ export default function ConfMetaPage() {
         whatsappWabaId: wabaId,
         whatsappTemplateNome: templateNome,
         whatsappAtivo: ativo,
+        whatsappFotosPendentesAtivo: fotosAtivo,
+        whatsappFotosPendentesIntervaloHoras: Number(fotosIntervalo) || 1,
       });
       await load();
       alert('Configuracoes da Meta salvas.');
@@ -197,6 +207,33 @@ export default function ConfMetaPage() {
             <span style={{ fontSize: 12, color: tokenConfigured ? 'var(--green)' : 'var(--amber)' }}>
               {tokenConfigured ? 'Token configurado ✓' : 'Token ainda nao configurado'}
             </span>
+          </div>
+        </div>
+
+        {/* Rotina de fotos pendentes */}
+        <div style={{ ...s.card, background: '#f0fdf4', borderColor: '#bbf7d0' }}>
+          <div style={s.h3}>Rotina: alerta de fotos pendentes</div>
+          <p style={s.p}>
+            Quando ativa, o sistema varre a pasta raiz do Pre-Cadastro (a configurada em Conf. Google) no intervalo definido,
+            identifica as pastas com 2+ fotos ainda <strong>sem tratamento</strong> (sem nomes Capa/02/03...) e envia a lista de SKUs
+            por WhatsApp. Usa o <strong>Template padrao</strong> acima e manda para os usuarios com a flag
+            <strong> "Fotos pendentes (WhatsApp)"</strong> marcada (em Conf. Perfil) e telefone preenchido. Cada SKU e avisado uma unica vez.
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 }}>
+            <div>
+              <label style={s.label}>Rotina</label>
+              <select style={{ ...s.input, cursor: 'pointer' }} value={fotosAtivo ? 'ativo' : 'pausado'} onChange={(e) => setFotosAtivo(e.target.value === 'ativo')}>
+                <option value="pausado">Pausada</option>
+                <option value="ativo">Ativa</option>
+              </select>
+            </div>
+            <div>
+              <label style={s.label}>Intervalo (horas)</label>
+              <input style={s.input} type="number" min="1" max="168" step="1" value={fotosIntervalo} onChange={(e) => setFotosIntervalo(e.target.value)} />
+            </div>
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 12 }}>
+            Ultima execucao: {fotosUltimaEm ? new Date(fotosUltimaEm).toLocaleString('pt-BR') : 'ainda nao executada'}
           </div>
         </div>
 

@@ -13,6 +13,9 @@ export type WhatsappConfig = {
   wabaId: string;
   templateNome: string;
   ativo: boolean;
+  fotosPendentesAtivo: boolean;
+  fotosPendentesIntervaloHoras: number;
+  fotosPendentesUltimaEm: Date | null;
 };
 
 export type WhatsappTemplateInfo = {
@@ -32,7 +35,8 @@ function txt(value: any) {
 export async function getWhatsappConfig(): Promise<WhatsappConfig> {
   const cfg = await getConfiguracaoGeral();
   const rows = await prisma.$queryRaw<any[]>`
-    SELECT "whatsappToken", "whatsappPhoneNumberId", "whatsappWabaId", "whatsappTemplateNome", "whatsappAtivo"
+    SELECT "whatsappToken", "whatsappPhoneNumberId", "whatsappWabaId", "whatsappTemplateNome", "whatsappAtivo",
+           "whatsappFotosPendentesAtivo", "whatsappFotosPendentesIntervaloHoras", "whatsappFotosPendentesUltimaExecucaoEm"
     FROM "ConfiguracaoGeral" WHERE "id" = ${cfg.id}
   `;
   const r = rows[0] || {};
@@ -43,6 +47,9 @@ export async function getWhatsappConfig(): Promise<WhatsappConfig> {
     wabaId: txt(r.whatsappWabaId),
     templateNome: txt(r.whatsappTemplateNome),
     ativo: !!r.whatsappAtivo,
+    fotosPendentesAtivo: !!r.whatsappFotosPendentesAtivo,
+    fotosPendentesIntervaloHoras: Math.max(1, Number(r.whatsappFotosPendentesIntervaloHoras) || 1),
+    fotosPendentesUltimaEm: r.whatsappFotosPendentesUltimaExecucaoEm ? new Date(r.whatsappFotosPendentesUltimaExecucaoEm) : null,
   };
 }
 
@@ -53,14 +60,19 @@ export async function saveWhatsappConfig(data: {
   whatsappWabaId?: string;
   whatsappTemplateNome?: string;
   whatsappAtivo?: boolean;
+  whatsappFotosPendentesAtivo?: boolean;
+  whatsappFotosPendentesIntervaloHoras?: number;
 }) {
   const cfg = await getConfiguracaoGeral();
+  const intervaloHoras = Math.max(1, Math.min(168, Math.trunc(Number(data.whatsappFotosPendentesIntervaloHoras) || 1)));
   await prisma.$executeRaw`
     UPDATE "ConfiguracaoGeral" SET
       "whatsappPhoneNumberId" = ${txt(data.whatsappPhoneNumberId)},
       "whatsappWabaId" = ${txt(data.whatsappWabaId)},
       "whatsappTemplateNome" = ${txt(data.whatsappTemplateNome)},
-      "whatsappAtivo" = ${!!data.whatsappAtivo}
+      "whatsappAtivo" = ${!!data.whatsappAtivo},
+      "whatsappFotosPendentesAtivo" = ${!!data.whatsappFotosPendentesAtivo},
+      "whatsappFotosPendentesIntervaloHoras" = ${intervaloHoras}
     WHERE "id" = ${cfg.id}
   `;
   const novoToken = txt(data.whatsappToken);

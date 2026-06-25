@@ -42,6 +42,13 @@ export const APP_NOTIFICATION_CATALOG: NotificationType[] = [
     actionKey: 'processar_baixa',
     href: '/etiquetas-detran',
   },
+  {
+    key: 'fotos_pendentes_whatsapp',
+    label: 'Fotos pendentes (WhatsApp)',
+    description: 'Recebe no WhatsApp os SKUs com fotos pendentes de tratamento no Drive (precisa do telefone preenchido).',
+    pageKey: 'cadastro',
+    href: '/cadastro',
+  },
 ];
 
 export function normalizeNotificationTypes(value: any) {
