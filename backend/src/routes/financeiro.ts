@@ -195,6 +195,53 @@ async function compressAttachment(att: ReturnType<typeof normalizeAttachment>) {
   return { name: att.name, dataUrl };
 }
 
+// ── Conversao do PASSADO das despesas (roda 1x por processo, nao a cada list) ──
+let despesasPassadoConvertido = false;
+// Acima deste tamanho (chars do dataUrl ~= base64), a imagem antiga e recomprimida pra ~foto capa.
+const DESPESA_IMG_RECOMPRESS_THRESHOLD = 280_000;
+
+// Converte UM campo de uma despesa: PDF cru -> x-pdf-br; imagem grande -> ~150KB. Best-effort.
+async function converterCampoDespesa(id: number, coluna: 'anexoArquivo' | 'comprovanteArquivo', prefixo: string | null, tamanho: number) {
+  try {
+    if (!prefixo) return;
+    const isPdfCru = /^data:application\/pdf;base64/.test(prefixo);
+    const isImagemGrande = /^data:image\//i.test(prefixo) && tamanho > DESPESA_IMG_RECOMPRESS_THRESHOLD;
+    if (!isPdfCru && !isImagemGrande) return;
+
+    const rows = coluna === 'anexoArquivo'
+      ? await prisma.$queryRaw<{ arquivo: string }[]>`SELECT "anexoArquivo" AS arquivo FROM "Despesa" WHERE id = ${id}`
+      : await prisma.$queryRaw<{ arquivo: string }[]>`SELECT "comprovanteArquivo" AS arquivo FROM "Despesa" WHERE id = ${id}`;
+    const atual = rows[0]?.arquivo;
+    if (!atual) return;
+
+    const novo = await compressAttachment({ name: '', dataUrl: atual });
+    if (novo && novo.dataUrl !== atual) {
+      if (coluna === 'anexoArquivo') {
+        await prisma.$executeRaw`UPDATE "Despesa" SET "anexoArquivo" = ${novo.dataUrl} WHERE id = ${id}`;
+      } else {
+        await prisma.$executeRaw`UPDATE "Despesa" SET "comprovanteArquivo" = ${novo.dataUrl} WHERE id = ${id}`;
+      }
+    }
+  } catch { /* ignora erro individual */ }
+}
+
+// Varre TODAS as despesas com anexo/comprovante (sem filtro) e converte os que faltam. Best-effort.
+async function compressDespesasAntigasEmBackground() {
+  try {
+    const rows = await prisma.$queryRaw<{ id: number; anexopref: string | null; anexolen: number | null; comppref: string | null; complen: number | null }[]>`
+      SELECT id,
+        left("anexoArquivo", 26)       AS anexopref, length("anexoArquivo")       AS anexolen,
+        left("comprovanteArquivo", 26) AS comppref,  length("comprovanteArquivo") AS complen
+      FROM "Despesa"
+      WHERE "anexoArquivo" IS NOT NULL OR "comprovanteArquivo" IS NOT NULL
+    `;
+    for (const row of rows) {
+      await converterCampoDespesa(row.id, 'anexoArquivo', row.anexopref, Number(row.anexolen || 0));
+      await converterCampoDespesa(row.id, 'comprovanteArquivo', row.comppref, Number(row.complen || 0));
+    }
+  } catch { /* nao quebra o request */ }
+}
+
 function roundMoney(value: number) {
   return Math.round(value * 100) / 100;
 }
@@ -368,6 +415,12 @@ financeiroRouter.get('/despesas', async (_req, res, next) => {
         // anexoArquivo e comprovanteArquivo (base64) ficam de fora — baixados sob demanda.
       },
     });
+
+    // Converte o passado UMA vez por processo (PDFs -> zip, imagens grandes -> foto capa). Nao bloqueia a resposta.
+    if (!despesasPassadoConvertido) {
+      despesasPassadoConvertido = true;
+      void compressDespesasAntigasEmBackground();
+    }
 
     res.json(rows.map(mapDespesaRow));
   } catch (e) {
