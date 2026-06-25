@@ -69,6 +69,133 @@ export function startLimpezaFotosPecaScheduler() {
   setInterval(runTick, LIMPEZA_FOTOS_PECA_INTERVAL_MS);
 }
 
+// ===== Recompressao assistida das fotos de capa antigas (alvo 75 KB) =====
+// Roda sob demanda (botao em Conf. Gerais), em blocos, com contadores de progresso.
+// Guard por TAMANHO: so processa fotos acima do alvo; ao recomprimir elas caem abaixo
+// e nunca sao tocadas de novo (evita degradacao por recompressao repetida). As fotos
+// que ja estao pequenas sao puladas. Reusa a MESMA funcao das fotos novas.
+const RECOMPRESS_FOTO_THRESHOLD_BYTES = 105 * 1024; // base64 acima disso = imagem > ~78 KB
+const RECOMPRESS_FOTO_BLOCO = 25;
+const RECOMPRESS_FOTO_PAUSA_MS = 150;
+
+type RecompressFotosState = {
+  iniciado: boolean;
+  rodando: boolean;
+  concluido: boolean;
+  total: number;
+  processadas: number;
+  sucesso: number;
+  erros: number;
+  blocosFeitos: number;
+  blocosTotais: number;
+  ultimoErro: string;
+  iniciadoEm: string | null;
+  finalizadoEm: string | null;
+};
+
+const recompressFotosState: RecompressFotosState = {
+  iniciado: false, rodando: false, concluido: false,
+  total: 0, processadas: 0, sucesso: 0, erros: 0,
+  blocosFeitos: 0, blocosTotais: 0, ultimoErro: '',
+  iniciadoEm: null, finalizadoEm: null,
+};
+
+const recompressSleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function contarFotosAcimaDoAlvo(): Promise<number> {
+  const rows = await prisma.$queryRaw<{ total: number }[]>`
+    SELECT count(*)::int AS total FROM "Peca"
+    WHERE "fotoCapaArquivo" IS NOT NULL
+      AND octet_length("fotoCapaArquivo") > ${RECOMPRESS_FOTO_THRESHOLD_BYTES}
+  `;
+  return rows.length ? Number(rows[0].total) : 0;
+}
+
+async function runRecompressaoFotos() {
+  try {
+    const candidatos = await prisma.$queryRaw<{ id: number }[]>`
+      SELECT id FROM "Peca"
+      WHERE "fotoCapaArquivo" IS NOT NULL
+        AND octet_length("fotoCapaArquivo") > ${RECOMPRESS_FOTO_THRESHOLD_BYTES}
+      ORDER BY id
+    `;
+    recompressFotosState.total = candidatos.length;
+    recompressFotosState.blocosTotais = Math.ceil(candidatos.length / RECOMPRESS_FOTO_BLOCO);
+
+    for (let i = 0; i < candidatos.length; i += RECOMPRESS_FOTO_BLOCO) {
+      const bloco = candidatos.slice(i, i + RECOMPRESS_FOTO_BLOCO);
+      for (const { id } of bloco) {
+        try {
+          const rows = await prisma.$queryRaw<{ nome: string | null; arquivo: string }[]>`
+            SELECT "fotoCapaNome" AS nome, "fotoCapaArquivo" AS arquivo FROM "Peca" WHERE id = ${id}
+          `;
+          if (rows.length && rows[0].arquivo) {
+            const original = rows[0].arquivo;
+            const prepared = await compressDataUrlImage(original, 'a foto capa');
+            // So regrava se realmente ficou menor (evita inflar / regravar atoa).
+            if (prepared.dataUrl.length < original.length) {
+              const novoNome = normalizeImageFileName(rows[0].nome, prepared.extension);
+              await prisma.$executeRaw`
+                UPDATE "Peca" SET "fotoCapaArquivo" = ${prepared.dataUrl}, "fotoCapaNome" = ${novoNome} WHERE id = ${id}
+              `;
+            }
+            recompressFotosState.sucesso++;
+          }
+        } catch (e: any) {
+          recompressFotosState.erros++;
+          recompressFotosState.ultimoErro = String(e?.message || e || 'erro desconhecido').slice(0, 200);
+        } finally {
+          recompressFotosState.processadas++;
+        }
+      }
+      recompressFotosState.blocosFeitos++;
+      await recompressSleep(RECOMPRESS_FOTO_PAUSA_MS);
+    }
+  } catch (e: any) {
+    recompressFotosState.ultimoErro = String(e?.message || e || 'erro ao iniciar a recompressao').slice(0, 200);
+  } finally {
+    recompressFotosState.rodando = false;
+    recompressFotosState.concluido = true;
+    recompressFotosState.finalizadoEm = new Date().toISOString();
+  }
+}
+
+pecasRouter.post('/recompressao-fotos/iniciar', async (_req, res, next) => {
+  try {
+    if (recompressFotosState.rodando) {
+      return res.json({ ok: true, jaRodando: true, ...recompressFotosState });
+    }
+    recompressFotosState.iniciado = true;
+    recompressFotosState.rodando = true;
+    recompressFotosState.concluido = false;
+    recompressFotosState.total = 0;
+    recompressFotosState.processadas = 0;
+    recompressFotosState.sucesso = 0;
+    recompressFotosState.erros = 0;
+    recompressFotosState.blocosFeitos = 0;
+    recompressFotosState.blocosTotais = 0;
+    recompressFotosState.ultimoErro = '';
+    recompressFotosState.iniciadoEm = new Date().toISOString();
+    recompressFotosState.finalizadoEm = null;
+    void runRecompressaoFotos();
+    res.json({ ok: true, jaRodando: false, ...recompressFotosState });
+  } catch (e) {
+    next(e);
+  }
+});
+
+pecasRouter.get('/recompressao-fotos/status', async (_req, res, next) => {
+  try {
+    const payload: Record<string, any> = { ...recompressFotosState };
+    if (!recompressFotosState.rodando) {
+      payload.pendentes = await contarFotosAcimaDoAlvo();
+    }
+    res.json(payload);
+  } catch (e) {
+    next(e);
+  }
+});
+
 const DEFAULT_SELL_FRETE = 29.9;
 const DEFAULT_TAXA_PCT = 17;
 const CAIXA_SEM_LOCALIZACAO = 'Sem Localizacao';

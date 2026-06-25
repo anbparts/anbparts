@@ -7,7 +7,7 @@ export type PreparedImageDataUrl = {
   compressed: boolean;
 };
 
-const FOTO_CAPA_PREFERRED_BYTES = 150 * 1024;
+const FOTO_CAPA_PREFERRED_BYTES = 75 * 1024;
 const FOTO_CAPA_HARD_MAX_BYTES = 220 * 1024;
 const FOTO_CAPA_RAW_FALLBACK_BYTES = 120 * 1024;
 

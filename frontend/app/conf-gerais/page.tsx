@@ -27,6 +27,8 @@ export default function ConfGeraisPage() {
   const [limpezaFotosPecaDias, setLimpezaFotosPecaDias] = useState('30');
   const [limpezaFotosPecaUltimaExecucaoEm, setLimpezaFotosPecaUltimaExecucaoEm] = useState<string | null>(null);
   const [savingLimpeza, setSavingLimpeza] = useState(false);
+  const [recomp, setRecomp] = useState<any>(null);
+  const [recompBusy, setRecompBusy] = useState(false);
 
   async function load() {
     const produtoConfig = await fetch(`${API}/bling/config-produtos`).then((r) => r.json());
@@ -40,6 +42,27 @@ export default function ConfGeraisPage() {
     setLimpezaFotosPecaHorario(geralCfg.limpezaFotosPecaHorario || '03:00');
     setLimpezaFotosPecaDias(String(geralCfg.limpezaFotosPecaDias || 30));
     setLimpezaFotosPecaUltimaExecucaoEm(geralCfg.limpezaFotosPecaUltimaExecucaoEm || null);
+    await fetchRecompStatus();
+  }
+
+  async function fetchRecompStatus() {
+    const st = await fetch(`${API}/pecas/recompressao-fotos/status`, { credentials: 'include' })
+      .then((r) => r.json())
+      .catch(() => null);
+    if (st) setRecomp(st);
+    return st;
+  }
+
+  async function iniciarRecompressao() {
+    if (!confirm('Iniciar a recompressao das fotos de capa antigas para ~75 KB? E uma operacao unica e irreversivel.')) return;
+    setRecompBusy(true);
+    try {
+      await fetch(`${API}/pecas/recompressao-fotos/iniciar`, { method: 'POST', credentials: 'include' });
+      await fetchRecompStatus();
+    } catch {
+      alert('Erro ao iniciar a recompressao');
+    }
+    setRecompBusy(false);
   }
 
   useEffect(() => {
@@ -47,6 +70,13 @@ export default function ConfGeraisPage() {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
+
+  // Enquanto a recompressao roda, atualiza a barra de status a cada 1,5s.
+  useEffect(() => {
+    if (!recomp?.rodando) return;
+    const t = setInterval(() => { fetchRecompStatus(); }, 1500);
+    return () => clearInterval(t);
+  }, [recomp?.rodando]);
 
   async function saveLojas() {
     setSavingLojas(true);
@@ -256,6 +286,70 @@ export default function ConfGeraisPage() {
           >
             {savingLimpeza ? 'Salvando...' : 'Salvar configuracao de limpeza'}
           </button>
+        </div>
+
+        {/* Recompressao assistida das fotos de capa antigas */}
+        <div style={s.card}>
+          <div style={s.h3}>Recompressão das Fotos de Capa Antigas (única vez)</div>
+          <p style={s.p}>
+            Reduz as fotos de capa ja existentes para ~75 KB (mesmo alvo das novas), liberando espaco no banco.
+            Roda em blocos, e pode ser acompanhada abaixo. So toca nas fotos acima do alvo — as ja otimizadas sao puladas,
+            e cada foto e processada no maximo uma vez. <strong>E uma operacao irreversivel</strong> (recompressao com perda).
+          </p>
+
+          {(() => {
+            const rodando = !!recomp?.rodando;
+            const blocosTotais = Number(recomp?.blocosTotais || 0);
+            const blocosFeitos = Number(recomp?.blocosFeitos || 0);
+            const pct = blocosTotais > 0 ? Math.round((blocosFeitos / blocosTotais) * 100) : (recomp?.concluido ? 100 : 0);
+            const pendentes = Number(recomp?.pendentes ?? 0);
+            const nadaPraFazer = !rodando && !recomp?.iniciado && pendentes === 0;
+
+            return (
+              <>
+                {!rodando && !recomp?.iniciado && (
+                  <div style={{ fontSize: 13, color: 'var(--gray-600)', marginBottom: 14 }}>
+                    {pendentes > 0
+                      ? <>Há <strong>{pendentes}</strong> foto(s) acima do alvo prontas para recompressão.</>
+                      : <>Nenhuma foto acima do alvo — tudo já está otimizado. ✅</>}
+                  </div>
+                )}
+
+                {(rodando || recomp?.iniciado) && (
+                  <div style={{ marginBottom: 14 }}>
+                    <div style={{ height: 12, background: 'var(--gray-100, #eef1f5)', borderRadius: 7, overflow: 'hidden', border: '1px solid var(--border)' }}>
+                      <div style={{ width: `${pct}%`, height: '100%', background: rodando ? 'var(--blue-500)' : 'var(--green)', transition: 'width .4s ease' }} />
+                    </div>
+                    <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', marginTop: 10, fontSize: 12.5 }}>
+                      <span style={{ color: 'var(--gray-600)' }}>Blocos: <strong>{blocosFeitos}/{blocosTotais}</strong> ({pct}%)</span>
+                      <span style={{ color: 'var(--gray-600)' }}>Processadas: <strong>{Number(recomp?.processadas || 0)}/{Number(recomp?.total || 0)}</strong></span>
+                      <span style={{ color: 'var(--green)' }}>Sucesso: <strong>{Number(recomp?.sucesso || 0)}</strong></span>
+                      <span style={{ color: Number(recomp?.erros || 0) > 0 ? 'var(--red, #dc2626)' : 'var(--gray-400)' }}>Erros: <strong>{Number(recomp?.erros || 0)}</strong></span>
+                      <span style={{ fontWeight: 600, color: rodando ? 'var(--blue-500)' : 'var(--green)' }}>
+                        {rodando ? 'Processando...' : (recomp?.concluido ? 'Concluído' : '')}
+                      </span>
+                    </div>
+                    {!!recomp?.erros && recomp?.ultimoErro && (
+                      <div style={{ fontSize: 11.5, color: 'var(--gray-400)', marginTop: 6 }}>Último erro: {recomp.ultimoErro}</div>
+                    )}
+                    {recomp?.concluido && !rodando && (
+                      <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 8 }}>
+                        Faltam <strong>{pendentes}</strong> foto(s) acima do alvo. Depois de zerar, rode <code>VACUUM (FULL, ANALYZE) "Peca"</code> no banco para liberar o disco.
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <button
+                  style={{ border: '1px solid var(--border)', borderRadius: 7, padding: '8px 18px', fontSize: 13, fontWeight: 500, cursor: (rodando || recompBusy || nadaPraFazer) ? 'not-allowed' : 'pointer', background: 'var(--gray-800)', color: '#fff', opacity: (rodando || recompBusy || nadaPraFazer) ? 0.6 : 1 }}
+                  onClick={iniciarRecompressao}
+                  disabled={rodando || recompBusy || nadaPraFazer}
+                >
+                  {rodando ? 'Processando...' : recompBusy ? 'Iniciando...' : (recomp?.iniciado && pendentes > 0) ? 'Continuar recompressão' : 'Comprimir fotos antigas'}
+                </button>
+              </>
+            );
+          })()}
         </div>
       </div>
     </>
