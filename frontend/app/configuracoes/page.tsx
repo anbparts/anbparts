@@ -304,7 +304,7 @@ export default function ConfiguracoesPage() {
             <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '1fr 1fr', gap: 12 }}>
               <div><label style={s.label}>Usuario</label><input style={s.input} value={form.username} onChange={(e) => setForm((p) => ({ ...p, username: e.target.value.toLowerCase().trim() }))} placeholder="ex: nelson" /></div>
               <div><label style={s.label}>Nome</label><input style={s.input} value={form.displayName} onChange={(e) => setForm((p) => ({ ...p, displayName: e.target.value }))} placeholder="Nome exibido" /></div>
-              <div><label style={s.label}>Telefone / WhatsApp</label><input style={s.input} value={form.telefone} onChange={(e) => setForm((p) => ({ ...p, telefone: e.target.value }))} placeholder="Ex.: 5511999999999 (DDI+DDD)" /></div>
+              <div><label style={s.label}>Telefone / WhatsApp</label><input style={s.input} type="tel" name="anb-telefone-whatsapp" autoComplete="off" value={form.telefone} onChange={(e) => setForm((p) => ({ ...p, telefone: e.target.value }))} placeholder="Ex.: 5511999999999 (DDI+DDD)" /></div>
               {isNovo && <div><label style={s.label}>Senha inicial</label><input type="password" style={s.input} value={form.password} onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))} placeholder="Senha inicial" /></div>}
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#334155', fontWeight: 700 }}>
                 <input type="checkbox" checked={form.active} onChange={(e) => setForm((p) => ({ ...p, active: e.target.checked }))} />
