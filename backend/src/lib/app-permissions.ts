@@ -73,6 +73,7 @@ export const APP_PERMISSION_CATALOG: AppPagePermission[] = [
     { key: 'usuarios', label: 'Gerenciar usuarios' },
     { key: 'permissoes', label: 'Gerenciar permissoes' },
   ] },
+  { key: 'conf_meta', label: 'Conf. Meta', href: '/conf-meta', actions: [{ key: 'editar', label: 'Editar configuracao' }] },
   { key: 'conf_bling', label: 'Conf. Conexao Bling', href: '/bling', actions: [{ key: 'editar', label: 'Editar configuracao' }] },
   { key: 'conf_emails', label: 'Conf. E-mails', href: '/configuracoes-gerais', actions: [{ key: 'editar', label: 'Editar configuracao' }] },
   { key: 'conf_produtos_bling', label: 'Conf. Produtos Bling', href: '/bling/config-produtos', actions: [{ key: 'editar', label: 'Editar configuracao' }] },

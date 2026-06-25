@@ -546,6 +546,7 @@ model AppUser {
   username     String   @unique
   displayName  String
   passwordHash String
+  telefone     String   @default("")
   active       Boolean  @default(true)
   isAdmin      Boolean  @default(false)
   permissions  Json     @default("{}")

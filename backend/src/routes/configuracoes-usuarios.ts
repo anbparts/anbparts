@@ -19,6 +19,7 @@ function requireBruno(req: any, res: any) {
 const userSchema = z.object({
   username: z.string().trim().min(2),
   displayName: z.string().trim().min(2),
+  telefone: z.string().trim().optional().default(''),
   password: z.union([z.string().trim().min(4), z.literal('')]).optional(),
   active: z.boolean().default(true),
   isAdmin: z.boolean().default(false),
@@ -36,6 +37,7 @@ function cleanUser(user: any) {
     id: user.id,
     username: user.username,
     displayName: user.displayName,
+    telefone: user.telefone || '',
     active: user.active,
     isAdmin,
     permissions: isAdmin ? buildFullPermissions() : normalizePermissions(user.permissions),
@@ -106,6 +108,7 @@ configuracoesUsuariosRouter.post('/usuarios', async (req, res, next) => {
       data: {
         username,
         displayName: payload.displayName,
+        telefone: payload.telefone || '',
         passwordHash: hashPassword(payload.password),
         active: payload.active,
         isAdmin: payload.isAdmin || username === 'bruno',
@@ -133,6 +136,7 @@ configuracoesUsuariosRouter.put('/usuarios/:id', async (req, res, next) => {
       data: {
         ...(username ? { username } : {}),
         ...(payload.displayName ? { displayName: payload.displayName } : {}),
+        ...(typeof payload.telefone === 'string' ? { telefone: payload.telefone } : {}),
         ...(typeof payload.active === 'boolean' ? { active: payload.active } : {}),
         ...(typeof payload.isAdmin === 'boolean' ? { isAdmin } : {}),
         ...(payload.permissions ? { permissions: isAdmin ? buildFullPermissions() : normalizePermissions(payload.permissions) } : {}),
