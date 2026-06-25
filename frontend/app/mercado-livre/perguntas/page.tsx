@@ -222,6 +222,8 @@ export default function MercadoLivrePerguntasPage() {
     try {
       await api.mercadoLivre.responderPergunta(questionId, text);
       setSuccessMessage('Mensagem respondida com sucesso!');
+      // Remove da fila imediatamente (nao espera o ML propagar no sync do reload).
+      setPerguntas((current) => current.filter((p) => String(p.questionId) !== questionId));
       await load();
       setTimeout(() => setSuccessMessage(''), 4000);
     } catch (error: any) {
@@ -237,6 +239,7 @@ export default function MercadoLivrePerguntasPage() {
     setDeletingId(questionId);
     try {
       await api.mercadoLivre.excluirPergunta(questionId);
+      setPerguntas((current) => current.filter((p) => String(p.questionId) !== questionId));
       await load();
     } catch (error: any) {
       alert(error.message || 'Erro ao excluir a pergunta no Mercado Livre');

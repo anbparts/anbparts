@@ -1877,26 +1877,42 @@ async function upsertMercadoLivrePergunta(question: any) {
 
   const existing = await prisma.mercadoLivrePergunta.findUnique({
     where: { questionId },
-    select: { id: true, notificadaEm: true, status: true },
+    select: { id: true, notificadaEm: true, status: true, respostaTexto: true, respondidaEm: true },
   });
 
-  const effectiveStatus = String(existing?.status || '').toUpperCase() === 'DISMISSED'
+  const existingStatus = String(existing?.status || '').toUpperCase();
+  const incomingStatus = String(status || '').toUpperCase();
+  // Nao deixa um sync atrasado do ML reverter o que ja foi tratado localmente:
+  // - DISMISSED (excluida) continua excluida;
+  // - ANSWERED (respondida) NAO volta pra UNANSWERED so porque o ML ainda nao
+  //   propagou a resposta — era isso que fazia a pergunta respondida reaparecer na fila.
+  const preservarResposta = existingStatus === 'ANSWERED' && incomingStatus === 'UNANSWERED';
+  const effectiveStatus = existingStatus === 'DISMISSED'
     ? 'DISMISSED'
-    : status;
+    : preservarResposta
+      ? 'ANSWERED'
+      : status;
+
+  // Ao preservar a resposta local, nao sobrescreve o texto/data da resposta com os
+  // campos vazios que vieram do ML ainda nao atualizado.
+  const dataToSave = preservarResposta
+    ? {
+        ...payload,
+        status: effectiveStatus,
+        respostaTexto: existing?.respostaTexto ?? payload.respostaTexto,
+        respondidaEm: existing?.respondidaEm ?? payload.respondidaEm,
+      }
+    : { ...payload, status: effectiveStatus };
 
   const saved = existing
     ? await prisma.mercadoLivrePergunta.update({
         where: { questionId },
-        data: {
-          ...payload,
-          status: effectiveStatus,
-        },
+        data: dataToSave,
       })
     : await prisma.mercadoLivrePergunta.create({
         data: {
           questionId,
-          ...payload,
-          status: effectiveStatus,
+          ...dataToSave,
         },
       });
 
