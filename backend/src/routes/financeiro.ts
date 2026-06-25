@@ -21,8 +21,7 @@ const PREJUIZO_MOTIVOS = new Set([
   'Extravio no Envio',
   'Defeito',
   'SKU Cancelado',
-  'Peca Restrita - Sem Revenda',
-  'Peca Restrita - Sem Revenda',
+  'Peça Restrita - Sem Revenda',
   'Extravio no Estoque',
 ]);
 

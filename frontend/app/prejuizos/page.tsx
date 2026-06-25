@@ -309,6 +309,8 @@ export default function PrejuizosPage() {
       await api.financeiro.prejuizos.update(editRow.id, data);
       setEditRow(null);
       await load();
+    } catch (error: any) {
+      alert(error?.message || 'Erro ao salvar o ajuste do prejuizo');
     } finally {
       setEditSaving(false);
     }
