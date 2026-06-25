@@ -192,6 +192,7 @@ export const api = {
     save: (data: any) => req<any>('/conf-meta', { method: 'POST', body: JSON.stringify(data) }),
     templates: () => req<any>('/conf-meta/templates'),
     testar: (data: any) => req<any>('/conf-meta/testar', { method: 'POST', body: JSON.stringify(data) }),
+    dryRunFotos: () => req<any>('/conf-meta/fotos-pendentes/dry-run'),
   },
   bling: {
     relatorioVendas: (params?: Record<string, any>) => {

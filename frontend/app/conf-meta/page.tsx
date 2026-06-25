@@ -34,6 +34,11 @@ export default function ConfMetaPage() {
   const [fotosIntervalo, setFotosIntervalo] = useState('1');
   const [fotosUltimaEm, setFotosUltimaEm] = useState<string | null>(null);
 
+  // Validação do Drive (dry-run)
+  const [dryLoading, setDryLoading] = useState(false);
+  const [dryError, setDryError] = useState('');
+  const [dryData, setDryData] = useState<any>(null);
+
   // Bloco de teste
   const [templates, setTemplates] = useState<TemplateInfo[]>([]);
   const [templatesLoading, setTemplatesLoading] = useState(false);
@@ -84,6 +89,20 @@ export default function ConfMetaPage() {
       alert(e.message || 'Erro ao salvar configuracoes da Meta');
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function verificarPendentes() {
+    setDryLoading(true);
+    setDryError('');
+    try {
+      const d = await api.confMeta.dryRunFotos();
+      setDryData(d);
+    } catch (e: any) {
+      setDryError(e.message || 'Falha ao verificar as pastas pendentes');
+      setDryData(null);
+    } finally {
+      setDryLoading(false);
     }
   }
 
@@ -235,6 +254,91 @@ export default function ConfMetaPage() {
           <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 12 }}>
             Ultima execucao: {fotosUltimaEm ? new Date(fotosUltimaEm).toLocaleString('pt-BR') : 'ainda nao executada'}
           </div>
+        </div>
+
+        {/* Validacao do Drive (dry-run) */}
+        <div style={{ ...s.card, background: '#fffbeb', borderColor: '#fde68a' }}>
+          <div style={s.h3}>Validar leitura do Drive (sem enviar)</div>
+          <p style={s.p}>
+            Roda apenas a varredura da pasta do Pre-Cadastro e mostra o que o robo enxerga: as pastas pendentes detectadas,
+            quem receberia e a <strong>prévia da mensagem</strong> exatamente como sairia no seu template. <strong>Nada e enviado.</strong>
+          </p>
+
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
+            <button style={{ ...s.btn, background: 'var(--gray-800)', color: '#fff' }} onClick={verificarPendentes} disabled={dryLoading}>
+              {dryLoading ? 'Verificando...' : 'Verificar pendentes (sem enviar)'}
+            </button>
+          </div>
+
+          {dryError ? (
+            <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: 12, color: '#b91c1c', fontSize: 13, marginBottom: 14 }}>{dryError}</div>
+          ) : null}
+
+          {dryData ? (
+            <div style={{ display: 'grid', gap: 16 }}>
+              <div style={{ fontSize: 13, color: 'var(--gray-700)' }}>
+                <strong>{(dryData.pendentes || []).length}</strong> pasta(s) pendente(s) detectada(s)
+                {' · '}<strong>{(dryData.novos || []).length}</strong> nova(s) (ainda nao avisada(s))
+              </div>
+
+              {(dryData.pendentes || []).length ? (
+                <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                    <thead style={{ background: 'var(--gray-50)' }}>
+                      <tr>
+                        <th style={{ textAlign: 'left', padding: '8px 12px', color: 'var(--gray-500)', fontWeight: 600 }}>SKU</th>
+                        <th style={{ textAlign: 'left', padding: '8px 12px', color: 'var(--gray-500)', fontWeight: 600 }}>Pasta</th>
+                        <th style={{ textAlign: 'center', padding: '8px 12px', color: 'var(--gray-500)', fontWeight: 600 }}>Fotos</th>
+                        <th style={{ textAlign: 'center', padding: '8px 12px', color: 'var(--gray-500)', fontWeight: 600 }}>Novo?</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(dryData.pendentes || []).map((p: any, i: number) => (
+                        <tr key={i} style={{ borderTop: '1px solid var(--gray-100)' }}>
+                          <td style={{ padding: '7px 12px', fontWeight: 600, color: 'var(--gray-800)' }}>{p.sku}</td>
+                          <td style={{ padding: '7px 12px', color: 'var(--gray-600)' }}>{p.nome}</td>
+                          <td style={{ padding: '7px 12px', textAlign: 'center', color: 'var(--gray-600)' }}>{p.totalFotos}</td>
+                          <td style={{ padding: '7px 12px', textAlign: 'center' }}>{(dryData.novos || []).includes(p.sku) ? '🟢' : '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div style={{ fontSize: 13, color: 'var(--gray-500)' }}>Nenhuma pasta pendente encontrada (ou pasta raiz nao configurada em Conf. Google).</div>
+              )}
+
+              <div>
+                <div style={s.label}>Destinatarios que receberiam</div>
+                {(dryData.destinatarios || []).length ? (
+                  <div style={{ fontSize: 13, color: 'var(--gray-700)' }}>
+                    {(dryData.destinatarios || []).map((d: any, i: number) => (
+                      <div key={i}>• {d.nome} — {d.telefone}</div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: 10, color: '#b45309', fontSize: 12.5 }}>
+                    ⚠️ Nenhum destinatario: marque a flag "Fotos pendentes (WhatsApp)" e preencha o telefone em Conf. Perfil.
+                  </div>
+                )}
+              </div>
+
+              {(dryData.pendentes || []).length ? (
+                <div>
+                  <div style={s.label}>Prévia da mensagem (template: {dryData.templateNome || '—'}{dryData.templateStatus ? ` · ${dryData.templateStatus}` : ''})</div>
+                  {dryData.templateEncontrado && dryData.previewTexto ? (
+                    <div style={{ background: '#dcf8c6', border: '1px solid #b6e4a0', borderRadius: 10, padding: 14, fontSize: 13.5, color: '#0b2e13', whiteSpace: 'pre-wrap', lineHeight: 1.55, maxWidth: 460 }}>
+                      {dryData.previewTexto}
+                    </div>
+                  ) : (
+                    <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 8, padding: 10, fontSize: 12.5, color: 'var(--gray-500)' }}>
+                      Template "{dryData.templateNome || '—'}" nao encontrado na Meta (confira o nome no campo Template padrao e se ele existe na sua conta).
+                    </div>
+                  )}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         {/* Bloco de teste */}

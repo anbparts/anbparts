@@ -23,6 +23,7 @@ export type WhatsappTemplateInfo = {
   language: string;
   status: string;
   category: string;
+  headerText: string;
   bodyText: string;
   varCount: number;
 };
@@ -92,14 +93,18 @@ export async function listWhatsappTemplates(token: string, wabaId: string): Prom
     throw new Error(data?.error?.message || `Falha ao listar templates (${resp.status})`);
   }
   return (data?.data || []).map((t: any) => {
-    const body = (t.components || []).find((c: any) => String(c.type).toUpperCase() === 'BODY');
+    const components = t.components || [];
+    const body = components.find((c: any) => String(c.type).toUpperCase() === 'BODY');
+    const header = components.find((c: any) => String(c.type).toUpperCase() === 'HEADER');
     const bodyText = txt(body?.text);
+    const headerText = header && String(header.format || 'TEXT').toUpperCase() === 'TEXT' ? txt(header.text) : '';
     const varCount = (bodyText.match(/\{\{\s*\d+\s*\}\}/g) || []).length;
     return {
       name: txt(t.name),
       language: txt(t.language),
       status: txt(t.status),
       category: txt(t.category),
+      headerText,
       bodyText,
       varCount,
     };

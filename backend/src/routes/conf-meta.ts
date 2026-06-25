@@ -6,6 +6,7 @@ import {
   listWhatsappTemplates,
   sendWhatsappTemplate,
 } from '../lib/whatsapp';
+import { dryRunFotosPendentes } from '../lib/fotos-pendentes-whatsapp';
 
 export const confMetaRouter = Router();
 
@@ -74,6 +75,17 @@ confMetaRouter.get('/templates', async (req, res, next) => {
     res.json({ ok: true, templates });
   } catch (e: any) {
     res.status(400).json({ ok: false, error: e?.message || 'Falha ao listar templates' });
+  }
+});
+
+// GET /conf-meta/fotos-pendentes/dry-run — varre o Drive e monta a prévia, sem enviar.
+confMetaRouter.get('/fotos-pendentes/dry-run', async (req, res, next) => {
+  try {
+    if (!requireBruno(req, res)) return;
+    const data = await dryRunFotosPendentes();
+    res.json({ ok: true, ...data });
+  } catch (e: any) {
+    res.status(400).json({ ok: false, error: e?.message || 'Falha ao verificar as pastas pendentes' });
   }
 });
 
