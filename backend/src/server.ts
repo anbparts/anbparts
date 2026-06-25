@@ -20,7 +20,7 @@ import { mercadoLivreRouter, startMercadoLivreScheduler } from './routes/mercado
 import { motosRouter } from './routes/motos';
 import { notificacoesRouter } from './routes/notificacoes';
 import { nuvemshopRouter } from './routes/nuvemshop';
-import { pecasRouter } from './routes/pecas';
+import { pecasRouter, startLimpezaFotosPecaScheduler } from './routes/pecas';
 import { authMiddleware } from './middlewares/auth';
 import { errorMiddleware } from './middlewares/error';
 
@@ -65,5 +65,6 @@ app.listen(port, () => {
   startBlingAuditoriaScheduler();
   startFinanceiroSchedulers();
   startMercadoLivreScheduler();
+  startLimpezaFotosPecaScheduler();
   console.log(`ANB Backend rodando na porta ${port}`);
 });

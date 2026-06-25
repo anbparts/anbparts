@@ -249,6 +249,11 @@ model ConfiguracaoGeral {
   mercadoLivrePerguntasEmailDestinatario String @default("")
   mercadoLivrePerguntasEmailTitulo String @default("ALERTA ANB Parts - Perguntas Mercado Livre - Verifique")
   mercadoLivrePerguntasUltimaLeituraEm DateTime?
+  limpezaFotosPecaAtivo Boolean @default(false)
+  limpezaFotosPecaHorario String @default("03:00")
+  limpezaFotosPecaDias Int @default(30)
+  limpezaFotosPecaUltimaExecucaoChave String?
+  limpezaFotosPecaUltimaExecucaoEm DateTime?
   empresaRazaoSocial        String   @default("")
   empresaCnpj               String   @default("")
   empresaEnderecoCompleto   String   @default("")

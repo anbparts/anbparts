@@ -21,6 +21,20 @@ function normalizeHorario(value: any) {
   return /^\d{2}:\d{2}$/.test(text) ? text : DEFAULT_DESPESAS_EMAIL_HORARIO;
 }
 
+export const DEFAULT_LIMPEZA_FOTOS_PECA_HORARIO = '03:00';
+export const DEFAULT_LIMPEZA_FOTOS_PECA_DIAS = 30;
+
+function normalizeHorarioLimpeza(value: any) {
+  const text = normalizeText(value);
+  return /^\d{2}:\d{2}$/.test(text) ? text : DEFAULT_LIMPEZA_FOTOS_PECA_HORARIO;
+}
+
+function normalizeDiasLimpeza(value: any) {
+  const n = Math.trunc(Number(value));
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_LIMPEZA_FOTOS_PECA_DIAS;
+  return Math.max(1, Math.min(3650, n));
+}
+
 function buildGeneralConfigSeed(blingConfig: any) {
   const auditoriaEmailDestinatario = normalizeText(blingConfig?.auditoriaEmailDestinatario);
 
@@ -42,6 +56,11 @@ function buildGeneralConfigSeed(blingConfig: any) {
     mercadoLivrePerguntasEmailDestinatario: auditoriaEmailDestinatario,
     mercadoLivrePerguntasEmailTitulo: DEFAULT_MERCADO_LIVRE_PERGUNTAS_EMAIL_TITULO,
     mercadoLivrePerguntasUltimaLeituraEm: null,
+    limpezaFotosPecaAtivo: false,
+    limpezaFotosPecaHorario: DEFAULT_LIMPEZA_FOTOS_PECA_HORARIO,
+    limpezaFotosPecaDias: DEFAULT_LIMPEZA_FOTOS_PECA_DIAS,
+    limpezaFotosPecaUltimaExecucaoChave: null,
+    limpezaFotosPecaUltimaExecucaoEm: null,
   };
 }
 
@@ -64,6 +83,11 @@ export function getConfiguracaoGeralDefaults(config: any) {
     mercadoLivrePerguntasEmailDestinatario: normalizeText(config?.mercadoLivrePerguntasEmailDestinatario),
     mercadoLivrePerguntasEmailTitulo: normalizeText(config?.mercadoLivrePerguntasEmailTitulo) || DEFAULT_MERCADO_LIVRE_PERGUNTAS_EMAIL_TITULO,
     mercadoLivrePerguntasUltimaLeituraEm: config?.mercadoLivrePerguntasUltimaLeituraEm || null,
+    limpezaFotosPecaAtivo: !!config?.limpezaFotosPecaAtivo,
+    limpezaFotosPecaHorario: normalizeHorarioLimpeza(config?.limpezaFotosPecaHorario),
+    limpezaFotosPecaDias: normalizeDiasLimpeza(config?.limpezaFotosPecaDias),
+    limpezaFotosPecaUltimaExecucaoChave: normalizeText(config?.limpezaFotosPecaUltimaExecucaoChave) || null,
+    limpezaFotosPecaUltimaExecucaoEm: config?.limpezaFotosPecaUltimaExecucaoEm || null,
   };
 }
 
@@ -100,6 +124,11 @@ export async function saveConfiguracaoGeral(data: Record<string, any>) {
   const resetMercadoLivreUltimaLeitura =
     proximoIntervalo !== intervaloAtual
     || (data.mercadoLivrePerguntasAtivo !== undefined && !!data.mercadoLivrePerguntasAtivo !== current.mercadoLivrePerguntasAtivo);
+  const horarioLimpezaAtual = current.limpezaFotosPecaHorario;
+  const proximoHorarioLimpeza = data.limpezaFotosPecaHorario !== undefined ? normalizeHorarioLimpeza(data.limpezaFotosPecaHorario) : horarioLimpezaAtual;
+  const diasLimpezaAtual = current.limpezaFotosPecaDias;
+  const proximoDiasLimpeza = data.limpezaFotosPecaDias !== undefined ? normalizeDiasLimpeza(data.limpezaFotosPecaDias) : diasLimpezaAtual;
+  const resetLimpezaExecucao = proximoHorarioLimpeza !== horarioLimpezaAtual || proximoDiasLimpeza !== diasLimpezaAtual;
   const payload = {
     resendApiKey: data.resendApiKey !== undefined ? normalizeText(data.resendApiKey) : current.resendApiKey,
     emailRemetente: data.emailRemetente !== undefined ? normalizeEmailFrom(data.emailRemetente) : current.emailRemetente,
@@ -134,6 +163,19 @@ export async function saveConfiguracaoGeral(data: Record<string, any>) {
       : resetMercadoLivreUltimaLeitura
         ? null
         : current.mercadoLivrePerguntasUltimaLeituraEm,
+    limpezaFotosPecaAtivo: data.limpezaFotosPecaAtivo !== undefined ? !!data.limpezaFotosPecaAtivo : current.limpezaFotosPecaAtivo,
+    limpezaFotosPecaHorario: proximoHorarioLimpeza,
+    limpezaFotosPecaDias: proximoDiasLimpeza,
+    limpezaFotosPecaUltimaExecucaoChave: data.limpezaFotosPecaUltimaExecucaoChave !== undefined
+      ? (normalizeText(data.limpezaFotosPecaUltimaExecucaoChave) || null)
+      : resetLimpezaExecucao
+        ? null
+        : current.limpezaFotosPecaUltimaExecucaoChave,
+    limpezaFotosPecaUltimaExecucaoEm: data.limpezaFotosPecaUltimaExecucaoEm !== undefined
+      ? data.limpezaFotosPecaUltimaExecucaoEm
+      : resetLimpezaExecucao
+        ? null
+        : current.limpezaFotosPecaUltimaExecucaoEm,
   };
 
   return prisma.configuracaoGeral.update({

@@ -30,6 +30,10 @@ configuracoesGeraisRouter.get('/', async (_req, res, next) => {
       mercadoLivrePerguntasIntervaloMin: Number(config.mercadoLivrePerguntasIntervaloMin || DEFAULT_MERCADO_LIVRE_PERGUNTAS_INTERVALO_MIN),
       mercadoLivrePerguntasEmailDestinatario: config.mercadoLivrePerguntasEmailDestinatario || '',
       mercadoLivrePerguntasEmailTitulo: config.mercadoLivrePerguntasEmailTitulo || DEFAULT_MERCADO_LIVRE_PERGUNTAS_EMAIL_TITULO,
+      limpezaFotosPecaAtivo: !!config.limpezaFotosPecaAtivo,
+      limpezaFotosPecaHorario: config.limpezaFotosPecaHorario || '03:00',
+      limpezaFotosPecaDias: Number(config.limpezaFotosPecaDias || 30),
+      limpezaFotosPecaUltimaExecucaoEm: config.limpezaFotosPecaUltimaExecucaoEm || null,
       resendApiKeyConfigured: !!config.resendApiKey,
       auditoriaEmailConfigurado: !!config.auditoriaEmailConfigurado,
       detranEmailConfigurado: !!config.detranEmailConfigurado,
@@ -57,6 +61,9 @@ configuracoesGeraisRouter.post('/', async (req, res, next) => {
       mercadoLivrePerguntasIntervaloMin: req.body?.mercadoLivrePerguntasIntervaloMin,
       mercadoLivrePerguntasEmailDestinatario: req.body?.mercadoLivrePerguntasEmailDestinatario,
       mercadoLivrePerguntasEmailTitulo: req.body?.mercadoLivrePerguntasEmailTitulo,
+      limpezaFotosPecaAtivo: req.body?.limpezaFotosPecaAtivo,
+      limpezaFotosPecaHorario: req.body?.limpezaFotosPecaHorario,
+      limpezaFotosPecaDias: req.body?.limpezaFotosPecaDias,
     };
 
     const resendApiKey = String(req.body?.resendApiKey || '').trim();

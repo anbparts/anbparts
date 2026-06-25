@@ -22,6 +22,11 @@ export default function ConfGeraisPage() {
   const [nuvemshopAtiva, setNuvemshopAtiva] = useState(false);
   const [nuvemshopLojaId, setNuvemshopLojaId] = useState('205449158');
   const [savingLojas, setSavingLojas] = useState(false);
+  const [limpezaFotosPecaAtivo, setLimpezaFotosPecaAtivo] = useState(false);
+  const [limpezaFotosPecaHorario, setLimpezaFotosPecaHorario] = useState('03:00');
+  const [limpezaFotosPecaDias, setLimpezaFotosPecaDias] = useState('30');
+  const [limpezaFotosPecaUltimaExecucaoEm, setLimpezaFotosPecaUltimaExecucaoEm] = useState<string | null>(null);
+  const [savingLimpeza, setSavingLimpeza] = useState(false);
 
   async function load() {
     const produtoConfig = await fetch(`${API}/bling/config-produtos`).then((r) => r.json());
@@ -30,6 +35,11 @@ export default function ConfGeraisPage() {
     const blingCfg = await fetch(`${API}/bling/config`, { credentials: 'include' }).then((r) => r.json()).catch(() => ({}));
     if (blingCfg.nuvemshopAtiva !== undefined) setNuvemshopAtiva(!!blingCfg.nuvemshopAtiva);
     if (blingCfg.nuvemshopLojaId) setNuvemshopLojaId(String(blingCfg.nuvemshopLojaId));
+    const geralCfg = await fetch(`${API}/configuracoes-gerais`, { credentials: 'include' }).then((r) => r.json()).catch(() => ({}));
+    setLimpezaFotosPecaAtivo(!!geralCfg.limpezaFotosPecaAtivo);
+    setLimpezaFotosPecaHorario(geralCfg.limpezaFotosPecaHorario || '03:00');
+    setLimpezaFotosPecaDias(String(geralCfg.limpezaFotosPecaDias || 30));
+    setLimpezaFotosPecaUltimaExecucaoEm(geralCfg.limpezaFotosPecaUltimaExecucaoEm || null);
   }
 
   useEffect(() => {
@@ -52,6 +62,28 @@ export default function ConfGeraisPage() {
       alert('Erro ao salvar');
     }
     setSavingLojas(false);
+  }
+
+  async function saveLimpeza() {
+    setSavingLimpeza(true);
+    try {
+      const resp = await fetch(`${API}/configuracoes-gerais`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          limpezaFotosPecaAtivo,
+          limpezaFotosPecaHorario,
+          limpezaFotosPecaDias: Number(limpezaFotosPecaDias) || 30,
+        }),
+      });
+      if (!resp.ok) throw new Error();
+      await load();
+      alert('Configuracao de limpeza de fotos salva!');
+    } catch {
+      alert('Erro ao salvar configuracao de limpeza de fotos');
+    }
+    setSavingLimpeza(false);
   }
 
   async function salvar() {
@@ -183,6 +215,46 @@ export default function ConfGeraisPage() {
             disabled={savingLojas}
           >
             {savingLojas ? 'Salvando...' : 'Salvar configuracao de lojas'}
+          </button>
+        </div>
+
+        {/* Limpeza de fotos de pecas vendidas */}
+        <div style={s.card}>
+          <div style={s.h3}>Limpeza de Fotos de Peças Vendidas</div>
+          <p style={s.p}>
+            Quando ativa, esta rotina roda 1x por dia no horario configurado e apaga a foto de capa das pecas que ja foram
+            vendidas ha mais que a quantidade de dias informada. Como cada peca e unica e nao sera revendida, a foto deixa de
+            ser necessaria e o espaco e liberado no banco. Pecas marcadas como prejuizo nunca tem a foto apagada.
+          </p>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 16 }}>
+            <div>
+              <div style={{ fontSize: 11, fontFamily: 'JetBrains Mono, monospace', color: 'var(--gray-400)', letterSpacing: '.8px', textTransform: 'uppercase', marginBottom: 8 }}>Rotina</div>
+              <select style={{ ...s.input, cursor: 'pointer' }} value={limpezaFotosPecaAtivo ? '1' : '0'} onChange={(e) => setLimpezaFotosPecaAtivo(e.target.value === '1')}>
+                <option value="0">Pausada</option>
+                <option value="1">Ativa</option>
+              </select>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, fontFamily: 'JetBrains Mono, monospace', color: 'var(--gray-400)', letterSpacing: '.8px', textTransform: 'uppercase', marginBottom: 8 }}>Horario</div>
+              <input style={s.input} type="time" value={limpezaFotosPecaHorario} onChange={(e) => setLimpezaFotosPecaHorario(e.target.value)} />
+            </div>
+            <div>
+              <div style={{ fontSize: 11, fontFamily: 'JetBrains Mono, monospace', color: 'var(--gray-400)', letterSpacing: '.8px', textTransform: 'uppercase', marginBottom: 8 }}>Apagar apos (dias)</div>
+              <input style={s.input} type="number" min="1" step="1" value={limpezaFotosPecaDias} onChange={(e) => setLimpezaFotosPecaDias(e.target.value)} />
+            </div>
+          </div>
+
+          <div style={{ fontSize: 12, color: 'var(--gray-400)', marginBottom: 16 }}>
+            Ultima execucao: {limpezaFotosPecaUltimaExecucaoEm ? new Date(limpezaFotosPecaUltimaExecucaoEm).toLocaleString('pt-BR') : 'ainda nao executada'}
+          </div>
+
+          <button
+            style={{ border: '1px solid var(--border)', borderRadius: 7, padding: '8px 18px', fontSize: 13, fontWeight: 500, cursor: savingLimpeza ? 'not-allowed' : 'pointer', background: 'var(--gray-800)', color: '#fff', opacity: savingLimpeza ? 0.7 : 1 }}
+            onClick={saveLimpeza}
+            disabled={savingLimpeza}
+          >
+            {savingLimpeza ? 'Salvando...' : 'Salvar configuracao de limpeza'}
           </button>
         </div>
       </div>

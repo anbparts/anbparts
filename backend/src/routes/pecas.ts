@@ -5,8 +5,69 @@ import { compressDataUrlImage, normalizeImageFileName } from '../lib/image';
 import { cancelarVendaComDevolucaoEtiqueta } from '../lib/cancelamento-venda';
 import { z } from 'zod';
 import { spDayStart, spDayEnd } from '../lib/timezone';
+import { getConfiguracaoGeral, saveConfiguracaoGeral } from '../lib/configuracoes-gerais';
 
 export const pecasRouter = Router();
+
+// ===== Rotina de limpeza automatica das fotos de capa de pecas ja vendidas =====
+// Peca e unica: depois de vendida ha mais de X dias, nao sera revendida, entao a foto
+// de capa (base64 pesado) pode ser apagada pra liberar espaco no banco. Nao apaga pecas
+// em prejuizo (podem precisar da evidencia) nem vendas recentes (janela de retencao).
+const LIMPEZA_FOTOS_PECA_TIMEZONE = 'America/Sao_Paulo';
+const LIMPEZA_FOTOS_PECA_INTERVAL_MS = 60 * 1000;
+const limpezaFotosPecaState = { started: false, running: false };
+
+function getLimpezaTimeParts(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: LIMPEZA_FOTOS_PECA_TIMEZONE,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false, hourCycle: 'h23',
+  }).formatToParts(date);
+  const find = (type: string) => parts.find((item) => item.type === type)?.value || '';
+  return { dateKey: `${find('year')}-${find('month')}-${find('day')}`, timeKey: `${find('hour')}:${find('minute')}` };
+}
+
+async function tickLimpezaFotosPeca() {
+  if (limpezaFotosPecaState.running) return;
+  const config = await getConfiguracaoGeral();
+  if (!config.limpezaFotosPecaAtivo) return;
+  const now = getLimpezaTimeParts();
+  if (now.timeKey !== config.limpezaFotosPecaHorario) return;
+  const executionKey = `${now.dateKey} ${config.limpezaFotosPecaHorario}`;
+  if (String(config.limpezaFotosPecaUltimaExecucaoChave || '') === executionKey) return;
+
+  limpezaFotosPecaState.running = true;
+  try {
+    // Marca a execucao ANTES de processar (evita rodar 2x no mesmo minuto se demorar).
+    await saveConfiguracaoGeral({
+      limpezaFotosPecaUltimaExecucaoChave: executionKey,
+      limpezaFotosPecaUltimaExecucaoEm: new Date(),
+    });
+
+    const dias = Math.max(1, Number(config.limpezaFotosPecaDias) || 30);
+    const cutoff = new Date(Date.now() - dias * 24 * 60 * 60 * 1000);
+    const resultado = await prisma.peca.updateMany({
+      where: {
+        dataVenda: { not: null, lt: cutoff },
+        emPrejuizo: false,
+        fotoCapaArquivo: { not: null },
+      },
+      data: { fotoCapaArquivo: null, fotoCapaNome: null },
+    });
+    console.log(`[limpeza-fotos-peca] ${resultado.count} foto(s) de capa apagada(s) (vendidas ha mais de ${dias} dias).`);
+  } catch (e) {
+    console.error('[limpeza-fotos-peca] falha ao executar a limpeza:', e);
+  } finally {
+    limpezaFotosPecaState.running = false;
+  }
+}
+
+export function startLimpezaFotosPecaScheduler() {
+  if (limpezaFotosPecaState.started) return;
+  limpezaFotosPecaState.started = true;
+  const runTick = () => { void tickLimpezaFotosPeca(); };
+  setInterval(runTick, LIMPEZA_FOTOS_PECA_INTERVAL_MS);
+}
 
 const DEFAULT_SELL_FRETE = 29.9;
 const DEFAULT_TAXA_PCT = 17;
