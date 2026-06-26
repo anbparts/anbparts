@@ -39,6 +39,7 @@ configuracoesGeraisRouter.get('/', async (_req, res, next) => {
       resendApiKeyConfigured: !!config.resendApiKey,
       auditoriaEmailConfigurado: !!config.auditoriaEmailConfigurado,
       detranEmailConfigurado: !!config.detranEmailConfigurado,
+      nfeTextoEmailConfigurado: !!config.nfeTextoEmailConfigurado,
       despesasEmailConfigurado: !!config.despesasEmailConfigurado,
       mercadoLivrePerguntasEmailConfigurado: !!config.mercadoLivrePerguntasEmailConfigurado,
     });

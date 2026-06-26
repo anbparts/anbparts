@@ -16,6 +16,7 @@ import {
   sendResendEmail,
 } from '../lib/email';
 import { sendDetranBaixaEmailIfNeeded } from '../lib/detran-alert';
+import { sendNfeTextoEmailIfNeeded } from '../lib/nfe-texto-email';
 import { downloadImageAsDataUrl } from '../lib/image';
 import { cancelarVendaComDevolucaoEtiqueta } from '../lib/cancelamento-venda';
 import { getMercadoLivreItemPermalink } from '../lib/mercado-livre';
@@ -6610,7 +6611,22 @@ blingRouter.post('/baixar', async (req, res, next) => {
       alertaDetranEmailErro = error?.message || String(error);
     }
 
-    res.json({ ok: true, alertaDetranEmailEnviado, alertaDetranEmailErro });
+    let alertaNfeTextoEmailEnviado = false;
+    let alertaNfeTextoEmailErro: string | null = null;
+    try {
+      const resultadoEmailNfeTexto = await sendNfeTextoEmailIfNeeded(ids);
+      alertaNfeTextoEmailEnviado = !!resultadoEmailNfeTexto?.sent;
+    } catch (error: any) {
+      alertaNfeTextoEmailErro = error?.message || String(error);
+    }
+
+    res.json({
+      ok: true,
+      alertaDetranEmailEnviado,
+      alertaDetranEmailErro,
+      alertaNfeTextoEmailEnviado,
+      alertaNfeTextoEmailErro,
+    });
   } catch (e) {
     next(e);
   }

@@ -112,6 +112,7 @@ export async function getConfiguracaoGeral() {
     resendApiKeyConfigured: !!normalized.resendApiKey,
     auditoriaEmailConfigurado: !!(normalized.resendApiKey && normalized.emailRemetente && normalized.auditoriaEmailDestinatario && normalized.auditoriaEmailTitulo),
     detranEmailConfigurado: !!(normalized.resendApiKey && normalized.emailRemetente && normalized.detranEmailDestinatario && normalized.detranEmailTitulo),
+    nfeTextoEmailConfigurado: !!(normalized.resendApiKey && normalized.emailRemetente && normalized.nfeTextoEmailDestinatario && normalized.nfeTextoEmailTitulo),
     despesasEmailConfigurado: !!(normalized.resendApiKey && normalized.emailRemetente && normalized.despesasEmailDestinatario && normalized.despesasEmailTitulo),
     mercadoLivrePerguntasEmailConfigurado: !!(normalized.resendApiKey && normalized.emailRemetente && normalized.mercadoLivrePerguntasEmailDestinatario && normalized.mercadoLivrePerguntasEmailTitulo),
   };
