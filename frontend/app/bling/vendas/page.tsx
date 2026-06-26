@@ -79,6 +79,8 @@ type SeparacaoItem = {
   pecaIdParaFoto?: number | null;
   fotoCapaArquivo?: string | null;
   fotoCapaNome?: string | null;
+  textoNfe?: string | null;
+  textoNfeTipo?: string | null;
 };
 
 type SeparacaoPedido = {
@@ -403,6 +405,23 @@ async function baixarSeparacaoPdf(relatorio: SeparacaoRelatorio) {
     });
 
     y = ((doc as any).lastAutoTable?.finalY || y) + 4;
+
+    const itensComTextoNfe = pedido.itens.filter((item) => String(item.textoNfe || '').trim());
+    if (itensComTextoNfe.length) {
+      autoTable(doc, {
+        startY: y,
+        margin: { left: marginX, right: marginX },
+        head: [['TEXTO PARA A NF-e (copiar para a nota fiscal)']],
+        body: itensComTextoNfe.map((item) => [
+          `${item.textoNfeTipo || ''}${item.skuSistema ? ` — ${item.skuSistema}` : ''}\n\n${item.textoNfe}`,
+        ]),
+        theme: 'grid',
+        styles: { font: 'helvetica', fontSize: 7, cellPadding: 2.2, overflow: 'linebreak', valign: 'top', textColor: [30, 41, 59], lineColor: [199, 210, 254], lineWidth: 0.2 },
+        headStyles: { fillColor: [238, 242, 255], textColor: [67, 56, 202], fontStyle: 'bold', fontSize: 6.5 },
+        columnStyles: { 0: { cellWidth: contentWidth } },
+      });
+      y = ((doc as any).lastAutoTable?.finalY || y) + 4;
+    }
   });
 
   doc.save(filename);
@@ -446,6 +465,7 @@ export default function VendasBlingPage() {
   const [carregandoSeparacao, setCarregandoSeparacao] = useState(false);
   const [carregandoPedidosManuais, setCarregandoPedidosManuais] = useState(false);
   const [gerandoPdf, setGerandoPdf] = useState(false);
+  const [textoNfeModal, setTextoNfeModal] = useState<{ pedidoNum: string; itens: any[] } | null>(null);
   const [itens, setItens] = useState<Item[]>([]);
   const [buscou, setBuscou] = useState(false);
   const [buscouSeparacao, setBuscouSeparacao] = useState(false);
@@ -1152,6 +1172,15 @@ export default function VendasBlingPage() {
                             <span style={{ border: `1px solid ${pedidoSeparadoEm(pedido.pedidoId) ? '#bbf7d0' : '#fed7aa'}`, background: pedidoSeparadoEm(pedido.pedidoId) ? '#f0fdf4' : '#fff7ed', color: pedidoSeparadoEm(pedido.pedidoId) ? '#15803d' : '#c2410c', borderRadius: 999, padding: '2px 8px', fontSize: 10.5, fontWeight: 800 }}>
                               {pedidoSeparadoEm(pedido.pedidoId) ? 'Separado' : 'Pendente'}
                             </span>
+                            {(pedido.itens || []).some((it: any) => String(it.textoNfe || '').trim()) ? (
+                              <button
+                                onClick={() => setTextoNfeModal({ pedidoNum: pedido.pedidoNum, itens: (pedido.itens || []).filter((it: any) => String(it.textoNfe || '').trim()) })}
+                                style={{ border: '1px solid #c7d2fe', background: '#eef2ff', color: '#4338ca', borderRadius: 999, padding: '2px 9px', fontSize: 10.5, fontWeight: 800, cursor: 'pointer' }}
+                                title="Ver o texto exigido na NF-e"
+                              >
+                                📄 Texto NF-e
+                              </button>
+                            ) : null}
                           </div>
                           <div style={{ fontSize: 11.5, color: 'var(--gray-500)', marginTop: 5 }}>
                             Data da venda: {fmtDate(pedido.dataVenda)}
@@ -1545,6 +1574,28 @@ export default function VendasBlingPage() {
           <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--gray-400)', fontSize: 14 }}>Nenhuma venda ou cancelamento encontrado no periodo.</div>
         )}
       </div>
+
+      {textoNfeModal ? (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }} onClick={() => setTextoNfeModal(null)}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 14, width: '100%', maxWidth: 720, maxHeight: '86vh', overflowY: 'auto', boxShadow: '0 12px 32px rgba(0,0,0,.12)' }}>
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--gray-800)' }}>Texto NF-e — Pedido #{textoNfeModal.pedidoNum}</div>
+              <button onClick={() => setTextoNfeModal(null)} style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer' }}>X</button>
+            </div>
+            <div style={{ padding: 20, display: 'grid', gap: 16 }}>
+              {textoNfeModal.itens.map((it: any, i: number) => (
+                <div key={i}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 6 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--gray-600)' }}>{it.textoNfeTipo}{it.skuSistema ? ` — ${it.skuSistema}` : ''}</div>
+                    <button onClick={() => { navigator.clipboard?.writeText(String(it.textoNfe || '')); }} style={{ border: '1px solid var(--border)', background: 'var(--white)', borderRadius: 7, padding: '5px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: 'var(--blue-500)' }}>Copiar</button>
+                  </div>
+                  <div style={{ background: '#f8fafc', border: '1px solid #dbe3ef', borderRadius: 10, padding: 14, fontSize: 13, color: 'var(--gray-800)', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{it.textoNfe}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </>
   );
 }

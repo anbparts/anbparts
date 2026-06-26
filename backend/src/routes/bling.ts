@@ -5,6 +5,7 @@ import {
   DEFAULT_RESEND_FROM,
   getConfiguracaoGeral,
 } from '../lib/configuracoes-gerais';
+import { DETRAN_TIPOS, posicaoDaEtiqueta, tipoPorPosicao, preencherTemplateNfe } from '../lib/nfe-texto';
 import {
   buildDatedEmailSubject,
   renderAlertEmailLayout,
@@ -5996,6 +5997,8 @@ async function buildRelatorioSeparacaoFromPedidoIds(
 
   totaisGerais.totalPedidos = pedidos.length;
 
+  await enriquecerSeparacaoComTextoNfe(pedidos);
+
   return {
     ok: true,
     filtros: options.filtros,
@@ -6003,6 +6006,56 @@ async function buildRelatorioSeparacaoFromPedidoIds(
     pedidos,
     geradoEm: new Date().toISOString(),
   };
+}
+
+// Resolve o tipo DETRAN de uma peça: avulsa pelo tipoPecaAvulsa, cartela pela posição da etiqueta.
+function resolveTipoPecaDetran(peca: any): string | null {
+  const avulsa = String(peca?.tipoPecaAvulsa || '').trim();
+  if (avulsa && DETRAN_TIPOS.includes(avulsa)) return avulsa;
+  const pos = posicaoDaEtiqueta(peca?.detranEtiqueta);
+  return pos ? tipoPorPosicao(pos) : null;
+}
+
+// Para cada item do relatório, anexa o texto NF-e preenchido se o tipo da peça tiver template ativo.
+async function enriquecerSeparacaoComTextoNfe(pedidos: any[]) {
+  let templateRows: { tipo: string; template: string }[] = [];
+  try {
+    templateRows = await prisma.$queryRaw<{ tipo: string; template: string }[]>`
+      SELECT "tipo", "template" FROM "TextoTipoPeca" WHERE "ativo" = true AND length(btrim("template")) > 0
+    `;
+  } catch {
+    return; // tabela ainda nao migrada
+  }
+  if (!templateRows.length) return;
+  const templates = new Map(templateRows.map((r) => [String(r.tipo), String(r.template)]));
+
+  const pecaIds = Array.from(new Set(
+    pedidos.flatMap((p) => (p.itens || []).map((it: any) => Number(it.pecaIdParaFoto))).filter((id: number) => id > 0),
+  )) as number[];
+  if (!pecaIds.length) return;
+
+  const pecas = await prisma.peca.findMany({
+    where: { id: { in: pecaIds } },
+    select: {
+      id: true, idPeca: true, descricao: true, detranEtiqueta: true, tipoPecaAvulsa: true,
+      moto: { select: { marca: true, modelo: true, ano: true, cor: true, placa: true, chassi: true, renavam: true } },
+    },
+  });
+  const pecaById = new Map(pecas.map((p) => [p.id, p]));
+
+  for (const pedido of pedidos) {
+    for (const item of (pedido.itens || [])) {
+      const peca = pecaById.get(Number(item.pecaIdParaFoto));
+      item.textoNfe = null;
+      item.textoNfeTipo = null;
+      if (!peca) continue;
+      const tipo = resolveTipoPecaDetran(peca);
+      const template = tipo ? templates.get(tipo) : null;
+      if (!template) continue;
+      item.textoNfeTipo = tipo;
+      item.textoNfe = preencherTemplateNfe(template, { moto: peca.moto, peca });
+    }
+  }
 }
 
 blingRouter.get('/relatorio-separacao-manual/pedidos', async (req, res, next) => {
