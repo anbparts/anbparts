@@ -7,6 +7,9 @@ import { listarPastasPendentesTratamento } from './fotos-cadastro';
 const TICK_MS = 60 * 1000;
 const TEMPLATE_LANGUAGE = 'pt_BR'; // idioma do template skus_pendentes_imagem
 const NOTIFICATION_TYPE = 'fotos_pendentes_whatsapp';
+// A Meta rejeita parametros de template com \n, tab ou 4+ espacos seguidos.
+// Por isso a lista de SKUs e unida por " / " (nao por quebra de linha).
+const SEPARADOR_SKUS = ' / ';
 const state = { started: false, running: false };
 
 // Monta o texto do alerta (cabecalho + corpo) substituindo as variaveis, para a prévia em tela.
@@ -40,7 +43,7 @@ export async function dryRunFotosPendentes() {
       if (tpl) {
         templateEncontrado = true;
         templateStatus = tpl.status;
-        previewTexto = montarPreview(tpl.headerText, tpl.bodyText, String(baseLista.length), baseLista.map((p) => p.sku).join('\n'));
+        previewTexto = montarPreview(tpl.headerText, tpl.bodyText, String(baseLista.length), baseLista.map((p) => p.sku).join(SEPARADOR_SKUS));
       }
     } catch { /* sem prévia se a Meta falhar */ }
   }
@@ -92,7 +95,7 @@ async function executarRotina() {
     return;
   }
 
-  const lista = novos.map((p) => p.sku).join('\n');
+  const lista = novos.map((p) => p.sku).join(SEPARADOR_SKUS);
   const qtd = String(novos.length);
 
   let algumSucesso = false;
