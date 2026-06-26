@@ -130,6 +130,21 @@ function getDetranEtiquetasValidationMessage(detranEtiqueta: any, estoque: any) 
   return null;
 }
 
+// Bloco do motor: etiqueta de cartela terminando em 005, ou avulsa com tipo "Bloco do motor".
+// Nesses casos o Número do Motor é obrigatório.
+function ehBlocoDoMotor(detranEtiqueta: any, tipoPecaAvulsa: any) {
+  const etiq = String(detranEtiqueta || '').trim();
+  const tipo = String(tipoPecaAvulsa || '').trim();
+  return /005$/.test(etiq) || tipo === 'Bloco do motor';
+}
+
+function getNumeroMotorValidationMessage(detranEtiqueta: any, tipoPecaAvulsa: any, numeroMotor: any) {
+  if (ehBlocoDoMotor(detranEtiqueta, tipoPecaAvulsa) && !String(numeroMotor || '').trim()) {
+    return 'Numero do Motor e obrigatorio para Bloco do motor (etiqueta de cartela final 005 ou avulsa com tipo Bloco do motor).';
+  }
+  return null;
+}
+
 function isBrunoAuthUser(req: any) {
   return String(req?.authUser?.username || '').trim().toLowerCase() === 'bruno';
 }
@@ -513,17 +528,19 @@ cadastroRouter.get('/proximo-id/:motoId', async (req, res, next) => {
 // POST /cadastro - criar pré-cadastro e enviar ao Bling
 cadastroRouter.post('/', requireCadastroAction('criar_pre_cadastro'), async (req, res, next) => {
   try {
-    const { motoId, idPeca, descricao, descricaoPecaTitulo, descricaoPeca, precoVenda, condicao, peso, largura, altura, profundidade, numeroPeca, detranEtiqueta, tipoPecaAvulsa, localizacao, estoque, categoriaMLId, categoriaMLNome, urlRef } = req.body;
+    const { motoId, idPeca, descricao, descricaoPecaTitulo, descricaoPeca, precoVenda, condicao, peso, largura, altura, profundidade, numeroPeca, numeroMotor, detranEtiqueta, tipoPecaAvulsa, localizacao, estoque, categoriaMLId, categoriaMLNome, urlRef } = req.body;
 
     if (!motoId || !idPeca || !descricao) return res.status(400).json({ error: 'motoId, idPeca e descricao sao obrigatorios' });
     if (!String(idPeca || '').trim()) return res.status(400).json({ error: 'SKU (idPeca) é obrigatorio' });
     const detranValidationMessage = getDetranEtiquetasValidationMessage(detranEtiqueta, estoque);
     if (detranValidationMessage) return res.status(400).json({ error: detranValidationMessage });
+    const numeroMotorMsg = getNumeroMotorValidationMessage(detranEtiqueta, tipoPecaAvulsa, numeroMotor);
+    if (numeroMotorMsg) return res.status(400).json({ error: numeroMotorMsg });
 
     const existing = await prisma.cadastroPeca.findUnique({ where: { idPeca } });
     if (existing) return res.status(400).json({ error: 'ID de peça já existe no cadastro' });
 
-    const record = await prisma.cadastroPeca.create({
+    const record = await (prisma as any).cadastroPeca.create({
       data: {
         motoId: Number(motoId),
         idPeca: String(idPeca).toUpperCase().trim(),
@@ -536,6 +553,7 @@ cadastroRouter.post('/', requireCadastroAction('criar_pre_cadastro'), async (req
         altura: altura != null ? Number(altura) : null,
         profundidade: profundidade != null ? Number(profundidade) : null,
         numeroPeca: numeroPeca ? String(numeroPeca).trim() : null,
+        numeroMotor: numeroMotor ? String(numeroMotor).trim() : null,
         detranEtiqueta: detranEtiqueta ? String(detranEtiqueta).trim() : null,
         tipoPecaAvulsa: tipoPecaAvulsa ? String(tipoPecaAvulsa).trim() : null,
         localizacao: localizacao ? String(localizacao).trim() : null,
@@ -867,11 +885,15 @@ cadastroRouter.put('/:id', requireCadastroAction('editar_pre_cadastro'), async (
     if (!atual) return res.status(404).json({ error: 'Não encontrado' });
     if (atual.status === 'cadastrado') return res.status(400).json({ error: 'Cadastro já finalizado — não é possível editar' });
 
-    const { descricao, descricaoPeca, precoVenda, condicao, peso, largura, altura, profundidade, numeroPeca, detranEtiqueta, tipoPecaAvulsa, localizacao, estoque, categoriaMLId, categoriaMLNome, urlRef } = req.body;
+    const { descricao, descricaoPeca, precoVenda, condicao, peso, largura, altura, profundidade, numeroPeca, numeroMotor, detranEtiqueta, tipoPecaAvulsa, localizacao, estoque, categoriaMLId, categoriaMLNome, urlRef } = req.body;
     const estoqueEfetivo = estoque !== undefined ? Number(estoque) : Number(atual.estoque);
     const detranEtiquetaEfetiva = detranEtiqueta !== undefined ? detranEtiqueta : atual.detranEtiqueta;
     const detranValidationMessage = getDetranEtiquetasValidationMessage(detranEtiquetaEfetiva, estoqueEfetivo);
     if (detranValidationMessage) return res.status(400).json({ error: detranValidationMessage });
+    const tipoPecaAvulsaEfetivo = tipoPecaAvulsa !== undefined ? tipoPecaAvulsa : atual.tipoPecaAvulsa;
+    const numeroMotorEfetivo = numeroMotor !== undefined ? numeroMotor : (atual as any).numeroMotor;
+    const numeroMotorMsg = getNumeroMotorValidationMessage(detranEtiquetaEfetiva, tipoPecaAvulsaEfetivo, numeroMotorEfetivo);
+    if (numeroMotorMsg) return res.status(400).json({ error: numeroMotorMsg });
     const data: any = {};
     if (descricao !== undefined) data.descricao = String(descricao).trim().slice(0, 60);
     if (descricaoPeca !== undefined) data.descricaoPeca = descricaoPeca || null;
@@ -882,6 +904,7 @@ cadastroRouter.put('/:id', requireCadastroAction('editar_pre_cadastro'), async (
     if (altura !== undefined) data.altura = altura != null ? Number(altura) : null;
     if (profundidade !== undefined) data.profundidade = profundidade != null ? Number(profundidade) : null;
     if (numeroPeca !== undefined) data.numeroPeca = numeroPeca || null;
+    if (numeroMotor !== undefined) data.numeroMotor = numeroMotor || null;
     if (detranEtiqueta !== undefined) data.detranEtiqueta = detranEtiqueta || null;
     if (tipoPecaAvulsa !== undefined) data.tipoPecaAvulsa = tipoPecaAvulsa || null;
     if (localizacao !== undefined) data.localizacao = localizacao || null;
@@ -988,7 +1011,7 @@ cadastroRouter.post('/:id/finalizar', requireCadastroAction('criar_bling'), asyn
         const idPeca = ids[i];
         const existing = await prisma.peca.findUnique({ where: { idPeca } });
         if (existing) continue;
-        const peca = await prisma.peca.create({
+        const peca = await (prisma as any).peca.create({
           data: {
             motoId: cadastro.motoId,
             idPeca,
@@ -1008,6 +1031,8 @@ cadastroRouter.post('/:id/finalizar', requireCadastroAction('criar_bling'), asyn
             altura: bAltura || Number(cadastro.altura || 0),
             profundidade: bProf || Number(cadastro.profundidade || 0),
             numeroPeca: cadastro.numeroPeca || null,
+            numeroMotor: (cadastro as any).numeroMotor || null,
+            tipoPecaAvulsa: cadastro.tipoPecaAvulsa || null,
             // Cada variação recebe sua etiqueta, ou a concatenada se só há 1
             detranEtiqueta: etiquetasArray.length > 0 ? (etiquetasArray[i] || null) : null,
             cadastro: new Date(),

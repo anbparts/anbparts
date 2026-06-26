@@ -46,7 +46,7 @@ type CadastroPeca = {
   id: number; motoId: number; idPeca: string; descricao: string;
   descricaoPeca?: string; precoVenda: number; condicao: string;
   peso?: number; largura?: number; altura?: number; profundidade?: number;
-  numeroPeca?: string; detranEtiqueta?: string; tipoPecaAvulsa?: string; localizacao?: string;
+  numeroPeca?: string; numeroMotor?: string; detranEtiqueta?: string; tipoPecaAvulsa?: string; localizacao?: string;
   estoque: number; categoriaMLId?: string; categoriaMLNome?: string;
   urlRef?: string; fotoCapa?: string; fotoCapaNome?: string; status: string; blingProdutoId?: string;
   createdAt?: string;
@@ -99,7 +99,7 @@ const CATEGORIA_PACOTES_STORAGE_KEY = 'anb.cadastro.categoria.pacotes';
 const EMPTY_FORM = {
   motoId: '', idPeca: '', descricao: '', descricaoPeca: '', precoVenda: '', sufixoTitulo: '',
   condicao: 'usado', peso: '', largura: '', altura: '', profundidade: '',
-  numeroPeca: '', detranEtiqueta: '', tipoPecaAvulsa: '', localizacao: '', estoque: '1',
+  numeroPeca: '', numeroMotor: '', detranEtiqueta: '', tipoPecaAvulsa: '', localizacao: '', estoque: '1',
   categoriaMLId: '', categoriaMLNome: '', urlRef: '', fotoCapa: '', fotoCapaNome: '',
 };
 
@@ -1017,7 +1017,7 @@ export default function CadastroPage() {
       largura: item.largura != null ? String(item.largura) : '',
       altura: item.altura != null ? String(item.altura) : '',
       profundidade: item.profundidade != null ? String(item.profundidade) : '',
-      numeroPeca: item.numeroPeca || '', detranEtiqueta: item.detranEtiqueta || '',
+      numeroPeca: item.numeroPeca || '', numeroMotor: item.numeroMotor || '', detranEtiqueta: item.detranEtiqueta || '',
       tipoPecaAvulsa: item.tipoPecaAvulsa || '', localizacao: item.localizacao || '', estoque: String(item.estoque),
       categoriaMLId: item.categoriaMLId || '', categoriaMLNome: item.categoriaMLNome || '',
       urlRef: item.urlRef || '', fotoCapa: item.fotoCapa || '', fotoCapaNome: item.fotoCapaNome || '',
@@ -1120,6 +1120,8 @@ export default function CadastroPage() {
     const etiquetasValidas = etiquetas.filter(e => e.trim());
     const possuiAvulsa = etiquetasValidas.some(e => !parseEtiquetaCartela(e));
     if (possuiAvulsa && !form.tipoPecaAvulsa) return alert('Selecione o Tipo de Peça para a etiqueta avulsa');
+    const ehBlocoMotor = etiquetasValidas.some(e => /005$/.test(e.trim())) || form.tipoPecaAvulsa === 'Bloco do motor';
+    if (ehBlocoMotor && !String(form.numeroMotor || '').trim()) return alert('Informe o Número do Motor (obrigatório para Bloco do motor: etiqueta final 005 ou tipo avulso Bloco do motor).');
     const detranResumo = getDetranEtiquetasResumo(etiquetas, form.estoque);
     if (detranResumo.possuiAlguma && detranResumo.faltantes > 0) {
       return alert(`Falta o preenchimento de ${detranResumo.faltantes} etiqueta(s) Detran ainda para bater com o estoque (${detranResumo.qtdEstoque}).`);
@@ -1137,6 +1139,7 @@ export default function CadastroPage() {
         peso: form.peso ? Number(form.peso) : null, largura: form.largura ? Number(form.largura) : null,
         altura: form.altura ? Number(form.altura) : null, profundidade: form.profundidade ? Number(form.profundidade) : null,
         numeroPeca: form.numeroPeca || null,
+        numeroMotor: form.numeroMotor || null,
         detranEtiqueta: etiquetas.filter(e => e.trim()).length > 0
           ? etiquetas.filter(e => e.trim()).map(e => e.trim()).join(' / ')
           : null,
@@ -2145,6 +2148,16 @@ export default function CadastroPage() {
                     </div>
                   )}
                 </div>
+
+                {(etiquetas.some((e: string) => /005$/.test(String(e || '').trim())) || form.tipoPecaAvulsa === 'Bloco do motor') && (
+                  <div>
+                    <label style={s.label}>
+                      Número do Motor <span style={{ color: '#dc2626' }}>*</span>
+                      <span style={{ fontSize: 11, color: 'var(--gray-500)', marginLeft: 6, fontWeight: 400 }}>(obrigatório para Bloco do motor)</span>
+                    </label>
+                    <input style={s.input} value={form.numeroMotor || ''} onChange={(e) => setForm((p: any) => ({ ...p, numeroMotor: e.target.value }))} placeholder="Ex: RC91E0P000245" />
+                  </div>
+                )}
 
                 <div>
                   <label style={s.label}>URL de Referência</label>

@@ -6037,7 +6037,7 @@ async function enriquecerSeparacaoComTextoNfe(pedidos: any[]) {
   const pecas = await (prisma as any).peca.findMany({
     where: { id: { in: pecaIds } },
     select: {
-      id: true, idPeca: true, descricao: true, detranEtiqueta: true, tipoPecaAvulsa: true,
+      id: true, idPeca: true, descricao: true, detranEtiqueta: true, tipoPecaAvulsa: true, numeroMotor: true,
       moto: { select: { marca: true, modelo: true, ano: true, cor: true, placa: true, chassi: true, renavam: true, cilindros: true, combustivel: true, cilindrada: true, potencia: true } },
     },
   });

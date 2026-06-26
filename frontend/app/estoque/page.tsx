@@ -1128,6 +1128,7 @@ function PecaDetalheModal({ open, peca, onClose, onSaved, canEditarPeca = false,
         localizacao: peca.localizacao || '',
         detranEtiqueta: peca.detranEtiqueta || '',
         numeroPeca: peca.numeroPeca || '',
+        numeroMotor: peca.numeroMotor || '',
       });
       setFotoCapaNome(peca.fotoCapaNome || '');
       setFotoCapaArquivo(peca.fotoCapaArquivo || '');
@@ -1167,6 +1168,7 @@ function PecaDetalheModal({ open, peca, onClose, onSaved, canEditarPeca = false,
         localizacao: form.localizacao || null,
         detranEtiqueta: form.detranEtiqueta || null,
         numeroPeca: form.numeroPeca || null,
+        numeroMotor: form.numeroMotor || null,
       };
       await fetch(`${API}/pecas/${peca.id}`, {
         method: 'PUT', credentials: 'include',
@@ -1294,6 +1296,7 @@ function PecaDetalheModal({ open, peca, onClose, onSaved, canEditarPeca = false,
               <Field label="Profundidade (cm)" value={peca.profundidade != null ? Number(peca.profundidade) : null} />
               <Field label="Localização"       value={peca.localizacao} />
               <div style={{ gridColumn: '1 / -1' }}><Field label="Número de Peça" value={peca.numeroPeca} mono /></div>
+              <div style={{ gridColumn: '1 / -1' }}><Field label="Número do Motor" value={peca.numeroMotor} mono /></div>
               <div style={{ gridColumn: '1 / -1' }}><Field label="Etiqueta Detran" value={peca.detranEtiqueta} mono /></div>
               <div style={{ gridColumn: '1 / -1', background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px' }}>
                 <input
@@ -1362,6 +1365,7 @@ function PecaDetalheModal({ open, peca, onClose, onSaved, canEditarPeca = false,
               localizacao: peca.localizacao || '',
               detranEtiqueta: peca.detranEtiqueta || '',
               numeroPeca: peca.numeroPeca || '',
+              numeroMotor: peca.numeroMotor || '',
             });
             setEditando(true);
           }} style={{ ...cs.btn, background: 'var(--gray-800)', color: '#fff' }}>✏️ Editar</button>
@@ -1394,6 +1398,10 @@ function PecaDetalheModal({ open, peca, onClose, onSaved, canEditarPeca = false,
               <div style={{ gridColumn: '1 / -1' }}>
                 <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginBottom: 4 }}>Número da Peça</div>
                 <input style={inp} value={form.numeroPeca} onChange={(e) => setForm((p: any) => ({ ...p, numeroPeca: e.target.value }))} placeholder="Código do fabricante" />
+              </div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginBottom: 4 }}>Número do Motor</div>
+                <input style={inp} value={form.numeroMotor || ''} onChange={(e) => setForm((p: any) => ({ ...p, numeroMotor: e.target.value }))} placeholder="Ex: RC91E0P000245" />
               </div>
               <div style={{ gridColumn: '1 / -1', fontSize: 11, color: '#2563eb', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 6, padding: '6px 10px' }}>
                 💡 Ao salvar, os dados serão atualizados no ANB e enviados ao Bling automaticamente.

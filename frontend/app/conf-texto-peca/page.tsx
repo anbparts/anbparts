@@ -18,6 +18,7 @@ const SAMPLE: Record<string, string> = {
   combustivel: 'Gasolina',
   cilindrada: '745',
   potencia: '58',
+  numeroMotor: 'RC91E0P000245',
   etiqueta: 'SP22102020206005',
   sku: 'HO01_0130',
   descricao: 'Carcaça Bloco Motor STD HONDA NC 750X 2022 - Usado',

@@ -213,6 +213,7 @@ const pecaBaseSchema = z.object({
   localizacao:   z.string().optional().nullable(),
   detranEtiqueta: z.string().optional().nullable(),
   numeroPeca:    z.string().optional().nullable(),
+  numeroMotor:   z.string().optional().nullable(),
   pesoLiquido:   z.number().optional().nullable(),
   pesoBruto:     z.number().optional().nullable(),
   largura:       z.number().optional().nullable(),
