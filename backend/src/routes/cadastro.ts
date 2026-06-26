@@ -1300,47 +1300,50 @@ cadastroRouter.delete('/:id', requireCadastroAction('editar_pre_cadastro'), asyn
       });
     }
 
-    // 2) Bling: apaga o produto somente se estiver INATIVO (pre-cadastro cria como inativo).
+    // 2) Bling: apaga o produto somente se estiver INATIVO. O Bling exige marcar como
+    //    EXCLUIDO (situacao 'E') ANTES de remover definitivamente (igual ao botao da lixeira).
     let blingDeletado = false;
     let blingMotivo = 'sem produto no Bling';
     if (cadastro.blingProdutoId) {
-      let situacao = '';
-      let existe = false;
+      let produtoAtual: any = null;
       try {
         const blingCheck = await blingReq(`/produtos/${cadastro.blingProdutoId}`);
-        situacao = String(blingCheck?.data?.situacao || '').trim().toUpperCase();
-        existe = !!(blingCheck?.data?.id && String(blingCheck.data.id) === String(cadastro.blingProdutoId));
+        produtoAtual = blingCheck?.data || null;
       } catch (e: any) {
         // GET falhou: produto provavelmente ja nao existe -> segue com Drive/local.
         console.log('[cadastro delete] Bling GET:', e?.message?.slice(0, 160));
       }
+      const situacao = String(produtoAtual?.situacao || '').trim().toUpperCase();
+      const existe = !!(produtoAtual?.id && String(produtoAtual.id) === String(cadastro.blingProdutoId));
 
-      if (!existe || situacao === 'E') {
+      if (!existe) {
         blingMotivo = 'produto ja nao existe no Bling';
-      } else if (situacao === 'I') {
+      } else if (situacao === 'I' || situacao === 'E') {
         try {
+          // 1) Marca como excluido (situacao 'E'), se ainda nao estiver.
+          if (situacao !== 'E') {
+            try {
+              await blingReq(`/produtos/${cadastro.blingProdutoId}/situacoes`, {
+                method: 'PATCH',
+                body: JSON.stringify({ situacao: 'E' }),
+              });
+            } catch {
+              // Fallback: PUT completo com situacao 'E'.
+              const payloadExcluir = buildBlingProdutoPayloadFromCurrent(produtoAtual);
+              payloadExcluir.situacao = 'E';
+              await blingReq(`/produtos/${cadastro.blingProdutoId}`, { method: 'PUT', body: JSON.stringify(payloadExcluir) });
+            }
+          }
+          // 2) Remove definitivamente (agora permitido pelo Bling).
           await blingReq(`/produtos/${cadastro.blingProdutoId}`, { method: 'DELETE' });
           blingDeletado = true;
-          blingMotivo = 'produto inativo apagado no Bling';
-        } catch (e1: any) {
-          // O Bling costuma recusar excluir produto COM saldo. Zera o estoque e tenta de novo.
-          try {
-            await lancarEstoqueNoBling({
-              blingProdutoId: String(cadastro.blingProdutoId),
-              quantidade: 0,
-              preco: 0,
-              observacoes: `Zerando estoque para excluir - ${baseSku}`,
-            });
-            await blingReq(`/produtos/${cadastro.blingProdutoId}`, { method: 'DELETE' });
-            blingDeletado = true;
-            blingMotivo = 'produto inativo apagado no Bling (estoque zerado antes)';
-          } catch (e2: any) {
-            // Erro real: aborta TUDO (nao apaga Drive/local) e mostra o motivo do Bling.
-            return res.status(400).json({
-              ok: false,
-              error: `Nao foi possivel apagar o produto no Bling: ${e2?.message || e1?.message || 'erro desconhecido'}`,
-            });
-          }
+          blingMotivo = 'produto excluido e removido do Bling';
+        } catch (e: any) {
+          // Erro real: aborta TUDO (nao apaga Drive/local) e mostra o motivo do Bling.
+          return res.status(400).json({
+            ok: false,
+            error: `Nao foi possivel apagar o produto no Bling: ${e?.message || 'erro desconhecido'}`,
+          });
         }
       } else {
         blingMotivo = 'produto ativo no Bling — nao foi apagado la';
