@@ -1304,22 +1304,46 @@ cadastroRouter.delete('/:id', requireCadastroAction('editar_pre_cadastro'), asyn
     let blingDeletado = false;
     let blingMotivo = 'sem produto no Bling';
     if (cadastro.blingProdutoId) {
+      let situacao = '';
+      let existe = false;
       try {
         const blingCheck = await blingReq(`/produtos/${cadastro.blingProdutoId}`);
-        const situacao = String(blingCheck?.data?.situacao || '');
-        const existe = blingCheck?.data?.id && String(blingCheck.data.id) === String(cadastro.blingProdutoId);
-        if (!existe || situacao === 'E') {
-          blingMotivo = 'produto ja nao existe no Bling';
-        } else if (situacao === 'I') {
+        situacao = String(blingCheck?.data?.situacao || '').trim().toUpperCase();
+        existe = !!(blingCheck?.data?.id && String(blingCheck.data.id) === String(cadastro.blingProdutoId));
+      } catch (e: any) {
+        // GET falhou: produto provavelmente ja nao existe -> segue com Drive/local.
+        console.log('[cadastro delete] Bling GET:', e?.message?.slice(0, 160));
+      }
+
+      if (!existe || situacao === 'E') {
+        blingMotivo = 'produto ja nao existe no Bling';
+      } else if (situacao === 'I') {
+        try {
           await blingReq(`/produtos/${cadastro.blingProdutoId}`, { method: 'DELETE' });
           blingDeletado = true;
           blingMotivo = 'produto inativo apagado no Bling';
-        } else {
-          blingMotivo = 'produto ativo no Bling — nao foi apagado la';
+        } catch (e1: any) {
+          // O Bling costuma recusar excluir produto COM saldo. Zera o estoque e tenta de novo.
+          try {
+            await lancarEstoqueNoBling({
+              blingProdutoId: String(cadastro.blingProdutoId),
+              quantidade: 0,
+              preco: 0,
+              observacoes: `Zerando estoque para excluir - ${baseSku}`,
+            });
+            await blingReq(`/produtos/${cadastro.blingProdutoId}`, { method: 'DELETE' });
+            blingDeletado = true;
+            blingMotivo = 'produto inativo apagado no Bling (estoque zerado antes)';
+          } catch (e2: any) {
+            // Erro real: aborta TUDO (nao apaga Drive/local) e mostra o motivo do Bling.
+            return res.status(400).json({
+              ok: false,
+              error: `Nao foi possivel apagar o produto no Bling: ${e2?.message || e1?.message || 'erro desconhecido'}`,
+            });
+          }
         }
-      } catch (e: any) {
-        blingMotivo = 'produto nao encontrado no Bling';
-        console.log('[cadastro delete] Bling check/delete:', e?.message?.slice(0, 120));
+      } else {
+        blingMotivo = 'produto ativo no Bling — nao foi apagado la';
       }
     }
 

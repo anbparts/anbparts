@@ -654,7 +654,14 @@ export async function blingReq(pathUrl: string, options: any = {}, retries = 3):
     throw new Error(`Bling API ${resp.status}: ${err.slice(0, 2000)}`);
   }
 
-  return resp.json();
+  // Respostas sem corpo (ex.: DELETE -> 204 No Content) nao podem ser parseadas como JSON.
+  const body = await resp.text();
+  if (!body) return {};
+  try {
+    return JSON.parse(body);
+  } catch {
+    return {};
+  }
 }
 
 async function refreshAccessToken() {
