@@ -5507,8 +5507,11 @@ blingRouter.get('/relatorio-vendas', async (req, res, next) => {
       { emPrejuizo: false },
     ];
 
-    if (dataDe) andFilters.push({ dataVenda: { gte: parseDateStart(dataDe) } });
-    if (dataAte) andFilters.push({ dataVenda: { lte: parseDateEnd(dataAte) } });
+    // dataVenda e gravada como dia-calendario em UTC (new Date('YYYY-MM-DD') = meia-noite UTC),
+    // entao o filtro usa limites de dia em UTC — nao no fuso de SP — senao a venda do proprio
+    // dia (00:00Z) cai antes da janela de SP (03:00Z) e some do relatorio.
+    if (dataDe) andFilters.push({ dataVenda: { gte: new Date(`${dataDe}T00:00:00.000Z`) } });
+    if (dataAte) andFilters.push({ dataVenda: { lte: new Date(`${dataAte}T23:59:59.999Z`) } });
     if (pedido) {
       andFilters.push({
         blingPedidoNum: {
@@ -6063,9 +6066,11 @@ blingRouter.get('/relatorio-separacao-manual/pedidos', async (req, res, next) =>
   try {
     const dataInicio = String(req.query?.dataInicio || '').trim();
     const dataFim = String(req.query?.dataFim || '').trim();
+    // dataVenda e dia-calendario em UTC (ver /relatorio-vendas): filtra por limite de dia em UTC,
+    // nao no fuso de SP, senao a venda do proprio dia (00:00Z) some num filtro de mesmo dia.
     const dataVendaFilter: any = { not: null };
-    if (dataInicio) dataVendaFilter.gte = spDayStart(dataInicio);
-    if (dataFim) dataVendaFilter.lte = spDayEnd(dataFim);
+    if (dataInicio) dataVendaFilter.gte = new Date(`${dataInicio}T00:00:00.000Z`);
+    if (dataFim) dataVendaFilter.lte = new Date(`${dataFim}T23:59:59.999Z`);
 
     const pecas = await prisma.peca.findMany({
       where: {
