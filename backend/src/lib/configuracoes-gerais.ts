@@ -6,6 +6,7 @@ export const DEFAULT_DETRAN_EMAIL_TITULO = 'ALERTA ANB Parts - Baixa de Etiqueta
 export const DEFAULT_DESPESAS_EMAIL_TITULO = 'ALERTA ANB Parts - Despesas do Dia - Verifique';
 export const DEFAULT_DESPESAS_EMAIL_HORARIO = '07:00';
 export const DEFAULT_MERCADO_LIVRE_PERGUNTAS_EMAIL_TITULO = 'ALERTA ANB Parts - Perguntas Mercado Livre - Verifique';
+export const DEFAULT_NFE_TEXTO_EMAIL_TITULO = 'ANB Parts - Texto da NF-e necessario - Verifique';
 export const DEFAULT_MERCADO_LIVRE_PERGUNTAS_INTERVALO_MIN = 5;
 
 function normalizeText(value: any) {
@@ -45,6 +46,8 @@ function buildGeneralConfigSeed(blingConfig: any) {
     auditoriaEmailTitulo: DEFAULT_AUDITORIA_EMAIL_TITULO,
     detranEmailDestinatario: auditoriaEmailDestinatario,
     detranEmailTitulo: DEFAULT_DETRAN_EMAIL_TITULO,
+    nfeTextoEmailDestinatario: auditoriaEmailDestinatario,
+    nfeTextoEmailTitulo: DEFAULT_NFE_TEXTO_EMAIL_TITULO,
     despesasEmailAtivo: false,
     despesasEmailHorario: DEFAULT_DESPESAS_EMAIL_HORARIO,
     despesasEmailDestinatario: auditoriaEmailDestinatario,
@@ -72,6 +75,8 @@ export function getConfiguracaoGeralDefaults(config: any) {
     auditoriaEmailTitulo: normalizeText(config?.auditoriaEmailTitulo) || DEFAULT_AUDITORIA_EMAIL_TITULO,
     detranEmailDestinatario: normalizeText(config?.detranEmailDestinatario),
     detranEmailTitulo: normalizeText(config?.detranEmailTitulo) || DEFAULT_DETRAN_EMAIL_TITULO,
+    nfeTextoEmailDestinatario: normalizeText(config?.nfeTextoEmailDestinatario),
+    nfeTextoEmailTitulo: normalizeText(config?.nfeTextoEmailTitulo) || DEFAULT_NFE_TEXTO_EMAIL_TITULO,
     despesasEmailAtivo: !!config?.despesasEmailAtivo,
     despesasEmailHorario: normalizeHorario(config?.despesasEmailHorario),
     despesasEmailDestinatario: normalizeText(config?.despesasEmailDestinatario),
@@ -136,6 +141,8 @@ export async function saveConfiguracaoGeral(data: Record<string, any>) {
     auditoriaEmailTitulo: data.auditoriaEmailTitulo !== undefined ? (normalizeText(data.auditoriaEmailTitulo) || DEFAULT_AUDITORIA_EMAIL_TITULO) : current.auditoriaEmailTitulo,
     detranEmailDestinatario: data.detranEmailDestinatario !== undefined ? normalizeText(data.detranEmailDestinatario) : current.detranEmailDestinatario,
     detranEmailTitulo: data.detranEmailTitulo !== undefined ? (normalizeText(data.detranEmailTitulo) || DEFAULT_DETRAN_EMAIL_TITULO) : current.detranEmailTitulo,
+    nfeTextoEmailDestinatario: data.nfeTextoEmailDestinatario !== undefined ? normalizeText(data.nfeTextoEmailDestinatario) : current.nfeTextoEmailDestinatario,
+    nfeTextoEmailTitulo: data.nfeTextoEmailTitulo !== undefined ? (normalizeText(data.nfeTextoEmailTitulo) || DEFAULT_NFE_TEXTO_EMAIL_TITULO) : current.nfeTextoEmailTitulo,
     despesasEmailAtivo: data.despesasEmailAtivo !== undefined ? !!data.despesasEmailAtivo : current.despesasEmailAtivo,
     despesasEmailHorario: proximoHorario,
     despesasEmailDestinatario: data.despesasEmailDestinatario !== undefined ? normalizeText(data.despesasEmailDestinatario) : current.despesasEmailDestinatario,

@@ -262,6 +262,8 @@ model ConfiguracaoGeral {
   whatsappFotosPendentesAtivo Boolean @default(false)
   whatsappFotosPendentesIntervaloHoras Int @default(1)
   whatsappFotosPendentesUltimaExecucaoEm DateTime?
+  nfeTextoEmailDestinatario String @default("")
+  nfeTextoEmailTitulo String @default("ANB Parts - Texto da NF-e necessario - Verifique")
   empresaRazaoSocial        String   @default("")
   empresaCnpj               String   @default("")
   empresaEnderecoCompleto   String   @default("")
@@ -588,6 +590,14 @@ model FotoPendenteNotificada {
   id           Int      @id @default(autoincrement())
   sku          String   @unique
   notificadaEm DateTime @default(now())
+}
+
+model TextoTipoPeca {
+  id        Int      @id @default(autoincrement())
+  tipo      String   @unique
+  template  String   @db.Text
+  ativo     Boolean  @default(true)
+  updatedAt DateTime @updatedAt
 }
 
 model BlingPedidoSeparacao {

@@ -17,6 +17,8 @@ type ConfiguracaoGeral = {
   auditoriaEmailTitulo: string;
   detranEmailDestinatario: string;
   detranEmailTitulo: string;
+  nfeTextoEmailDestinatario: string;
+  nfeTextoEmailTitulo: string;
   despesasEmailAtivo: boolean;
   despesasEmailHorario: string;
   despesasEmailDestinatario: string;
@@ -42,6 +44,8 @@ export default function ConfiguracoesGeraisPage() {
   const [auditoriaEmailTitulo, setAuditoriaEmailTitulo] = useState('');
   const [detranEmailDestinatario, setDetranEmailDestinatario] = useState('');
   const [detranEmailTitulo, setDetranEmailTitulo] = useState('');
+  const [nfeTextoEmailDestinatario, setNfeTextoEmailDestinatario] = useState('');
+  const [nfeTextoEmailTitulo, setNfeTextoEmailTitulo] = useState('');
   const [despesasEmailAtivo, setDespesasEmailAtivo] = useState(false);
   const [despesasEmailHorario, setDespesasEmailHorario] = useState('07:00');
   const [despesasEmailDestinatario, setDespesasEmailDestinatario] = useState('');
@@ -60,6 +64,8 @@ export default function ConfiguracoesGeraisPage() {
     setAuditoriaEmailTitulo(data.auditoriaEmailTitulo || '');
     setDetranEmailDestinatario(data.detranEmailDestinatario || '');
     setDetranEmailTitulo(data.detranEmailTitulo || '');
+    setNfeTextoEmailDestinatario(data.nfeTextoEmailDestinatario || '');
+    setNfeTextoEmailTitulo(data.nfeTextoEmailTitulo || '');
     setDespesasEmailAtivo(!!data.despesasEmailAtivo);
     setDespesasEmailHorario(data.despesasEmailHorario || '07:00');
     setDespesasEmailDestinatario(data.despesasEmailDestinatario || '');
@@ -86,6 +92,8 @@ export default function ConfiguracoesGeraisPage() {
         auditoriaEmailTitulo,
         detranEmailDestinatario,
         detranEmailTitulo,
+        nfeTextoEmailDestinatario,
+        nfeTextoEmailTitulo,
         despesasEmailAtivo,
         despesasEmailHorario,
         despesasEmailDestinatario,
@@ -183,6 +191,21 @@ export default function ConfiguracoesGeraisPage() {
             <div>
               <label style={s.label}>Titulo do email da baixa DETRAN</label>
               <input style={{ ...s.input, width: '100%' }} value={detranEmailTitulo} onChange={(e) => setDetranEmailTitulo(e.target.value)} placeholder="ALERTA ANB Parts - Baixa de Etiqueta DETRAN - Verifique" />
+            </div>
+          </div>
+        </div>
+
+        <div style={{ ...s.card, background: '#f0fdf4', borderColor: '#bbf7d0' }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 6 }}>Processo: Texto da NF-e</div>
+          <div style={{ fontSize: 12, color: 'var(--gray-500)', marginBottom: 14 }}>Quando uma peça vendida tiver texto configurado para o seu tipo (em Motos → Conf. Texto), este e-mail avisa que é preciso incluir o texto na NF-e. Dispara junto com a venda da etiqueta.</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12 }}>
+            <div>
+              <label style={s.label}>Email destinatario do texto NF-e</label>
+              <input style={{ ...s.input, width: '100%' }} value={nfeTextoEmailDestinatario} onChange={(e) => setNfeTextoEmailDestinatario(e.target.value)} placeholder="voce@anbparts.com.br" />
+            </div>
+            <div>
+              <label style={s.label}>Titulo do email do texto NF-e</label>
+              <input style={{ ...s.input, width: '100%' }} value={nfeTextoEmailTitulo} onChange={(e) => setNfeTextoEmailTitulo(e.target.value)} placeholder="ANB Parts - Texto da NF-e necessario - Verifique" />
             </div>
           </div>
         </div>

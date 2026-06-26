@@ -194,6 +194,11 @@ export const api = {
     testar: (data: any) => req<any>('/conf-meta/testar', { method: 'POST', body: JSON.stringify(data) }),
     dryRunFotos: () => req<any>('/conf-meta/fotos-pendentes/dry-run'),
   },
+  confTextoPeca: {
+    get: () => req<any>('/conf-texto-peca'),
+    save: (data: any) => req<any>('/conf-texto-peca', { method: 'POST', body: JSON.stringify(data) }),
+    remove: (tipo: string) => req<any>(`/conf-texto-peca/${encodeURIComponent(tipo)}`, { method: 'DELETE' }),
+  },
   bling: {
     relatorioVendas: (params?: Record<string, any>) => {
       const qs = params ? '?' + new URLSearchParams(params).toString() : '';

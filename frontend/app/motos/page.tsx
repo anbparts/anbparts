@@ -1,5 +1,6 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { api } from '@/lib/api';
 import { compressMotoFotoFile } from '@/lib/image-compression';
 import EtiquetaCartelaModal from '../estoque/EtiquetaCartelaModal';
@@ -2228,6 +2229,17 @@ export default function MotosPage() {
               {aba === 'cadastro' ? 'Cadastro' : 'Contratos'}
             </button>
           ))}
+          <Link
+            href="/conf-texto-peca"
+            style={{
+              padding: '7px 16px', borderRadius: 8, fontSize: 13, fontWeight: 500,
+              cursor: 'pointer', fontFamily: 'Geist, sans-serif',
+              border: '1px solid var(--border)', background: 'var(--white)', color: 'var(--ink-soft)',
+              textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6,
+            }}
+          >
+            📝 Conf. Texto
+          </Link>
         </div>
       </div>
 
