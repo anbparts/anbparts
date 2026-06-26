@@ -1157,52 +1157,56 @@ export default function CadastroPage() {
     setSaving(false);
   }
 
-  async function excluir(force = false) {
+  async function excluir(force = false, confirmarFotos = false) {
     if (!editItem) return;
     if (!isBruno) {
       alert('Apenas o usuario Bruno pode excluir linhas do cadastro.');
       return;
     }
-    const msg = force
-      ? `FORÇAR exclusão de ${editItem.idPeca} ignorando verificação do Bling?`
-      : `Excluir o pré-cadastro ${editItem.idPeca}?`;
-    if (!confirm(msg)) return;
+    if (!confirmarFotos) {
+      const msg = `Eliminar o pré-cadastro ${editItem.idPeca}? Isso apaga o produto no Bling (se inativo) e a pasta no Drive.`;
+      if (!confirm(msg)) return;
+    }
     setExcluindo(true);
     try {
-      const url = `${API}/cadastro/${editItem.id}${force ? '?force=true' : ''}`;
+      const params = [];
+      if (force) params.push('force=true');
+      if (confirmarFotos) params.push('confirmarFotos=true');
+      const url = `${API}/cadastro/${editItem.id}${params.length ? `?${params.join('&')}` : ''}`;
       const resp = await fetch(url, { method: 'DELETE', credentials: 'include' });
       const d = await resp.json();
-      if (!resp.ok) {
-        // Se bloqueado pelo Bling, oferecer força
-        if (!force && d.error?.includes('Bling')) {
-          const forcar = confirm(`${d.error}
-
-Deseja forçar a exclusão mesmo assim?`);
-          if (forcar) { setExcluindo(false); return excluir(true); }
-        }
-        throw new Error(d.error || 'Erro ao excluir');
+      if (resp.status === 409 && d.requiresConfirmation) {
+        setExcluindo(false);
+        if (confirm(d.message)) return excluir(force, true);
+        return;
       }
+      if (!resp.ok) throw new Error(d.error || 'Erro ao excluir');
       setModal(false);
       await loadCadastros();
     } catch (e: any) { alert(e.message); }
     setExcluindo(false);
   }
 
-  async function eliminarLinhaCadastro(item: CadastroPeca) {
+  async function eliminarLinhaCadastro(item: CadastroPeca, confirmarFotos = false) {
     if (!isBruno) {
       alert('Apenas o usuario Bruno pode eliminar linhas do cadastro.');
       return;
     }
-    if (!confirm(`Eliminar a linha ${item.idPeca} do cadastro?`)) return;
-    if (!confirm(`Tem certeza que deseja eliminar ${item.idPeca}? Essa acao remove a linha mesmo se ela ja estiver finalizada.`)) return;
+    if (!confirmarFotos) {
+      if (!confirm(`Eliminar a linha ${item.idPeca} do cadastro?`)) return;
+      if (!confirm(`Tem certeza que deseja eliminar ${item.idPeca}? Essa acao remove a linha (mesmo finalizada), apaga o produto no Bling (se inativo) e a pasta no Drive.`)) return;
+    }
 
     setEliminandoLinhaId(item.id);
     try {
-      const resp = await fetch(`${API}/cadastro/${item.id}?force=true`, {
-        method: 'DELETE',
-        credentials: 'include',
-      });
+      const url = `${API}/cadastro/${item.id}?force=true${confirmarFotos ? '&confirmarFotos=true' : ''}`;
+      const resp = await fetch(url, { method: 'DELETE', credentials: 'include' });
       const d = await resp.json();
+      if (resp.status === 409 && d.requiresConfirmation) {
+        setEliminandoLinhaId(null);
+        if (confirm(d.message)) return eliminarLinhaCadastro(item, true);
+        return;
+      }
       if (!resp.ok) throw new Error(d.error || 'Erro ao eliminar linha');
       if (editItem?.id === item.id) {
         setModal(false);

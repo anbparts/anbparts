@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { compressDataUrlImage, normalizeImageFileName } from '../lib/image';
-import { buscarCadastroFotos, buscarCadastroFotosAnb, buscarCadastroFotosDrive, enviarCadastroFotosManual, processarCadastroFotos, verificarCadastroFotoSku, verificarFotosCadastroPeca } from '../lib/fotos-cadastro';
+import { buscarCadastroFotos, buscarCadastroFotosAnb, buscarCadastroFotosDrive, enviarCadastroFotosManual, processarCadastroFotos, verificarCadastroFotoSku, verificarFotosCadastroPeca, getPastaPreCadastroDoSku, apagarPastaDrive } from '../lib/fotos-cadastro';
 import { blingReq, fetchProdutoLojaLinksByProductId, resolveBlingMercadoLivreItemId, resolveBlingMercadoLivreLinkWithFallback } from './bling';
 import { criarPastaPreCadastro } from './google-drive';
 import { mercadoLivreReq } from '../lib/mercado-livre';
@@ -1276,36 +1276,67 @@ cadastroRouter.delete('/:id', requireCadastroAction('editar_pre_cadastro'), asyn
     const id = Number(req.params.id);
     const cadastro = await prisma.cadastroPeca.findUnique({ where: { id } });
     if (!cadastro) return res.status(404).json({ error: 'Não encontrado' });
-    // Se forceDelete=true, pula a verificação do Bling
-    const forceDelete = req.query.force === 'true';
 
+    const forceDelete = req.query.force === 'true';
     if (forceDelete && !isBrunoAuthUser(req)) {
       return res.status(403).json({ error: 'Apenas o usuario Bruno pode eliminar linhas finalizadas do cadastro.' });
     }
+    const confirmarFotos = req.query.confirmarFotos === 'true';
+    const baseSku = getBaseSku(cadastro.idPeca);
 
-    if (cadastro.blingProdutoId && !forceDelete) {
-      let existeNoBling = false;
-      let blingDebug: any = null;
+    // 1) Pasta no Drive: se tiver fotos e o usuario ainda nao confirmou, pede confirmacao (nao apaga nada).
+    let driveInfo: { pastaId: string | null; nome: string; fotos: number } = { pastaId: null, nome: '', fotos: 0 };
+    try {
+      driveInfo = await getPastaPreCadastroDoSku(baseSku);
+    } catch (e: any) {
+      console.error('[cadastro delete] erro ao consultar a pasta no Drive:', e?.message);
+    }
+    if (driveInfo.fotos > 0 && !confirmarFotos) {
+      return res.status(409).json({
+        ok: false,
+        requiresConfirmation: true,
+        fotos: driveInfo.fotos,
+        message: `O SKU ${baseSku} tem ${driveInfo.fotos} foto(s) na pasta do Drive. Ao continuar, a pasta sera apagada (junto com o produto no Bling, se inativo, e o registro). Deseja continuar?`,
+      });
+    }
+
+    // 2) Bling: apaga o produto somente se estiver INATIVO (pre-cadastro cria como inativo).
+    let blingDeletado = false;
+    let blingMotivo = 'sem produto no Bling';
+    if (cadastro.blingProdutoId) {
       try {
         const blingCheck = await blingReq(`/produtos/${cadastro.blingProdutoId}`);
-        blingDebug = blingCheck;
-        // Bling pode retornar produto "inativo/excluído" com situacao='E' — não bloquear nesses casos
         const situacao = String(blingCheck?.data?.situacao || '');
-        const temId = blingCheck?.data?.id && String(blingCheck.data.id) === String(cadastro.blingProdutoId);
-        if (temId && situacao !== 'E' && situacao !== 'I') {
-          existeNoBling = true;
+        const existe = blingCheck?.data?.id && String(blingCheck.data.id) === String(cadastro.blingProdutoId);
+        if (!existe || situacao === 'E') {
+          blingMotivo = 'produto ja nao existe no Bling';
+        } else if (situacao === 'I') {
+          await blingReq(`/produtos/${cadastro.blingProdutoId}`, { method: 'DELETE' });
+          blingDeletado = true;
+          blingMotivo = 'produto inativo apagado no Bling';
+        } else {
+          blingMotivo = 'produto ativo no Bling — nao foi apagado la';
         }
       } catch (e: any) {
-        console.log('[cadastro delete] Bling check erro (produto não existe):', e?.message?.slice(0, 100));
-        existeNoBling = false;
-      }
-      console.log('[cadastro delete] blingProdutoId:', cadastro.blingProdutoId, '| existeNoBling:', existeNoBling, '| debug:', JSON.stringify(blingDebug?.data?.situacao));
-      if (existeNoBling) {
-        return res.status(400).json({ error: 'Este pré-cadastro já foi replicado ao Bling e o produto ainda existe lá. Delete o produto no Bling primeiro, ou use a opção "Forçar exclusão".' });
+        blingMotivo = 'produto nao encontrado no Bling';
+        console.log('[cadastro delete] Bling check/delete:', e?.message?.slice(0, 120));
       }
     }
+
+    // 3) Apaga a pasta no Drive (definitivo).
+    let driveApagada = false;
+    if (driveInfo.pastaId) {
+      try {
+        driveApagada = await apagarPastaDrive(driveInfo.pastaId);
+      } catch (e: any) {
+        console.error('[cadastro delete] erro ao apagar a pasta no Drive:', e?.message);
+      }
+    }
+
+    // 4) Apaga o registro local.
     await prisma.cadastroPeca.delete({ where: { id } });
-    res.json({ ok: true });
+
+    res.json({ ok: true, blingDeletado, blingMotivo, driveApagada, fotos: driveInfo.fotos });
   } catch (e) { next(e); }
 });
 

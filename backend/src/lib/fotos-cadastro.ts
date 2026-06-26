@@ -240,6 +240,50 @@ export async function listarPastasPendentesTratamento(): Promise<PastaPendenteTr
   return pendentes;
 }
 
+// Requisicao ao Drive com metodo arbitrario (ex.: DELETE), com refresh de token.
+async function driveRequest(path: string, init: any) {
+  const execute = (token: string) => fetch(`${GOOGLE_DRIVE_URL}${path}`, {
+    ...init,
+    headers: { Authorization: `Bearer ${token}`, ...(init?.headers || {}) },
+  });
+  let token = await getGoogleDriveToken();
+  let resp = await execute(token);
+  if (resp.status === 401 || resp.status === 403) {
+    await clearGoogleDriveToken();
+    token = await getGoogleDriveToken(true);
+    resp = await execute(token);
+  }
+  return resp;
+}
+
+// Localiza a pasta de um SKU dentro da raiz do Pre-Cadastro e conta as fotos.
+export async function getPastaPreCadastroDoSku(sku: string): Promise<{ pastaId: string | null; nome: string; fotos: number }> {
+  const cfg = await getGoogleDriveConfig();
+  const pastaRaizId = normalizeText((cfg as any).googleDrivePreCadastroPastaId);
+  const skuUpper = normalizeText(sku).toUpperCase();
+  if (!pastaRaizId || !skuUpper) return { pastaId: null, nome: '', fotos: 0 };
+
+  const pastas = await listDriveFiles(
+    `'${escapeDriveQueryValue(pastaRaizId)}' in parents and mimeType = 'application/vnd.google-apps.folder' and name contains '${escapeDriveQueryValue(skuUpper)}' and trashed = false`,
+    'files(id,name)',
+  );
+  const pasta = pastas.find((p: any) => normalizeText(p.name).toUpperCase().startsWith(skuUpper)) || null;
+  if (!pasta) return { pastaId: null, nome: '', fotos: 0 };
+
+  const fotos = await listDriveFiles(
+    `'${escapeDriveQueryValue(pasta.id)}' in parents and mimeType contains 'image/' and trashed = false`,
+    'files(id)',
+  );
+  return { pastaId: String(pasta.id), nome: normalizeText(pasta.name), fotos: fotos.length };
+}
+
+// Apaga definitivamente uma pasta do Drive pelo id. 404 = ja nao existe (consideramos ok).
+export async function apagarPastaDrive(pastaId: string): Promise<boolean> {
+  if (!pastaId) return false;
+  const resp = await driveRequest(buildDrivePath(`/files/${encodeURIComponent(pastaId)}`, {}), { method: 'DELETE' });
+  return resp.ok || resp.status === 204 || resp.status === 404;
+}
+
 async function buscarFotosDriveSku(motoId: number, sku: string) {
   const cfg = await getGoogleDriveConfig();
   const motoDirs = (cfg.googleDriveMotoDirs as any) || {};
