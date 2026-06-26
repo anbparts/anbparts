@@ -465,8 +465,8 @@ function Modal({ open, title, onClose, onSave, moto, viewportMode = 'desktop' }:
           <div style={{ display: 'grid', gridTemplateColumns: modalColumns, gap: 12 }}>
             {row('Cilindros', 'cilindros', 'text', 'Ex: 2')}
             {row('Combustivel', 'combustivel', 'text', 'Ex: Gasolina')}
-            {row('Cilindrada', 'cilindrada', 'text', 'Ex: 745 cm³')}
-            {row('Potencia', 'potencia', 'text', 'Ex: 58 cv')}
+            {row('Cilindrada (cm³)', 'cilindrada', 'text', 'Ex: 745')}
+            {row('Potencia (cv)', 'potencia', 'text', 'Ex: 58')}
           </div>
           <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '0.8px', textTransform: 'uppercase', margin: '16px 0 12px', paddingBottom: 8, borderBottom: '1px solid var(--border)' }}>Compra</div>
           <div style={{ display: 'grid', gridTemplateColumns: modalColumns, gap: 12 }}>
