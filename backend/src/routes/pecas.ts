@@ -874,7 +874,9 @@ pecasRouter.put('/:id', requireEstoqueAction('editar'), async (req, res, next) =
           ? normalizePecaLocalizacao(data.localizacao)
           : undefined,
         cadastro:  data.cadastro  ? new Date(data.cadastro)  : undefined,
-        dataVenda: data.dataVenda ? new Date(data.dataVenda) : null,
+        dataVenda: data.dataVenda !== undefined
+          ? (data.dataVenda ? new Date(data.dataVenda) : null)
+          : undefined,
       }
     });
     res.json(peca);
