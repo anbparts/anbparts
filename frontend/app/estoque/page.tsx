@@ -382,9 +382,13 @@ function CopySkuModal({
   preview,
   loading,
   saving,
-  detranEtiqueta,
+  quantidade,
+  localizacao,
+  etiquetas,
   error,
-  onChangeDetran,
+  onChangeQuantidade,
+  onChangeLocalizacao,
+  onChangeEtiqueta,
   onClose,
   onConfirm,
 }: {
@@ -392,9 +396,13 @@ function CopySkuModal({
   preview: any;
   loading: boolean;
   saving: boolean;
-  detranEtiqueta: string;
+  quantidade: string;
+  localizacao: string;
+  etiquetas: string[];
   error: string;
-  onChangeDetran: (value: string) => void;
+  onChangeQuantidade: (value: string) => void;
+  onChangeLocalizacao: (value: string) => void;
+  onChangeEtiqueta: (index: number, value: string) => void;
   onClose: () => void;
   onConfirm: () => void;
 }) {
@@ -403,7 +411,9 @@ function CopySkuModal({
   const origem = preview?.origem;
   const motoLabel = [origem?.moto?.marca, origem?.moto?.modelo].filter(Boolean).join(' ') || '-';
   const detranObrigatorio = Boolean(preview?.detranObrigatorio);
-  const confirmDisabled = loading || saving || !preview || (detranObrigatorio && !String(detranEtiqueta || '').trim());
+  const qtd = Math.max(1, Math.min(20, Math.trunc(Number(quantidade) || 1)));
+  const etiquetasOk = !detranObrigatorio || Array.from({ length: qtd }).every((_, i) => String(etiquetas[i] || '').trim());
+  const confirmDisabled = loading || saving || !preview || !etiquetasOk;
 
   function Field({ label, value, mono = false }: { label: string; value?: any; mono?: boolean }) {
     const display = value != null && value !== '' ? String(value) : '—';
@@ -420,9 +430,9 @@ function CopySkuModal({
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 16, width: '100%', maxWidth: 860, maxHeight: '92vh', overflowY: 'auto', boxShadow: '0 12px 32px rgba(0,0,0,.10)' }}>
         <div style={{ padding: '20px 22px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
           <div>
-            <div style={{ fontFamily: 'Fraunces, serif', fontSize: 18, fontWeight: 600 }}>Copiar SKU</div>
+            <div style={{ fontFamily: 'Fraunces, serif', fontSize: 18, fontWeight: 600 }}>Adicionar Estoque</div>
             <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 4 }}>
-              {preview?.baseSku ? `SKU base ${preview.baseSku}` : 'Preparando dados da cópia...'}
+              {preview?.baseSku ? `SKU base ${preview.baseSku}` : 'Preparando dados...'}
             </div>
           </div>
           <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', flexShrink: 0 }}>X</button>
@@ -459,8 +469,25 @@ function CopySkuModal({
                 <Field label="Profundidade (cm)" value={origem?.profundidade != null ? Number(origem.profundidade) : null} mono />
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
-                <Field label="Localização" value={origem?.localizacao} />
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', marginBottom: 4 }}>Quantidade a adicionar *</div>
+                  <input
+                    style={{ ...cs.fi, marginTop: 0 }}
+                    type="number" min={1} max={20} step={1}
+                    value={quantidade}
+                    onChange={(e) => onChangeQuantidade(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', marginBottom: 4 }}>Localização *</div>
+                  <input
+                    style={{ ...cs.fi, marginTop: 0 }}
+                    value={localizacao}
+                    onChange={(e) => onChangeLocalizacao(e.target.value)}
+                    placeholder="Confirme a localização da nova unidade"
+                  />
+                </div>
                 <Field label="Número da peça" value={origem?.numeroPeca} mono />
               </div>
 
@@ -470,25 +497,32 @@ function CopySkuModal({
                 </div>
               ) : null}
 
-              <div style={{ display: 'grid', gap: 8 }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-soft)' }}>
-                  Nova Etiqueta Detran {detranObrigatorio ? '*' : '(opcional)'}
+              {detranObrigatorio ? (
+                <div style={{ display: 'grid', gap: 8 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-soft)' }}>
+                    Etiquetas Detran (uma por unidade) *
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--ink-muted)' }}>
+                    Etiqueta atual da origem: <span style={{ fontFamily: 'Geist Mono, monospace', color: 'var(--ink)' }}>{origem?.detranEtiqueta || '—'}</span>
+                  </div>
+                  {Array.from({ length: qtd }).map((_, i) => (
+                    <input
+                      key={i}
+                      style={{ ...cs.fi, marginTop: 0, fontFamily: 'Geist Mono, monospace' }}
+                      value={etiquetas[i] || ''}
+                      onChange={(e) => onChangeEtiqueta(i, e.target.value.toUpperCase())}
+                      placeholder={`Etiqueta Detran da unidade ${i + 1}`}
+                    />
+                  ))}
+                  <div style={{ fontSize: 11.5, color: '#b45309' }}>
+                    Cada nova unidade precisa de uma etiqueta única, diferente da etiqueta de origem e das demais.
+                  </div>
                 </div>
-                <div style={{ fontSize: 12, color: 'var(--ink-muted)' }}>
-                  Etiqueta atual da origem: <span style={{ fontFamily: 'Geist Mono, monospace', color: 'var(--ink)' }}>{origem?.detranEtiqueta || '—'}</span>
+              ) : (
+                <div style={{ fontSize: 11.5, color: 'var(--ink-muted)' }}>
+                  Esta peça não possui etiqueta Detran — as novas unidades serão criadas sem etiqueta.
                 </div>
-                <input
-                  style={{ ...cs.fi, marginTop: 0, fontFamily: 'Geist Mono, monospace' }}
-                  value={detranEtiqueta}
-                  onChange={(e) => onChangeDetran(e.target.value.toUpperCase())}
-                  placeholder={detranObrigatorio ? 'Informe uma nova etiqueta Detran' : 'Pode deixar em branco'}
-                />
-                <div style={{ fontSize: 11.5, color: detranObrigatorio ? '#b45309' : 'var(--ink-muted)' }}>
-                  {detranObrigatorio
-                    ? 'A etiqueta Detran da nova variação precisa ser diferente da etiqueta da origem.'
-                    : 'Se você informar uma nova etiqueta, ela será concatenada com as demais variações no Bling.'}
-                </div>
-              </div>
+              )}
 
               {error ? <div style={{ fontSize: 12, color: 'var(--red)' }}>! {error}</div> : null}
             </>
@@ -498,7 +532,7 @@ function CopySkuModal({
         <div style={{ padding: '16px 22px 20px', display: 'flex', gap: 8, justifyContent: 'flex-end', borderTop: '1px solid var(--border)' }}>
           <button onClick={onClose} style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink-soft)', borderColor: 'var(--border-strong)' }}>Cancelar</button>
           <button onClick={onConfirm} disabled={confirmDisabled} style={{ ...cs.btn, background: 'var(--ink)', color: '#fff', opacity: confirmDisabled ? 0.7 : 1 }}>
-            {saving ? 'Criando cópia...' : 'Criar cópia SKU'}
+            {saving ? 'Adicionando...' : 'Adicionar estoque'}
           </button>
         </div>
       </div>
@@ -2396,7 +2430,9 @@ export default function EstoquePage() {
   const [copySkuLoading, setCopySkuLoading] = useState(false);
   const [copySkuSaving, setCopySkuSaving] = useState(false);
   const [copySkuError, setCopySkuError] = useState('');
-  const [copySkuDetran, setCopySkuDetran] = useState('');
+  const [copySkuQtd, setCopySkuQtd] = useState('1');
+  const [copySkuLoc, setCopySkuLoc] = useState('');
+  const [copySkuEtiquetas, setCopySkuEtiquetas] = useState<string[]>(['']);
   const isBruno = String(user?.username || '').trim().toLowerCase() === 'bruno';
   const [selecionandoTudo, setSelecionandoTudo] = useState(false);
   const [caixaFilterOpen, setCaixaFilterOpen] = useState(false);
@@ -2926,7 +2962,9 @@ export default function EstoquePage() {
     setCopySkuLoading(false);
     setCopySkuSaving(false);
     setCopySkuError('');
-    setCopySkuDetran('');
+    setCopySkuQtd('1');
+    setCopySkuLoc('');
+    setCopySkuEtiquetas(['']);
   }
 
   const hasActiveFilters = Boolean(
@@ -3164,7 +3202,9 @@ export default function EstoquePage() {
     setCopySkuLoading(true);
     setCopySkuPreview(null);
     setCopySkuError('');
-    setCopySkuDetran('');
+    setCopySkuQtd('1');
+    setCopySkuLoc('');
+    setCopySkuEtiquetas(['']);
 
     try {
       const resp = await fetch(`${API_BASE}/cadastro/copiar-peca/${copySkuSelecionada.id}/preview`, {
@@ -3173,6 +3213,7 @@ export default function EstoquePage() {
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.error || 'Erro ao carregar os dados da cópia do SKU');
       setCopySkuPreview(data);
+      setCopySkuLoc(data?.origem?.localizacao || '');
     } catch (e: any) {
       setCopySkuError(e.message || 'Erro ao carregar os dados da cópia do SKU');
     }
@@ -3191,18 +3232,21 @@ export default function EstoquePage() {
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          detranEtiqueta: copySkuDetran.trim() || null,
+          quantidade: Math.max(1, Math.min(20, Number(copySkuQtd) || 1)),
+          localizacao: copySkuLoc.trim(),
+          etiquetas: copySkuEtiquetas.map((e) => String(e || '').trim()),
         }),
       });
       const data = await resp.json();
-      if (!resp.ok) throw new Error(data.error || 'Erro ao copiar SKU');
+      if (!resp.ok) throw new Error(data.error || 'Erro ao adicionar estoque');
 
       resetCopySkuModal();
       clearSelection();
       await load();
-      alert(`Nova variacao ${data.novoIdPeca || 'criada'} e sincronizada com o Bling.`);
+      const criados = (data.criados || []).join(', ') || data.novoIdPeca || 'nova(s) unidade(s)';
+      alert(`Estoque adicionado: ${criados}. Bling sincronizado (saldo disponivel: ${data.estoqueDisponivel ?? '-'}).`);
     } catch (e: any) {
-      setCopySkuError(e.message || 'Erro ao copiar SKU');
+      setCopySkuError(e.message || 'Erro ao adicionar estoque');
       setCopySkuSaving(false);
       return;
     }
@@ -3482,7 +3526,7 @@ export default function EstoquePage() {
                 type="button"
                 onClick={openCopySkuModal}
                 disabled={!copySkuSelecionada || copySkuLoading || copySkuSaving}
-                title={selectedPecaIds.length === 1 ? 'Copiar SKU selecionado' : 'Selecione exatamente 1 SKU para copiar'}
+                title={selectedPecaIds.length === 1 ? 'Adicionar estoque (nova unidade) a partir do SKU selecionado' : 'Selecione exatamente 1 SKU para adicionar estoque'}
                 style={{
                   ...cs.btn,
                   background: copySkuSelecionada ? '#f5f3ff' : 'var(--gray-50)',
@@ -3495,7 +3539,7 @@ export default function EstoquePage() {
                   justifyContent: 'center',
                 }}
               >
-                {copySkuLoading ? 'Carregando cópia...' : copySkuSaving ? 'Copiando SKU...' : 'Copiar SKU'}
+                {copySkuLoading ? 'Carregando...' : copySkuSaving ? 'Adicionando...' : 'Adicionar Estoque'}
               </button>
               <button
                 type="button"
@@ -3848,9 +3892,13 @@ export default function EstoquePage() {
         preview={copySkuPreview}
         loading={copySkuLoading}
         saving={copySkuSaving}
-        detranEtiqueta={copySkuDetran}
+        quantidade={copySkuQtd}
+        localizacao={copySkuLoc}
+        etiquetas={copySkuEtiquetas}
         error={copySkuError}
-        onChangeDetran={setCopySkuDetran}
+        onChangeQuantidade={setCopySkuQtd}
+        onChangeLocalizacao={setCopySkuLoc}
+        onChangeEtiqueta={(i, v) => setCopySkuEtiquetas((cur) => { const next = [...cur]; next[i] = v; return next; })}
         onClose={resetCopySkuModal}
         onConfirm={handleCopySkuConfirm}
       />

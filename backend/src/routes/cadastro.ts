@@ -648,75 +648,89 @@ cadastroRouter.post('/copiar-peca/:pecaId', requireCadastroAction('criar_pre_cad
     }
 
     const baseSku = getBaseSku(origem.idPeca);
-    const existingIds = await listRelatedSkuIdsForBase(baseSku);
-    const novoIdPeca = getNextVariantSku(baseSku, existingIds);
     const detranOrigem = normalizeNullableText(origem.detranEtiqueta, { uppercase: true });
-    const novaEtiquetaDetran = normalizeNullableText(req.body?.detranEtiqueta, { uppercase: true });
 
-    if (detranOrigem && !novaEtiquetaDetran) {
-      return res.status(400).json({ error: 'Informe uma nova etiqueta Detran para copiar este SKU.' });
-    }
-    if (detranOrigem && novaEtiquetaDetran === detranOrigem) {
-      return res.status(400).json({ error: 'A nova etiqueta Detran nao pode repetir a etiqueta da variacao de origem.' });
-    }
+    // Quantidade de novas unidades a criar (1..20).
+    const quantidade = Math.max(1, Math.min(20, Math.trunc(Number(req.body?.quantidade) || 1)));
 
-    if (novaEtiquetaDetran) {
-      const detranDuplicada = await prisma.peca.findFirst({
-        where: {
-          id: { not: origem.id },
-          detranEtiqueta: { equals: novaEtiquetaDetran, mode: 'insensitive' },
-          OR: [
-            { idPeca: { equals: baseSku, mode: 'insensitive' } },
-            { idPeca: { startsWith: `${baseSku}-` } },
-          ],
-        },
-        select: { idPeca: true },
-      });
+    // Localizacao confirmada na tela (cai pra da origem se nao vier).
+    const localizacaoConfirmada = req.body?.localizacao !== undefined
+      ? normalizeNullableText(req.body.localizacao)
+      : normalizeNullableText(origem.localizacao);
 
-      if (detranDuplicada) {
-        return res.status(400).json({ error: `A etiqueta Detran ${novaEtiquetaDetran} ja esta em uso na variacao ${detranDuplicada.idPeca}.` });
+    // Etiquetas: uma por unidade quando a origem tem etiqueta. Aceita `etiquetas[]` ou `detranEtiqueta` (compat).
+    const rawEtiquetas: any[] = Array.isArray(req.body?.etiquetas)
+      ? req.body.etiquetas
+      : (req.body?.detranEtiqueta != null ? [req.body.detranEtiqueta] : []);
+    const etiquetas = rawEtiquetas.map((e) => String(normalizeNullableText(e, { uppercase: true }) || '').trim());
+
+    if (detranOrigem) {
+      const preenchidas = etiquetas.slice(0, quantidade).filter(Boolean);
+      if (preenchidas.length < quantidade) {
+        return res.status(400).json({ error: `Informe ${quantidade} etiqueta(s) Detran (uma por unidade) para este SKU.` });
+      }
+      if (new Set(preenchidas).size !== preenchidas.length) {
+        return res.status(400).json({ error: 'As etiquetas Detran das novas unidades nao podem se repetir entre si.' });
+      }
+      if (preenchidas.some((e) => e === detranOrigem)) {
+        return res.status(400).json({ error: 'A etiqueta Detran das novas unidades nao pode repetir a etiqueta da origem.' });
+      }
+      for (const et of preenchidas) {
+        const dup = await prisma.peca.findFirst({
+          where: {
+            id: { not: origem.id },
+            detranEtiqueta: { equals: et, mode: 'insensitive' },
+            OR: [
+              { idPeca: { equals: baseSku, mode: 'insensitive' } },
+              { idPeca: { startsWith: `${baseSku}-` } },
+            ],
+          },
+          select: { idPeca: true },
+        });
+        if (dup) return res.status(400).json({ error: `A etiqueta Detran ${et} ja esta em uso na variacao ${dup.idPeca}.` });
       }
     }
 
     const { blingProdutoId, produto } = await resolveBlingProductStateForBaseSku(baseSku);
 
-    const novaPeca = await prisma.peca.create({
-      data: {
-        motoId: origem.motoId,
-        idPeca: novoIdPeca,
-        descricao: origem.descricao,
-        localizacao: normalizeNullableText(origem.localizacao),
-        detranEtiqueta: novaEtiquetaDetran,
-        mercadoLivreItemId: origem.mercadoLivreItemId || null,
-        mercadoLivreLink: origem.mercadoLivreLink || null,
-        precoML: Number(origem.precoML || 0),
-        valorLiq: Number(origem.valorLiq || 0),
-        valorFrete: Number(origem.valorFrete || 0),
-        valorTaxas: Number(origem.valorTaxas || 0),
-        disponivel: true,
-        emPrejuizo: false,
-        dataVenda: null,
-        blingPedidoId: null,
-        blingPedidoNum: null,
-        pesoLiquido: origem.pesoLiquido != null ? Number(origem.pesoLiquido) : null,
-        pesoBruto: origem.pesoBruto != null ? Number(origem.pesoBruto) : (origem.pesoLiquido != null ? Number(origem.pesoLiquido) : null),
-        largura: origem.largura != null ? Number(origem.largura) : null,
-        altura: origem.altura != null ? Number(origem.altura) : null,
-        profundidade: origem.profundidade != null ? Number(origem.profundidade) : null,
-        numeroPeca: normalizeNullableText(origem.numeroPeca),
-        cadastro: new Date(),
-      },
-      include: {
-        moto: {
-          select: {
-            id: true,
-            marca: true,
-            modelo: true,
-            ano: true,
-          },
+    // Cria as N novas unidades, copiando os dados da origem (incl. FOTO de capa) e a localizacao confirmada.
+    const ids = await listRelatedSkuIdsForBase(baseSku);
+    const criadas: { id: number; idPeca: string }[] = [];
+    for (let i = 0; i < quantidade; i += 1) {
+      const novoId = getNextVariantSku(baseSku, ids);
+      ids.push(novoId.toUpperCase());
+      const nova = await prisma.peca.create({
+        data: {
+          motoId: origem.motoId,
+          idPeca: novoId,
+          descricao: origem.descricao,
+          localizacao: localizacaoConfirmada,
+          detranEtiqueta: detranOrigem ? (etiquetas[i] || null) : null,
+          fotoCapaNome: origem.fotoCapaNome,
+          fotoCapaArquivo: origem.fotoCapaArquivo,
+          mercadoLivreItemId: origem.mercadoLivreItemId || null,
+          mercadoLivreLink: origem.mercadoLivreLink || null,
+          precoML: Number(origem.precoML || 0),
+          valorLiq: Number(origem.valorLiq || 0),
+          valorFrete: Number(origem.valorFrete || 0),
+          valorTaxas: Number(origem.valorTaxas || 0),
+          disponivel: true,
+          emPrejuizo: false,
+          dataVenda: null,
+          blingPedidoId: null,
+          blingPedidoNum: null,
+          pesoLiquido: origem.pesoLiquido != null ? Number(origem.pesoLiquido) : null,
+          pesoBruto: origem.pesoBruto != null ? Number(origem.pesoBruto) : (origem.pesoLiquido != null ? Number(origem.pesoLiquido) : null),
+          largura: origem.largura != null ? Number(origem.largura) : null,
+          altura: origem.altura != null ? Number(origem.altura) : null,
+          profundidade: origem.profundidade != null ? Number(origem.profundidade) : null,
+          numeroPeca: normalizeNullableText(origem.numeroPeca),
+          cadastro: new Date(),
         },
-      },
-    });
+        select: { id: true, idPeca: true },
+      });
+      criadas.push(nova);
+    }
 
     const detranConcat = await buildDetranEtiquetaConcatForBaseSku(baseSku);
     const blingPayload = buildBlingProdutoPayloadFromCurrent(produto, {
@@ -724,13 +738,14 @@ cadastroRouter.post('/copiar-peca/:pecaId', requireCadastroAction('criar_pre_cad
       altura: origem.altura != null ? Number(origem.altura) : null,
       profundidade: origem.profundidade != null ? Number(origem.profundidade) : null,
       pesoLiquido: origem.pesoLiquido != null ? Number(origem.pesoLiquido) : null,
-      localizacao: normalizeNullableText(origem.localizacao),
+      localizacao: localizacaoConfirmada,
       numeroPeca: normalizeNullableText(origem.numeroPeca),
       detranEtiqueta: detranConcat,
-      estoqueDelta: 1,
+      estoqueDelta: quantidade,
     });
 
     let produtoAtualizadoNoBling = false;
+    let estoqueDisponivel = 0;
 
     try {
       await blingReq(`/produtos/${blingProdutoId}`, {
@@ -739,15 +754,25 @@ cadastroRouter.post('/copiar-peca/:pecaId', requireCadastroAction('criar_pre_cad
       });
       produtoAtualizadoNoBling = true;
 
-      const saldoAtual = Number(produto.estoque?.saldoVirtualTotal || 0);
+      // Saldo do Bling = quantidade DISPONIVEL no ANB para o SKU base (fonte da verdade = ANB).
+      estoqueDisponivel = await prisma.peca.count({
+        where: {
+          OR: [
+            { idPeca: { equals: baseSku, mode: 'insensitive' } },
+            { idPeca: { startsWith: `${baseSku}-` } },
+          ],
+          disponivel: true,
+          emPrejuizo: false,
+        },
+      });
       await lancarEstoqueNoBling({
         blingProdutoId,
-        quantidade: saldoAtual + 1,
+        quantidade: estoqueDisponivel,
         preco: Number(origem.precoML || 0),
-        observacoes: `Copia SKU - ${novoIdPeca}`,
+        observacoes: `Adicionar estoque - ${baseSku} (+${quantidade})`,
       });
     } catch (blingError: any) {
-      await prisma.peca.delete({ where: { id: novaPeca.id } }).catch(() => null);
+      await prisma.peca.deleteMany({ where: { id: { in: criadas.map((c) => c.id) } } }).catch(() => null);
 
       if (produtoAtualizadoNoBling) {
         try {
@@ -757,22 +782,24 @@ cadastroRouter.post('/copiar-peca/:pecaId', requireCadastroAction('criar_pre_cad
             body: JSON.stringify(restorePayload),
           });
         } catch (restoreError: any) {
-          console.error('[copiar-sku] Falha ao reverter produto no Bling:', restoreError?.message);
+          console.error('[adicionar-estoque] Falha ao reverter produto no Bling:', restoreError?.message);
         }
       }
 
       const failure = buildCadastroBlingErrorResponse(blingError);
       return res.status(failure.status).json({
         ...failure.body,
-        error: `Falha ao copiar SKU e sincronizar com o Bling: ${failure.body.error}`,
+        error: `Falha ao adicionar estoque e sincronizar com o Bling: ${failure.body.error}`,
       });
     }
 
     res.status(201).json({
       ok: true,
-      novoIdPeca,
+      quantidade,
+      criados: criadas.map((c) => c.idPeca),
+      novoIdPeca: criadas[0]?.idPeca,
       detranEtiquetaEnviada: detranConcat,
-      peca: novaPeca,
+      estoqueDisponivel,
     });
   } catch (e) { next(e); }
 });
