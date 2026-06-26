@@ -132,6 +132,10 @@ const motoSchema = z.object({
   placa:             z.string().optional().nullable(),
   chassi:            z.string().optional().nullable(),
   renavam:           z.string().optional().nullable(),
+  cilindros:         z.string().optional().nullable(),
+  combustivel:       z.string().optional().nullable(),
+  cilindrada:        z.string().optional().nullable(),
+  potencia:          z.string().optional().nullable(),
   dataCompra:        z.string().optional().nullable(),
   precoCompra:       z.number().default(0),
   origemCompra:      z.string().optional().nullable(),
@@ -286,7 +290,7 @@ const CONTRATO_DETALHES_MOTO_CATEGORIAS = [
 motosRouter.get('/', async (req, res, next) => {
   try {
     const [motos, totalRelacionadasRows, disponiveisRows, vendidasRows, detranRows, anexosCountRows] = await Promise.all([
-      prisma.moto.findMany({
+      (prisma as any).moto.findMany({
         select: {
           id: true,
           marca: true,
@@ -296,6 +300,10 @@ motosRouter.get('/', async (req, res, next) => {
           placa: true,
           chassi: true,
           renavam: true,
+          cilindros: true,
+          combustivel: true,
+          cilindrada: true,
+          potencia: true,
           dataCompra: true,
           precoCompra: true,
           origemCompra: true,
@@ -395,7 +403,7 @@ motosRouter.get('/', async (req, res, next) => {
       detranByMoto.set(row.motoId, current);
     }
 
-    const result = motos.map(m => {
+    const result = motos.map((m: any) => {
       const disponiveis = disponiveisByMoto.get(m.id) || { qtd: 0, precoML: 0, valorLiq: 0 };
       const vendidas = vendidasByMoto.get(m.id) || { qtd: 0, precoML: 0, valorLiq: 0 };
       const detran = detranByMoto.get(m.id) || { total: 0, ativas: 0, baixadas: 0 };
@@ -432,6 +440,10 @@ motosRouter.get('/', async (req, res, next) => {
         placa:          m.placa,
         chassi:         m.chassi,
         renavam:        m.renavam,
+        cilindros:      m.cilindros,
+        combustivel:    m.combustivel,
+        cilindrada:     m.cilindrada,
+        potencia:       m.potencia,
         dataCompra:     m.dataCompra,
         precoCompra:    Number(m.precoCompra),
         origemCompra:   m.origemCompra,

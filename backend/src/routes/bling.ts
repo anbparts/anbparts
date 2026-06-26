@@ -6034,14 +6034,14 @@ async function enriquecerSeparacaoComTextoNfe(pedidos: any[]) {
   )) as number[];
   if (!pecaIds.length) return;
 
-  const pecas = await prisma.peca.findMany({
+  const pecas = await (prisma as any).peca.findMany({
     where: { id: { in: pecaIds } },
     select: {
       id: true, idPeca: true, descricao: true, detranEtiqueta: true, tipoPecaAvulsa: true,
-      moto: { select: { marca: true, modelo: true, ano: true, cor: true, placa: true, chassi: true, renavam: true } },
+      moto: { select: { marca: true, modelo: true, ano: true, cor: true, placa: true, chassi: true, renavam: true, cilindros: true, combustivel: true, cilindrada: true, potencia: true } },
     },
   });
-  const pecaById = new Map(pecas.map((p) => [p.id, p]));
+  const pecaById = new Map((pecas as any[]).map((p: any) => [p.id, p]));
 
   for (const pedido of pedidos) {
     for (const item of (pedido.itens || [])) {

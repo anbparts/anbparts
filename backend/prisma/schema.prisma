@@ -16,6 +16,10 @@ model Moto {
   placa        String?
   chassi       String?
   renavam      String?
+  cilindros    String?
+  combustivel  String?
+  cilindrada   String?
+  potencia     String?
   dataCompra   DateTime?
   precoCompra  Decimal  @default(0) @db.Decimal(12, 2)
   origemCompra String?

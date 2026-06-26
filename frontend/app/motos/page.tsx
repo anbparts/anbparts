@@ -348,7 +348,7 @@ const cs: any = {
 type MotosViewportMode = 'phone' | 'tablet-portrait' | 'tablet-landscape' | 'desktop';
 
 function Modal({ open, title, onClose, onSave, moto, viewportMode = 'desktop' }: any) {
-  const empty = { marca: '', modelo: '', ano: '', cor: '', placa: '', chassi: '', renavam: '', dataCompra: '', precoCompra: '', origemCompra: '', valorFipe: '', observacoes: '' };
+  const empty = { marca: '', modelo: '', ano: '', cor: '', placa: '', chassi: '', renavam: '', cilindros: '', combustivel: '', cilindrada: '', potencia: '', dataCompra: '', precoCompra: '', origemCompra: '', valorFipe: '', observacoes: '' };
   const [form, setForm] = useState(empty);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
@@ -381,6 +381,10 @@ function Modal({ open, title, onClose, onSave, moto, viewportMode = 'desktop' }:
         placa: moto.placa || '',
         chassi: moto.chassi || '',
         renavam: moto.renavam || '',
+        cilindros: moto.cilindros || '',
+        combustivel: moto.combustivel || '',
+        cilindrada: moto.cilindrada || '',
+        potencia: moto.potencia || '',
         dataCompra: moto.dataCompra?.split('T')[0] || '',
         precoCompra: moto.precoCompra || '',
         origemCompra: moto.origemCompra || '',
@@ -457,6 +461,13 @@ function Modal({ open, title, onClose, onSave, moto, viewportMode = 'desktop' }:
             {row('Chassi', 'chassi', 'text')}
           </div>
           {row('Renavam', 'renavam', 'text')}
+          <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '0.8px', textTransform: 'uppercase', margin: '16px 0 12px', paddingBottom: 8, borderBottom: '1px solid var(--border)' }}>Dados tecnicos (usados no texto da NF-e)</div>
+          <div style={{ display: 'grid', gridTemplateColumns: modalColumns, gap: 12 }}>
+            {row('Cilindros', 'cilindros', 'text', 'Ex: 2')}
+            {row('Combustivel', 'combustivel', 'text', 'Ex: Gasolina')}
+            {row('Cilindrada', 'cilindrada', 'text', 'Ex: 745 cm³')}
+            {row('Potencia', 'potencia', 'text', 'Ex: 58 cv')}
+          </div>
           <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '0.8px', textTransform: 'uppercase', margin: '16px 0 12px', paddingBottom: 8, borderBottom: '1px solid var(--border)' }}>Compra</div>
           <div style={{ display: 'grid', gridTemplateColumns: modalColumns, gap: 12 }}>
             {row('Data de compra', 'dataCompra', 'date')}
