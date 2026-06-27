@@ -4,30 +4,33 @@ import { API_BASE } from '@/lib/api-base';
 
 const API = API_BASE;
 
+const SP_TZ = 'America/Sao_Paulo';
+
+// YYYY-MM-DD no fuso de Sao Paulo. Evita o bug de "virar o dia" as 21h:
+// toISOString() usa UTC, e as 21h em SP ja e meia-noite do dia seguinte em UTC.
+function spKey(d: Date = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: SP_TZ }).format(d);
+}
+
 function today() {
-  return new Date().toISOString().split('T')[0];
+  return spKey();
 }
 
 function currentYear() {
-  return new Date().getFullYear();
-}
-
-function addDays(date: Date, days: number) {
-  const d = new Date(date);
-  d.setDate(d.getDate() + days);
-  return d.toISOString().split('T')[0];
+  return Number(spKey().slice(0, 4));
 }
 
 function startOfWeek() {
-  const d = new Date();
-  const day = d.getDay(); // 0=sun
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1); // monday
-  return new Date(d.setDate(diff)).toISOString().split('T')[0];
+  const [y, m, d] = spKey().split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d)); // aritmetica de calendario pura, sem fuso
+  const day = dt.getUTCDay(); // 0=domingo
+  const diff = -day + (day === 0 ? -6 : 1); // volta para a segunda-feira
+  dt.setUTCDate(dt.getUTCDate() + diff);
+  return dt.toISOString().split('T')[0];
 }
 
 function startOfMonth() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+  return `${spKey().slice(0, 7)}-01`;
 }
 
 function getYearRange(year: string) {
