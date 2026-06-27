@@ -115,16 +115,26 @@ function parseDetranEtiquetas(value: any) {
     .filter(Boolean);
 }
 
-function getDetranEtiquetasValidationMessage(detranEtiqueta: any, estoque: any) {
+// Produto "Par": se o titulo tem a palavra inteira Par/Pares, cada unidade de estoque
+// equivale a 2 pecas fisicas -> 2 etiquetas Detran por unidade (2x estoque).
+function detranMultiplicadorPorTitulo(titulo: any) {
+  return /\bpar(es)?\b/i.test(String(titulo || '')) ? 2 : 1;
+}
+
+function getDetranEtiquetasValidationMessage(detranEtiqueta: any, estoque: any, titulo?: any) {
   const etiquetas = parseDetranEtiquetas(detranEtiqueta);
   if (!etiquetas.length) return null;
 
   const qtdEstoque = Math.max(1, Number(estoque) || 1);
-  if (etiquetas.length < qtdEstoque) {
-    return `Falta o preenchimento de ${qtdEstoque - etiquetas.length} etiqueta(s) Detran ainda para bater com o estoque (${qtdEstoque}).`;
+  const multiplicador = detranMultiplicadorPorTitulo(titulo);
+  const esperadas = qtdEstoque * multiplicador;
+  const notaPar = multiplicador > 1 ? ' — "Par": 2 etiquetas por unidade' : '';
+
+  if (etiquetas.length < esperadas) {
+    return `Falta o preenchimento de ${esperadas - etiquetas.length} etiqueta(s) Detran ainda para o esperado (${esperadas}${notaPar}).`;
   }
-  if (etiquetas.length > qtdEstoque) {
-    return `Existem ${etiquetas.length - qtdEstoque} etiqueta(s) Detran a mais para o estoque (${qtdEstoque}).`;
+  if (etiquetas.length > esperadas) {
+    return `Existem ${etiquetas.length - esperadas} etiqueta(s) Detran a mais para o esperado (${esperadas}${notaPar}).`;
   }
 
   return null;
@@ -532,7 +542,7 @@ cadastroRouter.post('/', requireCadastroAction('criar_pre_cadastro'), async (req
 
     if (!motoId || !idPeca || !descricao) return res.status(400).json({ error: 'motoId, idPeca e descricao sao obrigatorios' });
     if (!String(idPeca || '').trim()) return res.status(400).json({ error: 'SKU (idPeca) é obrigatorio' });
-    const detranValidationMessage = getDetranEtiquetasValidationMessage(detranEtiqueta, estoque);
+    const detranValidationMessage = getDetranEtiquetasValidationMessage(detranEtiqueta, estoque, descricao);
     if (detranValidationMessage) return res.status(400).json({ error: detranValidationMessage });
     const numeroMotorMsg = getNumeroMotorValidationMessage(detranEtiqueta, tipoPecaAvulsa, numeroMotor);
     if (numeroMotorMsg) return res.status(400).json({ error: numeroMotorMsg });
@@ -888,7 +898,8 @@ cadastroRouter.put('/:id', requireCadastroAction('editar_pre_cadastro'), async (
     const { descricao, descricaoPeca, precoVenda, condicao, peso, largura, altura, profundidade, numeroPeca, numeroMotor, detranEtiqueta, tipoPecaAvulsa, localizacao, estoque, categoriaMLId, categoriaMLNome, urlRef } = req.body;
     const estoqueEfetivo = estoque !== undefined ? Number(estoque) : Number(atual.estoque);
     const detranEtiquetaEfetiva = detranEtiqueta !== undefined ? detranEtiqueta : atual.detranEtiqueta;
-    const detranValidationMessage = getDetranEtiquetasValidationMessage(detranEtiquetaEfetiva, estoqueEfetivo);
+    const descricaoEfetiva = descricao !== undefined ? descricao : atual.descricao;
+    const detranValidationMessage = getDetranEtiquetasValidationMessage(detranEtiquetaEfetiva, estoqueEfetivo, descricaoEfetiva);
     if (detranValidationMessage) return res.status(400).json({ error: detranValidationMessage });
     const tipoPecaAvulsaEfetivo = tipoPecaAvulsa !== undefined ? tipoPecaAvulsa : atual.tipoPecaAvulsa;
     const numeroMotorEfetivo = numeroMotor !== undefined ? numeroMotor : (atual as any).numeroMotor;
@@ -999,11 +1010,16 @@ cadastroRouter.post('/:id/finalizar', requireCadastroAction('criar_bling'), asyn
         ? cadastro.detranEtiqueta.split('/').map((e: string) => e.trim()).filter(Boolean)
         : [];
 
-      // Validação: se há etiquetas, deve bater com a quantidade
-      if (etiquetasArray.length > 0 && etiquetasArray.length !== ids.length) {
+      // "Par" no titulo => 2 etiquetas por unidade (2x estoque). Senao, 1 por unidade.
+      const detranMultiplicador = detranMultiplicadorPorTitulo(cadastro.descricao);
+      const etiquetasEsperadas = ids.length * detranMultiplicador;
+
+      // Validação: se há etiquetas, deve bater com a quantidade esperada
+      if (etiquetasArray.length > 0 && etiquetasArray.length !== etiquetasEsperadas) {
+        const notaPar = detranMultiplicador > 1 ? ' — "Par": 2 etiquetas por unidade' : '';
         return res.status(400).json({
           ok: false,
-          error: `Quantidade de etiquetas Detran (${etiquetasArray.length}) não bate com o estoque (${ids.length}). Corrija no pré-cadastro antes de finalizar.`,
+          error: `Quantidade de etiquetas Detran (${etiquetasArray.length}) não bate com o esperado (${etiquetasEsperadas}${notaPar}). Corrija no pré-cadastro antes de finalizar.`,
         });
       }
 
@@ -1033,8 +1049,10 @@ cadastroRouter.post('/:id/finalizar', requireCadastroAction('criar_bling'), asyn
             numeroPeca: cadastro.numeroPeca || null,
             numeroMotor: (cadastro as any).numeroMotor || null,
             tipoPecaAvulsa: cadastro.tipoPecaAvulsa || null,
-            // Cada variação recebe sua etiqueta, ou a concatenada se só há 1
-            detranEtiqueta: etiquetasArray.length > 0 ? (etiquetasArray[i] || null) : null,
+            // Cada unidade recebe suas etiquetas: 1 normalmente, ou 2 juntas (" / ") se for "Par".
+            detranEtiqueta: etiquetasArray.length > 0
+              ? (etiquetasArray.slice(i * detranMultiplicador, i * detranMultiplicador + detranMultiplicador).join(' / ') || null)
+              : null,
             cadastro: new Date(),
           },
         });

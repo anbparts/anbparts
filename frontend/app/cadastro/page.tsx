@@ -220,15 +220,24 @@ function ChecklistValidacao({ form }: { form: any }) {
   );
 }
 
-function getDetranEtiquetasResumo(etiquetas: string[], estoque: any) {
+// Produto "Par": titulo com a palavra inteira Par/Pares => 2 etiquetas Detran por unidade (2x estoque).
+function ehProdutoPar(titulo: any) {
+  return /\bpar(es)?\b/i.test(String(titulo || ''));
+}
+
+function getDetranEtiquetasResumo(etiquetas: string[], estoque: any, titulo?: any) {
   const qtdEstoque = Math.max(1, Number(estoque) || 1);
+  const ehPar = ehProdutoPar(titulo);
+  const esperadas = qtdEstoque * (ehPar ? 2 : 1);
   const preenchidas = etiquetas.filter((e) => String(e || '').trim()).length;
-  const faltantes = Math.max(0, qtdEstoque - preenchidas);
-  const excedentes = Math.max(0, preenchidas - qtdEstoque);
+  const faltantes = Math.max(0, esperadas - preenchidas);
+  const excedentes = Math.max(0, preenchidas - esperadas);
   const possuiAlguma = preenchidas > 0;
 
   return {
     qtdEstoque,
+    ehPar,
+    esperadas,
     preenchidas,
     faltantes,
     excedentes,
@@ -1122,12 +1131,13 @@ export default function CadastroPage() {
     if (possuiAvulsa && !form.tipoPecaAvulsa) return alert('Selecione o Tipo de Peça para a etiqueta avulsa');
     const ehBlocoMotor = etiquetasValidas.some(e => /005$/.test(e.trim())) || form.tipoPecaAvulsa === 'Bloco do motor';
     if (ehBlocoMotor && !String(form.numeroMotor || '').trim()) return alert('Informe o Número do Motor (obrigatório para Bloco do motor: etiqueta final 005 ou tipo avulso Bloco do motor).');
-    const detranResumo = getDetranEtiquetasResumo(etiquetas, form.estoque);
+    const detranResumo = getDetranEtiquetasResumo(etiquetas, form.estoque, form.descricao);
+    const notaPar = detranResumo.ehPar ? ' — "Par": 2 etiquetas por unidade' : '';
     if (detranResumo.possuiAlguma && detranResumo.faltantes > 0) {
-      return alert(`Falta o preenchimento de ${detranResumo.faltantes} etiqueta(s) Detran ainda para bater com o estoque (${detranResumo.qtdEstoque}).`);
+      return alert(`Falta o preenchimento de ${detranResumo.faltantes} etiqueta(s) Detran ainda para o esperado (${detranResumo.esperadas}${notaPar}).`);
     }
     if (detranResumo.excedentes > 0) {
-      return alert(`Existem ${detranResumo.excedentes} etiqueta(s) Detran a mais para o estoque (${detranResumo.qtdEstoque}).`);
+      return alert(`Existem ${detranResumo.excedentes} etiqueta(s) Detran a mais para o esperado (${detranResumo.esperadas}${notaPar}).`);
     }
     setSaving(true);
     try {
@@ -2119,12 +2129,13 @@ export default function CadastroPage() {
                     </div>
                   ))}
                   {(() => {
-                    const resumoDetran = getDetranEtiquetasResumo(etiquetas, form.estoque);
+                    const resumoDetran = getDetranEtiquetasResumo(etiquetas, form.estoque, form.descricao);
+                    const sufixoPar = resumoDetran.ehPar ? ' (Par: 2 por unidade)' : '';
                     if (resumoDetran.possuiAlguma && resumoDetran.faltantes > 0) {
-                      return <div style={{ fontSize: 11, color: '#dc2626', marginTop: 2 }}>⚠ Falta o preenchimento de {resumoDetran.faltantes} etiqueta(s) Detran ainda. Estoque = {resumoDetran.qtdEstoque}.</div>;
+                      return <div style={{ fontSize: 11, color: '#dc2626', marginTop: 2 }}>⚠ Falta o preenchimento de {resumoDetran.faltantes} etiqueta(s) Detran ainda. Esperado = {resumoDetran.esperadas}{sufixoPar}.</div>;
                     }
                     if (resumoDetran.excedentes > 0) {
-                      return <div style={{ fontSize: 11, color: '#dc2626', marginTop: 2 }}>⚠ Existem {resumoDetran.excedentes} etiqueta(s) Detran a mais. Estoque = {resumoDetran.qtdEstoque}.</div>;
+                      return <div style={{ fontSize: 11, color: '#dc2626', marginTop: 2 }}>⚠ Existem {resumoDetran.excedentes} etiqueta(s) Detran a mais. Esperado = {resumoDetran.esperadas}{sufixoPar}.</div>;
                     }
                     return null;
                   })()}
