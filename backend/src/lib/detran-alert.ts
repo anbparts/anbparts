@@ -78,15 +78,22 @@ function renderDetranEmailText(items: DetranBaixaEmailItem[]) {
 }
 
 export async function sendDetranBaixaEmailIfNeeded(items: DetranBaixaEmailItem[]) {
+  // Uma peca pode ter mais de uma etiqueta ("SP001 / SP002" — ex.: produto "Par").
+  // Quebra por "/" para gerar 1 linha por etiqueta e contar todas (avisar de 2 etiquetas).
   const targets = items
-    .map((item) => ({
-      ...item,
-      idPeca: String(item.idPeca || '').trim(),
-      descricao: String(item.descricao || '').trim(),
-      detranEtiqueta: String(item.detranEtiqueta || '').trim(),
-      motoId: item.motoId ?? null,
-      moto: item.moto ? String(item.moto).trim() : null,
-    }))
+    .flatMap((item) => {
+      const base = {
+        idPeca: String(item.idPeca || '').trim(),
+        descricao: String(item.descricao || '').trim(),
+        motoId: item.motoId ?? null,
+        moto: item.moto ? String(item.moto).trim() : null,
+      };
+      return String(item.detranEtiqueta || '')
+        .split('/')
+        .map((e) => e.trim())
+        .filter(Boolean)
+        .map((detranEtiqueta) => ({ ...base, detranEtiqueta }));
+    })
     .filter((item) => item.idPeca && item.detranEtiqueta);
 
   if (!targets.length) {

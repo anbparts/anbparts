@@ -364,7 +364,8 @@ export default function EtiquetasDetranPage() {
       });
       if (!resp.ok) throw new Error('Erro ao confirmar baixa');
       setModalBaixa(null);
-      setPendencias((prev) => prev.filter((p) => p.pecaId !== linha.pecaId));
+      // Remove só a etiqueta confirmada (uma peça "Par" tem 2 etiquetas, cada uma baixa sozinha).
+      setPendencias((prev) => prev.filter((p) => !(p.pecaId === linha.pecaId && p.etiqueta === linha.etiqueta)));
       await buscar();
     } catch {}
     setConfirmando(null);

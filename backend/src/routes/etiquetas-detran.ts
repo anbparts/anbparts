@@ -47,6 +47,23 @@ function getDetranStatusLabel(detranBaixada: boolean) {
   return detranBaixada ? 'Baixada' : 'Ativa';
 }
 
+// Carrega o status de baixa POR etiqueta (tabela DetranEtiquetaBaixa) para um conjunto de peças.
+// Retorna Map "pecaId|etiqueta" -> { baixadaEm }. Tolera tabela ainda não migrada (cai no fallback peca.detranBaixada).
+async function loadBaixasPorEtiqueta(pecaIds: number[]) {
+  const map = new Map<string, { baixadaEm: Date }>();
+  const ids = Array.from(new Set(pecaIds.map((n) => Number(n)).filter((n) => Number.isInteger(n) && n > 0)));
+  if (!ids.length) return map;
+  try {
+    const rows = await prisma.$queryRawUnsafe<{ pecaId: number; etiqueta: string; baixadaEm: Date }[]>(
+      `SELECT "pecaId", "etiqueta", "baixadaEm" FROM "DetranEtiquetaBaixa" WHERE "pecaId" IN (${ids.join(',')})`,
+    );
+    for (const r of rows) map.set(`${Number(r.pecaId)}|${String(r.etiqueta).trim()}`, { baixadaEm: r.baixadaEm });
+  } catch {
+    // tabela ainda não migrada — segue com o fallback
+  }
+  return map;
+}
+
 function parseDetranStatusFilter(value: unknown) {
   const normalized = String(value || '').trim().toLowerCase();
   if (!normalized) return null;
@@ -225,7 +242,8 @@ etiquetasDetranRouter.get('/', async (req, res, next) => {
           detranEtiqueta: { not: null },
           ...(sku ? { idPeca: { contains: String(sku), mode: 'insensitive' } } : {}),
           ...(descricao ? { descricao: { contains: String(descricao), mode: 'insensitive' } } : {}),
-          ...(detranBaixadaFilter !== null ? { detranBaixada: detranBaixadaFilter } : {}),
+          // status (Ativa/Baixada) é filtrado por etiqueta mais abaixo, não pela flag da peça,
+          // pois uma peça "Par" pode ter 1 etiqueta baixada e outra ativa.
         },
         select: {
           id: true, idPeca: true, descricao: true, detranEtiqueta: true,
@@ -277,6 +295,8 @@ etiquetasDetranRouter.get('/', async (req, res, next) => {
       }
     }
 
+    const baixasMap = await loadBaixasPorEtiqueta(pecas.map((p) => p.id));
+
     const linhas: any[] = [];
     const activeEtiquetas = new Set<string>();
 
@@ -288,6 +308,11 @@ etiquetasDetranRouter.get('/', async (req, res, next) => {
 
       for (const etq of etiquetas) {
         activeEtiquetas.add(etq.toUpperCase());
+        // Status por etiqueta: baixada se houver registro na tabela; senão cai na flag da peça.
+        const baixaEtq = baixasMap.get(`${peca.id}|${etq}`);
+        const etqBaixada = !!baixaEtq || peca.detranBaixada;
+        if (detranBaixadaFilter !== null && etqBaixada !== detranBaixadaFilter) continue;
+        const etqBaixadaAt = baixaEtq?.baixadaEm ?? (etqBaixada ? peca.detranBaixadaAt : null);
         const cartelaTipo = cartelaMap.get(`${peca.motoId}|${peca.idPeca}|${etq}`);
         const matchCartela = etq.match(/^(.*?)(\d{3})$/);
         const posicaoCartela = matchCartela ? Number(matchCartela[2]) : 0;
@@ -306,9 +331,9 @@ etiquetasDetranRouter.get('/', async (req, res, next) => {
           pecaId: peca.id, sku: peca.idPeca, descricao: peca.descricao,
           tipoEtiqueta: tipoEtq, tipoPeca: tipoPecaVal, etiqueta: etq,
           qtdeEtiquetasSku: quantidadeEtiquetasSku,
-          status: getDetranStatusLabel(peca.detranBaixada),
-          detranStatus: peca.detranStatus || null, detranBaixada: peca.detranBaixada,
-          detranBaixadaAt: peca.detranBaixadaAt, disponivel: peca.disponivel,
+          status: getDetranStatusLabel(etqBaixada),
+          detranStatus: peca.detranStatus || null, detranBaixada: etqBaixada,
+          detranBaixadaAt: etqBaixadaAt, disponivel: peca.disponivel,
           blingPedidoId: peca.blingPedidoId, blingPedidoNum: peca.blingPedidoNum,
           dataVenda: peca.dataVenda, fromHistorico: false, isPreCadastro: false,
         });
@@ -454,6 +479,8 @@ etiquetasDetranRouter.get('/pendencias-baixa', async (req, res, next) => {
       }));
     }
 
+    const baixasMap = await loadBaixasPorEtiqueta(pecas.map((p) => p.id));
+
     const linhas: any[] = [];
     for (const peca of pecas) {
       const etiquetas = splitEtiquetas(peca.detranEtiqueta);
@@ -467,6 +494,8 @@ etiquetasDetranRouter.get('/pendencias-baixa', async (req, res, next) => {
       };
 
       for (const etq of etiquetas) {
+        // Pendência é por etiqueta: pula as que já foram baixadas individualmente.
+        if (baixasMap.has(`${peca.id}|${etq}`)) continue;
         const cartelaTipo = cartelaMap.get(`${peca.motoId}|${peca.idPeca}|${etq}`);
         linhas.push({
           pecaId: peca.id,
@@ -524,9 +553,12 @@ etiquetasDetranRouter.post('/validar', async (req, res, next) => {
     type AnbEntry = { sku: string; descricao: string; baixada: boolean; fonte: string; motoId: number | null };
     const anbMap = new Map<string, AnbEntry>();
 
+    const baixasMap = await loadBaixasPorEtiqueta(pecas.map((p) => p.id));
     for (const p of pecas) {
       for (const etq of splitEtiquetas(p.detranEtiqueta)) {
-        anbMap.set(etq.toUpperCase(), { sku: p.idPeca, descricao: p.descricao, baixada: p.detranBaixada, fonte: 'peca', motoId: p.motoId });
+        // Baixa por etiqueta: usa a tabela; cai na flag da peça se não houver registro.
+        const baixada = baixasMap.has(`${p.id}|${etq}`) || p.detranBaixada;
+        anbMap.set(etq.toUpperCase(), { sku: p.idPeca, descricao: p.descricao, baixada, fonte: 'peca', motoId: p.motoId });
       }
     }
     for (const h of historico) {
@@ -622,23 +654,51 @@ etiquetasDetranRouter.post('/validar', async (req, res, next) => {
 // POST /etiquetas-detran/:pecaId/confirmar-baixa
 etiquetasDetranRouter.post('/:pecaId/confirmar-baixa', async (req, res, next) => {
   try {
-    const { pecaId } = req.params;
-    const { comprovanteNome, comprovanteArquivo } = req.body || {};
+    const pecaIdNum = Number(req.params.pecaId);
+    const { etiqueta, comprovanteNome, comprovanteArquivo } = req.body || {};
 
-    const peca = await prisma.peca.findUnique({ where: { id: Number(pecaId) } });
+    const peca = await prisma.peca.findUnique({ where: { id: pecaIdNum } });
     if (!peca) return res.status(404).json({ ok: false, error: 'Peca nao encontrada' });
 
+    const todasEtiquetas = splitEtiquetas(peca.detranEtiqueta);
+    const etiquetaInformada = String(etiqueta || '').trim();
+    // Baixa só a etiqueta informada; sem etiqueta (compat), baixa todas as da peça.
+    const alvos = etiquetaInformada
+      ? (todasEtiquetas.includes(etiquetaInformada) ? [etiquetaInformada] : [etiquetaInformada])
+      : todasEtiquetas;
+
+    const comprovNome = comprovanteNome || null;
+    const comprovArq = comprovanteArquivo || null;
+
+    for (const etq of alvos) {
+      await prisma.$executeRaw`
+        INSERT INTO "DetranEtiquetaBaixa" ("pecaId", "etiqueta", "baixadaEm", "comprovanteNome", "comprovanteArquivo")
+        VALUES (${pecaIdNum}, ${etq}, now(), ${comprovNome}, ${comprovArq})
+        ON CONFLICT ("pecaId", "etiqueta") DO UPDATE SET
+          "baixadaEm" = now(),
+          "comprovanteNome" = COALESCE(EXCLUDED."comprovanteNome", "DetranEtiquetaBaixa"."comprovanteNome"),
+          "comprovanteArquivo" = COALESCE(EXCLUDED."comprovanteArquivo", "DetranEtiquetaBaixa"."comprovanteArquivo")
+      `;
+    }
+
+    // A peça só fica "Baixada" quando TODAS as etiquetas dela tiverem baixa registrada.
+    const baixadasRows = await prisma.$queryRaw<{ etiqueta: string }[]>`
+      SELECT "etiqueta" FROM "DetranEtiquetaBaixa" WHERE "pecaId" = ${pecaIdNum}
+    `;
+    const baixadasSet = new Set(baixadasRows.map((r) => String(r.etiqueta).trim()));
+    const todasBaixadas = todasEtiquetas.length > 0 && todasEtiquetas.every((e) => baixadasSet.has(e));
+
     await prisma.peca.update({
-      where: { id: Number(pecaId) },
+      where: { id: pecaIdNum },
       data: {
-        detranBaixada: true,
-        detranBaixadaAt: new Date(),
-        ...(comprovanteNome    ? { detranComprovanteNome:    comprovanteNome }    : {}),
-        ...(comprovanteArquivo ? { detranComprovanteArquivo: comprovanteArquivo } : {}),
+        detranBaixada: todasBaixadas,
+        detranBaixadaAt: todasBaixadas ? new Date() : null,
+        ...(comprovNome ? { detranComprovanteNome: comprovNome } : {}),
+        ...(comprovArq ? { detranComprovanteArquivo: comprovArq } : {}),
       },
     });
 
-    res.json({ ok: true });
+    res.json({ ok: true, etiquetaBaixada: etiquetaInformada || null, pecaBaixadaCompleta: todasBaixadas });
   } catch (e) { next(e); }
 });
 

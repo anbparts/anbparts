@@ -80,6 +80,7 @@ model Peca {
   moto        Moto     @relation(fields: [motoId], references: [id])
   prejuizo    Prejuizo?
   devolucoes  HistoricoDevolucao[]
+  detranEtiquetaBaixas DetranEtiquetaBaixa[]
 
   @@index([localizacao])
   @@index([mercadoLivreItemId])
@@ -609,4 +610,19 @@ model TextoTipoPeca {
 model BlingPedidoSeparacao {
   pedidoId   BigInt   @id
   separadoEm DateTime @default(now())
+}
+
+// Baixa de etiqueta DETRAN por etiqueta individual (uma peça pode ter mais de uma, ex.: produto "Par").
+// A presença de uma linha = aquela etiqueta foi baixada. Peca.detranBaixada = todas baixadas.
+model DetranEtiquetaBaixa {
+  id                 Int      @id @default(autoincrement())
+  pecaId             Int
+  etiqueta           String
+  baixadaEm          DateTime @default(now())
+  comprovanteNome    String?
+  comprovanteArquivo String?  @db.Text
+  peca               Peca     @relation(fields: [pecaId], references: [id], onDelete: Cascade)
+
+  @@unique([pecaId, etiqueta])
+  @@index([pecaId])
 }

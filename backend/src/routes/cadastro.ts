@@ -108,36 +108,23 @@ function normalizeNullableText(value: any, options?: { uppercase?: boolean }) {
   return options?.uppercase ? text.toUpperCase() : text;
 }
 
-function parseDetranEtiquetas(value: any) {
-  return String(value ?? '')
-    .split('/')
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-// Produto "Par": se o titulo tem a palavra inteira Par/Pares, cada unidade de estoque
-// equivale a 2 pecas fisicas -> 2 etiquetas Detran por unidade (2x estoque).
-function detranMultiplicadorPorTitulo(titulo: any) {
-  return /\bpar(es)?\b/i.test(String(titulo || '')) ? 2 : 1;
-}
-
-function getDetranEtiquetasValidationMessage(detranEtiqueta: any, estoque: any, titulo?: any) {
-  const etiquetas = parseDetranEtiquetas(detranEtiqueta);
-  if (!etiquetas.length) return null;
-
-  const qtdEstoque = Math.max(1, Number(estoque) || 1);
-  const multiplicador = detranMultiplicadorPorTitulo(titulo);
-  const esperadas = qtdEstoque * multiplicador;
-  const notaPar = multiplicador > 1 ? ' — "Par": 2 etiquetas por unidade' : '';
-
-  if (etiquetas.length < esperadas) {
-    return `Falta o preenchimento de ${esperadas - etiquetas.length} etiqueta(s) Detran ainda para o esperado (${esperadas}${notaPar}).`;
+// Distribui as etiquetas entre as unidades de estoque o mais uniforme possível, em blocos
+// sequenciais (sobras vão para as primeiras unidades). Sem validar contagem.
+// Ex.: estoque 1 + [A,B] => [[A,B]]. estoque 2 + [A,B,C,D] => [[A,B],[C,D]]. estoque 2 + [A,B,C] => [[A,B],[C]].
+function distribuirEtiquetas(etiquetas: string[], unidades: number): string[][] {
+  const total = Math.max(1, unidades);
+  const grupos: string[][] = Array.from({ length: total }, () => []);
+  const base = Math.floor(etiquetas.length / total);
+  const resto = etiquetas.length % total;
+  let idx = 0;
+  for (let u = 0; u < total; u += 1) {
+    const tamanho = base + (u < resto ? 1 : 0);
+    for (let k = 0; k < tamanho && idx < etiquetas.length; k += 1) {
+      grupos[u].push(etiquetas[idx]);
+      idx += 1;
+    }
   }
-  if (etiquetas.length > esperadas) {
-    return `Existem ${etiquetas.length - esperadas} etiqueta(s) Detran a mais para o esperado (${esperadas}${notaPar}).`;
-  }
-
-  return null;
+  return grupos;
 }
 
 // Bloco do motor: etiqueta de cartela terminando em 005, ou avulsa com tipo "Bloco do motor".
@@ -542,8 +529,6 @@ cadastroRouter.post('/', requireCadastroAction('criar_pre_cadastro'), async (req
 
     if (!motoId || !idPeca || !descricao) return res.status(400).json({ error: 'motoId, idPeca e descricao sao obrigatorios' });
     if (!String(idPeca || '').trim()) return res.status(400).json({ error: 'SKU (idPeca) é obrigatorio' });
-    const detranValidationMessage = getDetranEtiquetasValidationMessage(detranEtiqueta, estoque, descricao);
-    if (detranValidationMessage) return res.status(400).json({ error: detranValidationMessage });
     const numeroMotorMsg = getNumeroMotorValidationMessage(detranEtiqueta, tipoPecaAvulsa, numeroMotor);
     if (numeroMotorMsg) return res.status(400).json({ error: numeroMotorMsg });
 
@@ -896,11 +881,7 @@ cadastroRouter.put('/:id', requireCadastroAction('editar_pre_cadastro'), async (
     if (atual.status === 'cadastrado') return res.status(400).json({ error: 'Cadastro já finalizado — não é possível editar' });
 
     const { descricao, descricaoPeca, precoVenda, condicao, peso, largura, altura, profundidade, numeroPeca, numeroMotor, detranEtiqueta, tipoPecaAvulsa, localizacao, estoque, categoriaMLId, categoriaMLNome, urlRef } = req.body;
-    const estoqueEfetivo = estoque !== undefined ? Number(estoque) : Number(atual.estoque);
     const detranEtiquetaEfetiva = detranEtiqueta !== undefined ? detranEtiqueta : atual.detranEtiqueta;
-    const descricaoEfetiva = descricao !== undefined ? descricao : atual.descricao;
-    const detranValidationMessage = getDetranEtiquetasValidationMessage(detranEtiquetaEfetiva, estoqueEfetivo, descricaoEfetiva);
-    if (detranValidationMessage) return res.status(400).json({ error: detranValidationMessage });
     const tipoPecaAvulsaEfetivo = tipoPecaAvulsa !== undefined ? tipoPecaAvulsa : atual.tipoPecaAvulsa;
     const numeroMotorEfetivo = numeroMotor !== undefined ? numeroMotor : (atual as any).numeroMotor;
     const numeroMotorMsg = getNumeroMotorValidationMessage(detranEtiquetaEfetiva, tipoPecaAvulsaEfetivo, numeroMotorEfetivo);
@@ -1010,18 +991,9 @@ cadastroRouter.post('/:id/finalizar', requireCadastroAction('criar_bling'), asyn
         ? cadastro.detranEtiqueta.split('/').map((e: string) => e.trim()).filter(Boolean)
         : [];
 
-      // "Par" no titulo => 2 etiquetas por unidade (2x estoque). Senao, 1 por unidade.
-      const detranMultiplicador = detranMultiplicadorPorTitulo(cadastro.descricao);
-      const etiquetasEsperadas = ids.length * detranMultiplicador;
-
-      // Validação: se há etiquetas, deve bater com a quantidade esperada
-      if (etiquetasArray.length > 0 && etiquetasArray.length !== etiquetasEsperadas) {
-        const notaPar = detranMultiplicador > 1 ? ' — "Par": 2 etiquetas por unidade' : '';
-        return res.status(400).json({
-          ok: false,
-          error: `Quantidade de etiquetas Detran (${etiquetasArray.length}) não bate com o esperado (${etiquetasEsperadas}${notaPar}). Corrija no pré-cadastro antes de finalizar.`,
-        });
-      }
+      // Sem validação de contagem: as etiquetas são distribuídas entre as unidades o mais
+      // uniforme possível. estoque 1 + N etiquetas => todas na peça; estoque N => reparte.
+      const gruposEtiquetas = distribuirEtiquetas(etiquetasArray, ids.length);
 
       for (let i = 0; i < ids.length; i++) {
         const idPeca = ids[i];
@@ -1049,9 +1021,9 @@ cadastroRouter.post('/:id/finalizar', requireCadastroAction('criar_bling'), asyn
             numeroPeca: cadastro.numeroPeca || null,
             numeroMotor: (cadastro as any).numeroMotor || null,
             tipoPecaAvulsa: cadastro.tipoPecaAvulsa || null,
-            // Cada unidade recebe suas etiquetas: 1 normalmente, ou 2 juntas (" / ") se for "Par".
-            detranEtiqueta: etiquetasArray.length > 0
-              ? (etiquetasArray.slice(i * detranMultiplicador, i * detranMultiplicador + detranMultiplicador).join(' / ') || null)
+            // Cada unidade recebe seu grupo de etiquetas (1 ou mais), juntas por " / ".
+            detranEtiqueta: (gruposEtiquetas[i] && gruposEtiquetas[i].length)
+              ? gruposEtiquetas[i].join(' / ')
               : null,
             cadastro: new Date(),
           },
