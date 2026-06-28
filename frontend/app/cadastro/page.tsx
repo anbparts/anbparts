@@ -5,6 +5,7 @@ import { API_BASE } from '@/lib/api-base';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { formatEtiquetaMotoLabel, printSkuLabels } from '@/lib/estoque-label-print';
+import ModalImpressaoA4 from '@/app/components/ModalImpressaoA4';
 import { compressFotoCapaFile } from '@/lib/image-compression';
 import { canProcessAction } from '@/lib/permissions';
 
@@ -267,6 +268,8 @@ export default function CadastroPage() {
   const [caixas, setCaixas] = useState<string[]>([]);
   const [data, setData] = useState<{ total: number; data: CadastroPeca[] }>({ total: 0, data: [] });
   const [sortCadastro, setSortCadastro] = useState<{ key: string | null; dir: 'asc' | 'desc' }>({ key: 'createdAt', dir: 'desc' });
+  const [a4Sel, setA4Sel] = useState<Set<number>>(new Set());
+  const [modalA4Open, setModalA4Open] = useState(false);
   const [loading, setLoading] = useState(true);
   const [somentePendentes, setSomentePendentes] = useState(true);
   const [filters, setFilters] = useState({ motoId: '', search: '', semDimensoes: '', comDimensoes: '', preCadastroCompleto: '' });
@@ -489,6 +492,17 @@ export default function CadastroPage() {
       return String(va).localeCompare(String(vb), 'pt-BR', { numeric: true, sensitivity: 'base' }) * factor;
     });
   })();
+
+  function toggleA4Sel(id: number) {
+    setA4Sel((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  }
+  function toggleA4SelTodos() {
+    setA4Sel((prev) => prev.size === linhasOrdenadasCadastro.length ? new Set() : new Set(linhasOrdenadasCadastro.map((i) => i.id)));
+  }
+  // Expande os SKUs selecionados em 1 etiqueta por unidade (variações -2, -3...), na ordem da tabela.
+  const etiquetasA4 = linhasOrdenadasCadastro
+    .filter((it) => a4Sel.has(it.id))
+    .flatMap((it) => buildCadastroSkuEtiquetas(it));
 
   function normalizarListaFotosSkus(value: string) {
     return normalizarListaSkus(value);
@@ -1911,7 +1925,18 @@ export default function CadastroPage() {
         </div>
 
         <div style={{ ...s.card, overflow: 'hidden', maxWidth: '100%' }}>
-          <div style={{ fontSize: 12, color: 'var(--gray-400)', marginBottom: 14 }}>{data.total} registro(s){somentePendentes ? ' (pendentes)' : ''}</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
+            <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>
+              {data.total} registro(s){somentePendentes ? ' (pendentes)' : ''}
+              {a4Sel.size > 0 && <span style={{ color: 'var(--blue-600)', fontWeight: 600 }}> · {a4Sel.size} selecionado(s)</span>}
+            </div>
+            <button
+              onClick={() => { if (etiquetasA4.length === 0) return alert('Selecione ao menos um SKU.'); setModalA4Open(true); }}
+              disabled={a4Sel.size === 0}
+              style={{ ...s.btn, fontSize: 12, padding: '7px 14px', background: a4Sel.size ? '#16a34a' : 'var(--white)', color: a4Sel.size ? '#fff' : 'var(--gray-400)', border: '1px solid var(--border)', cursor: a4Sel.size ? 'pointer' : 'default' }}>
+              🖨️ Impressão A4{a4Sel.size > 0 ? ` (${etiquetasA4.length} etiq.)` : ''}
+            </button>
+          </div>
           {loading ? <div style={{ textAlign: 'center', padding: 32, color: 'var(--gray-400)' }}>Carregando...</div> :
             data.data.length === 0 ? <div style={{ textAlign: 'center', padding: 32, color: 'var(--gray-400)' }}>Nenhum cadastro encontrado.</div> : isPhone ? (
             <div style={{ display: 'grid', gap: 10 }}>
@@ -1981,6 +2006,7 @@ export default function CadastroPage() {
             <div style={{ maxWidth: '100%', overflow: 'hidden' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' as const }}>
                 <colgroup>
+                  <col style={{ width: 30 }} />
                   <col style={{ width: '10%' }} />
                   <col style={{ width: '18%' }} />
                   <col style={{ width: '18%' }} />
@@ -1991,7 +2017,11 @@ export default function CadastroPage() {
                   <col style={{ width: '8%' }} />
                   <col style={{ width: '10%' }} />
                 </colgroup>
-                <thead><tr>{CADASTRO_COLUNAS.map(col => {
+                <thead><tr>
+                  <th style={{ ...s.th, padding: '9px 4px', textAlign: 'center' }}>
+                    <input type="checkbox" checked={linhasOrdenadasCadastro.length > 0 && a4Sel.size === linhasOrdenadasCadastro.length} onChange={toggleA4SelTodos} title="Selecionar todos" />
+                  </th>
+                  {CADASTRO_COLUNAS.map(col => {
                   const ativo = !!col.key && sortCadastro.key === col.key;
                   return (
                     <th key={col.label}
@@ -2006,7 +2036,10 @@ export default function CadastroPage() {
                   {linhasOrdenadasCadastro.map((item) => {
                     const cadastOk = item.status === 'cadastrado';
                     return (
-                      <tr key={item.id}>
+                      <tr key={item.id} style={{ background: a4Sel.has(item.id) ? '#eff6ff' : undefined }}>
+                        <td style={{ ...s.td, padding: '10px 4px', textAlign: 'center' }}>
+                          <input type="checkbox" checked={a4Sel.has(item.id)} onChange={() => toggleA4Sel(item.id)} />
+                        </td>
                         <td style={{ ...s.td, padding: '10px 6px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--blue-600)', whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.idPeca}</td>
                         <td style={{ ...s.td, padding: '10px 6px' }}><div title={item.descricao} style={{ whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.descricao}</div></td>
                         <td style={{ ...s.td, padding: '10px 6px', fontSize: 12 }}><div title={`${item.moto?.marca || ''} ${item.moto?.modelo || ''}`} style={{ whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.moto?.marca} {item.moto?.modelo}</div></td>
@@ -2065,6 +2098,7 @@ export default function CadastroPage() {
         )}
       </div>
 
+      {modalA4Open && <ModalImpressaoA4 etiquetas={etiquetasA4} onClose={() => setModalA4Open(false)} />}
       {fotoManualModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.5)', zIndex: 260, display: 'flex', alignItems: isPhone ? 'stretch' : 'center', justifyContent: 'center', padding: isPhone ? 0 : 24 }}>
           <div style={{ background: 'var(--white)', borderRadius: isPhone ? 0 : 14, width: '100%', maxWidth: isPhone ? undefined : 720, maxHeight: isPhone ? '100dvh' : '92vh', minHeight: isPhone ? '100dvh' : undefined, display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,.2)' }}>

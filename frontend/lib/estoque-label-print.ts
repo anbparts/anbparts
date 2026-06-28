@@ -75,3 +75,20 @@ export async function printSkuLabels(items: SkuEtiquetaPrintItem[]) {
 
   await openLabelPdf('/etiquetas/sku', { items: sanitized });
 }
+
+// Impressao em folha A4 (21 etiquetas: 3 col x 7 lin). `start` = indice coluna-a-coluna (0..20)
+// da primeira celula livre da folha (0 = coluna 1, linha 1). Preenche coluna a coluna.
+export async function printSkuLabelsA4(items: SkuEtiquetaPrintItem[], start: number) {
+  const sanitized = items
+    .map((i) => ({
+      motoLabel: String(i.motoLabel || '').trim(),
+      sku:       String(i.sku || '').trim().toUpperCase(),
+      descricao: String(i.descricao || '').trim(),
+    }))
+    .filter((i) => i.sku);
+
+  if (!sanitized.length) throw new Error('Nenhum SKU valido informado.');
+
+  const startSafe = Number.isInteger(start) && start >= 0 && start <= 20 ? start : 0;
+  await openLabelPdf('/etiquetas/sku-a4', { items: sanitized, start: startSafe });
+}

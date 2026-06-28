@@ -187,3 +187,92 @@ etiquetasRouter.post('/sku', async (req, res, next) => {
     doc.end();
   } catch (e) { next(e); }
 });
+
+// ===== A4: 21 etiquetas por folha (Spiral A4360 / Avery L7160, 63,5 x 38,1 mm, 3 col x 7 lin) =====
+// Medidas padrao do layout — facil de calibrar aqui se a impressora desalinhar.
+const A4_CELL_W_MM = 63.5;
+const A4_CELL_H_MM = 38.1;
+const A4_LEFT      = MM(7.21);   // margem esquerda ate a 1a coluna
+const A4_TOP       = MM(15.15);  // margem superior ate a 1a linha
+const A4_COL_PITCH = MM(66.04);  // passo horizontal (63,5 + 2,54 de gap)
+const A4_ROW_PITCH = MM(38.1);   // passo vertical (sem gap)
+
+// Desenha UMA etiqueta SKU dentro de uma celula da folha A4, com origem (ox, oy) no canto superior esquerdo.
+async function desenharEtiquetaCelulaA4(
+  doc: InstanceType<typeof PDFDocument>,
+  ox: number,
+  oy: number,
+  item: { motoLabel: string; sku: string; descricao: string },
+) {
+  const ML = MM(5);
+  const MR = MM(3);
+  const QR = MM(17);
+  const QR_X = ox + MM(A4_CELL_W_MM) - MR - QR;
+  const QR_Y = oy + MM(5);
+  const TEXT_W = (QR_X - ox) - ML - MM(2);
+
+  const qrPng = await gerarQrPng(item.sku);
+  doc.image(qrPng, QR_X, QR_Y, { width: QR, height: QR });
+
+  doc.fillColor('#000000').font('Helvetica').fontSize(MM(2.2));
+  doc.text('Moto:', ox + ML, oy + MM(4.5), { lineBreak: false });
+  const motoLabelW = doc.widthOfString('Moto:');
+  const motoFontSize = fitFontSize(doc, item.motoLabel || '-', TEXT_W - motoLabelW - MM(1.5), MM(2.6), MM(1.6));
+  doc.font('Helvetica-Bold').fontSize(motoFontSize);
+  doc.text(item.motoLabel || '-', ox + ML + motoLabelW + MM(1.5), oy + MM(4.5), { lineBreak: false });
+
+  const skuFontSize = fitFontSize(doc, item.sku, TEXT_W, MM(9.0), MM(4.5));
+  doc.font('Helvetica-Bold').fontSize(skuFontSize);
+  doc.text(item.sku, ox + ML, oy + MM(12.0), { lineBreak: false });
+
+  doc.font('Helvetica-Bold').fontSize(MM(2.6)).fillColor('#000000');
+  doc.text(item.descricao || '-', ox + ML, oy + MM(27.0), {
+    width: MM(A4_CELL_W_MM) - ML - MR,
+    height: MM(9.0),
+    ellipsis: true,
+    lineBreak: true,
+  });
+}
+
+// POST /etiquetas/sku-a4
+// body: { items: [{ motoLabel, sku, descricao }], start: 0..20 (indice coluna-a-coluna da 1a celula livre) }
+// Preenche coluna a coluna (toda a coluna 1, depois a 2, depois a 3) a partir de `start`; excedente vai para novas folhas.
+etiquetasRouter.post('/sku-a4', async (req, res, next) => {
+  try {
+    const items: { motoLabel: string; sku: string; descricao: string }[] = (req.body?.items || [])
+      .map((i: any) => ({
+        motoLabel: String(i.motoLabel || '').trim().toUpperCase(),
+        sku:       String(i.sku || '').trim().toUpperCase(),
+        descricao: String(i.descricao || '').trim(),
+      }))
+      .filter((i: any) => i.sku);
+
+    if (!items.length) {
+      return res.status(400).json({ error: 'Nenhum SKU informado.' });
+    }
+
+    let start = Number(req.body?.start);
+    if (!Number.isInteger(start) || start < 0 || start > 20) start = 0;
+
+    const doc = new PDFDocument({ size: 'A4', margin: 0, autoFirstPage: true, compress: true });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'inline; filename="etiquetas-a4.pdf"');
+    doc.pipe(res);
+
+    let om = start; // posicao coluna-a-coluna na folha atual (0..20)
+    for (let i = 0; i < items.length; i++) {
+      if (om > 20) {
+        doc.addPage({ size: 'A4', margin: 0 });
+        om = 0;
+      }
+      const col = Math.floor(om / 7); // 0..2
+      const row = om % 7;             // 0..6
+      const ox = A4_LEFT + col * A4_COL_PITCH;
+      const oy = A4_TOP + row * A4_ROW_PITCH;
+      await desenharEtiquetaCelulaA4(doc, ox, oy, items[i]);
+      om++;
+    }
+
+    doc.end();
+  } catch (e) { next(e); }
+});
