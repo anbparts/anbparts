@@ -380,22 +380,47 @@ async function uploadArquivoParaPasta(pastaId: string, nome: string, mimeType: s
 }
 
 // Apaga definitivamente um arquivo do Drive. 404 = ja nao existe (ok).
-// Faz retry com backoff em 403/429/5xx (rate limit) e devolve o erro real para diagnostico.
-async function apagarArquivoDrive(fileId: string): Promise<{ ok: boolean; erro?: string }> {
+// Faz retry com backoff em 429/5xx (rate limit). Em 403 nao insiste (provavel falta de permissao).
+async function apagarArquivoDrive(fileId: string): Promise<{ ok: boolean; status?: number; erro?: string }> {
   if (!fileId) return { ok: false, erro: 'id vazio' };
   let ultimoErro = '';
+  let ultimoStatus = 0;
   for (let tentativa = 0; tentativa < 3; tentativa += 1) {
     const resp = await driveRequest(buildDrivePath(`/files/${encodeURIComponent(fileId)}`, {}), { method: 'DELETE' });
     if (resp.ok || resp.status === 204 || resp.status === 404) return { ok: true };
     const data: any = await resp.json().catch(() => ({}));
+    ultimoStatus = resp.status;
     ultimoErro = getApiErrorMessage(data, `DELETE ${resp.status}`);
-    if (resp.status === 403 || resp.status === 429 || resp.status >= 500) {
+    if (resp.status === 429 || resp.status >= 500) {
       await sleep(700 * (tentativa + 1)); // backoff para rate limit
       continue;
     }
-    return { ok: false, erro: ultimoErro };
+    return { ok: false, status: resp.status, erro: ultimoErro };
   }
-  return { ok: false, erro: ultimoErro || 'falha apos retries' };
+  return { ok: false, status: ultimoStatus, erro: ultimoErro || 'falha apos retries' };
+}
+
+// Manda o arquivo para a lixeira (PATCH trashed=true). Exige so permissao de edicao
+// (nao de dono), entao funciona em arquivos que o usuario do app nao pode apagar de vez.
+async function lixeiraArquivoDrive(fileId: string): Promise<{ ok: boolean; erro?: string }> {
+  if (!fileId) return { ok: false, erro: 'id vazio' };
+  const resp = await driveRequest(
+    buildDrivePath(`/files/${encodeURIComponent(fileId)}`, { fields: 'id,trashed' }),
+    { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ trashed: true }) },
+  );
+  if (resp.ok) return { ok: true };
+  const data: any = await resp.json().catch(() => ({}));
+  return { ok: false, erro: getApiErrorMessage(data, `trash ${resp.status}`) };
+}
+
+// Remove um arquivo: tenta apagar de vez; se o Drive negar (sem permissao de dono),
+// cai pra lixeira. Garante que a pasta final fique limpa.
+async function removerArquivoDrive(fileId: string): Promise<{ ok: boolean; via?: 'delete' | 'lixeira'; erro?: string }> {
+  const del = await apagarArquivoDrive(fileId);
+  if (del.ok) return { ok: true, via: 'delete' };
+  const tr = await lixeiraArquivoDrive(fileId);
+  if (tr.ok) return { ok: true, via: 'lixeira' };
+  return { ok: false, erro: del.erro || tr.erro };
 }
 
 // Move uma pasta: adiciona o novo parent (pasta da moto) e remove o atual (raiz pendente).
@@ -600,15 +625,18 @@ export async function processarPastaFotosDrive(pastaId: string, resultado: FotoD
       return resultado;
     }
 
-    // 4) Limpar antigas: apaga tudo que existia antes (fotos antigas + zip).
-    // Espaca os deletes (evita rate limit do Drive) e guarda o primeiro erro real.
+    // 4) Limpar antigas: remove tudo que existia antes (fotos antigas + zip).
+    // Tenta apagar de vez; se nao tiver permissao, manda pra lixeira. Espaca para evitar rate limit.
     let falhasDelete = 0;
+    let foiPraLixeira = 0;
     let primeiroErroDelete = '';
     for (const id of idsOriginais) {
-      const r = await apagarArquivoDrive(id).catch((e: any) => ({ ok: false, erro: e?.message || String(e) }));
+      const r = await removerArquivoDrive(id).catch((e: any) => ({ ok: false, erro: e?.message || String(e) } as any));
       if (!r.ok) {
         falhasDelete += 1;
         if (!primeiroErroDelete) primeiroErroDelete = r.erro || '';
+      } else if (r.via === 'lixeira') {
+        foiPraLixeira += 1;
       }
       await sleep(200);
     }
@@ -631,9 +659,13 @@ export async function processarPastaFotosDrive(pastaId: string, resultado: FotoD
     }
 
     resultado.status = 'processado';
-    resultado.mensagem = falhasDelete
-      ? `Processado, mas ${falhasDelete} arquivo(s) antigo(s) nao puderam ser apagados${primeiroErroDelete ? `: ${primeiroErroDelete}` : '.'}`
-      : 'Processado com sucesso.';
+    if (falhasDelete) {
+      resultado.mensagem = `Processado, mas ${falhasDelete} arquivo(s) antigo(s) nao puderam ser removidos${primeiroErroDelete ? `: ${primeiroErroDelete}` : '.'}`;
+    } else if (foiPraLixeira) {
+      resultado.mensagem = `Processado. ${foiPraLixeira} arquivo(s) antigo(s) foram para a lixeira (sem permissao para apagar de vez).`;
+    } else {
+      resultado.mensagem = 'Processado com sucesso.';
+    }
     return resultado;
   } catch (err: any) {
     resultado.status = 'erro';
