@@ -43,6 +43,7 @@ export default function ModalImpressaoA4({
     height: 52, borderRadius: 8, cursor: 'pointer', display: 'flex', flexDirection: 'column',
     alignItems: 'center', justifyContent: 'center', gap: 2, padding: 3, fontFamily: 'Inter, sans-serif',
     border: '1px dashed var(--border)', background: 'transparent', textAlign: 'center', overflow: 'hidden',
+    outline: 'none', WebkitTapHighlightColor: 'transparent',
   };
 
   return (
