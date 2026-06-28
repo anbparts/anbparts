@@ -1465,9 +1465,9 @@ export default function CadastroPage() {
               </tbody>
             </table>
           </div>
-          {fdItens.some(i => i.status === 'erro' && i.mensagem) && (
+          {fdItens.some(i => i.mensagem && (i.status === 'erro' || i.etapas?.limparAntigas === 'erro')) && (
             <div style={{ marginTop: 12, display: 'grid', gap: 4 }}>
-              {fdItens.filter(i => i.status === 'erro' && i.mensagem).map(i => (
+              {fdItens.filter(i => i.mensagem && (i.status === 'erro' || i.etapas?.limparAntigas === 'erro')).map(i => (
                 <div key={i.pastaId} style={{ fontSize: 11.5, color: '#dc2626' }}>⚠ <b>{i.sku}</b>: {i.mensagem}</div>
               ))}
             </div>

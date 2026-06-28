@@ -413,14 +413,28 @@ async function lixeiraArquivoDrive(fileId: string): Promise<{ ok: boolean; erro?
   return { ok: false, erro: getApiErrorMessage(data, `trash ${resp.status}`) };
 }
 
-// Remove um arquivo: tenta apagar de vez; se o Drive negar (sem permissao de dono),
-// cai pra lixeira. Garante que a pasta final fique limpa.
-async function removerArquivoDrive(fileId: string): Promise<{ ok: boolean; via?: 'delete' | 'lixeira'; erro?: string }> {
+// Tira o arquivo de uma pasta (PATCH removeParents). E o "inverso" do mover, que funciona
+// quando o app tem permissao na pasta. Deixa o arquivo orfao (fora da pasta do SKU).
+async function removerDaPastaDrive(fileId: string, pastaId: string): Promise<{ ok: boolean; erro?: string }> {
+  const resp = await driveRequest(
+    buildDrivePath(`/files/${encodeURIComponent(fileId)}`, { removeParents: pastaId, fields: 'id,parents' }),
+    { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: '{}' },
+  );
+  if (resp.ok) return { ok: true };
+  const data: any = await resp.json().catch(() => ({}));
+  return { ok: false, erro: getApiErrorMessage(data, `removeParents ${resp.status}`) };
+}
+
+// Remove um arquivo da pasta do SKU, na ordem mais "forte" para a mais "fraca":
+// 1) apagar de vez  2) lixeira  3) tirar da pasta (removeParents). Garante pasta final limpa.
+async function removerArquivoDrive(fileId: string, pastaId: string): Promise<{ ok: boolean; via?: 'delete' | 'lixeira' | 'removeParents'; erro?: string }> {
   const del = await apagarArquivoDrive(fileId);
   if (del.ok) return { ok: true, via: 'delete' };
   const tr = await lixeiraArquivoDrive(fileId);
   if (tr.ok) return { ok: true, via: 'lixeira' };
-  return { ok: false, erro: del.erro || tr.erro };
+  const rp = await removerDaPastaDrive(fileId, pastaId);
+  if (rp.ok) return { ok: true, via: 'removeParents' };
+  return { ok: false, erro: del.erro || tr.erro || rp.erro };
 }
 
 // Move uma pasta: adiciona o novo parent (pasta da moto) e remove o atual (raiz pendente).
@@ -631,16 +645,17 @@ export async function processarPastaFotosDrive(pastaId: string, resultado: FotoD
     let foiPraLixeira = 0;
     let primeiroErroDelete = '';
     for (const id of idsOriginais) {
-      const r = await removerArquivoDrive(id).catch((e: any) => ({ ok: false, erro: e?.message || String(e) } as any));
+      const r = await removerArquivoDrive(id, pastaId).catch((e: any) => ({ ok: false, erro: e?.message || String(e) } as any));
       if (!r.ok) {
         falhasDelete += 1;
         if (!primeiroErroDelete) primeiroErroDelete = r.erro || '';
-      } else if (r.via === 'lixeira') {
+      } else if (r.via === 'lixeira' || r.via === 'removeParents') {
         foiPraLixeira += 1;
       }
       await sleep(200);
     }
     etapas.limparAntigas = falhasDelete ? 'erro' : 'ok';
+    if (falhasDelete && primeiroErroDelete) resultado.mensagem = `Limpar antigas: ${primeiroErroDelete}`;
 
     // 5) Mover a pasta para a pasta oficial da moto.
     try {
