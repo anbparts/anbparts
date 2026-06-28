@@ -1,5 +1,9 @@
 import { prisma } from './prisma';
 import { compressDataUrlImage, normalizeImageFileName } from './image';
+import { createHash } from 'crypto';
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const AdmZip: any = require('adm-zip');
+const GOOGLE_DRIVE_UPLOAD_URL = 'https://www.googleapis.com/upload/drive/v3';
 
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const GOOGLE_DRIVE_URL = 'https://www.googleapis.com/drive/v3';
@@ -282,6 +286,284 @@ export async function apagarPastaDrive(pastaId: string): Promise<boolean> {
   if (!pastaId) return false;
   const resp = await driveRequest(buildDrivePath(`/files/${encodeURIComponent(pastaId)}`, {}), { method: 'DELETE' });
   return resp.ok || resp.status === 204 || resp.status === 404;
+}
+
+// ===== Fotos Drive: processamento do zip do Canva por pasta de SKU =====
+
+function ehArquivoZip(nome: string) {
+  return /\.zip$/i.test(normalizeText(nome));
+}
+
+function mimePorExtensao(nome: string) {
+  const ext = normalizeText(nome).toLowerCase().match(/\.([a-z0-9]+)$/)?.[1] || '';
+  if (ext === 'png') return 'image/png';
+  if (ext === 'webp') return 'image/webp';
+  return 'image/jpeg';
+}
+
+// Baixa qualquer arquivo do Drive como Buffer (zip, imagem, etc).
+async function downloadDriveArquivo(fileId: string): Promise<Buffer> {
+  const resp = await driveFetch(buildDrivePath(`/files/${encodeURIComponent(fileId)}`, { alt: 'media' }));
+  if (!resp.ok) {
+    const data: any = await resp.json().catch(() => ({}));
+    throw new Error(getApiErrorMessage(data, `Erro ao baixar arquivo ${fileId}`));
+  }
+  return Buffer.from(await resp.arrayBuffer());
+}
+
+// Sobe um arquivo (imagem) para dentro de uma pasta do Drive via upload multipart.
+async function uploadArquivoParaPasta(pastaId: string, nome: string, mimeType: string, buffer: Buffer) {
+  const metadata = { name: nome, parents: [pastaId] };
+  const boundary = `anbparts_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  const body = Buffer.concat([
+    Buffer.from(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n`, 'utf8'),
+    Buffer.from(`--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n`, 'utf8'),
+    buffer,
+    Buffer.from(`\r\n--${boundary}--\r\n`, 'utf8'),
+  ]);
+  const url = `${GOOGLE_DRIVE_UPLOAD_URL}/files?uploadType=multipart&supportsAllDrives=true&fields=id,name`;
+  const execute = (token: string) => fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': `multipart/related; boundary=${boundary}` },
+    body,
+  });
+  let token = await getGoogleDriveToken();
+  let resp = await execute(token);
+  if (resp.status === 401 || resp.status === 403) {
+    await clearGoogleDriveToken();
+    token = await getGoogleDriveToken(true);
+    resp = await execute(token);
+  }
+  if (!resp.ok) {
+    const data: any = await resp.json().catch(() => ({}));
+    throw new Error(getApiErrorMessage(data, `Erro ao subir ${nome} (${resp.status})`));
+  }
+  return resp.json();
+}
+
+// Apaga definitivamente um arquivo do Drive. 404 = ja nao existe (ok).
+async function apagarArquivoDrive(fileId: string): Promise<boolean> {
+  if (!fileId) return false;
+  const resp = await driveRequest(buildDrivePath(`/files/${encodeURIComponent(fileId)}`, {}), { method: 'DELETE' });
+  return resp.ok || resp.status === 204 || resp.status === 404;
+}
+
+// Move uma pasta: adiciona o novo parent (pasta da moto) e remove o atual (raiz pendente).
+async function moverPastaDrive(pastaId: string, addParent: string, removeParent: string): Promise<boolean> {
+  const resp = await driveRequest(
+    buildDrivePath(`/files/${encodeURIComponent(pastaId)}`, { addParents: addParent, removeParents: removeParent, fields: 'id,parents' }),
+    { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: '{}' },
+  );
+  return resp.ok;
+}
+
+// Resolve a pasta oficial da moto a partir do SKU (via motoId no banco -> googleDriveMotoDirs).
+async function resolverPastaMotoDoSku(sku: string): Promise<{ motoId: number | null; pastaMotoId: string | null }> {
+  const base = baseSku(sku);
+  if (!base) return { motoId: null, pastaMotoId: null };
+  const peca = await prisma.peca.findFirst({ where: { idPeca: base }, select: { motoId: true } })
+    || await prisma.cadastroPeca.findFirst({ where: { idPeca: base }, select: { motoId: true } });
+  const motoId = peca?.motoId ?? null;
+  if (!motoId) return { motoId: null, pastaMotoId: null };
+  const cfg = await getGoogleDriveConfig();
+  const motoDirs = ((cfg as any).googleDriveMotoDirs as any) || {};
+  const pastaMotoId = normalizeText(motoDirs[String(motoId)]);
+  return { motoId, pastaMotoId: pastaMotoId || null };
+}
+
+export type FotoDrivePastaCandidata = {
+  pastaId: string;
+  nome: string;
+  sku: string;
+  fotosForaPadrao: number;
+  zips: number;
+};
+
+// Varre a raiz do Pre-Cadastro e devolve as pastas que se qualificam:
+// tem >=2 imagens fora do padrao (Capa/NN) E pelo menos 1 arquivo .zip.
+// Filtros opcionais: sku (so a pasta daquele SKU) e intervalo de data de criacao.
+export async function escanearFotosDrive(input: { sku?: any; dataDe?: any; dataAte?: any }): Promise<{ ok: boolean; pastas: FotoDrivePastaCandidata[]; total: number }> {
+  const cfg = await getGoogleDriveConfig();
+  const pastaRaizId = normalizeText((cfg as any).googleDrivePreCadastroPastaId);
+  if (!pastaRaizId) return { ok: false, pastas: [], total: 0 };
+
+  const skuFiltro = normalizeSku(input?.sku);
+  const dataDe = normalizeText(input?.dataDe);
+  const dataAte = normalizeText(input?.dataAte);
+
+  let q = `'${escapeDriveQueryValue(pastaRaizId)}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+  if (skuFiltro) q += ` and name contains '${escapeDriveQueryValue(skuFiltro)}'`;
+  if (dataDe) q += ` and createdTime >= '${escapeDriveQueryValue(dataDe)}T00:00:00'`;
+  if (dataAte) q += ` and createdTime <= '${escapeDriveQueryValue(dataAte)}T23:59:59'`;
+
+  const pastas = await listDriveFiles(q, 'files(id,name,createdTime)', { orderBy: 'createdTime desc' });
+
+  const candidatas: FotoDrivePastaCandidata[] = [];
+  for (const pasta of pastas) {
+    if (skuFiltro && !normalizeText(pasta.name).toUpperCase().startsWith(skuFiltro)) continue;
+    const arquivos = await listDriveFiles(
+      `'${escapeDriveQueryValue(pasta.id)}' in parents and trashed = false`,
+      'files(id,name,mimeType)',
+    );
+    const imagens = arquivos.filter((f: any) => normalizeText(f.mimeType).startsWith('image/'));
+    const zips = arquivos.filter((f: any) => ehArquivoZip(f.name));
+    const foraPadrao = imagens.filter((f: any) => !ehNomeFotoTratada(f.name));
+    if (zips.length >= 1 && foraPadrao.length >= 2) {
+      candidatas.push({
+        pastaId: String(pasta.id),
+        nome: normalizeText(pasta.name),
+        sku: extrairSkuDaPasta(pasta.name),
+        fotosForaPadrao: foraPadrao.length,
+        zips: zips.length,
+      });
+    }
+  }
+  return { ok: true, pastas: candidatas, total: candidatas.length };
+}
+
+export type FotoDriveEtapa = 'ok' | 'erro' | 'pulado' | 'pendente';
+export type FotoDriveResultado = {
+  pastaId: string;
+  sku: string;
+  nome: string;
+  status: 'processado' | 'erro';
+  mensagem: string;
+  etapas: {
+    extrairZip: FotoDriveEtapa;
+    descartarBrancos: FotoDriveEtapa;
+    gravarFotos: FotoDriveEtapa;
+    limparAntigas: FotoDriveEtapa;
+    moverPasta: FotoDriveEtapa;
+  };
+  fotosGravadas: number;
+  brancosDescartados: number;
+};
+
+// Processa UMA pasta de SKU: extrai o zip, descarta brancos (conteudo identico repetido),
+// grava as fotos boas, apaga as antigas + zip e move a pasta para a pasta oficial da moto.
+export async function processarPastaFotosDrive(pastaId: string): Promise<FotoDriveResultado> {
+  const etapas: FotoDriveResultado['etapas'] = {
+    extrairZip: 'pendente', descartarBrancos: 'pendente', gravarFotos: 'pendente', limparAntigas: 'pendente', moverPasta: 'pendente',
+  };
+  const resultado: FotoDriveResultado = {
+    pastaId, sku: '', nome: '', status: 'erro', mensagem: '', etapas, fotosGravadas: 0, brancosDescartados: 0,
+  };
+
+  try {
+    const cfg = await getGoogleDriveConfig();
+    const pastaRaizId = normalizeText((cfg as any).googleDrivePreCadastroPastaId);
+
+    // Metadados da pasta.
+    const meta = await driveGet(buildDrivePath(`/files/${encodeURIComponent(pastaId)}`, { fields: 'id,name' }));
+    resultado.nome = normalizeText(meta?.name);
+    resultado.sku = extrairSkuDaPasta(resultado.nome);
+
+    // Valida a pasta da moto ANTES de qualquer acao destrutiva.
+    const { pastaMotoId } = await resolverPastaMotoDoSku(resultado.sku);
+    if (!pastaMotoId) {
+      resultado.mensagem = `Sem pasta da moto configurada para o SKU ${resultado.sku} (verifique o cadastro do SKU e o mapeamento da moto). Nada foi alterado.`;
+      return resultado;
+    }
+
+    // Lista o conteudo atual da pasta.
+    const arquivos = await listDriveFiles(
+      `'${escapeDriveQueryValue(pastaId)}' in parents and trashed = false`,
+      'files(id,name,mimeType)',
+    );
+    const zips = arquivos.filter((f: any) => ehArquivoZip(f.name));
+    if (!zips.length) {
+      resultado.mensagem = 'Nenhum arquivo .zip encontrado na pasta.';
+      return resultado;
+    }
+    const idsOriginais = arquivos.map((f: any) => String(f.id)); // tudo que existia antes (fotos antigas + zip)
+
+    // 1) Extrair zip.
+    let entradasImagens: { nome: string; buffer: Buffer; hash: string }[] = [];
+    try {
+      const zipBuffer = await downloadDriveArquivo(zips[0].id);
+      const zip = new AdmZip(zipBuffer);
+      const entries: any[] = zip.getEntries();
+      for (const e of entries) {
+        if (e.isDirectory) continue;
+        const nome = String(e.entryName || '').split('/').pop() || '';
+        if (!/\.(png|jpe?g|webp)$/i.test(nome)) continue;
+        const buffer: Buffer = e.getData();
+        if (!buffer || !buffer.length) continue;
+        entradasImagens.push({ nome, buffer, hash: createHash('md5').update(buffer).digest('hex') });
+      }
+      if (!entradasImagens.length) {
+        etapas.extrairZip = 'erro';
+        resultado.mensagem = 'O zip nao contem imagens validas.';
+        return resultado;
+      }
+      etapas.extrairZip = 'ok';
+    } catch (err: any) {
+      etapas.extrairZip = 'erro';
+      resultado.mensagem = `Falha ao extrair o zip: ${err?.message || err}`;
+      return resultado;
+    }
+
+    // 2) Descartar brancos: conteudo identico (mesmo hash) repetido 2+ vezes.
+    const contagemHash = new Map<string, number>();
+    for (const e of entradasImagens) contagemHash.set(e.hash, (contagemHash.get(e.hash) || 0) + 1);
+    const boas = entradasImagens.filter((e) => (contagemHash.get(e.hash) || 0) < 2);
+    resultado.brancosDescartados = entradasImagens.length - boas.length;
+    etapas.descartarBrancos = 'ok';
+    if (!boas.length) {
+      etapas.gravarFotos = 'erro';
+      resultado.mensagem = 'Todas as imagens do zip foram identificadas como brancos (identicas). Nada a gravar.';
+      return resultado;
+    }
+
+    // 3) Gravar as fotos boas na pasta (antes de apagar qualquer coisa).
+    try {
+      for (let i = 0; i < boas.length; i += 1) {
+        const e = boas[i];
+        await uploadArquivoParaPasta(pastaId, e.nome, mimePorExtensao(e.nome), e.buffer);
+        await pauseUploadBatch(i);
+      }
+      resultado.fotosGravadas = boas.length;
+      etapas.gravarFotos = 'ok';
+    } catch (err: any) {
+      etapas.gravarFotos = 'erro';
+      resultado.mensagem = `Falha ao gravar fotos do zip (nada foi apagado): ${err?.message || err}`;
+      return resultado;
+    }
+
+    // 4) Limpar antigas: apaga tudo que existia antes (fotos antigas + zip).
+    let falhasDelete = 0;
+    for (const id of idsOriginais) {
+      const ok = await apagarArquivoDrive(id).catch(() => false);
+      if (!ok) falhasDelete += 1;
+    }
+    etapas.limparAntigas = falhasDelete ? 'erro' : 'ok';
+
+    // 5) Mover a pasta para a pasta oficial da moto.
+    try {
+      const moved = await moverPastaDrive(pastaId, pastaMotoId, pastaRaizId);
+      etapas.moverPasta = moved ? 'ok' : 'erro';
+      if (!moved) {
+        resultado.status = 'erro';
+        resultado.mensagem = 'Fotos processadas, mas falhou ao mover a pasta para a moto.';
+        return resultado;
+      }
+    } catch (err: any) {
+      etapas.moverPasta = 'erro';
+      resultado.status = 'erro';
+      resultado.mensagem = `Fotos processadas, mas falhou ao mover a pasta: ${err?.message || err}`;
+      return resultado;
+    }
+
+    resultado.status = 'processado';
+    resultado.mensagem = falhasDelete
+      ? `Processado com ${falhasDelete} arquivo(s) antigo(s) que nao puderam ser apagados.`
+      : 'Processado com sucesso.';
+    return resultado;
+  } catch (err: any) {
+    resultado.status = 'erro';
+    resultado.mensagem = err?.message || String(err);
+    return resultado;
+  }
 }
 
 async function buscarFotosDriveSku(motoId: number, sku: string) {

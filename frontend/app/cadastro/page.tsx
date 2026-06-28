@@ -272,7 +272,15 @@ export default function CadastroPage() {
   const [filters, setFilters] = useState({ motoId: '', search: '', semDimensoes: '', comDimensoes: '', preCadastroCompleto: '' });
   const [verificandoFotos, setVerificandoFotos] = useState(false);
   const [searchInput, setSearchInput] = useState('');
-  const [paginaCadastro, setPaginaCadastro] = useState<'sku' | 'fotos' | 'categoria'>('sku');
+  const [paginaCadastro, setPaginaCadastro] = useState<'sku' | 'fotos-drive' | 'fotos' | 'categoria'>('sku');
+  // Aba "Fotos Drive" (processamento do zip do Canva)
+  const [fdModo, setFdModo] = useState<'data' | 'sku'>('data');
+  const [fdDataDe, setFdDataDe] = useState('');
+  const [fdDataAte, setFdDataAte] = useState('');
+  const [fdSku, setFdSku] = useState('');
+  const [fdScanning, setFdScanning] = useState(false);
+  const [fdProcessando, setFdProcessando] = useState(false);
+  const [fdItens, setFdItens] = useState<any[]>([]);
   const hoje = new Date().toISOString().slice(0, 10);
   const [fotosModo, setFotosModo] = useState<'skus' | 'data'>('data');
   const [fotosSkusInput, setFotosSkusInput] = useState('');
@@ -1302,6 +1310,164 @@ export default function CadastroPage() {
   const formOk = camposOk(form);
   const fotoCapaDisplayName = finalizarFotoCapaNome || (finalizarFotoCapa ? 'foto-capa.jpg' : '');
   const categoriaPercentual = categoriaProgresso.total > 0 ? Math.round((categoriaProgresso.atual / categoriaProgresso.total) * 100) : (categoriaBuscando || categoriaProcessando ? 12 : 100);
+  // ===== Aba Fotos Drive =====
+  async function fdEscanear() {
+    setFdScanning(true);
+    setFdItens([]);
+    try {
+      const params = new URLSearchParams();
+      if (fdModo === 'sku' && fdSku.trim()) params.set('sku', fdSku.trim());
+      if (fdModo === 'data') {
+        if (fdDataDe) params.set('dataDe', fdDataDe);
+        if (fdDataAte) params.set('dataAte', fdDataAte);
+      }
+      const d = await fetch(`${API}/cadastro/fotos-drive/scan?${params.toString()}`, { credentials: 'include' }).then(r => r.json());
+      if (d?.ok === false && !d?.pastas) throw new Error('Pasta raiz do Pré-Cadastro não configurada.');
+      setFdItens((d.pastas || []).map((p: any) => ({ ...p, status: 'pendente', etapas: null, mensagem: '' })));
+    } catch (e: any) {
+      alert(e?.message || 'Erro ao escanear pastas.');
+    }
+    setFdScanning(false);
+  }
+
+  async function fdProcessarUm(pastaId: string) {
+    setFdItens(prev => prev.map(i => i.pastaId === pastaId ? { ...i, status: 'processando' } : i));
+    try {
+      const d = await fetch(`${API}/cadastro/fotos-drive/processar`, {
+        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pastaId }),
+      }).then(r => r.json());
+      const r = d?.resultado || {};
+      setFdItens(prev => prev.map(i => i.pastaId === pastaId ? {
+        ...i, status: r.status || 'erro', etapas: r.etapas || null, mensagem: r.mensagem || '',
+        fotosGravadas: r.fotosGravadas, brancosDescartados: r.brancosDescartados,
+      } : i));
+    } catch (e: any) {
+      setFdItens(prev => prev.map(i => i.pastaId === pastaId ? { ...i, status: 'erro', mensagem: e?.message || 'Erro' } : i));
+    }
+  }
+
+  async function fdProcessarTodos() {
+    setFdProcessando(true);
+    const alvos = fdItens.filter(i => i.status === 'pendente' || i.status === 'erro');
+    for (const item of alvos) {
+      await fdProcessarUm(item.pastaId);
+    }
+    setFdProcessando(false);
+  }
+
+  const FD_ETAPAS: { key: string; label: string }[] = [
+    { key: 'extrairZip', label: 'Extrair Zip' },
+    { key: 'descartarBrancos', label: 'Descartar Brancos' },
+    { key: 'gravarFotos', label: 'Gravar Fotos' },
+    { key: 'limparAntigas', label: 'Limpar Antigas' },
+    { key: 'moverPasta', label: 'Mover p/ Moto' },
+  ];
+  function fdEtapaCell(item: any, key: string) {
+    const v = item.etapas?.[key];
+    if (item.status === 'processando' && !v) return <span style={{ color: '#9333ea' }}>⏳</span>;
+    if (v === 'ok') return <span style={{ color: '#16a34a', fontWeight: 700 }}>✓</span>;
+    if (v === 'erro') return <span style={{ color: '#dc2626', fontWeight: 700 }}>✗</span>;
+    if (v === 'pulado') return <span style={{ color: '#94a3b8' }}>–</span>;
+    return <span style={{ color: '#cbd5e1' }}>·</span>;
+  }
+  const fdPendentes = fdItens.filter(i => i.status === 'pendente' || i.status === 'erro').length;
+
+  const renderFotosDriveConteudo = () => (
+    <>
+      <div style={{ ...s.card, padding: isPhone ? '14px' : '18px' }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 4 }}>Processar fotos do Drive (zip do Canva)</div>
+        <div style={{ fontSize: 12, color: 'var(--gray-500)', marginBottom: 14, lineHeight: 1.5 }}>
+          Identifica pastas na raiz de Fotos Pendentes que têm um <b>.zip</b> + fotos fora do padrão. Para cada uma: extrai o zip, descarta os brancos (imagens idênticas), grava as fotos, apaga as antigas + o zip e <b>move a pasta para a pasta oficial da moto</b>.
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14, flexDirection: isPhone ? 'column' : 'row' }}>
+          {(['data', 'sku'] as const).map((modo) => (
+            <button key={modo} onClick={() => setFdModo(modo)}
+              style={{ ...s.btn, fontSize: 12, padding: '7px 14px', background: fdModo === modo ? 'var(--gray-800)' : 'var(--white)', color: fdModo === modo ? '#fff' : 'var(--gray-600)', border: '1px solid var(--border)' }}>
+              {modo === 'data' ? 'Por Data de Cadastro' : 'Por SKU'}
+            </button>
+          ))}
+        </div>
+        {fdModo === 'data' ? (
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+            <div><label style={{ fontSize: 11, color: 'var(--gray-500)' }}>De</label><input type="date" value={fdDataDe} onChange={e => setFdDataDe(e.target.value)} style={{ ...s.input, padding: '7px 10px' }} /></div>
+            <div><label style={{ fontSize: 11, color: 'var(--gray-500)' }}>Até</label><input type="date" value={fdDataAte} onChange={e => setFdDataAte(e.target.value)} style={{ ...s.input, padding: '7px 10px' }} /></div>
+            <div style={{ fontSize: 11.5, color: 'var(--gray-400)', alignSelf: 'center' }}>Vazio = processa a raiz toda.</div>
+          </div>
+        ) : (
+          <input value={fdSku} onChange={e => setFdSku(e.target.value)} placeholder="Ex: HD04_0041" style={{ ...s.input, maxWidth: 280 }} />
+        )}
+        <div style={{ marginTop: 14 }}>
+          <button onClick={fdEscanear} disabled={fdScanning || fdProcessando}
+            style={{ ...s.btn, background: '#7c3aed', color: '#fff', opacity: (fdScanning || fdProcessando) ? 0.7 : 1 }}>
+            {fdScanning ? 'Escaneando...' : 'Escanear pastas'}
+          </button>
+        </div>
+      </div>
+
+      {fdItens.length > 0 && (
+        <div style={{ ...s.card, padding: isPhone ? '12px' : '16px', marginTop: 14 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-800)' }}>
+              {fdItens.length} pasta(s) identificada(s){fdPendentes ? ` · ${fdPendentes} pendente(s)` : ''}
+            </div>
+            <button onClick={fdProcessarTodos} disabled={fdProcessando || fdScanning || fdPendentes === 0}
+              style={{ ...s.btn, background: '#16a34a', color: '#fff', opacity: (fdProcessando || fdPendentes === 0) ? 0.6 : 1 }}>
+              {fdProcessando ? 'Processando...' : `Processar ${fdPendentes} pasta(s)`}
+            </button>
+          </div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', minWidth: 920, borderCollapse: 'collapse' }}>
+              <thead><tr>
+                <th style={{ ...s.th, textAlign: 'left' }}>SKU</th>
+                <th style={{ ...s.th, textAlign: 'left' }}>Pasta</th>
+                {FD_ETAPAS.map(et => <th key={et.key} style={{ ...s.th, fontSize: 10, whiteSpace: 'nowrap' }}>{et.label}</th>)}
+                <th style={s.th}>Status</th>
+                <th style={s.th}>Ação</th>
+              </tr></thead>
+              <tbody>
+                {fdItens.map((item, i) => {
+                  const stColor = item.status === 'processado' ? { bg: '#f0fdf4', c: '#16a34a' }
+                    : item.status === 'erro' ? { bg: '#fef2f2', c: '#dc2626' }
+                    : item.status === 'processando' ? { bg: '#faf5ff', c: '#9333ea' }
+                    : { bg: '#f1f5f9', c: '#64748b' };
+                  return (
+                    <tr key={item.pastaId} style={{ background: i % 2 === 0 ? 'var(--white)' : 'var(--gray-50)' }}>
+                      <td style={{ ...s.td, fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: 'var(--blue-600)', whiteSpace: 'nowrap' }}>{item.sku}</td>
+                      <td style={{ ...s.td, fontSize: 11.5, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.mensagem || item.nome}>{item.nome}</td>
+                      {FD_ETAPAS.map(et => <td key={et.key} style={{ ...s.td, textAlign: 'center', fontSize: 13 }}>{fdEtapaCell(item, et.key)}</td>)}
+                      <td style={{ ...s.td, textAlign: 'center' }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 6, background: stColor.bg, color: stColor.c, whiteSpace: 'nowrap' }}>
+                          {item.status === 'processado' ? 'Processado' : item.status === 'erro' ? 'Erro' : item.status === 'processando' ? 'Processando' : 'Pendente'}
+                        </span>
+                        {item.brancosDescartados != null && item.status === 'processado' && (
+                          <div style={{ fontSize: 10, color: 'var(--gray-400)', marginTop: 2 }}>{item.fotosGravadas} fotos · {item.brancosDescartados} brancos</div>
+                        )}
+                      </td>
+                      <td style={{ ...s.td, textAlign: 'center' }}>
+                        <button onClick={() => fdProcessarUm(item.pastaId)} disabled={fdProcessando || item.status === 'processando'}
+                          style={{ ...s.btn, fontSize: 11, padding: '4px 10px', background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-700)', opacity: (fdProcessando || item.status === 'processando') ? 0.5 : 1 }}>
+                          {item.status === 'processado' ? 'Refazer' : 'Processar'}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {fdItens.some(i => i.status === 'erro' && i.mensagem) && (
+            <div style={{ marginTop: 12, display: 'grid', gap: 4 }}>
+              {fdItens.filter(i => i.status === 'erro' && i.mensagem).map(i => (
+                <div key={i.pastaId} style={{ fontSize: 11.5, color: '#dc2626' }}>⚠ <b>{i.sku}</b>: {i.mensagem}</div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  );
+
   const renderCategoriaConteudo = () => (
     <>
       <div style={{ ...s.card, padding: isPhone ? '14px' : '18px' }}>
@@ -1515,7 +1681,7 @@ export default function CadastroPage() {
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', width: isPhone ? '100%' : undefined, justifyContent: isPhone ? 'space-between' : 'flex-end' }}>
           <div style={{ display: 'inline-flex', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', background: 'var(--white)' }}>
-            {(['sku', 'fotos', 'categoria'] as const).map((tab, index, arr) => (
+            {(['sku', 'fotos-drive', 'fotos', 'categoria'] as const).map((tab, index, arr) => (
               <button
                 key={tab}
                 onClick={() => setPaginaCadastro(tab)}
@@ -1530,7 +1696,7 @@ export default function CadastroPage() {
                   cursor: 'pointer',
                 }}
               >
-                {tab === 'sku' ? 'SKU' : tab === 'fotos' ? 'Fotos' : 'Categoria'}
+                {tab === 'sku' ? 'SKU' : tab === 'fotos-drive' ? 'Fotos Drive' : tab === 'fotos' ? 'Fotos Anúncios' : 'Categoria'}
               </button>
             ))}
           </div>
@@ -1546,7 +1712,7 @@ export default function CadastroPage() {
       </div>
 
       <div style={{ padding: isPhone ? '14px' : '20px 24px' }}>
-        {paginaCadastro === 'categoria' ? renderCategoriaConteudo() : paginaCadastro === 'fotos' ? (
+        {paginaCadastro === 'categoria' ? renderCategoriaConteudo() : paginaCadastro === 'fotos-drive' ? renderFotosDriveConteudo() : paginaCadastro === 'fotos' ? (
           <>
             <div style={{ ...s.card, padding: isPhone ? '14px' : '18px' }}>
               <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 12 }}>Buscar SKUs para fotos</div>

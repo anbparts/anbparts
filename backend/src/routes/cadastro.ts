@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { compressDataUrlImage, normalizeImageFileName } from '../lib/image';
-import { buscarCadastroFotos, buscarCadastroFotosAnb, buscarCadastroFotosDrive, enviarCadastroFotosManual, processarCadastroFotos, verificarCadastroFotoSku, verificarFotosCadastroPeca, getPastaPreCadastroDoSku, apagarPastaDrive } from '../lib/fotos-cadastro';
+import { buscarCadastroFotos, buscarCadastroFotosAnb, buscarCadastroFotosDrive, enviarCadastroFotosManual, processarCadastroFotos, verificarCadastroFotoSku, verificarFotosCadastroPeca, getPastaPreCadastroDoSku, apagarPastaDrive, escanearFotosDrive, processarPastaFotosDrive } from '../lib/fotos-cadastro';
 import { blingReq, fetchProdutoLojaLinksByProductId, resolveBlingMercadoLivreItemId, resolveBlingMercadoLivreLinkWithFallback } from './bling';
 import { criarPastaPreCadastro } from './google-drive';
 import { mercadoLivreReq } from '../lib/mercado-livre';
@@ -862,6 +862,28 @@ cadastroRouter.post('/fotos/drive', async (req, res, next) => {
   try {
     const result = await buscarCadastroFotosDrive(req.body || {});
     res.json(result);
+  } catch (e) { next(e); }
+});
+
+// GET /cadastro/fotos-drive/scan — lista as pastas qualificadas (zip + fotos fora do padrao)
+cadastroRouter.get('/fotos-drive/scan', requireCadastroAction('enviar_fotos'), async (req, res, next) => {
+  try {
+    const result = await escanearFotosDrive({
+      sku: req.query?.sku,
+      dataDe: req.query?.dataDe,
+      dataAte: req.query?.dataAte,
+    });
+    res.json(result);
+  } catch (e) { next(e); }
+});
+
+// POST /cadastro/fotos-drive/processar — processa UMA pasta (zip -> fotos -> limpeza -> move)
+cadastroRouter.post('/fotos-drive/processar', requireCadastroAction('enviar_fotos'), async (req, res, next) => {
+  try {
+    const pastaId = String(req.body?.pastaId || '').trim();
+    if (!pastaId) return res.status(400).json({ ok: false, error: 'pastaId obrigatorio' });
+    const result = await processarPastaFotosDrive(pastaId);
+    res.json({ ok: result.status === 'processado', resultado: result });
   } catch (e) { next(e); }
 });
 
