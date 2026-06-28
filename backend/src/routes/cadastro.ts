@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { compressDataUrlImage, normalizeImageFileName } from '../lib/image';
-import { buscarCadastroFotos, buscarCadastroFotosAnb, buscarCadastroFotosDrive, enviarCadastroFotosManual, processarCadastroFotos, verificarCadastroFotoSku, verificarFotosCadastroPeca, getPastaPreCadastroDoSku, apagarPastaDrive, escanearFotosDrive, processarPastaFotosDrive } from '../lib/fotos-cadastro';
+import { buscarCadastroFotos, buscarCadastroFotosAnb, buscarCadastroFotosDrive, enviarCadastroFotosManual, processarCadastroFotos, verificarCadastroFotoSku, verificarFotosCadastroPeca, getPastaPreCadastroDoSku, apagarPastaDrive, escanearFotosDrive, processarPastaFotosDrive, novoResultadoFotoDrive } from '../lib/fotos-cadastro';
+import type { FotoDriveResultado } from '../lib/fotos-cadastro';
 import { blingReq, fetchProdutoLojaLinksByProductId, resolveBlingMercadoLivreItemId, resolveBlingMercadoLivreLinkWithFallback } from './bling';
 import { criarPastaPreCadastro } from './google-drive';
 import { mercadoLivreReq } from '../lib/mercado-livre';
@@ -877,13 +878,38 @@ cadastroRouter.get('/fotos-drive/scan', requireCadastroAction('enviar_fotos'), a
   } catch (e) { next(e); }
 });
 
-// POST /cadastro/fotos-drive/processar — processa UMA pasta (zip -> fotos -> limpeza -> move)
+// Jobs de processamento em memoria (por pastaId) — processa em segundo plano e a tela faz polling,
+// evitando timeout de requisicao em pastas com muitos arquivos.
+const fotosDriveJobs = new Map<string, FotoDriveResultado>();
+
+// POST /cadastro/fotos-drive/processar — inicia o processamento em segundo plano e retorna na hora.
 cadastroRouter.post('/fotos-drive/processar', requireCadastroAction('enviar_fotos'), async (req, res, next) => {
   try {
     const pastaId = String(req.body?.pastaId || '').trim();
     if (!pastaId) return res.status(400).json({ ok: false, error: 'pastaId obrigatorio' });
-    const result = await processarPastaFotosDrive(pastaId);
-    res.json({ ok: result.status === 'processado', resultado: result });
+
+    const jobAtual = fotosDriveJobs.get(pastaId);
+    if (jobAtual && jobAtual.status === 'processando') {
+      return res.json({ ok: true, jaRodando: true, resultado: jobAtual });
+    }
+
+    const resultado = novoResultadoFotoDrive(pastaId);
+    fotosDriveJobs.set(pastaId, resultado);
+    // Roda sem await — o progresso fica observavel via GET /fotos-drive/status.
+    processarPastaFotosDrive(pastaId, resultado).catch((err: any) => {
+      resultado.status = 'erro';
+      resultado.mensagem = err?.message || String(err);
+    });
+    res.json({ ok: true, iniciado: true, resultado });
+  } catch (e) { next(e); }
+});
+
+// GET /cadastro/fotos-drive/status?pastaId= — progresso atual do job (polling da tela).
+cadastroRouter.get('/fotos-drive/status', requireCadastroAction('enviar_fotos'), async (req, res, next) => {
+  try {
+    const pastaId = String(req.query?.pastaId || '').trim();
+    const resultado = fotosDriveJobs.get(pastaId) || null;
+    res.json({ ok: !!resultado, resultado });
   } catch (e) { next(e); }
 });
 

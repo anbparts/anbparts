@@ -1331,17 +1331,26 @@ export default function CadastroPage() {
   }
 
   async function fdProcessarUm(pastaId: string) {
-    setFdItens(prev => prev.map(i => i.pastaId === pastaId ? { ...i, status: 'processando' } : i));
+    setFdItens(prev => prev.map(i => i.pastaId === pastaId ? { ...i, status: 'processando', etapas: null, mensagem: '' } : i));
+    const aplica = (r: any) => setFdItens(prev => prev.map(i => i.pastaId === pastaId ? {
+      ...i, status: r.status || 'erro', etapas: r.etapas || null, mensagem: r.mensagem || '',
+      fotosGravadas: r.fotosGravadas, brancosDescartados: r.brancosDescartados,
+    } : i));
     try {
-      const d = await fetch(`${API}/cadastro/fotos-drive/processar`, {
+      // Inicia o processamento em segundo plano (retorna na hora — não dá timeout).
+      await fetch(`${API}/cadastro/fotos-drive/processar`, {
         method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pastaId }),
       }).then(r => r.json());
-      const r = d?.resultado || {};
-      setFdItens(prev => prev.map(i => i.pastaId === pastaId ? {
-        ...i, status: r.status || 'erro', etapas: r.etapas || null, mensagem: r.mensagem || '',
-        fotosGravadas: r.fotosGravadas, brancosDescartados: r.brancosDescartados,
-      } : i));
+      // Polling do progresso (até ~4 min).
+      for (let tentativa = 0; tentativa < 160; tentativa += 1) {
+        await new Promise(res => setTimeout(res, 1500));
+        const d = await fetch(`${API}/cadastro/fotos-drive/status?pastaId=${encodeURIComponent(pastaId)}`, { credentials: 'include' }).then(r => r.json());
+        const r = d?.resultado;
+        if (!r) continue;
+        aplica(r);
+        if (r.status === 'processado' || r.status === 'erro') break;
+      }
     } catch (e: any) {
       setFdItens(prev => prev.map(i => i.pastaId === pastaId ? { ...i, status: 'erro', mensagem: e?.message || 'Erro' } : i));
     }

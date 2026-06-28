@@ -476,7 +476,7 @@ export type FotoDriveResultado = {
   pastaId: string;
   sku: string;
   nome: string;
-  status: 'processado' | 'erro';
+  status: 'processando' | 'processado' | 'erro';
   mensagem: string;
   etapas: {
     extrairZip: FotoDriveEtapa;
@@ -489,15 +489,19 @@ export type FotoDriveResultado = {
   brancosDescartados: number;
 };
 
-// Processa UMA pasta de SKU: extrai o zip, descarta brancos (conteudo identico repetido),
-// grava as fotos boas, apaga as antigas + zip e move a pasta para a pasta oficial da moto.
-export async function processarPastaFotosDrive(pastaId: string): Promise<FotoDriveResultado> {
-  const etapas: FotoDriveResultado['etapas'] = {
-    extrairZip: 'pendente', descartarBrancos: 'pendente', gravarFotos: 'pendente', limparAntigas: 'pendente', moverPasta: 'pendente',
+// Cria o objeto de progresso inicial (usado tambem pelo job em segundo plano).
+export function novoResultadoFotoDrive(pastaId: string): FotoDriveResultado {
+  return {
+    pastaId, sku: '', nome: '', status: 'processando', mensagem: '', fotosGravadas: 0, brancosDescartados: 0,
+    etapas: { extrairZip: 'pendente', descartarBrancos: 'pendente', gravarFotos: 'pendente', limparAntigas: 'pendente', moverPasta: 'pendente' },
   };
-  const resultado: FotoDriveResultado = {
-    pastaId, sku: '', nome: '', status: 'erro', mensagem: '', etapas, fotosGravadas: 0, brancosDescartados: 0,
-  };
+}
+
+// Processa UMA pasta de SKU: extrai o zip, descarta brancos, grava as fotos boas, apaga as antigas
+// + zip e move a pasta para a pasta oficial da moto. Muta `resultado` ao longo do caminho para que
+// o progresso seja observavel por polling (job em segundo plano).
+export async function processarPastaFotosDrive(pastaId: string, resultado: FotoDriveResultado = novoResultadoFotoDrive(pastaId)): Promise<FotoDriveResultado> {
+  const etapas = resultado.etapas;
 
   try {
     const cfg = await getGoogleDriveConfig();
@@ -511,6 +515,7 @@ export async function processarPastaFotosDrive(pastaId: string): Promise<FotoDri
     // Valida a pasta da moto ANTES de qualquer acao destrutiva.
     const { pastaMotoId } = await resolverPastaMotoDoSku(resultado.sku);
     if (!pastaMotoId) {
+      resultado.status = 'erro';
       resultado.mensagem = `Sem pasta da moto configurada para o SKU ${resultado.sku} (verifique o cadastro do SKU e o mapeamento da moto). Nada foi alterado.`;
       return resultado;
     }
@@ -522,6 +527,7 @@ export async function processarPastaFotosDrive(pastaId: string): Promise<FotoDri
     );
     const zips = arquivos.filter((f: any) => ehArquivoZip(f.name));
     if (!zips.length) {
+      resultado.status = 'erro';
       resultado.mensagem = 'Nenhum arquivo .zip encontrado na pasta.';
       return resultado;
     }
@@ -541,12 +547,14 @@ export async function processarPastaFotosDrive(pastaId: string): Promise<FotoDri
       }
       if (!entradasImagens.length) {
         etapas.extrairZip = 'erro';
+        resultado.status = 'erro';
         resultado.mensagem = 'O zip nao contem imagens validas.';
         return resultado;
       }
       etapas.extrairZip = 'ok';
     } catch (err: any) {
       etapas.extrairZip = 'erro';
+      resultado.status = 'erro';
       resultado.mensagem = `Falha ao extrair o zip: ${err?.message || err}`;
       return resultado;
     }
@@ -571,6 +579,7 @@ export async function processarPastaFotosDrive(pastaId: string): Promise<FotoDri
     etapas.descartarBrancos = 'ok';
     if (!boas.length) {
       etapas.gravarFotos = 'erro';
+      resultado.status = 'erro';
       resultado.mensagem = 'Todas as imagens do zip foram identificadas como brancos do template. Nada a gravar.';
       return resultado;
     }
@@ -586,6 +595,7 @@ export async function processarPastaFotosDrive(pastaId: string): Promise<FotoDri
       etapas.gravarFotos = 'ok';
     } catch (err: any) {
       etapas.gravarFotos = 'erro';
+      resultado.status = 'erro';
       resultado.mensagem = `Falha ao gravar fotos do zip (nada foi apagado): ${err?.message || err}`;
       return resultado;
     }
