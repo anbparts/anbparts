@@ -1,9 +1,47 @@
 import { prisma } from './prisma';
 import { compressDataUrlImage, normalizeImageFileName } from './image';
 import { createHash } from 'crypto';
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const AdmZip: any = require('adm-zip');
+import { inflateRawSync } from 'zlib';
 const GOOGLE_DRIVE_UPLOAD_URL = 'https://www.googleapis.com/upload/drive/v3';
+
+// Leitor de ZIP nativo (sem dependencia externa). Le pela central directory:
+// suporta metodo 0 (stored) e 8 (deflate), que e o que o Canva exporta.
+function lerEntradasZip(buffer: Buffer): { nome: string; data: Buffer }[] {
+  const out: { nome: string; data: Buffer }[] = [];
+  // Localiza o End Of Central Directory (assinatura 0x06054b50), varrendo do fim.
+  let eocd = -1;
+  for (let i = buffer.length - 22; i >= 0; i -= 1) {
+    if (buffer.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error('Arquivo zip invalido (EOCD nao encontrado).');
+  const totalEntradas = buffer.readUInt16LE(eocd + 10);
+  let p = buffer.readUInt32LE(eocd + 16); // offset da central directory
+
+  for (let n = 0; n < totalEntradas; n += 1) {
+    if (p + 46 > buffer.length || buffer.readUInt32LE(p) !== 0x02014b50) break;
+    const metodo = buffer.readUInt16LE(p + 10);
+    const compSize = buffer.readUInt32LE(p + 20);
+    const nameLen = buffer.readUInt16LE(p + 28);
+    const extraLen = buffer.readUInt16LE(p + 30);
+    const commentLen = buffer.readUInt16LE(p + 32);
+    const localOffset = buffer.readUInt32LE(p + 42);
+    const nome = buffer.toString('utf8', p + 46, p + 46 + nameLen);
+    p += 46 + nameLen + extraLen + commentLen;
+
+    if (nome.endsWith('/')) continue; // diretorio
+    if (localOffset + 30 > buffer.length || buffer.readUInt32LE(localOffset) !== 0x04034b50) continue;
+    const lNameLen = buffer.readUInt16LE(localOffset + 26);
+    const lExtraLen = buffer.readUInt16LE(localOffset + 28);
+    const dataStart = localOffset + 30 + lNameLen + lExtraLen;
+    const comp = buffer.subarray(dataStart, dataStart + compSize);
+    let data: Buffer;
+    if (metodo === 0) data = Buffer.from(comp);
+    else if (metodo === 8) { try { data = inflateRawSync(comp); } catch { continue; } }
+    else continue; // metodo nao suportado
+    out.push({ nome, data });
+  }
+  return out;
+}
 
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const GOOGLE_DRIVE_URL = 'https://www.googleapis.com/drive/v3';
@@ -481,13 +519,11 @@ export async function processarPastaFotosDrive(pastaId: string): Promise<FotoDri
     let entradasImagens: { nome: string; buffer: Buffer; hash: string }[] = [];
     try {
       const zipBuffer = await downloadDriveArquivo(zips[0].id);
-      const zip = new AdmZip(zipBuffer);
-      const entries: any[] = zip.getEntries();
+      const entries = lerEntradasZip(zipBuffer);
       for (const e of entries) {
-        if (e.isDirectory) continue;
-        const nome = String(e.entryName || '').split('/').pop() || '';
+        const nome = String(e.nome || '').split('/').pop() || '';
         if (!/\.(png|jpe?g|webp)$/i.test(nome)) continue;
-        const buffer: Buffer = e.getData();
+        const buffer = e.data;
         if (!buffer || !buffer.length) continue;
         entradasImagens.push({ nome, buffer, hash: createHash('md5').update(buffer).digest('hex') });
       }
