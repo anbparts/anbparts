@@ -191,7 +191,7 @@ async function collectDetranAtivacao(limit: number) {
       emPrejuizo: false,
       cadastro: { gte: cutoff },
     },
-    select: { id: true, idPeca: true, descricao: true, detranEtiqueta: true, tipoPecaAvulsa: true, cadastro: true },
+    select: { id: true, idPeca: true, descricao: true, detranEtiqueta: true, tipoPecaAvulsa: true, cadastro: true, motoId: true },
     orderBy: { cadastro: 'desc' },
     take: limit * 4,
   });
@@ -207,9 +207,22 @@ async function collectDetranAtivacao(limit: number) {
     ativadas = new Set(rows.map((r) => `${Number(r.pecaId)}|${String(r.etiqueta).trim()}`));
   } catch { /* tabela ainda não migrada */ }
 
+  // Base da cartela de cada moto (para distinguir cartela de avulsa corretamente).
+  const motoIds = [...new Set(candidatas.map((c) => c.motoId))];
+  const motos = await prisma.moto.findMany({ where: { id: { in: motoIds } }, select: { id: true, detranCartelaId: true } });
+  const cartelaBaseByMoto = new Map<number, string>(motos.map((m) => [m.id, String(m.detranCartelaId || '')]));
+
+  // Cartela = posição 001-034 E base == prefixo da cartela da moto. Só avulsa precisa de ativação.
+  const ehCartelaDaMoto = (etq: string, base: string) => {
+    const s = String(etq || '').trim();
+    if (!base || s.length <= 3) return false;
+    const pos = Number(s.slice(-3));
+    return pos >= 1 && pos <= 34 && s.slice(0, -3) === base;
+  };
   const pendentes = candidatas.filter((c) => {
-    const etqs = String(c.detranEtiqueta || '').split('/').map((e) => e.trim()).filter(Boolean);
-    return etqs.some((etq) => !ativadas.has(`${c.id}|${etq}`));
+    const base = cartelaBaseByMoto.get(c.motoId) || '';
+    const avulsas = String(c.detranEtiqueta || '').split('/').map((e) => e.trim()).filter(Boolean).filter((e) => !ehCartelaDaMoto(e, base));
+    return avulsas.some((etq) => !ativadas.has(`${c.id}|${etq}`));
   }).slice(0, limit);
 
   return pendentes.map((row) => ({

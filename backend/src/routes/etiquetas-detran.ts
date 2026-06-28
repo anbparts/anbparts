@@ -29,6 +29,17 @@ function splitEtiquetas(value: unknown) {
     .filter(Boolean);
 }
 
+// Etiqueta é de cartela quando: termina em 001..034 (posição) E a base (sem os 3 dígitos)
+// é exatamente o prefixo da cartela da moto (detranCartelaId). Só a posição não basta —
+// uma avulsa pode coincidir nos últimos 3 dígitos; precisa bater a base da moto.
+function ehEtiquetaCartelaDaMoto(etq: unknown, cartelaBase: unknown) {
+  const s = String(etq || '').trim();
+  const base = String(cartelaBase || '').trim();
+  if (!base || s.length <= 3) return false;
+  const pos = Number(s.slice(-3));
+  return pos >= 1 && pos <= 34 && s.slice(0, -3) === base;
+}
+
 function normalizeFilterText(value: unknown) {
   return String(value || '')
     .normalize('NFD')
@@ -318,6 +329,11 @@ etiquetasDetranRouter.get('/', async (req, res, next) => {
       }
     }
 
+    const motosCartela = allMotoIds.length
+      ? await (prisma as any).moto.findMany({ where: { id: { in: allMotoIds } }, select: { id: true, detranCartelaId: true } })
+      : [];
+    const cartelaBaseByMoto = new Map<number, string>((motosCartela as any[]).map((m: any) => [m.id, String(m.detranCartelaId || '')]));
+
     const baixasMap = await loadBaixasPorEtiqueta(pecas.map((p) => p.id));
     const ativacoesMap = await loadAtivacoesPorEtiqueta(pecas.map((p) => p.id));
     const cutoffAtivacao = ativacaoCutoff();
@@ -356,6 +372,7 @@ etiquetasDetranRouter.get('/', async (req, res, next) => {
         // Acima de 30 dias ou já ativada = Ativa (a menos que esteja baixada).
         const ehAvulsaPendente = !etqBaixada
           && !cartelaTipo
+          && !ehEtiquetaCartelaDaMoto(etq, cartelaBaseByMoto.get(peca.motoId))
           && !!(peca as any).tipoPecaAvulsa
           && !ativacoesMap.has(`${peca.id}|${etq}`)
           && !!peca.cadastro && new Date(peca.cadastro) >= cutoffAtivacao;
@@ -763,7 +780,7 @@ etiquetasDetranRouter.get('/pendencias-ativacao', async (req, res, next) => {
     const [motos, posicoes, ativacoesMap] = await Promise.all([
       (prisma as any).moto.findMany({
         where: { id: { in: motoIds } },
-        select: { id: true, marca: true, modelo: true, renavam: true, placa: true, chassi: true, notaFiscalEntrada: true },
+        select: { id: true, marca: true, modelo: true, renavam: true, placa: true, chassi: true, notaFiscalEntrada: true, detranCartelaId: true },
       }),
       prisma.motoDetranPosicao.findMany({
         where: { motoId: { in: motoIds }, idPeca: { not: null } },
@@ -782,8 +799,10 @@ etiquetasDetranRouter.get('/pendencias-ativacao', async (req, res, next) => {
     for (const peca of pecas) {
       const moto: any = motoById.get(peca.motoId) || {};
       for (const etq of splitEtiquetas(peca.detranEtiqueta)) {
-        // Só etiquetas avulsas (que não pertencem a uma cartela da moto).
+        // Só etiquetas avulsas: nem cadastradas na cartela (MotoDetranPosicao),
+        // nem cuja base bate com a cartela da moto (detranCartelaId) + posição 001-034.
         if (cartelaSet.has(`${peca.motoId}|${peca.idPeca}|${etq}`)) continue;
+        if (ehEtiquetaCartelaDaMoto(etq, moto.detranCartelaId)) continue;
         // Já ativada → não é pendência.
         if (ativacoesMap.has(`${peca.id}|${etq}`)) continue;
         linhas.push({
