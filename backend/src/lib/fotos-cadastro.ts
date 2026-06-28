@@ -1284,11 +1284,15 @@ export async function processarCadastroFotos(rowsInput: CadastroFotosRowInput[])
       try {
         const capa = drive.fotos[0];
         const { fotoCapaNome, fotoCapaArquivo } = await prepararFotoCapaAnb(capa, sku);
-        await prisma.peca.update({
-          where: { id: peca.id },
+        // Aplica a capa na base E em todas as variacoes do SKU (-2, -3, ...).
+        const upd = await prisma.peca.updateMany({
+          where: { OR: [
+            { idPeca: { equals: sku, mode: 'insensitive' } },
+            { idPeca: { startsWith: `${sku}-`, mode: 'insensitive' } },
+          ] },
           data: { fotoCapaNome, fotoCapaArquivo },
         });
-        detalhes.push({ sistema: 'anb', ok: true, enviada: 1, nome: fotoCapaNome });
+        detalhes.push({ sistema: 'anb', ok: true, enviada: Math.max(1, upd.count), nome: fotoCapaNome });
       } catch (e: any) {
         detalhes.push({ sistema: 'anb', ok: false, error: e?.message || String(e) });
       }
@@ -1403,8 +1407,12 @@ export async function enviarCadastroFotosManual(input: {
     const drivePrepared = origem === 'drive' ? await prepararFotoCapaAnb(fotosSelecionadas[0], sku) : null;
     const fotoCapaNome = drivePrepared?.fotoCapaNome || normalizeImageFileName(buildAnbFotoCapaNome(sku, prepared?.extension || 'jpg'), prepared?.extension || 'jpg');
     const fotoCapaArquivo = drivePrepared?.fotoCapaArquivo || prepared?.dataUrl || '';
-    await prisma.peca.update({
-      where: { id: peca.id },
+    // Aplica a capa na base E em todas as variacoes do SKU (-2, -3, ...).
+    await prisma.peca.updateMany({
+      where: { OR: [
+        { idPeca: { equals: sku, mode: 'insensitive' } },
+        { idPeca: { startsWith: `${sku}-`, mode: 'insensitive' } },
+      ] },
       data: { fotoCapaNome, fotoCapaArquivo },
     });
     return {
