@@ -6,6 +6,7 @@ import { blingReq, fetchProdutoLojaLinksByProductId, resolveBlingMercadoLivreIte
 import { criarPastaPreCadastro } from './google-drive';
 import { mercadoLivreReq } from '../lib/mercado-livre';
 import { nuvemReq, buscarProdutoNuvemshopPorSku } from './nuvemshop';
+import { sendDetranAtivacaoEmailIfNeeded } from '../lib/detran-alert';
 
 const CAMPOS_COMPLETOS_WHERE = {
   peso: { not: null as null },
@@ -1041,6 +1042,37 @@ cadastroRouter.post('/:id/finalizar', requireCadastroAction('criar_bling'), asyn
       }
 
       await prisma.cadastroPeca.update({ where: { id }, data: { status: 'cadastrado' } });
+
+      // Etiqueta avulsa recém-criada precisa de ativação no DETRAN → dispara o e-mail (best-effort).
+      if (cadastro.tipoPecaAvulsa) {
+        try {
+          const motoAtivacao = await prisma.moto.findUnique({
+            where: { id: cadastro.motoId },
+            select: { marca: true, modelo: true, renavam: true, placa: true, chassi: true, notaFiscalEntrada: true } as any,
+          }) as any;
+          const itensAtivacao = pecasCriadas.flatMap((p: any) =>
+            String(p.detranEtiqueta || '')
+              .split('/')
+              .map((e: string) => e.trim())
+              .filter(Boolean)
+              .map((etq: string) => ({
+                idPeca: p.idPeca,
+                descricao: p.descricao,
+                etiqueta: etq,
+                tipoPeca: cadastro.tipoPecaAvulsa,
+                motoLabel: motoAtivacao ? [motoAtivacao.marca, motoAtivacao.modelo].filter(Boolean).join(' ') : null,
+                renavam: motoAtivacao?.renavam || null,
+                placa: motoAtivacao?.placa || null,
+                chassi: motoAtivacao?.chassi || null,
+                notaFiscalEntrada: motoAtivacao?.notaFiscalEntrada || null,
+              })),
+          );
+          await sendDetranAtivacaoEmailIfNeeded(itensAtivacao);
+        } catch (err) {
+          console.error('[ativacao-email] falha ao enviar alerta de ativacao:', err);
+        }
+      }
+
       return res.json({ ok: true, pecasCriadas, diff });
     }
 

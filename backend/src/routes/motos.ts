@@ -142,6 +142,7 @@ const motoSchema = z.object({
   valorFipe:         z.number().optional().nullable(),
   observacoes:       z.string().optional().nullable(),
   etiquetaSkuLabel:  z.string().optional().nullable(),
+  notaFiscalEntrada: z.string().optional().nullable(),
 });
 
 const detranEtiquetaStatusSchema = z.object({
@@ -311,6 +312,7 @@ motosRouter.get('/', async (req, res, next) => {
           observacoes: true,
           descricaoModelo: true,
           etiquetaSkuLabel: true,
+          notaFiscalEntrada: true,
           // anexos (Json com base64) NAO entra aqui — contamos via query separada abaixo.
         },
         orderBy: { id: 'asc' }
@@ -451,6 +453,7 @@ motosRouter.get('/', async (req, res, next) => {
         observacoes:    m.observacoes,
         descricaoModelo: m.descricaoModelo,
         etiquetaSkuLabel: m.etiquetaSkuLabel,
+        notaFiscalEntrada: m.notaFiscalEntrada,
         qtdDisp:        disponiveis.qtd,
         qtdVendidas:    vendidas.qtd,
         receitaTotal:   receita,
@@ -743,7 +746,7 @@ motosRouter.get('/:id', async (req, res, next) => {
 motosRouter.post('/', requireMotosAction('criar'), async (req, res, next) => {
   try {
     const data = motoSchema.parse(req.body);
-    const moto = await prisma.moto.create({
+    const moto = await (prisma as any).moto.create({
       data: {
         ...data,
         dataCompra: data.dataCompra ? new Date(data.dataCompra) : null,
@@ -757,7 +760,7 @@ motosRouter.post('/', requireMotosAction('criar'), async (req, res, next) => {
 motosRouter.put('/:id', requireMotosAction('editar'), async (req, res, next) => {
   try {
     const data = motoSchema.partial().parse(req.body);
-    const moto = await prisma.moto.update({
+    const moto = await (prisma as any).moto.update({
       where: { id: Number(req.params.id) },
       data: {
         ...data,

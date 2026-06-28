@@ -29,6 +29,7 @@ model Moto {
   etiquetaSkuLabel  String?  // Abreviação para etiqueta SKU (ex: "HD ULTRA")
   sufixoTitulo      String?  // Sufixo do título do anúncio (ex: "YAMAHA CROSSER 2024")
   detranCartelaId   String?  // Prefixo/ID da cartela Detran (ex: "SP22102017701")
+  notaFiscalEntrada String?  // Nº da Nota Fiscal de Entrada da moto (usado na ativação de etiqueta avulsa)
   anexos            Json     @default("{}")
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
@@ -81,6 +82,7 @@ model Peca {
   prejuizo    Prejuizo?
   devolucoes  HistoricoDevolucao[]
   detranEtiquetaBaixas DetranEtiquetaBaixa[]
+  detranEtiquetaAtivacoes DetranEtiquetaAtivacao[]
 
   @@index([localizacao])
   @@index([mercadoLivreItemId])
@@ -619,6 +621,21 @@ model DetranEtiquetaBaixa {
   pecaId             Int
   etiqueta           String
   baixadaEm          DateTime @default(now())
+  comprovanteNome    String?
+  comprovanteArquivo String?  @db.Text
+  peca               Peca     @relation(fields: [pecaId], references: [id], onDelete: Cascade)
+
+  @@unique([pecaId, etiqueta])
+  @@index([pecaId])
+}
+
+// Ativação (entrada no DETRAN) de etiqueta avulsa, por etiqueta individual.
+// A presença de uma linha = aquela etiqueta avulsa foi ativada/confirmada.
+model DetranEtiquetaAtivacao {
+  id                 Int      @id @default(autoincrement())
+  pecaId             Int
+  etiqueta           String
+  ativadaEm          DateTime @default(now())
   comprovanteNome    String?
   comprovanteArquivo String?  @db.Text
   peca               Peca     @relation(fields: [pecaId], references: [id], onDelete: Cascade)

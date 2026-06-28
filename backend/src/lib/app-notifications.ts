@@ -36,8 +36,8 @@ export const APP_NOTIFICATION_CATALOG: NotificationType[] = [
   },
   {
     key: 'detran_baixa',
-    label: 'Baixa Detran',
-    description: 'Avisa etiquetas Detran pendentes de baixa.',
+    label: 'Etiqueta Detran',
+    description: 'Avisa etiquetas Detran pendentes de baixa (venda) e de ativação (etiqueta avulsa nova).',
     pageKey: 'etiquetas_detran',
     actionKey: 'processar_baixa',
     href: '/etiquetas-detran',
@@ -180,13 +180,64 @@ async function collectDetranBaixa(limit: number) {
   }));
 }
 
+// Etiquetas avulsas pendentes de ativação: tipoPecaAvulsa, cadastro <= 30 dias e com ao menos
+// uma etiqueta sem ativação registrada. Acima de 30 dias é assumida ativa.
+async function collectDetranAtivacao(limit: number) {
+  const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const candidatas = await prisma.peca.findMany({
+    where: {
+      tipoPecaAvulsa: { not: null },
+      detranEtiqueta: { not: null },
+      emPrejuizo: false,
+      cadastro: { gte: cutoff },
+    },
+    select: { id: true, idPeca: true, descricao: true, detranEtiqueta: true, tipoPecaAvulsa: true, cadastro: true },
+    orderBy: { cadastro: 'desc' },
+    take: limit * 4,
+  });
+  if (!candidatas.length) return [];
+
+  // Etiquetas já ativadas (para excluir peças cujas etiquetas estão todas ativadas).
+  let ativadas = new Set<string>();
+  try {
+    const ids = candidatas.map((c) => c.id);
+    const rows = await prisma.$queryRawUnsafe<{ pecaId: number; etiqueta: string }[]>(
+      `SELECT "pecaId", "etiqueta" FROM "DetranEtiquetaAtivacao" WHERE "pecaId" IN (${ids.join(',')})`,
+    );
+    ativadas = new Set(rows.map((r) => `${Number(r.pecaId)}|${String(r.etiqueta).trim()}`));
+  } catch { /* tabela ainda não migrada */ }
+
+  const pendentes = candidatas.filter((c) => {
+    const etqs = String(c.detranEtiqueta || '').split('/').map((e) => e.trim()).filter(Boolean);
+    return etqs.some((etq) => !ativadas.has(`${c.id}|${etq}`));
+  }).slice(0, limit);
+
+  return pendentes.map((row) => ({
+    type: 'detran_baixa',
+    itemKey: `ativacao-${row.id}`,
+    title: `Ativar etiqueta - ${row.idPeca}`,
+    description: shortText(row.descricao),
+    href: '/etiquetas-detran',
+    createdAt: row.cadastro,
+    meta: row.tipoPecaAvulsa ? String(row.tipoPecaAvulsa) : 'Etiqueta avulsa',
+  }));
+}
+
+async function collectDetranBaixaEAtivacao(limit: number) {
+  const [baixa, ativacao] = await Promise.all([
+    collectDetranBaixa(limit),
+    collectDetranAtivacao(limit),
+  ]);
+  return [...baixa, ...ativacao];
+}
+
 export async function collectNotificationsForTypes(types: string[], limitPerType = 20) {
   const enabled = new Set(types);
   const groups = await Promise.all([
     enabled.has('ml_questions') ? collectMlQuestions(limitPerType) : [],
     enabled.has('cadastro_pre_cadastro') ? collectPreCadastros(limitPerType) : [],
     enabled.has('pagamentos_dia') ? collectPagamentosDia(limitPerType) : [],
-    enabled.has('detran_baixa') ? collectDetranBaixa(limitPerType) : [],
+    enabled.has('detran_baixa') ? collectDetranBaixaEAtivacao(limitPerType) : [],
   ]);
 
   return groups.flat().sort((a, b) => {

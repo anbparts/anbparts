@@ -24,9 +24,21 @@ const s: any = {
 const STATUS_COLORS: Record<string, { bg: string; color: string }> = {
   Ativa: { bg: '#ecfdf3', color: '#16a34a' },
   Baixada: { bg: '#fef2f2', color: '#dc2626' },
+  'Pendente Ativação': { bg: '#fff7ed', color: '#c2410c' },
   'Pré-Cadastro': { bg: '#eff6ff', color: '#2563eb' },
   '-': { bg: '#f1f5f9', color: '#94a3b8' },
 };
+
+const ATIVACAO_COLUMNS = [
+  { key: 'sku', label: 'SKU' },
+  { key: 'descricao', label: 'Descricao' },
+  { key: 'tipoPeca', label: 'Tipo de Peca' },
+  { key: 'etiqueta', label: 'Nº Peca Avulsa' },
+  { key: 'renavam', label: 'Renavam' },
+  { key: 'placa', label: 'Placa' },
+  { key: 'chassi', label: 'Chassi' },
+  { key: 'notaFiscalEntrada', label: 'NF Entrada' },
+];
 
 const TIPO_ETQ_COLORS: Record<string, { bg: string; color: string }> = {
   Cartela: { bg: '#eff6ff', color: '#1d4ed8' },
@@ -173,6 +185,11 @@ export default function EtiquetasDetranPage() {
   const [modalBaixa, setModalBaixa] = useState<any | null>(null);
   const [comprovanteDataUrl, setComprovanteDataUrl] = useState<string | null>(null);
   const [comprovanteNome, setComprovanteNome] = useState<string>('');
+  const [modalAtivacao, setModalAtivacao] = useState(false);
+  const [ativacoes, setAtivacoes] = useState<any[]>([]);
+  const [loadingAtivacoes, setLoadingAtivacoes] = useState(false);
+  const [modalAtivar, setModalAtivar] = useState<any | null>(null);
+  const [confirmandoAtivacao, setConfirmandoAtivacao] = useState<string | null>(null);
   const [pendenciasDevOpen, setPendenciasDevOpen] = useState(false);
   const [pendenciasDev, setPendenciasDev] = useState<any[]>([]);
   const [loadingPendenciasDev, setLoadingPendenciasDev] = useState(false);
@@ -371,6 +388,58 @@ export default function EtiquetasDetranPage() {
     setConfirmando(null);
   }
 
+  async function abrirPendenciasAtivacao() {
+    if (!canProcessarBaixa) {
+      alert('Seu usuario nao tem permissao para processar etiquetas Detran.');
+      return;
+    }
+    setModalAtivacao(true);
+    setLoadingAtivacoes(true);
+    try {
+      const resp = await fetch(`${API}/etiquetas-detran/pendencias-ativacao`, { credentials: 'include' });
+      const data = await resp.json();
+      setAtivacoes(data.linhas || []);
+    } catch {
+      setAtivacoes([]);
+    }
+    setLoadingAtivacoes(false);
+  }
+
+  function abrirModalAtivar(linha: any) {
+    if (!canProcessarBaixa) {
+      alert('Seu usuario nao tem permissao para processar etiquetas Detran.');
+      return;
+    }
+    setModalAtivar(linha);
+    setComprovanteDataUrl(null);
+    setComprovanteNome('');
+  }
+
+  async function confirmarAtivacao() {
+    if (!modalAtivar || !canProcessarBaixa) return;
+    const linha = modalAtivar;
+    const key = `${linha.pecaId}|${linha.etiqueta}`;
+    setConfirmandoAtivacao(key);
+    try {
+      const resp = await fetch(`${API}/etiquetas-detran/${linha.pecaId}/confirmar-ativacao`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          etiqueta: linha.etiqueta,
+          comprovanteNome:    comprovanteNome    || null,
+          comprovanteArquivo: comprovanteDataUrl || null,
+        }),
+      });
+      if (!resp.ok) throw new Error('Erro ao confirmar ativacao');
+      setModalAtivar(null);
+      // Remove só a etiqueta confirmada (uma peça pode ter mais de uma etiqueta avulsa).
+      setAtivacoes((prev) => prev.filter((p) => !(p.pecaId === linha.pecaId && p.etiqueta === linha.etiqueta)));
+      await buscar();
+    } catch {}
+    setConfirmandoAtivacao(null);
+  }
+
   async function salvarNovaEtiquetaDevolucao(peca: any) {
     if (!canProcessarDevolucao) {
       alert('Seu usuario nao tem permissao para processar devolucao de etiquetas.');
@@ -446,6 +515,11 @@ export default function EtiquetasDetranPage() {
           {canProcessarBaixa && (
           <button style={{ ...s.btn, background: '#7c3aed', color: '#fff', width: isPhone ? '100%' : undefined }} onClick={abrirPendencias}>
             Pendencias Baixa
+          </button>
+          )}
+          {canProcessarBaixa && (
+          <button style={{ ...s.btn, background: '#c2410c', color: '#fff', width: isPhone ? '100%' : undefined }} onClick={abrirPendenciasAtivacao}>
+            Pendencias Etiqueta Avulsa
           </button>
           )}
           <label style={{ ...s.btn, background: '#059669', color: '#fff', width: isPhone ? '100%' : undefined, cursor: validacaoLoading ? 'wait' : 'pointer', opacity: validacaoLoading ? 0.7 : 1 }}>
@@ -845,6 +919,132 @@ export default function EtiquetasDetranPage() {
                 disabled={!!confirmando}
                 style={{ ...s.btn, background: '#16a34a', color: '#fff', opacity: confirmando ? 0.7 : 1, width: isPhone ? '100%' : undefined }}>
                 {confirmando ? 'Salvando...' : 'Confirmar Baixa'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Modal Pendências Etiqueta Avulsa (Ativação) */}
+      {modalAtivacao && (
+        <div onClick={() => setModalAtivacao(false)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.55)', zIndex: 320, display: 'flex', alignItems: isPhone ? 'stretch' : 'center', justifyContent: 'center', padding: isPhone ? 0 : 24, backdropFilter: 'blur(2px)' }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background: 'var(--white)', borderRadius: isPhone ? 0 : 12, width: isPhone ? '100%' : 'min(1320px, calc(100vw - 48px))', maxHeight: isPhone ? '100dvh' : '88vh', minHeight: isPhone ? '100dvh' : undefined, overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: isPhone ? 'none' : '0 24px 70px rgba(2, 6, 23, 0.28)', border: '1px solid rgba(226,232,240,0.95)' }}>
+            <div style={{ padding: isPhone ? '14px' : '18px 22px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: isPhone ? 'stretch' : 'center', justifyContent: 'space-between', gap: 12, background: 'var(--white)', flexDirection: isPhone ? 'column' : 'row' }}>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--gray-800)' }}>Pendencias de Ativação — Etiqueta Avulsa</div>
+                <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>
+                  {loadingAtivacoes ? 'Carregando...' : `${ativacoes.length} etiqueta(s) avulsa(s) pendente(s) de ativação (cadastro nos últimos 30 dias)`}
+                </div>
+              </div>
+              <button onClick={() => setModalAtivacao(false)}
+                style={{ ...s.btn, background: 'var(--gray-100)', color: 'var(--gray-600)', border: '1px solid var(--border)', width: isPhone ? '100%' : undefined }}>
+                Fechar
+              </button>
+            </div>
+
+            <div style={{ overflow: 'auto', flex: 1, background: 'var(--white)' }}>
+              {loadingAtivacoes ? (
+                <div style={{ textAlign: 'center', padding: 60, color: 'var(--gray-400)' }}>Carregando etiquetas avulsas...</div>
+              ) : ativacoes.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: 60, color: 'var(--gray-400)' }}>Nenhuma etiqueta avulsa pendente de ativação</div>
+              ) : isPhone ? (
+                <div style={{ padding: 12, display: 'grid', gap: 10, background: '#f8fafc' }}>
+                  {ativacoes.map((linha) => {
+                    const key = `${linha.pecaId}|${linha.etiqueta}`;
+                    return (
+                      <div key={key} style={{ border: '1px solid var(--border)', borderRadius: 12, background: 'var(--white)', padding: 12, display: 'grid', gap: 10 }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 12, fontWeight: 700, color: '#c2410c' }}>{linha.sku}</div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-800)', marginTop: 3, lineHeight: 1.25 }}>{linha.descricao || '-'}</div>
+                          <div style={{ fontSize: 11.5, color: 'var(--gray-500)', marginTop: 2 }}>{linha.motoLabel || '-'}</div>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                          {[['Tipo de Peça', linha.tipoPeca], ['Nº Peça Avulsa', linha.etiqueta], ['Placa', linha.placa], ['Chassi', linha.chassi], ['Renavam', linha.renavam], ['NF Entrada', linha.notaFiscalEntrada]].map(([lbl, val]) => (
+                            <div key={String(lbl)} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 8 }}>
+                              <div style={{ fontSize: 10, color: 'var(--gray-500)', marginBottom: 3 }}>{lbl}</div>
+                              <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11.5 }}>{val || '-'}</div>
+                            </div>
+                          ))}
+                        </div>
+                        <button onClick={() => abrirModalAtivar(linha)} disabled={confirmandoAtivacao === key}
+                          style={{ ...s.btn, background: '#c2410c', color: '#fff', padding: '9px 12px', fontSize: 12, opacity: confirmandoAtivacao === key ? 0.6 : 1, width: '100%' }}>
+                          {confirmandoAtivacao === key ? 'Salvando...' : 'Confirmar Ativação'}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <table style={{ width: '100%', minWidth: 1180, borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      {ATIVACAO_COLUMNS.map((c) => <th key={c.key} style={s.th}>{c.label}</th>)}
+                      <th style={s.th}>Acao</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ativacoes.map((linha, i) => {
+                      const key = `${linha.pecaId}|${linha.etiqueta}`;
+                      return (
+                        <tr key={key} style={{ background: i % 2 === 0 ? 'var(--white)' : 'var(--gray-50)' }}>
+                          <td style={{ ...s.td, fontFamily: 'Geist Mono, monospace', fontWeight: 700, whiteSpace: 'nowrap' }}>{linha.sku}</td>
+                          <td style={{ ...s.td, fontSize: 12, lineHeight: 1.25, maxWidth: 240 }}>{linha.descricao || '-'}</td>
+                          <td style={{ ...s.td, fontSize: 12 }}>{linha.tipoPeca || '-'}</td>
+                          <td style={{ ...s.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, fontWeight: 700, color: '#c2410c', whiteSpace: 'nowrap' }}>{linha.etiqueta}</td>
+                          <td style={{ ...s.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, whiteSpace: 'nowrap' }}>{linha.renavam || '-'}</td>
+                          <td style={{ ...s.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, whiteSpace: 'nowrap' }}>{linha.placa || '-'}</td>
+                          <td style={{ ...s.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, whiteSpace: 'nowrap' }}>{linha.chassi || '-'}</td>
+                          <td style={{ ...s.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, whiteSpace: 'nowrap' }}>{linha.notaFiscalEntrada || '-'}</td>
+                          <td style={{ ...s.td, whiteSpace: 'nowrap' }}>
+                            <button onClick={() => abrirModalAtivar(linha)} disabled={confirmandoAtivacao === key}
+                              style={{ ...s.btn, background: '#c2410c', color: '#fff', padding: '5px 12px', fontSize: 12, opacity: confirmandoAtivacao === key ? 0.6 : 1 }}>
+                              {confirmandoAtivacao === key ? 'Salvando...' : 'Confirmar Ativação'}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Modal de Confirmação de Ativação */}
+      {modalAtivar && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 500, display: 'flex', alignItems: isPhone ? 'stretch' : 'center', justifyContent: 'center', padding: isPhone ? 0 : 24, backdropFilter: 'blur(2px)' }}>
+          <div style={{ background: 'var(--white)', borderRadius: isPhone ? 0 : 14, width: '100%', maxWidth: isPhone ? undefined : 480, minHeight: isPhone ? '100dvh' : undefined, boxShadow: isPhone ? 'none' : '0 16px 40px rgba(0,0,0,.15)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ padding: isPhone ? '16px 14px' : '18px 22px', borderBottom: '1px solid var(--border)' }}>
+              <div style={{ fontFamily: 'Fraunces, serif', fontSize: 16, fontWeight: 600 }}>Confirmar Ativação de Etiqueta Avulsa</div>
+              <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 3 }}>{modalAtivar.sku} — {modalAtivar.etiqueta}</div>
+            </div>
+            <div style={{ padding: isPhone ? 14 : '18px 22px', flex: 1 }}>
+              <div style={{ fontSize: 13, color: 'var(--ink-soft)', marginBottom: 16 }}>
+                Confirma que esta etiqueta avulsa foi ativada (entrada) no DETRAN? Você pode anexar o comprovante (opcional).
+              </div>
+              <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px', background: 'var(--gray-50)' }}>
+                <div style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--ink-soft)', marginBottom: 8 }}>COMPROVANTE (opcional)</div>
+                {comprovanteDataUrl ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ fontSize: 12, color: 'var(--ink)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>✓ {comprovanteNome}</span>
+                    <button onClick={() => { setComprovanteDataUrl(null); setComprovanteNome(''); }}
+                      style={{ ...s.btn, fontSize: 11, padding: '4px 10px', color: 'var(--red-light)', borderColor: 'var(--red-light)' }}>Remover</button>
+                  </div>
+                ) : (
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, color: 'var(--ink-soft)', padding: '6px 12px', border: '1px dashed var(--border)', borderRadius: 8 }}>
+                    📎 Anexar comprovante
+                    <input type="file" accept="image/*,application/pdf" style={{ display: 'none' }} onChange={handleComprovanteChange} />
+                  </label>
+                )}
+              </div>
+            </div>
+            <div style={{ padding: isPhone ? '12px 14px calc(12px + env(safe-area-inset-bottom))' : '14px 22px 20px', display: 'flex', gap: 10, justifyContent: 'flex-end', flexDirection: isPhone ? 'column-reverse' : 'row' }}>
+              <button onClick={() => setModalAtivar(null)} style={{ ...s.btn, color: 'var(--ink-soft)', width: isPhone ? '100%' : undefined }}>Cancelar</button>
+              <button onClick={confirmarAtivacao} disabled={!!confirmandoAtivacao}
+                style={{ ...s.btn, background: '#c2410c', color: '#fff', opacity: confirmandoAtivacao ? 0.7 : 1, width: isPhone ? '100%' : undefined }}>
+                {confirmandoAtivacao ? 'Salvando...' : 'Confirmar Ativação'}
               </button>
             </div>
           </div>

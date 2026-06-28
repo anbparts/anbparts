@@ -116,3 +116,99 @@ export async function sendDetranBaixaEmailIfNeeded(items: DetranBaixaEmailItem[]
 
   return { attempted: true, sent: true, skipped: false, total: targets.length };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Ativação de etiqueta avulsa — reaproveita a mesma config DETRAN (remetente,
+// destinatário e Resend), só muda o conteúdo/assunto.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type DetranAtivacaoEmailItem = {
+  idPeca: string;
+  descricao: string;
+  etiqueta: string;
+  tipoPeca?: string | null;
+  motoLabel?: string | null;
+  renavam?: string | null;
+  placa?: string | null;
+  chassi?: string | null;
+  notaFiscalEntrada?: string | null;
+};
+
+function renderAtivacaoEmailHtml(items: DetranAtivacaoEmailItem[]) {
+  const rows = items.map((item) => `
+    <tr>
+      <td style="padding:12px 12px;border-bottom:1px solid #e2e8f0;font-family:'JetBrains Mono',Consolas,monospace;font-size:12px;color:#0f172a;">${escapeHtml(item.idPeca)}</td>
+      <td style="padding:12px 12px;border-bottom:1px solid #e2e8f0;font-size:13px;color:#0f172a;">${escapeHtml(item.tipoPeca || '-')}</td>
+      <td style="padding:12px 12px;border-bottom:1px solid #e2e8f0;font-family:'JetBrains Mono',Consolas,monospace;font-size:12px;font-weight:700;color:#1d4ed8;">${escapeHtml(item.etiqueta)}</td>
+      <td style="padding:12px 12px;border-bottom:1px solid #e2e8f0;font-size:13px;color:#475569;">${escapeHtml(item.motoLabel || '-')}</td>
+      <td style="padding:12px 12px;border-bottom:1px solid #e2e8f0;font-size:12px;color:#0f172a;">${escapeHtml(item.placa || '-')}</td>
+      <td style="padding:12px 12px;border-bottom:1px solid #e2e8f0;font-family:'JetBrains Mono',Consolas,monospace;font-size:12px;color:#0f172a;">${escapeHtml(item.chassi || '-')}</td>
+      <td style="padding:12px 12px;border-bottom:1px solid #e2e8f0;font-family:'JetBrains Mono',Consolas,monospace;font-size:12px;color:#0f172a;">${escapeHtml(item.renavam || '-')}</td>
+      <td style="padding:12px 12px;border-bottom:1px solid #e2e8f0;font-size:12px;color:#0f172a;">${escapeHtml(item.notaFiscalEntrada || '-')}</td>
+    </tr>
+  `).join('');
+
+  const th = (label: string) => `<th style="text-align:left;padding:0 12px 12px 12px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#64748b;border-bottom:1px solid #dbe3ef;">${label}</th>`;
+
+  return renderAlertEmailLayout({
+    eyebrow: 'ANB Parts - Etiqueta Avulsa',
+    title: 'Etiquetas avulsas pendentes de ativacao',
+    subtitle: 'Faça a entrada/ativação das etiquetas abaixo no DETRAN e confirme no sistema.',
+    summaryHtml: renderEmailMetricCard('Etiquetas a ativar', items.length, { tone: 'info' }),
+    contentHtml: renderEmailPanel(`
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;">
+        <thead><tr>${th('SKU')}${th('Tipo de Peca')}${th('Etiqueta')}${th('Moto')}${th('Placa')}${th('Chassi')}${th('Renavam')}${th('NF Entrada')}</tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `, { padding: '18px 18px 6px' }),
+    maxWidth: 1100,
+  });
+}
+
+function renderAtivacaoEmailText(items: DetranAtivacaoEmailItem[]) {
+  return [
+    'ANB Parts - Ativacao de Etiqueta Avulsa',
+    'As etiquetas avulsas abaixo entraram no estoque e precisam de ativacao (entrada) no DETRAN.',
+    '',
+    ...items.map((item) => [
+      `SKU / ID Peca: ${item.idPeca}`,
+      `Tipo de Peca: ${item.tipoPeca || '-'}`,
+      `Numero da Peca Avulsa (etiqueta): ${item.etiqueta}`,
+      `Moto: ${item.motoLabel || '-'}`,
+      `Placa: ${item.placa || '-'} | Chassi: ${item.chassi || '-'} | Renavam: ${item.renavam || '-'}`,
+      `NF de Entrada: ${item.notaFiscalEntrada || '-'}`,
+      '',
+    ].join('\n')),
+  ].join('\n');
+}
+
+export async function sendDetranAtivacaoEmailIfNeeded(items: DetranAtivacaoEmailItem[]) {
+  const targets = items
+    .map((item) => ({
+      ...item,
+      idPeca: String(item.idPeca || '').trim(),
+      descricao: String(item.descricao || '').trim(),
+      etiqueta: String(item.etiqueta || '').trim(),
+    }))
+    .filter((item) => item.idPeca && item.etiqueta);
+
+  if (!targets.length) {
+    return { attempted: false, sent: false, skipped: true, reason: 'sem_etiqueta' };
+  }
+
+  const config = await getConfiguracaoGeral();
+  if (!config.detranEmailConfigurado) {
+    return { attempted: false, sent: false, skipped: true, reason: 'configuracao_incompleta' };
+  }
+
+  await sendResendEmail({
+    apiKey: config.resendApiKey,
+    from: config.emailRemetente,
+    to: config.detranEmailDestinatario,
+    subject: buildDatedEmailSubject('ANB Parts - Ativacao de Etiqueta Avulsa - Verifique', 'ANB Parts - Ativacao de Etiqueta Avulsa - Verifique'),
+    html: renderAtivacaoEmailHtml(targets),
+    text: renderAtivacaoEmailText(targets),
+  });
+
+  return { attempted: true, sent: true, skipped: false, total: targets.length };
+}

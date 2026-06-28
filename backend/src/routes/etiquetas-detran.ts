@@ -64,6 +64,29 @@ async function loadBaixasPorEtiqueta(pecaIds: number[]) {
   return map;
 }
 
+// Janela de pendência de ativação: etiqueta avulsa com cadastro nos últimos 30 dias e sem ativação.
+// Acima de 30 dias é assumida ativa por idade.
+const ATIVACAO_JANELA_DIAS = 30;
+function ativacaoCutoff() {
+  return new Date(Date.now() - ATIVACAO_JANELA_DIAS * 24 * 60 * 60 * 1000);
+}
+
+// Carrega a ativação POR etiqueta (tabela DetranEtiquetaAtivacao). Map "pecaId|etiqueta" -> { ativadaEm }.
+async function loadAtivacoesPorEtiqueta(pecaIds: number[]) {
+  const map = new Map<string, { ativadaEm: Date }>();
+  const ids = Array.from(new Set(pecaIds.map((n) => Number(n)).filter((n) => Number.isInteger(n) && n > 0)));
+  if (!ids.length) return map;
+  try {
+    const rows = await prisma.$queryRawUnsafe<{ pecaId: number; etiqueta: string; ativadaEm: Date }[]>(
+      `SELECT "pecaId", "etiqueta", "ativadaEm" FROM "DetranEtiquetaAtivacao" WHERE "pecaId" IN (${ids.join(',')})`,
+    );
+    for (const r of rows) map.set(`${Number(r.pecaId)}|${String(r.etiqueta).trim()}`, { ativadaEm: r.ativadaEm });
+  } catch {
+    // tabela ainda não migrada — segue com o fallback (tudo ativo)
+  }
+  return map;
+}
+
 function parseDetranStatusFilter(value: unknown) {
   const normalized = String(value || '').trim().toLowerCase();
   if (!normalized) return null;
@@ -249,7 +272,7 @@ etiquetasDetranRouter.get('/', async (req, res, next) => {
           id: true, idPeca: true, descricao: true, detranEtiqueta: true,
           detranStatus: true, detranBaixada: true, detranBaixadaAt: true,
           disponivel: true, blingPedidoId: true, blingPedidoNum: true,
-          dataVenda: true, motoId: true, tipoPecaAvulsa: true,
+          dataVenda: true, motoId: true, tipoPecaAvulsa: true, cadastro: true,
         },
         orderBy: { idPeca: 'asc' },
       }),
@@ -296,6 +319,8 @@ etiquetasDetranRouter.get('/', async (req, res, next) => {
     }
 
     const baixasMap = await loadBaixasPorEtiqueta(pecas.map((p) => p.id));
+    const ativacoesMap = await loadAtivacoesPorEtiqueta(pecas.map((p) => p.id));
+    const cutoffAtivacao = ativacaoCutoff();
 
     const linhas: any[] = [];
     const activeEtiquetas = new Set<string>();
@@ -327,11 +352,21 @@ etiquetasDetranRouter.get('/', async (req, res, next) => {
         if (!textIncludes(tipoPecaVal, tipoPeca)) continue;
         if (!textIncludes(etq, etiqueta)) continue;
 
+        // Etiqueta avulsa (sem cartela) com tipo definido, cadastro <= 30 dias e sem ativação = Pendente Ativação.
+        // Acima de 30 dias ou já ativada = Ativa (a menos que esteja baixada).
+        const ehAvulsaPendente = !etqBaixada
+          && !cartelaTipo
+          && !!(peca as any).tipoPecaAvulsa
+          && !ativacoesMap.has(`${peca.id}|${etq}`)
+          && !!peca.cadastro && new Date(peca.cadastro) >= cutoffAtivacao;
+        const statusLabel = etqBaixada ? 'Baixada' : (ehAvulsaPendente ? 'Pendente Ativação' : 'Ativa');
+
         linhas.push({
           pecaId: peca.id, sku: peca.idPeca, descricao: peca.descricao,
           tipoEtiqueta: tipoEtq, tipoPeca: tipoPecaVal, etiqueta: etq,
           qtdeEtiquetasSku: quantidadeEtiquetasSku,
-          status: getDetranStatusLabel(etqBaixada),
+          status: statusLabel,
+          pendenteAtivacao: ehAvulsaPendente,
           detranStatus: peca.detranStatus || null, detranBaixada: etqBaixada,
           detranBaixadaAt: etqBaixadaAt, disponivel: peca.disponivel,
           blingPedidoId: peca.blingPedidoId, blingPedidoNum: peca.blingPedidoNum,
@@ -699,6 +734,109 @@ etiquetasDetranRouter.post('/:pecaId/confirmar-baixa', async (req, res, next) =>
     });
 
     res.json({ ok: true, etiquetaBaixada: etiquetaInformada || null, pecaBaixadaCompleta: todasBaixadas });
+  } catch (e) { next(e); }
+});
+
+// GET /etiquetas-detran/pendencias-ativacao
+// Lista etiquetas AVULSAS (não-cartela) pendentes de ativação: peças com tipoPecaAvulsa,
+// cadastro nos últimos 30 dias e sem ativação registrada. Traz dados da moto p/ a "Entrada de Peças Avulsas".
+etiquetasDetranRouter.get('/pendencias-ativacao', async (req, res, next) => {
+  try {
+    const pecas = await prisma.peca.findMany({
+      where: {
+        tipoPecaAvulsa: { not: null },
+        detranEtiqueta: { not: null },
+        emPrejuizo: false,
+        cadastro: { gte: ativacaoCutoff() },
+      },
+      select: {
+        id: true, idPeca: true, descricao: true, detranEtiqueta: true,
+        tipoPecaAvulsa: true, cadastro: true, motoId: true,
+        disponivel: true, blingPedidoNum: true,
+      },
+      orderBy: { cadastro: 'desc' },
+    });
+
+    if (!pecas.length) return res.json({ ok: true, total: 0, linhas: [] });
+
+    const motoIds = [...new Set(pecas.map((p) => p.motoId))];
+    const [motos, posicoes, ativacoesMap] = await Promise.all([
+      (prisma as any).moto.findMany({
+        where: { id: { in: motoIds } },
+        select: { id: true, marca: true, modelo: true, renavam: true, placa: true, chassi: true, notaFiscalEntrada: true },
+      }),
+      prisma.motoDetranPosicao.findMany({
+        where: { motoId: { in: motoIds }, idPeca: { not: null } },
+        select: { motoId: true, idPeca: true, etiqueta: true },
+      }),
+      loadAtivacoesPorEtiqueta(pecas.map((p) => p.id)),
+    ]);
+
+    const motoById = new Map((motos as any[]).map((m: any) => [m.id, m]));
+    const cartelaSet = new Set<string>();
+    for (const pos of posicoes) {
+      if (pos.idPeca && pos.etiqueta) cartelaSet.add(`${pos.motoId}|${pos.idPeca}|${pos.etiqueta}`);
+    }
+
+    const linhas: any[] = [];
+    for (const peca of pecas) {
+      const moto: any = motoById.get(peca.motoId) || {};
+      for (const etq of splitEtiquetas(peca.detranEtiqueta)) {
+        // Só etiquetas avulsas (que não pertencem a uma cartela da moto).
+        if (cartelaSet.has(`${peca.motoId}|${peca.idPeca}|${etq}`)) continue;
+        // Já ativada → não é pendência.
+        if (ativacoesMap.has(`${peca.id}|${etq}`)) continue;
+        linhas.push({
+          pecaId: peca.id,
+          sku: peca.idPeca,
+          descricao: peca.descricao,
+          etiqueta: etq,                          // Número da Peça Avulsa
+          tipoPeca: peca.tipoPecaAvulsa,          // Tipo de Peça
+          renavam: moto.renavam || null,
+          placa: moto.placa || null,
+          chassi: moto.chassi || null,
+          notaFiscalEntrada: moto.notaFiscalEntrada || null,
+          motoLabel: [moto.marca, moto.modelo].filter(Boolean).join(' ') || null,
+          cadastro: peca.cadastro,
+          disponivel: peca.disponivel,
+          blingPedidoNum: peca.blingPedidoNum || null,
+        });
+      }
+    }
+
+    res.json({ ok: true, total: linhas.length, linhas });
+  } catch (e) { next(e); }
+});
+
+// POST /etiquetas-detran/:pecaId/confirmar-ativacao
+// Confirma a ativação de UMA etiqueta avulsa (comprovante opcional).
+etiquetasDetranRouter.post('/:pecaId/confirmar-ativacao', async (req, res, next) => {
+  try {
+    const pecaIdNum = Number(req.params.pecaId);
+    const { etiqueta, comprovanteNome, comprovanteArquivo } = req.body || {};
+
+    const peca = await prisma.peca.findUnique({ where: { id: pecaIdNum } });
+    if (!peca) return res.status(404).json({ ok: false, error: 'Peca nao encontrada' });
+
+    const todasEtiquetas = splitEtiquetas(peca.detranEtiqueta);
+    const etiquetaInformada = String(etiqueta || '').trim();
+    const alvos = etiquetaInformada ? [etiquetaInformada] : todasEtiquetas;
+
+    const comprovNome = comprovanteNome || null;
+    const comprovArq = comprovanteArquivo || null;
+
+    for (const etq of alvos) {
+      await prisma.$executeRaw`
+        INSERT INTO "DetranEtiquetaAtivacao" ("pecaId", "etiqueta", "ativadaEm", "comprovanteNome", "comprovanteArquivo")
+        VALUES (${pecaIdNum}, ${etq}, now(), ${comprovNome}, ${comprovArq})
+        ON CONFLICT ("pecaId", "etiqueta") DO UPDATE SET
+          "ativadaEm" = now(),
+          "comprovanteNome" = COALESCE(EXCLUDED."comprovanteNome", "DetranEtiquetaAtivacao"."comprovanteNome"),
+          "comprovanteArquivo" = COALESCE(EXCLUDED."comprovanteArquivo", "DetranEtiquetaAtivacao"."comprovanteArquivo")
+      `;
+    }
+
+    res.json({ ok: true, etiquetaAtivada: etiquetaInformada || null });
   } catch (e) { next(e); }
 });
 
