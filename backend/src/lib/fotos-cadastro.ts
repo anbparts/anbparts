@@ -380,10 +380,22 @@ async function uploadArquivoParaPasta(pastaId: string, nome: string, mimeType: s
 }
 
 // Apaga definitivamente um arquivo do Drive. 404 = ja nao existe (ok).
-async function apagarArquivoDrive(fileId: string): Promise<boolean> {
-  if (!fileId) return false;
-  const resp = await driveRequest(buildDrivePath(`/files/${encodeURIComponent(fileId)}`, {}), { method: 'DELETE' });
-  return resp.ok || resp.status === 204 || resp.status === 404;
+// Faz retry com backoff em 403/429/5xx (rate limit) e devolve o erro real para diagnostico.
+async function apagarArquivoDrive(fileId: string): Promise<{ ok: boolean; erro?: string }> {
+  if (!fileId) return { ok: false, erro: 'id vazio' };
+  let ultimoErro = '';
+  for (let tentativa = 0; tentativa < 3; tentativa += 1) {
+    const resp = await driveRequest(buildDrivePath(`/files/${encodeURIComponent(fileId)}`, {}), { method: 'DELETE' });
+    if (resp.ok || resp.status === 204 || resp.status === 404) return { ok: true };
+    const data: any = await resp.json().catch(() => ({}));
+    ultimoErro = getApiErrorMessage(data, `DELETE ${resp.status}`);
+    if (resp.status === 403 || resp.status === 429 || resp.status >= 500) {
+      await sleep(700 * (tentativa + 1)); // backoff para rate limit
+      continue;
+    }
+    return { ok: false, erro: ultimoErro };
+  }
+  return { ok: false, erro: ultimoErro || 'falha apos retries' };
 }
 
 // Move uma pasta: adiciona o novo parent (pasta da moto) e remove o atual (raiz pendente).
@@ -539,15 +551,27 @@ export async function processarPastaFotosDrive(pastaId: string): Promise<FotoDri
       return resultado;
     }
 
-    // 2) Descartar brancos: conteudo identico (mesmo hash) repetido 2+ vezes.
+    // 2) Descartar brancos do template: imagens do Canva com EXATAMENTE o mesmo tamanho em bytes
+    // (repetido 2+ vezes) e pequenas (bem menores que a maior foto). Tambem pega as byte-a-byte
+    // identicas (hash repetido). Fotos reais tem tamanho unico, entao nao sao afetadas.
+    const contagemTam = new Map<number, number>();
     const contagemHash = new Map<string, number>();
-    for (const e of entradasImagens) contagemHash.set(e.hash, (contagemHash.get(e.hash) || 0) + 1);
-    const boas = entradasImagens.filter((e) => (contagemHash.get(e.hash) || 0) < 2);
+    for (const e of entradasImagens) {
+      contagemTam.set(e.buffer.length, (contagemTam.get(e.buffer.length) || 0) + 1);
+      contagemHash.set(e.hash, (contagemHash.get(e.hash) || 0) + 1);
+    }
+    const maiorTam = Math.max(...entradasImagens.map((e) => e.buffer.length));
+    const ehBranco = (e: { buffer: Buffer; hash: string }) => {
+      const mesmoTamRepetido = (contagemTam.get(e.buffer.length) || 0) >= 2 && e.buffer.length < maiorTam * 0.6;
+      const mesmoConteudoRepetido = (contagemHash.get(e.hash) || 0) >= 2;
+      return mesmoTamRepetido || mesmoConteudoRepetido;
+    };
+    const boas = entradasImagens.filter((e) => !ehBranco(e));
     resultado.brancosDescartados = entradasImagens.length - boas.length;
     etapas.descartarBrancos = 'ok';
     if (!boas.length) {
       etapas.gravarFotos = 'erro';
-      resultado.mensagem = 'Todas as imagens do zip foram identificadas como brancos (identicas). Nada a gravar.';
+      resultado.mensagem = 'Todas as imagens do zip foram identificadas como brancos do template. Nada a gravar.';
       return resultado;
     }
 
@@ -567,10 +591,16 @@ export async function processarPastaFotosDrive(pastaId: string): Promise<FotoDri
     }
 
     // 4) Limpar antigas: apaga tudo que existia antes (fotos antigas + zip).
+    // Espaca os deletes (evita rate limit do Drive) e guarda o primeiro erro real.
     let falhasDelete = 0;
+    let primeiroErroDelete = '';
     for (const id of idsOriginais) {
-      const ok = await apagarArquivoDrive(id).catch(() => false);
-      if (!ok) falhasDelete += 1;
+      const r = await apagarArquivoDrive(id).catch((e: any) => ({ ok: false, erro: e?.message || String(e) }));
+      if (!r.ok) {
+        falhasDelete += 1;
+        if (!primeiroErroDelete) primeiroErroDelete = r.erro || '';
+      }
+      await sleep(200);
     }
     etapas.limparAntigas = falhasDelete ? 'erro' : 'ok';
 
@@ -592,7 +622,7 @@ export async function processarPastaFotosDrive(pastaId: string): Promise<FotoDri
 
     resultado.status = 'processado';
     resultado.mensagem = falhasDelete
-      ? `Processado com ${falhasDelete} arquivo(s) antigo(s) que nao puderam ser apagados.`
+      ? `Processado, mas ${falhasDelete} arquivo(s) antigo(s) nao puderam ser apagados${primeiroErroDelete ? `: ${primeiroErroDelete}` : '.'}`
       : 'Processado com sucesso.';
     return resultado;
   } catch (err: any) {
