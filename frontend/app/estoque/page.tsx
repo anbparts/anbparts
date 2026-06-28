@@ -5,6 +5,7 @@ import { api } from '@/lib/api';
 import { API_BASE } from '@/lib/api-base';
 import { useAuth } from '@/lib/auth';
 import { formatEtiquetaMotoLabel, printCaixaLabels, printSkuLabels } from '@/lib/estoque-label-print';
+import ModalImpressaoA4 from '@/app/components/ModalImpressaoA4';
 import { compressFotoCapaFile } from '@/lib/image-compression';
 import { canProcessAction } from '@/lib/permissions';
 
@@ -2433,6 +2434,7 @@ export default function EstoquePage() {
   const [atualizarCaixaOpen, setAtualizarCaixaOpen] = useState(false);
   const [atualizandoCaixa, setAtualizandoCaixa] = useState(false);
   const [imprimindoSkus, setImprimindoSkus] = useState(false);
+  const [modalA4Open, setModalA4Open] = useState(false);
   const [copySkuOpen, setCopySkuOpen] = useState(false);
   const [copySkuPreview, setCopySkuPreview] = useState<any>(null);
   const [copySkuLoading, setCopySkuLoading] = useState(false);
@@ -3567,6 +3569,24 @@ export default function EstoquePage() {
               >
                 {imprimindoSkus ? 'Preparando impressao...' : 'Impressao SKU'}
               </button>
+              <button
+                type="button"
+                onClick={() => { if (!selectedPecas.length) return alert('Selecione as pecas desejadas.'); setModalA4Open(true); }}
+                disabled={!selectedPecaIds.length}
+                style={{
+                  ...cs.btn,
+                  background: selectedPecaIds.length ? '#f0fdf4' : 'var(--gray-50)',
+                  color: selectedPecaIds.length ? '#16a34a' : 'var(--ink-muted)',
+                  borderColor: selectedPecaIds.length ? '#86efac' : 'var(--border)',
+                  padding: '6px 14px',
+                  fontSize: 13,
+                  width: isPhone ? '100%' : undefined,
+                  opacity: !selectedPecaIds.length ? 0.7 : 1,
+                  justifyContent: 'center',
+                }}
+              >
+                Impressao A4
+              </button>
             </div>
           </div>
 
@@ -3910,6 +3930,16 @@ export default function EstoquePage() {
         onClose={resetCopySkuModal}
         onConfirm={handleCopySkuConfirm}
       />
+      {modalA4Open && (
+        <ModalImpressaoA4
+          etiquetas={selectedPecas.map((peca: any) => ({
+            motoLabel: formatEtiquetaMotoLabel(peca),
+            sku: String(peca.idPeca || '').trim().toUpperCase(),
+            descricao: String(peca.descricao || '').trim(),
+          }))}
+          onClose={() => setModalA4Open(false)}
+        />
+      )}
       <VendaModal open={vendaModal} peca={vendaPeca} onClose={() => setVendaModal(false)} onConfirm={handleVenda} />
       <DetranEtiquetaModal open={Boolean(detranPeca)} peca={detranPeca} onClose={() => setDetranPeca(null)} />
       <PecaDetalheModal open={Boolean(detalhePeca)} peca={detalhePeca} onClose={() => setDetalhePeca(null)} onSaved={() => { load(); }} canEditarPeca={canEditarPeca} canTrocarFotoCapa={canTrocarFotoCapa} />
