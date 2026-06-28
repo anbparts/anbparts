@@ -220,6 +220,32 @@ function ChecklistValidacao({ form }: { form: any }) {
   );
 }
 
+// Colunas da tabela de Cadastro (SKU). key=null => não ordenável.
+const CADASTRO_COLUNAS: { label: string; key: string | null }[] = [
+  { label: 'ID Peça', key: 'idPeca' },
+  { label: 'Descrição', key: 'descricao' },
+  { label: 'Moto', key: 'moto' },
+  { label: 'Data Pré-Cadastro', key: 'createdAt' },
+  { label: 'Preço', key: 'precoVenda' },
+  { label: 'Estoque', key: 'estoque' },
+  { label: 'Pré-Cadastro', key: null },
+  { label: 'Cadastro', key: 'status' },
+  { label: 'Ações', key: null },
+];
+
+function valorOrdenacaoCadastro(item: any, key: string): number | string {
+  switch (key) {
+    case 'idPeca': return String(item.idPeca || '');
+    case 'descricao': return String(item.descricao || '').toLowerCase();
+    case 'moto': return `${item.moto?.marca || ''} ${item.moto?.modelo || ''}`.trim().toLowerCase();
+    case 'createdAt': return new Date(item.createdAt || 0).getTime();
+    case 'precoVenda': return Number(item.precoVenda) || 0;
+    case 'estoque': return Number(item.estoque) || 0;
+    case 'status': return item.status === 'cadastrado' ? 1 : 0;
+    default: return '';
+  }
+}
+
 function buildCadastroSkuEtiquetas(item: CadastroPeca) {
   const quantidade = Math.max(1, Number(item.estoque) || 1);
   const skuAtual = String(item.idPeca || '').trim().toUpperCase();
@@ -240,6 +266,7 @@ export default function CadastroPage() {
   const [motos, setMotos] = useState<any[]>([]);
   const [caixas, setCaixas] = useState<string[]>([]);
   const [data, setData] = useState<{ total: number; data: CadastroPeca[] }>({ total: 0, data: [] });
+  const [sortCadastro, setSortCadastro] = useState<{ key: string | null; dir: 'asc' | 'desc' }>({ key: 'createdAt', dir: 'desc' });
   const [loading, setLoading] = useState(true);
   const [somentePendentes, setSomentePendentes] = useState(true);
   const [filters, setFilters] = useState({ motoId: '', search: '', semDimensoes: '', comDimensoes: '', preCadastroCompleto: '' });
@@ -438,6 +465,22 @@ export default function CadastroPage() {
     } catch { }
     setLoading(false);
   }
+
+  function toggleSortCadastro(key: string) {
+    setSortCadastro((cur) => cur.key === key ? { key, dir: cur.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' });
+  }
+
+  const linhasOrdenadasCadastro = (() => {
+    const k = sortCadastro.key;
+    if (!k) return data.data;
+    const factor = sortCadastro.dir === 'asc' ? 1 : -1;
+    return [...data.data].sort((a, b) => {
+      const va = valorOrdenacaoCadastro(a, k);
+      const vb = valorOrdenacaoCadastro(b, k);
+      if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * factor;
+      return String(va).localeCompare(String(vb), 'pt-BR', { numeric: true, sensitivity: 'base' }) * factor;
+    });
+  })();
 
   function normalizarListaFotosSkus(value: string) {
     return normalizarListaSkus(value);
@@ -1773,9 +1816,19 @@ export default function CadastroPage() {
                   <col style={{ width: '8%' }} />
                   <col style={{ width: '10%' }} />
                 </colgroup>
-                <thead><tr>{['ID Peça', 'Descrição', 'Moto', 'Data Pré-Cadastro', 'Preço', 'Estoque', 'Pré-Cadastro', 'Cadastro', 'Ações'].map(h => <th key={h} style={{ ...s.th, padding: '9px 6px', fontSize: 10.5, overflow: 'hidden', textOverflow: 'ellipsis' }}>{h}</th>)}</tr></thead>
+                <thead><tr>{CADASTRO_COLUNAS.map(col => {
+                  const ativo = !!col.key && sortCadastro.key === col.key;
+                  return (
+                    <th key={col.label}
+                      onClick={col.key ? () => toggleSortCadastro(col.key as string) : undefined}
+                      title={col.key ? 'Ordenar' : undefined}
+                      style={{ ...s.th, padding: '9px 6px', fontSize: 10.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: col.key ? 'pointer' : 'default', userSelect: 'none', color: ativo ? 'var(--blue-600)' : undefined }}>
+                      {col.label}{ativo ? (sortCadastro.dir === 'asc' ? ' ▲' : ' ▼') : ''}
+                    </th>
+                  );
+                })}</tr></thead>
                 <tbody>
-                  {data.data.map((item) => {
+                  {linhasOrdenadasCadastro.map((item) => {
                     const cadastOk = item.status === 'cadastrado';
                     return (
                       <tr key={item.id}>
