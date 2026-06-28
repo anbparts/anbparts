@@ -40,8 +40,8 @@ export default function ModalImpressaoA4({
   }
 
   const cellBase: CSSProperties = {
-    height: 52, borderRadius: 8, cursor: 'pointer', display: 'flex', flexDirection: 'column',
-    alignItems: 'center', justifyContent: 'center', gap: 2, padding: 3, fontFamily: 'Inter, sans-serif',
+    height: 44, borderRadius: 8, cursor: 'pointer', display: 'flex', flexDirection: 'column',
+    alignItems: 'center', justifyContent: 'center', gap: 1, padding: 3, fontFamily: 'Inter, sans-serif',
     border: '1px dashed var(--border)', background: 'transparent', textAlign: 'center', overflow: 'hidden',
     outline: 'none', WebkitTapHighlightColor: 'transparent',
   };
@@ -59,8 +59,8 @@ export default function ModalImpressaoA4({
           <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', fontSize: 16 }}>×</button>
         </div>
 
-        <div style={{ padding: 20 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
+        <div style={{ padding: '14px 20px 18px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
             <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12, color: 'var(--gray-500)' }}>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><span style={{ width: 12, height: 12, borderRadius: 3, background: 'var(--gray-100)', border: '1px solid var(--border)' }} />já usada</span>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><span style={{ width: 12, height: 12, borderRadius: 3, background: '#eff6ff', border: '1px solid #93c5fd' }} />vai imprimir</span>
@@ -72,21 +72,21 @@ export default function ModalImpressaoA4({
             </button>
           </div>
 
-          <div style={{ fontSize: 13, color: 'var(--gray-600)', marginBottom: 12 }}>
+          <div style={{ fontSize: 13, color: 'var(--gray-600)', marginBottom: 10 }}>
             <b style={{ color: 'var(--gray-800)' }}>{total} etiqueta(s)</b> · começa em <b style={{ color: 'var(--blue-600)' }}>{pos(start)}</b>
             {sobra > 0 && <> · <span style={{ color: '#c2410c' }}>{sobra} vão para outra folha</span></>}
             {folhas > 1 && <> · <b>{folhas} folhas</b></>}
           </div>
 
-          <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, padding: 14 }}>
-            <div style={{ fontSize: 11, color: 'var(--gray-400)', textAlign: 'center', marginBottom: 8 }}>A4 · 3 colunas × 7 linhas · preenche coluna a coluna</div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6 }}>
+          <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, padding: 12 }}>
+            <div style={{ fontSize: 11, color: 'var(--gray-400)', textAlign: 'center', marginBottom: 6 }}>A4 · 3 colunas × 7 linhas · preenche coluna a coluna</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 5 }}>
               {cells.map((om) => {
                 const rel = om - start;
                 const usada = om < start;
                 const filled = !usada && rel < total;
                 const st: CSSProperties = usada
-                  ? { ...cellBase, background: 'var(--gray-100)', borderStyle: 'solid', borderColor: 'var(--border)' }
+                  ? { ...cellBase, background: 'var(--gray-100)', border: '1px solid var(--border)' }
                   : filled
                     ? { ...cellBase, background: '#eff6ff', border: '1px solid #93c5fd' }
                     : cellBase;
