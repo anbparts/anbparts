@@ -1930,12 +1930,25 @@ export default function CadastroPage() {
               {data.total} registro(s){somentePendentes ? ' (pendentes)' : ''}
               {a4Sel.size > 0 && <span style={{ color: 'var(--blue-600)', fontWeight: 600 }}> · {a4Sel.size} selecionado(s)</span>}
             </div>
-            <button
-              onClick={() => { if (etiquetasA4.length === 0) return alert('Selecione ao menos um SKU.'); setModalA4Open(true); }}
-              disabled={a4Sel.size === 0}
-              style={{ ...s.btn, fontSize: 12, padding: '7px 14px', background: a4Sel.size ? '#16a34a' : 'var(--white)', color: a4Sel.size ? '#fff' : 'var(--gray-400)', border: '1px solid var(--border)', cursor: a4Sel.size ? 'pointer' : 'default' }}>
-              🖨️ Impressão A4{a4Sel.size > 0 ? ` (${etiquetasA4.length} etiq.)` : ''}
-            </button>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button
+                onClick={() => setA4Sel(new Set(linhasOrdenadasCadastro.map((i) => i.id)))}
+                style={{ ...s.btn, fontSize: 12, padding: '7px 12px', background: 'var(--white)', color: 'var(--gray-700)', border: '1px solid var(--border)' }}>
+                Selecionar tudo
+              </button>
+              <button
+                onClick={() => setA4Sel(new Set())}
+                disabled={a4Sel.size === 0}
+                style={{ ...s.btn, fontSize: 12, padding: '7px 12px', background: 'var(--white)', color: a4Sel.size ? 'var(--gray-700)' : 'var(--gray-400)', border: '1px solid var(--border)', cursor: a4Sel.size ? 'pointer' : 'default' }}>
+                Limpar seleção
+              </button>
+              <button
+                onClick={() => { if (etiquetasA4.length === 0) return alert('Selecione ao menos um SKU.'); setModalA4Open(true); }}
+                disabled={a4Sel.size === 0}
+                style={{ ...s.btn, fontSize: 12, padding: '7px 14px', background: a4Sel.size ? '#16a34a' : 'var(--white)', color: a4Sel.size ? '#fff' : 'var(--gray-400)', border: '1px solid var(--border)', cursor: a4Sel.size ? 'pointer' : 'default' }}>
+                🖨️ Impressão A4{a4Sel.size > 0 ? ` (${etiquetasA4.length} etiq.)` : ''}
+              </button>
+            </div>
           </div>
           {loading ? <div style={{ textAlign: 'center', padding: 32, color: 'var(--gray-400)' }}>Carregando...</div> :
             data.data.length === 0 ? <div style={{ textAlign: 'center', padding: 32, color: 'var(--gray-400)' }}>Nenhum cadastro encontrado.</div> : isPhone ? (
