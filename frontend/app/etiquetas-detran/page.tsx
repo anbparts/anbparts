@@ -539,11 +539,18 @@ export default function EtiquetasDetranPage() {
   return (
     <>
       <div style={{ ...s.topbar, height: isPhone ? 'auto' : 'var(--topbar-h)', minHeight: 'var(--topbar-h)', padding: isPhone ? '12px 14px' : '0 28px', alignItems: isPhone ? 'stretch' : 'center', flexDirection: isPhone ? 'column' : 'row' }}>
-        <div>
-          <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)' }}>Etiquetas Detran</div>
-          <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>
-            {loading ? 'Carregando...' : `${linhas.length} etiqueta(s) encontrada(s)`}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+          <div>
+            <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)' }}>Etiquetas Detran</div>
+            <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>
+              {loading ? 'Carregando...' : `${linhas.length} etiqueta(s) encontrada(s)`}
+            </div>
           </div>
+          {canProcessarBaixa && (
+          <button style={{ ...s.btn, background: 'var(--gray-800)', color: '#fff', width: isPhone ? '100%' : undefined }} onClick={abrirVerificarPendencias}>
+            ✓ Verificar Pendências
+          </button>
+          )}
         </div>
         <div style={{ display: 'flex', gap: 8, flexDirection: isPhone ? 'column' : 'row', width: isPhone ? '100%' : undefined }}>
           {canProcessarBaixa && (
@@ -556,20 +563,15 @@ export default function EtiquetasDetranPage() {
             Pendencias Etiqueta Avulsa
           </button>
           )}
-          <label style={{ ...s.btn, background: '#059669', color: '#fff', width: isPhone ? '100%' : undefined, cursor: validacaoLoading ? 'wait' : 'pointer', opacity: validacaoLoading ? 0.7 : 1 }}>
-            {validacaoLoading ? 'Processando...' : 'Validação Detran'}
-            <input type="file" accept=".xlsx,.xls" style={{ display: 'none' }} disabled={validacaoLoading} onChange={(e) => { setModalValidacao(true); rodarValidacaoDetran(e); }} />
-          </label>
           {canProcessarDevolucao && (
           <button style={{ ...s.btn, background: '#2563eb', color: '#fff', width: isPhone ? '100%' : undefined }} onClick={abrirPendenciasDev}>
             Pendências Devolução
           </button>
           )}
-          {canProcessarBaixa && (
-          <button style={{ ...s.btn, background: 'var(--gray-800)', color: '#fff', width: isPhone ? '100%' : undefined }} onClick={abrirVerificarPendencias}>
-            ✓ Verificar Pendências
-          </button>
-          )}
+          <label style={{ ...s.btn, background: '#059669', color: '#fff', width: isPhone ? '100%' : undefined, cursor: validacaoLoading ? 'wait' : 'pointer', opacity: validacaoLoading ? 0.7 : 1 }}>
+            {validacaoLoading ? 'Processando...' : 'Validação Detran'}
+            <input type="file" accept=".xlsx,.xls" style={{ display: 'none' }} disabled={validacaoLoading} onChange={(e) => { setModalValidacao(true); rodarValidacaoDetran(e); }} />
+          </label>
         </div>
       </div>
 
