@@ -859,6 +859,76 @@ etiquetasDetranRouter.post('/:pecaId/confirmar-ativacao', async (req, res, next)
   } catch (e) { next(e); }
 });
 
+// GET /etiquetas-detran/pendencias-resumo
+// Agrega as 3 pendencias (baixa, ativacao de avulsa, devolucao) num resumo unico e rapido (sem Bling).
+etiquetasDetranRouter.get('/pendencias-resumo', async (_req, res, next) => {
+  try {
+    const itens: { tipo: 'baixa' | 'ativacao' | 'devolucao'; pecaId: number; sku: string; descricao: string; etiqueta: string; info: string }[] = [];
+
+    // 1) BAIXA — peca vendida com etiqueta ainda nao baixada.
+    const pecasBaixa = await prisma.peca.findMany({
+      where: {
+        detranEtiqueta: { not: null }, detranBaixada: false, disponivel: false, emPrejuizo: false,
+        OR: [{ blingPedidoId: { not: null } }, { blingPedidoNum: { not: null } }],
+      },
+      select: { id: true, idPeca: true, descricao: true, detranEtiqueta: true, blingPedidoNum: true },
+    });
+    const baixasMap = await loadBaixasPorEtiqueta(pecasBaixa.map((p) => p.id));
+    for (const p of pecasBaixa) {
+      for (const etq of splitEtiquetas(p.detranEtiqueta)) {
+        if (baixasMap.has(`${p.id}|${etq}`)) continue;
+        itens.push({ tipo: 'baixa', pecaId: p.id, sku: p.idPeca, descricao: p.descricao, etiqueta: etq, info: p.blingPedidoNum ? `Pedido ${p.blingPedidoNum}` : '' });
+      }
+    }
+
+    // 2) ATIVACAO — etiqueta avulsa (≤30 dias) ainda nao ativada.
+    const pecasAtiv = await prisma.peca.findMany({
+      where: { tipoPecaAvulsa: { not: null }, detranEtiqueta: { not: null }, emPrejuizo: false, cadastro: { gte: ativacaoCutoff() } },
+      select: { id: true, idPeca: true, descricao: true, detranEtiqueta: true, tipoPecaAvulsa: true, motoId: true },
+    });
+    if (pecasAtiv.length) {
+      const motoIds = [...new Set(pecasAtiv.map((p) => p.motoId))];
+      const [motos, posicoes, ativMap] = await Promise.all([
+        (prisma as any).moto.findMany({ where: { id: { in: motoIds } }, select: { id: true, detranCartelaId: true } }),
+        prisma.motoDetranPosicao.findMany({ where: { motoId: { in: motoIds }, idPeca: { not: null } }, select: { motoId: true, idPeca: true, etiqueta: true } }),
+        loadAtivacoesPorEtiqueta(pecasAtiv.map((p) => p.id)),
+      ]);
+      const cartelaBaseByMoto = new Map<number, string>((motos as any[]).map((m: any) => [m.id, String(m.detranCartelaId || '')]));
+      const cartelaSet = new Set<string>();
+      for (const pos of posicoes) if (pos.idPeca && pos.etiqueta) cartelaSet.add(`${pos.motoId}|${pos.idPeca}|${pos.etiqueta}`);
+      for (const p of pecasAtiv) {
+        for (const etq of splitEtiquetas(p.detranEtiqueta)) {
+          if (cartelaSet.has(`${p.motoId}|${p.idPeca}|${etq}`)) continue;
+          if (ehEtiquetaCartelaDaMoto(etq, cartelaBaseByMoto.get(p.motoId))) continue;
+          if (ativMap.has(`${p.id}|${etq}`)) continue;
+          itens.push({ tipo: 'ativacao', pecaId: p.id, sku: p.idPeca, descricao: p.descricao, etiqueta: etq, info: p.tipoPecaAvulsa || '' });
+        }
+      }
+    }
+
+    // 3) DEVOLUCAO — peca com etiquetaPendente (aguarda nova etiqueta).
+    const pecasDev = await prisma.peca.findMany({
+      where: { etiquetaPendente: true, disponivel: true },
+      select: {
+        id: true, idPeca: true, descricao: true,
+        devolucoes: { orderBy: { dataDevolucao: 'desc' }, take: 1, select: { etiquetasDetran: true } },
+      },
+    });
+    for (const p of pecasDev) {
+      const etqAntiga = splitEtiquetas(p.devolucoes?.[0]?.etiquetasDetran)[0] || '';
+      itens.push({ tipo: 'devolucao', pecaId: p.id, sku: p.idPeca, descricao: p.descricao, etiqueta: etqAntiga || '—', info: 'Aguarda nova etiqueta' });
+    }
+
+    const totais = {
+      baixa: itens.filter((i) => i.tipo === 'baixa').length,
+      ativacao: itens.filter((i) => i.tipo === 'ativacao').length,
+      devolucao: itens.filter((i) => i.tipo === 'devolucao').length,
+      total: itens.length,
+    };
+    res.json({ ok: true, totais, itens });
+  } catch (e) { next(e); }
+});
+
 // PATCH /etiquetas-detran/:pecaId/tipo-peca
 etiquetasDetranRouter.patch('/:pecaId/tipo-peca', async (req, res, next) => {
   try {

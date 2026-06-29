@@ -188,6 +188,9 @@ export default function EtiquetasDetranPage() {
   const [modalAtivacao, setModalAtivacao] = useState(false);
   const [ativacoes, setAtivacoes] = useState<any[]>([]);
   const [loadingAtivacoes, setLoadingAtivacoes] = useState(false);
+  const [modalResumo, setModalResumo] = useState(false);
+  const [resumoLoading, setResumoLoading] = useState(false);
+  const [resumo, setResumo] = useState<{ totais: any; itens: any[] } | null>(null);
   const [modalAtivar, setModalAtivar] = useState<any | null>(null);
   const [confirmandoAtivacao, setConfirmandoAtivacao] = useState<string | null>(null);
   const [pendenciasDevOpen, setPendenciasDevOpen] = useState(false);
@@ -440,6 +443,37 @@ export default function EtiquetasDetranPage() {
     setConfirmandoAtivacao(null);
   }
 
+  async function abrirPendenciasDev() {
+    setPendenciasDevOpen(true);
+    setLoadingPendenciasDev(true);
+    setNovasEtiquetasDev({});
+    try {
+      const resp = await fetch(`${API}/devolucoes/pendentes-etiqueta`, { credentials: 'include' });
+      const data = await resp.json();
+      setPendenciasDev(data.pecas || []);
+    } catch { setPendenciasDev([]); }
+    setLoadingPendenciasDev(false);
+  }
+
+  async function abrirVerificarPendencias() {
+    setModalResumo(true);
+    setResumoLoading(true);
+    setResumo(null);
+    try {
+      const resp = await fetch(`${API}/etiquetas-detran/pendencias-resumo`, { credentials: 'include' });
+      const data = await resp.json();
+      setResumo({ totais: data.totais || {}, itens: data.itens || [] });
+    } catch { setResumo({ totais: {}, itens: [] }); }
+    setResumoLoading(false);
+  }
+
+  function irParaFluxoPendencia(tipo: string) {
+    setModalResumo(false);
+    if (tipo === 'baixa') abrirPendencias();
+    else if (tipo === 'ativacao') abrirPendenciasAtivacao();
+    else if (tipo === 'devolucao') abrirPendenciasDev();
+  }
+
   async function salvarNovaEtiquetaDevolucao(peca: any) {
     if (!canProcessarDevolucao) {
       alert('Seu usuario nao tem permissao para processar devolucao de etiquetas.');
@@ -527,18 +561,13 @@ export default function EtiquetasDetranPage() {
             <input type="file" accept=".xlsx,.xls" style={{ display: 'none' }} disabled={validacaoLoading} onChange={(e) => { setModalValidacao(true); rodarValidacaoDetran(e); }} />
           </label>
           {canProcessarDevolucao && (
-          <button style={{ ...s.btn, background: '#2563eb', color: '#fff', width: isPhone ? '100%' : undefined }} onClick={async () => {
-            setPendenciasDevOpen(true);
-            setLoadingPendenciasDev(true);
-            setNovasEtiquetasDev({});
-            try {
-              const resp = await fetch(`${API}/devolucoes/pendentes-etiqueta`, { credentials: 'include' });
-              const data = await resp.json();
-              setPendenciasDev(data.pecas || []);
-            } catch { setPendenciasDev([]); }
-            setLoadingPendenciasDev(false);
-          }}>
+          <button style={{ ...s.btn, background: '#2563eb', color: '#fff', width: isPhone ? '100%' : undefined }} onClick={abrirPendenciasDev}>
             Pendências Devolução
+          </button>
+          )}
+          {canProcessarBaixa && (
+          <button style={{ ...s.btn, background: 'var(--gray-800)', color: '#fff', width: isPhone ? '100%' : undefined }} onClick={abrirVerificarPendencias}>
+            ✓ Verificar Pendências
           </button>
           )}
         </div>
@@ -924,6 +953,88 @@ export default function EtiquetasDetranPage() {
           </div>
         </div>
       )}
+      {/* Modal Verificar Pendências (resumo das 3) */}
+      {modalResumo && (() => {
+        const TIPOS: Record<string, { label: string; bg: string; c: string }> = {
+          baixa:     { label: 'Baixa',     bg: '#f3e8ff', c: '#7c3aed' },
+          ativacao:  { label: 'Ativação',  bg: '#ffedd5', c: '#c2410c' },
+          devolucao: { label: 'Devolução', bg: '#dbeafe', c: '#2563eb' },
+        };
+        const ordem: Record<string, number> = { baixa: 0, ativacao: 1, devolucao: 2 };
+        const itens = [...(resumo?.itens || [])].sort((a, b) => (ordem[a.tipo] - ordem[b.tipo]) || String(a.sku).localeCompare(String(b.sku), 'pt-BR', { numeric: true }));
+        const t = resumo?.totais || {};
+        const card = (label: string, valor: number, cor: { bg: string; c: string }, tipo?: string) => (
+          <div onClick={tipo ? () => irParaFluxoPendencia(tipo) : undefined}
+            style={{ background: cor.bg, borderRadius: 12, padding: '12px 16px', flex: 1, minWidth: 120, cursor: tipo ? 'pointer' : 'default' }}>
+            <div style={{ fontSize: 11.5, fontWeight: 700, color: cor.c, textTransform: 'uppercase', letterSpacing: '.04em' }}>{label}</div>
+            <div style={{ fontSize: 24, fontWeight: 800, color: cor.c, marginTop: 2 }}>{valor || 0}</div>
+          </div>
+        );
+        return (
+          <div onClick={() => setModalResumo(false)}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.55)', zIndex: 320, display: 'flex', alignItems: isPhone ? 'stretch' : 'center', justifyContent: 'center', padding: isPhone ? 0 : 24, backdropFilter: 'blur(2px)' }}>
+            <div onClick={e => e.stopPropagation()}
+              style={{ background: 'var(--white)', borderRadius: isPhone ? 0 : 12, width: isPhone ? '100%' : 'min(900px, calc(100vw - 48px))', maxHeight: isPhone ? '100dvh' : '88vh', minHeight: isPhone ? '100dvh' : undefined, overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 70px rgba(2,6,23,0.28)', border: '1px solid var(--border)' }}>
+              <div style={{ padding: isPhone ? '14px' : '18px 22px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--gray-800)' }}>Verificar Pendências</div>
+                  <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>
+                    {resumoLoading ? 'Verificando baixa, ativação e devolução...' : `${t.total || 0} pendência(s) no total · clique em "Ver" para abrir o fluxo`}
+                  </div>
+                </div>
+                <button onClick={() => setModalResumo(false)} style={{ ...s.btn, background: 'var(--gray-100)', color: 'var(--gray-600)', border: '1px solid var(--border)' }}>Fechar</button>
+              </div>
+
+              <div style={{ overflow: 'auto', flex: 1, background: 'var(--white)', padding: isPhone ? 12 : 18 }}>
+                {resumoLoading ? (
+                  <div style={{ textAlign: 'center', padding: 50, color: 'var(--gray-400)' }}>Carregando...</div>
+                ) : (
+                  <>
+                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
+                      {card('Baixa', t.baixa, TIPOS.baixa, t.baixa ? 'baixa' : undefined)}
+                      {card('Ativação', t.ativacao, TIPOS.ativacao, t.ativacao ? 'ativacao' : undefined)}
+                      {card('Devolução', t.devolucao, TIPOS.devolucao, t.devolucao ? 'devolucao' : undefined)}
+                      {card('Total', t.total, { bg: 'var(--gray-100)', c: 'var(--gray-700)' })}
+                    </div>
+                    {itens.length === 0 ? (
+                      <div style={{ textAlign: 'center', padding: 40, color: 'var(--green)', fontWeight: 700 }}>✓ Nenhuma pendência. Tudo em dia!</div>
+                    ) : (
+                      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        <thead><tr>
+                          <th style={{ ...s.th, textAlign: 'left' }}>SKU</th>
+                          <th style={{ ...s.th, textAlign: 'left' }}>Descrição</th>
+                          <th style={{ ...s.th, textAlign: 'left' }}>Etiqueta</th>
+                          <th style={s.th}>Tipo</th>
+                          <th style={s.th}>Ação</th>
+                        </tr></thead>
+                        <tbody>
+                          {itens.map((it, i) => {
+                            const cor = TIPOS[it.tipo] || TIPOS.baixa;
+                            return (
+                              <tr key={`${it.tipo}-${it.pecaId}-${it.etiqueta}-${i}`} style={{ background: i % 2 === 0 ? 'var(--white)' : 'var(--gray-50)' }}>
+                                <td style={{ ...s.td, fontFamily: 'Geist Mono, monospace', fontWeight: 700, whiteSpace: 'nowrap' }}>{it.sku}</td>
+                                <td style={{ ...s.td, fontSize: 12, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={it.descricao}>{it.descricao}</td>
+                                <td style={{ ...s.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, whiteSpace: 'nowrap' }}>{it.etiqueta}</td>
+                                <td style={{ ...s.td, textAlign: 'center' }}>
+                                  <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 999, background: cor.bg, color: cor.c }}>{cor.label}</span>
+                                </td>
+                                <td style={{ ...s.td, textAlign: 'center' }}>
+                                  <button onClick={() => irParaFluxoPendencia(it.tipo)}
+                                    style={{ ...s.btn, fontSize: 11, padding: '4px 12px', background: 'var(--white)', border: '1px solid var(--border)', color: cor.c }}>Ver →</button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
       {/* Modal Pendências Etiqueta Avulsa (Ativação) */}
       {modalAtivacao && (
         <div onClick={() => setModalAtivacao(false)}
