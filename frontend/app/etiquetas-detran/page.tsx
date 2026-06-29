@@ -811,8 +811,9 @@ export default function EtiquetasDetranPage() {
                   Buscando NF e dados do cliente no Bling...
                 </div>
               ) : pendenciasOrdenadas.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: 60, color: 'var(--gray-400)' }}>
-                  Nenhuma pendencia de baixa encontrada
+                <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-muted)' }}>
+                  <div style={{ fontSize: 28, marginBottom: 8 }}>✅</div>
+                  <div>Nenhuma pendência de baixa encontrada</div>
                 </div>
               ) : isPhone ? (
                 <div style={{ padding: 12, display: 'grid', gap: 10, background: '#f8fafc' }}>
@@ -1060,7 +1061,10 @@ export default function EtiquetasDetranPage() {
               {loadingAtivacoes ? (
                 <div style={{ textAlign: 'center', padding: 60, color: 'var(--gray-400)' }}>Carregando etiquetas avulsas...</div>
               ) : ativacoes.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: 60, color: 'var(--gray-400)' }}>Nenhuma etiqueta avulsa pendente de ativação</div>
+                <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-muted)' }}>
+                  <div style={{ fontSize: 28, marginBottom: 8 }}>✅</div>
+                  <div>Nenhuma etiqueta avulsa pendente de ativação</div>
+                </div>
               ) : isPhone ? (
                 <div style={{ padding: 12, display: 'grid', gap: 10, background: '#f8fafc' }}>
                   {ativacoes.map((linha) => {
