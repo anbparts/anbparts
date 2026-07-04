@@ -284,6 +284,7 @@ export default function CadastroPage() {
   const [fdScanning, setFdScanning] = useState(false);
   const [fdProcessando, setFdProcessando] = useState(false);
   const [fdItens, setFdItens] = useState<any[]>([]);
+  const [fdCopiado, setFdCopiado] = useState(false);
   const hoje = new Date().toISOString().slice(0, 10);
   const [fotosModo, setFotosModo] = useState<'skus' | 'data'>('data');
   const [fotosSkusInput, setFotosSkusInput] = useState('');
@@ -1431,8 +1432,28 @@ export default function CadastroPage() {
       {fdItens.length > 0 && (
         <div style={{ ...s.card, padding: isPhone ? '12px' : '16px', marginTop: 14 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-800)' }}>
-              {fdItens.length} pasta(s) identificada(s){fdPendentes ? ` · ${fdPendentes} pendente(s)` : ''}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-800)' }}>
+                {fdItens.length} pasta(s) identificada(s){fdPendentes ? ` · ${fdPendentes} pendente(s)` : ''}
+              </div>
+              {(() => {
+                const processados = fdItens.filter(i => i.status === 'processado').map(i => i.sku);
+                if (!processados.length) return null;
+                return (
+                  <button
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(processados.join('\n'));
+                        setFdCopiado(true);
+                        setTimeout(() => setFdCopiado(false), 2000);
+                      } catch { alert('Nao foi possivel copiar. Copie manualmente:\n\n' + processados.join('\n')); }
+                    }}
+                    title={`Copiar ${processados.length} SKU(s) processado(s), um por linha`}
+                    style={{ ...s.btn, fontSize: 11.5, padding: '5px 12px', background: fdCopiado ? '#f0fdf4' : 'var(--white)', color: fdCopiado ? '#16a34a' : 'var(--gray-600)', border: `1px solid ${fdCopiado ? '#86efac' : 'var(--border)'}` }}>
+                    {fdCopiado ? '✓ Copiado!' : `📋 Copiar SKUs (${processados.length})`}
+                  </button>
+                );
+              })()}
             </div>
             <button onClick={fdProcessarTodos} disabled={fdProcessando || fdScanning || fdPendentes === 0}
               style={{ ...s.btn, background: '#16a34a', color: '#fff', opacity: (fdProcessando || fdPendentes === 0) ? 0.6 : 1 }}>
