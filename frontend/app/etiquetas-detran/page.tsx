@@ -443,6 +443,29 @@ export default function EtiquetasDetranPage() {
     setConfirmandoAtivacao(null);
   }
 
+  // Abre o comprovante (registro da avulsa ou baixa) em nova aba; avisa se nao houver anexo.
+  async function abrirComprovante(linha: any, tipo: 'ativacao' | 'baixa') {
+    if (linha.isPreCadastro) {
+      alert('Nenhum comprovante anexado (etiqueta ainda em pré-cadastro).');
+      return;
+    }
+    try {
+      const url = `${API}/etiquetas-detran/comprovante?pecaId=${encodeURIComponent(linha.pecaId)}&etiqueta=${encodeURIComponent(linha.etiqueta)}&tipo=${tipo}`;
+      const resp = await fetch(url, { credentials: 'include' });
+      if (resp.status === 404) {
+        alert('Nenhum comprovante anexado para esta etiqueta.');
+        return;
+      }
+      if (!resp.ok) throw new Error('Erro ao buscar comprovante');
+      const blob = await resp.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      window.open(blobUrl, '_blank', 'noopener');
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+    } catch (e: any) {
+      alert(e?.message || 'Erro ao abrir comprovante.');
+    }
+  }
+
   async function abrirPendenciasDev() {
     setPendenciasDevOpen(true);
     setLoadingPendenciasDev(true);
@@ -652,9 +675,17 @@ export default function EtiquetasDetranPage() {
                         <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-800)', marginTop: 3, lineHeight: 1.25 }}>{linha.descricao || '-'}</div>
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-end', flexShrink: 0 }}>
-                        <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 999, background: stColors.bg, color: stColors.color }}>
-                          {linha.status || '-'}
-                        </span>
+                        {linha.status === 'Baixada' ? (
+                          <button type="button" onClick={() => abrirComprovante(linha, 'baixa')}
+                            title="Abrir comprovante de baixa"
+                            style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 999, background: stColors.bg, color: stColors.color, border: 'none', cursor: 'pointer', textDecoration: 'underline', fontFamily: 'inherit' }}>
+                            {linha.status}
+                          </button>
+                        ) : (
+                          <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 999, background: stColors.bg, color: stColors.color }}>
+                            {linha.status || '-'}
+                          </span>
+                        )}
                         {linha.fromHistorico && (
                           <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 5, background: '#fef3c7', color: '#92400e' }}>
                             Devolução
@@ -665,7 +696,15 @@ export default function EtiquetasDetranPage() {
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                       <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 8 }}>
                         <div style={{ fontSize: 10, color: 'var(--gray-500)', marginBottom: 3 }}>Tipo</div>
-                        <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 5, background: etqColors.bg, color: etqColors.color }}>{linha.tipoEtiqueta}</span>
+                        {linha.tipoEtiqueta === 'Avulsa' ? (
+                          <button type="button" onClick={() => abrirComprovante(linha, 'ativacao')}
+                            title="Abrir comprovante de registro da etiqueta avulsa"
+                            style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 5, background: etqColors.bg, color: etqColors.color, border: 'none', cursor: 'pointer', textDecoration: 'underline', fontFamily: 'inherit' }}>
+                            {linha.tipoEtiqueta}
+                          </button>
+                        ) : (
+                          <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 5, background: etqColors.bg, color: etqColors.color }}>{linha.tipoEtiqueta}</span>
+                        )}
                       </div>
                       <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 8 }}>
                         <div style={{ fontSize: 10, color: 'var(--gray-500)', marginBottom: 3 }}>Peça</div>
@@ -712,9 +751,17 @@ export default function EtiquetasDetranPage() {
                       <td style={{ ...s.td, fontFamily: 'Geist Mono, monospace', fontWeight: 600 }}>{linha.sku}</td>
                       <td style={{ ...s.td, maxWidth: 320 }}>{linha.descricao || '-'}</td>
                       <td style={s.td}>
-                        <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 5, background: etqColors.bg, color: etqColors.color }}>
-                          {linha.tipoEtiqueta}
-                        </span>
+                        {linha.tipoEtiqueta === 'Avulsa' ? (
+                          <button type="button" onClick={() => abrirComprovante(linha, 'ativacao')}
+                            title="Abrir comprovante de registro da etiqueta avulsa"
+                            style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 5, background: etqColors.bg, color: etqColors.color, border: 'none', cursor: 'pointer', textDecoration: 'underline', fontFamily: 'inherit' }}>
+                            {linha.tipoEtiqueta}
+                          </button>
+                        ) : (
+                          <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 5, background: etqColors.bg, color: etqColors.color }}>
+                            {linha.tipoEtiqueta}
+                          </span>
+                        )}
                       </td>
                       <td style={s.td}>
                         {linha.tipoEtiqueta === 'Avulsa' ? (
@@ -727,9 +774,17 @@ export default function EtiquetasDetranPage() {
                       <td style={{ ...s.td, fontFamily: 'Geist Mono, monospace', fontSize: 12 }}>{linha.etiqueta}</td>
                       <td style={s.td}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-start' }}>
-                          <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 5, background: stColors.bg, color: stColors.color }}>
-                            {linha.status || '-'}
-                          </span>
+                          {linha.status === 'Baixada' ? (
+                            <button type="button" onClick={() => abrirComprovante(linha, 'baixa')}
+                              title="Abrir comprovante de baixa"
+                              style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 5, background: stColors.bg, color: stColors.color, border: 'none', cursor: 'pointer', textDecoration: 'underline', fontFamily: 'inherit' }}>
+                              {linha.status}
+                            </button>
+                          ) : (
+                            <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 5, background: stColors.bg, color: stColors.color }}>
+                              {linha.status || '-'}
+                            </span>
+                          )}
                           {linha.fromHistorico && (
                             <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 5, background: '#fef3c7', color: '#92400e' }}>
                               Devolução

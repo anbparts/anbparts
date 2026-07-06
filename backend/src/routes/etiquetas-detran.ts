@@ -929,6 +929,64 @@ etiquetasDetranRouter.get('/pendencias-resumo', async (_req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// GET /etiquetas-detran/comprovante?pecaId=&etiqueta=&tipo=ativacao|baixa
+// Serve o comprovante anexado (imagem/PDF) inline para abrir em nova aba.
+// Baixa: tabela por etiqueta (novo) com fallback no campo legado da peca.
+etiquetasDetranRouter.get('/comprovante', async (req, res, next) => {
+  try {
+    const pecaId = Number(req.query?.pecaId);
+    const etiqueta = String(req.query?.etiqueta || '').trim();
+    const tipo = String(req.query?.tipo || '').trim();
+    if (!pecaId || !tipo) return res.status(400).json({ ok: false, error: 'pecaId e tipo sao obrigatorios' });
+
+    let nome = '';
+    let arquivo = '';
+
+    if (tipo === 'ativacao') {
+      try {
+        const rows = await prisma.$queryRaw<{ comprovanteNome: string | null; comprovanteArquivo: string | null }[]>`
+          SELECT "comprovanteNome", "comprovanteArquivo" FROM "DetranEtiquetaAtivacao"
+          WHERE "pecaId" = ${pecaId} AND "etiqueta" = ${etiqueta}
+        `;
+        nome = String(rows?.[0]?.comprovanteNome || '');
+        arquivo = String(rows?.[0]?.comprovanteArquivo || '');
+      } catch { /* tabela ainda nao migrada */ }
+    } else if (tipo === 'baixa') {
+      try {
+        const rows = await prisma.$queryRaw<{ comprovanteNome: string | null; comprovanteArquivo: string | null }[]>`
+          SELECT "comprovanteNome", "comprovanteArquivo" FROM "DetranEtiquetaBaixa"
+          WHERE "pecaId" = ${pecaId} AND "etiqueta" = ${etiqueta}
+        `;
+        nome = String(rows?.[0]?.comprovanteNome || '');
+        arquivo = String(rows?.[0]?.comprovanteArquivo || '');
+      } catch { /* tabela ainda nao migrada */ }
+      if (!arquivo) {
+        // Fallback: comprovante legado gravado direto na peca (baixas antigas, por peca).
+        const peca = await prisma.peca.findUnique({
+          where: { id: pecaId },
+          select: { detranComprovanteNome: true, detranComprovanteArquivo: true },
+        });
+        nome = String(peca?.detranComprovanteNome || '');
+        arquivo = String(peca?.detranComprovanteArquivo || '');
+      }
+    } else {
+      return res.status(400).json({ ok: false, error: 'tipo invalido (ativacao|baixa)' });
+    }
+
+    if (!arquivo) return res.status(404).json({ ok: false, error: 'Nenhum comprovante anexado' });
+
+    // Arquivo gravado como data URL ("data:<mime>;base64,<dados>").
+    const match = arquivo.match(/^data:([^;]+);base64,(.+)$/s);
+    const mime = match?.[1] || 'application/octet-stream';
+    const base64 = match?.[2] || arquivo;
+    const buffer = Buffer.from(base64, 'base64');
+
+    res.setHeader('Content-Type', mime);
+    res.setHeader('Content-Disposition', `inline; filename="${(nome || `comprovante-${tipo}`).replace(/[^\w.\-]+/g, '_')}"`);
+    res.send(buffer);
+  } catch (e) { next(e); }
+});
+
 // PATCH /etiquetas-detran/:pecaId/tipo-peca
 etiquetasDetranRouter.patch('/:pecaId/tipo-peca', async (req, res, next) => {
   try {
