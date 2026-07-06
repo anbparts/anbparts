@@ -1611,6 +1611,11 @@ function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, peca, 
       setErr('Moto, ID da peca e descricao sao obrigatorios');
       return;
     }
+    const descricaoLen = String(form.descricao || '').trim().length;
+    if (descricaoLen > 60) {
+      setErr(`A descricao tem ${descricaoLen} caracteres — o maximo e 60 (limite do titulo no Mercado Livre). Ajuste antes de salvar.`);
+      return;
+    }
 
     setSaving(true);
     try {
@@ -1769,7 +1774,7 @@ function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, peca, 
           {modalIsTabletLandscape ? (
             <div style={{ display: 'grid', gridTemplateColumns: modalMainColumns, gap: 16, alignItems: 'start' }}>
               <div>
-                {renderField('Descricao da peca *', 'descricao', 'text', 'Ex: Tampa lateral direita')}
+                {renderField(`Descricao da peca * — ${String(form.descricao || '').length}/60`, 'descricao', 'text', 'Ex: Tampa lateral direita')}
                 <div style={{ display: 'grid', gridTemplateColumns: modalActionColumns, gap: 12, alignItems: 'start' }}>
                   {renderField('Pedido Bling', 'blingPedidoNum', 'text', 'Ex: 449')}
                   <div style={{ marginBottom: 14 }}>
@@ -1839,7 +1844,7 @@ function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, peca, 
             </div>
           ) : (
             <>
-              {renderField('Descricao da peca *', 'descricao', 'text', 'Ex: Tampa lateral direita')}
+              {renderField(`Descricao da peca * — ${String(form.descricao || '').length}/60`, 'descricao', 'text', 'Ex: Tampa lateral direita')}
               {renderField('Pedido Bling', 'blingPedidoNum', 'text', 'Ex: 449')}
               <div style={{ display: 'grid', gridTemplateColumns: dualFieldColumns, gap: 12 }}>
                 <div style={{ marginBottom: 14 }}>

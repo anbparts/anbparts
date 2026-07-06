@@ -1347,23 +1347,30 @@ cadastroRouter.post('/sync-preco-plataformas', async (req, res, next) => {
       if (!mlItemId) {
         resultados.ml = { ok: false, error: 'Anuncio ML nao encontrado para este SKU' };
       } else {
-        // Pre-checa o anuncio: o ML bloqueia alteracao de titulo em anuncio com venda ou de catalogo,
-        // e limita o titulo a 60 caracteres.
+        // Pre-checa o anuncio: o ML limita o titulo a 60 caracteres e, em anuncios com
+        // family_name (sistema de familias/catalogo novo), o titulo e alterado via family_name.
+        // Em anuncio classico com venda, o titulo e bloqueado pela regra do ML.
         let tituloBloqueado = '';
+        let campoTitulo: 'title' | 'family_name' = 'title';
         if (descricao && descricao.length > 60) {
           tituloBloqueado = `titulo com ${descricao.length} caracteres (limite do ML e 60)`;
         }
         if (descricao && !tituloBloqueado) {
           try {
-            const item = await mercadoLivreReq(`/items/${encodeURIComponent(mlItemId)}?attributes=sold_quantity,catalog_listing,status`);
-            if (Number(item?.sold_quantity || 0) > 0) tituloBloqueado = 'anuncio ja tem venda (regra do ML)';
-            else if (item?.catalog_listing) tituloBloqueado = 'anuncio de catalogo nao permite titulo proprio';
+            const item = await mercadoLivreReq(`/items/${encodeURIComponent(mlItemId)}?attributes=sold_quantity,catalog_listing,status,family_name`);
+            if (item?.family_name) {
+              campoTitulo = 'family_name';
+            } else if (Number(item?.sold_quantity || 0) > 0) {
+              tituloBloqueado = 'anuncio ja tem venda (regra do ML)';
+            } else if (item?.catalog_listing) {
+              tituloBloqueado = 'anuncio de catalogo nao permite titulo proprio';
+            }
           } catch { /* se o pre-check falhar, tenta enviar mesmo assim */ }
         }
 
         const mlBody: any = {};
         if (temPreco) mlBody.price = precoML;
-        if (descricao && !tituloBloqueado) mlBody.title = descricao;
+        if (descricao && !tituloBloqueado) mlBody[campoTitulo] = descricao;
 
         try {
           if (Object.keys(mlBody).length) {
@@ -1378,7 +1385,7 @@ cadastroRouter.post('/sync-preco-plataformas', async (req, res, next) => {
             : { ok: true };
         } catch (mlErr: any) {
           // Fallback: se o PUT combinado falhou por causa do titulo, reenvia so o preco.
-          if (mlBody.title && temPreco) {
+          if ((mlBody.title || mlBody.family_name) && temPreco) {
             await mercadoLivreReq(`/items/${encodeURIComponent(mlItemId)}`, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
