@@ -146,7 +146,12 @@ export async function mercadoLivreReq(path: string, init?: RequestInit, retry = 
 
   const payload: any = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(payload?.message || payload?.error || payload?.error_description || `Mercado Livre ${response.status}`);
+    // O motivo real costuma vir no array `cause` (ex.: "item.title cannot be modified").
+    const causas = Array.isArray(payload?.cause)
+      ? payload.cause.map((c: any) => String(c?.message || c?.code || '')).filter(Boolean).join('; ')
+      : '';
+    const base = payload?.message || payload?.error || payload?.error_description || `Mercado Livre ${response.status}`;
+    throw new Error(causas ? `${base} — ${causas}` : base);
   }
 
   return payload;

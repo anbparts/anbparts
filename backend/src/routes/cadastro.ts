@@ -1347,20 +1347,34 @@ cadastroRouter.post('/sync-preco-plataformas', async (req, res, next) => {
       if (!mlItemId) {
         resultados.ml = { ok: false, error: 'Anuncio ML nao encontrado para este SKU' };
       } else {
+        // Pre-checa o anuncio: o ML bloqueia alteracao de titulo em anuncio com venda ou de catalogo.
+        let tituloBloqueado = '';
+        if (descricao) {
+          try {
+            const item = await mercadoLivreReq(`/items/${encodeURIComponent(mlItemId)}?attributes=sold_quantity,catalog_listing,status`);
+            if (Number(item?.sold_quantity || 0) > 0) tituloBloqueado = 'anuncio ja tem venda (regra do ML)';
+            else if (item?.catalog_listing) tituloBloqueado = 'anuncio de catalogo nao permite titulo proprio';
+          } catch { /* se o pre-check falhar, tenta enviar mesmo assim */ }
+        }
+
         const mlBody: any = {};
         if (temPreco) mlBody.price = precoML;
-        if (descricao) mlBody.title = descricao;
+        if (descricao && !tituloBloqueado) mlBody.title = descricao;
+
         try {
-          await mercadoLivreReq(`/items/${encodeURIComponent(mlItemId)}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(mlBody),
-          });
-          resultados.ml = { ok: true };
+          if (Object.keys(mlBody).length) {
+            await mercadoLivreReq(`/items/${encodeURIComponent(mlItemId)}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(mlBody),
+            });
+          }
+          resultados.ml = tituloBloqueado
+            ? { ok: false, error: `Titulo nao alterado: ${tituloBloqueado}.${temPreco ? ' Preco atualizado normalmente.' : ''}` }
+            : { ok: true };
         } catch (mlErr: any) {
-          // ML bloqueia alteracao de titulo em anuncio com venda. Se o preco tambem mudou,
-          // reenvia so o preco pra nao perder a atualizacao; reporta o bloqueio do titulo.
-          if (descricao && temPreco) {
+          // Fallback: se o PUT combinado falhou por causa do titulo, reenvia so o preco.
+          if (mlBody.title && temPreco) {
             await mercadoLivreReq(`/items/${encodeURIComponent(mlItemId)}`, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
