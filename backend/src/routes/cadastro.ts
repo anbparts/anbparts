@@ -1370,7 +1370,8 @@ cadastroRouter.post('/sync-preco-plataformas', async (req, res, next) => {
 
         const mlBody: any = {};
         if (temPreco) mlBody.price = precoML;
-        if (descricao && !tituloBloqueado) mlBody[campoTitulo] = descricao;
+        // Anuncio classico: titulo vai no PUT geral do item.
+        if (descricao && !tituloBloqueado && campoTitulo === 'title') mlBody.title = descricao;
 
         try {
           if (Object.keys(mlBody).length) {
@@ -1380,12 +1381,27 @@ cadastroRouter.post('/sync-preco-plataformas', async (req, res, next) => {
               body: JSON.stringify(mlBody),
             });
           }
-          resultados.ml = tituloBloqueado
-            ? { ok: false, error: `Titulo nao alterado: ${tituloBloqueado}.${temPreco ? ' Preco atualizado normalmente.' : ''}` }
-            : { ok: true };
+          // Anuncio com familia (User Products): o titulo e alterado no endpoint dedicado
+          // PUT /items/{id}/family_name — o ML recalcula o title a partir dele.
+          if (descricao && !tituloBloqueado && campoTitulo === 'family_name') {
+            try {
+              await mercadoLivreReq(`/items/${encodeURIComponent(mlItemId)}/family_name`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ family_name: descricao }),
+              });
+            } catch (famErr: any) {
+              resultados.ml = { ok: false, error: `${temPreco ? 'Preco atualizado, mas o ' : 'O '}titulo (family_name) foi recusado pelo ML: ${famErr?.message || 'bloqueio da API'}` };
+            }
+          }
+          if (!resultados.ml) {
+            resultados.ml = tituloBloqueado
+              ? { ok: false, error: `Titulo nao alterado: ${tituloBloqueado}.${temPreco ? ' Preco atualizado normalmente.' : ''}` }
+              : { ok: true };
+          }
         } catch (mlErr: any) {
           // Fallback: se o PUT combinado falhou por causa do titulo, reenvia so o preco.
-          if ((mlBody.title || mlBody.family_name) && temPreco) {
+          if (mlBody.title && temPreco) {
             await mercadoLivreReq(`/items/${encodeURIComponent(mlItemId)}`, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
