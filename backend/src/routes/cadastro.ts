@@ -58,9 +58,19 @@ function buildCadastroBlingErrorResponse(error: any) {
   };
 }
 
+// Capitaliza cada palavra ("HARLEY DAVIDSON" -> "Harley Davidson").
+// Excecao: palavras de ate 3 letras sao tratadas como sigla e ficam em caixa alta (BMW, KTM).
 function toTitleCase(str: string): string {
   if (!str) return '';
-  return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+  return str
+    .toLowerCase()
+    .split(/\s+/)
+    .map((palavra) => {
+      if (!palavra) return palavra;
+      if (/^\p{L}{1,3}$/u.test(palavra)) return palavra.toUpperCase();
+      return palavra.replace(/(^|[\-\/])\p{L}/gu, (ch) => ch.toUpperCase());
+    })
+    .join(' ');
 }
 
 function gerarIdsPeca(baseSku: string, quantidade: number): string[] {
@@ -1264,16 +1274,20 @@ cadastroRouter.post('/sync-bling-peca', async (req, res, next) => {
 });
 
 // ── POST /cadastro/sync-preco-plataformas ─────────────────────────────────────
-// Sincroniza precoML com Bling, Mercado Livre e Nuvemshop.
-// Body: { sku, precoML }
-// Retorna: { ok, resultados: { bling, ml, nuvemshop } } — resultado individual por plataforma.
+// Sincroniza precoML e/ou descricao (titulo do anuncio) com Bling, Mercado Livre e Nuvemshop.
+// Body: { sku, precoML?, descricao? } — pelo menos um dos dois.
+// Sem rollback: cada plataforma retorna seu proprio resultado (ex.: ML pode bloquear
+// alteracao de titulo em anuncio com venda; Bling/Nuvemshop seguem atualizados).
 cadastroRouter.post('/sync-preco-plataformas', async (req, res, next) => {
   try {
-    const sku     = String(req.body?.sku || '').trim().toUpperCase();
-    const precoML = Number(req.body?.precoML);
+    const sku       = String(req.body?.sku || '').trim().toUpperCase();
+    const temPreco  = req.body?.precoML !== undefined && req.body?.precoML !== null;
+    const precoML   = Number(req.body?.precoML);
+    const descricao = String(req.body?.descricao || '').trim();
 
-    if (!sku)                                         return res.status(400).json({ ok: false, error: 'sku obrigatorio' });
-    if (!Number.isFinite(precoML) || precoML < 0)    return res.status(400).json({ ok: false, error: 'precoML invalido' });
+    if (!sku)                                                  return res.status(400).json({ ok: false, error: 'sku obrigatorio' });
+    if (!temPreco && !descricao)                               return res.status(400).json({ ok: false, error: 'informe precoML e/ou descricao' });
+    if (temPreco && (!Number.isFinite(precoML) || precoML < 0)) return res.status(400).json({ ok: false, error: 'precoML invalido' });
 
     const baseSku = getBaseSku(sku);
     const BLING_READONLY = ['id', 'dataCriacao', 'dataAlteracao', 'imagemURL', 'imagens', 'depositos', 'variacoes', 'estrutura', 'categorias', 'anexos'];
@@ -1305,7 +1319,8 @@ cadastroRouter.post('/sync-preco-plataformas', async (req, res, next) => {
         if (!b) throw new Error('Produto nao carregado do Bling');
         const payload: any = { ...b };
         for (const f of BLING_READONLY) delete payload[f];
-        payload.preco        = precoML;
+        if (temPreco) payload.preco = precoML;
+        if (descricao) payload.nome = descricao;
         payload.unidade      = 'UN';
         payload.tipoProducao = 'T';
         payload.tributacao   = { ...(b.tributacao || {}), ncm: '87141000', cest: '01.076.00' };
@@ -1332,12 +1347,30 @@ cadastroRouter.post('/sync-preco-plataformas', async (req, res, next) => {
       if (!mlItemId) {
         resultados.ml = { ok: false, error: 'Anuncio ML nao encontrado para este SKU' };
       } else {
-        await mercadoLivreReq(`/items/${encodeURIComponent(mlItemId)}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ price: precoML }),
-        });
-        resultados.ml = { ok: true };
+        const mlBody: any = {};
+        if (temPreco) mlBody.price = precoML;
+        if (descricao) mlBody.title = descricao;
+        try {
+          await mercadoLivreReq(`/items/${encodeURIComponent(mlItemId)}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(mlBody),
+          });
+          resultados.ml = { ok: true };
+        } catch (mlErr: any) {
+          // ML bloqueia alteracao de titulo em anuncio com venda. Se o preco tambem mudou,
+          // reenvia so o preco pra nao perder a atualizacao; reporta o bloqueio do titulo.
+          if (descricao && temPreco) {
+            await mercadoLivreReq(`/items/${encodeURIComponent(mlItemId)}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ price: precoML }),
+            });
+            resultados.ml = { ok: false, error: `Preco atualizado, mas o titulo foi recusado pelo ML: ${mlErr?.message || 'bloqueio da API'}` };
+          } else {
+            throw mlErr;
+          }
+        }
       }
     } catch (e: any) {
       resultados.ml = { ok: false, error: e?.message || 'Erro desconhecido' };
@@ -1349,27 +1382,37 @@ cadastroRouter.post('/sync-preco-plataformas', async (req, res, next) => {
       if (!produto) {
         resultados.nuvemshop = { ok: false, error: 'Produto nao encontrado no Nuvemshop' };
       } else {
-        const variants: any[] = produto.variants || [];
-        const variant = variants.find((v: any) =>
-          String(v.sku || '').trim().toUpperCase() === baseSku
-        );
-        if (!variant) {
-          resultados.nuvemshop = { ok: false, error: 'Variante com SKU nao encontrada no Nuvemshop' };
-        } else {
-          await nuvemReq(`/products/${produto.id}/variants/${variant.id}`, {
+        // Titulo fica no PRODUTO (name.pt); preco fica na VARIANTE — chamadas separadas.
+        if (descricao) {
+          await nuvemReq(`/products/${produto.id}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ price: precoML.toFixed(2) }),
+            body: JSON.stringify({ name: { pt: descricao } }),
           });
-          resultados.nuvemshop = { ok: true };
         }
+        if (temPreco) {
+          const variants: any[] = produto.variants || [];
+          const variant = variants.find((v: any) =>
+            String(v.sku || '').trim().toUpperCase() === baseSku
+          );
+          if (!variant) {
+            resultados.nuvemshop = { ok: false, error: 'Variante com SKU nao encontrada no Nuvemshop' };
+          } else {
+            await nuvemReq(`/products/${produto.id}/variants/${variant.id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ price: precoML.toFixed(2) }),
+            });
+          }
+        }
+        if (!resultados.nuvemshop) resultados.nuvemshop = { ok: true };
       }
     } catch (e: any) {
       resultados.nuvemshop = { ok: false, error: e?.message || 'Erro desconhecido' };
     }
 
     const todosOk = Object.values(resultados).every(r => r.ok);
-    console.log(`[sync-preco-plataformas] SKU ${baseSku} preço R$${precoML}:`, JSON.stringify(resultados));
+    console.log(`[sync-preco-plataformas] SKU ${baseSku}${temPreco ? ` preço R$${precoML}` : ''}${descricao ? ' + titulo' : ''}:`, JSON.stringify(resultados));
     res.json({ ok: todosOk, resultados });
   } catch (e) { next(e); }
 });

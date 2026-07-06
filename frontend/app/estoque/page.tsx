@@ -2702,67 +2702,54 @@ export default function EstoquePage() {
         const API = API_BASE;
         const baseSku = String(editPeca.idPeca || '').replace(/-\d+$/, '');
 
-        if (precoMudou) {
-          // Sincroniza precoML com Bling + Mercado Livre + Nuvemshop
-          try {
-            const syncResp = await fetch(`${API}/cadastro/sync-preco-plataformas`, {
-              method: 'POST', credentials: 'include',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ sku: baseSku, precoML: formData.precoML }),
-            });
-            const syncData = await syncResp.json();
-            const r = syncData.resultados || {};
-            const falhas = [
-              !r.bling?.ok    && `Bling: ${r.bling?.error    || 'falha'}`,
-              !r.ml?.ok       && `ML: ${r.ml?.error          || 'falha'}`,
-              !r.nuvemshop?.ok && `Nuvemshop: ${r.nuvemshop?.error || 'falha'}`,
-            ].filter(Boolean);
-            if (falhas.length) {
-              alert(`Preço salvo no ANB, mas houve falha ao sincronizar:\n\n${falhas.join('\n')}`);
-            }
-          } catch (e: any) {
-            alert(`Preço salvo no ANB, mas erro ao sincronizar plataformas: ${e.message}`);
+        // Sincroniza preço e/ou título (descrição) com Bling + Mercado Livre + Nuvemshop
+        try {
+          const syncResp = await fetch(`${API}/cadastro/sync-preco-plataformas`, {
+            method: 'POST', credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              sku: baseSku,
+              ...(precoMudou ? { precoML: formData.precoML } : {}),
+              ...(descricaoMudou ? { descricao: formData.descricao } : {}),
+            }),
+          });
+          const syncData = await syncResp.json();
+          const r = syncData.resultados || {};
+          const nomes: Record<string, string> = { bling: 'Bling', ml: 'Mercado Livre', nuvemshop: 'Nuvemshop' };
+          const oks = Object.keys(nomes).filter((k) => r[k]?.ok).map((k) => nomes[k]);
+          const falhas = Object.keys(nomes).filter((k) => r[k] && !r[k].ok).map((k) => `${nomes[k]}: ${r[k].error || 'falha'}`);
+          if (falhas.length) {
+            alert(`Salvo no ANB.${oks.length ? ` Atualizado em: ${oks.join(', ')}.` : ''}\n\nFalhou em:\n${falhas.join('\n')}`);
           }
-        } else if (descricaoMudou) {
-          // Só descrição mudou — continua usando sync-bling-peca
-          try {
-            await fetch(`${API}/cadastro/sync-bling-peca`, {
-              method: 'POST', credentials: 'include',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ sku: baseSku, descricao: formData.descricao }),
-            });
-          } catch (e: any) {
-            console.warn('[sync-bling] Erro ao sincronizar descricao:', e.message);
-          }
+        } catch (e: any) {
+          alert(`Salvo no ANB, mas erro ao sincronizar plataformas: ${e.message}`);
         }
 
-        // Se o preço mudou, replica para todas as variações em estoque (disponivel=true) no ANB
-        if (precoMudou) {
-          try {
-            const pecasResp = await fetch(`${API}/pecas?sku=${encodeURIComponent(baseSku)}&per=50`, { credentials: 'include' });
-            const pecasData = await pecasResp.json();
-            const todasVariacoes: any[] = (pecasData?.data || []).filter((p: any) =>
-              p.id !== editPeca.id &&
-              p.disponivel === true &&
-              (p.idPeca === baseSku || p.idPeca.startsWith(`${baseSku}-`))
-            );
-            for (const variacao of todasVariacoes) {
-              await fetch(`${API}/pecas/${variacao.id}`, {
-                method: 'PUT', credentials: 'include',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  motoId: variacao.motoId,
-                  descricao: variacao.descricao,
-                  precoML: formData.precoML,
-                  valorFrete: Number(variacao.valorFrete),
-                  valorTaxas: Number(variacao.valorTaxas),
-                  disponivel: variacao.disponivel,
-                }),
-              });
-            }
-          } catch (e: any) {
-            console.warn('[sync-variacoes] Erro ao replicar preço:', e.message);
+        // Replica preço e/ou título para todas as variações em estoque (disponivel=true) no ANB
+        try {
+          const pecasResp = await fetch(`${API}/pecas?sku=${encodeURIComponent(baseSku)}&per=50`, { credentials: 'include' });
+          const pecasData = await pecasResp.json();
+          const todasVariacoes: any[] = (pecasData?.data || []).filter((p: any) =>
+            p.id !== editPeca.id &&
+            p.disponivel === true &&
+            (p.idPeca === baseSku || p.idPeca.startsWith(`${baseSku}-`))
+          );
+          for (const variacao of todasVariacoes) {
+            await fetch(`${API}/pecas/${variacao.id}`, {
+              method: 'PUT', credentials: 'include',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                motoId: variacao.motoId,
+                descricao: descricaoMudou ? formData.descricao : variacao.descricao,
+                precoML: precoMudou ? formData.precoML : Number(variacao.precoML),
+                valorFrete: Number(variacao.valorFrete),
+                valorTaxas: Number(variacao.valorTaxas),
+                disponivel: variacao.disponivel,
+              }),
+            });
           }
+        } catch (e: any) {
+          console.warn('[sync-variacoes] Erro ao replicar preço/título:', e.message);
         }
       }
     } else {
