@@ -1347,9 +1347,13 @@ cadastroRouter.post('/sync-preco-plataformas', async (req, res, next) => {
       if (!mlItemId) {
         resultados.ml = { ok: false, error: 'Anuncio ML nao encontrado para este SKU' };
       } else {
-        // Pre-checa o anuncio: o ML bloqueia alteracao de titulo em anuncio com venda ou de catalogo.
+        // Pre-checa o anuncio: o ML bloqueia alteracao de titulo em anuncio com venda ou de catalogo,
+        // e limita o titulo a 60 caracteres.
         let tituloBloqueado = '';
-        if (descricao) {
+        if (descricao && descricao.length > 60) {
+          tituloBloqueado = `titulo com ${descricao.length} caracteres (limite do ML e 60)`;
+        }
+        if (descricao && !tituloBloqueado) {
           try {
             const item = await mercadoLivreReq(`/items/${encodeURIComponent(mlItemId)}?attributes=sold_quantity,catalog_listing,status`);
             if (Number(item?.sold_quantity || 0) > 0) tituloBloqueado = 'anuncio ja tem venda (regra do ML)';
