@@ -1437,7 +1437,8 @@ export default function CadastroPage() {
                 {fdItens.length} pasta(s) identificada(s){fdPendentes ? ` · ${fdPendentes} pendente(s)` : ''}
               </div>
               {(() => {
-                const processados = fdItens.filter(i => i.status === 'processado').map(i => i.sku);
+                const processados = fdItens.filter(i => i.status === 'processado').map(i => i.sku)
+                  .sort((a, b) => String(a).localeCompare(String(b), 'pt-BR', { numeric: true, sensitivity: 'base' }));
                 if (!processados.length) return null;
                 return (
                   <button
