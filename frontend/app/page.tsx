@@ -350,7 +350,9 @@ export default function DashboardPage() {
         setSkuPorMoto(grouped);
 
         // Busca visitas do ML hoje (silencioso — não bloqueia o dashboard)
-        api.mercadoLivre.visitasHoje().then((v) => { if (!cancelled) setVisitasML(v); }).catch(() => {});
+        // DESATIVADO temporariamente: o ML parou de registrar visitas (confirmado no painel deles).
+        // Reativar descomentando a linha abaixo + o card 'Visitas hoje (ML)' + a rota /mercado-livre/visitas-hoje no backend.
+        // api.mercadoLivre.visitasHoje().then((v) => { if (!cancelled) setVisitasML(v); }).catch(() => {});
       } catch {
         if (cancelled) return;
         const cachedDashboard = readDashboardCache();
@@ -447,12 +449,13 @@ export default function DashboardPage() {
       kind: 'mercado-livre-saldo',
       saldo: dash?.mercadoLivreSaldo || null,
     },
-    {
-      label: 'Visitas hoje (ML)',
-      kind: 'ml-visitas',
-      visitasUnicas: visitasML?.visitasUnicas ?? null,
-      totalVisitas: visitasML?.totalVisitas ?? null,
-    },
+    // DESATIVADO temporariamente: ML parou de registrar visitas. Reativar junto com o fetch acima.
+    // {
+    //   label: 'Visitas hoje (ML)',
+    //   kind: 'ml-visitas',
+    //   visitasUnicas: visitasML?.visitasUnicas ?? null,
+    //   totalVisitas: visitasML?.totalVisitas ?? null,
+    // },
     {
       label: 'Receita bruta',
       val: fmt(dash?.receitaBruta || 0),
