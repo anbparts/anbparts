@@ -279,11 +279,14 @@ async function persistirSkuCategorias(resultados: any[]) {
 
 nuvemshopRouter.post('/buscar-produtos', async (req, res, next) => {
   try {
-    const { motoId, skus: skusInput, offset: offsetInput, limit: limitInput, dataDe, dataAte } = req.body || {};
+    const { motoId, skus: skusInput, offset: offsetInput, limit: limitInput, dataDe, dataAte, incluirVendidas } = req.body || {};
 
-    // 1. Obtém SKUs do ANB com estoque
+    // 1. Obtém SKUs do ANB
+    // Por padrão só com estoque; com incluirVendidas traz também as já vendidas (muitas existem
+    // na Nuvemshop) — assim a categoria delas entra automaticamente. As pré-site (ausentes da
+    // Nuvemshop) aparecem como "não encontrado" e são categorizadas pela aba manual da Curva ABC.
     // Quando SKUs específicos são informados, busca pelo SKU base E todas as variações (-2, -3...)
-    const where: any = { disponivel: true };
+    const where: any = incluirVendidas ? {} : { disponivel: true };
     if (motoId) where.motoId = Number(motoId);
     if (skusInput && Array.isArray(skusInput) && skusInput.length) {
       const bases = skusInput.map((s: string) => normalizarSkuBusca(s).replace(/-\d+$/, ''));

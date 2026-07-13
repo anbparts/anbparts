@@ -138,6 +138,7 @@ export default function NuvemshopProdutosPage() {
   const [motoId, setMotoId] = useState('');
   const [skusInput, setSkusInput] = useState('');
   const [modo, setModo] = useState<'moto' | 'skus' | 'data'>('moto');
+  const [incluirVendidas, setIncluirVendidas] = useState(false);
   const hoje = new Date().toISOString().slice(0, 10);
   const [dataDe, setDataDe] = useState(hoje);
   const [dataAte, setDataAte] = useState(hoje);
@@ -291,6 +292,7 @@ export default function NuvemshopProdutosPage() {
               motoId: Number(motoId),
               offset,
               limit: MOTO_SEARCH_BATCH_SIZE,
+              incluirVendidas,
             }),
           });
           const data = await lerRespostaApi(resp);
@@ -308,7 +310,7 @@ export default function NuvemshopProdutosPage() {
         return;
       }
 
-      const body: any = {};
+      const body: any = { incluirVendidas };
       if (modo === 'skus') body.skus = normalizarSkuLista(skusInput);
       if (modo === 'data') { body.dataDe = dataDe; body.dataAte = dataAte; }
       const resp = await fetch(`${API}/nuvemshop/buscar-produtos`, {
@@ -435,10 +437,15 @@ export default function NuvemshopProdutosPage() {
             ))}
           </div>
 
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5, color: 'var(--gray-600)', cursor: 'pointer', marginBottom: 14, padding: '6px 10px', background: incluirVendidas ? '#f3e8ff' : 'var(--gray-50)', border: `1px solid ${incluirVendidas ? '#c4b5fd' : 'var(--border)'}`, borderRadius: 8 }}>
+            <input type="checkbox" checked={incluirVendidas} onChange={e => setIncluirVendidas(e.target.checked)} />
+            <span>Incluir peças <b>já vendidas</b> na busca <span style={{ color: 'var(--gray-400)' }}>— traz a categoria das que existem na Nuvemshop; as pré-site aparecem como “não encontrado”</span></span>
+          </label>
+
           {modo === 'moto' ? (
             <div style={{ display: isPhone ? 'grid' : 'flex', gridTemplateColumns: '1fr', gap: 12, alignItems: 'flex-end' }}>
               <div style={{ flex: 1 }}>
-                <label style={s.label}>Moto (somente com estoque)</label>
+                <label style={s.label}>Moto {incluirVendidas ? '(estoque + vendidas)' : '(somente com estoque)'}</label>
                 <select style={{ ...s.input, minHeight: isPhone ? 42 : undefined }} value={motoId} onChange={e => setMotoId(e.target.value)}>
                   <option value="">Selecione a moto...</option>
                   {motos.map(m => <option key={m.id} value={m.id}>ID {m.id} - {m.marca} {m.modelo} {m.ano || ''}</option>)}
