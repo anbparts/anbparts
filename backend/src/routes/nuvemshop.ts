@@ -253,6 +253,30 @@ nuvemshopRouter.get('/categorias', async (_req, res, next) => {
 // ─── POST /nuvemshop/buscar-produtos ──────────────────────────────────────────
 // Body: { motoId?: number } | { skus?: string[] }
 
+// Persiste as categorias lidas da Nuvemshop na tabela SkuCategoria (alimenta a Curva ABC).
+// Substitui apenas as categorias de origem 'nuvemshop' do SKU (reflete remoções); categorias
+// atribuídas manualmente no sistema (origem 'manual') são preservadas. Best-effort: não quebra a busca.
+async function persistirSkuCategorias(resultados: any[]) {
+  for (const r of resultados) {
+    if (!r?.encontradoNuvemshop || !r?.sku) continue;
+    const sku = String(r.sku).trim().toUpperCase();
+    const categorias: { id: any; nome: any }[] = Array.isArray(r.categorias) ? r.categorias : [];
+    try {
+      await prisma.$executeRaw`DELETE FROM "SkuCategoria" WHERE "sku" = ${sku} AND "origem" = 'nuvemshop'`;
+      for (const c of categorias) {
+        const categoriaId = String(c?.id ?? '').trim();
+        const nome = String(c?.nome ?? '').trim();
+        if (!categoriaId || !nome) continue;
+        await prisma.$executeRaw`
+          INSERT INTO "SkuCategoria" ("sku", "categoriaId", "nome", "origem", "atualizadoEm")
+          VALUES (${sku}, ${categoriaId}, ${nome}, 'nuvemshop', now())
+          ON CONFLICT ("sku", "categoriaId") DO UPDATE SET "nome" = EXCLUDED."nome", "origem" = 'nuvemshop', "atualizadoEm" = now()
+        `;
+      }
+    } catch { /* tabela ainda nao migrada — segue sem persistir */ }
+  }
+}
+
 nuvemshopRouter.post('/buscar-produtos', async (req, res, next) => {
   try {
     const { motoId, skus: skusInput, offset: offsetInput, limit: limitInput, dataDe, dataAte } = req.body || {};
@@ -343,6 +367,9 @@ nuvemshopRouter.post('/buscar-produtos', async (req, res, next) => {
         };
       }
     });
+
+    // Alimenta a tabela SkuCategoria com o que foi lido (base do relatorio Curva ABC).
+    await persistirSkuCategorias(resultados);
 
     res.json({
       ok: true,

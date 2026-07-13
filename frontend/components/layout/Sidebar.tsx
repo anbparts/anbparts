@@ -39,6 +39,7 @@ export const NAV: NavGroup[] = [
       { href: '/faturamento/geral', icon: 'chart-line', label: 'Fat. Geral' },
       { href: '/despesas-receita', icon: 'compare', label: 'Despesas x Receita' },
       { href: '/dre', icon: 'file-text', label: 'DRE' },
+      { href: '/curva-abc', icon: 'chart-bars', label: 'Curva ABC' },
       { href: '/despesas', icon: 'receipt', label: 'Despesas' },
       { href: '/prejuizos', icon: 'alert', label: 'Prejuizos' },
       { href: '/investimentos', icon: 'briefcase', label: 'Investimentos' },

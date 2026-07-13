@@ -614,6 +614,21 @@ model BlingPedidoSeparacao {
   separadoEm DateTime @default(now())
 }
 
+// Categorias da Nuvemshop por SKU base (N por SKU). Alimentada automaticamente
+// pela busca da tela Produtos Nuvemshop; consumida pelo relatorio Curva ABC.
+model SkuCategoria {
+  id           Int      @id @default(autoincrement())
+  sku          String
+  categoriaId  String
+  nome         String
+  origem       String   @default("nuvemshop") // nuvemshop | manual
+  atualizadoEm DateTime @updatedAt
+
+  @@unique([sku, categoriaId])
+  @@index([sku])
+  @@index([nome])
+}
+
 // Baixa de etiqueta DETRAN por etiqueta individual (uma peça pode ter mais de uma, ex.: produto "Par").
 // A presença de uma linha = aquela etiqueta foi baixada. Peca.detranBaixada = todas baixadas.
 model DetranEtiquetaBaixa {
