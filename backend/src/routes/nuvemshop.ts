@@ -145,7 +145,6 @@ function produtoContemSku(produto: any, sku: string) {
 export async function buscarProdutoNuvemshopPorSku(sku: string, modoConfiavel: boolean) {
   const tentativas = modoConfiavel ? 4 : 1;
   const perPage = modoConfiavel ? 20 : 5;
-  let ultimoErro: any = null;
 
   for (let tentativa = 0; tentativa < tentativas; tentativa++) {
     try {
@@ -158,6 +157,7 @@ export async function buscarProdutoNuvemshopPorSku(sku: string, modoConfiavel: b
         } catch (e: any) {
           const mensagem = String(e?.message || e || '');
           if (!mensagem.includes('Nuvemshop 404')) throw e;
+          // 404 no lookup exato: não existe por SKU exato; segue pro fallback de busca textual.
         }
       }
 
@@ -165,16 +165,17 @@ export async function buscarProdutoNuvemshopPorSku(sku: string, modoConfiavel: b
         timeoutMs: modoConfiavel ? 20000 : 12000,
       }) as any[];
       const produtoEncontrado = (Array.isArray(produtos) ? produtos : []).find((produto) => produtoContemSku(produto, sku)) || null;
-      if (produtoEncontrado || !modoConfiavel || tentativa === tentativas - 1) return produtoEncontrado;
+      // Busca concluída SEM erro → o resultado é definitivo (achou ou realmente não existe).
+      // Antes, um resultado nulo era repetido até 4x, mesmo sem erro: com "incluir vendidas",
+      // as muitas peças pré-site (ausentes da Nuvemshop) faziam o lote estourar o tempo (500 no gateway).
+      return produtoEncontrado;
     } catch (e: any) {
-      ultimoErro = e;
+      // Só reintenta em ERRO real (rate limit / timeout / instabilidade), nunca em "não encontrado".
       if (!modoConfiavel || tentativa === tentativas - 1) throw e;
+      await aguardar(450 * (tentativa + 1));
     }
-
-    await aguardar(450 * (tentativa + 1));
   }
 
-  if (ultimoErro) throw ultimoErro;
   return null;
 }
 
