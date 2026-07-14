@@ -27,6 +27,7 @@ import { pecasRouter, startLimpezaFotosPecaScheduler } from './routes/pecas';
 import { authMiddleware } from './middlewares/auth';
 import { errorMiddleware } from './middlewares/error';
 import { startFotosPendentesWhatsappScheduler } from './lib/fotos-pendentes-whatsapp';
+import { startFotosDrivePendentesScheduler } from './lib/fotos-drive-aviso';
 
 const app = express();
 
@@ -74,5 +75,6 @@ app.listen(port, () => {
   startMercadoLivreScheduler();
   startLimpezaFotosPecaScheduler();
   startFotosPendentesWhatsappScheduler();
+  startFotosDrivePendentesScheduler();
   console.log(`ANB Backend rodando na porta ${port}`);
 });

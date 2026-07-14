@@ -27,6 +27,11 @@ type ConfiguracaoGeral = {
   mercadoLivrePerguntasIntervaloMin: number;
   mercadoLivrePerguntasEmailDestinatario: string;
   mercadoLivrePerguntasEmailTitulo: string;
+  fotosDrivePendentesAtivo: boolean;
+  fotosDrivePendentesIntervaloMin: number;
+  fotosDrivePendentesEmailDestinatario: string;
+  fotosDrivePendentesEmailTitulo: string;
+  fotosDrivePendentesEmailConfigurado: boolean;
   resendApiKeyConfigured: boolean;
   auditoriaEmailConfigurado: boolean;
   detranEmailConfigurado: boolean;
@@ -54,6 +59,10 @@ export default function ConfiguracoesGeraisPage() {
   const [mercadoLivrePerguntasIntervaloMin, setMercadoLivrePerguntasIntervaloMin] = useState('5');
   const [mercadoLivrePerguntasEmailDestinatario, setMercadoLivrePerguntasEmailDestinatario] = useState('');
   const [mercadoLivrePerguntasEmailTitulo, setMercadoLivrePerguntasEmailTitulo] = useState('');
+  const [fotosDrivePendentesAtivo, setFotosDrivePendentesAtivo] = useState(false);
+  const [fotosDrivePendentesIntervaloMin, setFotosDrivePendentesIntervaloMin] = useState('20');
+  const [fotosDrivePendentesEmailDestinatario, setFotosDrivePendentesEmailDestinatario] = useState('');
+  const [fotosDrivePendentesEmailTitulo, setFotosDrivePendentesEmailTitulo] = useState('');
 
   async function loadConfig() {
     const data = await api.configuracoesGerais.get();
@@ -74,6 +83,10 @@ export default function ConfiguracoesGeraisPage() {
     setMercadoLivrePerguntasIntervaloMin(String(data.mercadoLivrePerguntasIntervaloMin || 5));
     setMercadoLivrePerguntasEmailDestinatario(data.mercadoLivrePerguntasEmailDestinatario || '');
     setMercadoLivrePerguntasEmailTitulo(data.mercadoLivrePerguntasEmailTitulo || '');
+    setFotosDrivePendentesAtivo(!!data.fotosDrivePendentesAtivo);
+    setFotosDrivePendentesIntervaloMin(String(data.fotosDrivePendentesIntervaloMin || 20));
+    setFotosDrivePendentesEmailDestinatario(data.fotosDrivePendentesEmailDestinatario || '');
+    setFotosDrivePendentesEmailTitulo(data.fotosDrivePendentesEmailTitulo || '');
   }
 
   useEffect(() => {
@@ -102,6 +115,10 @@ export default function ConfiguracoesGeraisPage() {
         mercadoLivrePerguntasIntervaloMin: Number(mercadoLivrePerguntasIntervaloMin) || 5,
         mercadoLivrePerguntasEmailDestinatario,
         mercadoLivrePerguntasEmailTitulo,
+        fotosDrivePendentesAtivo,
+        fotosDrivePendentesIntervaloMin: Number(fotosDrivePendentesIntervaloMin) || 20,
+        fotosDrivePendentesEmailDestinatario,
+        fotosDrivePendentesEmailTitulo,
       });
       await loadConfig();
       alert('Configuracoes gerais salvas.');
@@ -260,6 +277,39 @@ export default function ConfiguracoesGeraisPage() {
             <div>
               <label style={s.label}>Titulo do email das perguntas</label>
               <input style={{ ...s.input, width: '100%' }} value={mercadoLivrePerguntasEmailTitulo} onChange={(e) => setMercadoLivrePerguntasEmailTitulo(e.target.value)} placeholder="ALERTA ANB Parts - Perguntas Mercado Livre - Verifique" />
+            </div>
+          </div>
+        </div>
+
+        <div style={{ ...s.card, background: '#f5f3ff', borderColor: '#ddd6fe' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-800)' }}>Processo: Fotos prontas no Drive</div>
+            <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: config?.fotosDrivePendentesEmailConfigurado ? '#ecfdf3' : '#fff7ed', color: config?.fotosDrivePendentesEmailConfigurado ? '#047857' : '#c2410c' }}>
+              {config?.fotosDrivePendentesEmailConfigurado ? 'Configurado' : 'Incompleto'}
+            </span>
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--gray-500)', marginBottom: 14 }}>
+            Quando ativo, o sistema faz a mesma verificacao do botao "Escanear pastas" (Cadastro &rarr; Fotos Drive) no intervalo abaixo e, ao encontrar SKUs com o zip pronto, envia 1 e-mail agrupando os novos. Avisa so 1x por SKU; se a pasta for processada e o SKU reaparecer depois com fotos novas, avisa de novo.
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
+            <div>
+              <label style={s.label}>Verificacao e email ativos</label>
+              <select style={{ ...s.input, width: '100%', cursor: 'pointer' }} value={fotosDrivePendentesAtivo ? 'ativa' : 'pausada'} onChange={(e) => setFotosDrivePendentesAtivo(e.target.value === 'ativa')}>
+                <option value="pausada">Pausada</option>
+                <option value="ativa">Ativa</option>
+              </select>
+            </div>
+            <div>
+              <label style={s.label}>Tempo de processamento (min)</label>
+              <input style={{ ...s.input, width: '100%' }} type="number" min="1" step="1" value={fotosDrivePendentesIntervaloMin} onChange={(e) => setFotosDrivePendentesIntervaloMin(e.target.value)} />
+            </div>
+            <div>
+              <label style={s.label}>Email destinatario do aviso</label>
+              <input style={{ ...s.input, width: '100%' }} value={fotosDrivePendentesEmailDestinatario} onChange={(e) => setFotosDrivePendentesEmailDestinatario(e.target.value)} placeholder="fotos@empresa.com.br" />
+            </div>
+            <div>
+              <label style={s.label}>Titulo do email do aviso</label>
+              <input style={{ ...s.input, width: '100%' }} value={fotosDrivePendentesEmailTitulo} onChange={(e) => setFotosDrivePendentesEmailTitulo(e.target.value)} placeholder="ANB Parts - Fotos prontas no Drive - Processar" />
             </div>
           </div>
         </div>

@@ -639,6 +639,23 @@ model CategoriaUnificacao {
   atualizadoEm DateTime @updatedAt
 }
 
+// Config da rotina de aviso de fotos prontas no Drive (pasta com zip). Singleton (id=1).
+model FotosDrivePendenteConfig {
+  id                 Int       @id @default(1)
+  ativo              Boolean   @default(false)
+  intervaloMin       Int       @default(20)
+  emailDestinatario  String    @default("")
+  emailTitulo        String    @default("ANB Parts - Fotos prontas no Drive - Processar")
+  ultimaExecucaoEm   DateTime?
+}
+
+// Controle de SKUs já avisados (1x por SKU). Ao sumir do scan, o registro é removido — reaparecendo, avisa de novo.
+model FotosDrivePendenteNotificado {
+  sku          String   @id
+  nomePasta    String   @default("")
+  notificadoEm DateTime @default(now())
+}
+
 // Baixa de etiqueta DETRAN por etiqueta individual (uma peça pode ter mais de uma, ex.: produto "Par").
 // A presença de uma linha = aquela etiqueta foi baixada. Peca.detranBaixada = todas baixadas.
 model DetranEtiquetaBaixa {

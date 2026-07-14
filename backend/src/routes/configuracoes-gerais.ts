@@ -10,13 +10,21 @@ import {
   getConfiguracaoGeral,
   saveConfiguracaoGeral,
 } from '../lib/configuracoes-gerais';
+import { getFotosDriveAvisoConfig, saveFotosDriveAvisoConfig } from '../lib/fotos-drive-aviso';
 
 export const configuracoesGeraisRouter = Router();
 
 configuracoesGeraisRouter.get('/', async (_req, res, next) => {
   try {
     const config = await getConfiguracaoGeral();
+    const fotosDrive = await getFotosDriveAvisoConfig();
     res.json({
+      fotosDrivePendentesAtivo: fotosDrive.ativo,
+      fotosDrivePendentesIntervaloMin: fotosDrive.intervaloMin,
+      fotosDrivePendentesEmailDestinatario: fotosDrive.emailDestinatario,
+      fotosDrivePendentesEmailTitulo: fotosDrive.emailTitulo,
+      fotosDrivePendentesEmailConfigurado: !!(config.resendApiKey && config.emailRemetente && fotosDrive.emailDestinatario && fotosDrive.emailTitulo),
+      fotosDrivePendentesUltimaExecucaoEm: fotosDrive.ultimaExecucaoEm || null,
       emailRemetente: config.emailRemetente || DEFAULT_RESEND_FROM,
       auditoriaEmailDestinatario: config.auditoriaEmailDestinatario || '',
       auditoriaEmailTitulo: config.auditoriaEmailTitulo || DEFAULT_AUDITORIA_EMAIL_TITULO,
@@ -77,6 +85,22 @@ configuracoesGeraisRouter.post('/', async (req, res, next) => {
     }
 
     await saveConfiguracaoGeral(payload);
+
+    // Rotina de aviso de fotos prontas no Drive (config em tabela própria, via raw SQL)
+    if (
+      req.body?.fotosDrivePendentesAtivo !== undefined ||
+      req.body?.fotosDrivePendentesIntervaloMin !== undefined ||
+      req.body?.fotosDrivePendentesEmailDestinatario !== undefined ||
+      req.body?.fotosDrivePendentesEmailTitulo !== undefined
+    ) {
+      await saveFotosDriveAvisoConfig({
+        ativo: req.body?.fotosDrivePendentesAtivo,
+        intervaloMin: req.body?.fotosDrivePendentesIntervaloMin,
+        emailDestinatario: req.body?.fotosDrivePendentesEmailDestinatario,
+        emailTitulo: req.body?.fotosDrivePendentesEmailTitulo,
+      });
+    }
+
     res.json({ ok: true });
   } catch (e) {
     next(e);
