@@ -111,10 +111,10 @@ export default function CurvaAbcPage() {
     setConfLoading(false);
   }
 
-  function aplicarSugestoesConf() {
+  function aplicarSugestoesConf(lista: { origem: string; destino: string }[]) {
     setConfMap(prev => {
       const n = { ...prev };
-      for (const s of confSugestoes) n[s.origem] = s.destino;
+      for (const sg of lista) n[sg.origem] = sg.destino;
       return n;
     });
   }
@@ -332,6 +332,36 @@ export default function CurvaAbcPage() {
     () => (rel?.categorias || []).filter(c => c.nome !== 'Sem categoria' && c.vendidas === 0),
     [rel],
   );
+
+  // Sugestões de unificação: por nome (backend) + por hierarquia da Nuvemshop (filha → categoria pai).
+  const sugestoesTodas = useMemo(() => {
+    const nodes = (catTree || []).map((c: any) => {
+      const nome = c?.name?.pt || c?.name?.['pt-BR'] || (c?.name ? (Object.values(c.name)[0] as string) : '') || String(c?.id || '');
+      const parent = c?.parent != null ? String(c.parent) : (c?.parent_id != null ? String(c.parent_id) : '');
+      return { id: String(c?.id || ''), nome: String(nome || '').trim(), parent };
+    });
+    const idToNome = new Map<string, string>();
+    for (const n of nodes) if (n.id) idToNome.set(n.id, n.nome);
+    const origensExistentes = new Set(confItens.map(i => i.origem.trim().toLowerCase()));
+    const hier: { origem: string; destino: string }[] = [];
+    for (const n of nodes) {
+      if (!n.parent || !n.nome) continue;
+      const paiNome = idToNome.get(n.parent);
+      if (!paiNome) continue;
+      if (paiNome.trim().toLowerCase() === n.nome.trim().toLowerCase()) continue;
+      if (!origensExistentes.has(n.nome.trim().toLowerCase())) continue; // só categorias que temos
+      hier.push({ origem: n.nome, destino: paiNome });
+    }
+    const seen = new Set<string>();
+    const todas: { origem: string; destino: string }[] = [];
+    for (const sug of [...hier, ...confSugestoes]) { // hierarquia primeiro
+      const k = sug.origem.trim().toLowerCase();
+      if (seen.has(k)) continue;
+      seen.add(k);
+      todas.push(sug);
+    }
+    return todas;
+  }, [catTree, confItens, confSugestoes]);
 
   const t = rel?.totais;
   const atualizadoEm = rel?.atualizadoEm ? new Date(rel.atualizadoEm) : null;
@@ -696,9 +726,9 @@ export default function CurvaAbcPage() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
                 <span style={{ fontSize: 12, color: 'var(--gray-500)' }}><b style={{ color: 'var(--gray-700)' }}>{confItens.length}</b> categoria(s) · deixe o destino vazio para manter o nome original</span>
                 <div style={{ display: 'flex', gap: 8 }}>
-                  {confSugestoes.length > 0 && (
-                    <button onClick={aplicarSugestoesConf} style={{ ...s.btn, padding: '6px 12px', fontSize: 12.5, background: 'var(--gray-100)', color: 'var(--gray-700)', border: '1px solid var(--border)' }}>
-                      ✨ Aplicar {confSugestoes.length} sugestão(ões)
+                  {sugestoesTodas.length > 0 && (
+                    <button onClick={() => aplicarSugestoesConf(sugestoesTodas)} style={{ ...s.btn, padding: '6px 12px', fontSize: 12.5, background: 'var(--gray-100)', color: 'var(--gray-700)', border: '1px solid var(--border)' }}>
+                      ✨ Aplicar {sugestoesTodas.length} sugestão(ões)
                     </button>
                   )}
                   <button onClick={salvarConf} disabled={confSalvando} style={{ ...s.btn, padding: '6px 14px', fontSize: 12.5, background: '#7c3aed', color: '#fff', opacity: confSalvando ? .6 : 1 }}>
@@ -720,7 +750,7 @@ export default function CurvaAbcPage() {
                   <tbody>
                     {confItens.map((it, i) => {
                       const destino = confMap[it.origem] || '';
-                      const sugerido = confSugestoes.find(s => s.origem === it.origem);
+                      const sugerido = sugestoesTodas.find(sg => sg.origem === it.origem);
                       return (
                         <tr key={it.origem} style={{ background: i % 2 === 0 ? 'var(--white)' : 'var(--gray-50)' }}>
                           <td style={{ ...s.td, fontWeight: 600 }}>{it.origem}</td>
@@ -742,7 +772,7 @@ export default function CurvaAbcPage() {
                 </table>
               </div>
               <div style={{ padding: '10px 14px', fontSize: 11.5, color: 'var(--gray-400)', borderTop: '1px solid var(--border)' }}>
-                Ex.: mande <b>Carroceria</b> e <b>Carenagem (dianteira, lateral, traseira)</b> para <b>Carenagem</b>. As sugestões automáticas agrupam nomes parecidos (“Outras Peças X” e “X (…)” → X).
+                Ex.: mande <b>Carroceria</b> e <b>Carenagem (dianteira, lateral, traseira)</b> para <b>Carenagem</b>. As sugestões automáticas agrupam por nome parecido (“Outras Peças X” e “X (…)” → X) <b>e pela hierarquia da Nuvemshop</b> (subcategoria → categoria pai, ex.: Sensores/Faróis → Elétrica).
               </div>
             </div>
           )}
