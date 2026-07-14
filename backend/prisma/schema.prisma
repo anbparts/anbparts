@@ -291,6 +291,7 @@ model ConfiguracaoGeral {
   googleDriveMotoDirs            Json     @default("{}") // { motoId: "folderId da pasta da moto" }
   googleDrivePreCadastroPastaId  String   @default("") // ID da pasta raiz dos pré-cadastros
   cadastroMotoIdDefault     Int?              // Moto pré-selecionada ao abrir novo pré-cadastro
+  curvaAbcModoMultiplas     String   @default("todas") // todas | principal (SKU em várias categorias)
   createdAt                 DateTime @default(now())
   updatedAt                 DateTime @updatedAt
 }
@@ -627,6 +628,15 @@ model SkuCategoria {
   @@unique([sku, categoriaId])
   @@index([sku])
   @@index([nome])
+}
+
+// Unificação de categorias para o relatório Curva ABC: nome de origem → nome exibido (grupo).
+// Ex.: "Carroceria" e "Carenagem (dianteira, lateral, traseira)" → "Carenagem".
+model CategoriaUnificacao {
+  id           Int      @id @default(autoincrement())
+  origem       String   @unique
+  destino      String
+  atualizadoEm DateTime @updatedAt
 }
 
 // Baixa de etiqueta DETRAN por etiqueta individual (uma peça pode ter mais de uma, ex.: produto "Par").

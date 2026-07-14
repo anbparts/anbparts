@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { API_BASE } from '@/lib/api-base';
+import { useAuth } from '@/lib/auth';
+import { canProcessAction } from '@/lib/permissions';
 
 const API = API_BASE;
 
@@ -51,7 +53,9 @@ type PecaItem = {
 };
 
 export default function CurvaAbcPage() {
-  const [aba, setAba] = useState<'relatorio' | 'manual'>('relatorio');
+  const { user } = useAuth();
+  const podeSugerirIA = canProcessAction(user as any, 'curva_abc', 'sugerir_ia');
+  const [aba, setAba] = useState<'relatorio' | 'manual' | 'conf'>('relatorio');
   const [loading, setLoading] = useState(true);
   const [rel, setRel] = useState<Relatorio | null>(null);
   const [motos, setMotos] = useState<any[]>([]);
@@ -72,6 +76,145 @@ export default function CurvaAbcPage() {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [salvandoSku, setSalvandoSku] = useState('');
   const [salvoSku, setSalvoSku] = useState('');
+  const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
+  const [catTree, setCatTree] = useState<any[]>([]);
+  const [sugerindoIA, setSugerindoIA] = useState(false);
+  const [statusIA, setStatusIA] = useState('');
+
+  // Aba Conf. Categorias (unificação)
+  const [confItens, setConfItens] = useState<{ origem: string; skus: number; destino: string }[]>([]);
+  const [confModo, setConfModo] = useState<'todas' | 'principal'>('todas');
+  const [confSugestoes, setConfSugestoes] = useState<{ origem: string; destino: string }[]>([]);
+  const [confMap, setConfMap] = useState<Record<string, string>>({});
+  const [confLoading, setConfLoading] = useState(false);
+  const [confSalvando, setConfSalvando] = useState(false);
+  const [confBuscou, setConfBuscou] = useState(false);
+
+  // Drill-down de categoria
+  const [drillNome, setDrillNome] = useState<string | null>(null);
+  const [drillData, setDrillData] = useState<{ itens: any[]; serieMeses: any[] } | null>(null);
+  const [drillLoading, setDrillLoading] = useState(false);
+
+  async function carregarConf() {
+    setConfLoading(true);
+    try {
+      const d = await fetch(`${API}/curva-abc/unificacao`, { credentials: 'include' }).then(r => r.json());
+      const itens = d?.itens || [];
+      setConfItens(itens);
+      setConfModo(d?.modo === 'principal' ? 'principal' : 'todas');
+      setConfSugestoes(d?.sugestoes || []);
+      const m: Record<string, string> = {};
+      for (const it of itens) m[it.origem] = it.destino || '';
+      setConfMap(m);
+      setConfBuscou(true);
+    } catch (e: any) { alert(e?.message || 'Erro ao carregar categorias'); }
+    setConfLoading(false);
+  }
+
+  function aplicarSugestoesConf() {
+    setConfMap(prev => {
+      const n = { ...prev };
+      for (const s of confSugestoes) n[s.origem] = s.destino;
+      return n;
+    });
+  }
+
+  async function salvarConf() {
+    setConfSalvando(true);
+    try {
+      const mapa = Object.entries(confMap)
+        .map(([origem, destino]) => ({ origem, destino: String(destino || '').trim() }))
+        .filter(m => m.destino && m.destino.toLowerCase() !== m.origem.toLowerCase());
+      const r = await fetch(`${API}/curva-abc/unificacao`, {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mapa, modo: confModo }),
+      }).then(res => res.json());
+      if (!r?.ok) { alert(r?.error || 'Erro ao salvar'); setConfSalvando(false); return; }
+      alert('✓ Unificação salva! O relatório já reflete o agrupamento.');
+      await carregar(); // atualiza o relatório
+      await carregarConf();
+    } catch (e: any) { alert(e?.message || 'Erro ao salvar'); }
+    setConfSalvando(false);
+  }
+
+  async function abrirDrill(nome: string) {
+    setDrillNome(nome);
+    setDrillData(null);
+    setDrillLoading(true);
+    try {
+      const params = new URLSearchParams({ nome });
+      if (motoId) params.set('motoId', motoId);
+      if (dataDe) params.set('dataDe', dataDe);
+      if (dataAte) params.set('dataAte', dataAte);
+      const d = await fetch(`${API}/curva-abc/categoria-detalhe?${params.toString()}`, { credentials: 'include' }).then(r => r.json());
+      setDrillData({ itens: d?.itens || [], serieMeses: d?.serieMeses || [] });
+    } catch (e: any) { alert(e?.message || 'Erro no detalhe'); }
+    setDrillLoading(false);
+  }
+
+  function toggleSelecionado(sku: string) {
+    setSelecionados(prev => { const n = new Set(prev); n.has(sku) ? n.delete(sku) : n.add(sku); return n; });
+  }
+  function toggleSelecionarTodos() {
+    setSelecionados(prev => prev.size === manualItens.length ? new Set() : new Set(manualItens.map(i => i.sku)));
+  }
+
+  // Chama a MESMA IA da Nuvemshop, mas usa só as categorias sugeridas (sem tags),
+  // grava na SkuCategoria (origem manual) e exibe os chips na hora. Só-Bruno (permissão de perfil).
+  async function sugerirCategoriasIA() {
+    const alvos = manualItens.filter(i => selecionados.has(i.sku));
+    if (!alvos.length) { alert('Selecione ao menos uma peça.'); return; }
+    if (!catTree.length) { alert('Categorias da Nuvemshop ainda não carregaram — tente novamente em instantes.'); return; }
+    const moto = motos.find((m: any) => String(m.id) === String(manualMotoId));
+    setSugerindoIA(true);
+    setStatusIA('✨ Analisando com IA...');
+    try {
+      const resp = await fetch(`${API}/nuvemshop/sugerir-ia`, {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          produtos: alvos.map(i => ({ sku: i.sku, titulo: i.descricao, moto: moto ? { marca: moto.marca, modelo: moto.modelo, ano: moto.ano } : {} })),
+          categorias: catTree.map((c: any) => ({ id: c.id, name: c.name, parent_id: c.parent_id })),
+        }),
+      }).then(r => r.json());
+      if (!resp?.ok) { alert(resp?.error || 'Erro na IA'); setSugerindoIA(false); setStatusIA(''); return; }
+
+      const porSku: Record<string, string[]> = {};
+      (resp.sugestoes || []).forEach((s: any) => {
+        porSku[String(s.sku).toUpperCase()] = (Array.isArray(s.categorias) ? s.categorias : [])
+          .map((c: any) => String(c?.nome || '').trim()).filter(Boolean);
+      });
+
+      let salvos = 0;
+      for (const it of alvos) {
+        const nomes = porSku[it.sku.toUpperCase()] || [];
+        if (!nomes.length) continue;
+        // mescla com o que já havia de manual, sem duplicar
+        const atual = edits[it.sku] || [];
+        const merge = Array.from(new Set([...atual, ...nomes]));
+        const r = await fetch(`${API}/curva-abc/pecas/categorias`, {
+          method: 'POST', credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sku: it.sku, categorias: merge }),
+        }).then(res => res.json());
+        if (r?.ok) {
+          salvos++;
+          setEdits(prev => ({ ...prev, [it.sku]: merge }));
+          setManualItens(prev => prev.map(x => x.sku === it.sku
+            ? { ...x, categorias: [...x.categorias.filter(c => c.origem !== 'manual'), ...merge.map(n => ({ nome: n, origem: 'manual' }))] }
+            : x));
+          setNomesCategorias(prev => Array.from(new Set([...prev, ...merge])).sort((a, b) => a.localeCompare(b, 'pt-BR')));
+        }
+      }
+      setStatusIA(`✓ IA categorizou ${salvos} de ${alvos.length} peça(s).`);
+      setTimeout(() => setStatusIA(''), 4000);
+    } catch (e: any) {
+      alert(e?.message || 'Erro na IA');
+      setStatusIA('');
+    }
+    setSugerindoIA(false);
+  }
 
   async function carregarManual() {
     if (!manualMotoId) { setManualItens([]); setManualBuscou(false); return; }
@@ -85,6 +228,7 @@ export default function CurvaAbcPage() {
       const ed: Record<string, string[]> = {};
       for (const it of itens) ed[it.sku] = (it.categorias || []).filter(c => c.origem === 'manual').map(c => c.nome);
       setEdits(ed);
+      setSelecionados(new Set());
       setManualBuscou(true);
     } catch (e: any) {
       alert(e?.message || 'Erro ao carregar peças');
@@ -149,6 +293,7 @@ export default function CurvaAbcPage() {
     carregar();
     fetch(`${API}/motos`, { credentials: 'include' }).then(r => r.json()).then((d) => setMotos(Array.isArray(d) ? d : (d?.data || []))).catch(() => {});
     fetch(`${API}/curva-abc/categorias-nomes`, { credentials: 'include' }).then(r => r.json()).then((d) => setNomesCategorias(d?.nomes || [])).catch(() => {});
+    fetch(`${API}/nuvemshop/categorias`, { credentials: 'include' }).then(r => r.json()).then((d) => setCatTree(d?.categorias || [])).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -193,7 +338,7 @@ export default function CurvaAbcPage() {
         <div>
           <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)' }}>Curva ABC</div>
           <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>
-            {aba === 'relatorio' ? 'Giro e receita por categoria de peça' : 'Atribua categorias a peças que não vieram da Nuvemshop (vendidas antigas)'}
+            {aba === 'relatorio' ? 'Giro e receita por categoria de peça' : aba === 'manual' ? 'Atribua categorias a peças que não vieram da Nuvemshop (vendidas antigas)' : 'Agrupe categorias parecidas e defina como contar peças com várias categorias'}
             {aba === 'relatorio' && atualizadoEm ? ` · categorias atualizadas em ${atualizadoEm.toLocaleDateString('pt-BR')} às ${atualizadoEm.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}` : ''}
           </div>
         </div>
@@ -209,8 +354,8 @@ export default function CurvaAbcPage() {
             </div>
           )}
           <div style={{ display: 'inline-flex', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
-            {([['relatorio', 'Relatório'], ['manual', 'Categorização manual']] as const).map(([k, label]) => (
-              <button key={k} onClick={() => setAba(k)}
+            {([['relatorio', 'Relatório'], ['manual', 'Categorização manual'], ['conf', 'Conf. Categorias']] as const).map(([k, label]) => (
+              <button key={k} onClick={() => { setAba(k); if (k === 'conf' && !confBuscou) carregarConf(); }}
                 style={{ border: 'none', padding: '8px 16px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'Inter, sans-serif', background: aba === k ? '#7c3aed' : 'var(--white)', color: aba === k ? '#fff' : 'var(--gray-600)' }}>
                 {label}
               </button>
@@ -279,6 +424,38 @@ export default function CurvaAbcPage() {
               </div>
             )}
 
+            {/* Gráfico: top categorias */}
+            {(() => {
+              const base = linhas.filter((c: any) => c.nome !== 'Sem categoria');
+              const valor = (c: any) => criterio === 'receita' ? c.receita : c.vendidas;
+              const top = [...base].sort((a, b) => valor(b) - valor(a)).slice(0, 8);
+              const max = Math.max(...top.map(valor), 1);
+              if (!top.length) return null;
+              return (
+                <div style={{ ...s.card }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 12 }}>
+                    Top categorias por {criterio === 'receita' ? 'receita' : 'quantidade vendida'}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+                    {top.map((c: any) => {
+                      const cor = CLASSE_CORES[c.classe] || CLASSE_CORES['-'];
+                      return (
+                        <div key={c.nome} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <button onClick={() => abrirDrill(c.nome)} style={{ width: 150, textAlign: 'right', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--gray-700)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontFamily: 'Inter, sans-serif' }} title={c.nome}>{c.nome}</button>
+                          <div style={{ flex: 1, height: 18, background: 'var(--gray-50)', borderRadius: 4, overflow: 'hidden' }}>
+                            <div style={{ width: `${(valor(c) / max) * 100}%`, height: '100%', background: cor.color, borderRadius: 4, minWidth: 2 }} />
+                          </div>
+                          <span style={{ width: 92, textAlign: 'right', fontSize: 12, fontWeight: 700, color: 'var(--gray-700)', whiteSpace: 'nowrap' }}>
+                            {criterio === 'receita' ? fmtBRL(valor(c)) : `${valor(c)} un.`}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* Tabela ABC */}
             <div style={{ ...s.card, padding: 0, overflow: 'hidden' }}>
               <div style={{ overflowX: 'auto' }}>
@@ -303,7 +480,12 @@ export default function CurvaAbcPage() {
                       const semCat = c.nome === 'Sem categoria';
                       return (
                         <tr key={c.nome} style={{ background: semCat ? '#f8fafc' : (i % 2 === 0 ? 'var(--white)' : 'var(--gray-50)') }}>
-                          <td style={{ ...s.td, fontWeight: 600, color: semCat ? 'var(--gray-400)' : 'var(--gray-800)' }}>{c.nome}</td>
+                          <td style={{ ...s.td, fontWeight: 600 }}>
+                            <button onClick={() => abrirDrill(c.nome)} title="Ver peças e vendas desta categoria"
+                              style={{ border: 'none', background: 'transparent', padding: 0, cursor: 'pointer', fontFamily: 'Inter, sans-serif', fontSize: 13, fontWeight: 600, textAlign: 'left', color: semCat ? 'var(--gray-400)' : '#7c3aed', textDecoration: 'underline', textDecorationColor: 'rgba(124,58,237,.35)', textUnderlineOffset: 2 }}>
+                              {c.nome} <span style={{ fontSize: 11, opacity: .7 }}>→</span>
+                            </button>
+                          </td>
                           <td style={{ ...s.td, textAlign: 'center' }}>
                             <span style={{ display: 'inline-block', minWidth: 24, padding: '2px 10px', borderRadius: 999, fontSize: 12, fontWeight: 800, background: cor.bg, color: cor.color }}>{c.classe}</span>
                           </td>
@@ -330,7 +512,7 @@ export default function CurvaAbcPage() {
               </div>
               <div style={{ padding: '10px 14px', fontSize: 11.5, color: 'var(--gray-400)', borderTop: '1px solid var(--border)' }}>
                 Classe pela participação acumulada em {criterio === 'receita' ? 'receita' : 'quantidade vendida'}: A até 80% · B até 95% · C restante.
-                SKU com mais de uma categoria conta em todas — os totais do topo usam peças únicas.
+                SKU com mais de uma categoria {(rel as any)?.modo === 'principal' ? 'conta só na principal (1ª categoria)' : 'conta em todas'} — os totais do topo usam peças únicas. Clique numa categoria para ver os SKUs e vendas.
               </div>
             </div>
           </>
@@ -379,13 +561,27 @@ export default function CurvaAbcPage() {
             </div>
           ) : (
             <div style={{ ...s.card, padding: 0, overflow: 'hidden' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 14px', borderBottom: '1px solid var(--border)', fontSize: 12, color: 'var(--gray-500)' }}>
-                <span><b style={{ color: 'var(--gray-700)' }}>{manualItens.length}</b> peça(s){soSemCat ? ' sem categoria' : ''}</span>
-                <span>Digite para buscar uma categoria existente ou criar uma nova</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 14px', borderBottom: '1px solid var(--border)', fontSize: 12, color: 'var(--gray-500)' }}>
+                <span><b style={{ color: 'var(--gray-700)' }}>{manualItens.length}</b> peça(s){soSemCat ? ' sem categoria' : ''}{selecionados.size ? ` · ${selecionados.size} selecionada(s)` : ''}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  {statusIA && <span style={{ fontSize: 12, fontWeight: 700, color: statusIA.startsWith('✓') ? '#16a34a' : '#7c3aed' }}>{statusIA}</span>}
+                  {podeSugerirIA && (
+                    <button onClick={sugerirCategoriasIA} disabled={sugerindoIA || selecionados.size === 0}
+                      style={{ ...s.btn, padding: '6px 14px', fontSize: 12.5, background: '#7c3aed', color: '#fff', opacity: (sugerindoIA || selecionados.size === 0) ? .55 : 1 }}
+                      title={selecionados.size === 0 ? 'Selecione peças para sugerir' : 'Gera as categorias com IA para as peças selecionadas'}>
+                      {sugerindoIA ? '✨ Analisando...' : `✨ Sugerir com IA${selecionados.size ? ` (${selecionados.size})` : ''}`}
+                    </button>
+                  )}
+                  <span>Digite para buscar/criar categoria</span>
+                </div>
               </div>
               <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', minWidth: 820, borderCollapse: 'collapse' }}>
+                <table style={{ width: '100%', minWidth: 860, borderCollapse: 'collapse' }}>
                   <thead><tr>
+                    <th style={{ ...s.th, width: 34, textAlign: 'center' }}>
+                      <input type="checkbox" checked={selecionados.size === manualItens.length && manualItens.length > 0}
+                        onChange={toggleSelecionarTodos} title="Selecionar todas" />
+                    </th>
                     <th style={{ ...s.th, width: 120 }}>SKU</th>
                     <th style={s.th}>Peça</th>
                     <th style={{ ...s.th, textAlign: 'center', width: 90 }}>Situação</th>
@@ -397,7 +593,10 @@ export default function CurvaAbcPage() {
                       const manuais = edits[it.sku] || [];
                       const nuvem = (it.categorias || []).filter(c => c.origem !== 'manual');
                       return (
-                        <tr key={it.sku} style={{ background: i % 2 === 0 ? 'var(--white)' : 'var(--gray-50)', verticalAlign: 'top' }}>
+                        <tr key={it.sku} style={{ background: selecionados.has(it.sku) ? '#faf5ff' : (i % 2 === 0 ? 'var(--white)' : 'var(--gray-50)'), verticalAlign: 'top' }}>
+                          <td style={{ ...s.td, textAlign: 'center' }}>
+                            <input type="checkbox" checked={selecionados.has(it.sku)} onChange={() => toggleSelecionado(it.sku)} />
+                          </td>
                           <td style={{ ...s.td, fontWeight: 700, fontFamily: 'monospace', fontSize: 12 }}>{it.sku}</td>
                           <td style={{ ...s.td }}>{it.descricao}</td>
                           <td style={{ ...s.td, textAlign: 'center' }}>
@@ -449,7 +648,145 @@ export default function CurvaAbcPage() {
             </div>
           )}
         </>}
+
+        {aba === 'conf' && <>
+          {/* Modo de contagem */}
+          <div style={{ ...s.card }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 8 }}>Peça com mais de uma categoria (após agrupar)</div>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              {([['todas', 'Contar em todas', 'A peça soma em cada categoria dela'], ['principal', 'Só na principal', 'Conta só na 1ª categoria do SKU']] as const).map(([k, label, desc]) => (
+                <button key={k} onClick={() => setConfModo(k)}
+                  style={{ ...s.btn, flexDirection: 'column', alignItems: 'flex-start', gap: 2, padding: '10px 14px', border: `1px solid ${confModo === k ? '#7c3aed' : 'var(--border)'}`, background: confModo === k ? '#faf5ff' : 'var(--white)', color: 'var(--gray-800)' }}>
+                  <span style={{ fontWeight: 700, fontSize: 13 }}>{confModo === k ? '● ' : '○ '}{label}</span>
+                  <span style={{ fontSize: 11.5, color: 'var(--gray-500)', fontWeight: 500 }}>{desc}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {confLoading && !confBuscou ? (
+            <div style={{ ...s.card, textAlign: 'center', padding: 40, color: 'var(--gray-400)' }}>Carregando categorias...</div>
+          ) : confItens.length === 0 ? (
+            <div style={{ ...s.card, textAlign: 'center', padding: 40, color: 'var(--gray-400)' }}>
+              <div style={{ fontSize: 26, marginBottom: 6 }}>🏷️</div>
+              <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--gray-600)' }}>Nenhuma categoria ainda</div>
+              <div style={{ fontSize: 12.5, marginTop: 6 }}>Importe categorias pela tela Nuvemshop → Produtos ou use a categorização manual.</div>
+            </div>
+          ) : (
+            <div style={{ ...s.card, padding: 0, overflow: 'hidden' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
+                <span style={{ fontSize: 12, color: 'var(--gray-500)' }}><b style={{ color: 'var(--gray-700)' }}>{confItens.length}</b> categoria(s) · deixe o destino vazio para manter o nome original</span>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {confSugestoes.length > 0 && (
+                    <button onClick={aplicarSugestoesConf} style={{ ...s.btn, padding: '6px 12px', fontSize: 12.5, background: 'var(--gray-100)', color: 'var(--gray-700)', border: '1px solid var(--border)' }}>
+                      ✨ Aplicar {confSugestoes.length} sugestão(ões)
+                    </button>
+                  )}
+                  <button onClick={salvarConf} disabled={confSalvando} style={{ ...s.btn, padding: '6px 14px', fontSize: 12.5, background: '#7c3aed', color: '#fff', opacity: confSalvando ? .6 : 1 }}>
+                    {confSalvando ? 'Salvando...' : 'Salvar unificação'}
+                  </button>
+                </div>
+              </div>
+              <datalist id="dl-destinos">
+                {Array.from(new Set([...confItens.map(i => i.origem), ...Object.values(confMap).filter(Boolean)])).sort().map(n => <option key={n} value={n} />)}
+              </datalist>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', minWidth: 640, borderCollapse: 'collapse' }}>
+                  <thead><tr>
+                    <th style={s.th}>Categoria original</th>
+                    <th style={{ ...s.th, textAlign: 'right', width: 80 }}>SKUs</th>
+                    <th style={{ ...s.th, width: 40, textAlign: 'center' }}></th>
+                    <th style={{ ...s.th, minWidth: 240 }}>Agrupar em (destino)</th>
+                  </tr></thead>
+                  <tbody>
+                    {confItens.map((it, i) => {
+                      const destino = confMap[it.origem] || '';
+                      const sugerido = confSugestoes.find(s => s.origem === it.origem);
+                      return (
+                        <tr key={it.origem} style={{ background: i % 2 === 0 ? 'var(--white)' : 'var(--gray-50)' }}>
+                          <td style={{ ...s.td, fontWeight: 600 }}>{it.origem}</td>
+                          <td style={{ ...s.td, textAlign: 'right', color: 'var(--gray-500)' }}>{it.skus}</td>
+                          <td style={{ ...s.td, textAlign: 'center', color: 'var(--gray-300)' }}>{destino ? '→' : ''}</td>
+                          <td style={{ ...s.td }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <input list="dl-destinos" value={destino} placeholder={sugerido ? `sugerido: ${sugerido.destino}` : 'manter original'}
+                                onChange={e => setConfMap(prev => ({ ...prev, [it.origem]: e.target.value }))}
+                                style={{ ...s.input, flex: 1, padding: '5px 8px', fontSize: 12.5, borderColor: destino ? '#c4b5fd' : 'var(--border)' }} />
+                              {destino && <button onClick={() => setConfMap(prev => ({ ...prev, [it.origem]: '' }))} title="Limpar"
+                                style={{ border: 'none', background: 'transparent', color: 'var(--gray-400)', cursor: 'pointer', fontWeight: 800 }}>×</button>}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{ padding: '10px 14px', fontSize: 11.5, color: 'var(--gray-400)', borderTop: '1px solid var(--border)' }}>
+                Ex.: mande <b>Carroceria</b> e <b>Carenagem (dianteira, lateral, traseira)</b> para <b>Carenagem</b>. As sugestões automáticas agrupam nomes parecidos (“Outras Peças X” e “X (…)” → X).
+              </div>
+            </div>
+          )}
+        </>}
       </div>
+
+      {/* Drill-down de categoria */}
+      {drillNome && (
+        <div onClick={() => setDrillNome(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,.55)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--white)', borderRadius: 14, width: 'min(880px, 100%)', maxHeight: '88vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--gray-800)' }}>{drillNome}</div>
+                <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>{drillData ? `${drillData.itens.length} SKU(s)` : 'Carregando...'}</div>
+              </div>
+              <button onClick={() => setDrillNome(null)} style={{ border: 'none', background: 'var(--gray-100)', width: 30, height: 30, borderRadius: 8, cursor: 'pointer', fontSize: 16, color: 'var(--gray-600)' }}>×</button>
+            </div>
+            <div style={{ overflow: 'auto', padding: 16 }}>
+              {drillLoading ? (
+                <div style={{ textAlign: 'center', padding: 40, color: 'var(--gray-400)' }}>Carregando...</div>
+              ) : drillData ? (
+                <>
+                  {drillData.serieMeses.length > 0 && (
+                    <div style={{ marginBottom: 16 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 8 }}>Vendas por mês</div>
+                      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 90, borderLeft: '1px solid var(--border)', borderBottom: '1px solid var(--border)', padding: '0 4px' }}>
+                        {(() => { const max = Math.max(...drillData.serieMeses.map((m: any) => m.vendidas), 1); return drillData.serieMeses.map((m: any) => (
+                          <div key={m.mes} title={`${m.mes}: ${m.vendidas} vendida(s) · ${fmtBRL(m.receita)}`} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                            <div style={{ width: '100%', maxWidth: 34, height: `${(m.vendidas / max) * 70}px`, minHeight: 3, background: '#7c3aed', borderRadius: '3px 3px 0 0' }} />
+                            <span style={{ fontSize: 9, color: 'var(--gray-400)', whiteSpace: 'nowrap' }}>{m.mes.slice(2)}</span>
+                          </div>
+                        )); })()}
+                      </div>
+                    </div>
+                  )}
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead><tr>
+                      <th style={{ ...s.th, width: 110 }}>SKU</th>
+                      <th style={s.th}>Peça</th>
+                      <th style={{ ...s.th, textAlign: 'right' }}>Estoque</th>
+                      <th style={{ ...s.th, textAlign: 'right' }}>Vendidas</th>
+                      <th style={{ ...s.th, textAlign: 'right' }}>Receita</th>
+                      <th style={{ ...s.th, textAlign: 'right', width: 92 }}>Últ. venda</th>
+                    </tr></thead>
+                    <tbody>
+                      {drillData.itens.map((it: any, i: number) => (
+                        <tr key={it.sku} style={{ background: i % 2 === 0 ? 'var(--white)' : 'var(--gray-50)' }}>
+                          <td style={{ ...s.td, fontFamily: 'monospace', fontSize: 12, fontWeight: 700 }}>{it.sku}</td>
+                          <td style={{ ...s.td, fontSize: 12.5 }}>{it.descricao}</td>
+                          <td style={{ ...s.td, textAlign: 'right' }}>{it.emEstoque}</td>
+                          <td style={{ ...s.td, textAlign: 'right', fontWeight: 700 }}>{it.vendidas}</td>
+                          <td style={{ ...s.td, textAlign: 'right', whiteSpace: 'nowrap' }}>{fmtBRL(it.receita)}</td>
+                          <td style={{ ...s.td, textAlign: 'right', fontSize: 12, color: 'var(--gray-500)' }}>{it.ultimaVenda ? new Date(it.ultimaVenda).toLocaleDateString('pt-BR') : '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
