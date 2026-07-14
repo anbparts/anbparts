@@ -74,19 +74,42 @@ function removerAncestrais(nomes: string[], parentByNome: Map<string, string>): 
   return nomes.filter((n) => !ehAncestralDeOutro(n));
 }
 
+// Profundidade de um nome na hierarquia (nº de ancestrais) — quanto maior, mais específica.
+function profundidade(nome: string, parentByNome: Map<string, string>): number {
+  let d = 0;
+  let cur = parentByNome.get(String(nome || '').trim().toLowerCase());
+  const guard = new Set<string>();
+  while (cur && !guard.has(cur)) { d++; guard.add(cur); cur = parentByNome.get(cur); }
+  return d;
+}
+
 // Categorias efetivas de um SKU aplicando modo + unificação (usada pelo relatório e pelo drill-down).
 function categoriasEfetivas(rawNomes: string[] | undefined, ctx: Contexto): string[] {
   if (!rawNomes || !rawNomes.length) return ['Sem categoria'];
-  let nomes = rawNomes;
-  if (ctx.modo === 'especifica') nomes = removerAncestrais(nomes, ctx.parentByNome);
+
+  // "Mais específica": SEMPRE 1 categoria por SKU (nunca conta 2x). Remove os pais quando há filha
+  // e, se ainda sobrar mais de uma, escolhe a mais específica (maior profundidade na hierarquia).
+  if (ctx.modo === 'especifica') {
+    let nomes = removerAncestrais(rawNomes, ctx.parentByNome);
+    if (!nomes.length) nomes = rawNomes;
+    let escolhida = nomes[0];
+    let melhorProf = profundidade(escolhida, ctx.parentByNome);
+    for (const n of nomes.slice(1)) {
+      const p = profundidade(n, ctx.parentByNome);
+      if (p > melhorProf) { escolhida = n; melhorProf = p; }
+    }
+    const u = unificarNome(ctx.mapa, escolhida); // respeita o agrupamento que você configurou
+    return [u || 'Sem categoria'];
+  }
+
   const out: string[] = [];
-  for (const n of nomes) {
+  for (const n of rawNomes) {
     const u = unificarNome(ctx.mapa, n);
     if (u && !out.includes(u)) out.push(u);
   }
   if (!out.length) return ['Sem categoria'];
-  if (ctx.modo === 'principal') return [out[0]];
-  return out;
+  if (ctx.modo === 'principal') return [out[0]]; // conta só na 1ª categoria
+  return out; // 'todas'
 }
 
 // GET /curva-abc/relatorio?motoId=&dataDe=&dataAte=
@@ -98,6 +121,7 @@ curvaAbcRouter.get('/relatorio', async (req, res, next) => {
     const motoId = Number(req.query?.motoId) || 0;
     const dataDe = String(req.query?.dataDe || '').trim();
     const dataAte = String(req.query?.dataAte || '').trim();
+    const skuFiltro = baseSku(req.query?.sku);
     const vendaDe = dataDe ? new Date(`${dataDe}T00:00:00.000Z`) : null;
     const vendaAte = dataAte ? new Date(`${dataAte}T23:59:59.999Z`) : null;
 
@@ -129,8 +153,12 @@ curvaAbcRouter.get('/relatorio', async (req, res, next) => {
     for (const [sku, raw] of rawPorSku.entries()) categoriasPorSku.set(sku, categoriasEfetivas(raw, ctx));
 
     const pecas = await prisma.peca.findMany({
-      where: { emPrejuizo: false, ...(motoId ? { motoId } : {}) },
-      select: { idPeca: true, disponivel: true, dataVenda: true, precoML: true, valorLiq: true },
+      where: {
+        emPrejuizo: false,
+        ...(motoId ? { motoId } : {}),
+        ...(skuFiltro ? { idPeca: { startsWith: skuFiltro } } : {}),
+      },
+      select: { idPeca: true, descricao: true, disponivel: true, dataVenda: true, precoML: true, valorLiq: true },
     });
 
     type Agg = {
@@ -181,10 +209,27 @@ curvaAbcRouter.get('/relatorio', async (req, res, next) => {
 
     const skusCategorizado = new Set(Array.from(geral.skus).filter((s) => categoriasPorSku.has(s))).size;
 
+    // Detalhe do SKU filtrado: categorias cruas (Nuvemshop/manual) × onde ele conta (após modo+unificação)
+    let skuInfo: any = null;
+    if (skuFiltro) {
+      const desc = pecas.find((p) => baseSku(p.idPeca) === skuFiltro)?.descricao || '';
+      const raw = rawPorSku.get(skuFiltro) || [];
+      const efetivas = raw.length ? categoriasEfetivas(raw, ctx) : ['Sem categoria'];
+      skuInfo = {
+        sku: skuFiltro,
+        descricao: desc,
+        encontrada: pecas.some((p) => baseSku(p.idPeca) === skuFiltro),
+        categoriasNuvemshop: raw,
+        contaEm: efetivas,
+        emVariasCategorias: efetivas.filter((n) => n !== 'Sem categoria').length > 1,
+      };
+    }
+
     res.json({
       ok: true,
       atualizadoEm,
       modo,
+      skuInfo,
       categorias,
       totais: {
         categorias: categorias.filter((c) => c.nome !== 'Sem categoria').length,

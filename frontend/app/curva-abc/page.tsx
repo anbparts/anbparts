@@ -64,6 +64,7 @@ export default function CurvaAbcPage() {
   const [dataAte, setDataAte] = useState('');
   const [criterio, setCriterio] = useState<'receita' | 'quantidade'>('receita');
   const [esconderSemCategoria, setEsconderSemCategoria] = useState(false);
+  const [skuFiltro, setSkuFiltro] = useState('');
 
   // Aba de categorização manual
   const [manualMotoId, setManualMotoId] = useState('');
@@ -314,6 +315,7 @@ export default function CurvaAbcPage() {
       if (motoId) params.set('motoId', motoId);
       if (dataDe) params.set('dataDe', dataDe);
       if (dataAte) params.set('dataAte', dataAte);
+      if (skuFiltro.trim()) params.set('sku', skuFiltro.trim());
       const d = await fetch(`${API}/curva-abc/relatorio?${params.toString()}`, { credentials: 'include' }).then(r => r.json());
       setRel(d);
     } catch (e: any) {
@@ -462,6 +464,11 @@ export default function CurvaAbcPage() {
             <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--gray-500)', marginBottom: 4 }}>até</div>
             <input type="date" style={s.input} value={dataAte} onChange={e => setDataAte(e.target.value)} />
           </div>
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--gray-500)', marginBottom: 4 }}>SKU (conferir categorias)</div>
+            <input style={{ ...s.input, minWidth: 150, textTransform: 'uppercase' }} value={skuFiltro} placeholder="ex.: HD01_0064"
+              onChange={e => setSkuFiltro(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') carregar(); }} />
+          </div>
           <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: 'var(--gray-600)', cursor: 'pointer', paddingBottom: 8 }}>
             <input type="checkbox" checked={esconderSemCategoria} onChange={e => setEsconderSemCategoria(e.target.checked)} />
             Esconder “Sem categoria”
@@ -470,6 +477,36 @@ export default function CurvaAbcPage() {
             {loading ? 'Carregando...' : 'Aplicar filtros'}
           </button>
         </div>
+
+        {/* Detalhe do SKU filtrado — mostra onde ele conta */}
+        {(rel as any)?.skuInfo && (() => {
+          const si = (rel as any).skuInfo;
+          if (!si.encontrada) return (
+            <div style={{ ...s.card, background: '#fef2f2', borderColor: '#fecaca', fontSize: 13, color: '#b91c1c' }}>
+              SKU <b>{si.sku}</b> não encontrado no estoque/vendas.
+            </div>
+          );
+          return (
+            <div style={{ ...s.card, background: si.emVariasCategorias ? '#fff7ed' : '#f0fdf4', borderColor: si.emVariasCategorias ? '#fdba74' : '#86efac' }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 6 }}>
+                {si.sku} — {si.descricao || 'peça'}
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, fontSize: 12.5 }}>
+                <div>
+                  <span style={{ color: 'var(--gray-500)' }}>Categorias no Nuvemshop/manual: </span>
+                  <b>{si.categoriasNuvemshop.length ? si.categoriasNuvemshop.join(' · ') : 'nenhuma'}</b>
+                </div>
+                <div>
+                  <span style={{ color: 'var(--gray-500)' }}>Conta em ({(rel as any)?.modo === 'especifica' ? 'mais específica' : (rel as any)?.modo === 'principal' ? 'principal' : 'todas'}): </span>
+                  <b style={{ color: si.emVariasCategorias ? '#c2410c' : '#15803d' }}>{si.contaEm.join(' · ')}</b>
+                  {si.emVariasCategorias
+                    ? <span style={{ color: '#c2410c' }}> — está em {si.contaEm.length} categorias</span>
+                    : <span style={{ color: '#15803d' }}> ✓ 1 categoria</span>}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {rel?.semTabela || (!loading && !(rel?.categorias || []).length) ? (
           <div style={{ ...s.card, textAlign: 'center', padding: 48, color: 'var(--gray-400)' }}>
