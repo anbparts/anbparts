@@ -111,6 +111,27 @@ export default function CurvaAbcPage() {
     setConfLoading(false);
   }
 
+  const [modoSalvo, setModoSalvo] = useState(false);
+  // O modo é salvo na hora (independe da tabela de unificação) e o relatório é atualizado.
+  async function selecionarModo(k: 'todas' | 'principal' | 'especifica') {
+    setConfModo(k);
+    setModoSalvo(false);
+    try {
+      const r = await fetch(`${API}/curva-abc/modo`, {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ modo: k }),
+      }).then(res => res.json());
+      if (r?.ok) {
+        setModoSalvo(true);
+        setTimeout(() => setModoSalvo(false), 2500);
+        carregar(); // atualiza o relatório com o novo modo
+      } else {
+        alert(r?.error || 'Erro ao salvar o modo');
+      }
+    } catch (e: any) { alert(e?.message || 'Erro ao salvar o modo'); }
+  }
+
   function aplicarSugestoesConf(lista: { origem: string; destino: string }[]) {
     setConfMap(prev => {
       const n = { ...prev };
@@ -717,14 +738,18 @@ export default function CurvaAbcPage() {
         {aba === 'conf' && <>
           {/* Modo de contagem */}
           <div style={{ ...s.card }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 8 }}>Peça com mais de uma categoria</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-800)' }}>Peça com mais de uma categoria</div>
+              <span style={{ fontSize: 11, color: 'var(--gray-400)' }}>— salva sozinho ao clicar</span>
+              {modoSalvo && <span style={{ fontSize: 12, fontWeight: 700, color: '#16a34a' }}>✓ modo salvo</span>}
+            </div>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
               {([
                 ['todas', 'Contar em todas', 'A peça soma em cada categoria dela'],
                 ['especifica', 'Só na mais específica', 'Subcategoria ganha do pai (Sensores em vez de Elétrica)'],
                 ['principal', 'Só na principal', 'Conta só na 1ª categoria do SKU'],
               ] as const).map(([k, label, desc]) => (
-                <button key={k} onClick={() => setConfModo(k)}
+                <button key={k} onClick={() => selecionarModo(k)}
                   style={{ ...s.btn, flexDirection: 'column', alignItems: 'flex-start', gap: 2, padding: '10px 14px', flex: '1 1 200px', border: `1px solid ${confModo === k ? '#7c3aed' : 'var(--border)'}`, background: confModo === k ? '#faf5ff' : 'var(--white)', color: 'var(--gray-800)' }}>
                   <span style={{ fontWeight: 700, fontSize: 13 }}>{confModo === k ? '● ' : '○ '}{label}</span>
                   <span style={{ fontSize: 11.5, color: 'var(--gray-500)', fontWeight: 500 }}>{desc}</span>
@@ -732,7 +757,7 @@ export default function CurvaAbcPage() {
               ))}
             </div>
             <div style={{ fontSize: 11.5, color: 'var(--gray-400)', marginTop: 8 }}>
-              “Mais específica” usa a hierarquia da Nuvemshop (categoria filha × pai) para desmembrar categorias genéricas como Elétrica.
+              “Mais específica” usa a hierarquia da Nuvemshop (categoria filha × pai) para desmembrar categorias genéricas como Elétrica. O botão <b>Salvar unificação</b> (abaixo) é só para os agrupamentos da tabela.
             </div>
           </div>
 

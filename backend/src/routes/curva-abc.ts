@@ -391,6 +391,20 @@ curvaAbcRouter.post('/unificacao', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// POST /curva-abc/modo — salva SÓ o modo de contagem (independente da tabela de unificação).
+// Body: { modo: 'todas'|'principal'|'especifica' }
+curvaAbcRouter.post('/modo', async (req, res, next) => {
+  try {
+    const modo = (req.body?.modo === 'principal' || req.body?.modo === 'especifica') ? req.body.modo : 'todas';
+    try {
+      await prisma.$executeRaw`UPDATE "ConfiguracaoGeral" SET "curvaAbcModoMultiplas" = ${modo}`;
+    } catch (e: any) {
+      return res.status(500).json({ ok: false, error: 'Falha ao salvar modo: ' + (e?.message || String(e)) });
+    }
+    res.json({ ok: true, modo });
+  } catch (e) { next(e); }
+});
+
 // POST /curva-abc/hierarquia — espelha a árvore de categorias da Nuvemshop (id, nome, parentId).
 // Alimentada pela página (que já carrega /nuvemshop/categorias) para o modo "mais específica".
 curvaAbcRouter.post('/hierarquia', async (req, res, next) => {
