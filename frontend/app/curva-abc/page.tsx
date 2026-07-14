@@ -78,6 +78,8 @@ export default function CurvaAbcPage() {
   const [salvandoSku, setSalvandoSku] = useState('');
   const [salvoSku, setSalvoSku] = useState('');
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
+  const [filtroSkuManual, setFiltroSkuManual] = useState('');
+  const [filtroCatManual, setFiltroCatManual] = useState('');
   const [catTree, setCatTree] = useState<any[]>([]);
   const [sugerindoIA, setSugerindoIA] = useState(false);
   const [statusIA, setStatusIA] = useState('');
@@ -178,13 +180,16 @@ export default function CurvaAbcPage() {
   function toggleSelecionado(sku: string) {
     setSelecionados(prev => { const n = new Set(prev); n.has(sku) ? n.delete(sku) : n.add(sku); return n; });
   }
+  // Operam sobre a lista FILTRADA (manualView) — respeitam os filtros de SKU/categoria ativos.
   function toggleSelecionarTodos() {
-    setSelecionados(prev => prev.size === manualItens.length ? new Set() : new Set(manualItens.map(i => i.sku)));
+    const view = manualView;
+    const todosSelec = view.length > 0 && view.every(i => selecionados.has(i.sku));
+    setSelecionados(todosSelec ? new Set() : new Set(view.map(i => i.sku)));
   }
   // Seleciona o próximo lote de até 10 peças ainda SEM categoria (evita o erro da IA com muitos itens).
   // Como categoriza em lote, a cada clique avança para as 10 seguintes que continuam sem categoria.
   function selecionarProximos10() {
-    const semCat = manualItens.filter(it => {
+    const semCat = manualView.filter(it => {
       const manuais = edits[it.sku] || [];
       const nuvem = (it.categorias || []).filter(c => c.origem !== 'manual');
       return manuais.length === 0 && nuvem.length === 0;
@@ -263,6 +268,8 @@ export default function CurvaAbcPage() {
       for (const it of itens) ed[it.sku] = (it.categorias || []).filter(c => c.origem === 'manual').map(c => c.nome);
       setEdits(ed);
       setSelecionados(new Set());
+      setFiltroSkuManual('');
+      setFiltroCatManual('');
       setManualBuscou(true);
     } catch (e: any) {
       alert(e?.message || 'Erro ao carregar peças');
@@ -401,6 +408,34 @@ export default function CurvaAbcPage() {
     }
     return todas;
   }, [catTree, confItens, confSugestoes]);
+
+  // Filtro client-side da aba manual (SKU + categoria) sobre a lista já carregada.
+  const manualView = useMemo(() => {
+    const sku = filtroSkuManual.trim().toUpperCase();
+    const cat = filtroCatManual.trim().toLowerCase();
+    return manualItens.filter(it => {
+      if (sku && !it.sku.toUpperCase().includes(sku)) return false;
+      if (cat) {
+        const manuais = edits[it.sku] || [];
+        const nuvem = (it.categorias || []).filter(c => c.origem !== 'manual');
+        if (cat === '__sem__') { if (manuais.length || nuvem.length) return false; }
+        else {
+          const nomes = new Set([...(it.categorias || []).map(c => c.nome), ...manuais].map(n => n.toLowerCase()));
+          if (!nomes.has(cat)) return false;
+        }
+      }
+      return true;
+    });
+  }, [manualItens, filtroSkuManual, filtroCatManual, edits]);
+
+  const catOptionsManual = useMemo(() => {
+    const set = new Set<string>();
+    for (const it of manualItens) {
+      for (const c of (it.categorias || [])) set.add(c.nome);
+      for (const n of (edits[it.sku] || [])) set.add(n);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  }, [manualItens, edits]);
 
   const t = rel?.totais;
   const atualizadoEm = rel?.atualizadoEm ? new Date(rel.atualizadoEm) : null;
@@ -659,6 +694,31 @@ export default function CurvaAbcPage() {
             {nomesCategorias.map(n => <option key={n} value={n} />)}
           </datalist>
 
+          {manualBuscou && manualItens.length > 0 && (
+            <div style={{ ...s.card, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end', padding: '10px 14px' }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--gray-500)', paddingBottom: 8 }}>Filtrar:</div>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--gray-500)', marginBottom: 4 }}>SKU</div>
+                <input value={filtroSkuManual} placeholder="ex.: PN0003" style={{ ...s.input, minWidth: 140, textTransform: 'uppercase' }}
+                  onChange={e => setFiltroSkuManual(e.target.value)} />
+              </div>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--gray-500)', marginBottom: 4 }}>Categoria</div>
+                <select value={filtroCatManual} style={{ ...s.input, minWidth: 200, cursor: 'pointer' }} onChange={e => setFiltroCatManual(e.target.value)}>
+                  <option value="">Todas as categorias</option>
+                  <option value="__sem__">Sem categoria</option>
+                  {catOptionsManual.map(n => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </div>
+              {(filtroSkuManual || filtroCatManual) && (
+                <button onClick={() => { setFiltroSkuManual(''); setFiltroCatManual(''); }}
+                  style={{ ...s.btn, padding: '7px 12px', fontSize: 12.5, background: 'var(--gray-100)', color: 'var(--gray-700)', border: '1px solid var(--border)' }}>
+                  Limpar filtros
+                </button>
+              )}
+            </div>
+          )}
+
           {!manualBuscou ? (
             <div style={{ ...s.card, textAlign: 'center', padding: 40, color: 'var(--gray-400)' }}>
               <div style={{ fontSize: 26, marginBottom: 6 }}>🏷️</div>
@@ -678,7 +738,7 @@ export default function CurvaAbcPage() {
           ) : (
             <div style={{ ...s.card, padding: 0, overflow: 'hidden' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 14px', borderBottom: '1px solid var(--border)', fontSize: 12, color: 'var(--gray-500)' }}>
-                <span><b style={{ color: 'var(--gray-700)' }}>{manualItens.length}</b> peça(s){soSemCat ? ' sem categoria' : ''}{selecionados.size ? ` · ${selecionados.size} selecionada(s)` : ''}</span>
+                <span><b style={{ color: 'var(--gray-700)' }}>{manualView.length}</b>{manualView.length !== manualItens.length ? ` de ${manualItens.length}` : ''} peça(s){soSemCat ? ' sem categoria' : ''}{selecionados.size ? ` · ${selecionados.size} selecionada(s)` : ''}</span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   {statusIA && <span style={{ fontSize: 12, fontWeight: 700, color: statusIA.startsWith('✓') ? '#16a34a' : '#7c3aed' }}>{statusIA}</span>}
                   {podeSugerirIA && (
@@ -702,8 +762,8 @@ export default function CurvaAbcPage() {
                 <table style={{ width: '100%', minWidth: 860, borderCollapse: 'collapse' }}>
                   <thead><tr>
                     <th style={{ ...s.th, width: 34, textAlign: 'center' }}>
-                      <input type="checkbox" checked={selecionados.size === manualItens.length && manualItens.length > 0}
-                        onChange={toggleSelecionarTodos} title="Selecionar todas" />
+                      <input type="checkbox" checked={manualView.length > 0 && manualView.every(i => selecionados.has(i.sku))}
+                        onChange={toggleSelecionarTodos} title="Selecionar todas (filtradas)" />
                     </th>
                     <th style={{ ...s.th, width: 120 }}>SKU</th>
                     <th style={s.th}>Peça</th>
@@ -712,7 +772,9 @@ export default function CurvaAbcPage() {
                     <th style={{ ...s.th, width: 90 }}></th>
                   </tr></thead>
                   <tbody>
-                    {manualItens.map((it, i) => {
+                    {manualView.length === 0 ? (
+                      <tr><td colSpan={6} style={{ ...s.td, textAlign: 'center', padding: 28, color: 'var(--gray-400)' }}>Nenhuma peça com esses filtros.</td></tr>
+                    ) : manualView.map((it, i) => {
                       const manuais = edits[it.sku] || [];
                       const nuvem = (it.categorias || []).filter(c => c.origem !== 'manual');
                       return (
