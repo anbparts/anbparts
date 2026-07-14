@@ -159,6 +159,17 @@ export default function CurvaAbcPage() {
   function toggleSelecionarTodos() {
     setSelecionados(prev => prev.size === manualItens.length ? new Set() : new Set(manualItens.map(i => i.sku)));
   }
+  // Seleciona o próximo lote de até 10 peças ainda SEM categoria (evita o erro da IA com muitos itens).
+  // Como categoriza em lote, a cada clique avança para as 10 seguintes que continuam sem categoria.
+  function selecionarProximos10() {
+    const semCat = manualItens.filter(it => {
+      const manuais = edits[it.sku] || [];
+      const nuvem = (it.categorias || []).filter(c => c.origem !== 'manual');
+      return manuais.length === 0 && nuvem.length === 0;
+    }).slice(0, 10).map(it => it.sku);
+    if (!semCat.length) { alert('Não há mais peças sem categoria para selecionar.'); return; }
+    setSelecionados(new Set(semCat));
+  }
 
   // Chama a MESMA IA da Nuvemshop, mas usa só as categorias sugeridas (sem tags),
   // grava na SkuCategoria (origem manual) e exibe os chips na hora. Só-Bruno (permissão de perfil).
@@ -208,6 +219,7 @@ export default function CurvaAbcPage() {
         }
       }
       setStatusIA(`✓ IA categorizou ${salvos} de ${alvos.length} peça(s).`);
+      setSelecionados(new Set()); // limpa pro próximo lote de 10
       setTimeout(() => setStatusIA(''), 4000);
     } catch (e: any) {
       alert(e?.message || 'Erro na IA');
@@ -565,6 +577,13 @@ export default function CurvaAbcPage() {
                 <span><b style={{ color: 'var(--gray-700)' }}>{manualItens.length}</b> peça(s){soSemCat ? ' sem categoria' : ''}{selecionados.size ? ` · ${selecionados.size} selecionada(s)` : ''}</span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   {statusIA && <span style={{ fontSize: 12, fontWeight: 700, color: statusIA.startsWith('✓') ? '#16a34a' : '#7c3aed' }}>{statusIA}</span>}
+                  {podeSugerirIA && (
+                    <button onClick={selecionarProximos10} disabled={sugerindoIA}
+                      style={{ ...s.btn, padding: '6px 12px', fontSize: 12.5, background: 'var(--gray-100)', color: 'var(--gray-700)', border: '1px solid var(--border)' }}
+                      title="Seleciona as próximas 10 peças sem categoria (rode a IA em lotes de 10)">
+                      Selecionar 10
+                    </button>
+                  )}
                   {podeSugerirIA && (
                     <button onClick={sugerirCategoriasIA} disabled={sugerindoIA || selecionados.size === 0}
                       style={{ ...s.btn, padding: '6px 14px', fontSize: 12.5, background: '#7c3aed', color: '#fff', opacity: (sugerindoIA || selecionados.size === 0) ? .55 : 1 }}
