@@ -843,12 +843,22 @@ export default function CurvaAbcPage() {
                           <td style={{ ...s.td, textAlign: 'center', color: 'var(--gray-300)' }}>{destino ? '→' : ''}</td>
                           <td style={{ ...s.td }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                              <input list="dl-destinos" value={destino} placeholder={sugerido ? `sugerido: ${sugerido.destino}` : 'manter original'}
+                              <input list="dl-destinos" value={destino} placeholder="manter original"
                                 onChange={e => setConfMap(prev => ({ ...prev, [it.origem]: e.target.value }))}
                                 style={{ ...s.input, flex: 1, padding: '5px 8px', fontSize: 12.5, borderColor: destino ? '#c4b5fd' : 'var(--border)' }} />
                               {destino && <button onClick={() => setConfMap(prev => ({ ...prev, [it.origem]: '' }))} title="Limpar"
                                 style={{ border: 'none', background: 'transparent', color: 'var(--gray-400)', cursor: 'pointer', fontWeight: 800 }}>×</button>}
                             </div>
+                            {sugerido && sugerido.destino.trim().toLowerCase() !== destino.trim().toLowerCase() && (
+                              <div style={{ marginTop: 4, fontSize: 11.5, color: 'var(--gray-400)' }}>
+                                sugestão:{' '}
+                                <button onClick={() => setConfMap(prev => ({ ...prev, [it.origem]: sugerido.destino }))}
+                                  title="Clique para aplicar esta sugestão"
+                                  style={{ border: 'none', background: 'transparent', padding: 0, cursor: 'pointer', fontFamily: 'Inter, sans-serif', fontSize: 11.5, color: 'var(--gray-500)', textDecoration: 'underline', textDecorationColor: 'rgba(100,116,139,.4)', textUnderlineOffset: 2 }}>
+                                  {sugerido.destino}
+                                </button>
+                              </div>
+                            )}
                           </td>
                         </tr>
                       );
