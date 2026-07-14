@@ -83,7 +83,7 @@ export default function CurvaAbcPage() {
 
   // Aba Conf. Categorias (unificação)
   const [confItens, setConfItens] = useState<{ origem: string; skus: number; destino: string }[]>([]);
-  const [confModo, setConfModo] = useState<'todas' | 'principal'>('todas');
+  const [confModo, setConfModo] = useState<'todas' | 'principal' | 'especifica'>('todas');
   const [confSugestoes, setConfSugestoes] = useState<{ origem: string; destino: string }[]>([]);
   const [confMap, setConfMap] = useState<Record<string, string>>({});
   const [confLoading, setConfLoading] = useState(false);
@@ -101,7 +101,7 @@ export default function CurvaAbcPage() {
       const d = await fetch(`${API}/curva-abc/unificacao`, { credentials: 'include' }).then(r => r.json());
       const itens = d?.itens || [];
       setConfItens(itens);
-      setConfModo(d?.modo === 'principal' ? 'principal' : 'todas');
+      setConfModo(d?.modo === 'principal' || d?.modo === 'especifica' ? d.modo : 'todas');
       setConfSugestoes(d?.sugestoes || []);
       const m: Record<string, string> = {};
       for (const it of itens) m[it.origem] = it.destino || '';
@@ -305,7 +305,23 @@ export default function CurvaAbcPage() {
     carregar();
     fetch(`${API}/motos`, { credentials: 'include' }).then(r => r.json()).then((d) => setMotos(Array.isArray(d) ? d : (d?.data || []))).catch(() => {});
     fetch(`${API}/curva-abc/categorias-nomes`, { credentials: 'include' }).then(r => r.json()).then((d) => setNomesCategorias(d?.nomes || [])).catch(() => {});
-    fetch(`${API}/nuvemshop/categorias`, { credentials: 'include' }).then(r => r.json()).then((d) => setCatTree(d?.categorias || [])).catch(() => {});
+    fetch(`${API}/nuvemshop/categorias`, { credentials: 'include' }).then(r => r.json()).then((d) => {
+      const cats = d?.categorias || [];
+      setCatTree(cats);
+      // Espelha a hierarquia no backend (para o modo "mais específica")
+      const payload = cats.map((c: any) => ({
+        id: String(c?.id ?? ''),
+        nome: c?.name?.pt || c?.name?.['pt-BR'] || (c?.name ? (Object.values(c.name)[0] as string) : '') || String(c?.id ?? ''),
+        parentId: c?.parent != null ? String(c.parent) : (c?.parent_id != null ? String(c.parent_id) : ''),
+      })).filter((c: any) => c.id && c.nome);
+      if (payload.length) {
+        fetch(`${API}/curva-abc/hierarquia`, {
+          method: 'POST', credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ categorias: payload }),
+        }).catch(() => {});
+      }
+    }).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -554,7 +570,7 @@ export default function CurvaAbcPage() {
               </div>
               <div style={{ padding: '10px 14px', fontSize: 11.5, color: 'var(--gray-400)', borderTop: '1px solid var(--border)' }}>
                 Classe pela participação acumulada em {criterio === 'receita' ? 'receita' : 'quantidade vendida'}: A até 80% · B até 95% · C restante.
-                SKU com mais de uma categoria {(rel as any)?.modo === 'principal' ? 'conta só na principal (1ª categoria)' : 'conta em todas'} — os totais do topo usam peças únicas. Clique numa categoria para ver os SKUs e vendas.
+                SKU com mais de uma categoria {(rel as any)?.modo === 'principal' ? 'conta só na principal (1ª categoria)' : (rel as any)?.modo === 'especifica' ? 'conta só na mais específica (subcategoria ganha do pai)' : 'conta em todas'} — os totais do topo usam peças únicas. Clique numa categoria para ver os SKUs e vendas.
               </div>
             </div>
           </>
@@ -701,15 +717,22 @@ export default function CurvaAbcPage() {
         {aba === 'conf' && <>
           {/* Modo de contagem */}
           <div style={{ ...s.card }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 8 }}>Peça com mais de uma categoria (após agrupar)</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 8 }}>Peça com mais de uma categoria</div>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              {([['todas', 'Contar em todas', 'A peça soma em cada categoria dela'], ['principal', 'Só na principal', 'Conta só na 1ª categoria do SKU']] as const).map(([k, label, desc]) => (
+              {([
+                ['todas', 'Contar em todas', 'A peça soma em cada categoria dela'],
+                ['especifica', 'Só na mais específica', 'Subcategoria ganha do pai (Sensores em vez de Elétrica)'],
+                ['principal', 'Só na principal', 'Conta só na 1ª categoria do SKU'],
+              ] as const).map(([k, label, desc]) => (
                 <button key={k} onClick={() => setConfModo(k)}
-                  style={{ ...s.btn, flexDirection: 'column', alignItems: 'flex-start', gap: 2, padding: '10px 14px', border: `1px solid ${confModo === k ? '#7c3aed' : 'var(--border)'}`, background: confModo === k ? '#faf5ff' : 'var(--white)', color: 'var(--gray-800)' }}>
+                  style={{ ...s.btn, flexDirection: 'column', alignItems: 'flex-start', gap: 2, padding: '10px 14px', flex: '1 1 200px', border: `1px solid ${confModo === k ? '#7c3aed' : 'var(--border)'}`, background: confModo === k ? '#faf5ff' : 'var(--white)', color: 'var(--gray-800)' }}>
                   <span style={{ fontWeight: 700, fontSize: 13 }}>{confModo === k ? '● ' : '○ '}{label}</span>
                   <span style={{ fontSize: 11.5, color: 'var(--gray-500)', fontWeight: 500 }}>{desc}</span>
                 </button>
               ))}
+            </div>
+            <div style={{ fontSize: 11.5, color: 'var(--gray-400)', marginTop: 8 }}>
+              “Mais específica” usa a hierarquia da Nuvemshop (categoria filha × pai) para desmembrar categorias genéricas como Elétrica.
             </div>
           </div>
 

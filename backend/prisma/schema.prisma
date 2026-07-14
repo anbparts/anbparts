@@ -639,6 +639,14 @@ model CategoriaUnificacao {
   atualizadoEm DateTime @updatedAt
 }
 
+// Espelho da hierarquia de categorias da Nuvemshop (pai/filha) para o modo "mais específica" da Curva ABC.
+model NuvemshopCategoria {
+  categoriaId String  @id
+  nome        String
+  parentId    String  @default("")
+  atualizadoEm DateTime @updatedAt
+}
+
 // Config da rotina de aviso de fotos prontas no Drive (pasta com zip). Singleton (id=1).
 model FotosDrivePendenteConfig {
   id                 Int       @id @default(1)

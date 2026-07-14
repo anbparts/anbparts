@@ -7,10 +7,14 @@ function baseSku(value: any) {
   return String(value || '').replace(/-\d+$/, '').toUpperCase().trim();
 }
 
-// Carrega o mapa de unificação (origem→destino) e o modo de contagem de múltiplas categorias.
-async function carregarUnificacao(): Promise<{ mapa: Map<string, string>; modo: 'todas' | 'principal' }> {
+type ModoAbc = 'todas' | 'principal' | 'especifica';
+type Contexto = { mapa: Map<string, string>; modo: ModoAbc; parentByNome: Map<string, string> };
+
+// Carrega mapa de unificação, modo de contagem e a hierarquia (nome→nome do pai) da Nuvemshop.
+async function carregarUnificacao(): Promise<Contexto> {
   const mapa = new Map<string, string>();
-  let modo: 'todas' | 'principal' = 'todas';
+  const parentByNome = new Map<string, string>();
+  let modo: ModoAbc = 'todas';
   try {
     const rows = await prisma.$queryRaw<{ origem: string; destino: string }[]>`
       SELECT "origem", "destino" FROM "CategoriaUnificacao"
@@ -25,15 +29,64 @@ async function carregarUnificacao(): Promise<{ mapa: Map<string, string>; modo: 
     const cfg = await prisma.$queryRaw<{ curvaAbcModoMultiplas: string }[]>`
       SELECT "curvaAbcModoMultiplas" FROM "ConfiguracaoGeral"
     `;
-    if (cfg?.[0]?.curvaAbcModoMultiplas === 'principal') modo = 'principal';
+    const m = cfg?.[0]?.curvaAbcModoMultiplas;
+    if (m === 'principal' || m === 'especifica') modo = m;
   } catch { /* coluna ainda nao migrada */ }
-  return { mapa, modo };
+  try {
+    const cats = await prisma.$queryRaw<{ categoriaId: string; nome: string; parentId: string }[]>`
+      SELECT "categoriaId", "nome", "parentId" FROM "NuvemshopCategoria"
+    `;
+    const idToNome = new Map<string, string>();
+    for (const c of cats) idToNome.set(String(c.categoriaId), String(c.nome || '').trim());
+    for (const c of cats) {
+      const nomeL = String(c.nome || '').trim().toLowerCase();
+      const paiNome = c.parentId ? idToNome.get(String(c.parentId)) : '';
+      if (nomeL && paiNome) parentByNome.set(nomeL, paiNome.trim().toLowerCase());
+    }
+  } catch { /* tabela ainda nao migrada */ }
+  return { mapa, modo, parentByNome };
 }
 
 // Aplica a unificação a um nome de categoria (usa o destino se houver regra).
 function unificarNome(mapa: Map<string, string>, nome: string) {
   const limpo = String(nome || '').trim();
   return mapa.get(limpo.toLowerCase()) || limpo;
+}
+
+// No modo "especifica": remove das categorias de um SKU as que são ancestrais (pai/avô)
+// de outra categoria presente — a peça fica só na(s) mais específica(s).
+function removerAncestrais(nomes: string[], parentByNome: Map<string, string>): string[] {
+  if (nomes.length < 2) return nomes;
+  const ehAncestralDeOutro = (candidato: string) => {
+    const alvo = candidato.trim().toLowerCase();
+    return nomes.some((outro) => {
+      if (outro.trim().toLowerCase() === alvo) return false;
+      let cur = parentByNome.get(outro.trim().toLowerCase());
+      const guard = new Set<string>();
+      while (cur && !guard.has(cur)) {
+        if (cur === alvo) return true;
+        guard.add(cur);
+        cur = parentByNome.get(cur);
+      }
+      return false;
+    });
+  };
+  return nomes.filter((n) => !ehAncestralDeOutro(n));
+}
+
+// Categorias efetivas de um SKU aplicando modo + unificação (usada pelo relatório e pelo drill-down).
+function categoriasEfetivas(rawNomes: string[] | undefined, ctx: Contexto): string[] {
+  if (!rawNomes || !rawNomes.length) return ['Sem categoria'];
+  let nomes = rawNomes;
+  if (ctx.modo === 'especifica') nomes = removerAncestrais(nomes, ctx.parentByNome);
+  const out: string[] = [];
+  for (const n of nomes) {
+    const u = unificarNome(ctx.mapa, n);
+    if (u && !out.includes(u)) out.push(u);
+  }
+  if (!out.length) return ['Sem categoria'];
+  if (ctx.modo === 'principal') return [out[0]];
+  return out;
 }
 
 // GET /curva-abc/relatorio?motoId=&dataDe=&dataAte=
@@ -48,7 +101,8 @@ curvaAbcRouter.get('/relatorio', async (req, res, next) => {
     const vendaDe = dataDe ? new Date(`${dataDe}T00:00:00.000Z`) : null;
     const vendaAte = dataAte ? new Date(`${dataAte}T23:59:59.999Z`) : null;
 
-    const { mapa: mapaUnif, modo } = await carregarUnificacao();
+    const ctx = await carregarUnificacao();
+    const modo = ctx.modo;
 
     // Categorias por SKU (raw SQL: tolera client Prisma local desatualizado).
     // ORDER BY id: preserva a ordem de cadastro — no modo 'principal' vale a 1ª categoria do SKU.
@@ -61,15 +115,18 @@ curvaAbcRouter.get('/relatorio', async (req, res, next) => {
       return res.json({ ok: true, semTabela: true, categorias: [], totais: null, atualizadoEm: null });
     }
 
-    const categoriasPorSku = new Map<string, string[]>();
+    // Nomes CRUS por SKU (modo/unificação são aplicados depois por categoriasEfetivas).
+    const rawPorSku = new Map<string, string[]>();
     let atualizadoEm: Date | null = null;
     for (const r of catRows) {
       const sku = baseSku(r.sku);
-      if (!categoriasPorSku.has(sku)) categoriasPorSku.set(sku, []);
-      const nome = unificarNome(mapaUnif, r.nome); // aplica agrupamento
-      if (nome && !categoriasPorSku.get(sku)!.includes(nome)) categoriasPorSku.get(sku)!.push(nome);
+      if (!rawPorSku.has(sku)) rawPorSku.set(sku, []);
+      const nome = String(r.nome || '').trim();
+      if (nome && !rawPorSku.get(sku)!.includes(nome)) rawPorSku.get(sku)!.push(nome);
       if (r.atualizadoEm && (!atualizadoEm || r.atualizadoEm > atualizadoEm)) atualizadoEm = r.atualizadoEm;
     }
+    const categoriasPorSku = new Map<string, string[]>();
+    for (const [sku, raw] of rawPorSku.entries()) categoriasPorSku.set(sku, categoriasEfetivas(raw, ctx));
 
     const pecas = await prisma.peca.findMany({
       where: { emPrejuizo: false, ...(motoId ? { motoId } : {}) },
@@ -92,9 +149,8 @@ curvaAbcRouter.get('/relatorio', async (req, res, next) => {
       const receita = vendidaNoPeriodo ? Number(p.precoML) || 0 : 0;
       const receitaLiq = vendidaNoPeriodo ? Number(p.valorLiq) || 0 : 0;
 
-      // Modo 'principal': o SKU conta só na 1ª categoria; 'todas': conta em todas (dedup).
-      const listaCat = categoriasPorSku.get(sku);
-      const nomes = listaCat?.length ? (modo === 'principal' ? [listaCat[0]] : listaCat) : ['Sem categoria'];
+      // Já resolvido por categoriasEfetivas (aplica modo todas/principal/especifica + unificação).
+      const nomes = categoriasPorSku.get(sku) || ['Sem categoria'];
       for (const nome of nomes) {
         if (!porCategoria.has(nome)) porCategoria.set(nome, novoAgg());
         const agg = porCategoria.get(nome)!;
@@ -308,11 +364,11 @@ curvaAbcRouter.get('/unificacao', async (_req, res, next) => {
 });
 
 // POST /curva-abc/unificacao — salva o mapa completo e o modo.
-// Body: { mapa: [{origem, destino}], modo: 'todas'|'principal' }
+// Body: { mapa: [{origem, destino}], modo: 'todas'|'principal'|'especifica' }
 curvaAbcRouter.post('/unificacao', async (req, res, next) => {
   try {
     const mapa: { origem: string; destino: string }[] = Array.isArray(req.body?.mapa) ? req.body.mapa : [];
-    const modo = req.body?.modo === 'principal' ? 'principal' : 'todas';
+    const modo = (req.body?.modo === 'principal' || req.body?.modo === 'especifica') ? req.body.modo : 'todas';
 
     try {
       await prisma.$executeRaw`DELETE FROM "CategoriaUnificacao"`;
@@ -335,6 +391,31 @@ curvaAbcRouter.post('/unificacao', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// POST /curva-abc/hierarquia — espelha a árvore de categorias da Nuvemshop (id, nome, parentId).
+// Alimentada pela página (que já carrega /nuvemshop/categorias) para o modo "mais específica".
+curvaAbcRouter.post('/hierarquia', async (req, res, next) => {
+  try {
+    const categorias: { id: any; nome: any; parentId: any }[] = Array.isArray(req.body?.categorias) ? req.body.categorias : [];
+    try {
+      await prisma.$executeRaw`DELETE FROM "NuvemshopCategoria"`;
+      for (const c of categorias) {
+        const id = String(c?.id ?? '').trim();
+        const nome = String(c?.nome ?? '').trim();
+        if (!id || !nome) continue;
+        const parentId = String(c?.parentId ?? '').trim();
+        await prisma.$executeRaw`
+          INSERT INTO "NuvemshopCategoria" ("categoriaId", "nome", "parentId", "atualizadoEm")
+          VALUES (${id}, ${nome}, ${parentId}, now())
+          ON CONFLICT ("categoriaId") DO UPDATE SET "nome" = EXCLUDED."nome", "parentId" = EXCLUDED."parentId", "atualizadoEm" = now()
+        `;
+      }
+    } catch (e: any) {
+      return res.status(500).json({ ok: false, error: 'Falha ao salvar hierarquia: ' + (e?.message || String(e)) });
+    }
+    res.json({ ok: true, total: categorias.length });
+  } catch (e) { next(e); }
+});
+
 // GET /curva-abc/categoria-detalhe?nome=&motoId=&dataDe=&dataAte= — drill-down de uma categoria (já unificada).
 curvaAbcRouter.get('/categoria-detalhe', async (req, res, next) => {
   try {
@@ -346,7 +427,7 @@ curvaAbcRouter.get('/categoria-detalhe', async (req, res, next) => {
     const vendaDe = dataDe ? new Date(`${dataDe}T00:00:00.000Z`) : null;
     const vendaAte = dataAte ? new Date(`${dataAte}T23:59:59.999Z`) : null;
 
-    const { mapa, modo } = await carregarUnificacao();
+    const ctx = await carregarUnificacao();
     const ehSemCategoria = nomeAlvo.toLowerCase() === 'sem categoria';
 
     let catRows: { sku: string; nome: string }[] = [];
@@ -356,13 +437,15 @@ curvaAbcRouter.get('/categoria-detalhe', async (req, res, next) => {
       `;
     } catch { catRows = []; }
 
-    const categoriasPorSku = new Map<string, string[]>();
+    const rawPorSku = new Map<string, string[]>();
     for (const r of catRows) {
       const sku = baseSku(r.sku);
-      if (!categoriasPorSku.has(sku)) categoriasPorSku.set(sku, []);
-      const nome = unificarNome(mapa, r.nome);
-      if (nome && !categoriasPorSku.get(sku)!.includes(nome)) categoriasPorSku.get(sku)!.push(nome);
+      if (!rawPorSku.has(sku)) rawPorSku.set(sku, []);
+      const nome = String(r.nome || '').trim();
+      if (nome && !rawPorSku.get(sku)!.includes(nome)) rawPorSku.get(sku)!.push(nome);
     }
+    const categoriasPorSku = new Map<string, string[]>();
+    for (const [sku, raw] of rawPorSku.entries()) categoriasPorSku.set(sku, categoriasEfetivas(raw, ctx));
 
     const pecas = await prisma.peca.findMany({
       where: { emPrejuizo: false, ...(motoId ? { motoId } : {}) },
@@ -373,12 +456,11 @@ curvaAbcRouter.get('/categoria-detalhe', async (req, res, next) => {
       orderBy: { idPeca: 'asc' },
     });
 
-    // Pertence à categoria conforme o modo (mesma regra do relatório)
+    // Pertence à categoria (já resolvido por categoriasEfetivas conforme o modo)
     const pertence = (sku: string) => {
       const lista = categoriasPorSku.get(sku);
-      if (!lista?.length) return ehSemCategoria;
-      const efetivas = modo === 'principal' ? [lista[0]] : lista;
-      return efetivas.some((n) => n.toLowerCase() === nomeAlvo.toLowerCase());
+      if (!lista || (lista.length === 1 && lista[0] === 'Sem categoria')) return ehSemCategoria;
+      return lista.some((n) => n.toLowerCase() === nomeAlvo.toLowerCase());
     };
 
     const round2 = (n: number) => Math.round(n * 100) / 100;
