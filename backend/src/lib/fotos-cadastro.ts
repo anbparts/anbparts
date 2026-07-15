@@ -250,6 +250,46 @@ function ehNomeFotoTratada(nome: string) {
   return /capa/i.test(base) || /^\d{1,2}$/.test(base);
 }
 
+// Conta fotos TRATADAS (nome Capa/01/02...) x CRUAS (nomes fora do padrão, ex.: 20260704_*)
+// da pasta do SKU na moto oficial + na pasta pendente de pré-cadastro. Usado pelo Resumo.
+export async function analisarFotosSku(motoId: number, sku: string): Promise<{ tratadas: number; cruas: number }> {
+  const cfg = await getGoogleDriveConfig();
+  const skuBase = baseSku(sku);
+  let tratadas = 0;
+  let cruas = 0;
+  const classificar = (nome: string) => { if (ehNomeFotoTratada(nome)) tratadas++; else cruas++; };
+
+  const listarFotosDaPasta = async (raizId: string) => {
+    if (!raizId || !skuBase) return;
+    const pastas = await listDriveFiles(
+      `'${escapeDriveQueryValue(raizId)}' in parents and mimeType = 'application/vnd.google-apps.folder' and name contains '${escapeDriveQueryValue(skuBase)}' and trashed = false`,
+      'files(id,name)',
+    );
+    const pasta = pastas.find((p: any) => normalizeText(p.name).toUpperCase().startsWith(skuBase));
+    if (!pasta) return;
+    const fotos = await listDriveFiles(
+      `'${escapeDriveQueryValue(pasta.id)}' in parents and mimeType contains 'image/' and trashed = false`,
+      'files(id,name)',
+    );
+    for (const f of fotos) classificar(String((f as any).name || ''));
+  };
+
+  // Pasta na moto oficial (já movida/tratada)
+  try {
+    const motoDirs = (cfg.googleDriveMotoDirs as any) || {};
+    const motoPastaId = normalizeText(motoDirs[String(motoId)]);
+    if (motoPastaId) await listarFotosDaPasta(motoPastaId);
+  } catch { /* ignore */ }
+
+  // Pasta pendente de pré-cadastro (cruas antes do tratamento)
+  try {
+    const pastaRaizId = normalizeText((cfg as any).googleDrivePreCadastroPastaId);
+    if (pastaRaizId) await listarFotosDaPasta(pastaRaizId);
+  } catch { /* ignore */ }
+
+  return { tratadas, cruas };
+}
+
 function extrairSkuDaPasta(nome: string) {
   const n = normalizeText(nome);
   const m = n.match(/^([A-Za-z0-9]+_\d+)/);

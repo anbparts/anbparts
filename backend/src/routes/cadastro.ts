@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { compressDataUrlImage, normalizeImageFileName } from '../lib/image';
-import { buscarCadastroFotos, buscarCadastroFotosAnb, buscarCadastroFotosDrive, enviarCadastroFotosManual, processarCadastroFotos, verificarCadastroFotoSku, verificarFotosCadastroPeca, getPastaPreCadastroDoSku, buscarFotosDriveSku, apagarPastaDrive, escanearFotosDrive, processarPastaFotosDrive, novoResultadoFotoDrive } from '../lib/fotos-cadastro';
+import { buscarCadastroFotos, buscarCadastroFotosAnb, buscarCadastroFotosDrive, enviarCadastroFotosManual, processarCadastroFotos, verificarCadastroFotoSku, verificarFotosCadastroPeca, getPastaPreCadastroDoSku, analisarFotosSku, apagarPastaDrive, escanearFotosDrive, processarPastaFotosDrive, novoResultadoFotoDrive } from '../lib/fotos-cadastro';
 import type { FotoDriveResultado } from '../lib/fotos-cadastro';
 import { blingReq, fetchProdutoLojaLinksByProductId, resolveBlingMercadoLivreItemId, resolveBlingMercadoLivreLinkWithFallback } from './bling';
 import { criarPastaPreCadastro } from './google-drive';
@@ -929,24 +929,20 @@ cadastroRouter.get('/resumo', async (req, res, next) => {
         if (p.localizacao == null || String(p.localizacao).trim() === '') dadosFaltando.push('localização');
         if (!(Number(p.precoVenda) > 0)) dadosFaltando.push('preço');
 
-        // Imagens (3 estados):
-        //  completo            = zip na pasta pendente OU pasta já movida pra moto oficial (com fotos)
-        //  pendente_tratamento = sem zip, sem pasta movida, mas HÁ fotos cruas na pasta pendente
-        //  sem_fotos           = não há foto nenhuma em lugar algum
+        // Imagens (3 estados) — "tratada" exige 2+ arquivos com nome no padrão (Capa/02...):
+        //  completo            = zip na pasta pendente OU 2+ fotos TRATADAS (Capa/02) na moto oficial
+        //  pendente_tratamento = sem zip, sem tratadas, mas 2+ fotos CRUAS (nomes fora do padrão)
+        //  sem_fotos           = nenhuma, só 1 foto, ou só 1 tratada
         let imagens: 'completo' | 'pendente_tratamento' | 'sem_fotos' = 'sem_fotos';
         let motivo = 'sem fotos';
         if (zipSkus.has(base)) { imagens = 'completo'; motivo = 'zip na pasta'; }
         else {
-          let fotosMoto = 0;
-          try { fotosMoto = (await buscarFotosDriveSku(Number(p.motoId), base)).fotos.length; } catch { /* ignore */ }
-          if (fotosMoto > 0 || p.fotoCadastroVerificada) { imagens = 'completo'; motivo = fotosMoto > 0 ? 'pasta movida' : 'fotos tratadas'; }
-          else {
-            let fotosPre = 0;
-            try { fotosPre = (await getPastaPreCadastroDoSku(base)).fotos; } catch { /* ignore */ }
-            // Só conta como "pendente tratamento" com 2+ fotos cruas; 1 foto ainda não vale.
-            if (fotosPre >= 2) { imagens = 'pendente_tratamento'; motivo = `${fotosPre} fotos cruas sem zip`; }
-            else { imagens = 'sem_fotos'; motivo = fotosPre === 1 ? '1 foto (insuficiente)' : 'sem fotos'; }
-          }
+          let tratadas = 0;
+          let cruas = 0;
+          try { const r = await analisarFotosSku(Number(p.motoId), base); tratadas = r.tratadas; cruas = r.cruas; } catch { /* ignore */ }
+          if (tratadas >= 2) { imagens = 'completo'; motivo = `${tratadas} fotos tratadas`; }
+          else if (cruas >= 2) { imagens = 'pendente_tratamento'; motivo = `${cruas} fotos cruas sem zip`; }
+          else { imagens = 'sem_fotos'; motivo = (tratadas + cruas) === 1 ? '1 foto (insuficiente)' : 'sem fotos'; }
         }
 
         const cadastrado = p.status === 'cadastrado';
