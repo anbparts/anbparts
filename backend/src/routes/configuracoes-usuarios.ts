@@ -4,6 +4,7 @@ import { hashPassword } from '../lib/auth';
 import { APP_PERMISSION_CATALOG, buildFullPermissions, normalizePermissions } from '../lib/app-permissions';
 import { APP_NOTIFICATION_CATALOG, normalizeNotificationTypes } from '../lib/app-notifications';
 import { prisma } from '../lib/prisma';
+import { getWhatsappConfig, sendWhatsappTemplate } from '../lib/whatsapp';
 
 export const configuracoesUsuariosRouter = Router();
 
@@ -161,6 +162,42 @@ configuracoesUsuariosRouter.post('/usuarios/:id/reset-senha', async (req, res, n
       data: { passwordHash: hashPassword(password) },
     });
     res.json({ ok: true, usuario: cleanUser(user) });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// POST /configuracoes/usuarios/:id/whatsapp-teste — envia o template de fotos pendentes para o
+// telefone do usuário AGORA (ignora dedup) e devolve a resposta crua da Meta (erro exato incluso).
+configuracoesUsuariosRouter.post('/usuarios/:id/whatsapp-teste', async (req, res, next) => {
+  try {
+    if (!requireBruno(req, res)) return;
+    const id = Number(req.params.id);
+    const user = await (prisma as any).appUser.findUnique({ where: { id } });
+    if (!user) return res.status(404).json({ ok: false, error: 'Usuário não encontrado.' });
+
+    const telefone = String(user.telefone || '').replace(/\D/g, '');
+    if (!telefone) return res.status(400).json({ ok: false, error: 'Usuário sem telefone/WhatsApp cadastrado.' });
+
+    const wa = await getWhatsappConfig();
+    if (!wa.token || !wa.phoneNumberId || !wa.templateNome) {
+      return res.status(400).json({ ok: false, error: 'WhatsApp não configurado (token/phoneNumberId/template) em Conf. Meta.' });
+    }
+
+    const r = await sendWhatsappTemplate({
+      token: wa.token,
+      phoneNumberId: wa.phoneNumberId,
+      to: telefone,
+      templateNome: wa.templateNome,
+      language: 'pt_BR',
+      variaveis: ['1', 'TESTE'],
+    });
+
+    if (r.ok) {
+      return res.json({ ok: true, enviado: true, telefone, phoneNumberId: wa.phoneNumberId, messageId: r.id });
+    }
+    // Devolve o erro exato da Meta pra diagnosticar (allow-list, número inválido, re-engajamento etc.)
+    return res.json({ ok: true, enviado: false, telefone, phoneNumberId: wa.phoneNumberId, erro: r.error, detalhe: (r as any).detalhe || null });
   } catch (e) {
     next(e);
   }

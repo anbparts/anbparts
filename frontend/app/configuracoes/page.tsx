@@ -107,6 +107,7 @@ export default function ConfiguracoesPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
+  const [testandoWa, setTestandoWa] = useState(false);
   const [isPhone, setIsPhone] = useState(false);
 
 
@@ -232,6 +233,25 @@ export default function ConfiguracoesPage() {
     }
   }
 
+  async function testarWhatsapp() {
+    if (!selecionadoId) return;
+    setTestandoWa(true);
+    try {
+      const resp = await fetch(`${API}/configuracoes/usuarios/${selecionadoId}/whatsapp-teste`, {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const d = await resp.json();
+      if (!d?.ok) { alert(`Erro: ${d?.error || 'falha'}`); }
+      else if (d.enviado) { alert(`✓ Mensagem de teste ENVIADA para ${d.telefone} (via phoneNumberId ${d.phoneNumberId}).\nID: ${d.messageId || '-'}\n\nSe não chegar no WhatsApp, o número não está aceitando mensagens (allow-list / re-engajamento).`); }
+      else { alert(`✗ A Meta RECUSOU o envio para ${d.telefone}:\n\n${d.erro}\n\n${d.detalhe ? JSON.stringify(d.detalhe, null, 2) : ''}`); }
+    } catch (e: any) {
+      alert(e?.message || 'Erro ao testar WhatsApp');
+    } finally {
+      setTestandoWa(false);
+    }
+  }
+
   async function resetarSenha() {
     if (!selecionadoId || senhaReset.trim().length < 4) return alert('Informe uma nova senha com pelo menos 4 caracteres.');
     setSaving(true);
@@ -304,7 +324,17 @@ export default function ConfiguracoesPage() {
             <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '1fr 1fr', gap: 12 }}>
               <div><label style={s.label}>Usuario</label><input style={s.input} value={form.username} onChange={(e) => setForm((p) => ({ ...p, username: e.target.value.toLowerCase().trim() }))} placeholder="ex: nelson" /></div>
               <div><label style={s.label}>Nome</label><input style={s.input} value={form.displayName} onChange={(e) => setForm((p) => ({ ...p, displayName: e.target.value }))} placeholder="Nome exibido" /></div>
-              <div><label style={s.label}>Telefone / WhatsApp</label><input style={s.input} type="tel" name="anb-telefone-whatsapp" autoComplete="off" value={form.telefone} onChange={(e) => setForm((p) => ({ ...p, telefone: e.target.value }))} placeholder="Ex.: 5511999999999 (DDI+DDD)" /></div>
+              <div>
+                <label style={s.label}>Telefone / WhatsApp</label>
+                <input style={s.input} type="tel" name="anb-telefone-whatsapp" autoComplete="off" value={form.telefone} onChange={(e) => setForm((p) => ({ ...p, telefone: e.target.value }))} placeholder="Ex.: 5511999999999 (DDI+DDD)" />
+                {!isNovo && form.telefone.trim() && (
+                  <button onClick={testarWhatsapp} disabled={testandoWa}
+                    style={{ ...s.btn, marginTop: 8, fontSize: 12, background: '#16a34a', color: '#fff', opacity: testandoWa ? 0.7 : 1 }}
+                    title="Envia uma mensagem de teste agora e mostra a resposta exata da Meta">
+                    {testandoWa ? 'Enviando teste...' : '📲 Testar WhatsApp'}
+                  </button>
+                )}
+              </div>
               {isNovo && <div><label style={s.label}>Senha inicial</label><input type="password" style={s.input} value={form.password} onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))} placeholder="Senha inicial" /></div>}
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#334155', fontWeight: 700 }}>
                 <input type="checkbox" checked={form.active} onChange={(e) => setForm((p) => ({ ...p, active: e.target.checked }))} />
