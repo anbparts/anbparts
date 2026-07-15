@@ -943,8 +943,9 @@ cadastroRouter.get('/resumo', async (req, res, next) => {
           else {
             let fotosPre = 0;
             try { fotosPre = (await getPastaPreCadastroDoSku(base)).fotos; } catch { /* ignore */ }
-            if (fotosPre > 0) { imagens = 'pendente_tratamento'; motivo = 'fotos cruas sem zip'; }
-            else { imagens = 'sem_fotos'; motivo = 'sem fotos'; }
+            // Só conta como "pendente tratamento" com 2+ fotos cruas; 1 foto ainda não vale.
+            if (fotosPre >= 2) { imagens = 'pendente_tratamento'; motivo = `${fotosPre} fotos cruas sem zip`; }
+            else { imagens = 'sem_fotos'; motivo = fotosPre === 1 ? '1 foto (insuficiente)' : 'sem fotos'; }
           }
         }
 

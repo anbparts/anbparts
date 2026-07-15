@@ -2841,7 +2841,7 @@ export default function CadastroPage() {
                     </table>
                   </div>
                   <div style={{ fontSize: 11.5, color: 'var(--gray-400)', marginTop: 10 }}>
-                    Imagens: “completo” = zip na pasta pendente ou pasta já movida pra moto oficial · “Pendente tratamento” = tem fotos cruas mas sem zip · “Sem fotos disponíveis” = nenhuma foto encontrada. Dados = dimensões, nº peça, localização e preço.
+                    Imagens: “completo” = zip na pasta pendente ou pasta já movida pra moto oficial · “Pendente tratamento” = 2+ fotos cruas mas sem zip · “Sem fotos disponíveis” = nenhuma ou só 1 foto. Dados = dimensões, nº peça, localização e preço.
                   </div>
                 </>
               ) : null}
