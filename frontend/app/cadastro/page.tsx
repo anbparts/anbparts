@@ -273,7 +273,6 @@ export default function CadastroPage() {
   const [loading, setLoading] = useState(true);
   const [somentePendentes, setSomentePendentes] = useState(true);
   const [filters, setFilters] = useState({ motoId: '', search: '', semDimensoes: '', comDimensoes: '', preCadastroCompleto: '' });
-  const [verificandoFotos, setVerificandoFotos] = useState(false);
   const [searchInput, setSearchInput] = useState('');
   const [resumoOpen, setResumoOpen] = useState(false);
   const [resumoLoading, setResumoLoading] = useState(false);
@@ -448,15 +447,6 @@ export default function CadastroPage() {
         setConfigMotoIdDefault(String(cfgResp.cadastroMotoIdDefault));
       }
     } catch { }
-  }
-
-  async function verificarFotosDriveEFiltrar() {
-    setVerificandoFotos(true);
-    try {
-      await fetch(`${API}/cadastro/verificar-fotos-drive`, { method: 'POST', credentials: 'include' });
-      setFilters(prev => ({ ...prev, preCadastroCompleto: 'true', semDimensoes: '', comDimensoes: '' }));
-    } catch { alert('Erro ao verificar fotos no Drive'); }
-    setVerificandoFotos(false);
   }
 
   async function loadCadastros() {
@@ -1963,19 +1953,6 @@ export default function CadastroPage() {
               {motos.map((m) => <option key={m.id} value={m.id}>ID {m.id} - {m.marca} {m.modelo}</option>)}
             </select>
             <input style={{ ...s.input, width: isPhone ? '100%' : 200 }} placeholder="Buscar ID ou descrição..." value={searchInput} onChange={(e) => setSearchInput(e.target.value)} />
-            <button
-              style={{ ...s.btn, fontSize: 12, background: filters.semDimensoes === 'true' ? '#f59e0b' : 'var(--white)', color: filters.semDimensoes === 'true' ? '#fff' : 'var(--gray-600)', border: `1px solid ${filters.semDimensoes === 'true' ? '#f59e0b' : 'var(--border)'}`, width: isPhone ? '100%' : undefined }}
-              onClick={() => setFilters((prev) => ({ ...prev, semDimensoes: prev.semDimensoes === 'true' ? '' : 'true', comDimensoes: '', preCadastroCompleto: '' }))}
-            >📐 Sem dimensões</button>
-            <button
-              style={{ ...s.btn, fontSize: 12, background: filters.comDimensoes === 'true' ? '#10b981' : 'var(--white)', color: filters.comDimensoes === 'true' ? '#fff' : 'var(--gray-600)', border: `1px solid ${filters.comDimensoes === 'true' ? '#10b981' : 'var(--border)'}`, width: isPhone ? '100%' : undefined }}
-              onClick={() => setFilters((prev) => ({ ...prev, comDimensoes: prev.comDimensoes === 'true' ? '' : 'true', semDimensoes: '', preCadastroCompleto: '' }))}
-            >📐 Com dimensões</button>
-            <button
-              style={{ ...s.btn, fontSize: 12, background: filters.preCadastroCompleto === 'true' ? '#6366f1' : 'var(--white)', color: filters.preCadastroCompleto === 'true' ? '#fff' : 'var(--gray-600)', border: `1px solid ${filters.preCadastroCompleto === 'true' ? '#6366f1' : 'var(--border)'}`, width: isPhone ? '100%' : undefined, opacity: verificandoFotos ? 0.6 : 1 }}
-              onClick={verificarFotosDriveEFiltrar}
-              disabled={verificandoFotos}
-            >{verificandoFotos ? '⏳ Verificando...' : '✅ Pré-cadastro completo'}</button>
             <button style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', fontSize: 12, width: isPhone ? '100%' : undefined }} onClick={() => { setSearchInput(''); setFilters({ motoId: '', search: '', semDimensoes: '', comDimensoes: '', preCadastroCompleto: '' }); }}>Limpar</button>
           </div>
         </div>
