@@ -876,6 +876,95 @@ cadastroRouter.post('/fotos/drive', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// GET /cadastro/resumo — status de cada SKU da lista filtrada (mesmos filtros da lista):
+// dados do pré-cadastro (dimensões/nº peça/localização/preço), imagens (zip na pasta OU pasta
+// movida pra oficial = completo; senão "Pendente tratamento de imagens") e cadastro no Bling.
+cadastroRouter.get('/resumo', async (req, res, next) => {
+  try {
+    const { motoId, search, semDimensoes, comDimensoes, preCadastroCompleto, somentePendentes } = req.query as any;
+    const where: any = {};
+    if (somentePendentes === 'true') where.status = { not: 'cadastrado' };
+    if (motoId) where.motoId = Number(motoId);
+    if (search) {
+      const s = String(search).trim();
+      where.OR = [{ idPeca: { startsWith: s, mode: 'insensitive' } }, { descricao: { contains: s, mode: 'insensitive' } }];
+    }
+    if (semDimensoes === 'true') where.OR = [...(where.OR || []), { largura: null }, { largura: 0 }, { altura: null }, { altura: 0 }, { profundidade: null }, { profundidade: 0 }];
+    if (comDimensoes === 'true') where.AND = [...(where.AND || []), { peso: { not: null } }, { largura: { not: null } }, { altura: { not: null } }, { profundidade: { not: null } }];
+    if (preCadastroCompleto === 'true') where.AND = [...(where.AND || []),
+      { peso: { not: null } }, { largura: { not: null } }, { altura: { not: null } }, { profundidade: { not: null } },
+      { numeroPeca: { not: null } }, { localizacao: { not: null } }, { precoVenda: { gt: 0 } }, { fotoCadastroVerificada: true },
+    ];
+
+    const pecas = await prisma.cadastroPeca.findMany({
+      where,
+      select: {
+        idPeca: true, descricao: true, motoId: true, status: true,
+        peso: true, largura: true, altura: true, profundidade: true,
+        numeroPeca: true, localizacao: true, precoVenda: true, fotoCadastroVerificada: true,
+        moto: { select: { marca: true, modelo: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 500,
+    });
+
+    // 1 varredura ao vivo: quais SKUs têm zip na pasta pendente do Drive
+    const zipSkus = new Set<string>();
+    try {
+      const scan = await escanearFotosDrive({});
+      for (const p of (scan.pastas || [])) { const b = getBaseSku(p.sku || p.nome); if (b) zipSkus.add(b); }
+    } catch { /* Drive indisponível: segue sem info de zip */ }
+
+    // Processa com concorrência limitada (só chama o Drive por SKU quando precisa checar "pasta movida")
+    const itens: any[] = new Array(pecas.length);
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < pecas.length) {
+        const idx = cursor++;
+        const p = pecas[idx];
+        const base = getBaseSku(p.idPeca);
+        const dadosFaltando: string[] = [];
+        if (p.peso == null || p.largura == null || p.altura == null || p.profundidade == null) dadosFaltando.push('dimensões');
+        if (p.numeroPeca == null || String(p.numeroPeca).trim() === '') dadosFaltando.push('nº peça');
+        if (p.localizacao == null || String(p.localizacao).trim() === '') dadosFaltando.push('localização');
+        if (!(Number(p.precoVenda) > 0)) dadosFaltando.push('preço');
+
+        let imagens: 'completo' | 'pendente_tratamento' = 'pendente_tratamento';
+        let motivo = 'sem zip';
+        if (zipSkus.has(base)) { imagens = 'completo'; motivo = 'zip na pasta'; }
+        else if (p.fotoCadastroVerificada) { imagens = 'completo'; motivo = 'fotos tratadas'; }
+        else {
+          let fotos = 0;
+          try { fotos = await verificarFotosCadastroPeca(Number(p.motoId), base); } catch { /* ignore */ }
+          if (fotos > 0) { imagens = 'completo'; motivo = 'pasta movida'; }
+        }
+
+        const cadastrado = p.status === 'cadastrado';
+        const liberada = dadosFaltando.length === 0 && imagens === 'completo';
+        itens[idx] = {
+          sku: base,
+          descricao: p.descricao || '',
+          moto: p.moto ? `${p.moto.marca} ${p.moto.modelo}` : '',
+          cadastrado,
+          dadosFaltando,
+          imagens,
+          motivo,
+          liberada,
+        };
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(6, pecas.length || 1) }, worker));
+
+    const totais = {
+      total: itens.length,
+      liberadas: itens.filter((i) => i.liberada).length,
+      pendentes: itens.filter((i) => !i.liberada).length,
+      pendenteImagens: itens.filter((i) => i.imagens === 'pendente_tratamento').length,
+    };
+    res.json({ ok: true, itens, totais });
+  } catch (e) { next(e); }
+});
+
 // GET /cadastro/fotos-drive/scan — lista as pastas qualificadas (zip + fotos fora do padrao)
 cadastroRouter.get('/fotos-drive/scan', requireCadastroAction('enviar_fotos'), async (req, res, next) => {
   try {

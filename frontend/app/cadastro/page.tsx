@@ -275,6 +275,9 @@ export default function CadastroPage() {
   const [filters, setFilters] = useState({ motoId: '', search: '', semDimensoes: '', comDimensoes: '', preCadastroCompleto: '' });
   const [verificandoFotos, setVerificandoFotos] = useState(false);
   const [searchInput, setSearchInput] = useState('');
+  const [resumoOpen, setResumoOpen] = useState(false);
+  const [resumoLoading, setResumoLoading] = useState(false);
+  const [resumoData, setResumoData] = useState<any>(null);
   const [paginaCadastro, setPaginaCadastro] = useState<'sku' | 'fotos-drive' | 'fotos' | 'categoria'>('sku');
   // Aba "Fotos Drive" (processamento do zip do Canva)
   const [fdModo, setFdModo] = useState<'data' | 'sku'>('data');
@@ -476,6 +479,28 @@ export default function CadastroPage() {
       setData({ total: Number(d?.total || linhas.length), data: linhas });
     } catch { }
     setLoading(false);
+  }
+
+  async function abrirResumo() {
+    setResumoOpen(true);
+    setResumoLoading(true);
+    setResumoData(null);
+    try {
+      const params = new URLSearchParams();
+      if (somentePendentes) params.set('somentePendentes', 'true');
+      if (filters.motoId) params.set('motoId', filters.motoId);
+      if (filters.search) params.set('search', filters.search);
+      if (filters.semDimensoes) params.set('semDimensoes', filters.semDimensoes);
+      if (filters.comDimensoes) params.set('comDimensoes', filters.comDimensoes);
+      if (filters.preCadastroCompleto) params.set('preCadastroCompleto', filters.preCadastroCompleto);
+      const d = await fetch(`${API}/cadastro/resumo?${params}`, { credentials: 'include' }).then(r => r.json());
+      if (!d?.ok) { alert(d?.error || 'Erro ao gerar resumo'); setResumoOpen(false); }
+      else setResumoData(d);
+    } catch (e: any) {
+      alert(e?.message || 'Erro ao gerar resumo');
+      setResumoOpen(false);
+    }
+    setResumoLoading(false);
   }
 
   function toggleSortCadastro(key: string) {
@@ -688,7 +713,7 @@ export default function CadastroPage() {
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ aplicacoes: lote.map(({ produtoId, categorias, tags }) => ({ produtoId, categorias, tags })) }),
+          body: JSON.stringify({ aplicacoes: lote.map(({ sku, produtoId, categorias, tags }) => ({ sku, produtoId, categorias, tags })) }),
         });
         const data = await readApiResponse(resp, 'Erro ao aplicar categorias na Nuvemshop');
         const resultados = Array.isArray(data.resultados) ? data.resultados : [];
@@ -1720,9 +1745,18 @@ export default function CadastroPage() {
   return (
     <>
       <div style={{ ...s.topbar, height: isPhone ? 'auto' : 'var(--topbar-h)', minHeight: 'var(--topbar-h)', padding: isPhone ? '12px 14px' : '0 28px', gap: 10, flexWrap: isPhone ? 'wrap' : 'nowrap' }}>
-        <div>
-          <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)', letterSpacing: '-0.3px' }}>Cadastro</div>
-          <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>Pré-cadastro e cadastro de peças</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)', letterSpacing: '-0.3px' }}>Cadastro</div>
+            <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>Pré-cadastro e cadastro de peças</div>
+          </div>
+          {paginaCadastro === 'sku' && (
+            <button onClick={abrirResumo}
+              style={{ ...s.btn, fontSize: 12.5, fontWeight: 700, background: '#0ea5e9', color: '#fff', border: 'none', padding: '8px 16px' }}
+              title="Resumo de status (dados, imagens/zip, cadastro) dos SKUs da lista filtrada">
+              📋 Resumo
+            </button>
+          )}
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', width: isPhone ? '100%' : undefined, justifyContent: isPhone ? 'space-between' : 'flex-end' }}>
           <div style={{ display: 'inline-flex', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', background: 'var(--white)' }}>
@@ -2758,6 +2792,79 @@ export default function CadastroPage() {
             <div style={{ padding: '12px 20px 16px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <button onClick={() => setModalConfig(false)} style={{ ...s.btn, background: 'var(--white)', color: 'var(--ink-soft)', border: '1px solid var(--border)' }}>Cancelar</button>
               <button onClick={salvarConfig} disabled={savingConfig} style={{ ...s.btn, background: 'var(--gray-800)', color: '#fff', opacity: savingConfig ? 0.7 : 1 }}>{savingConfig ? 'Salvando...' : 'Salvar'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Resumo de status dos SKUs */}
+      {resumoOpen && (
+        <div onClick={() => setResumoOpen(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,.55)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--white)', borderRadius: 14, width: 'min(1000px, 100%)', maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--gray-800)' }}>📋 Resumo de status</div>
+                <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>SKUs da lista filtrada · verificação ao vivo no Drive</div>
+              </div>
+              <button onClick={() => setResumoOpen(false)} style={{ border: 'none', background: 'var(--gray-100)', width: 30, height: 30, borderRadius: 8, cursor: 'pointer', fontSize: 16, color: 'var(--gray-600)' }}>×</button>
+            </div>
+            <div style={{ overflow: 'auto', padding: 16 }}>
+              {resumoLoading ? (
+                <div style={{ textAlign: 'center', padding: 48, color: 'var(--gray-400)' }}>⏳ Verificando no Drive... (pode levar alguns segundos)</div>
+              ) : resumoData ? (
+                <>
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
+                    {[
+                      ['Total', resumoData.totais.total, 'var(--gray-700)', '#f1f5f9'],
+                      ['✓ Liberadas p/ cadastro', resumoData.totais.liberadas, '#15803d', '#f0fdf4'],
+                      ['Com pendências', resumoData.totais.pendentes, '#c2410c', '#fff7ed'],
+                      ['Pendente tratamento imagens', resumoData.totais.pendenteImagens, '#b91c1c', '#fef2f2'],
+                    ].map(([label, val, cor, bg]: any) => (
+                      <div key={label} style={{ flex: '1 1 150px', background: bg, borderRadius: 10, padding: '10px 14px' }}>
+                        <div style={{ fontSize: 20, fontWeight: 800, color: cor }}>{val}</div>
+                        <div style={{ fontSize: 11.5, color: 'var(--gray-500)', fontWeight: 600 }}>{label}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 10 }}>
+                    <table style={{ width: '100%', minWidth: 720, borderCollapse: 'collapse', fontSize: 13 }}>
+                      <thead><tr style={{ background: 'var(--gray-50)' }}>
+                        <th style={{ textAlign: 'left', padding: '9px 12px', fontSize: 11, color: 'var(--gray-500)', fontWeight: 700, textTransform: 'uppercase' }}>SKU</th>
+                        <th style={{ textAlign: 'left', padding: '9px 12px', fontSize: 11, color: 'var(--gray-500)', fontWeight: 700, textTransform: 'uppercase' }}>Peça</th>
+                        <th style={{ textAlign: 'left', padding: '9px 12px', fontSize: 11, color: 'var(--gray-500)', fontWeight: 700, textTransform: 'uppercase' }}>Dados</th>
+                        <th style={{ textAlign: 'left', padding: '9px 12px', fontSize: 11, color: 'var(--gray-500)', fontWeight: 700, textTransform: 'uppercase' }}>Imagens</th>
+                        <th style={{ textAlign: 'center', padding: '9px 12px', fontSize: 11, color: 'var(--gray-500)', fontWeight: 700, textTransform: 'uppercase' }}>Status</th>
+                      </tr></thead>
+                      <tbody>
+                        {resumoData.itens.map((it: any, i: number) => (
+                          <tr key={it.sku + i} style={{ borderTop: '1px solid #f1f5f9', background: it.liberada ? '#fbfffe' : 'var(--white)' }}>
+                            <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 700, fontSize: 12 }}>{it.sku}</td>
+                            <td style={{ padding: '9px 12px', color: 'var(--gray-700)' }}>{it.descricao}</td>
+                            <td style={{ padding: '9px 12px' }}>
+                              {it.dadosFaltando.length === 0
+                                ? <span style={{ color: '#15803d' }}>✓ completo</span>
+                                : <span style={{ color: '#c2410c' }}>falta: {it.dadosFaltando.join(', ')}</span>}
+                            </td>
+                            <td style={{ padding: '9px 12px' }}>
+                              {it.imagens === 'completo'
+                                ? <span style={{ color: '#15803d' }}>✓ completo <span style={{ color: 'var(--gray-400)', fontSize: 11 }}>({it.motivo})</span></span>
+                                : <span style={{ color: '#b91c1c', fontWeight: 600 }}>⚠ Pendente tratamento</span>}
+                            </td>
+                            <td style={{ padding: '9px 12px', textAlign: 'center' }}>
+                              <span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 700, background: it.liberada ? '#ecfdf3' : '#fff7ed', color: it.liberada ? '#047857' : '#c2410c' }}>
+                                {it.liberada ? 'Liberada' : 'Pendências'}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div style={{ fontSize: 11.5, color: 'var(--gray-400)', marginTop: 10 }}>
+                    Imagens “completo” = zip na pasta pendente ou pasta já movida pra moto oficial. “Pendente tratamento” = sem zip e sem fotos tratadas. Dados = dimensões, nº peça, localização e preço.
+                  </div>
+                </>
+              ) : null}
             </div>
           </div>
         </div>
