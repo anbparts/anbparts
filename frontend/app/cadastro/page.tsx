@@ -2818,7 +2818,8 @@ export default function CadastroPage() {
                       ['Total', resumoData.totais.total, 'var(--gray-700)', '#f1f5f9'],
                       ['✓ Liberadas p/ cadastro', resumoData.totais.liberadas, '#15803d', '#f0fdf4'],
                       ['Com pendências', resumoData.totais.pendentes, '#c2410c', '#fff7ed'],
-                      ['Pendente tratamento imagens', resumoData.totais.pendenteImagens, '#b91c1c', '#fef2f2'],
+                      ['Pendente tratamento imagens', resumoData.totais.pendenteImagens, '#c2410c', '#fff7ed'],
+                      ['Sem fotos disponíveis', resumoData.totais.semFotos ?? 0, '#b91c1c', '#fef2f2'],
                     ].map(([label, val, cor, bg]: any) => (
                       <div key={label} style={{ flex: '1 1 150px', background: bg, borderRadius: 10, padding: '10px 14px' }}>
                         <div style={{ fontSize: 20, fontWeight: 800, color: cor }}>{val}</div>
@@ -2848,7 +2849,9 @@ export default function CadastroPage() {
                             <td style={{ padding: '9px 12px' }}>
                               {it.imagens === 'completo'
                                 ? <span style={{ color: '#15803d' }}>✓ completo <span style={{ color: 'var(--gray-400)', fontSize: 11 }}>({it.motivo})</span></span>
-                                : <span style={{ color: '#b91c1c', fontWeight: 600 }}>⚠ Pendente tratamento</span>}
+                                : it.imagens === 'pendente_tratamento'
+                                  ? <span style={{ color: '#c2410c', fontWeight: 600 }}>⚠ Pendente tratamento</span>
+                                  : <span style={{ color: '#b91c1c', fontWeight: 600 }}>✗ Sem fotos disponíveis</span>}
                             </td>
                             <td style={{ padding: '9px 12px', textAlign: 'center' }}>
                               <span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 700, background: it.liberada ? '#ecfdf3' : '#fff7ed', color: it.liberada ? '#047857' : '#c2410c' }}>
@@ -2861,7 +2864,7 @@ export default function CadastroPage() {
                     </table>
                   </div>
                   <div style={{ fontSize: 11.5, color: 'var(--gray-400)', marginTop: 10 }}>
-                    Imagens “completo” = zip na pasta pendente ou pasta já movida pra moto oficial. “Pendente tratamento” = sem zip e sem fotos tratadas. Dados = dimensões, nº peça, localização e preço.
+                    Imagens: “completo” = zip na pasta pendente ou pasta já movida pra moto oficial · “Pendente tratamento” = tem fotos cruas mas sem zip · “Sem fotos disponíveis” = nenhuma foto encontrada. Dados = dimensões, nº peça, localização e preço.
                   </div>
                 </>
               ) : null}

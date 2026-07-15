@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { compressDataUrlImage, normalizeImageFileName } from '../lib/image';
-import { buscarCadastroFotos, buscarCadastroFotosAnb, buscarCadastroFotosDrive, enviarCadastroFotosManual, processarCadastroFotos, verificarCadastroFotoSku, verificarFotosCadastroPeca, getPastaPreCadastroDoSku, apagarPastaDrive, escanearFotosDrive, processarPastaFotosDrive, novoResultadoFotoDrive } from '../lib/fotos-cadastro';
+import { buscarCadastroFotos, buscarCadastroFotosAnb, buscarCadastroFotosDrive, enviarCadastroFotosManual, processarCadastroFotos, verificarCadastroFotoSku, verificarFotosCadastroPeca, getPastaPreCadastroDoSku, buscarFotosDriveSku, apagarPastaDrive, escanearFotosDrive, processarPastaFotosDrive, novoResultadoFotoDrive } from '../lib/fotos-cadastro';
 import type { FotoDriveResultado } from '../lib/fotos-cadastro';
 import { blingReq, fetchProdutoLojaLinksByProductId, resolveBlingMercadoLivreItemId, resolveBlingMercadoLivreLinkWithFallback } from './bling';
 import { criarPastaPreCadastro } from './google-drive';
@@ -929,14 +929,23 @@ cadastroRouter.get('/resumo', async (req, res, next) => {
         if (p.localizacao == null || String(p.localizacao).trim() === '') dadosFaltando.push('localização');
         if (!(Number(p.precoVenda) > 0)) dadosFaltando.push('preço');
 
-        let imagens: 'completo' | 'pendente_tratamento' = 'pendente_tratamento';
-        let motivo = 'sem zip';
+        // Imagens (3 estados):
+        //  completo            = zip na pasta pendente OU pasta já movida pra moto oficial (com fotos)
+        //  pendente_tratamento = sem zip, sem pasta movida, mas HÁ fotos cruas na pasta pendente
+        //  sem_fotos           = não há foto nenhuma em lugar algum
+        let imagens: 'completo' | 'pendente_tratamento' | 'sem_fotos' = 'sem_fotos';
+        let motivo = 'sem fotos';
         if (zipSkus.has(base)) { imagens = 'completo'; motivo = 'zip na pasta'; }
-        else if (p.fotoCadastroVerificada) { imagens = 'completo'; motivo = 'fotos tratadas'; }
         else {
-          let fotos = 0;
-          try { fotos = await verificarFotosCadastroPeca(Number(p.motoId), base); } catch { /* ignore */ }
-          if (fotos > 0) { imagens = 'completo'; motivo = 'pasta movida'; }
+          let fotosMoto = 0;
+          try { fotosMoto = (await buscarFotosDriveSku(Number(p.motoId), base)).fotos.length; } catch { /* ignore */ }
+          if (fotosMoto > 0 || p.fotoCadastroVerificada) { imagens = 'completo'; motivo = fotosMoto > 0 ? 'pasta movida' : 'fotos tratadas'; }
+          else {
+            let fotosPre = 0;
+            try { fotosPre = (await getPastaPreCadastroDoSku(base)).fotos; } catch { /* ignore */ }
+            if (fotosPre > 0) { imagens = 'pendente_tratamento'; motivo = 'fotos cruas sem zip'; }
+            else { imagens = 'sem_fotos'; motivo = 'sem fotos'; }
+          }
         }
 
         const cadastrado = p.status === 'cadastrado';
@@ -960,6 +969,7 @@ cadastroRouter.get('/resumo', async (req, res, next) => {
       liberadas: itens.filter((i) => i.liberada).length,
       pendentes: itens.filter((i) => !i.liberada).length,
       pendenteImagens: itens.filter((i) => i.imagens === 'pendente_tratamento').length,
+      semFotos: itens.filter((i) => i.imagens === 'sem_fotos').length,
     };
     res.json({ ok: true, itens, totais });
   } catch (e) { next(e); }

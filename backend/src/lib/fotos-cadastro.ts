@@ -689,7 +689,7 @@ export async function processarPastaFotosDrive(pastaId: string, resultado: FotoD
   }
 }
 
-async function buscarFotosDriveSku(motoId: number, sku: string) {
+export async function buscarFotosDriveSku(motoId: number, sku: string) {
   const cfg = await getGoogleDriveConfig();
   const motoDirs = (cfg.googleDriveMotoDirs as any) || {};
   const motoPastaId = normalizeText(motoDirs[String(motoId)]);
