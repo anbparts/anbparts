@@ -647,6 +647,20 @@ model NuvemshopCategoria {
   atualizadoEm DateTime @updatedAt
 }
 
+// Config do digest de baixa de etiqueta DETRAN (consolida vendidas pendentes num e-mail). Singleton (id=1).
+model DetranBaixaConfig {
+  id               Int       @id @default(1)
+  ativo            Boolean   @default(false)
+  intervaloMin     Int       @default(20)
+  ultimaExecucaoEm DateTime?
+}
+
+// Dedup: etiquetas já avisadas (1x por peça|etiqueta). Removidas quando deixam de estar pendentes.
+model DetranBaixaNotificado {
+  chave        String   @id // "pecaId|etiqueta"
+  notificadoEm DateTime @default(now())
+}
+
 // Config da rotina de aviso de fotos prontas no Drive (pasta com zip). Singleton (id=1).
 model FotosDrivePendenteConfig {
   id                 Int       @id @default(1)

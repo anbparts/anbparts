@@ -17,6 +17,8 @@ type ConfiguracaoGeral = {
   auditoriaEmailTitulo: string;
   detranEmailDestinatario: string;
   detranEmailTitulo: string;
+  detranBaixaAtivo: boolean;
+  detranBaixaIntervaloMin: number;
   nfeTextoEmailDestinatario: string;
   nfeTextoEmailTitulo: string;
   despesasEmailAtivo: boolean;
@@ -49,6 +51,8 @@ export default function ConfiguracoesGeraisPage() {
   const [auditoriaEmailTitulo, setAuditoriaEmailTitulo] = useState('');
   const [detranEmailDestinatario, setDetranEmailDestinatario] = useState('');
   const [detranEmailTitulo, setDetranEmailTitulo] = useState('');
+  const [detranBaixaAtivo, setDetranBaixaAtivo] = useState(false);
+  const [detranBaixaIntervaloMin, setDetranBaixaIntervaloMin] = useState('20');
   const [nfeTextoEmailDestinatario, setNfeTextoEmailDestinatario] = useState('');
   const [nfeTextoEmailTitulo, setNfeTextoEmailTitulo] = useState('');
   const [despesasEmailAtivo, setDespesasEmailAtivo] = useState(false);
@@ -73,6 +77,8 @@ export default function ConfiguracoesGeraisPage() {
     setAuditoriaEmailTitulo(data.auditoriaEmailTitulo || '');
     setDetranEmailDestinatario(data.detranEmailDestinatario || '');
     setDetranEmailTitulo(data.detranEmailTitulo || '');
+    setDetranBaixaAtivo(!!data.detranBaixaAtivo);
+    setDetranBaixaIntervaloMin(String(data.detranBaixaIntervaloMin || 20));
     setNfeTextoEmailDestinatario(data.nfeTextoEmailDestinatario || '');
     setNfeTextoEmailTitulo(data.nfeTextoEmailTitulo || '');
     setDespesasEmailAtivo(!!data.despesasEmailAtivo);
@@ -105,6 +111,8 @@ export default function ConfiguracoesGeraisPage() {
         auditoriaEmailTitulo,
         detranEmailDestinatario,
         detranEmailTitulo,
+        detranBaixaAtivo,
+        detranBaixaIntervaloMin: Number(detranBaixaIntervaloMin) || 20,
         nfeTextoEmailDestinatario,
         nfeTextoEmailTitulo,
         despesasEmailAtivo,
@@ -199,8 +207,19 @@ export default function ConfiguracoesGeraisPage() {
 
         <div style={{ ...s.card, background: '#fff7ed', borderColor: '#fed7aa' }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 6 }}>Processo: Baixa Etiqueta DETRAN</div>
-          <div style={{ fontSize: 12, color: 'var(--gray-500)', marginBottom: 14 }}>Destinatario e titulo abaixo pertencem ao processo de alerta de baixa de etiqueta DETRAN quando uma peca com etiqueta for vendida.</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12 }}>
+          <div style={{ fontSize: 12, color: 'var(--gray-500)', marginBottom: 14 }}>Quando ativo, a rotina roda no intervalo abaixo, junta TODAS as pecas vendidas com etiqueta ainda pendente de baixa num UNICO e-mail e avisa so 1x por etiqueta (nao repete). Se a etiqueta for baixada e a peca voltar a ficar pendente no futuro, avisa de novo.</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+            <div>
+              <label style={s.label}>Verificacao e email ativos</label>
+              <select style={{ ...s.input, width: '100%', cursor: 'pointer' }} value={detranBaixaAtivo ? 'ativa' : 'pausada'} onChange={(e) => setDetranBaixaAtivo(e.target.value === 'ativa')}>
+                <option value="pausada">Pausada</option>
+                <option value="ativa">Ativa</option>
+              </select>
+            </div>
+            <div>
+              <label style={s.label}>Tempo de processamento (min)</label>
+              <input style={{ ...s.input, width: '100%' }} type="number" min="1" step="1" value={detranBaixaIntervaloMin} onChange={(e) => setDetranBaixaIntervaloMin(e.target.value)} />
+            </div>
             <div>
               <label style={s.label}>Email destinatario da baixa DETRAN</label>
               <input style={{ ...s.input, width: '100%' }} value={detranEmailDestinatario} onChange={(e) => setDetranEmailDestinatario(e.target.value)} placeholder="voce@anbparts.com.br" />

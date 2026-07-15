@@ -1001,22 +1001,10 @@ pecasRouter.patch('/:id/vender', requireEstoqueAction('editar'), async (req, res
         valorLiq: financials.valorLiq,
       }
     });
-    let alertaDetranEmailEnviado = false;
-    let alertaDetranEmailErro: string | null = null;
-    try {
-      const resultadoEmailDetran = await sendDetranBaixaEmailIfNeeded([
-        {
-          idPeca: current.idPeca,
-          descricao: current.descricao,
-          detranEtiqueta: current.detranEtiqueta || '',
-          motoId: current.motoId,
-          moto: current.moto ? `${current.moto.marca} ${current.moto.modelo}`.trim() : null,
-        },
-      ]);
-      alertaDetranEmailEnviado = !!resultadoEmailDetran?.sent;
-    } catch (error: any) {
-      alertaDetranEmailErro = error?.message || String(error);
-    }
+    // Alerta de baixa DETRAN agora é consolidado no digest periódico (Conf. E-mails →
+    // Processo: Baixa Etiqueta DETRAN). Não envia mais na venda individual.
+    const alertaDetranEmailEnviado = false;
+    const alertaDetranEmailErro: string | null = null;
 
     res.json({ ...peca, alertaDetranEmailEnviado, alertaDetranEmailErro });
   } catch (e) { next(e); }

@@ -11,6 +11,7 @@ import {
   saveConfiguracaoGeral,
 } from '../lib/configuracoes-gerais';
 import { getFotosDriveAvisoConfig, saveFotosDriveAvisoConfig } from '../lib/fotos-drive-aviso';
+import { getDetranBaixaConfig, saveDetranBaixaConfig } from '../lib/detran-baixa-digest';
 
 export const configuracoesGeraisRouter = Router();
 
@@ -18,7 +19,11 @@ configuracoesGeraisRouter.get('/', async (_req, res, next) => {
   try {
     const config = await getConfiguracaoGeral();
     const fotosDrive = await getFotosDriveAvisoConfig();
+    const detranBaixa = await getDetranBaixaConfig();
     res.json({
+      detranBaixaAtivo: detranBaixa.ativo,
+      detranBaixaIntervaloMin: detranBaixa.intervaloMin,
+      detranBaixaUltimaExecucaoEm: detranBaixa.ultimaExecucaoEm || null,
       fotosDrivePendentesAtivo: fotosDrive.ativo,
       fotosDrivePendentesIntervaloMin: fotosDrive.intervaloMin,
       fotosDrivePendentesEmailDestinatario: fotosDrive.emailDestinatario,
@@ -85,6 +90,14 @@ configuracoesGeraisRouter.post('/', async (req, res, next) => {
     }
 
     await saveConfiguracaoGeral(payload);
+
+    // Digest de baixa de etiqueta DETRAN (ativo/intervalo em tabela própria, via raw SQL)
+    if (req.body?.detranBaixaAtivo !== undefined || req.body?.detranBaixaIntervaloMin !== undefined) {
+      await saveDetranBaixaConfig({
+        ativo: req.body?.detranBaixaAtivo,
+        intervaloMin: req.body?.detranBaixaIntervaloMin,
+      });
+    }
 
     // Rotina de aviso de fotos prontas no Drive (config em tabela própria, via raw SQL)
     if (

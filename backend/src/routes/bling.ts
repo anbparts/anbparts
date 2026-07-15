@@ -6599,22 +6599,11 @@ blingRouter.post('/baixar', async (req, res, next) => {
       },
     });
 
-    let alertaDetranEmailEnviado = false;
-    let alertaDetranEmailErro: string | null = null;
-    try {
-      const resultadoEmailDetran = await sendDetranBaixaEmailIfNeeded(
-        pecasParaAlerta.map((item) => ({
-          idPeca: item.idPeca,
-          descricao: item.descricao,
-          detranEtiqueta: item.detranEtiqueta || '',
-          motoId: item.motoId,
-          moto: item.moto ? `${item.moto.marca} ${item.moto.modelo}`.trim() : null,
-        })),
-      );
-      alertaDetranEmailEnviado = !!resultadoEmailDetran?.sent;
-    } catch (error: any) {
-      alertaDetranEmailErro = error?.message || String(error);
-    }
+    // Alerta de baixa DETRAN agora é consolidado no digest periódico (Conf. E-mails →
+    // Processo: Baixa Etiqueta DETRAN), que agrupa todas as pendentes em 1 e-mail. Não envia mais na venda.
+    const alertaDetranEmailEnviado = false;
+    const alertaDetranEmailErro: string | null = null;
+    void pecasParaAlerta;
 
     let alertaNfeTextoEmailEnviado = false;
     let alertaNfeTextoEmailErro: string | null = null;
