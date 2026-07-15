@@ -4,7 +4,7 @@ import { compressDataUrlImage, normalizeImageFileName } from '../lib/image';
 import { buscarCadastroFotos, buscarCadastroFotosAnb, buscarCadastroFotosDrive, enviarCadastroFotosManual, processarCadastroFotos, verificarCadastroFotoSku, verificarFotosCadastroPeca, getPastaPreCadastroDoSku, analisarFotosSku, apagarPastaDrive, escanearFotosDrive, processarPastaFotosDrive, novoResultadoFotoDrive } from '../lib/fotos-cadastro';
 import type { FotoDriveResultado } from '../lib/fotos-cadastro';
 import { blingReq, fetchProdutoLojaLinksByProductId, resolveBlingMercadoLivreItemId, resolveBlingMercadoLivreLinkWithFallback } from './bling';
-import { criarPastaPreCadastro } from './google-drive';
+import { criarPastaPreCadastro, renomearPastaPreCadastro } from './google-drive';
 import { mercadoLivreReq } from '../lib/mercado-livre';
 import { nuvemReq, buscarProdutoNuvemshopPorSku } from './nuvemshop';
 import { sendDetranAtivacaoEmailIfNeeded } from '../lib/detran-alert';
@@ -1065,6 +1065,11 @@ cadastroRouter.put('/:id', requireCadastroAction('editar_pre_cadastro'), async (
       data,
       include: { moto: { select: { id: true, marca: true, modelo: true, ano: true } } },
     });
+
+    // Renomeia a pasta do Drive quando a descrição muda (replica o nome digitado). Best-effort.
+    if (data.descricao !== undefined && data.descricao !== atual.descricao) {
+      renomearPastaPreCadastro(record.idPeca, data.descricao).catch(() => null);
+    }
 
     // Re-enviar ao Bling
     try {

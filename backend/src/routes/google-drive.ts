@@ -137,6 +137,28 @@ async function driveFetch(cfg: any, path: string) {
   return resp;
 }
 
+async function drivePatchJson(cfg: any, path: string, body: any): Promise<any> {
+  const execute = (token: string) => fetch(`${GOOGLE_DRIVE_URL}${path}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  let token = await getValidToken(cfg);
+  if (!token) throw createGoogleDriveError('Google Drive não conectado.', 401);
+
+  let resp = await execute(token);
+  if (resp.status === 401 || resp.status === 403) {
+    await clearCachedGoogleDriveToken();
+    token = await getValidToken({ ...cfg, googleDriveAccessToken: '', googleDriveTokenExpiry: null }, { forceRefresh: true });
+    if (token) resp = await execute(token);
+  }
+
+  const data = await resp.json().catch(() => ({})) as any;
+  if (!resp.ok) throw createGoogleDriveError(getGoogleApiErrorMessage(data, `Google Drive ${resp.status}`), resp.status);
+  return data;
+}
+
 async function driveGet(cfg: any, path: string): Promise<any> {
   const resp = await driveFetch(cfg, path);
   const data = await resp.json().catch(() => ({})) as any;
@@ -183,6 +205,33 @@ export async function criarPastaPreCadastro(idPeca: string, descricao: string): 
     return data.id || null;
   } catch {
     return null;
+  }
+}
+
+// Renomeia a pasta do SKU no pré-cadastro para "IDPECA - novaDescricao" (replica o nome digitado).
+// Best-effort: retorna false se não achar a pasta ou o Drive não estiver conectado.
+export async function renomearPastaPreCadastro(idPeca: string, novaDescricao: string): Promise<boolean> {
+  try {
+    const cfg = await getConfig();
+    const pastaRaizId = String((cfg as any).googleDrivePreCadastroPastaId || '').trim();
+    const skuBase = String(idPeca || '').trim().toUpperCase();
+    if (!pastaRaizId || !skuBase) return false;
+
+    const pastas = await listDriveFiles(
+      cfg,
+      `'${escapeDriveQueryValue(pastaRaizId)}' in parents and mimeType = 'application/vnd.google-apps.folder' and name contains '${escapeDriveQueryValue(skuBase)}' and trashed = false`,
+      'files(id,name)',
+    );
+    const pasta = pastas.find((p: any) => normalizeText(p.name).toUpperCase().startsWith(skuBase));
+    if (!pasta) return false;
+
+    const novoNome = `${idPeca} - ${String(novaDescricao || '').trim().slice(0, 60)}`.trim();
+    if (normalizeText(pasta.name) === novoNome) return true; // já está com o nome certo
+
+    await drivePatchJson(cfg, buildDrivePath(`/files/${encodeURIComponent(pasta.id)}`, { fields: 'id,name' }), { name: novoNome });
+    return true;
+  } catch {
+    return false;
   }
 }
 
