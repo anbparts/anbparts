@@ -277,6 +277,8 @@ export default function CadastroPage() {
   const [resumoOpen, setResumoOpen] = useState(false);
   const [resumoLoading, setResumoLoading] = useState(false);
   const [resumoData, setResumoData] = useState<any>(null);
+  const [resumoFiltro, setResumoFiltro] = useState<'' | 'liberadas' | 'pendentes' | 'pendente_imagens' | 'sem_fotos'>('');
+  const [resumoFiltroSku, setResumoFiltroSku] = useState('');
   const [paginaCadastro, setPaginaCadastro] = useState<'sku' | 'fotos-drive' | 'fotos' | 'categoria'>('sku');
   // Aba "Fotos Drive" (processamento do zip do Canva)
   const [fdModo, setFdModo] = useState<'data' | 'sku'>('data');
@@ -475,6 +477,8 @@ export default function CadastroPage() {
     setResumoOpen(true);
     setResumoLoading(true);
     setResumoData(null);
+    setResumoFiltro('');
+    setResumoFiltroSku('');
     try {
       const params = new URLSearchParams();
       if (somentePendentes) params.set('somentePendentes', 'true');
@@ -491,6 +495,17 @@ export default function CadastroPage() {
       setResumoOpen(false);
     }
     setResumoLoading(false);
+  }
+
+  function itensResumoFiltrados() {
+    const itens = resumoData?.itens || [];
+    return itens.filter((it: any) =>
+      (resumoFiltro === ''
+        || (resumoFiltro === 'liberadas' && it.liberada)
+        || (resumoFiltro === 'pendentes' && !it.liberada)
+        || (resumoFiltro === 'pendente_imagens' && it.imagens === 'pendente_tratamento')
+        || (resumoFiltro === 'sem_fotos' && it.imagens === 'sem_fotos'))
+      && (!resumoFiltroSku || String(it.sku).toUpperCase().includes(resumoFiltroSku.toUpperCase())));
   }
 
   function toggleSortCadastro(key: string) {
@@ -2790,19 +2805,40 @@ export default function CadastroPage() {
                 <div style={{ textAlign: 'center', padding: 48, color: 'var(--gray-400)' }}>⏳ Verificando no Drive... (pode levar alguns segundos)</div>
               ) : resumoData ? (
                 <>
-                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
-                    {[
-                      ['Total', resumoData.totais.total, 'var(--gray-700)', '#f1f5f9'],
-                      ['✓ Liberadas p/ cadastro', resumoData.totais.liberadas, '#15803d', '#f0fdf4'],
-                      ['Com pendências', resumoData.totais.pendentes, '#c2410c', '#fff7ed'],
-                      ['Pendente tratamento imagens', resumoData.totais.pendenteImagens, '#c2410c', '#fff7ed'],
-                      ['Sem fotos disponíveis', resumoData.totais.semFotos ?? 0, '#b91c1c', '#fef2f2'],
-                    ].map(([label, val, cor, bg]: any) => (
-                      <div key={label} style={{ flex: '1 1 150px', background: bg, borderRadius: 10, padding: '10px 14px' }}>
-                        <div style={{ fontSize: 20, fontWeight: 800, color: cor }}>{val}</div>
-                        <div style={{ fontSize: 11.5, color: 'var(--gray-500)', fontWeight: 600 }}>{label}</div>
-                      </div>
-                    ))}
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+                    {([
+                      ['Total', resumoData.totais.total, 'var(--gray-700)', '#f1f5f9', '' as const],
+                      ['✓ Liberadas p/ cadastro', resumoData.totais.liberadas, '#15803d', '#f0fdf4', 'liberadas' as const],
+                      ['Com pendências', resumoData.totais.pendentes, '#c2410c', '#fff7ed', 'pendentes' as const],
+                      ['Pendente tratamento imagens', resumoData.totais.pendenteImagens, '#c2410c', '#fff7ed', 'pendente_imagens' as const],
+                      ['Sem fotos disponíveis', resumoData.totais.semFotos ?? 0, '#b91c1c', '#fef2f2', 'sem_fotos' as const],
+                    ] as any[]).map(([label, val, cor, bg, chave]: any) => {
+                      const ehTotal = chave === '';
+                      const ativo = resumoFiltro === chave && !ehTotal;
+                      const clicavel = ehTotal || val > 0;
+                      return (
+                        <button key={label} disabled={!clicavel}
+                          onClick={() => setResumoFiltro(ehTotal ? '' : (resumoFiltro === chave ? '' : chave))}
+                          title={ehTotal ? 'Mostrar todas' : (val > 0 ? 'Filtrar por este status' : 'Sem itens')}
+                          style={{ flex: '1 1 150px', textAlign: 'left', background: bg, borderRadius: 10, padding: '10px 14px', cursor: clicavel ? 'pointer' : 'default', opacity: clicavel ? 1 : 0.5, border: ativo ? `2px solid ${cor}` : '2px solid transparent', fontFamily: 'inherit' }}>
+                          <div style={{ fontSize: 20, fontWeight: 800, color: cor }}>{val}</div>
+                          <div style={{ fontSize: 11.5, color: 'var(--gray-500)', fontWeight: 600 }}>{label}{ativo ? ' ●' : ''}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Filtro por SKU + limpar */}
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
+                    <input value={resumoFiltroSku} placeholder="Filtrar por SKU..." onChange={e => setResumoFiltroSku(e.target.value)}
+                      style={{ ...s.input, width: 200, textTransform: 'uppercase' }} />
+                    {(resumoFiltro || resumoFiltroSku) && (
+                      <button onClick={() => { setResumoFiltro(''); setResumoFiltroSku(''); }}
+                        style={{ ...s.btn, fontSize: 12, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)' }}>
+                        ✕ Limpar filtro
+                      </button>
+                    )}
+                    <span style={{ fontSize: 12, color: 'var(--gray-400)' }}>Mostrando {itensResumoFiltrados().length} de {resumoData.itens.length}</span>
                   </div>
                   <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 10 }}>
                     <table style={{ width: '100%', minWidth: 720, borderCollapse: 'collapse', fontSize: 13 }}>
@@ -2814,7 +2850,9 @@ export default function CadastroPage() {
                         <th style={{ textAlign: 'center', padding: '9px 12px', fontSize: 11, color: 'var(--gray-500)', fontWeight: 700, textTransform: 'uppercase' }}>Status</th>
                       </tr></thead>
                       <tbody>
-                        {resumoData.itens.map((it: any, i: number) => (
+                        {itensResumoFiltrados().length === 0 ? (
+                          <tr><td colSpan={5} style={{ padding: 24, textAlign: 'center', color: 'var(--gray-400)' }}>Nenhuma peça com esse filtro.</td></tr>
+                        ) : itensResumoFiltrados().map((it: any, i: number) => (
                           <tr key={it.sku + i} style={{ borderTop: '1px solid #f1f5f9', background: it.liberada ? '#fbfffe' : 'var(--white)' }}>
                             <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 700, fontSize: 12 }}>{it.sku}</td>
                             <td style={{ padding: '9px 12px', color: 'var(--gray-700)' }}>{it.descricao}</td>
