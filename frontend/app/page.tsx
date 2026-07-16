@@ -212,6 +212,15 @@ function renderMercadoLivreSaldoCard(saldo: any, hidden: boolean) {
     );
   }
 
+  if (saldo?.aguardandoPrimeira) {
+    return (
+      <>
+        <div style={{ ...s.val, color: 'var(--ink)' }}>Aguardando</div>
+        <div style={s.sub2}>Saldo é atualizado 1x por dia (rotina das 7:30). Ainda não houve a primeira atualização.</div>
+      </>
+    );
+  }
+
   if (saldo?.error) {
     return (
       <>
@@ -225,6 +234,8 @@ function renderMercadoLivreSaldoCard(saldo: any, hidden: boolean) {
     { label: 'Saldo', value: fmtMaybe(saldo?.saldoDisponivel), color: 'var(--sage)' },
   ];
 
+  const atualizado = saldo?.atualizadoEm ? new Date(saldo.atualizadoEm) : null;
+
   return (
     <>
       <div style={s.balanceRows}>
@@ -236,11 +247,9 @@ function renderMercadoLivreSaldoCard(saldo: any, hidden: boolean) {
         ))}
       </div>
       <div style={s.sub2}>
-        {false
-          ? saldo?.observacao || 'Nem todos os relatórios do Mercado Pago estao disponiveis ainda.'
-          : false
-          ? 'Saldo antecipavel estimado a partir do dinheiro ainda no prazo de liberacao.'
-          : 'Saldos consultados na conta Mercado Pago conectada.'}
+        {atualizado
+          ? `Atualizado em ${atualizado.toLocaleDateString('pt-BR')} às ${atualizado.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} (rotina diária).`
+          : 'Saldo do último processamento do Mercado Pago.'}
       </div>
     </>
   );

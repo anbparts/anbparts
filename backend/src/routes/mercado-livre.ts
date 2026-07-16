@@ -1646,6 +1646,14 @@ export async function loadMercadoLivreSaldoResumo(forceRefresh = false) {
       };
         saldoCacheState.value = resumo;
         saldoCacheState.expiresAt = Date.now() + MERCADO_LIVRE_SALDO_CACHE_TTL_MS;
+        // Persiste o saldo calculado (o job das 7:30 grava aqui; o dashboard só lê daqui, sem consulta ao vivo).
+        try {
+          await prisma.$executeRaw`
+            INSERT INTO "MercadoPagoSaldoCache" ("id", "resumoJson", "atualizadoEm")
+            VALUES (1, ${JSON.stringify(resumo)}, now())
+            ON CONFLICT ("id") DO UPDATE SET "resumoJson" = EXCLUDED."resumoJson", "atualizadoEm" = now()
+          `;
+        } catch { /* tabela ainda nao migrada — segue sem persistir */ }
         return resumo;
       } catch (error: any) {
         lastError = error || lastError;
@@ -1665,6 +1673,20 @@ export async function loadMercadoLivreSaldoResumo(forceRefresh = false) {
     return await saldoCacheState.inFlight;
   } finally {
     saldoCacheState.inFlight = null;
+  }
+}
+
+// Lê o saldo do Mercado Pago PERSISTIDO (gravado pelo job das 7:30). Usado pelo dashboard —
+// nunca faz chamada ao vivo ao MP. Retorna null se ainda não houve nenhuma atualização.
+export async function getSaldoMercadoPagoPersistido(): Promise<{ resumo: any; atualizadoEm: Date | null } | null> {
+  try {
+    const rows = await prisma.$queryRaw<{ resumoJson: string; atualizadoEm: Date | null }[]>`
+      SELECT "resumoJson", "atualizadoEm" FROM "MercadoPagoSaldoCache" WHERE "id" = 1
+    `;
+    if (!rows.length || !rows[0].resumoJson) return null;
+    return { resumo: JSON.parse(rows[0].resumoJson), atualizadoEm: rows[0].atualizadoEm };
+  } catch {
+    return null;
   }
 }
 

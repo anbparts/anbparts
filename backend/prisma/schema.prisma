@@ -647,6 +647,14 @@ model NuvemshopCategoria {
   atualizadoEm DateTime @updatedAt
 }
 
+// Saldo do Mercado Pago persistido (calculado 1x/dia pelo job das 7:30). O dashboard só LÊ daqui,
+// nunca consulta o MP ao vivo. Singleton (id=1).
+model MercadoPagoSaldoCache {
+  id           Int       @id @default(1)
+  resumoJson   String    @default("")
+  atualizadoEm DateTime?
+}
+
 // Config do digest de baixa de etiqueta DETRAN (consolida vendidas pendentes num e-mail). Singleton (id=1).
 model DetranBaixaConfig {
   id               Int       @id @default(1)

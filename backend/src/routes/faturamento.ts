@@ -1,9 +1,8 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
-import { loadMercadoLivreSaldoResumo } from './mercado-livre';
+import { getSaldoMercadoPagoPersistido } from './mercado-livre';
 
 export const faturamentoRouter = Router();
-const DASHBOARD_MERCADO_PAGO_TIMEOUT_MS = 4000;
 
 function getBaseSku(value: string | null | undefined) {
   return String(value || '')
@@ -16,22 +15,24 @@ function normalizeDespesaCategoria(value: any) {
   return String(value ?? '').trim().toLowerCase();
 }
 
+// Dashboard: lê APENAS o saldo persistido (gravado 1x/dia pelo job das 7:30). Sem consulta ao vivo
+// ao Mercado Pago — por isso é instantâneo e nunca fica "demorando para responder".
 async function loadDashboardMercadoPagoSaldo() {
   try {
-    return await Promise.race([
-      loadMercadoLivreSaldoResumo(),
-      new Promise((resolve) => {
-        setTimeout(() => resolve({
-          connected: true,
-          error: 'Mercado Pago demorando para responder. Os indicadores locais continuam disponiveis.',
-          consultadoEm: new Date().toISOString(),
-        }), DASHBOARD_MERCADO_PAGO_TIMEOUT_MS);
-      }),
-    ]);
+    const persistido = await getSaldoMercadoPagoPersistido();
+    if (persistido?.resumo) {
+      return { ...persistido.resumo, atualizadoEm: persistido.atualizadoEm ? persistido.atualizadoEm.toISOString() : null };
+    }
+    return {
+      connected: true,
+      aguardandoPrimeira: true,
+      error: 'Saldo ainda nao atualizado. E calculado 1x por dia (rotina das 7:30).',
+      consultadoEm: new Date().toISOString(),
+    };
   } catch (error: any) {
     return {
       connected: true,
-      error: String(error?.message || 'Nao foi possivel consultar o saldo do Mercado Pago.'),
+      error: String(error?.message || 'Nao foi possivel ler o saldo do Mercado Pago.'),
       consultadoEm: new Date().toISOString(),
     };
   }
