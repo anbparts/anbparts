@@ -290,7 +290,7 @@ export default function CadastroPage() {
   const [fdItens, setFdItens] = useState<any[]>([]);
   const [fdCopiado, setFdCopiado] = useState(false);
   const hoje = new Date().toISOString().slice(0, 10);
-  const [fotosModo, setFotosModo] = useState<'skus' | 'data'>('data');
+  const [fotosModo, setFotosModo] = useState<'skus' | 'data'>('skus');
   const [fotosSkusInput, setFotosSkusInput] = useState('');
   const [fotosDataDe, setFotosDataDe] = useState(hoje);
   const [fotosDataAte, setFotosDataAte] = useState(hoje);
@@ -314,7 +314,7 @@ export default function CadastroPage() {
     enviando: boolean;
     status: { nome: string; status: 'aguardando' | 'enviando' | 'ok' | 'erro' | 'pulada'; erro?: string }[];
   } | null>(null);
-  const [categoriaModo, setCategoriaModo] = useState<'data' | 'skus'>('data');
+  const [categoriaModo, setCategoriaModo] = useState<'data' | 'skus'>('skus');
   const [categoriaSkusInput, setCategoriaSkusInput] = useState('');
   const [categoriaDataDe, setCategoriaDataDe] = useState(hoje);
   const [categoriaDataAte, setCategoriaDataAte] = useState(hoje);
