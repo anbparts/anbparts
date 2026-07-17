@@ -191,16 +191,8 @@ function DashboardVisibilityButton({
   );
 }
 
-function renderMercadoLivreSaldoCard(saldo: any, hidden: boolean, onAtualizar?: () => void, atualizando?: boolean) {
+function renderMercadoLivreSaldoCard(saldo: any, hidden: boolean) {
   const fmtMaybe = (value: any) => (typeof value === 'number' && Number.isFinite(value) ? fmt(value) : '-');
-
-  const botaoAtualizar = onAtualizar ? (
-    <button onClick={onAtualizar} disabled={atualizando}
-      style={{ marginTop: 8, fontSize: 11.5, fontWeight: 700, color: '#2563eb', background: 'transparent', border: 'none', cursor: atualizando ? 'default' : 'pointer', padding: 0, opacity: atualizando ? 0.6 : 1 }}
-      title="Recalcula o saldo a partir do último relatório do Mercado Pago e grava (o dashboard passa a ler esse valor).">
-      {atualizando ? '⏳ Atualizando...' : '🔄 Atualizar agora'}
-    </button>
-  ) : null;
 
   if (!saldo) {
     return (
@@ -225,7 +217,6 @@ function renderMercadoLivreSaldoCard(saldo: any, hidden: boolean, onAtualizar?: 
       <>
         <div style={{ ...s.val, color: 'var(--ink)' }}>Aguardando</div>
         <div style={s.sub2}>Saldo é atualizado 1x por dia (rotina das 7:30). Ainda não houve a primeira atualização.</div>
-        {botaoAtualizar}
       </>
     );
   }
@@ -260,7 +251,6 @@ function renderMercadoLivreSaldoCard(saldo: any, hidden: boolean, onAtualizar?: 
           ? `Atualizado em ${atualizado.toLocaleDateString('pt-BR')} às ${atualizado.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} (rotina diária).`
           : 'Saldo do último processamento do Mercado Pago.'}
       </div>
-      {botaoAtualizar}
     </>
   );
 }
@@ -269,20 +259,7 @@ type DashboardViewportMode = 'default' | 'phone' | 'tablet-landscape';
 
 export default function DashboardPage() {
   const [dash, setDash] = useState<any>(null);
-  const [atualizandoSaldo, setAtualizandoSaldo] = useState(false);
   const [motos, setMotos] = useState<any[]>([]);
-
-  async function atualizarSaldoMP() {
-    setAtualizandoSaldo(true);
-    try {
-      const r = await fetch(`${API}/mercado-livre/saldo?refresh=1`, { credentials: 'include' }).then((res) => res.json());
-      if (r?.error && !r?.saldoDisponivel) alert(`Não foi possível atualizar agora: ${r.error}`);
-      window.location.reload();
-    } catch (e: any) {
-      alert(e?.message || 'Erro ao atualizar o saldo');
-      setAtualizandoSaldo(false);
-    }
-  }
   const [skuPorMoto, setSkuPorMoto] = useState<Record<number, string[]>>({});
   const [filtroMarcaMoto, setFiltroMarcaMoto] = useState('');
   const [resumoVendasMes, setResumoVendasMes] = useState<any>(null);
@@ -653,7 +630,7 @@ export default function DashboardPage() {
             <div key={card.label} style={getCardStyle(card)}>
               <div style={getLabelStyle()}>{card.label}</div>
               {card.kind === 'mercado-livre-saldo' ? (
-                renderMercadoLivreSaldoCard((card as any).saldo, ocultarValores, atualizarSaldoMP, atualizandoSaldo)
+                renderMercadoLivreSaldoCard((card as any).saldo, ocultarValores)
               ) : card.kind === 'ml-visitas' ? (
                 <>
                   <div style={{ ...getValueStyle('var(--blue-500)') }}>
