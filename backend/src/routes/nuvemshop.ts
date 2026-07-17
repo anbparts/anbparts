@@ -274,7 +274,9 @@ async function persistirSkuCategorias(resultados: any[]) {
           ON CONFLICT ("sku", "categoriaId") DO UPDATE SET "nome" = EXCLUDED."nome", "origem" = 'nuvemshop', "atualizadoEm" = now()
         `;
       }
-    } catch { /* tabela ainda nao migrada — segue sem persistir */ }
+    } catch (e: any) {
+      console.error(`[persistirSkuCategorias] falha ao gravar sku=${sku}:`, e?.message || e);
+    }
   }
 }
 
@@ -710,7 +712,9 @@ IMPORTANTE: tags devem ser strings simples sem aspas internas ou caracteres espe
 });
 
 // ─── POST /nuvemshop/aplicar ─────────────────────────────────────────────────
-// Body: { aplicacoes: [{produtoId, categorias: [{id}], tags: string[]}] }
+// Body: { aplicacoes: [{produtoId, sku?, categorias: [{id, nome?}], tags: string[]}] }
+// Quando o `sku` é informado, as categorias aplicadas também alimentam a SkuCategoria
+// (base da Curva ABC) — assim o pré-cadastro já cadastra a categoria no sistema, sem job.
 
 nuvemshopRouter.post('/aplicar', async (req, res, next) => {
   try {
@@ -720,8 +724,9 @@ nuvemshopRouter.post('/aplicar', async (req, res, next) => {
     }
 
     const resultados: any[] = [];
+    const paraPersistir: any[] = [];
     for (const item of aplicacoes) {
-      const { produtoId, categorias, tags } = item;
+      const { produtoId, categorias, tags, sku } = item;
       try {
         await nuvemReq(`/products/${produtoId}`, {
           method: 'PUT',
@@ -731,10 +736,14 @@ nuvemshopRouter.post('/aplicar', async (req, res, next) => {
           }),
         });
         resultados.push({ produtoId, ok: true });
+        if (sku) paraPersistir.push({ sku, encontradoNuvemshop: true, categorias: categorias || [] });
       } catch (e: any) {
         resultados.push({ produtoId, ok: false, error: e.message });
       }
     }
+
+    // Grava as categorias aplicadas na SkuCategoria (best-effort, não quebra a resposta).
+    if (paraPersistir.length) await persistirSkuCategorias(paraPersistir);
 
     res.json({ ok: true, resultados, errosDetalhados: resultados.filter(r => !r.ok).map((e: any) => `Produto ${e.produtoId}: ${e.error}`).join(' | ') || null });
   } catch (e) { next(e); }

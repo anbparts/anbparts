@@ -686,20 +686,30 @@ export default function CadastroPage() {
         });
         const data = await readApiResponse(resp, 'Erro IA ao sugerir categorias');
         (Array.isArray(data.sugestoes) ? data.sugestoes : []).forEach((sugestao: CadastroCategoriaSugestao) => {
-          if (sugestao?.sku) sugestoesMap[sugestao.sku] = sugestao;
+          const skuNormalizado = String(sugestao?.sku || '').trim().toUpperCase();
+          if (skuNormalizado) sugestoesMap[skuNormalizado] = sugestao;
         });
         analisados += lote.length;
         setCategoriaSugestoes({ ...sugestoesMap });
         setCategoriaProgresso({ atual: analisados, total: alvo.length });
       }
 
+      const semSugestao: string[] = [];
       const aplicacoes = alvo
         .map((linha) => {
           const sugestao = sugestoesMap[linha.sku];
-          if (!sugestao) return null;
+          if (!sugestao) { semSugestao.push(linha.sku); return null; }
           return { sku: linha.sku, produtoId: linha.produtoId, categorias: sugestao.categorias || [], tags: sugestao.tags || [] };
         })
         .filter(Boolean) as any[];
+
+      if (semSugestao.length) {
+        setCategoriaLinhas((prev) => ordenarCategoriaLinhas(prev.map((linha) => (
+          semSugestao.includes(linha.sku)
+            ? { ...linha, status: 'erro', erroConsulta: 'IA nao retornou sugestao para este SKU (verifique/tente novamente)' }
+            : linha
+        ))));
+      }
 
       if (!aplicacoes.length) throw new Error('IA nao retornou sugestoes para os SKUs selecionados.');
 
@@ -744,8 +754,9 @@ export default function CadastroPage() {
         setCategoriaProgresso({ atual: Math.min(atualizados + erros, aplicacoes.length), total: aplicacoes.length });
       }
 
-      setCategoriaResultado(`Processamento concluido: ${atualizados} SKU(s) atualizado(s), ${erros} com erro.`);
-      setCategoriaStatus(`Categorias concluidas: ${atualizados} SKU(s) OK, ${erros} com erro.`);
+      const semSugestaoMsg = semSugestao.length ? `, ${semSugestao.length} sem sugestao da IA (${semSugestao.join(', ')})` : '';
+      setCategoriaResultado(`Processamento concluido: ${atualizados} SKU(s) atualizado(s), ${erros} com erro${semSugestaoMsg}.`);
+      setCategoriaStatus(`Categorias concluidas: ${atualizados} SKU(s) OK, ${erros} com erro${semSugestaoMsg}.`);
       setCategoriaFase('Concluido');
     } catch (e: any) {
       alert(e.message || 'Erro ao processar categorias');
