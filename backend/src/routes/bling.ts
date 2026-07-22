@@ -60,6 +60,7 @@ const AUDITORIA_DEFAULT_PAUSA_MS = 400;
 const AUDITORIA_EMAIL_SUBJECT = 'ALERTA ANB Parts - Divergência de Produtos / Anúncios - Verifique';
 const AUDITORIA_TIMEZONE = 'America/Sao_Paulo';
 const AUDITORIA_SCHEDULER_INTERVAL_MS = 60 * 1000;
+const AUDITORIA_HISTORICO_RETENCAO_DIAS = 7;
 const STATUS_IDS_EM_ABERTO = new Set([6]);
 const STATUS_ID_CONCLUIDO = 9;
 const STATUS_IDS_CANCELADO = new Set([12]);
@@ -4285,6 +4286,19 @@ async function tickAuditoriaAutomatica() {
   }
 }
 
+// Mantem so os ultimos AUDITORIA_HISTORICO_RETENCAO_DIAS dias de "Historico de execucoes"
+// (auditoria automatica do Bling). Roda no maximo 1x/dia; deleteMany por data e idempotente.
+let auditoriaLimpezaHistoricoUltimoDia = '';
+
+async function tickLimpezaHistoricoAuditoria() {
+  const hojeKey = getTimezoneDateParts(new Date()).dateKey;
+  if (auditoriaLimpezaHistoricoUltimoDia === hojeKey) return;
+  auditoriaLimpezaHistoricoUltimoDia = hojeKey;
+
+  const cutoff = new Date(Date.now() - AUDITORIA_HISTORICO_RETENCAO_DIAS * 24 * 60 * 60 * 1000);
+  await prisma.auditoriaAutomaticaExecucao.deleteMany({ where: { startedAt: { lt: cutoff } } });
+}
+
 export function startBlingAuditoriaScheduler() {
   if (auditoriaSchedulerState.started) return;
   auditoriaSchedulerState.started = true;
@@ -4297,6 +4311,9 @@ export function startBlingAuditoriaScheduler() {
     tickAuditoriaLinkMl().catch((error) => {
       console.error('Falha na rotina de link ML do Bling:', error);
       auditoriaLinkMlSchedulerState.running = false;
+    });
+    tickLimpezaHistoricoAuditoria().catch((error) => {
+      console.error('Falha na limpeza do historico de auditoria automatica:', error);
     });
   };
 
