@@ -4369,8 +4369,6 @@ blingRouter.get('/config-produtos', async (_req, res, next) => {
       prefixos: cfg.prefixos || [],
       fretePadrao: cfg.fretePadrao,
       taxaPadraoPct: cfg.taxaPadraoPct,
-      exibirBuscarProdutos: cfg.exibirBuscarProdutos ?? true,
-      exibirCompararCSV: cfg.exibirCompararCSV ?? true,
     });
   } catch (e) {
     next(e);
@@ -4392,8 +4390,6 @@ blingRouter.post('/config-produtos', async (req, res, next) => {
       prefixos,
       fretePadrao,
       taxaPadraoPct,
-      exibirBuscarProdutos: req.body?.exibirBuscarProdutos !== undefined ? Boolean(req.body.exibirBuscarProdutos) : (current.exibirBuscarProdutos ?? true),
-      exibirCompararCSV: req.body?.exibirCompararCSV !== undefined ? Boolean(req.body.exibirCompararCSV) : (current.exibirCompararCSV ?? true),
     });
 
     res.json({ ok: true });
