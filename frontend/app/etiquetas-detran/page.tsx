@@ -1262,6 +1262,7 @@ export default function EtiquetasDetranPage() {
                     || (l.detranModelo || '').toLowerCase().includes(txt)
                     || (l.detranPlaca || '').toLowerCase().includes(txt)
                     || (l.motoPrefixo || '').toLowerCase().includes(txt)
+                    || (l.tipoPeca || '').toLowerCase().includes(txt)
                     || String(l.motoAnbId || '').includes(txt);
                 }
                 return true;
@@ -1306,14 +1307,14 @@ export default function EtiquetasDetranPage() {
                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                       <thead>
                         <tr>
-                          {['Etiqueta DETRAN', 'Situação', 'Moto ANB', 'SKU ANB', 'Descrição ANB', 'Status ANB', 'Placa DETRAN'].map(col => (
+                          {['Etiqueta DETRAN', 'Situação', 'Moto ANB', 'SKU ANB', 'Descrição ANB', 'Tipo de Peça', 'Status ANB', 'Placa DETRAN'].map(col => (
                             <th key={col} style={s.th}>{col}</th>
                           ))}
                         </tr>
                       </thead>
                       <tbody>
                         {filtradas.length === 0 ? (
-                          <tr><td colSpan={7} style={{ ...s.td, textAlign: 'center', padding: 40, color: 'var(--gray-400)' }}>Nenhum resultado</td></tr>
+                          <tr><td colSpan={8} style={{ ...s.td, textAlign: 'center', padding: 40, color: 'var(--gray-400)' }}>Nenhum resultado</td></tr>
                         ) : filtradas.map((l: any, i: number) => {
                           const sit = SIT_CONFIG[l.situacao] || SIT_CONFIG.ok;
                           return (
@@ -1335,6 +1336,7 @@ export default function EtiquetasDetranPage() {
                               </td>
                               <td style={{ ...s.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, whiteSpace: 'nowrap' }}>{l.anbSku || '-'}</td>
                               <td style={{ ...s.td, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12 }} title={l.anbDescricao || ''}>{l.anbDescricao || '-'}</td>
+                              <td style={{ ...s.td, fontSize: 12 }}>{l.tipoPeca || '-'}</td>
                               <td style={s.td}>
                                 {l.anbStatus ? <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 7px', borderRadius: 999, whiteSpace: 'nowrap', ...((STATUS_COLORS as any)[l.anbStatus] || STATUS_COLORS['-']) }}>{l.anbStatus}</span> : '-'}
                               </td>
