@@ -209,6 +209,11 @@ export default function EtiquetasDetranPage() {
   const [validacaoResult, setValidacaoResult] = useState<any>(null);
   const [validacaoFiltro, setValidacaoFiltro] = useState('todos');
   const [validacaoTexto, setValidacaoTexto] = useState('');
+  const [modalValidacaoBaixa, setModalValidacaoBaixa] = useState(false);
+  const [validacaoBaixaLoading, setValidacaoBaixaLoading] = useState(false);
+  const [validacaoBaixaResult, setValidacaoBaixaResult] = useState<any>(null);
+  const [validacaoBaixaFiltro, setValidacaoBaixaFiltro] = useState('todos');
+  const [validacaoBaixaTexto, setValidacaoBaixaTexto] = useState('');
   const canProcessarBaixa = canProcessAction(user, 'etiquetas_detran', 'processar_baixa');
   const canProcessarDevolucao = canProcessAction(user, 'etiquetas_detran', 'processar_devolucao');
   const linhasOrdenadas = useMemo(() => sortRows(linhas, sort), [linhas, sort]);
@@ -316,6 +321,55 @@ export default function EtiquetasDetranPage() {
       alert(err.message || 'Erro ao processar arquivo');
     }
     setValidacaoLoading(false);
+  }
+
+  async function rodarValidacaoDetranBaixa(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+    setValidacaoBaixaLoading(true);
+    setValidacaoBaixaResult(null);
+    setValidacaoBaixaFiltro('todos');
+    setValidacaoBaixaTexto('');
+    try {
+      const XLSX = await import('xlsx');
+      const ab = await file.arrayBuffer();
+      const wb = XLSX.read(ab, { cellDates: true });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows: any[] = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+      const norm = (s: string) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
+      const linhasBaixa = rows.map((row: any) => {
+        const keys = Object.keys(row);
+        const find = (pat: RegExp) => { const k = keys.find(k => pat.test(norm(k))); return row[k]; };
+        const quantidadeRaw = find(/quantidade/);
+        const dataRaw = find(/^data$|data /);
+        return {
+          etiqueta: String(find(/etiqueta/) || '').trim(),
+          documentoComprador: String(find(/documento/) || '').trim(),
+          nomeComprador: String(find(/nome|razao/) || '').trim(),
+          pecaDescricao: String(find(/peca/) || '').trim(),
+          quantidade: quantidadeRaw !== '' ? (Number(quantidadeRaw) || 0) : undefined,
+          data: dataRaw instanceof Date ? dataRaw.toLocaleDateString('pt-BR') : String(dataRaw || '').trim(),
+          realizadoPor: String(find(/realizado/) || '').trim(),
+          pecaFusao: String(find(/fusao|fusão/) || '').trim(),
+        };
+      }).filter((r: any) => r.etiqueta);
+
+      if (!linhasBaixa.length) throw new Error('Nenhuma etiqueta encontrada. Verifique se o arquivo é o export correto de baixas do DETRAN.');
+
+      const resp = await fetch(`${API}/etiquetas-detran/validar-baixa`, {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ linhasBaixa }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || 'Erro na validação');
+      setValidacaoBaixaResult(data);
+    } catch (err: any) {
+      alert(err.message || 'Erro ao processar arquivo');
+    }
+    setValidacaoBaixaLoading(false);
   }
 
   async function abrirPendencias() {
@@ -592,8 +646,12 @@ export default function EtiquetasDetranPage() {
           </button>
           )}
           <label style={{ ...s.btn, background: '#059669', color: '#fff', width: isPhone ? '100%' : undefined, cursor: validacaoLoading ? 'wait' : 'pointer', opacity: validacaoLoading ? 0.7 : 1 }}>
-            {validacaoLoading ? 'Processando...' : 'Validação Detran'}
+            {validacaoLoading ? 'Processando...' : 'Validação Detran - Ativa'}
             <input type="file" accept=".xlsx,.xls" style={{ display: 'none' }} disabled={validacaoLoading} onChange={(e) => { setModalValidacao(true); rodarValidacaoDetran(e); }} />
+          </label>
+          <label style={{ ...s.btn, background: '#dc2626', color: '#fff', width: isPhone ? '100%' : undefined, cursor: validacaoBaixaLoading ? 'wait' : 'pointer', opacity: validacaoBaixaLoading ? 0.7 : 1 }}>
+            {validacaoBaixaLoading ? 'Processando...' : 'Validação Detran - Baixada'}
+            <input type="file" accept=".xlsx,.xls" style={{ display: 'none' }} disabled={validacaoBaixaLoading} onChange={(e) => { setModalValidacaoBaixa(true); rodarValidacaoDetranBaixa(e); }} />
           </label>
         </div>
       </div>
@@ -1358,6 +1416,144 @@ export default function EtiquetasDetranPage() {
                 <label style={{ ...s.btn, background: '#059669', color: '#fff', cursor: 'pointer', marginTop: 8 }}>
                   Selecionar arquivo
                   <input type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={rodarValidacaoDetran} />
+                </label>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal Validação DETRAN - Baixada */}
+      {modalValidacaoBaixa && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', zIndex: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, backdropFilter: 'blur(2px)' }}>
+          <div style={{ background: 'var(--white)', borderRadius: 14, width: '100%', maxWidth: 1200, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 70px rgba(2,6,23,0.3)', overflow: 'hidden' }}>
+            {/* Header */}
+            <div style={{ padding: '16px 22px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--gray-800)' }}>Validação DETRAN — Baixada</div>
+                <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 2 }}>
+                  {validacaoBaixaLoading ? 'Processando arquivo e consultando sistema...' : validacaoBaixaResult ? `${validacaoBaixaResult.resumo.totalPlanilha} baixas na planilha · ${validacaoBaixaResult.resumo.totalAnb} baixadas no ANB` : 'Selecione a planilha de baixas confirmadas no DETRAN'}
+                </div>
+              </div>
+              <button onClick={() => setModalValidacaoBaixa(false)} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', fontSize: 16 }}>✕</button>
+            </div>
+
+            {validacaoBaixaLoading && (
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12, padding: 60 }}>
+                <div style={{ fontSize: 32 }}>⏳</div>
+                <div style={{ fontSize: 14, color: 'var(--gray-500)' }}>Processando e cruzando dados...</div>
+              </div>
+            )}
+
+            {!validacaoBaixaLoading && validacaoBaixaResult && (() => {
+              const { resumo, linhas: todasLinhas } = validacaoBaixaResult;
+              const SIT_CONFIG: Record<string, { label: string; bg: string; color: string }> = {
+                ok:          { label: 'OK',           bg: '#dcfce7', color: '#16a34a' },
+                so_planilha: { label: 'Só Planilha',  bg: '#fee2e2', color: '#dc2626' },
+                so_anb:      { label: 'Só ANB',       bg: '#dbeafe', color: '#2563eb' },
+              };
+              const filtradas = todasLinhas.filter((l: any) => {
+                if (validacaoBaixaFiltro !== 'todos' && l.situacao !== validacaoBaixaFiltro) return false;
+                if (validacaoBaixaTexto) {
+                  const txt = validacaoBaixaTexto.toLowerCase();
+                  return (l.etiqueta || '').toLowerCase().includes(txt)
+                    || (l.anbSku || '').toLowerCase().includes(txt)
+                    || (l.anbDescricao || '').toLowerCase().includes(txt)
+                    || (l.tipoPeca || '').toLowerCase().includes(txt)
+                    || (l.motoPrefixo || '').toLowerCase().includes(txt)
+                    || (l.planilhaNomeComprador || '').toLowerCase().includes(txt)
+                    || String(l.motoAnbId || '').includes(txt);
+                }
+                return true;
+              });
+
+              return (
+                <>
+                  {/* Resumo */}
+                  <div style={{ padding: '14px 22px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                    {[
+                      { label: 'Total Planilha', value: resumo.totalPlanilha, bg: '#f8fafc', color: '#334155' },
+                      { label: 'Total Baixadas ANB', value: resumo.totalAnb, bg: '#f8fafc', color: '#334155' },
+                      { label: 'OK', value: resumo.ok, bg: '#dcfce7', color: '#16a34a' },
+                      { label: 'Só Planilha', value: resumo.soPlanilha, bg: '#fee2e2', color: '#dc2626' },
+                      { label: 'Só ANB', value: resumo.soAnb, bg: '#dbeafe', color: '#2563eb' },
+                    ].map(card => (
+                      <div key={card.label} style={{ background: card.bg, borderRadius: 8, padding: '8px 14px', minWidth: 90, textAlign: 'center' }}>
+                        <div style={{ fontSize: 20, fontWeight: 700, color: card.color }}>{card.value}</div>
+                        <div style={{ fontSize: 11, color: card.color, opacity: 0.8, marginTop: 1 }}>{card.label}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {/* Filtros */}
+                  <div style={{ padding: '10px 22px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    {[
+                      { key: 'todos', label: 'Todos' },
+                      { key: 'so_planilha', label: 'Só Planilha' },
+                      { key: 'so_anb', label: 'Só ANB' },
+                      { key: 'ok', label: 'OK' },
+                    ].map(f => (
+                      <button key={f.key} onClick={() => setValidacaoBaixaFiltro(f.key)} style={{ ...s.btn, padding: '5px 12px', fontSize: 12, background: validacaoBaixaFiltro === f.key ? 'var(--ink)' : 'var(--gray-100)', color: validacaoBaixaFiltro === f.key ? '#fff' : 'var(--gray-600)', border: '1px solid var(--border)' }}>
+                        {f.label}
+                      </button>
+                    ))}
+                    <input value={validacaoBaixaTexto} onChange={e => setValidacaoBaixaTexto(e.target.value)} placeholder="Buscar etiqueta, SKU, comprador..." style={{ ...s.input, flex: 1, minWidth: 200 }} />
+                    <span style={{ fontSize: 12, color: 'var(--gray-400)', whiteSpace: 'nowrap' }}>{filtradas.length} linha(s)</span>
+                  </div>
+                  {/* Tabela */}
+                  <div style={{ overflow: 'auto', flex: 1 }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr>
+                          {['Etiqueta DETRAN', 'Situação', 'Moto ANB', 'SKU ANB', 'Descrição ANB', 'Tipo de Peça', 'Baixada ANB em', 'Comprador', 'Data Baixa (planilha)', 'Peça Fusão'].map(col => (
+                            <th key={col} style={s.th}>{col}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filtradas.length === 0 ? (
+                          <tr><td colSpan={10} style={{ ...s.td, textAlign: 'center', padding: 40, color: 'var(--gray-400)' }}>Nenhum resultado</td></tr>
+                        ) : filtradas.map((l: any, i: number) => {
+                          const sit = SIT_CONFIG[l.situacao] || SIT_CONFIG.ok;
+                          return (
+                            <tr key={i} style={{ background: i % 2 === 0 ? 'var(--white)' : 'var(--gray-50)' }}>
+                              <td style={{ ...s.td, fontFamily: 'Geist Mono, monospace', fontSize: 11.5, whiteSpace: 'nowrap' }}>{l.etiqueta}</td>
+                              <td style={{ ...s.td, whiteSpace: 'nowrap' }}>
+                                <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 999, background: sit.bg, color: sit.color, whiteSpace: 'nowrap' }}>
+                                  {sit.label}
+                                </span>
+                              </td>
+                              <td style={{ ...s.td, fontSize: 12 }}>
+                                {l.motoAnbId ? (
+                                  <div>
+                                    <div style={{ fontWeight: 600, color: 'var(--gray-700)' }}>#{l.motoAnbId}</div>
+                                    {l.motoPrefixo && <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 10, color: 'var(--gray-400)', marginTop: 1 }}>{l.motoPrefixo}</div>}
+                                  </div>
+                                ) : '-'}
+                              </td>
+                              <td style={{ ...s.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, whiteSpace: 'nowrap' }}>{l.anbSku || '-'}</td>
+                              <td style={{ ...s.td, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12 }} title={l.anbDescricao || ''}>{l.anbDescricao || '-'}</td>
+                              <td style={{ ...s.td, fontSize: 12 }}>{l.tipoPeca || '-'}</td>
+                              <td style={{ ...s.td, fontSize: 12, whiteSpace: 'nowrap' }}>{l.anbBaixadaEm ? new Date(l.anbBaixadaEm).toLocaleDateString('pt-BR') : '-'}</td>
+                              <td style={{ ...s.td, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12 }} title={l.planilhaNomeComprador || ''}>{l.planilhaNomeComprador || '-'}</td>
+                              <td style={{ ...s.td, fontSize: 12, whiteSpace: 'nowrap' }}>{l.planilhaData || '-'}</td>
+                              <td style={{ ...s.td, fontSize: 12 }}>{l.planilhaPecaFusao || '-'}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              );
+            })()}
+
+            {!validacaoBaixaLoading && !validacaoBaixaResult && (
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12, padding: 60 }}>
+                <div style={{ fontSize: 32 }}>📊</div>
+                <div style={{ fontSize: 14, color: 'var(--gray-500)' }}>Selecione a planilha de baixas confirmadas no DETRAN para iniciar a validação</div>
+                <label style={{ ...s.btn, background: '#dc2626', color: '#fff', cursor: 'pointer', marginTop: 8 }}>
+                  Selecionar arquivo
+                  <input type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={rodarValidacaoDetranBaixa} />
                 </label>
               </div>
             )}

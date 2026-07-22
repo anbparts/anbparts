@@ -58,6 +58,32 @@ function getDetranStatusLabel(detranBaixada: boolean) {
   return detranBaixada ? 'Baixada' : 'Ativa';
 }
 
+// Tipo de peça por etiqueta: usa a cartela da moto (MotoDetranPosicao, chave motoId|etiqueta,
+// sem exigir SKU já vinculado) com fallback pela posição (001-034) do numero da etiqueta e,
+// por ultimo, o tipo informado manualmente na peca/pre-cadastro avulso. Compartilhada entre
+// /validar (etiquetas ativas) e /validar-baixa (etiquetas baixadas).
+function calcularTipoPeca(etq: string, motoId: number | null | undefined, cartelaMap: Map<string, string>, tipoAvulsaFallback?: string | null) {
+  const cartelaTipo = motoId != null ? cartelaMap.get(`${motoId}|${etq.toUpperCase()}`) : undefined;
+  const match = etq.match(/^(.*?)(\d{3})$/);
+  const posicao = match ? Number(match[2]) : 0;
+  const isCartela = posicao >= 1 && posicao <= 34;
+  return cartelaTipo || (isCartela ? DETRAN_TIPOS[posicao - 1] : null) || tipoAvulsaFallback || null;
+}
+
+async function carregarCartelaMap(motoIds: number[]) {
+  const posicoesCartela = motoIds.length
+    ? await prisma.motoDetranPosicao.findMany({
+        where: { motoId: { in: motoIds } },
+        select: { motoId: true, etiqueta: true, tipo: true },
+      })
+    : [];
+  const cartelaMap = new Map<string, string>();
+  for (const pos of posicoesCartela) {
+    if (pos.etiqueta) cartelaMap.set(`${pos.motoId}|${pos.etiqueta.toUpperCase()}`, pos.tipo);
+  }
+  return cartelaMap;
+}
+
 // Carrega o status de baixa POR etiqueta (tabela DetranEtiquetaBaixa) para um conjunto de peças.
 // Retorna Map "pecaId|etiqueta" -> { baixadaEm }. Tolera tabela ainda não migrada (cai no fallback peca.detranBaixada).
 async function loadBaixasPorEtiqueta(pecaIds: number[]) {
@@ -651,27 +677,9 @@ etiquetasDetranRouter.post('/validar', async (req, res, next) => {
     }
     const motos = motosRaw; // alias mantido para tipo
 
-    // Tipo de peça por etiqueta: usa a cartela da moto (MotoDetranPosicao, sem exigir SKU já
-    // vinculado — cobre tambem "Só DETRAN") com fallback pela posição (001-034) do numero da
-    // etiqueta e, por ultimo, o tipo informado manualmente na peca/pre-cadastro avulso.
-    const posicoesCartela = motosRaw.length
-      ? await prisma.motoDetranPosicao.findMany({
-          where: { motoId: { in: motosRaw.map((m) => m.id) } },
-          select: { motoId: true, etiqueta: true, tipo: true },
-        })
-      : [];
-    const cartelaMap = new Map<string, string>();
-    for (const pos of posicoesCartela) {
-      if (pos.etiqueta) cartelaMap.set(`${pos.motoId}|${pos.etiqueta.toUpperCase()}`, pos.tipo);
-    }
-
-    function calcularTipoPeca(etq: string, motoId: number | null | undefined, tipoAvulsaFallback?: string | null) {
-      const cartelaTipo = motoId != null ? cartelaMap.get(`${motoId}|${etq.toUpperCase()}`) : undefined;
-      const match = etq.match(/^(.*?)(\d{3})$/);
-      const posicao = match ? Number(match[2]) : 0;
-      const isCartela = posicao >= 1 && posicao <= 34;
-      return cartelaTipo || (isCartela ? DETRAN_TIPOS[posicao - 1] : null) || tipoAvulsaFallback || null;
-    }
+    // Tipo de peça por etiqueta: cartela da moto (cobre tambem "Só DETRAN", sem SKU vinculado
+    // ainda) + fallback por posição (001-034) + fallback do tipo avulso cadastrado na peça.
+    const cartelaMap = await carregarCartelaMap(motosRaw.map((m) => m.id));
 
     type Linha = {
       etiqueta: string; situacao: 'ok' | 'so_detran' | 'so_anb' | 'divergencia'; detalhe?: string;
@@ -693,11 +701,11 @@ etiquetasDetranRouter.post('/validar', async (req, res, next) => {
       const base = { etiqueta: etq, detranDescricao: row.descricao, detranSaldo: saldo, detranModelo: row.modelo, detranPlaca: row.placa, ...motoFields };
 
       if (!anb) {
-        const tipoPeca = calcularTipoPeca(etq, moto?.id);
+        const tipoPeca = calcularTipoPeca(etq, moto?.id, cartelaMap);
         linhas.push({ ...base, situacao: 'so_detran', tipoPeca });
       } else {
         const anbStatus = anb.baixada ? 'Baixada' : anb.fonte === 'pre_cadastro' ? 'Pré-Cadastro' : 'Ativa';
-        const tipoPeca = calcularTipoPeca(etq, moto?.id, anb.tipoPecaAvulsa);
+        const tipoPeca = calcularTipoPeca(etq, moto?.id, cartelaMap, anb.tipoPecaAvulsa);
         if (detranAtivo === !anb.baixada) {
           linhas.push({ ...base, situacao: 'ok', anbSku: anb.sku, anbDescricao: anb.descricao, anbStatus, anbFonte: anb.fonte, tipoPeca });
         } else {
@@ -710,7 +718,7 @@ etiquetasDetranRouter.post('/validar', async (req, res, next) => {
       if (!detranMap.has(etq) && !anb.baixada) {
         const moto = anb.motoId ? motoById.get(anb.motoId) : undefined;
         const motoFields = moto ? { motoAnbId: moto.id, motoPrefixo: moto.detranCartelaId ?? undefined, motoModelo: [moto.marca, moto.modelo].filter(Boolean).join(' ') } : {};
-        const tipoPeca = calcularTipoPeca(etq, anb.motoId, anb.tipoPecaAvulsa);
+        const tipoPeca = calcularTipoPeca(etq, anb.motoId, cartelaMap, anb.tipoPecaAvulsa);
         linhas.push({ etiqueta: etq, situacao: 'so_anb', anbSku: anb.sku, anbDescricao: anb.descricao, anbStatus: anb.fonte === 'pre_cadastro' ? 'Pré-Cadastro' : 'Ativa', anbFonte: anb.fonte, tipoPeca, ...motoFields });
       }
     }
@@ -722,6 +730,125 @@ etiquetasDetranRouter.post('/validar', async (req, res, next) => {
       soDetran: linhas.filter(l => l.situacao === 'so_detran').length,
       soAnb: linhas.filter(l => l.situacao === 'so_anb').length,
       divergencias: linhas.filter(l => l.situacao === 'divergencia').length,
+    };
+
+    res.json({ ok: true, resumo, linhas });
+  } catch (e) { next(e); }
+});
+
+// ── POST /etiquetas-detran/validar-baixa ───────────────────────────────────────
+// Confronta a planilha de baixas JA CONFIRMADAS no DETRAN (uma linha por etiqueta baixada:
+// Documento do Comprador, Nome/Razao Social, Etiqueta, Peca, Quantidade, Data, Realizado Por,
+// E Peca Fusao) contra as etiquetas que o ANB marca como baixadas (DetranEtiquetaBaixa/
+// Peca.detranBaixada + HistoricoDevolucao.etiquetaBaixada). Nao persiste nada, so compara.
+etiquetasDetranRouter.post('/validar-baixa', async (req, res, next) => {
+  try {
+    type BaixaRow = {
+      etiqueta: string; documentoComprador?: string; nomeComprador?: string;
+      pecaDescricao?: string; quantidade?: number; data?: string; realizadoPor?: string; pecaFusao?: string;
+    };
+    const linhasBaixa: BaixaRow[] = Array.isArray(req.body?.linhasBaixa) ? req.body.linhasBaixa : [];
+    if (!linhasBaixa.length) return res.status(400).json({ ok: false, error: 'Nenhuma linha da planilha de baixa enviada.' });
+
+    const planilhaMap = new Map<string, BaixaRow>();
+    for (const row of linhasBaixa) {
+      const etq = String(row.etiqueta || '').trim().toUpperCase();
+      if (etq) planilhaMap.set(etq, row);
+    }
+
+    const [pecas, historico] = await Promise.all([
+      prisma.peca.findMany({
+        where: { detranEtiqueta: { not: null } },
+        select: { id: true, idPeca: true, descricao: true, detranEtiqueta: true, detranBaixada: true, motoId: true, tipoPecaAvulsa: true },
+      }),
+      prisma.historicoDevolucao.findMany({
+        where: { etiquetasDetran: { not: null }, etiquetaBaixada: true },
+        select: { pecaId: true, idPeca: true, descricao: true, etiquetasDetran: true, motoId: true },
+      }),
+    ]);
+
+    type AnbBaixaEntry = { sku: string; descricao: string; motoId: number | null; baixadaEm: Date | null; fonte: string; tipoPecaAvulsa?: string | null };
+    const anbBaixadasMap = new Map<string, AnbBaixaEntry>();
+
+    const baixasMap = await loadBaixasPorEtiqueta(pecas.map((p) => p.id));
+    for (const p of pecas) {
+      for (const etq of splitEtiquetas(p.detranEtiqueta)) {
+        const baixaEtq = baixasMap.get(`${p.id}|${etq}`);
+        const baixada = !!baixaEtq || p.detranBaixada;
+        if (!baixada) continue;
+        anbBaixadasMap.set(etq.toUpperCase(), {
+          sku: p.idPeca, descricao: p.descricao, motoId: p.motoId,
+          baixadaEm: baixaEtq?.baixadaEm ?? null, fonte: 'peca', tipoPecaAvulsa: p.tipoPecaAvulsa,
+        });
+      }
+    }
+    for (const h of historico) {
+      for (const etq of splitEtiquetas(h.etiquetasDetran)) {
+        const key = etq.toUpperCase();
+        if (!anbBaixadasMap.has(key)) anbBaixadasMap.set(key, { sku: h.idPeca, descricao: h.descricao, motoId: h.motoId, baixadaEm: null, fonte: 'historico' });
+      }
+    }
+
+    const motoIds = [...new Set([...anbBaixadasMap.values()].map((e) => e.motoId).filter((id): id is number => id != null))];
+    const motosRaw = motoIds.length
+      ? await prisma.moto.findMany({ where: { id: { in: motoIds } }, select: { id: true, detranCartelaId: true, modelo: true, marca: true } })
+      : [];
+    const motoById = new Map(motosRaw.map((m) => [m.id, m]));
+    const cartelaMap = await carregarCartelaMap(motoIds);
+
+    // Melhor esforço: a descricao da planilha vem como "Peca Desmonte, <Tipo>, <Moto>, <ano>, <ano>".
+    function tipoPecaDaDescricaoPlanilha(descricao?: string) {
+      const partes = String(descricao || '').split(',').map((p) => p.trim()).filter(Boolean);
+      return partes[1] || null;
+    }
+
+    type LinhaBaixa = {
+      etiqueta: string; situacao: 'ok' | 'so_planilha' | 'so_anb'; tipoPeca?: string | null;
+      anbSku?: string; anbDescricao?: string; anbFonte?: string; anbBaixadaEm?: Date | null;
+      motoAnbId?: number; motoPrefixo?: string; motoModelo?: string;
+      planilhaDocumentoComprador?: string; planilhaNomeComprador?: string; planilhaPecaDescricao?: string;
+      planilhaQuantidade?: number; planilhaData?: string; planilhaRealizadoPor?: string; planilhaPecaFusao?: string;
+    };
+    const linhas: LinhaBaixa[] = [];
+
+    for (const [etq, row] of planilhaMap) {
+      const anb = anbBaixadasMap.get(etq);
+      const planilhaFields = {
+        planilhaDocumentoComprador: row.documentoComprador, planilhaNomeComprador: row.nomeComprador,
+        planilhaPecaDescricao: row.pecaDescricao, planilhaQuantidade: row.quantidade,
+        planilhaData: row.data, planilhaRealizadoPor: row.realizadoPor, planilhaPecaFusao: row.pecaFusao,
+      };
+
+      if (!anb) {
+        const tipoPeca = tipoPecaDaDescricaoPlanilha(row.pecaDescricao) || calcularTipoPeca(etq, null, cartelaMap);
+        linhas.push({ etiqueta: etq, situacao: 'so_planilha', tipoPeca, ...planilhaFields });
+      } else {
+        const moto = anb.motoId ? motoById.get(anb.motoId) : undefined;
+        const motoFields = moto ? { motoAnbId: moto.id, motoPrefixo: moto.detranCartelaId ?? undefined, motoModelo: [moto.marca, moto.modelo].filter(Boolean).join(' ') } : {};
+        const tipoPeca = calcularTipoPeca(etq, anb.motoId, cartelaMap, anb.tipoPecaAvulsa);
+        linhas.push({
+          etiqueta: etq, situacao: 'ok', tipoPeca,
+          anbSku: anb.sku, anbDescricao: anb.descricao, anbFonte: anb.fonte, anbBaixadaEm: anb.baixadaEm,
+          ...motoFields, ...planilhaFields,
+        });
+      }
+    }
+
+    for (const [etq, anb] of anbBaixadasMap) {
+      if (!planilhaMap.has(etq)) {
+        const moto = anb.motoId ? motoById.get(anb.motoId) : undefined;
+        const motoFields = moto ? { motoAnbId: moto.id, motoPrefixo: moto.detranCartelaId ?? undefined, motoModelo: [moto.marca, moto.modelo].filter(Boolean).join(' ') } : {};
+        const tipoPeca = calcularTipoPeca(etq, anb.motoId, cartelaMap, anb.tipoPecaAvulsa);
+        linhas.push({ etiqueta: etq, situacao: 'so_anb', tipoPeca, anbSku: anb.sku, anbDescricao: anb.descricao, anbFonte: anb.fonte, anbBaixadaEm: anb.baixadaEm, ...motoFields });
+      }
+    }
+
+    const resumo = {
+      totalPlanilha: planilhaMap.size,
+      totalAnb: anbBaixadasMap.size,
+      ok: linhas.filter((l) => l.situacao === 'ok').length,
+      soPlanilha: linhas.filter((l) => l.situacao === 'so_planilha').length,
+      soAnb: linhas.filter((l) => l.situacao === 'so_anb').length,
     };
 
     res.json({ ok: true, resumo, linhas });
