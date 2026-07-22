@@ -2408,6 +2408,153 @@ function DevolucaoHistoricoModal({ motos, onClose }: any) {
   );
 }
 
+// Modal exigido ao salvar uma peca com preco alterado: categoriza o motivo do reajuste
+// (desconto ao cliente dispara reversao automatica em 3 dias) + observacao livre pro historico.
+function MotivoPrecoModal({ precoAnterior, precoNovo, onConfirm, onCancel }: any) {
+  const [motivo, setMotivo] = useState<'desconto_cliente' | 'reajuste_mercado' | ''>('');
+  const [observacao, setObservacao] = useState('');
+  const [salvando, setSalvando] = useState(false);
+
+  const fmt = (v: any) => `R$ ${Number(v || 0).toFixed(2).replace('.', ',')}`;
+  const subiu = Number(precoNovo) > Number(precoAnterior);
+
+  async function confirmar() {
+    if (!motivo) { alert('Selecione o motivo do reajuste.'); return; }
+    setSalvando(true);
+    await onConfirm(motivo, observacao.trim());
+    setSalvando(false);
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 420, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, backdropFilter: 'blur(2px)' }}>
+      <div style={{ background: 'var(--white)', borderRadius: 16, width: '100%', maxWidth: 440, boxShadow: '0 20px 60px rgba(0,0,0,.2)', overflow: 'hidden' }}>
+        <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--border)' }}>
+          <div style={{ fontFamily: 'Fraunces, serif', fontSize: 17, fontWeight: 700 }}>Motivo do reajuste de preço</div>
+          <div style={{ fontSize: 12.5, color: 'var(--ink-muted)', marginTop: 4 }}>
+            {fmt(precoAnterior)} → <b style={{ color: subiu ? '#16a34a' : '#dc2626' }}>{subiu ? '↑' : '↓'} {fmt(precoNovo)}</b>
+          </div>
+        </div>
+        <div style={{ padding: '18px 22px', display: 'grid', gap: 12 }}>
+          {[
+            { value: 'desconto_cliente', label: 'Desconto ao cliente', desc: 'Se a peça continuar em estoque em 3 dias, o preço volta sozinho ao valor anterior.' },
+            { value: 'reajuste_mercado', label: 'Reajuste de mercado', desc: 'Fica só no histórico, sem acompanhamento.' },
+          ].map((opt) => (
+            <label key={opt.value} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '10px 12px', borderRadius: 10, border: motivo === opt.value ? '1px solid var(--blue-500)' : '1px solid var(--border)', background: motivo === opt.value ? '#eff6ff' : 'var(--white)', cursor: 'pointer' }}>
+              <input type="radio" name="motivoPreco" checked={motivo === opt.value} onChange={() => setMotivo(opt.value as any)} style={{ marginTop: 2, cursor: 'pointer' }} />
+              <div>
+                <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--gray-800)' }}>{opt.label}</div>
+                <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>{opt.desc}</div>
+              </div>
+            </label>
+          ))}
+          <div>
+            <div style={{ fontSize: 11.5, color: 'var(--ink-muted)', marginBottom: 4 }}>Observação (opcional)</div>
+            <textarea value={observacao} onChange={(e) => setObservacao(e.target.value)} rows={2}
+              placeholder="Ex: cliente pediu 10% à vista"
+              style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px', fontSize: 13, fontFamily: 'inherit', resize: 'vertical' }} />
+          </div>
+        </div>
+        <div style={{ padding: '14px 22px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+          <button onClick={onCancel} disabled={salvando} style={{ ...cs.btn, background: 'var(--white)', border: '1px solid var(--border)' }}>Cancelar</button>
+          <button onClick={confirmar} disabled={salvando || !motivo} style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)', opacity: !motivo || salvando ? 0.6 : 1 }}>
+            {salvando ? 'Salvando...' : 'Confirmar e salvar'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Tela de histórico de reajustes de preço (botão "Histórico Preço" na barra superior).
+function HistoricoPrecoModal({ onClose }: any) {
+  const [skuFiltro, setSkuFiltro] = useState('');
+  const [itens, setItens] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const fmt = (v: any) => `R$ ${Number(v || 0).toFixed(2).replace('.', ',')}`;
+  const fmtData = (d: any) => d ? new Date(d).toLocaleString('pt-BR') : '—';
+  const motivoLabel: Record<string, string> = {
+    desconto_cliente: 'Desconto ao cliente',
+    reajuste_mercado: 'Reajuste de mercado',
+    reversao_automatica: 'Ajuste automático (reversão)',
+  };
+
+  async function buscar(sku = skuFiltro) {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (sku.trim()) params.set('sku', sku.trim());
+      const resp = await fetch(`${API_BASE}/pecas/historico-preco?${params}`, { credentials: 'include' });
+      const data = await resp.json();
+      setItens(Array.isArray(data.itens) ? data.itens : []);
+    } catch {}
+    setLoading(false);
+  }
+
+  useEffect(() => { buscar(); }, []);
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, backdropFilter: 'blur(2px)' }}>
+      <div style={{ background: 'var(--white)', borderRadius: 16, width: '100%', maxWidth: 1100, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,.2)', overflow: 'hidden' }}>
+        <div style={{ padding: '16px 22px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+          <div>
+            <div style={{ fontFamily: 'Fraunces, serif', fontSize: 17, fontWeight: 700 }}>💲 Histórico Preço</div>
+            <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>{itens.length} registro(s)</div>
+          </div>
+          <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', fontSize: 16 }}>✕</button>
+        </div>
+
+        <div style={{ padding: '12px 22px', borderBottom: '1px solid var(--border)', background: 'var(--gray-50)', display: 'flex', gap: 10 }}>
+          <input placeholder="Filtrar por SKU" value={skuFiltro} onChange={(e) => setSkuFiltro(e.target.value.toUpperCase())}
+            onKeyDown={(e) => { if (e.key === 'Enter') buscar(); }}
+            style={{ ...cs.fi, fontSize: 12, fontFamily: 'Geist Mono, monospace', maxWidth: 260 }} />
+          <button onClick={() => buscar()} style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)' }}>Buscar</button>
+        </div>
+
+        <div style={{ overflowY: 'auto', flex: 1 }}>
+          {loading ? (
+            <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-muted)' }}>Carregando...</div>
+          ) : itens.length === 0 ? (
+            <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-muted)' }}>Nenhum reajuste registrado.</div>
+          ) : (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+              <thead>
+                <tr style={{ background: 'var(--gray-50)', position: 'sticky', top: 0 }}>
+                  {['SKU', 'Descrição', 'Anterior', 'Novo', '%', '', 'Motivo', 'Observação', 'Quando', 'Por'].map((h) => (
+                    <th key={h} style={{ textAlign: 'left', padding: '8px 12px', borderBottom: '1px solid var(--border)', color: 'var(--ink-muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {itens.map((it: any) => {
+                  const anterior = Number(it.valorAnterior);
+                  const novo = Number(it.valorNovo);
+                  const pct = anterior ? ((novo - anterior) / anterior) * 100 : 0;
+                  const subiu = novo > anterior;
+                  return (
+                    <tr key={it.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                      <td style={{ padding: '8px 12px', fontFamily: 'Geist Mono, monospace', fontWeight: 700, color: 'var(--blue)' }}>{it.sku}</td>
+                      <td style={{ padding: '8px 12px', maxWidth: 220 }}>{it.descricao}</td>
+                      <td style={{ padding: '8px 12px', fontFamily: 'Geist Mono, monospace' }}>{fmt(anterior)}</td>
+                      <td style={{ padding: '8px 12px', fontFamily: 'Geist Mono, monospace', fontWeight: 700 }}>{fmt(novo)}</td>
+                      <td style={{ padding: '8px 12px', fontFamily: 'Geist Mono, monospace', color: subiu ? '#16a34a' : '#dc2626' }}>{pct >= 0 ? '+' : ''}{pct.toFixed(1)}%</td>
+                      <td style={{ padding: '8px 12px', fontSize: 15, color: subiu ? '#16a34a' : '#dc2626' }}>{subiu ? '↑' : '↓'}</td>
+                      <td style={{ padding: '8px 12px' }}>{motivoLabel[it.motivo] || it.motivo}</td>
+                      <td style={{ padding: '8px 12px', color: 'var(--ink-muted)', maxWidth: 200 }}>{it.observacao || '—'}</td>
+                      <td style={{ padding: '8px 12px', whiteSpace: 'nowrap', color: 'var(--ink-muted)' }}>{fmtData(it.criadoEm)}</td>
+                      <td style={{ padding: '8px 12px', whiteSpace: 'nowrap', color: 'var(--ink-muted)' }}>{it.usuario || '—'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function EstoquePage() {
   const { user } = useAuth();
   const canEditarPeca = canProcessAction(user, 'estoque', 'editar');
@@ -2458,6 +2605,8 @@ export default function EstoquePage() {
   const [devolucaoModal, setDevolucaoModal] = useState(false);
   const [devolucaoPeca, setDevolucaoPeca] = useState<any>(null);
   const [devolucaoHistoricoOpen, setDevolucaoHistoricoOpen] = useState(false);
+  const [historicoPrecoOpen, setHistoricoPrecoOpen] = useState(false);
+  const [precoMotivoPendente, setPrecoMotivoPendente] = useState<{ formData: any } | null>(null);
 
   const pecasRequestIdRef = useRef(0);
   const [savedColsVisiveis, setSavedColsVisiveis] = useState<ColKey[]>(COL_DEFAULT);
@@ -2698,11 +2847,37 @@ export default function EstoquePage() {
       alert('Essa peca esta em prejuizo e nao pode ser editada pela tela de estoque.');
       return;
     }
+    // Preco mudou: exige motivo do reajuste antes de gravar (log + regra de reversao automatica).
+    if (editPeca && Number(formData.precoML) !== Number(editPeca.precoML)) {
+      setPrecoMotivoPendente({ formData });
+      return;
+    }
+    await salvarPecaComMotivo(formData, null, '');
+  }
+
+  async function confirmarMotivoPreco(motivo: 'desconto_cliente' | 'reajuste_mercado', observacao: string) {
+    if (!precoMotivoPendente) return;
+    const { formData } = precoMotivoPendente;
+    setPrecoMotivoPendente(null);
+    await salvarPecaComMotivo(formData, motivo, observacao);
+  }
+
+  async function salvarPecaComMotivo(formData: any, motivo: 'desconto_cliente' | 'reajuste_mercado' | null, observacao: string) {
     if (editPeca) {
       await api.pecas.update(editPeca.id, formData);
 
       const precoMudou = Number(formData.precoML) !== Number(editPeca.precoML);
       const descricaoMudou = String(formData.descricao || '').trim() !== String(editPeca.descricao || '').trim();
+      const historicoPreco: any[] = [];
+      if (precoMudou) {
+        historicoPreco.push({
+          pecaId: editPeca.id,
+          sku: editPeca.idPeca,
+          descricao: formData.descricao || editPeca.descricao,
+          valorAnterior: Number(editPeca.precoML),
+          valorNovo: Number(formData.precoML),
+        });
+      }
 
       if (precoMudou || descricaoMudou) {
         const API = API_BASE;
@@ -2741,6 +2916,15 @@ export default function EstoquePage() {
             (p.idPeca === baseSku || p.idPeca.startsWith(`${baseSku}-`))
           );
           for (const variacao of todasVariacoes) {
+            if (precoMudou) {
+              historicoPreco.push({
+                pecaId: variacao.id,
+                sku: variacao.idPeca,
+                descricao: descricaoMudou ? formData.descricao : variacao.descricao,
+                valorAnterior: Number(variacao.precoML),
+                valorNovo: Number(formData.precoML),
+              });
+            }
             await fetch(`${API}/pecas/${variacao.id}`, {
               method: 'PUT', credentials: 'include',
               headers: { 'Content-Type': 'application/json' },
@@ -2756,6 +2940,18 @@ export default function EstoquePage() {
           }
         } catch (e: any) {
           console.warn('[sync-variacoes] Erro ao replicar preço/título:', e.message);
+        }
+      }
+
+      if (historicoPreco.length && motivo) {
+        try {
+          await fetch(`${API_BASE}/pecas/historico-preco`, {
+            method: 'POST', credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ itens: historicoPreco, motivo, observacao }),
+          });
+        } catch (e: any) {
+          console.warn('[historico-preco] Erro ao registrar log:', e.message);
         }
       }
     } else {
@@ -3350,6 +3546,13 @@ export default function EstoquePage() {
             style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink)', borderColor: 'var(--border)', padding: '7px 14px', fontSize: 13, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}
           >
             ↩️ Devoluções
+          </button>}
+          {canEditarPeca && <button
+            type="button"
+            onClick={() => setHistoricoPrecoOpen(true)}
+            style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink)', borderColor: 'var(--border)', padding: '7px 14px', fontSize: 13, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}
+          >
+            💲 Histórico Preço
           </button>}
           {filters.motoId && (
             <button
@@ -4046,6 +4249,19 @@ export default function EstoquePage() {
         <DevolucaoHistoricoModal
           motos={motos}
           onClose={() => setDevolucaoHistoricoOpen(false)}
+        />
+      )}
+
+      {canEditarPeca && historicoPrecoOpen && (
+        <HistoricoPrecoModal onClose={() => setHistoricoPrecoOpen(false)} />
+      )}
+
+      {precoMotivoPendente && (
+        <MotivoPrecoModal
+          precoAnterior={editPeca?.precoML}
+          precoNovo={precoMotivoPendente.formData?.precoML}
+          onConfirm={confirmarMotivoPreco}
+          onCancel={() => setPrecoMotivoPendente(null)}
         />
       )}
     </>

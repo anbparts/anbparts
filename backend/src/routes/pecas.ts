@@ -883,6 +883,70 @@ pecasRouter.put('/:id', requireEstoqueAction('editar'), async (req, res, next) =
   } catch (e) { next(e); }
 });
 
+// POST /pecas/historico-preco — registra o log de reajuste manual (tela Estoque).
+// Body: { itens: [{ pecaId, sku, descricao, valorAnterior, valorNovo }], motivo, observacao? }
+// motivo 'desconto_cliente' agenda reversao automatica em 3 dias (ver reversao-preco-desconto.ts).
+const MOTIVOS_HISTORICO_PRECO = new Set(['desconto_cliente', 'reajuste_mercado']);
+const DIAS_REVERSAO_DESCONTO_CLIENTE = 3;
+
+pecasRouter.post('/historico-preco', requireEstoqueAction('editar'), async (req, res, next) => {
+  try {
+    const motivo = String(req.body?.motivo || '').trim();
+    if (!MOTIVOS_HISTORICO_PRECO.has(motivo)) {
+      return res.status(400).json({ ok: false, error: 'motivo invalido' });
+    }
+    const itens = Array.isArray(req.body?.itens) ? req.body.itens : [];
+    if (!itens.length) return res.status(400).json({ ok: false, error: 'itens obrigatorio' });
+
+    const observacao = String(req.body?.observacao || '').trim() || null;
+    const usuario = String((req as any).authUser?.username || '').trim() || null;
+    const reverterEm = motivo === 'desconto_cliente'
+      ? new Date(Date.now() + DIAS_REVERSAO_DESCONTO_CLIENTE * 24 * 60 * 60 * 1000)
+      : null;
+
+    for (const item of itens) {
+      const pecaId = Number(item?.pecaId);
+      const valorAnterior = Number(item?.valorAnterior);
+      const valorNovo = Number(item?.valorNovo);
+      if (!Number.isInteger(pecaId) || pecaId <= 0) continue;
+      if (!Number.isFinite(valorAnterior) || !Number.isFinite(valorNovo)) continue;
+
+      await prisma.$executeRaw`
+        INSERT INTO "HistoricoPrecoPeca"
+          ("pecaId", "sku", "descricao", "valorAnterior", "valorNovo", "motivo", "observacao", "usuario", "reverterEm")
+        VALUES
+          (${pecaId}, ${String(item?.sku || '').trim().toUpperCase()}, ${String(item?.descricao || '').trim()},
+           ${valorAnterior}, ${valorNovo}, ${motivo}, ${observacao}, ${usuario}, ${reverterEm})
+      `;
+    }
+
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+// GET /pecas/historico-preco?sku=&limit= — lista o log de reajustes (tela Historico Preco).
+pecasRouter.get('/historico-preco', requireEstoqueAction('editar'), async (req, res, next) => {
+  try {
+    const skuFiltro = String(req.query?.sku || '').trim().toUpperCase();
+    const limit = Math.max(1, Math.min(500, Number(req.query?.limit) || 200));
+
+    const rows = skuFiltro
+      ? await prisma.$queryRaw<any[]>`
+          SELECT * FROM "HistoricoPrecoPeca"
+          WHERE "sku" ILIKE ${`%${skuFiltro}%`}
+          ORDER BY "criadoEm" DESC
+          LIMIT ${limit}
+        `
+      : await prisma.$queryRaw<any[]>`
+          SELECT * FROM "HistoricoPrecoPeca"
+          ORDER BY "criadoEm" DESC
+          LIMIT ${limit}
+        `;
+
+    res.json({ ok: true, itens: rows });
+  } catch (e) { next(e); }
+});
+
 // PATCH /pecas/:id/foto-capa
 pecasRouter.patch('/:id/foto-capa', requireEstoqueAction('trocar_foto'), async (req, res, next) => {
   try {

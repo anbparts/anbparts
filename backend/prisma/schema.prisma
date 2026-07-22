@@ -99,6 +99,28 @@ model Peca {
   @@index([detranStatus])
 }
 
+// Log de reajuste manual de preco (tela Estoque). motivo: 'desconto_cliente' (dispara
+// reversao automatica em 3 dias se a peca continuar disponivel) | 'reajuste_mercado' (so log)
+// | 'reversao_automatica' (gravado pelo job quando reverte um desconto nao efetivado).
+model HistoricoPrecoPeca {
+  id            Int       @id @default(autoincrement())
+  pecaId        Int
+  sku           String
+  descricao     String
+  valorAnterior Decimal   @db.Decimal(12, 2)
+  valorNovo     Decimal   @db.Decimal(12, 2)
+  motivo        String
+  observacao    String?
+  usuario       String?
+  reverterEm    DateTime?
+  revertido     Boolean   @default(false)
+  criadoEm      DateTime  @default(now())
+
+  @@index([pecaId])
+  @@index([reverterEm])
+  @@index([sku])
+}
+
 model CadastroPeca {
   id               Int      @id @default(autoincrement())
   motoId           Int

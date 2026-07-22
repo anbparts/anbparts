@@ -29,6 +29,7 @@ import { errorMiddleware } from './middlewares/error';
 import { startFotosPendentesWhatsappScheduler } from './lib/fotos-pendentes-whatsapp';
 import { startFotosDrivePendentesScheduler } from './lib/fotos-drive-aviso';
 import { startDetranBaixaDigestScheduler } from './lib/detran-baixa-digest';
+import { startReversaoPrecoDescontoScheduler } from './lib/reversao-preco-desconto';
 
 const app = express();
 
@@ -78,5 +79,6 @@ app.listen(port, () => {
   startFotosPendentesWhatsappScheduler();
   startFotosDrivePendentesScheduler();
   startDetranBaixaDigestScheduler();
+  startReversaoPrecoDescontoScheduler();
   console.log(`ANB Backend rodando na porta ${port}`);
 });

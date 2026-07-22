@@ -1374,27 +1374,26 @@ cadastroRouter.post('/sync-bling-peca', async (req, res, next) => {
   }
 });
 
-// ── POST /cadastro/sync-preco-plataformas ─────────────────────────────────────
 // Sincroniza precoML e/ou descricao (titulo do anuncio) com Bling, Mercado Livre e Nuvemshop.
-// Body: { sku, precoML?, descricao? } — pelo menos um dos dois.
 // Sem rollback: cada plataforma retorna seu proprio resultado (ex.: ML pode bloquear
 // alteracao de titulo em anuncio com venda; Bling/Nuvemshop seguem atualizados).
-cadastroRouter.post('/sync-preco-plataformas', async (req, res, next) => {
-  try {
-    const sku       = String(req.body?.sku || '').trim().toUpperCase();
-    const temPreco  = req.body?.precoML !== undefined && req.body?.precoML !== null;
-    const precoML   = Number(req.body?.precoML);
-    const descricao = String(req.body?.descricao || '').trim();
+// Extraida como funcao (nao so rota) para ser reaproveitada pela reversao automatica
+// de desconto ao cliente (backend/src/lib/reversao-preco-desconto.ts).
+export async function syncPrecoPlataformas(skuInput: string, opts: { precoML?: number; descricao?: string }) {
+  const sku       = String(skuInput || '').trim().toUpperCase();
+  const temPreco  = opts.precoML !== undefined && opts.precoML !== null;
+  const precoML   = Number(opts.precoML);
+  const descricao = String(opts.descricao || '').trim();
 
-    if (!sku)                                                  return res.status(400).json({ ok: false, error: 'sku obrigatorio' });
-    if (!temPreco && !descricao)                               return res.status(400).json({ ok: false, error: 'informe precoML e/ou descricao' });
-    if (temPreco && (!Number.isFinite(precoML) || precoML < 0)) return res.status(400).json({ ok: false, error: 'precoML invalido' });
+  if (!sku)                                                  return { ok: false, resultados: {}, error: 'sku obrigatorio' };
+  if (!temPreco && !descricao)                               return { ok: false, resultados: {}, error: 'informe precoML e/ou descricao' };
+  if (temPreco && (!Number.isFinite(precoML) || precoML < 0)) return { ok: false, resultados: {}, error: 'precoML invalido' };
 
-    const baseSku = getBaseSku(sku);
-    const BLING_READONLY = ['id', 'dataCriacao', 'dataAlteracao', 'imagemURL', 'imagens', 'depositos', 'variacoes', 'estrutura', 'categorias', 'anexos'];
+  const baseSku = getBaseSku(sku);
+  const BLING_READONLY = ['id', 'dataCriacao', 'dataAlteracao', 'imagemURL', 'imagens', 'depositos', 'variacoes', 'estrutura', 'categorias', 'anexos'];
 
-    type PlataformaResultado = { ok: boolean; error?: string };
-    const resultados: Record<string, PlataformaResultado> = {};
+  type PlataformaResultado = { ok: boolean; error?: string };
+  const resultados: Record<string, PlataformaResultado> = {};
 
     // ── 1. Bling ──────────────────────────────────────────────────────────────
     try {
@@ -1553,9 +1552,20 @@ cadastroRouter.post('/sync-preco-plataformas', async (req, res, next) => {
       resultados.nuvemshop = { ok: false, error: e?.message || 'Erro desconhecido' };
     }
 
-    const todosOk = Object.values(resultados).every(r => r.ok);
-    console.log(`[sync-preco-plataformas] SKU ${baseSku}${temPreco ? ` preço R$${precoML}` : ''}${descricao ? ' + titulo' : ''}:`, JSON.stringify(resultados));
-    res.json({ ok: todosOk, resultados });
+  const todosOk = Object.values(resultados).every(r => r.ok);
+  console.log(`[sync-preco-plataformas] SKU ${baseSku}${temPreco ? ` preço R$${precoML}` : ''}${descricao ? ' + titulo' : ''}:`, JSON.stringify(resultados));
+  return { ok: todosOk, resultados };
+}
+
+// ── POST /cadastro/sync-preco-plataformas ─────────────────────────────────────
+// Body: { sku, precoML?, descricao? } — pelo menos um dos dois.
+cadastroRouter.post('/sync-preco-plataformas', async (req, res, next) => {
+  try {
+    const resultado = await syncPrecoPlataformas(req.body?.sku, {
+      precoML: req.body?.precoML,
+      descricao: req.body?.descricao,
+    });
+    res.json(resultado);
   } catch (e) { next(e); }
 });
 
