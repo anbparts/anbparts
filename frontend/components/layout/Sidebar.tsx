@@ -50,7 +50,6 @@ export const NAV: NavGroup[] = [
     items: [
       { href: '/bling/vendas', icon: 'shopping-cart', label: 'Vendas' },
       { href: '/bling/relatorio-vendas', icon: 'clipboard', label: 'Relatorio de Vendas' },
-      { href: '/bling/produtos', icon: 'package-search', label: 'Produtos' },
       { href: '/bling/auditoria-automatica', icon: 'radar', label: 'Auditoria Automatica' },
     ],
   },

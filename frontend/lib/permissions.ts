@@ -22,7 +22,6 @@ export const PAGE_KEY_BY_HREF: Record<string, string> = {
   '/investimentos': 'investimentos',
   '/bling/vendas': 'bling_vendas',
   '/bling/relatorio-vendas': 'bling_relatorio',
-  '/bling/produtos': 'bling_produtos',
   '/bling/auditoria-automatica': 'bling_auditoria',
   '/mercado-livre/perguntas': 'mercado_livre_perguntas',
   '/nuvemshop/produtos': 'nuvemshop_produtos',

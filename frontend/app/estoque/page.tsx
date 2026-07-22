@@ -2439,6 +2439,7 @@ export default function EstoquePage() {
   const [atualizarCaixaOpen, setAtualizarCaixaOpen] = useState(false);
   const [atualizandoCaixa, setAtualizandoCaixa] = useState(false);
   const [imprimindoSkus, setImprimindoSkus] = useState(false);
+  const [atualizandoLinkMl, setAtualizandoLinkMl] = useState(false);
   const [modalA4Open, setModalA4Open] = useState(false);
   const [copySkuOpen, setCopySkuOpen] = useState(false);
   const [copySkuPreview, setCopySkuPreview] = useState<any>(null);
@@ -3197,6 +3198,48 @@ export default function EstoquePage() {
     setImprimindoSkus(false);
   }
 
+  async function handleAtualizarLinkMl() {
+    if (!selectedPecas.length) {
+      alert('Selecione as pecas desejadas para atualizar o link ML.');
+      return;
+    }
+
+    const vistos = new Set<string>();
+    const skus: string[] = [];
+    for (const peca of selectedPecas) {
+      const base = String(peca.idPeca || '').replace(/-\d+$/, '').trim().toUpperCase();
+      if (base && !vistos.has(base)) { vistos.add(base); skus.push(base); }
+    }
+    if (!skus.length) {
+      alert('Nenhum SKU valido na selecao.');
+      return;
+    }
+
+    setAtualizandoLinkMl(true);
+    try {
+      const LOTE = 20;
+      const lotes: string[][] = [];
+      for (let i = 0; i < skus.length; i += LOTE) lotes.push(skus.slice(i, i + LOTE));
+
+      let totalAtualizadas = 0;
+      for (const lote of lotes) {
+        const resp = await fetch('/api-proxy/atualizar-link-ml-skus', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ skus: lote }),
+        });
+        const data = await resp.json();
+        if (!data.ok) throw new Error(data.error || 'Erro ao atualizar link ML');
+        totalAtualizadas += data.totalAtualizadas || 0;
+      }
+      alert(`Links ML atualizados: ${totalAtualizadas} peca(s) atualizada(s).`);
+    } catch (e: any) {
+      alert(`Erro: ${e.message}`);
+    }
+    setAtualizandoLinkMl(false);
+  }
+
   async function openCopySkuModal() {
     if (!copySkuSelecionada) return;
 
@@ -3578,6 +3621,24 @@ export default function EstoquePage() {
                 }}
               >
                 Impressao A4
+              </button>
+              <button
+                type="button"
+                onClick={handleAtualizarLinkMl}
+                disabled={!selectedPecaIds.length || atualizandoLinkMl}
+                style={{
+                  ...cs.btn,
+                  background: selectedPecaIds.length ? '#fff7ed' : 'var(--gray-50)',
+                  color: selectedPecaIds.length ? '#c2410c' : 'var(--ink-muted)',
+                  borderColor: selectedPecaIds.length ? '#fed7aa' : 'var(--border)',
+                  padding: '6px 14px',
+                  fontSize: 13,
+                  width: isPhone ? '100%' : undefined,
+                  opacity: !selectedPecaIds.length || atualizandoLinkMl ? 0.7 : 1,
+                  justifyContent: 'center',
+                }}
+              >
+                {atualizandoLinkMl ? 'Atualizando...' : 'Atualizar Link ML'}
               </button>
             </div>
           </div>
