@@ -341,7 +341,7 @@ export default function EtiquetasDetranPage() {
       const norm = (s: string) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
       const linhasBaixa = rows.map((row: any) => {
         const keys = Object.keys(row);
-        const find = (pat: RegExp) => { const k = keys.find(k => pat.test(norm(k))); return row[k]; };
+        const find = (pat: RegExp) => { const k = keys.find(k => pat.test(norm(k))); return k ? row[k] : undefined; };
         const quantidadeRaw = find(/quantidade/);
         const dataRaw = find(/^data$|data /);
         return {
