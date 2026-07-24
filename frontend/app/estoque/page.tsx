@@ -1532,6 +1532,16 @@ function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, peca, 
   const [, setFreteTouched] = useState(false);
   const [taxasTouched, setTaxasTouched] = useState(false);
   const preview = calculatePecaPreview(form.precoML, form.valorFrete, form.valorTaxas);
+  const precoOriginal = peca ? Number(peca.precoML || 0) : null;
+  const precoNovoNum = Number(form.precoML) || 0;
+  const reajustePct = precoOriginal && precoNovoNum !== precoOriginal
+    ? ((precoNovoNum - precoOriginal) / precoOriginal) * 100
+    : null;
+  const reajusteInfo = reajustePct !== null ? (
+    <div style={{ fontSize: 11, marginTop: 4, color: reajustePct > 0 ? '#16a34a' : '#dc2626' }}>
+      {reajustePct > 0 ? '↑' : '↓'} {reajustePct > 0 ? '+' : ''}{reajustePct.toFixed(1)}%
+    </div>
+  ) : null;
 
   useEffect(() => {
     if (peca) {
@@ -1799,6 +1809,7 @@ function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, peca, 
                       value={form.precoML}
                       onChange={(e) => handlePrecoMlChange(e.target.value)}
                     />
+                    {reajusteInfo}
                   </div>
                   <div style={{ marginBottom: 14 }}>
                     <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-soft)' }}>Frete (R$)</label>
@@ -1856,6 +1867,7 @@ function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, peca, 
                     value={form.precoML}
                     onChange={(e) => handlePrecoMlChange(e.target.value)}
                   />
+                  {reajusteInfo}
                 </div>
                 <div style={{ marginBottom: 14 }}>
                   <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-soft)' }}>Frete (R$)</label>
