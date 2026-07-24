@@ -1533,6 +1533,7 @@ function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, peca, 
   const [taxasTouched, setTaxasTouched] = useState(false);
   const preview = calculatePecaPreview(form.precoML, form.valorFrete, form.valorTaxas);
   const precoOriginal = peca ? Number(peca.precoML || 0) : null;
+  const taxaRateOriginal = peca && precoOriginal ? Number(peca.valorTaxas || 0) / precoOriginal : null;
   const precoNovoNum = Number(form.precoML) || 0;
   const reajustePct = precoOriginal && precoNovoNum !== precoOriginal
     ? ((precoNovoNum - precoOriginal) / precoOriginal) * 100
@@ -1690,6 +1691,9 @@ function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, peca, 
       const next = { ...prev, precoML: value };
       if (!peca && !taxasTouched && suggestion?.taxaPadraoPct !== undefined) {
         next.valorTaxas = moneyInputValue((Number(value) || 0) * (Number(suggestion?.taxaPadraoPct || 0) / 100));
+      } else if (peca && !taxasTouched && taxaRateOriginal !== null) {
+        // Mantem a mesma taxa % implicita no valor original da peca, escalada pro novo preco.
+        next.valorTaxas = moneyInputValue((Number(value) || 0) * taxaRateOriginal);
       }
       return next;
     });
