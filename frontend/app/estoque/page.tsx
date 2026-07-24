@@ -1505,7 +1505,7 @@ function PecaActionsModal({ open, peca, onClose, onEdit, onSell, onDelete, onDev
   );
 }
 
-function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, peca, motos, viewportMode = 'desktop' }: any) {
+function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, onOpenHistoricoPreco, peca, motos, viewportMode = 'desktop' }: any) {
   const empty = {
     idPeca: '',
     motoId: '',
@@ -1531,6 +1531,7 @@ function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, peca, 
   const [, setIdPecaTouched] = useState(false);
   const [, setFreteTouched] = useState(false);
   const [taxasTouched, setTaxasTouched] = useState(false);
+  const [temHistoricoPreco, setTemHistoricoPreco] = useState(false);
   const preview = calculatePecaPreview(form.precoML, form.valorFrete, form.valorTaxas);
   const precoOriginal = peca ? Number(peca.precoML || 0) : null;
   const taxaRateOriginal = peca && precoOriginal ? Number(peca.valorTaxas || 0) / precoOriginal : null;
@@ -1571,6 +1572,17 @@ function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, peca, 
     setIdPecaTouched(false);
     setFreteTouched(false);
     setTaxasTouched(false);
+  }, [peca, open]);
+
+  useEffect(() => {
+    setTemHistoricoPreco(false);
+    if (!open || !peca?.idPeca) return;
+    let cancelled = false;
+    fetch(`${API_BASE}/pecas/historico-preco?sku=${encodeURIComponent(peca.idPeca)}&limit=1`, { credentials: 'include' })
+      .then((r) => r.json())
+      .then((data) => { if (!cancelled) setTemHistoricoPreco(Array.isArray(data.itens) && data.itens.length > 0); })
+      .catch(() => {});
+    return () => { cancelled = true; };
   }, [peca, open]);
 
   useEffect(() => {
@@ -1805,7 +1817,14 @@ function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, peca, 
                 <div style={{ fontSize: 10.5, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: 10 }}>Financeiro</div>
                 <div style={{ display: 'grid', gridTemplateColumns: modalFinancialColumns, gap: 12 }}>
                   <div style={{ marginBottom: 14 }}>
-                    <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-soft)' }}>Preco ML (R$)</label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-soft)' }}>Preco ML (R$)</label>
+                      {temHistoricoPreco && (
+                        <a onClick={() => onOpenHistoricoPreco?.(peca.idPeca)} style={{ fontSize: 11, color: 'var(--blue-500)', cursor: 'pointer', textDecoration: 'underline' }}>
+                          Histórico
+                        </a>
+                      )}
+                    </div>
                     <input
                       style={cs.fi}
                       type="number"
@@ -1863,7 +1882,14 @@ function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, peca, 
               {renderField('Pedido Bling', 'blingPedidoNum', 'text', 'Ex: 449')}
               <div style={{ display: 'grid', gridTemplateColumns: dualFieldColumns, gap: 12 }}>
                 <div style={{ marginBottom: 14 }}>
-                  <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-soft)' }}>Preco ML (R$)</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-soft)' }}>Preco ML (R$)</label>
+                    {temHistoricoPreco && (
+                      <a onClick={() => onOpenHistoricoPreco?.(peca.idPeca)} style={{ fontSize: 11, color: 'var(--blue-500)', cursor: 'pointer', textDecoration: 'underline' }}>
+                        Histórico
+                      </a>
+                    )}
+                  </div>
                   <input
                     style={cs.fi}
                     type="number"
@@ -2482,8 +2508,8 @@ function MotivoPrecoModal({ precoAnterior, precoNovo, onConfirm, onCancel }: any
 }
 
 // Tela de histórico de reajustes de preço (botão "Histórico Preço" na barra superior).
-function HistoricoPrecoModal({ onClose }: any) {
-  const [skuFiltro, setSkuFiltro] = useState('');
+function HistoricoPrecoModal({ onClose, skuInicial }: any) {
+  const [skuFiltro, setSkuFiltro] = useState(skuInicial || '');
   const [itens, setItens] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -2622,6 +2648,7 @@ export default function EstoquePage() {
   const [devolucaoPeca, setDevolucaoPeca] = useState<any>(null);
   const [devolucaoHistoricoOpen, setDevolucaoHistoricoOpen] = useState(false);
   const [historicoPrecoOpen, setHistoricoPrecoOpen] = useState(false);
+  const [historicoPrecoSkuInicial, setHistoricoPrecoSkuInicial] = useState('');
   const [precoMotivoPendente, setPrecoMotivoPendente] = useState<{ formData: any } | null>(null);
 
   const pecasRequestIdRef = useRef(0);
@@ -3565,7 +3592,7 @@ export default function EstoquePage() {
           </button>}
           {canEditarPeca && <button
             type="button"
-            onClick={() => setHistoricoPrecoOpen(true)}
+            onClick={() => { setHistoricoPrecoSkuInicial(''); setHistoricoPrecoOpen(true); }}
             style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink)', borderColor: 'var(--border)', padding: '7px 14px', fontSize: 13, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}
           >
             💲 Histórico Preço
@@ -4162,7 +4189,7 @@ export default function EstoquePage() {
         </div>
       </div>
 
-      <PecaModal open={modal && canEditarPeca} onClose={() => { setModal(false); setEditPeca(null); }} onSave={handleSavePeca} onCancelSale={handleCancelSale} onMarkPrejuizo={handleMarkPrejuizo} peca={editPeca} motos={motos} viewportMode={viewportMode} />
+      <PecaModal open={modal && canEditarPeca} onClose={() => { setModal(false); setEditPeca(null); }} onSave={handleSavePeca} onCancelSale={handleCancelSale} onMarkPrejuizo={handleMarkPrejuizo} onOpenHistoricoPreco={(sku: string) => { setHistoricoPrecoSkuInicial(sku); setHistoricoPrecoOpen(true); }} peca={editPeca} motos={motos} viewportMode={viewportMode} />
       <ImpressaoCaixaModal
         open={impressaoCaixaOpen && canImpressaoCaixa}
         loading={loadingCaixas}
@@ -4269,7 +4296,7 @@ export default function EstoquePage() {
       )}
 
       {canEditarPeca && historicoPrecoOpen && (
-        <HistoricoPrecoModal onClose={() => setHistoricoPrecoOpen(false)} />
+        <HistoricoPrecoModal onClose={() => setHistoricoPrecoOpen(false)} skuInicial={historicoPrecoSkuInicial} />
       )}
 
       {precoMotivoPendente && (
