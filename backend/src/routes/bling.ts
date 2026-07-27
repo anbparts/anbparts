@@ -1394,14 +1394,14 @@ async function listPedidos(dataInicio?: string, dataFim?: string, situacoes?: nu
   return Array.from(pedidosMap.values());
 }
 
-async function findBlingProductsByCodes(codes: string[]) {
+async function findBlingProductsByCodes(codes: string[], opts: { forceRefresh?: boolean } = {}) {
   const uniqueCodes = Array.from(new Set(codes.map((code) => getBaseSku(code)).filter(Boolean)));
   const found = new Map<string, any>();
   const targetCodes = new Set<string>();
   let pagina = 1;
 
   for (const code of uniqueCodes) {
-    const cached = blingProductByCodeCache.get(code);
+    const cached = opts.forceRefresh ? null : blingProductByCodeCache.get(code);
     if (cached && cached.expiresAt > Date.now() && cached.value) {
       found.set(code, cached.value);
       continue;
@@ -1442,8 +1442,8 @@ async function findBlingProductsByCodes(codes: string[]) {
   return found;
 }
 
-export async function fetchBlingProductDetailById(id: number) {
-  const cached = blingProductDetailCache.get(id);
+export async function fetchBlingProductDetailById(id: number, opts: { forceRefresh?: boolean } = {}) {
+  const cached = opts.forceRefresh ? null : blingProductDetailCache.get(id);
   if (cached && cached.expiresAt > Date.now()) {
     return cached.value;
   }
@@ -1617,8 +1617,8 @@ function isLikelyMercadoLivreLink(row: any) {
   return false;
 }
 
-export async function fetchProdutoLojaLinksByProductId(productId: number) {
-  const cached = produtoLojaLinksCache.get(productId);
+export async function fetchProdutoLojaLinksByProductId(productId: number, opts: { forceRefresh?: boolean } = {}) {
+  const cached = opts.forceRefresh ? null : produtoLojaLinksCache.get(productId);
   if (cached && cached.expiresAt > Date.now()) {
     return cached.rows;
   }
@@ -4889,9 +4889,11 @@ blingRouter.post('/atualizar-link-ml-skus', async (req, res, next) => {
     let totalAtualizadas = 0;
     let totalSemPermalink = 0;
 
-    // Bling é a fonte de verdade: busca o ID atual do anúncio ML para todos os SKUs
+    // Bling é a fonte de verdade: busca o ID atual do anúncio ML para todos os SKUs.
+    // forceRefresh: este botao existe pra "puxar o vinculo certo agora" — ignora os caches
+    // (produto/detalhe/lojas) que outras rotas podem ter deixado quentes com dado desatualizado.
     const skusBase = Array.from(new Set(pecas.map((p) => getBaseSku(p.idPeca)).filter(Boolean)));
-    const produtosByCode = await findBlingProductsByCodes(skusBase);
+    const produtosByCode = await findBlingProductsByCodes(skusBase, { forceRefresh: true });
 
     // Agrupa peças por SKU base para facilitar atualização
     const pecasBySkuBase = new Map<string, typeof pecas>();
@@ -4906,8 +4908,8 @@ blingRouter.post('/atualizar-link-ml-skus', async (req, res, next) => {
     for (const [skuBase, produto] of produtosByCode.entries()) {
       if (!produto?.id) continue;
 
-      const detail = await fetchBlingProductDetailById(Number(produto.id));
-      const lojaRows = await fetchProdutoLojaLinksByProductId(Number(produto.id));
+      const detail = await fetchBlingProductDetailById(Number(produto.id), { forceRefresh: true });
+      const lojaRows = await fetchProdutoLojaLinksByProductId(Number(produto.id), { forceRefresh: true });
 
       // ID do anúncio atual no Bling
       const itemIdBling = resolveBlingMercadoLivreItemId(produto, detail, lojaRows);
