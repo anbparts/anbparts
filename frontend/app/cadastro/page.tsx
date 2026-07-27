@@ -272,13 +272,16 @@ export default function CadastroPage() {
   const [modalA4Open, setModalA4Open] = useState(false);
   const [loading, setLoading] = useState(true);
   const [somentePendentes, setSomentePendentes] = useState(true);
-  const [filters, setFilters] = useState({ motoId: '', search: '', semDimensoes: '', comDimensoes: '', preCadastroCompleto: '' });
+  const [filters, setFilters] = useState({ motoId: '', search: '', skus: '', semDimensoes: '', comDimensoes: '', preCadastroCompleto: '' });
   const [searchInput, setSearchInput] = useState('');
+  const [skusListaAberta, setSkusListaAberta] = useState(false);
+  const [skusListaTexto, setSkusListaTexto] = useState('');
   const [resumoOpen, setResumoOpen] = useState(false);
   const [resumoLoading, setResumoLoading] = useState(false);
   const [resumoData, setResumoData] = useState<any>(null);
   const [resumoFiltro, setResumoFiltro] = useState<'' | 'liberadas' | 'pendentes' | 'pendente_imagens' | 'sem_fotos'>('');
   const [resumoFiltroSku, setResumoFiltroSku] = useState('');
+  const [skusCopiados, setSkusCopiados] = useState(false);
   const [paginaCadastro, setPaginaCadastro] = useState<'sku' | 'fotos-drive' | 'fotos' | 'categoria'>('sku');
   // Aba "Fotos Drive" (processamento do zip do Canva)
   const [fdModo, setFdModo] = useState<'data' | 'sku'>('data');
@@ -458,6 +461,7 @@ export default function CadastroPage() {
       if (somentePendentes) params.set('somentePendentes', 'true');
       if (filters.motoId) params.set('motoId', filters.motoId);
       if (filters.search) params.set('search', filters.search);
+      if (filters.skus) params.set('skus', filters.skus);
       if (filters.semDimensoes) params.set('semDimensoes', filters.semDimensoes);
       if (filters.comDimensoes) params.set('comDimensoes', filters.comDimensoes);
       if (filters.preCadastroCompleto) params.set('preCadastroCompleto', filters.preCadastroCompleto);
@@ -484,6 +488,7 @@ export default function CadastroPage() {
       if (somentePendentes) params.set('somentePendentes', 'true');
       if (filters.motoId) params.set('motoId', filters.motoId);
       if (filters.search) params.set('search', filters.search);
+      if (filters.skus) params.set('skus', filters.skus);
       if (filters.semDimensoes) params.set('semDimensoes', filters.semDimensoes);
       if (filters.comDimensoes) params.set('comDimensoes', filters.comDimensoes);
       if (filters.preCadastroCompleto) params.set('preCadastroCompleto', filters.preCadastroCompleto);
@@ -506,6 +511,19 @@ export default function CadastroPage() {
         || (resumoFiltro === 'pendente_imagens' && it.imagens === 'pendente_tratamento')
         || (resumoFiltro === 'sem_fotos' && it.imagens === 'sem_fotos'))
       && (!resumoFiltroSku || String(it.sku).toUpperCase().includes(resumoFiltroSku.toUpperCase())));
+  }
+
+  async function copiarSkusResumo() {
+    const skusOrdenados = itensResumoFiltrados()
+      .map((it: any) => String(it.sku))
+      .sort((a: string, b: string) => a.localeCompare(b, 'pt-BR', { numeric: true, sensitivity: 'base' }));
+    try {
+      await navigator.clipboard.writeText(skusOrdenados.join('\n'));
+      setSkusCopiados(true);
+      setTimeout(() => setSkusCopiados(false), 2000);
+    } catch {
+      alert('Não foi possível copiar. Selecione e copie manualmente.');
+    }
   }
 
   function toggleSortCadastro(key: string) {
@@ -1979,14 +1997,41 @@ export default function CadastroPage() {
               {motos.map((m) => <option key={m.id} value={m.id}>ID {m.id} - {m.marca} {m.modelo}</option>)}
             </select>
             <input style={{ ...s.input, width: isPhone ? '100%' : 200 }} placeholder="Buscar ID ou descrição..." value={searchInput} onChange={(e) => setSearchInput(e.target.value)} />
-            <button style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', fontSize: 12, width: isPhone ? '100%' : undefined }} onClick={() => { setSearchInput(''); setFilters({ motoId: '', search: '', semDimensoes: '', comDimensoes: '', preCadastroCompleto: '' }); }}>Limpar</button>
+            <button
+              style={{ ...s.btn, fontSize: 12, background: filters.skus ? 'var(--blue-600)' : 'var(--white)', color: filters.skus ? '#fff' : 'var(--gray-600)', border: '1px solid var(--border)', width: isPhone ? '100%' : undefined }}
+              onClick={() => { setSkusListaTexto(filters.skus); setSkusListaAberta(!skusListaAberta); }}
+            >📋 Lista de SKUs{filters.skus ? ` (${filters.skus.split(/[\n,]+/).filter(Boolean).length})` : ''}</button>
+            <button style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', fontSize: 12, width: isPhone ? '100%' : undefined }} onClick={() => { setSearchInput(''); setSkusListaTexto(''); setSkusListaAberta(false); setFilters({ motoId: '', search: '', skus: '', semDimensoes: '', comDimensoes: '', preCadastroCompleto: '' }); }}>Limpar</button>
           </div>
+          {skusListaAberta && (
+            <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+              <div style={{ fontSize: 11.5, color: 'var(--gray-400)', marginBottom: 6 }}>Cole os SKUs (um por linha, ou separados por vírgula) para filtrar somente eles:</div>
+              <textarea
+                value={skusListaTexto}
+                onChange={(e) => setSkusListaTexto(e.target.value.toUpperCase())}
+                placeholder={'HD04_0001\nHD04_0002\nPN_0001'}
+                rows={isPhone ? 4 : 3}
+                style={{ ...s.input, width: '100%', resize: 'vertical', fontFamily: 'monospace', fontSize: 12.5 }}
+              />
+              <div style={{ display: 'flex', gap: 8, marginTop: 8, flexDirection: isPhone ? 'column' : 'row' }}>
+                <button
+                  style={{ ...s.btn, background: 'var(--gray-800)', color: '#fff', fontSize: 12, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}
+                  onClick={() => { setFilters((prev) => ({ ...prev, skus: skusListaTexto })); setSkusListaAberta(false); }}
+                >Aplicar filtro</button>
+                <button
+                  style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', fontSize: 12, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}
+                  onClick={() => setSkusListaAberta(false)}
+                >Cancelar</button>
+              </div>
+            </div>
+          )}
         </div>
 
         <div style={{ ...s.card, overflow: 'hidden', maxWidth: '100%' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
             <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>
               {data.total} registro(s){somentePendentes ? ' (pendentes)' : ''}
+              {filters.skus && <span style={{ color: 'var(--blue-600)', fontWeight: 600 }}> · filtrado por lista de SKUs</span>}
               {a4Sel.size > 0 && <span style={{ color: 'var(--blue-600)', fontWeight: 600 }}> · {a4Sel.size} selecionado(s)</span>}
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -2850,6 +2895,10 @@ export default function CadastroPage() {
                       </button>
                     )}
                     <span style={{ fontSize: 12, color: 'var(--gray-400)' }}>Mostrando {itensResumoFiltrados().length} de {resumoData.itens.length}</span>
+                    <button onClick={copiarSkusResumo} disabled={!itensResumoFiltrados().length}
+                      style={{ ...s.btn, fontSize: 12, background: skusCopiados ? '#f0fdf4' : 'var(--white)', border: `1px solid ${skusCopiados ? '#86efac' : 'var(--border)'}`, color: skusCopiados ? '#15803d' : 'var(--gray-600)', width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>
+                      {skusCopiados ? '✓ Copiado' : '📋 Copiar SKUs'}
+                    </button>
                   </div>
 
                   {isPhone ? (

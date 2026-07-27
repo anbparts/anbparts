@@ -415,7 +415,7 @@ async function enviarParaBling(cadastro: any) {
 // GET /cadastro
 cadastroRouter.get('/', async (req, res, next) => {
   try {
-    const { status, motoId, search, semDimensoes, comDimensoes, preCadastroCompleto, semNumeroPeca, page = '1', per = '200', somentePendentes } = req.query as any;
+    const { status, motoId, search, skus, semDimensoes, comDimensoes, preCadastroCompleto, semNumeroPeca, page = '1', per = '200', somentePendentes } = req.query as any;
     const where: any = {};
 
     if (somentePendentes === 'true') {
@@ -431,6 +431,9 @@ cadastroRouter.get('/', async (req, res, next) => {
         { descricao: { contains: normalizedSearch, mode: 'insensitive' } },
       ];
     }
+    // Filtro por lista de SKUs colada (tela: "Lista de SKUs") — casamento exato, case-insensitive.
+    const skusLista = String(skus || '').split(/[\n,]+/).map((s) => s.trim().toUpperCase()).filter(Boolean);
+    if (skusLista.length) where.idPeca = { in: skusLista };
     if (semDimensoes === 'true') {
       where.OR = [...(where.OR || []), { largura: null }, { largura: 0 }, { altura: null }, { altura: 0 }, { profundidade: null }, { profundidade: 0 }];
     }
@@ -881,7 +884,7 @@ cadastroRouter.post('/fotos/drive', async (req, res, next) => {
 // movida pra oficial = completo; senão "Pendente tratamento de imagens") e cadastro no Bling.
 cadastroRouter.get('/resumo', async (req, res, next) => {
   try {
-    const { motoId, search, semDimensoes, comDimensoes, preCadastroCompleto, somentePendentes } = req.query as any;
+    const { motoId, search, skus, semDimensoes, comDimensoes, preCadastroCompleto, somentePendentes } = req.query as any;
     const where: any = {};
     if (somentePendentes === 'true') where.status = { not: 'cadastrado' };
     if (motoId) where.motoId = Number(motoId);
@@ -889,6 +892,8 @@ cadastroRouter.get('/resumo', async (req, res, next) => {
       const s = String(search).trim();
       where.OR = [{ idPeca: { startsWith: s, mode: 'insensitive' } }, { descricao: { contains: s, mode: 'insensitive' } }];
     }
+    const skusLista = String(skus || '').split(/[\n,]+/).map((s) => s.trim().toUpperCase()).filter(Boolean);
+    if (skusLista.length) where.idPeca = { in: skusLista };
     if (semDimensoes === 'true') where.OR = [...(where.OR || []), { largura: null }, { largura: 0 }, { altura: null }, { altura: 0 }, { profundidade: null }, { profundidade: 0 }];
     if (comDimensoes === 'true') where.AND = [...(where.AND || []), { peso: { not: null } }, { largura: { not: null } }, { altura: { not: null } }, { profundidade: { not: null } }];
     if (preCadastroCompleto === 'true') where.AND = [...(where.AND || []),
