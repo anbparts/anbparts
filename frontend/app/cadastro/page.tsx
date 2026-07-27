@@ -2802,16 +2802,16 @@ export default function CadastroPage() {
 
       {/* Modal Resumo de status dos SKUs */}
       {resumoOpen && (
-        <div onClick={() => setResumoOpen(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,.55)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--white)', borderRadius: 14, width: 'min(1000px, 100%)', maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
+        <div onClick={() => setResumoOpen(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,.55)', zIndex: 200, display: 'flex', alignItems: isPhone ? 'stretch' : 'center', justifyContent: 'center', padding: isPhone ? 0 : 20 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--white)', borderRadius: isPhone ? 0 : 14, width: isPhone ? '100%' : 'min(1000px, 100%)', maxHeight: isPhone ? '100dvh' : '90vh', minHeight: isPhone ? '100dvh' : undefined, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: isPhone ? '14px' : '14px 18px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
               <div>
                 <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--gray-800)' }}>📋 Resumo de status</div>
                 <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>SKUs da lista filtrada · verificação ao vivo no Drive</div>
               </div>
-              <button onClick={() => setResumoOpen(false)} style={{ border: 'none', background: 'var(--gray-100)', width: 30, height: 30, borderRadius: 8, cursor: 'pointer', fontSize: 16, color: 'var(--gray-600)' }}>×</button>
+              <button onClick={() => setResumoOpen(false)} style={{ border: 'none', background: 'var(--gray-100)', width: 30, height: 30, borderRadius: 8, cursor: 'pointer', fontSize: 16, color: 'var(--gray-600)', flexShrink: 0 }}>×</button>
             </div>
-            <div style={{ overflow: 'auto', padding: 16 }}>
+            <div style={{ overflow: 'auto', padding: isPhone ? 12 : 16 }}>
               {resumoLoading ? (
                 <div style={{ textAlign: 'center', padding: 48, color: 'var(--gray-400)' }}>⏳ Verificando no Drive... (pode levar alguns segundos)</div>
               ) : resumoData ? (
@@ -2831,7 +2831,7 @@ export default function CadastroPage() {
                         <button key={label} disabled={!clicavel}
                           onClick={() => setResumoFiltro(ehTotal ? '' : (resumoFiltro === chave ? '' : chave))}
                           title={ehTotal ? 'Mostrar todas' : (val > 0 ? 'Filtrar por este status' : 'Sem itens')}
-                          style={{ flex: '1 1 150px', textAlign: 'left', background: bg, borderRadius: 10, padding: '10px 14px', cursor: clicavel ? 'pointer' : 'default', opacity: clicavel ? 1 : 0.5, border: ativo ? `2px solid ${cor}` : '2px solid transparent', fontFamily: 'inherit' }}>
+                          style={{ flex: isPhone ? '1 1 44%' : '1 1 150px', textAlign: 'left', background: bg, borderRadius: 10, padding: '10px 14px', cursor: clicavel ? 'pointer' : 'default', opacity: clicavel ? 1 : 0.5, border: ativo ? `2px solid ${cor}` : '2px solid transparent', fontFamily: 'inherit' }}>
                           <div style={{ fontSize: 20, fontWeight: 800, color: cor }}>{val}</div>
                           <div style={{ fontSize: 11.5, color: 'var(--gray-500)', fontWeight: 600 }}>{label}{ativo ? ' ●' : ''}</div>
                         </button>
@@ -2840,55 +2840,92 @@ export default function CadastroPage() {
                   </div>
 
                   {/* Filtro por SKU + limpar */}
-                  <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
+                  <div style={{ display: 'flex', gap: 10, alignItems: isPhone ? 'stretch' : 'center', flexWrap: 'wrap', flexDirection: isPhone ? 'column' : 'row', marginBottom: 12 }}>
                     <input value={resumoFiltroSku} placeholder="Filtrar por SKU..." onChange={e => setResumoFiltroSku(e.target.value)}
-                      style={{ ...s.input, width: 200, textTransform: 'uppercase' }} />
+                      style={{ ...s.input, width: isPhone ? '100%' : 200, textTransform: 'uppercase' }} />
                     {(resumoFiltro || resumoFiltroSku) && (
                       <button onClick={() => { setResumoFiltro(''); setResumoFiltroSku(''); }}
-                        style={{ ...s.btn, fontSize: 12, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)' }}>
+                        style={{ ...s.btn, fontSize: 12, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>
                         ✕ Limpar filtro
                       </button>
                     )}
                     <span style={{ fontSize: 12, color: 'var(--gray-400)' }}>Mostrando {itensResumoFiltrados().length} de {resumoData.itens.length}</span>
                   </div>
-                  <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 10 }}>
-                    <table style={{ width: '100%', minWidth: 720, borderCollapse: 'collapse', fontSize: 13 }}>
-                      <thead><tr style={{ background: 'var(--gray-50)' }}>
-                        <th style={{ textAlign: 'left', padding: '9px 12px', fontSize: 11, color: 'var(--gray-500)', fontWeight: 700, textTransform: 'uppercase' }}>SKU</th>
-                        <th style={{ textAlign: 'left', padding: '9px 12px', fontSize: 11, color: 'var(--gray-500)', fontWeight: 700, textTransform: 'uppercase' }}>Peça</th>
-                        <th style={{ textAlign: 'left', padding: '9px 12px', fontSize: 11, color: 'var(--gray-500)', fontWeight: 700, textTransform: 'uppercase' }}>Dados</th>
-                        <th style={{ textAlign: 'left', padding: '9px 12px', fontSize: 11, color: 'var(--gray-500)', fontWeight: 700, textTransform: 'uppercase' }}>Imagens</th>
-                        <th style={{ textAlign: 'center', padding: '9px 12px', fontSize: 11, color: 'var(--gray-500)', fontWeight: 700, textTransform: 'uppercase' }}>Status</th>
-                      </tr></thead>
-                      <tbody>
-                        {itensResumoFiltrados().length === 0 ? (
-                          <tr><td colSpan={5} style={{ padding: 24, textAlign: 'center', color: 'var(--gray-400)' }}>Nenhuma peça com esse filtro.</td></tr>
-                        ) : itensResumoFiltrados().map((it: any, i: number) => (
-                          <tr key={it.sku + i} style={{ borderTop: '1px solid #f1f5f9', background: it.liberada ? '#fbfffe' : 'var(--white)' }}>
-                            <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 700, fontSize: 12 }}>{it.sku}</td>
-                            <td style={{ padding: '9px 12px', color: 'var(--gray-700)' }}>{it.descricao}</td>
-                            <td style={{ padding: '9px 12px' }}>
-                              {it.dadosFaltando.length === 0
-                                ? <span style={{ color: '#15803d' }}>✓ completo</span>
-                                : <span style={{ color: '#c2410c' }}>falta: {it.dadosFaltando.join(', ')}</span>}
-                            </td>
-                            <td style={{ padding: '9px 12px' }}>
-                              {it.imagens === 'completo'
-                                ? <span style={{ color: '#15803d' }}>✓ completo <span style={{ color: 'var(--gray-400)', fontSize: 11 }}>({it.motivo})</span></span>
-                                : it.imagens === 'pendente_tratamento'
-                                  ? <span style={{ color: '#c2410c', fontWeight: 600 }}>⚠ Pendente tratamento</span>
-                                  : <span style={{ color: '#b91c1c', fontWeight: 600 }}>✗ Sem fotos disponíveis</span>}
-                            </td>
-                            <td style={{ padding: '9px 12px', textAlign: 'center' }}>
-                              <span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 700, background: it.liberada ? '#ecfdf3' : '#fff7ed', color: it.liberada ? '#047857' : '#c2410c' }}>
+
+                  {isPhone ? (
+                    itensResumoFiltrados().length === 0 ? (
+                      <div style={{ padding: 24, textAlign: 'center', color: 'var(--gray-400)' }}>Nenhuma peça com esse filtro.</div>
+                    ) : (
+                      <div style={{ display: 'grid', gap: 10 }}>
+                        {itensResumoFiltrados().map((it: any, i: number) => (
+                          <div key={it.sku + i} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 12, background: it.liberada ? '#fbfffe' : 'var(--white)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+                              <div style={{ minWidth: 0 }}>
+                                <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 12, color: 'var(--gray-800)' }}>{it.sku}</div>
+                                <div style={{ fontSize: 12.5, color: 'var(--gray-700)', marginTop: 2 }}>{it.descricao}</div>
+                              </div>
+                              <span style={{ flexShrink: 0, display: 'inline-block', padding: '2px 10px', borderRadius: 999, fontSize: 11, fontWeight: 700, background: it.liberada ? '#ecfdf3' : '#fff7ed', color: it.liberada ? '#047857' : '#c2410c' }}>
                                 {it.liberada ? 'Liberada' : 'Pendências'}
                               </span>
-                            </td>
-                          </tr>
+                            </div>
+                            <div style={{ display: 'grid', gap: 4, marginTop: 8, fontSize: 12 }}>
+                              <div>
+                                {it.dadosFaltando.length === 0
+                                  ? <span style={{ color: '#15803d' }}>✓ dados completos</span>
+                                  : <span style={{ color: '#c2410c' }}>dados: falta {it.dadosFaltando.join(', ')}</span>}
+                              </div>
+                              <div>
+                                {it.imagens === 'completo'
+                                  ? <span style={{ color: '#15803d' }}>✓ imagens completas <span style={{ color: 'var(--gray-400)', fontSize: 11 }}>({it.motivo})</span></span>
+                                  : it.imagens === 'pendente_tratamento'
+                                    ? <span style={{ color: '#c2410c', fontWeight: 600 }}>⚠ imagens pendente tratamento</span>
+                                    : <span style={{ color: '#b91c1c', fontWeight: 600 }}>✗ sem fotos disponíveis</span>}
+                              </div>
+                            </div>
+                          </div>
                         ))}
-                      </tbody>
-                    </table>
-                  </div>
+                      </div>
+                    )
+                  ) : (
+                    <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 10 }}>
+                      <table style={{ width: '100%', minWidth: 720, borderCollapse: 'collapse', fontSize: 13 }}>
+                        <thead><tr style={{ background: 'var(--gray-50)' }}>
+                          <th style={{ textAlign: 'left', padding: '9px 12px', fontSize: 11, color: 'var(--gray-500)', fontWeight: 700, textTransform: 'uppercase' }}>SKU</th>
+                          <th style={{ textAlign: 'left', padding: '9px 12px', fontSize: 11, color: 'var(--gray-500)', fontWeight: 700, textTransform: 'uppercase' }}>Peça</th>
+                          <th style={{ textAlign: 'left', padding: '9px 12px', fontSize: 11, color: 'var(--gray-500)', fontWeight: 700, textTransform: 'uppercase' }}>Dados</th>
+                          <th style={{ textAlign: 'left', padding: '9px 12px', fontSize: 11, color: 'var(--gray-500)', fontWeight: 700, textTransform: 'uppercase' }}>Imagens</th>
+                          <th style={{ textAlign: 'center', padding: '9px 12px', fontSize: 11, color: 'var(--gray-500)', fontWeight: 700, textTransform: 'uppercase' }}>Status</th>
+                        </tr></thead>
+                        <tbody>
+                          {itensResumoFiltrados().length === 0 ? (
+                            <tr><td colSpan={5} style={{ padding: 24, textAlign: 'center', color: 'var(--gray-400)' }}>Nenhuma peça com esse filtro.</td></tr>
+                          ) : itensResumoFiltrados().map((it: any, i: number) => (
+                            <tr key={it.sku + i} style={{ borderTop: '1px solid #f1f5f9', background: it.liberada ? '#fbfffe' : 'var(--white)' }}>
+                              <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 700, fontSize: 12 }}>{it.sku}</td>
+                              <td style={{ padding: '9px 12px', color: 'var(--gray-700)' }}>{it.descricao}</td>
+                              <td style={{ padding: '9px 12px' }}>
+                                {it.dadosFaltando.length === 0
+                                  ? <span style={{ color: '#15803d' }}>✓ completo</span>
+                                  : <span style={{ color: '#c2410c' }}>falta: {it.dadosFaltando.join(', ')}</span>}
+                              </td>
+                              <td style={{ padding: '9px 12px' }}>
+                                {it.imagens === 'completo'
+                                  ? <span style={{ color: '#15803d' }}>✓ completo <span style={{ color: 'var(--gray-400)', fontSize: 11 }}>({it.motivo})</span></span>
+                                  : it.imagens === 'pendente_tratamento'
+                                    ? <span style={{ color: '#c2410c', fontWeight: 600 }}>⚠ Pendente tratamento</span>
+                                    : <span style={{ color: '#b91c1c', fontWeight: 600 }}>✗ Sem fotos disponíveis</span>}
+                              </td>
+                              <td style={{ padding: '9px 12px', textAlign: 'center' }}>
+                                <span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 700, background: it.liberada ? '#ecfdf3' : '#fff7ed', color: it.liberada ? '#047857' : '#c2410c' }}>
+                                  {it.liberada ? 'Liberada' : 'Pendências'}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                   <div style={{ fontSize: 11.5, color: 'var(--gray-400)', marginTop: 10 }}>
                     Imagens: “completo” = zip na pasta pendente ou 2+ fotos tratadas (nome Capa/02...) · “Pendente tratamento” = 2+ fotos cruas mas sem zip · “Sem fotos disponíveis” = nenhuma ou só 1 foto. Dados = dimensões, nº peça, localização e preço.
                   </div>
