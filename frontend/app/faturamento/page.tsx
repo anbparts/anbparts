@@ -735,6 +735,42 @@ export default function FaturamentoMotoPage() {
                               </tr>
                             );
                           })}
+                        {estoqueConsolidadoFiltrado.length > 0 && (() => {
+                          const meses = estoqueConsolidadoFiltrado.length;
+                          const totalVendido = estoqueConsolidadoFiltrado.reduce((acc: number, c: any) => acc + (c.vendido || 0), 0);
+                          const totalPct = estoqueConsolidadoFiltrado.reduce((acc: number, c: any) => acc + (c.percentual || 0), 0);
+                          const totalQtd = estoqueConsolidadoFiltrado.reduce((acc: number, c: any) => acc + (c.qtdVendida || 0), 0);
+                          return (
+                            <>
+                              <tr style={{ background: 'var(--gray-50)', borderTop: '2px solid var(--border)' }}>
+                                <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap' as const }}>Total</td>
+                                <td style={cs.td}>-</td>
+                                <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, fontWeight: 700, color: 'var(--sage)', ...sensitiveMaskStyle(hidden) }}>
+                                  {sensitiveText(fmt(totalVendido), hidden)}
+                                </td>
+                                <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, fontWeight: 700, ...sensitiveMaskStyle(hidden) }}>
+                                  {sensitiveText(`${totalPct.toFixed(1)}%`, hidden)}
+                                </td>
+                                <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, fontWeight: 700, ...sensitiveMaskStyle(hidden) }}>
+                                  {sensitiveText(String(totalQtd), hidden)}
+                                </td>
+                              </tr>
+                              <tr style={{ background: 'var(--gray-50)' }}>
+                                <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap' as const }}>Média/mês</td>
+                                <td style={cs.td}>-</td>
+                                <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, fontWeight: 700, color: 'var(--sage)', ...sensitiveMaskStyle(hidden) }}>
+                                  {sensitiveText(fmt(totalVendido / meses), hidden)}
+                                </td>
+                                <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, fontWeight: 700, ...sensitiveMaskStyle(hidden) }}>
+                                  {sensitiveText(`${(totalPct / meses).toFixed(1)}%`, hidden)}
+                                </td>
+                                <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, fontWeight: 700, ...sensitiveMaskStyle(hidden) }}>
+                                  {sensitiveText((totalQtd / meses).toFixed(1), hidden)}
+                                </td>
+                              </tr>
+                            </>
+                          );
+                        })()}
                       </tbody>
                     </table>
                   </div>
