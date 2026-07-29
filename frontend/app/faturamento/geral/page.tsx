@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { ChartPanel, DonutChart, HeatmapChart, HorizontalBarChart, ViewModeSwitch, type ViewMode } from '@/components/finance/Charts';
 import { api } from '@/lib/api';
 import { API_BASE } from '@/lib/api-base';
@@ -52,6 +52,14 @@ const FAIXAS_GIRO: { label: string; min: number; max: number }[] = [
   { label: '91 a 180 dias', min: 91, max: 180 },
   { label: '181 a 365 dias', min: 181, max: 365 },
   { label: 'Mais de 365 dias', min: 366, max: Infinity },
+];
+
+const FAIXAS_VALOR: { label: string; min: number; max: number }[] = [
+  { label: 'Ate R$ 300,00', min: 0, max: 300 },
+  { label: 'R$ 300,01 a R$ 600,00', min: 300.01, max: 600 },
+  { label: 'R$ 600,01 a R$ 1.000,00', min: 600.01, max: 1000 },
+  { label: 'R$ 1.000,01 a R$ 1.500,00', min: 1000.01, max: 1500 },
+  { label: 'Acima de R$ 1.500,00', min: 1500.01, max: Infinity },
 ];
 
 function mediaDias(valores: number[]) {
@@ -117,6 +125,7 @@ export default function FaturamentoGeralPage() {
   const [giroMes, setGiroMes] = useState('');
   const [giroMarca, setGiroMarca] = useState('');
   const [giroMoto, setGiroMoto] = useState('');
+  const [valorFaixaAberta, setValorFaixaAberta] = useState('');
   const { hidden } = useCompanyValueVisibility();
   const viewportMode = useFinancialViewportMode();
   const isPhone = viewportMode === 'phone';
@@ -133,7 +142,7 @@ export default function FaturamentoGeralPage() {
   }, []);
 
   useEffect(() => {
-    if (modo !== 'giro' || giroData) return;
+    if ((modo !== 'giro' && modo !== 'valor') || giroData) return;
     setGiroLoading(true);
     fetch(`${API}/faturamento/tempo-giro`, { credentials: 'include' })
       .then((r) => r.json())
@@ -308,6 +317,19 @@ export default function FaturamentoGeralPage() {
     .sort((a, b) => b.qtd - a.qtd)
     .slice(0, 30);
 
+  const valorDistribuicao = FAIXAS_VALOR.map((faixa) => {
+    const itens = giroFiltrado.filter((l: any) => l.valor >= faixa.min && l.valor <= faixa.max);
+    const porMotoMap = new Map<number, { moto: string; qtd: number }>();
+    itens.forEach((l: any) => {
+      const atual = porMotoMap.get(l.motoId) || { moto: l.moto, qtd: 0 };
+      atual.qtd += 1;
+      porMotoMap.set(l.motoId, atual);
+    });
+    const porMoto = Array.from(porMotoMap.values()).sort((a, b) => b.qtd - a.qtd);
+    return { label: faixa.label, qtd: itens.length, porMoto };
+  });
+  const valorTotalGeral = giroFiltrado.length;
+
   return (
     <>
       <div style={{ ...cs.topbar, alignItems: isCompact ? 'flex-start' : 'center', flexDirection: isCompact ? 'column' : 'row', gap: 10, padding: isCompact ? '14px 16px' : cs.topbar.padding }}>
@@ -315,11 +337,11 @@ export default function FaturamentoGeralPage() {
           <div style={cs.title}>Faturamento Geral</div>
           <div style={cs.sub}>Receita total consolidada</div>
         </div>
-        <ViewModeSwitch value={modo} onChange={setModo} modes={['grafico', 'relatorio', 'giro']} />
+        <ViewModeSwitch value={modo} onChange={setModo} modes={['grafico', 'relatorio', 'giro', 'valor']} />
       </div>
 
       <div style={{ padding: isCompact ? 16 : 28 }}>
-        {modo !== 'giro' && (
+        {modo !== 'giro' && modo !== 'valor' && (
           <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 20 }}>
             {[
               { label: 'Receita total', value: fmt(totalReceita), color: 'var(--sage)' },
@@ -342,7 +364,7 @@ export default function FaturamentoGeralPage() {
           </div>
         )}
 
-        {modo !== 'giro' && (
+        {modo !== 'giro' && modo !== 'valor' && (
           <div style={{ ...cs.card, marginBottom: 20 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: isCompact ? '14px 16px' : '14px 18px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', gap: 10 }}>
               <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>Filtros</div>
@@ -354,7 +376,7 @@ export default function FaturamentoGeralPage() {
           </div>
         )}
 
-        {modo === 'giro' && (
+        {(modo === 'giro' || modo === 'valor') && (
           <div style={{ ...cs.card, marginBottom: 20 }}>
             <div style={{ padding: isCompact ? '14px 16px' : '14px 18px', borderBottom: '1px solid var(--border)' }}>
               <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>Filtros</div>
@@ -380,7 +402,59 @@ export default function FaturamentoGeralPage() {
           </div>
         )}
 
-        {modo === 'giro' ? (
+        {modo === 'valor' ? (
+          giroLoading ? (
+            <div style={{ ...cs.card, padding: 28, color: 'var(--ink-muted)' }}>Carregando distribuicao por valor...</div>
+          ) : (
+            <div style={cs.card}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: isCompact ? '14px 16px' : '14px 18px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', gap: 10 }}>
+                <div>
+                  <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>Distribuicao por Valor</div>
+                  <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>Quantidade de pecas vendidas por faixa de preco, detalhado por moto.</div>
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--ink-muted)' }}>{valorTotalGeral} peca(s) no filtro</div>
+              </div>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
+                    <tr>{['Por valor', 'Moto', 'Qtd.'].map((h) => <th key={h} style={cs.th}>{h}</th>)}</tr>
+                  </thead>
+                  <tbody>
+                    {valorDistribuicao.every((f) => f.qtd === 0) ? (
+                      <tr><td colSpan={3} style={{ ...cs.td, textAlign: 'center', color: 'var(--ink-muted)', padding: '30px 20px' }}>Sem vendas no filtro</td></tr>
+                    ) : valorDistribuicao.map((faixa) => {
+                      const aberta = valorFaixaAberta === faixa.label;
+                      return (
+                        <Fragment key={faixa.label}>
+                          <tr onClick={() => setValorFaixaAberta(aberta ? '' : faixa.label)} style={{ cursor: faixa.qtd > 0 ? 'pointer' : 'default', background: 'var(--gray-50)' }}>
+                            <td style={{ ...cs.td, fontWeight: 700 }}>
+                              {faixa.qtd > 0 && <span style={{ display: 'inline-block', width: 18, color: 'var(--ink-muted)' }}>{aberta ? '−' : '+'}</span>}
+                              {faixa.label}
+                            </td>
+                            <td style={cs.td} />
+                            <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontWeight: 700 }}>{faixa.qtd}</td>
+                          </tr>
+                          {aberta && faixa.porMoto.map((m) => (
+                            <tr key={`${faixa.label}-${m.moto}`}>
+                              <td style={cs.td} />
+                              <td style={{ ...cs.td, fontSize: 12.5 }}>{m.moto}</td>
+                              <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12.5 }}>{m.qtd}</td>
+                            </tr>
+                          ))}
+                        </Fragment>
+                      );
+                    })}
+                    <tr style={{ background: 'var(--gray-50)', borderTop: '2px solid var(--border)' }}>
+                      <td style={{ ...cs.td, fontWeight: 700 }}>Total geral</td>
+                      <td style={cs.td} />
+                      <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontWeight: 700 }}>{valorTotalGeral}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )
+        ) : modo === 'giro' ? (
           giroLoading ? (
             <div style={{ ...cs.card, padding: 28, color: 'var(--ink-muted)' }}>Carregando tempo de giro...</div>
           ) : (
