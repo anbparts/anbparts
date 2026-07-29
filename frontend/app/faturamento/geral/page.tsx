@@ -289,7 +289,7 @@ export default function FaturamentoGeralPage() {
 
   const giroPorMotoMap = new Map<number, { moto: string; dias: number[] }>();
   giroFiltrado.forEach((l: any) => {
-    const atual = giroPorMotoMap.get(l.motoId) || { moto: l.moto, dias: [] };
+    const atual = giroPorMotoMap.get(l.motoId) || { moto: l.moto, dias: [] as number[] };
     atual.dias.push(l.diasGiro);
     giroPorMotoMap.set(l.motoId, atual);
   });
@@ -299,7 +299,7 @@ export default function FaturamentoGeralPage() {
 
   const giroPorSkuMap = new Map<string, { dias: number[] }>();
   giroFiltrado.forEach((l: any) => {
-    const atual = giroPorSkuMap.get(l.skuBase) || { dias: [] };
+    const atual = giroPorSkuMap.get(l.skuBase) || { dias: [] as number[] };
     atual.dias.push(l.diasGiro);
     giroPorSkuMap.set(l.skuBase, atual);
   });
