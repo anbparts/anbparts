@@ -899,7 +899,7 @@ export default function VendasBlingPage() {
         )}
       </div>
 
-      <div style={{ padding: isPhone ? 16 : 28 }}>
+      <div style={{ padding: isPhone ? 16 : 28, paddingBottom: isPhone ? 'calc(96px + env(safe-area-inset-bottom))' : 28 }}>
         <div style={{ ...s.card, padding: isPhone ? 16 : s.card.padding }}>
           <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 14 }}>Buscar pedidos do Bling</div>
           <div style={{ display: isPhone ? 'grid' : 'flex', gridTemplateColumns: '1fr', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
