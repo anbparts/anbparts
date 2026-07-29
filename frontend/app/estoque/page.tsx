@@ -1442,7 +1442,7 @@ function PecaDetalheModal({ open, peca, onClose, onSaved, canEditarPeca = false,
   );
 }
 
-function PecaActionsModal({ open, peca, onClose, onEdit, onSell, onDelete, onDevolucao, canEditarPeca = false, canDevolucoes = false }: any) {
+function PecaActionsModal({ open, peca, onClose, onEdit, onEditTexto, onSell, onDelete, onDevolucao, canEditarPeca = false, canDevolucoes = false }: any) {
   if (!open || !peca) return null;
   const bloqueadaPrejuizo = isPrejuizoPeca(peca);
   const pendenteEtiqueta = Boolean(peca.etiquetaPendente);
@@ -1471,6 +1471,9 @@ function PecaActionsModal({ open, peca, onClose, onEdit, onSell, onDelete, onDev
               )}
               {canEditarPeca && <button onClick={onEdit} style={{ ...cs.btn, width: '100%', justifyContent: 'center', background: 'var(--white)', color: 'var(--ink)', borderColor: 'var(--border-strong)' }}>
                 Editar
+              </button>}
+              {canEditarPeca && <button onClick={onEditTexto} style={{ ...cs.btn, width: '100%', justifyContent: 'center', background: 'var(--white)', color: 'var(--ink)', borderColor: 'var(--border-strong)' }}>
+                Editar Texto
               </button>}
               {peca.disponivel && canEditarPeca && !pendenteEtiqueta ? (
                 <button onClick={onSell} style={{ ...cs.btn, width: '100%', justifyContent: 'center', background: 'var(--amber-light)', color: 'var(--amber)', borderColor: 'var(--amber-mid)' }}>
@@ -2597,6 +2600,131 @@ function HistoricoPrecoModal({ onClose, skuInicial }: any) {
   );
 }
 
+// Modal "Editar Texto" (botão em Ações da peça): le a descricao longa (corpo do anuncio) atual
+// no Bling e, ao salvar, replica pro Bling + Mercado Livre (texto simples) + Nuvemshop.
+function EditarTextoModal({ peca, onClose }: any) {
+  const [loading, setLoading] = useState(true);
+  const [salvando, setSalvando] = useState(false);
+  const [descricaoHtml, setDescricaoHtml] = useState('');
+  const [erro, setErro] = useState('');
+  const [resultado, setResultado] = useState<any>(null);
+  const editorRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setErro('');
+    setResultado(null);
+    fetch(`${API_BASE}/cadastro/descricao-peca?sku=${encodeURIComponent(peca.idPeca)}`, { credentials: 'include' })
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        if (!data.ok) { setErro(data.error || 'Erro ao carregar descrição'); return; }
+        setDescricaoHtml(data.descricaoCurta || '');
+      })
+      .catch((e) => { if (!cancelled) setErro(e.message || 'Erro ao carregar descrição'); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [peca.idPeca]);
+
+  useEffect(() => {
+    const el = editorRef.current;
+    if (el && document.activeElement !== el && el.innerHTML !== descricaoHtml) {
+      el.innerHTML = descricaoHtml;
+    }
+  }, [descricaoHtml, loading]);
+
+  function inserirHtml(cmd: string) {
+    document.execCommand(cmd, false);
+    const el = editorRef.current;
+    if (el) setDescricaoHtml(el.innerHTML);
+  }
+
+  async function salvar() {
+    setSalvando(true);
+    setErro('');
+    setResultado(null);
+    try {
+      const resp = await fetch(`${API_BASE}/cadastro/atualizar-descricao-peca`, {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sku: peca.idPeca, descricaoHtml }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || 'Erro ao salvar');
+      setResultado(data);
+    } catch (e: any) {
+      setErro(e.message || 'Erro ao salvar');
+    }
+    setSalvando(false);
+  }
+
+  const nomes: Record<string, string> = { bling: 'Bling', ml: 'Mercado Livre', nuvemshop: 'Nuvemshop' };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 420, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, backdropFilter: 'blur(2px)' }}>
+      <div style={{ background: 'var(--white)', borderRadius: 16, width: '100%', maxWidth: 700, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,.2)', overflow: 'hidden' }}>
+        <div style={{ padding: '16px 22px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+          <div>
+            <div style={{ fontFamily: 'Fraunces, serif', fontSize: 17, fontWeight: 700 }}>Editar Texto</div>
+            <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>{peca.idPeca} — corpo do anúncio (Bling, Mercado Livre e Nuvemshop)</div>
+          </div>
+          <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', fontSize: 16 }}>✕</button>
+        </div>
+
+        <div style={{ padding: 20, overflow: 'auto', flex: 1 }}>
+          {loading ? (
+            <div style={{ textAlign: 'center', padding: 40, color: 'var(--ink-muted)' }}>Carregando descrição atual do Bling...</div>
+          ) : erro && !descricaoHtml ? (
+            <div style={{ color: '#dc2626', fontSize: 13 }}>{erro}</div>
+          ) : (
+            <>
+              <div style={{ fontSize: 11.5, color: 'var(--ink-muted)', marginBottom: 8 }}>
+                Ao salvar, o texto é atualizado no Bling, no Mercado Livre (sem formatação — o ML só aceita texto simples) e na Nuvemshop.
+              </div>
+              <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+                <div style={{ display: 'flex', gap: 4, padding: '6px 10px', background: '#f8fafc', borderBottom: '1px solid var(--border)' }}>
+                  {[{ label: 'B', cmd: 'bold', style: { fontWeight: 700 } }, { label: 'I', cmd: 'italic', style: { fontStyle: 'italic' } }, { label: 'U', cmd: 'underline', style: { textDecoration: 'underline' } }].map(({ label, cmd, style }) => (
+                    <button key={cmd} type="button"
+                      onMouseDown={(e) => { e.preventDefault(); inserirHtml(cmd); }}
+                      style={{ ...style, border: '1px solid var(--border)', background: 'var(--white)', borderRadius: 4, padding: '4px 10px', fontSize: 13, cursor: 'pointer', fontFamily: 'serif' }}>{label}</button>
+                  ))}
+                </div>
+                <div
+                  ref={editorRef}
+                  contentEditable
+                  suppressContentEditableWarning
+                  style={{ padding: 10, minHeight: 220, maxHeight: 360, overflowY: 'auto', whiteSpace: 'pre-wrap', outline: 'none', fontSize: 13.5 }}
+                  onInput={(e) => setDescricaoHtml((e.target as HTMLDivElement).innerHTML)}
+                />
+              </div>
+            </>
+          )}
+
+          {erro && descricaoHtml && <div style={{ color: '#dc2626', fontSize: 12, marginTop: 10 }}>{erro}</div>}
+
+          {resultado && (
+            <div style={{ marginTop: 12, fontSize: 12.5 }}>
+              {Object.keys(nomes).map((k) => resultado.resultados?.[k] && (
+                <div key={k} style={{ color: resultado.resultados[k].ok ? '#16a34a' : '#dc2626', marginBottom: 3 }}>
+                  {resultado.resultados[k].ok ? '✓' : '✗'} {nomes[k]}{!resultado.resultados[k].ok && resultado.resultados[k].error ? `: ${resultado.resultados[k].error}` : ''}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div style={{ padding: '14px 22px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+          <button onClick={onClose} style={{ ...cs.btn, background: 'var(--white)', border: '1px solid var(--border)' }}>Fechar</button>
+          <button onClick={salvar} disabled={salvando || loading} style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)', opacity: (salvando || loading) ? 0.6 : 1 }}>
+            {salvando ? 'Salvando...' : 'Salvar e sincronizar'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function EstoquePage() {
   const { user } = useAuth();
   const canEditarPeca = canProcessAction(user, 'estoque', 'editar');
@@ -2617,6 +2745,7 @@ export default function EstoquePage() {
   const [vendaModal, setVendaModal] = useState(false);
   const [vendaPeca, setVendaPeca] = useState<any>(null);
   const [actionPeca, setActionPeca] = useState<any>(null);
+  const [editTextoPeca, setEditTextoPeca] = useState<any>(null);
   const [detranPeca, setDetranPeca] = useState<any>(null);
   const [detalhePeca, setDetalhePeca] = useState<any>(null);
   const [selectedPecaIds, setSelectedPecaIds] = useState<number[]>([]);
@@ -4275,9 +4404,18 @@ export default function EstoquePage() {
           setActionPeca(null);
           setDevolucaoModal(true);
         }}
+        onEditTexto={() => {
+          if (!canEditarPeca) return;
+          if (isPrejuizoPeca(actionPeca)) return;
+          setEditTextoPeca(actionPeca);
+          setActionPeca(null);
+        }}
         canEditarPeca={canEditarPeca}
         canDevolucoes={canDevolucoes}
       />
+      {canEditarPeca && editTextoPeca && (
+        <EditarTextoModal peca={editTextoPeca} onClose={() => setEditTextoPeca(null)} />
+      )}
       {/* Modal de Devolução */}
       {canDevolucoes && devolucaoModal && devolucaoPeca && (
         <DevolucaoModal

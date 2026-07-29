@@ -1574,6 +1574,151 @@ cadastroRouter.post('/sync-preco-plataformas', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// Converte o HTML do editor (corpo do anuncio) pra texto simples — o Mercado Livre so aceita
+// texto puro na descricao (sem negrito/italico/etc, quebra de linha via \n).
+function htmlParaTextoPlanoML(html: string) {
+  return String(html || '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(div|p|li)>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+// Resolve o ID do produto no Bling a partir do SKU base (CadastroPeca.blingProdutoId, ou busca
+// direta no Bling por codigo). Compartilhado entre leitura e gravacao da descricao longa.
+async function resolverBlingProdutoIdPorSku(baseSku: string): Promise<string | null> {
+  const cadastro = await prisma.cadastroPeca.findFirst({
+    where: { idPeca: { equals: baseSku, mode: 'insensitive' } },
+    select: { blingProdutoId: true },
+  });
+  if (cadastro?.blingProdutoId) return cadastro.blingProdutoId;
+
+  const blingSearch = await blingReq(`/produtos?criterio=2&tipo=P&codigo=${encodeURIComponent(baseSku)}&pagina=1&limite=5`);
+  const found = (blingSearch?.data || []).find((p: any) => String(p.codigo || '').toUpperCase() === baseSku);
+  return found ? String(found.id) : null;
+}
+
+// GET /cadastro/descricao-peca?sku=XXX — le a descricao longa (corpo do anuncio) atual no Bling,
+// pra preencher o editor da tela "Editar Texto" (Estoque > Acoes da peca).
+cadastroRouter.get('/descricao-peca', async (req, res, next) => {
+  try {
+    const sku = String(req.query?.sku || '').trim().toUpperCase();
+    if (!sku) return res.status(400).json({ ok: false, error: 'sku obrigatorio' });
+    const baseSku = getBaseSku(sku);
+
+    const blingProdutoId = await resolverBlingProdutoIdPorSku(baseSku);
+    if (!blingProdutoId) return res.status(404).json({ ok: false, error: 'Produto nao encontrado no Bling' });
+
+    const blingAtual = await blingReq(`/produtos/${blingProdutoId}`);
+    const descricaoCurta = blingAtual?.data?.descricaoCurta || '';
+    res.json({ ok: true, descricaoCurta });
+  } catch (e) { next(e); }
+});
+
+// Sincroniza a descricao longa (corpo do anuncio, HTML) com Bling, Mercado Livre e Nuvemshop.
+// Bling e Nuvemshop aceitam HTML; o Mercado Livre so aceita texto simples (endpoint dedicado
+// /items/{id}/description), entao o HTML e convertido antes de enviar pra la. Sem rollback
+// entre plataformas — cada uma retorna seu proprio resultado, igual syncPrecoPlataformas.
+export async function syncDescricaoLongaPlataformas(skuInput: string, descricaoHtml: string) {
+  const sku = String(skuInput || '').trim().toUpperCase();
+  if (!sku) return { ok: false, resultados: {}, error: 'sku obrigatorio' };
+  if (!String(descricaoHtml || '').trim()) return { ok: false, resultados: {}, error: 'descricao obrigatoria' };
+
+  const baseSku = getBaseSku(sku);
+  const BLING_READONLY = ['id', 'dataCriacao', 'dataAlteracao', 'imagemURL', 'imagens', 'depositos', 'variacoes', 'estrutura', 'categorias', 'anexos'];
+
+  type PlataformaResultado = { ok: boolean; error?: string };
+  const resultados: Record<string, PlataformaResultado> = {};
+
+  // ── 1. Bling ──────────────────────────────────────────────────────────────
+  try {
+    const blingProdutoId = await resolverBlingProdutoIdPorSku(baseSku);
+    if (!blingProdutoId) {
+      resultados.bling = { ok: false, error: 'Produto nao encontrado no Bling' };
+    } else {
+      const blingAtual = await blingReq(`/produtos/${blingProdutoId}`);
+      const b = blingAtual?.data;
+      if (!b) throw new Error('Produto nao carregado do Bling');
+      const payload: any = { ...b };
+      for (const f of BLING_READONLY) delete payload[f];
+      payload.descricaoCurta = descricaoHtml;
+      payload.unidade      = 'UN';
+      payload.tipoProducao = 'T';
+      payload.tributacao   = { ...(b.tributacao || {}), ncm: '87141000', cest: '01.076.00' };
+      await blingReq(`/produtos/${blingProdutoId}`, { method: 'PUT', body: JSON.stringify(payload) });
+      resultados.bling = { ok: true };
+    }
+  } catch (e: any) {
+    resultados.bling = { ok: false, error: e?.message || 'Erro desconhecido' };
+  }
+
+  // ── 2. Mercado Livre ──────────────────────────────────────────────────────
+  try {
+    const pecaComML = await prisma.peca.findFirst({
+      where: {
+        OR: [
+          { idPeca: { equals: baseSku, mode: 'insensitive' } },
+          { idPeca: { startsWith: `${baseSku}-`, mode: 'insensitive' } },
+        ],
+        mercadoLivreItemId: { not: null },
+      },
+      select: { mercadoLivreItemId: true },
+    });
+    const mlItemId = pecaComML?.mercadoLivreItemId;
+    if (!mlItemId) {
+      resultados.ml = { ok: false, error: 'Anuncio ML nao encontrado para este SKU' };
+    } else {
+      const plainText = htmlParaTextoPlanoML(descricaoHtml);
+      await mercadoLivreReq(`/items/${encodeURIComponent(mlItemId)}/description?api_version=2`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plain_text: plainText }),
+      });
+      resultados.ml = { ok: true };
+    }
+  } catch (e: any) {
+    resultados.ml = { ok: false, error: e?.message || 'Erro desconhecido' };
+  }
+
+  // ── 3. Nuvemshop ──────────────────────────────────────────────────────────
+  try {
+    const produto = await buscarProdutoNuvemshopPorSku(baseSku, true);
+    if (!produto) {
+      resultados.nuvemshop = { ok: false, error: 'Produto nao encontrado no Nuvemshop' };
+    } else {
+      await nuvemReq(`/products/${produto.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description: { pt: descricaoHtml } }),
+      });
+      resultados.nuvemshop = { ok: true };
+    }
+  } catch (e: any) {
+    resultados.nuvemshop = { ok: false, error: e?.message || 'Erro desconhecido' };
+  }
+
+  const todosOk = Object.values(resultados).every((r) => r.ok);
+  console.log(`[sync-descricao-longa] SKU ${baseSku}:`, JSON.stringify(resultados));
+  return { ok: todosOk, resultados };
+}
+
+// POST /cadastro/atualizar-descricao-peca — Body: { sku, descricaoHtml }
+cadastroRouter.post('/atualizar-descricao-peca', async (req, res, next) => {
+  try {
+    const resultado = await syncDescricaoLongaPlataformas(req.body?.sku, req.body?.descricaoHtml);
+    res.json(resultado);
+  } catch (e) { next(e); }
+});
+
 // DELETE /cadastro/:id
 cadastroRouter.delete('/:id', requireCadastroAction('editar_pre_cadastro'), async (req, res, next) => {
   try {
