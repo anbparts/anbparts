@@ -3,7 +3,10 @@
 import { useEffect, useState } from 'react';
 import { ChartPanel, DonutChart, HeatmapChart, HorizontalBarChart, ViewModeSwitch, type ViewMode } from '@/components/finance/Charts';
 import { api } from '@/lib/api';
+import { API_BASE } from '@/lib/api-base';
 import { sensitiveMaskStyle, sensitiveText, useCompanyValueVisibility, useFinancialViewportMode } from '@/lib/company-values';
+
+const API = API_BASE;
 
 const MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 const MESES_FULL = ['Janeiro', 'Fevereiro', 'Marco', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
@@ -29,6 +32,38 @@ function quarterLabel(mes: number) {
 
 function periodKey(ano: number, mes: number) {
   return `${ano}-${String(mes).padStart(2, '0')}`;
+}
+
+function marcaDaMoto(nome: any) {
+  const texto = String(nome || '').trim().replace(/\s+/g, ' ').toUpperCase();
+  if (!texto) return 'SEM MARCA';
+  const marcasCompostas = ['HARLEY DAVIDSON', 'ROYAL ENFIELD', 'MOTO GUZZI', 'MV AGUSTA'];
+  const composta = marcasCompostas.find((marca) => texto.startsWith(marca));
+  if (composta) return composta;
+  return texto.split(' ')[0] || 'SEM MARCA';
+}
+
+const FAIXAS_GIRO: { label: string; min: number; max: number }[] = [
+  { label: 'Ate 7 dias', min: 0, max: 7 },
+  { label: '8 a 15 dias', min: 8, max: 15 },
+  { label: '16 a 30 dias', min: 16, max: 30 },
+  { label: '31 a 60 dias', min: 31, max: 60 },
+  { label: '61 a 90 dias', min: 61, max: 90 },
+  { label: '91 a 180 dias', min: 91, max: 180 },
+  { label: '181 a 365 dias', min: 181, max: 365 },
+  { label: 'Mais de 365 dias', min: 366, max: Infinity },
+];
+
+function mediaDias(valores: number[]) {
+  if (!valores.length) return 0;
+  return valores.reduce((sum, v) => sum + v, 0) / valores.length;
+}
+
+function medianaDias(valores: number[]) {
+  if (!valores.length) return 0;
+  const ordenado = [...valores].sort((a, b) => a - b);
+  const meio = Math.floor(ordenado.length / 2);
+  return ordenado.length % 2 !== 0 ? ordenado[meio] : (ordenado[meio - 1] + ordenado[meio]) / 2;
 }
 
 const cs: any = {
@@ -76,6 +111,12 @@ export default function FaturamentoGeralPage() {
   const [filtAno, setFiltAno] = useState(currentYear());
   const [loading, setLoading] = useState(true);
   const [modo, setModo] = useState<ViewMode>('grafico');
+  const [giroData, setGiroData] = useState<any[] | null>(null);
+  const [giroLoading, setGiroLoading] = useState(false);
+  const [giroAno, setGiroAno] = useState('');
+  const [giroMes, setGiroMes] = useState('');
+  const [giroMarca, setGiroMarca] = useState('');
+  const [giroMoto, setGiroMoto] = useState('');
   const { hidden } = useCompanyValueVisibility();
   const viewportMode = useFinancialViewportMode();
   const isPhone = viewportMode === 'phone';
@@ -90,6 +131,16 @@ export default function FaturamentoGeralPage() {
       setLoading(false);
     });
   }, []);
+
+  useEffect(() => {
+    if (modo !== 'giro' || giroData) return;
+    setGiroLoading(true);
+    fetch(`${API}/faturamento/tempo-giro`, { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => setGiroData(Array.isArray(d?.linhas) ? d.linhas : []))
+      .catch(() => setGiroData([]))
+      .finally(() => setGiroLoading(false));
+  }, [modo, giroData]);
 
   const anos = Array.from(new Set(data.map((item: any) => item.ano))).sort((a, b) => b - a);
   const filtered = data.filter((item) => !filtAno || item.ano === Number(filtAno));
@@ -209,6 +260,54 @@ export default function FaturamentoGeralPage() {
     };
   });
 
+  const giroRaw = giroData || [];
+  const giroAnos = Array.from(new Set(giroRaw.map((l: any) => l.anoVenda))).sort((a, b) => b - a);
+  const giroMarcas = Array.from(new Set(giroRaw.map((l: any) => marcaDaMoto(l.moto)))).sort();
+  const giroMotosFiltradasPorMarca = Array.from(new Set(giroRaw
+    .filter((l: any) => !giroMarca || marcaDaMoto(l.moto) === giroMarca)
+    .map((l: any) => l.moto)
+  )).sort();
+
+  const giroFiltrado = giroRaw.filter((l: any) =>
+    (!giroAno || l.anoVenda === Number(giroAno)) &&
+    (!giroMes || l.mesVenda === Number(giroMes)) &&
+    (!giroMarca || marcaDaMoto(l.moto) === giroMarca) &&
+    (!giroMoto || l.moto === giroMoto)
+  );
+
+  const giroDistribuicao = FAIXAS_GIRO.map((faixa) => {
+    const itens = giroFiltrado.filter((l: any) => l.diasGiro >= faixa.min && l.diasGiro <= faixa.max);
+    return {
+      label: faixa.label,
+      value: itens.length,
+      note: giroFiltrado.length ? `${((itens.length / giroFiltrado.length) * 100).toFixed(1)}%` : '0%',
+    };
+  });
+
+  const giroMediaGeral = mediaDias(giroFiltrado.map((l: any) => l.diasGiro));
+  const giroMedianaGeral = medianaDias(giroFiltrado.map((l: any) => l.diasGiro));
+
+  const giroPorMotoMap = new Map<number, { moto: string; dias: number[] }>();
+  giroFiltrado.forEach((l: any) => {
+    const atual = giroPorMotoMap.get(l.motoId) || { moto: l.moto, dias: [] };
+    atual.dias.push(l.diasGiro);
+    giroPorMotoMap.set(l.motoId, atual);
+  });
+  const giroPorMoto = Array.from(giroPorMotoMap.entries())
+    .map(([motoId, v]) => ({ motoId, moto: v.moto, qtd: v.dias.length, media: mediaDias(v.dias) }))
+    .sort((a, b) => b.qtd - a.qtd);
+
+  const giroPorSkuMap = new Map<string, { dias: number[] }>();
+  giroFiltrado.forEach((l: any) => {
+    const atual = giroPorSkuMap.get(l.skuBase) || { dias: [] };
+    atual.dias.push(l.diasGiro);
+    giroPorSkuMap.set(l.skuBase, atual);
+  });
+  const giroPorSku = Array.from(giroPorSkuMap.entries())
+    .map(([sku, v]) => ({ sku, qtd: v.dias.length, media: mediaDias(v.dias) }))
+    .sort((a, b) => b.qtd - a.qtd)
+    .slice(0, 30);
+
   return (
     <>
       <div style={{ ...cs.topbar, alignItems: isCompact ? 'flex-start' : 'center', flexDirection: isCompact ? 'column' : 'row', gap: 10, padding: isCompact ? '14px 16px' : cs.topbar.padding }}>
@@ -216,7 +315,7 @@ export default function FaturamentoGeralPage() {
           <div style={cs.title}>Faturamento Geral</div>
           <div style={cs.sub}>Receita total consolidada</div>
         </div>
-        <ViewModeSwitch value={modo} onChange={setModo} />
+        <ViewModeSwitch value={modo} onChange={setModo} modes={['grafico', 'relatorio', 'giro']} />
       </div>
 
       <div style={{ padding: isCompact ? 16 : 28 }}>
@@ -241,17 +340,126 @@ export default function FaturamentoGeralPage() {
           ))}
         </div>
 
-        <div style={{ ...cs.card, marginBottom: 20 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: isCompact ? '14px 16px' : '14px 18px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', gap: 10 }}>
-            <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>Filtros</div>
-            <select style={{ ...cs.sel, width: isCompact ? '100%' : undefined }} value={filtAno} onChange={(e) => setFiltAno(e.target.value)}>
-              <option value="">Todos os anos</option>
-              {anos.map((ano) => <option key={ano} value={ano}>{ano}</option>)}
-            </select>
+        {modo !== 'giro' && (
+          <div style={{ ...cs.card, marginBottom: 20 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: isCompact ? '14px 16px' : '14px 18px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', gap: 10 }}>
+              <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>Filtros</div>
+              <select style={{ ...cs.sel, width: isCompact ? '100%' : undefined }} value={filtAno} onChange={(e) => setFiltAno(e.target.value)}>
+                <option value="">Todos os anos</option>
+                {anos.map((ano) => <option key={ano} value={ano}>{ano}</option>)}
+              </select>
+            </div>
           </div>
-        </div>
+        )}
 
-        {modo === 'grafico' ? (
+        {modo === 'giro' && (
+          <div style={{ ...cs.card, marginBottom: 20 }}>
+            <div style={{ padding: isCompact ? '14px 16px' : '14px 18px', borderBottom: '1px solid var(--border)' }}>
+              <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>Filtros</div>
+              <div style={{ display: 'grid', gridTemplateColumns: isCompact ? '1fr' : 'repeat(4, minmax(150px, 1fr))', gap: 8, marginTop: 10 }}>
+                <select style={{ ...cs.sel, width: isCompact ? '100%' : undefined }} value={giroAno} onChange={(e) => setGiroAno(e.target.value)}>
+                  <option value="">Todos os anos</option>
+                  {giroAnos.map((ano) => <option key={ano} value={ano}>{ano}</option>)}
+                </select>
+                <select style={{ ...cs.sel, width: isCompact ? '100%' : undefined }} value={giroMes} onChange={(e) => setGiroMes(e.target.value)}>
+                  <option value="">Todos os meses</option>
+                  {MESES.map((mes, index) => <option key={index + 1} value={String(index + 1)}>{mes}</option>)}
+                </select>
+                <select style={{ ...cs.sel, width: isCompact ? '100%' : undefined }} value={giroMarca} onChange={(e) => { setGiroMarca(e.target.value); setGiroMoto(''); }}>
+                  <option value="">Todas as marcas</option>
+                  {giroMarcas.map((marca) => <option key={marca} value={marca}>{marca}</option>)}
+                </select>
+                <select style={{ ...cs.sel, width: isCompact ? '100%' : undefined }} value={giroMoto} onChange={(e) => setGiroMoto(e.target.value)}>
+                  <option value="">Todas as motos</option>
+                  {giroMotosFiltradasPorMarca.map((moto) => <option key={moto} value={moto}>{moto}</option>)}
+                </select>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {modo === 'giro' ? (
+          giroLoading ? (
+            <div style={{ ...cs.card, padding: 28, color: 'var(--ink-muted)' }}>Carregando tempo de giro...</div>
+          ) : (
+            <div style={{ display: 'grid', gap: 18 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 }}>
+                {[
+                  { label: 'Tempo medio de giro', value: `${giroMediaGeral.toFixed(1)} dias`, color: 'var(--ink)' },
+                  { label: 'Mediana de giro', value: `${giroMedianaGeral.toFixed(0)} dias`, color: 'var(--ink)' },
+                  { label: 'Pecas analisadas', value: giroFiltrado.length.toLocaleString('pt-BR'), color: 'var(--sage)' },
+                ].map((card) => (
+                  <div key={card.label} style={cs.sCard}>
+                    <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '0.6px', textTransform: 'uppercase', marginBottom: 10 }}>
+                      {card.label}
+                    </div>
+                    <div style={{ fontFamily: 'Fraunces, serif', fontSize: 22, fontWeight: 500, color: card.color }}>{card.value}</div>
+                  </div>
+                ))}
+              </div>
+
+              <ChartPanel
+                title="Distribuicao do tempo de giro"
+                subtitle="Quantidade de pecas vendidas, por faixa de dias entre o cadastro e a venda."
+                accent="#2563eb"
+              >
+                <HorizontalBarChart items={giroDistribuicao} valueFormatter={(v) => `${v} peca(s)`} emptyText="Sem vendas no filtro." />
+              </ChartPanel>
+
+              <div style={{ display: 'grid', gridTemplateColumns: isCompact ? '1fr' : '1fr 1fr', gap: 18 }}>
+                <div style={cs.card}>
+                  <div style={{ padding: isCompact ? '14px 16px' : '14px 18px', borderBottom: '1px solid var(--border)' }}>
+                    <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>Tempo de giro por Moto</div>
+                    <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>Media de dias ate a venda, por moto.</div>
+                  </div>
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
+                        <tr>{['Moto', 'Qtd. vendida', 'Media (dias)'].map((h) => <th key={h} style={cs.th}>{h}</th>)}</tr>
+                      </thead>
+                      <tbody>
+                        {giroPorMoto.length === 0 ? (
+                          <tr><td colSpan={3} style={{ ...cs.td, textAlign: 'center', color: 'var(--ink-muted)', padding: '30px 20px' }}>Sem dados no filtro</td></tr>
+                        ) : giroPorMoto.map((m) => (
+                          <tr key={m.motoId}>
+                            <td style={{ ...cs.td, fontSize: 12 }}>{m.moto}</td>
+                            <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12 }}>{m.qtd}</td>
+                            <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, fontWeight: 600 }}>{m.media.toFixed(1)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div style={cs.card}>
+                  <div style={{ padding: isCompact ? '14px 16px' : '14px 18px', borderBottom: '1px solid var(--border)' }}>
+                    <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>Tempo de giro por SKU</div>
+                    <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>Top 30 SKUs por quantidade vendida no filtro.</div>
+                  </div>
+                  <div style={{ overflowX: 'auto', maxHeight: 420, overflowY: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)', position: 'sticky' as const, top: 0 }}>
+                        <tr>{['SKU', 'Qtd. vendida', 'Media (dias)'].map((h) => <th key={h} style={cs.th}>{h}</th>)}</tr>
+                      </thead>
+                      <tbody>
+                        {giroPorSku.length === 0 ? (
+                          <tr><td colSpan={3} style={{ ...cs.td, textAlign: 'center', color: 'var(--ink-muted)', padding: '30px 20px' }}>Sem dados no filtro</td></tr>
+                        ) : giroPorSku.map((s) => (
+                          <tr key={s.sku}>
+                            <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12 }}>{s.sku}</td>
+                            <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12 }}>{s.qtd}</td>
+                            <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, fontWeight: 600 }}>{s.media.toFixed(1)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )
+        ) : modo === 'grafico' ? (
           loading ? (
             <div style={{ ...cs.card, padding: 28, color: 'var(--ink-muted)' }}>Carregando visualizacao...</div>
           ) : (

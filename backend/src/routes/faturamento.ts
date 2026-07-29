@@ -93,6 +93,44 @@ faturamentoRouter.get('/por-moto', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// GET /faturamento/tempo-giro — tempo entre cadastro da peca e a venda (dias), peca a peca.
+// Retorna dado bruto (1 linha por peca vendida) pra o frontend montar distribuicao por faixa
+// e medias gerais/por SKU/por moto, com os mesmos filtros de ano/mes/marca/moto da aba estoque.
+faturamentoRouter.get('/tempo-giro', async (req, res, next) => {
+  try {
+    const pecas = await prisma.peca.findMany({
+      where: { disponivel: false, emPrejuizo: false, dataVenda: { not: null } },
+      select: {
+        idPeca: true, cadastro: true, dataVenda: true,
+        moto: { select: { id: true, marca: true, modelo: true, ano: true } },
+      },
+    });
+
+    const linhas = pecas
+      .map((p) => {
+        const cad = new Date(p.cadastro);
+        const venda = new Date(p.dataVenda as Date);
+        const diasGiro = Math.max(0, Math.round((venda.getTime() - cad.getTime()) / 86400000));
+        return {
+          idPeca: p.idPeca,
+          skuBase: getBaseSku(p.idPeca),
+          motoId: p.moto.id,
+          moto: `${p.moto.marca} ${p.moto.modelo}`,
+          motoAno: p.moto.ano,
+          cadastro: p.cadastro,
+          dataVenda: p.dataVenda,
+          anoVenda: venda.getFullYear(),
+          mesVenda: venda.getMonth() + 1,
+          diasGiro,
+        };
+      })
+      // cadastro > dataVenda seria dado inconsistente (ex.: migracao antiga) — nao entra na analise.
+      .filter((l) => new Date(l.dataVenda as Date) >= new Date(l.cadastro));
+
+    res.json({ ok: true, linhas });
+  } catch (e) { next(e); }
+});
+
 // GET /faturamento/dashboard
 faturamentoRouter.get('/dashboard', async (req, res, next) => {
   try {
