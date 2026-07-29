@@ -319,26 +319,28 @@ export default function FaturamentoGeralPage() {
       </div>
 
       <div style={{ padding: isCompact ? 16 : 28 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 20 }}>
-          {[
-            { label: 'Receita total', value: fmt(totalReceita), color: 'var(--sage)' },
-            { label: 'Pecas vendidas', value: totalQtd.toLocaleString('pt-BR'), color: 'var(--ink)' },
-            {
-              label: 'Mes corrente',
-              value: `${MESES[mesAtual - 1]}/${anoCardAtual}`,
-              color: 'var(--amber)',
-              sub: fmt(Number(mesCorrente?.receitaLiq || mesCorrente?.receita || 0)),
-            },
-          ].map((card) => (
-            <div key={card.label} style={cs.sCard}>
-              <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '0.6px', textTransform: 'uppercase', marginBottom: 10 }}>
-                {card.label}
+        {modo !== 'giro' && (
+          <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 20 }}>
+            {[
+              { label: 'Receita total', value: fmt(totalReceita), color: 'var(--sage)' },
+              { label: 'Pecas vendidas', value: totalQtd.toLocaleString('pt-BR'), color: 'var(--ink)' },
+              {
+                label: 'Mes corrente',
+                value: `${MESES[mesAtual - 1]}/${anoCardAtual}`,
+                color: 'var(--amber)',
+                sub: fmt(Number(mesCorrente?.receitaLiq || mesCorrente?.receita || 0)),
+              },
+            ].map((card) => (
+              <div key={card.label} style={cs.sCard}>
+                <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '0.6px', textTransform: 'uppercase', marginBottom: 10 }}>
+                  {card.label}
+                </div>
+                <div style={{ fontFamily: 'Fraunces, serif', fontSize: 22, fontWeight: 500, color: card.color, ...sensitiveMaskStyle(hidden) }}>{sensitiveText(card.value, hidden)}</div>
+                {card.sub && <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 4, ...sensitiveMaskStyle(hidden) }}>{sensitiveText(card.sub, hidden)}</div>}
               </div>
-              <div style={{ fontFamily: 'Fraunces, serif', fontSize: 22, fontWeight: 500, color: card.color, ...sensitiveMaskStyle(hidden) }}>{sensitiveText(card.value, hidden)}</div>
-              {card.sub && <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 4, ...sensitiveMaskStyle(hidden) }}>{sensitiveText(card.sub, hidden)}</div>}
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
 
         {modo !== 'giro' && (
           <div style={{ ...cs.card, marginBottom: 20 }}>
