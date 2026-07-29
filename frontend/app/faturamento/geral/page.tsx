@@ -126,6 +126,9 @@ export default function FaturamentoGeralPage() {
   const [giroMarca, setGiroMarca] = useState('');
   const [giroMoto, setGiroMoto] = useState('');
   const [valorFaixaAberta, setValorFaixaAberta] = useState('');
+  const [provisaoData, setProvisaoData] = useState<any[] | null>(null);
+  const [provisaoLoading, setProvisaoLoading] = useState(false);
+  const [provisaoMarca, setProvisaoMarca] = useState('');
   const { hidden } = useCompanyValueVisibility();
   const viewportMode = useFinancialViewportMode();
   const isPhone = viewportMode === 'phone';
@@ -150,6 +153,16 @@ export default function FaturamentoGeralPage() {
       .catch(() => setGiroData([]))
       .finally(() => setGiroLoading(false));
   }, [modo, giroData]);
+
+  useEffect(() => {
+    if (modo !== 'provisao' || provisaoData) return;
+    setProvisaoLoading(true);
+    fetch(`${API}/faturamento/provisao`, { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => setProvisaoData(Array.isArray(d?.linhas) ? d.linhas : []))
+      .catch(() => setProvisaoData([]))
+      .finally(() => setProvisaoLoading(false));
+  }, [modo, provisaoData]);
 
   const anos = Array.from(new Set(data.map((item: any) => item.ano))).sort((a, b) => b - a);
   const filtered = data.filter((item) => !filtAno || item.ano === Number(filtAno));
@@ -330,6 +343,49 @@ export default function FaturamentoGeralPage() {
   });
   const valorTotalGeral = giroFiltrado.length;
 
+  const HOJE = new Date();
+  const provisaoRaw = provisaoData || [];
+  const provisaoMarcas = Array.from(new Set(provisaoRaw.map((m: any) => marcaDaMoto(m.moto)))).sort();
+  const provisaoFiltrado = provisaoRaw.filter((m: any) => !provisaoMarca || marcaDaMoto(m.moto) === provisaoMarca);
+
+  const provisaoCalculada = provisaoFiltrado.map((m: any) => {
+    const primeiraVenda = m.primeiraVenda ? new Date(m.primeiraVenda) : null;
+    const diasAtivo = primeiraVenda ? Math.max(1, Math.round((HOJE.getTime() - primeiraVenda.getTime()) / 86400000)) : 0;
+    const receitaPorDia = diasAtivo > 0 ? m.receitaLiq / diasAtivo : 0;
+    const pecasPorDia = diasAtivo > 0 ? m.qtdVendida / diasAtivo : 0;
+    const saldoRestante = m.precoCompra - m.receitaLiq;
+    const percentualPago = m.precoCompra > 0 ? Math.min(999, (m.receitaLiq / m.precoCompra) * 100) : null;
+
+    const semCusto = !(m.precoCompra > 0);
+    const jaPago = !semCusto && saldoRestante <= 0;
+    const semVendas = m.qtdVendida === 0;
+
+    const diasParaPagar = !semCusto && !jaPago && !semVendas && receitaPorDia > 0
+      ? Math.ceil(saldoRestante / receitaPorDia)
+      : null;
+    const dataPayback = diasParaPagar != null ? new Date(HOJE.getTime() + diasParaPagar * 86400000) : null;
+
+    const diasParaEsgotar = m.qtdEstoque > 0 && pecasPorDia > 0 ? Math.ceil(m.qtdEstoque / pecasPorDia) : (m.qtdEstoque === 0 ? 0 : null);
+
+    let status: 'pago' | 'projetado' | 'sem_dados' = 'sem_dados';
+    if (jaPago) status = 'pago';
+    else if (diasParaPagar != null) status = 'projetado';
+
+    return { ...m, diasAtivo, receitaPorDia, pecasPorDia, saldoRestante, percentualPago, semCusto, jaPago, semVendas, diasParaPagar, dataPayback, diasParaEsgotar, status };
+  }).sort((a: any, b: any) => {
+    const ordem = { pago: 0, projetado: 1, sem_dados: 2 };
+    if (ordem[a.status as keyof typeof ordem] !== ordem[b.status as keyof typeof ordem]) {
+      return ordem[a.status as keyof typeof ordem] - ordem[b.status as keyof typeof ordem];
+    }
+    if (a.status === 'projetado') return (a.diasParaPagar || 0) - (b.diasParaPagar || 0);
+    return String(a.moto).localeCompare(String(b.moto));
+  });
+
+  const provisaoTotalInvestido = provisaoFiltrado.reduce((sum: number, m: any) => sum + m.precoCompra, 0);
+  const provisaoTotalRecuperado = provisaoFiltrado.reduce((sum: number, m: any) => sum + m.receitaLiq, 0);
+  const provisaoTotalSaldo = provisaoTotalInvestido - provisaoTotalRecuperado;
+  const provisaoPctGeral = provisaoTotalInvestido > 0 ? (provisaoTotalRecuperado / provisaoTotalInvestido) * 100 : 0;
+
   return (
     <>
       <div style={{ ...cs.topbar, alignItems: isCompact ? 'flex-start' : 'center', flexDirection: isCompact ? 'column' : 'row', gap: 10, padding: isCompact ? '14px 16px' : cs.topbar.padding }}>
@@ -337,11 +393,11 @@ export default function FaturamentoGeralPage() {
           <div style={cs.title}>Faturamento Geral</div>
           <div style={cs.sub}>Receita total consolidada</div>
         </div>
-        <ViewModeSwitch value={modo} onChange={setModo} modes={['grafico', 'relatorio', 'giro', 'valor']} />
+        <ViewModeSwitch value={modo} onChange={setModo} modes={['grafico', 'relatorio', 'giro', 'valor', 'provisao']} />
       </div>
 
       <div style={{ padding: isCompact ? 16 : 28 }}>
-        {modo !== 'giro' && modo !== 'valor' && (
+        {modo !== 'giro' && modo !== 'valor' && modo !== 'provisao' && (
           <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 20 }}>
             {[
               { label: 'Receita total', value: fmt(totalReceita), color: 'var(--sage)' },
@@ -364,7 +420,7 @@ export default function FaturamentoGeralPage() {
           </div>
         )}
 
-        {modo !== 'giro' && modo !== 'valor' && (
+        {modo !== 'giro' && modo !== 'valor' && modo !== 'provisao' && (
           <div style={{ ...cs.card, marginBottom: 20 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: isCompact ? '14px 16px' : '14px 18px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', gap: 10 }}>
               <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>Filtros</div>
@@ -402,7 +458,95 @@ export default function FaturamentoGeralPage() {
           </div>
         )}
 
-        {modo === 'valor' ? (
+        {modo === 'provisao' && (
+          <div style={{ ...cs.card, marginBottom: 20 }}>
+            <div style={{ padding: isCompact ? '14px 16px' : '14px 18px', borderBottom: '1px solid var(--border)' }}>
+              <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>Filtros</div>
+              <select style={{ ...cs.sel, width: isCompact ? '100%' : undefined, marginTop: 10 }} value={provisaoMarca} onChange={(e) => setProvisaoMarca(e.target.value)}>
+                <option value="">Todas as marcas</option>
+                {provisaoMarcas.map((marca) => <option key={marca} value={marca}>{marca}</option>)}
+              </select>
+            </div>
+          </div>
+        )}
+
+        {modo === 'provisao' ? (
+          provisaoLoading ? (
+            <div style={{ ...cs.card, padding: 28, color: 'var(--ink-muted)' }}>Carregando provisao...</div>
+          ) : (
+            <div style={{ display: 'grid', gap: 18 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 }}>
+                {[
+                  { label: 'Total investido', value: fmt(provisaoTotalInvestido), color: 'var(--ink)' },
+                  { label: 'Total recuperado', value: fmt(provisaoTotalRecuperado), color: 'var(--sage)' },
+                  { label: 'Saldo restante', value: fmt(Math.max(0, provisaoTotalSaldo)), color: provisaoTotalSaldo > 0 ? '#c2410c' : 'var(--sage)' },
+                  { label: '% pago geral', value: `${provisaoPctGeral.toFixed(1)}%`, color: 'var(--ink)' },
+                ].map((card) => (
+                  <div key={card.label} style={cs.sCard}>
+                    <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '0.6px', textTransform: 'uppercase', marginBottom: 10 }}>
+                      {card.label}
+                    </div>
+                    <div style={{ fontFamily: 'Fraunces, serif', fontSize: 22, fontWeight: 500, color: card.color, ...sensitiveMaskStyle(hidden) }}>{sensitiveText(card.value, hidden)}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ fontSize: 11.5, color: 'var(--ink-muted)', padding: '0 4px' }}>
+                Projecao baseada no ritmo medio de venda (receita liquida e pecas) desde a 1a venda de cada moto. Motos sem venda ainda ou sem preco de compra cadastrado ficam sem projecao.
+              </div>
+
+              <div style={cs.card}>
+                <div style={{ padding: isCompact ? '14px 16px' : '14px 18px', borderBottom: '1px solid var(--border)' }}>
+                  <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>Provisao por Moto</div>
+                  <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>Ordenado por: pagas primeiro, depois por dias restantes (menor pra maior).</div>
+                </div>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
+                      <tr>{['Moto', 'Investido', 'Recuperado', '% pago', 'Saldo', 'Ritmo (R$/dia)', 'Dias p/ pagar', 'Previsao', 'Pecas rest.', 'Dias p/ esgotar'].map((h) => (
+                        <th key={h} style={cs.th}>{h}</th>
+                      ))}</tr>
+                    </thead>
+                    <tbody>
+                      {provisaoCalculada.length === 0 ? (
+                        <tr><td colSpan={10} style={{ ...cs.td, textAlign: 'center', color: 'var(--ink-muted)', padding: '30px 20px' }}>Sem dados no filtro</td></tr>
+                      ) : provisaoCalculada.map((m: any) => {
+                        const pctColor = m.jaPago ? '#16a34a' : (m.percentualPago || 0) >= 60 ? '#16a34a' : (m.percentualPago || 0) >= 25 ? '#d97706' : '#6b7280';
+                        return (
+                          <tr key={m.motoId}>
+                            <td style={{ ...cs.td, fontSize: 12.5 }}>{m.moto}</td>
+                            <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, ...sensitiveMaskStyle(hidden) }}>{sensitiveText(fmt(m.precoCompra), hidden)}</td>
+                            <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, color: 'var(--sage)', ...sensitiveMaskStyle(hidden) }}>{sensitiveText(fmt(m.receitaLiq), hidden)}</td>
+                            <td style={cs.td}>
+                              {m.percentualPago == null ? '—' : (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                  <div style={{ flex: 1, maxWidth: 60, height: 6, background: 'var(--border)', borderRadius: 99, overflow: 'hidden' }}>
+                                    <div style={{ width: `${Math.min(m.percentualPago, 100)}%`, height: '100%', background: pctColor, borderRadius: 99 }} />
+                                  </div>
+                                  <span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 12, fontWeight: 600, color: pctColor, minWidth: 40 }}>{m.percentualPago.toFixed(0)}%</span>
+                                </div>
+                              )}
+                            </td>
+                            <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, ...sensitiveMaskStyle(hidden) }}>
+                              {m.jaPago ? <span style={{ color: '#16a34a', fontWeight: 600 }}>Ja pago</span> : sensitiveText(fmt(Math.max(0, m.saldoRestante)), hidden)}
+                            </td>
+                            <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, color: 'var(--ink-muted)', ...sensitiveMaskStyle(hidden) }}>{m.receitaPorDia > 0 ? sensitiveText(fmt(m.receitaPorDia), hidden) : '—'}</td>
+                            <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12 }}>
+                              {m.jaPago ? '—' : m.semVendas ? <span style={{ color: 'var(--ink-muted)' }}>Sem vendas</span> : m.semCusto ? <span style={{ color: 'var(--ink-muted)' }}>Sem custo</span> : m.diasParaPagar != null ? m.diasParaPagar : '—'}
+                            </td>
+                            <td style={{ ...cs.td, fontSize: 12, whiteSpace: 'nowrap' as const }}>{m.dataPayback ? m.dataPayback.toLocaleDateString('pt-BR') : '—'}</td>
+                            <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12 }}>{m.qtdEstoque}</td>
+                            <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12 }}>{m.diasParaEsgotar != null ? m.diasParaEsgotar : '—'}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )
+        ) : modo === 'valor' ? (
           giroLoading ? (
             <div style={{ ...cs.card, padding: 28, color: 'var(--ink-muted)' }}>Carregando distribuicao por valor...</div>
           ) : (

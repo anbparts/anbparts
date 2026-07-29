@@ -3,7 +3,7 @@
 import { type CSSProperties, type ReactNode } from 'react';
 import { sensitiveMaskStyle, sensitiveText, useCompanyValueVisibility } from '@/lib/company-values';
 
-export type ViewMode = 'grafico' | 'relatorio' | 'estoque' | 'giro' | 'valor';
+export type ViewMode = 'grafico' | 'relatorio' | 'estoque' | 'giro' | 'valor' | 'provisao';
 
 export type ChartItem = {
   label: string;
@@ -93,10 +93,12 @@ export function ViewModeSwitch({
     { mode: 'estoque',   label: '% Estoque' },
     { mode: 'giro',      label: 'Tempo de Giro' },
     { mode: 'valor',     label: 'Por Valor' },
+    { mode: 'provisao',  label: 'Provisao' },
   ];
+  const modosExtras: ViewMode[] = ['estoque', 'giro', 'valor', 'provisao'];
   const buttons = modes
     ? modes.map(m => allButtons.find(b => b.mode === m)!).filter(Boolean)
-    : allButtons.filter(b => b.mode !== 'estoque' && b.mode !== 'giro' && b.mode !== 'valor');
+    : allButtons.filter(b => !modosExtras.includes(b.mode));
 
   return (
     <div style={wrap}>

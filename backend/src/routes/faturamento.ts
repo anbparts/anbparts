@@ -133,6 +133,57 @@ faturamentoRouter.get('/tempo-giro', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// GET /faturamento/provisao — projecao de payback por moto: receita liquida acumulada (pecas
+// vendidas) vs precoCompra da moto, com ritmo de venda (R$/dia e pecas/dia) desde a 1a venda,
+// pra estimar em quantos dias a moto se paga e em quantos dias o estoque restante se esgota.
+faturamentoRouter.get('/provisao', async (req, res, next) => {
+  try {
+    const motos = await prisma.moto.findMany({
+      select: { id: true, marca: true, modelo: true, ano: true, precoCompra: true },
+    });
+    const pecas = await prisma.peca.findMany({
+      where: { emPrejuizo: false },
+      select: { motoId: true, disponivel: true, valorLiq: true, dataVenda: true },
+    });
+
+    const porMoto = new Map<number, { receitaLiq: number; qtdVendida: number; qtdEstoque: number; primeiraVenda: Date | null; ultimaVenda: Date | null }>();
+    for (const moto of motos) {
+      porMoto.set(moto.id, { receitaLiq: 0, qtdVendida: 0, qtdEstoque: 0, primeiraVenda: null, ultimaVenda: null });
+    }
+    for (const p of pecas) {
+      const agg = porMoto.get(p.motoId);
+      if (!agg) continue;
+      if (p.disponivel) {
+        agg.qtdEstoque += 1;
+      } else if (p.dataVenda) {
+        agg.receitaLiq += Number(p.valorLiq);
+        agg.qtdVendida += 1;
+        const venda = new Date(p.dataVenda);
+        if (!agg.primeiraVenda || venda < agg.primeiraVenda) agg.primeiraVenda = venda;
+        if (!agg.ultimaVenda || venda > agg.ultimaVenda) agg.ultimaVenda = venda;
+      }
+    }
+
+    const linhas = motos.map((moto) => {
+      const agg = porMoto.get(moto.id)!;
+      return {
+        motoId: moto.id,
+        moto: `${moto.marca} ${moto.modelo}`,
+        marca: moto.marca,
+        motoAno: moto.ano,
+        precoCompra: Number(moto.precoCompra),
+        receitaLiq: agg.receitaLiq,
+        qtdVendida: agg.qtdVendida,
+        qtdEstoque: agg.qtdEstoque,
+        primeiraVenda: agg.primeiraVenda,
+        ultimaVenda: agg.ultimaVenda,
+      };
+    });
+
+    res.json({ ok: true, linhas });
+  } catch (e) { next(e); }
+});
+
 // GET /faturamento/dashboard
 faturamentoRouter.get('/dashboard', async (req, res, next) => {
   try {
