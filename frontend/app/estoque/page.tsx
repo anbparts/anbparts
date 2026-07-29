@@ -1109,7 +1109,7 @@ function DetranEtiquetaModal({ open, peca, onClose }: any) {
   );
 }
 
-function PecaDetalheModal({ open, peca, onClose, onSaved, canEditarPeca = false, canTrocarFotoCapa = false }: any) {
+function PecaDetalheModal({ open, peca, onClose, onSaved, canEditarPeca = false, canTrocarFotoCapa = false, iniciarEditando = false }: any) {
   const [editando, setEditando] = useState(false);
   const [form, setForm] = useState<any>({});
   const [saving, setSaving] = useState(false);
@@ -1134,9 +1134,9 @@ function PecaDetalheModal({ open, peca, onClose, onSaved, canEditarPeca = false,
       setFotoCapaNome(peca.fotoCapaNome || '');
       setFotoCapaArquivo(peca.fotoCapaArquivo || '');
     }
-    setEditando(false);
+    setEditando(canEditarPeca && iniciarEditando);
     setFotoPreviewOpen(false);
-  }, [peca]);
+  }, [peca, iniciarEditando]);
 
   if (!open || !peca) return null;
 
@@ -1442,7 +1442,7 @@ function PecaDetalheModal({ open, peca, onClose, onSaved, canEditarPeca = false,
   );
 }
 
-function PecaActionsModal({ open, peca, onClose, onEdit, onEditTexto, onSell, onDelete, onDevolucao, canEditarPeca = false, canDevolucoes = false }: any) {
+function PecaActionsModal({ open, peca, onClose, onEdit, onEditDimensoes, onEditTexto, onSell, onDelete, onDevolucao, canEditarPeca = false, canDevolucoes = false }: any) {
   if (!open || !peca) return null;
   const bloqueadaPrejuizo = isPrejuizoPeca(peca);
   const pendenteEtiqueta = Boolean(peca.etiquetaPendente);
@@ -1470,7 +1470,10 @@ function PecaActionsModal({ open, peca, onClose, onEdit, onEditTexto, onSell, on
                 </div>
               )}
               {canEditarPeca && <button onClick={onEdit} style={{ ...cs.btn, width: '100%', justifyContent: 'center', background: 'var(--white)', color: 'var(--ink)', borderColor: 'var(--border-strong)' }}>
-                Editar
+                Editar Título / Preço
+              </button>}
+              {canEditarPeca && <button onClick={onEditDimensoes} style={{ ...cs.btn, width: '100%', justifyContent: 'center', background: 'var(--white)', color: 'var(--ink)', borderColor: 'var(--border-strong)' }}>
+                Editar Dimensões / Localização / Etiqueta
               </button>}
               {canEditarPeca && <button onClick={onEditTexto} style={{ ...cs.btn, width: '100%', justifyContent: 'center', background: 'var(--white)', color: 'var(--ink)', borderColor: 'var(--border-strong)' }}>
                 Editar Texto
@@ -2602,7 +2605,7 @@ function HistoricoPrecoModal({ onClose, skuInicial }: any) {
 
 // Modal "Editar Texto" (botão em Ações da peça): le a descricao longa (corpo do anuncio) atual
 // no Bling e, ao salvar, replica pro Bling + Mercado Livre (texto simples) + Nuvemshop.
-function EditarTextoModal({ peca, onClose }: any) {
+function EditarTextoModal({ peca, onClose, onSaved }: any) {
   const [loading, setLoading] = useState(true);
   const [salvando, setSalvando] = useState(false);
   const [descricaoHtml, setDescricaoHtml] = useState('');
@@ -2652,6 +2655,11 @@ function EditarTextoModal({ peca, onClose }: any) {
       });
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.error || 'Erro ao salvar');
+      if (data.ok) {
+        onSaved?.();
+        onClose();
+        return;
+      }
       setResultado(data);
     } catch (e: any) {
       setErro(e.message || 'Erro ao salvar');
@@ -2746,6 +2754,14 @@ export default function EstoquePage() {
   const [vendaPeca, setVendaPeca] = useState<any>(null);
   const [actionPeca, setActionPeca] = useState<any>(null);
   const [editTextoPeca, setEditTextoPeca] = useState<any>(null);
+  const [detalheIniciarEditando, setDetalheIniciarEditando] = useState(false);
+  const [toastMsg, setToastMsg] = useState('');
+
+  useEffect(() => {
+    if (!toastMsg) return;
+    const t = setTimeout(() => setToastMsg(''), 2800);
+    return () => clearTimeout(t);
+  }, [toastMsg]);
   const [detranPeca, setDetranPeca] = useState<any>(null);
   const [detalhePeca, setDetalhePeca] = useState<any>(null);
   const [selectedPecaIds, setSelectedPecaIds] = useState<number[]>([]);
@@ -4094,7 +4110,7 @@ export default function EstoquePage() {
                           />
                           <div style={{ minWidth: 0 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                              <button onClick={(e) => { if (e.ctrlKey || e.metaKey) { navigator.clipboard.writeText(p.idPeca); return; } setDetalhePeca(p); }} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'Geist Mono, monospace', fontSize: 12.5, fontWeight: 600, color: 'var(--blue-500)' }} title="Ver detalhes · Ctrl+Clique para copiar ID">{p.idPeca}</button>
+                              <button onClick={(e) => { if (e.ctrlKey || e.metaKey) { navigator.clipboard.writeText(p.idPeca); return; } setDetalheIniciarEditando(false); setDetalhePeca(p); }} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'Geist Mono, monospace', fontSize: 12.5, fontWeight: 600, color: 'var(--blue-500)' }} title="Ver detalhes · Ctrl+Clique para copiar ID">{p.idPeca}</button>
                               <span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11, color: 'var(--ink-muted)' }}>ID #{p.motoId}</span>
                               {bloqueadaPrejuizo ? <PrejuizoBadge /> : null}
                             </div>
@@ -4243,7 +4259,7 @@ export default function EstoquePage() {
                           </td>
                           {colsVisiveis.includes('motoId') && <td style={{ ...cs.td, padding: denseTablePadding }}><span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11.5, color: 'var(--ink-muted)' }}>#{p.motoId}</span></td>}
                           {colsVisiveis.includes('idPeca') && <td style={{ ...cs.td, padding: denseTablePadding, fontFamily: 'Geist Mono, monospace', fontSize: 11.5, whiteSpace: 'nowrap' }}>
-                            <button onClick={(e) => { if (e.ctrlKey || e.metaKey) { navigator.clipboard.writeText(p.idPeca); return; } setDetalhePeca(p); }} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'Geist Mono, monospace', fontSize: 11.5, fontWeight: 600, color: isPrejuizoPeca(p) ? '#b91c1c' : 'var(--blue-500)' }} title="Ver detalhes da peça · Ctrl+Clique para copiar ID">
+                            <button onClick={(e) => { if (e.ctrlKey || e.metaKey) { navigator.clipboard.writeText(p.idPeca); return; } setDetalheIniciarEditando(false); setDetalhePeca(p); }} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'Geist Mono, monospace', fontSize: 11.5, fontWeight: 600, color: isPrejuizoPeca(p) ? '#b91c1c' : 'var(--blue-500)' }} title="Ver detalhes da peça · Ctrl+Clique para copiar ID">
                               {p.idPeca}
                             </button>
                           </td>}
@@ -4370,7 +4386,7 @@ export default function EstoquePage() {
       )}
       <VendaModal open={vendaModal} peca={vendaPeca} onClose={() => setVendaModal(false)} onConfirm={handleVenda} />
       <DetranEtiquetaModal open={Boolean(detranPeca)} peca={detranPeca} onClose={() => setDetranPeca(null)} />
-      <PecaDetalheModal open={Boolean(detalhePeca)} peca={detalhePeca} onClose={() => setDetalhePeca(null)} onSaved={() => { load(); }} canEditarPeca={canEditarPeca} canTrocarFotoCapa={canTrocarFotoCapa} />
+      <PecaDetalheModal open={Boolean(detalhePeca)} peca={detalhePeca} onClose={() => setDetalhePeca(null)} onSaved={() => { load(); }} canEditarPeca={canEditarPeca} canTrocarFotoCapa={canTrocarFotoCapa} iniciarEditando={detalheIniciarEditando} />
       {etiquetaCartelaOpen && filters.motoId && (
         <EtiquetaCartelaModal
           motoId={Number(filters.motoId)}
@@ -4410,11 +4426,23 @@ export default function EstoquePage() {
           setEditTextoPeca(actionPeca);
           setActionPeca(null);
         }}
+        onEditDimensoes={() => {
+          if (!canEditarPeca) return;
+          if (isPrejuizoPeca(actionPeca)) return;
+          setDetalheIniciarEditando(true);
+          setDetalhePeca(actionPeca);
+          setActionPeca(null);
+        }}
         canEditarPeca={canEditarPeca}
         canDevolucoes={canDevolucoes}
       />
       {canEditarPeca && editTextoPeca && (
-        <EditarTextoModal peca={editTextoPeca} onClose={() => setEditTextoPeca(null)} />
+        <EditarTextoModal peca={editTextoPeca} onClose={() => setEditTextoPeca(null)} onSaved={() => setToastMsg('Texto atualizado com sucesso.')} />
+      )}
+      {toastMsg && (
+        <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', background: 'var(--ink)', color: '#fff', padding: '10px 20px', borderRadius: 999, fontSize: 13, fontWeight: 600, boxShadow: '0 8px 24px rgba(0,0,0,.25)', zIndex: 500 }}>
+          ✓ {toastMsg}
+        </div>
       )}
       {/* Modal de Devolução */}
       {canDevolucoes && devolucaoModal && devolucaoPeca && (
