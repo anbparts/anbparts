@@ -43,24 +43,56 @@ function marcaDaMoto(nome: any) {
   return texto.split(' ')[0] || 'SEM MARCA';
 }
 
-const FAIXAS_GIRO: { label: string; min: number; max: number }[] = [
-  { label: 'Ate 7 dias', min: 0, max: 7 },
-  { label: '8 a 15 dias', min: 8, max: 15 },
-  { label: '16 a 30 dias', min: 16, max: 30 },
-  { label: '31 a 60 dias', min: 31, max: 60 },
-  { label: '61 a 90 dias', min: 61, max: 90 },
-  { label: '91 a 180 dias', min: 91, max: 180 },
-  { label: '181 a 365 dias', min: 181, max: 365 },
-  { label: 'Mais de 365 dias', min: 366, max: Infinity },
-];
+const GIRO_BREAKPOINTS_DEFAULT = [7, 15, 30, 60, 90, 180, 365];
+const VALOR_BREAKPOINTS_DEFAULT = [300, 600, 1000, 1500];
 
-const FAIXAS_VALOR: { label: string; min: number; max: number }[] = [
-  { label: 'Ate R$ 300,00', min: 0, max: 300 },
-  { label: 'R$ 300,01 a R$ 600,00', min: 300.01, max: 600 },
-  { label: 'R$ 600,01 a R$ 1.000,00', min: 600.01, max: 1000 },
-  { label: 'R$ 1.000,01 a R$ 1.500,00', min: 1000.01, max: 1500 },
-  { label: 'Acima de R$ 1.500,00', min: 1500.01, max: Infinity },
-];
+const GIRO_BREAKPOINTS_KEY = 'anb.faturamentoGeral.giroBreakpoints';
+const VALOR_BREAKPOINTS_KEY = 'anb.faturamentoGeral.valorBreakpoints';
+const GIRO_VISAO_KEY = 'anb.faturamentoGeral.giroVisao';
+const VALOR_VISAO_KEY = 'anb.faturamentoGeral.valorVisao';
+
+function gerarFaixasNumericas(
+  breakpointsRaw: number[],
+  passo: number,
+  fmtLimite: (n: number) => string,
+  labelAte: string,
+  labelAcima: string,
+  conector: string,
+): { label: string; min: number; max: number }[] {
+  const bps = Array.from(new Set(breakpointsRaw.filter((n) => Number.isFinite(n) && n > 0))).sort((a, b) => a - b);
+  if (!bps.length) return [];
+  const faixas: { label: string; min: number; max: number }[] = [];
+  bps.forEach((bp, index) => {
+    if (index === 0) {
+      faixas.push({ label: `${labelAte} ${fmtLimite(bp)}`, min: 0, max: bp });
+    } else {
+      const min = bps[index - 1] + passo;
+      faixas.push({ label: `${fmtLimite(min)} ${conector} ${fmtLimite(bp)}`, min, max: bp });
+    }
+  });
+  faixas.push({ label: `${labelAcima} ${fmtLimite(bps[bps.length - 1])}`, min: bps[bps.length - 1] + passo, max: Infinity });
+  return faixas;
+}
+
+function carregarBreakpointsSalvos(chave: string, padrao: number[]): number[] {
+  if (typeof window === 'undefined') return padrao;
+  try {
+    const bruto = window.localStorage.getItem(chave);
+    if (!bruto) return padrao;
+    const lista = JSON.parse(bruto);
+    if (!Array.isArray(lista) || !lista.length) return padrao;
+    const numeros = lista.map((n) => Number(n)).filter((n) => Number.isFinite(n) && n > 0);
+    return numeros.length ? numeros : padrao;
+  } catch {
+    return padrao;
+  }
+}
+
+function carregarVisaoSalva(chave: string): 'sku' | 'categoria' {
+  if (typeof window === 'undefined') return 'sku';
+  const valor = window.localStorage.getItem(chave);
+  return valor === 'categoria' ? 'categoria' : 'sku';
+}
 
 function mediaDias(valores: number[]) {
   if (!valores.length) return 0;
@@ -72,6 +104,22 @@ function medianaDias(valores: number[]) {
   const ordenado = [...valores].sort((a, b) => a - b);
   const meio = Math.floor(ordenado.length / 2);
   return ordenado.length % 2 !== 0 ? ordenado[meio] : (ordenado[meio - 1] + ordenado[meio]) / 2;
+}
+
+function subLinhasPorVisao(itens: any[], visao: 'sku' | 'categoria', mapaCategorias: Record<string, string[]>) {
+  const mapa = new Map<string, number>();
+  itens.forEach((l: any) => {
+    if (visao === 'sku') {
+      mapa.set(l.skuBase, (mapa.get(l.skuBase) || 0) + 1);
+    } else {
+      const categorias = mapaCategorias[l.skuBase];
+      const lista = categorias && categorias.length ? categorias : ['Sem categoria'];
+      lista.forEach((categoria) => mapa.set(categoria, (mapa.get(categoria) || 0) + 1));
+    }
+  });
+  return Array.from(mapa.entries())
+    .map(([label, qtd]) => ({ label, qtd, pct: itens.length ? (qtd / itens.length) * 100 : 0 }))
+    .sort((a, b) => b.qtd - a.qtd);
 }
 
 const cs: any = {
@@ -126,9 +174,18 @@ export default function FaturamentoGeralPage() {
   const [giroMarca, setGiroMarca] = useState('');
   const [giroMoto, setGiroMoto] = useState('');
   const [valorFaixaAberta, setValorFaixaAberta] = useState('');
+  const [giroFaixaAberta, setGiroFaixaAberta] = useState('');
   const [provisaoData, setProvisaoData] = useState<any[] | null>(null);
   const [provisaoLoading, setProvisaoLoading] = useState(false);
   const [provisaoMarca, setProvisaoMarca] = useState('');
+  const [mapaCategorias, setMapaCategorias] = useState<Record<string, string[]>>({});
+  const [mapaCategoriasCarregado, setMapaCategoriasCarregado] = useState(false);
+  const [giroBreakpoints, setGiroBreakpoints] = useState<number[]>(GIRO_BREAKPOINTS_DEFAULT);
+  const [valorBreakpoints, setValorBreakpoints] = useState<number[]>(VALOR_BREAKPOINTS_DEFAULT);
+  const [giroVisao, setGiroVisao] = useState<'sku' | 'categoria'>('sku');
+  const [valorVisao, setValorVisao] = useState<'sku' | 'categoria'>('sku');
+  const [configFaixasAberto, setConfigFaixasAberto] = useState<'giro' | 'valor' | ''>('');
+  const [configFaixasTexto, setConfigFaixasTexto] = useState('');
   const { hidden } = useCompanyValueVisibility();
   const viewportMode = useFinancialViewportMode();
   const isPhone = viewportMode === 'phone';
@@ -145,6 +202,13 @@ export default function FaturamentoGeralPage() {
   }, []);
 
   useEffect(() => {
+    setGiroBreakpoints(carregarBreakpointsSalvos(GIRO_BREAKPOINTS_KEY, GIRO_BREAKPOINTS_DEFAULT));
+    setValorBreakpoints(carregarBreakpointsSalvos(VALOR_BREAKPOINTS_KEY, VALOR_BREAKPOINTS_DEFAULT));
+    setGiroVisao(carregarVisaoSalva(GIRO_VISAO_KEY));
+    setValorVisao(carregarVisaoSalva(VALOR_VISAO_KEY));
+  }, []);
+
+  useEffect(() => {
     if ((modo !== 'giro' && modo !== 'valor') || giroData) return;
     setGiroLoading(true);
     fetch(`${API}/faturamento/tempo-giro`, { credentials: 'include' })
@@ -153,6 +217,15 @@ export default function FaturamentoGeralPage() {
       .catch(() => setGiroData([]))
       .finally(() => setGiroLoading(false));
   }, [modo, giroData]);
+
+  useEffect(() => {
+    if ((modo !== 'giro' && modo !== 'valor') || mapaCategoriasCarregado) return;
+    setMapaCategoriasCarregado(true);
+    fetch(`${API}/faturamento/mapa-categorias`, { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => setMapaCategorias(d?.mapa && typeof d.mapa === 'object' ? d.mapa : {}))
+      .catch(() => setMapaCategorias({}));
+  }, [modo, mapaCategoriasCarregado]);
 
   useEffect(() => {
     if (modo !== 'provisao' || provisaoData) return;
@@ -297,12 +370,15 @@ export default function FaturamentoGeralPage() {
     (!giroMoto || l.moto === giroMoto)
   );
 
-  const giroDistribuicao = FAIXAS_GIRO.map((faixa) => {
+  const giroFaixasConfig = gerarFaixasNumericas(giroBreakpoints, 1, (n) => `${n} dias`, 'Ate', 'Mais de', 'a');
+
+  const giroDistribuicao = giroFaixasConfig.map((faixa) => {
     const itens = giroFiltrado.filter((l: any) => l.diasGiro >= faixa.min && l.diasGiro <= faixa.max);
     return {
       label: faixa.label,
-      value: itens.length,
-      note: giroFiltrado.length ? `${((itens.length / giroFiltrado.length) * 100).toFixed(1)}%` : '0%',
+      qtd: itens.length,
+      pct: giroFiltrado.length ? (itens.length / giroFiltrado.length) * 100 : 0,
+      itens,
     };
   });
 
@@ -330,16 +406,16 @@ export default function FaturamentoGeralPage() {
     .sort((a, b) => b.qtd - a.qtd)
     .slice(0, 30);
 
-  const valorDistribuicao = FAIXAS_VALOR.map((faixa) => {
+  const valorFaixasConfig = gerarFaixasNumericas(valorBreakpoints, 0.01, (n) => fmt(n), 'Ate', 'Acima de', 'a');
+
+  const valorDistribuicao = valorFaixasConfig.map((faixa) => {
     const itens = giroFiltrado.filter((l: any) => l.valor >= faixa.min && l.valor <= faixa.max);
-    const porMotoMap = new Map<number, { moto: string; qtd: number }>();
-    itens.forEach((l: any) => {
-      const atual = porMotoMap.get(l.motoId) || { moto: l.moto, qtd: 0 };
-      atual.qtd += 1;
-      porMotoMap.set(l.motoId, atual);
-    });
-    const porMoto = Array.from(porMotoMap.values()).sort((a, b) => b.qtd - a.qtd);
-    return { label: faixa.label, qtd: itens.length, porMoto };
+    return {
+      label: faixa.label,
+      qtd: itens.length,
+      pct: giroFiltrado.length ? (itens.length / giroFiltrado.length) * 100 : 0,
+      itens,
+    };
   });
   const valorTotalGeral = giroFiltrado.length;
 
@@ -385,6 +461,129 @@ export default function FaturamentoGeralPage() {
   const provisaoTotalRecuperado = provisaoFiltrado.reduce((sum: number, m: any) => sum + m.receitaLiq, 0);
   const provisaoTotalSaldo = provisaoTotalInvestido - provisaoTotalRecuperado;
   const provisaoPctGeral = provisaoTotalInvestido > 0 ? (provisaoTotalRecuperado / provisaoTotalInvestido) * 100 : 0;
+
+  function abrirConfigFaixas(tab: 'giro' | 'valor') {
+    const atual = tab === 'giro' ? giroBreakpoints : valorBreakpoints;
+    setConfigFaixasTexto(atual.join(' '));
+    setConfigFaixasAberto(tab);
+  }
+
+  function salvarConfigFaixas() {
+    const numeros = configFaixasTexto
+      .split(/[;\s]+/)
+      .filter(Boolean)
+      .map((s) => Number(s.replace(',', '.')))
+      .filter((n) => Number.isFinite(n) && n > 0);
+    if (!numeros.length) return;
+    const unicos = Array.from(new Set(numeros)).sort((a, b) => a - b);
+    if (configFaixasAberto === 'giro') {
+      setGiroBreakpoints(unicos);
+      window.localStorage.setItem(GIRO_BREAKPOINTS_KEY, JSON.stringify(unicos));
+    } else if (configFaixasAberto === 'valor') {
+      setValorBreakpoints(unicos);
+      window.localStorage.setItem(VALOR_BREAKPOINTS_KEY, JSON.stringify(unicos));
+    }
+    setConfigFaixasAberto('');
+  }
+
+  function alterarVisao(tab: 'giro' | 'valor', visao: 'sku' | 'categoria') {
+    if (tab === 'giro') {
+      setGiroVisao(visao);
+      window.localStorage.setItem(GIRO_VISAO_KEY, visao);
+    } else {
+      setValorVisao(visao);
+      window.localStorage.setItem(VALOR_VISAO_KEY, visao);
+    }
+  }
+
+  function renderTabelaFaixas(
+    tab: 'giro' | 'valor',
+    faixas: { label: string; qtd: number; pct: number; itens: any[] }[],
+    visao: 'sku' | 'categoria',
+    faixaAberta: string,
+    setFaixaAberta: (v: string) => void,
+    totalGeral: number,
+    colunaFaixa: string,
+    subtitulo: string,
+  ) {
+    return (
+      <div style={cs.card}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: isCompact ? '14px 16px' : '14px 18px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', gap: 10 }}>
+          <div>
+            <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>{colunaFaixa}</div>
+            <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>{subtitulo}</div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 6, overflow: 'hidden' }}>
+              {(['sku', 'categoria'] as const).map((v) => (
+                <button
+                  key={v}
+                  onClick={() => alterarVisao(tab, v)}
+                  style={{
+                    padding: '6px 12px',
+                    fontSize: 12,
+                    border: 'none',
+                    cursor: 'pointer',
+                    background: visao === v ? 'var(--ink)' : 'var(--white)',
+                    color: visao === v ? 'var(--white)' : 'var(--ink)',
+                  }}
+                >
+                  {v === 'sku' ? 'SKU' : 'Categoria'}
+                </button>
+              ))}
+            </div>
+            <button onClick={() => abrirConfigFaixas(tab)} style={{ ...cs.sel, cursor: 'pointer' }}>
+              Configurar faixas
+            </button>
+          </div>
+        </div>
+        {visao === 'categoria' && (
+          <div style={{ fontSize: 11.5, color: 'var(--ink-muted)', padding: '10px 18px 0' }}>
+            Categorias seguem a configuracao atual da Curva ABC (modo de categorias multiplas + unificacao). Se o modo "todas as categorias" estiver ativo la, um mesmo SKU pode contar em mais de uma categoria e os subtotais podem somar mais que 100%.
+          </div>
+        )}
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
+              <tr>{[colunaFaixa, 'Qtd.', '%'].map((h) => <th key={h} style={cs.th}>{h}</th>)}</tr>
+            </thead>
+            <tbody>
+              {faixas.every((f) => f.qtd === 0) ? (
+                <tr><td colSpan={3} style={{ ...cs.td, textAlign: 'center', color: 'var(--ink-muted)', padding: '30px 20px' }}>Sem dados no filtro</td></tr>
+              ) : faixas.map((faixa) => {
+                const aberta = faixaAberta === faixa.label;
+                const subLinhas = aberta ? subLinhasPorVisao(faixa.itens, visao, mapaCategorias) : [];
+                return (
+                  <Fragment key={faixa.label}>
+                    <tr onClick={() => setFaixaAberta(aberta ? '' : faixa.label)} style={{ cursor: faixa.qtd > 0 ? 'pointer' : 'default', background: 'var(--gray-50)' }}>
+                      <td style={{ ...cs.td, fontWeight: 700 }}>
+                        {faixa.qtd > 0 && <span style={{ display: 'inline-block', width: 18, color: 'var(--ink-muted)' }}>{aberta ? '−' : '+'}</span>}
+                        {faixa.label}
+                      </td>
+                      <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontWeight: 700 }}>{faixa.qtd}</td>
+                      <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontWeight: 700 }}>{faixa.pct.toFixed(1)}%</td>
+                    </tr>
+                    {aberta && subLinhas.map((s) => (
+                      <tr key={`${faixa.label}-${s.label}`}>
+                        <td style={{ ...cs.td, fontSize: 12.5, paddingLeft: 32 }}>{s.label}</td>
+                        <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12.5 }}>{s.qtd}</td>
+                        <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12.5 }}>{s.pct.toFixed(1)}%</td>
+                      </tr>
+                    ))}
+                  </Fragment>
+                );
+              })}
+              <tr style={{ background: 'var(--gray-50)', borderTop: '2px solid var(--border)' }}>
+                <td style={{ ...cs.td, fontWeight: 700 }}>Total geral</td>
+                <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontWeight: 700 }}>{totalGeral}</td>
+                <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontWeight: 700 }}>{totalGeral ? '100.0%' : '0%'}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -550,53 +749,16 @@ export default function FaturamentoGeralPage() {
           giroLoading ? (
             <div style={{ ...cs.card, padding: 28, color: 'var(--ink-muted)' }}>Carregando distribuicao por valor...</div>
           ) : (
-            <div style={cs.card}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: isCompact ? '14px 16px' : '14px 18px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', gap: 10 }}>
-                <div>
-                  <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>Distribuicao por Valor</div>
-                  <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>Quantidade de pecas vendidas por faixa de preco, detalhado por moto.</div>
-                </div>
-                <div style={{ fontSize: 12, color: 'var(--ink-muted)' }}>{valorTotalGeral} peca(s) no filtro</div>
-              </div>
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
-                    <tr>{['Por valor', 'Moto', 'Qtd.'].map((h) => <th key={h} style={cs.th}>{h}</th>)}</tr>
-                  </thead>
-                  <tbody>
-                    {valorDistribuicao.every((f) => f.qtd === 0) ? (
-                      <tr><td colSpan={3} style={{ ...cs.td, textAlign: 'center', color: 'var(--ink-muted)', padding: '30px 20px' }}>Sem vendas no filtro</td></tr>
-                    ) : valorDistribuicao.map((faixa) => {
-                      const aberta = valorFaixaAberta === faixa.label;
-                      return (
-                        <Fragment key={faixa.label}>
-                          <tr onClick={() => setValorFaixaAberta(aberta ? '' : faixa.label)} style={{ cursor: faixa.qtd > 0 ? 'pointer' : 'default', background: 'var(--gray-50)' }}>
-                            <td style={{ ...cs.td, fontWeight: 700 }}>
-                              {faixa.qtd > 0 && <span style={{ display: 'inline-block', width: 18, color: 'var(--ink-muted)' }}>{aberta ? '−' : '+'}</span>}
-                              {faixa.label}
-                            </td>
-                            <td style={cs.td} />
-                            <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontWeight: 700 }}>{faixa.qtd}</td>
-                          </tr>
-                          {aberta && faixa.porMoto.map((m) => (
-                            <tr key={`${faixa.label}-${m.moto}`}>
-                              <td style={cs.td} />
-                              <td style={{ ...cs.td, fontSize: 12.5 }}>{m.moto}</td>
-                              <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12.5 }}>{m.qtd}</td>
-                            </tr>
-                          ))}
-                        </Fragment>
-                      );
-                    })}
-                    <tr style={{ background: 'var(--gray-50)', borderTop: '2px solid var(--border)' }}>
-                      <td style={{ ...cs.td, fontWeight: 700 }}>Total geral</td>
-                      <td style={cs.td} />
-                      <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontWeight: 700 }}>{valorTotalGeral}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
+            renderTabelaFaixas(
+              'valor',
+              valorDistribuicao,
+              valorVisao,
+              valorFaixaAberta,
+              setValorFaixaAberta,
+              valorTotalGeral,
+              'Por valor',
+              'Quantidade de pecas vendidas por faixa de preco. Clique numa faixa para expandir.',
+            )
           )
         ) : modo === 'giro' ? (
           giroLoading ? (
@@ -618,13 +780,16 @@ export default function FaturamentoGeralPage() {
                 ))}
               </div>
 
-              <ChartPanel
-                title="Distribuicao do tempo de giro"
-                subtitle="Quantidade de pecas vendidas, por faixa de dias entre o cadastro e a venda."
-                accent="#2563eb"
-              >
-                <HorizontalBarChart items={giroDistribuicao} valueFormatter={(v) => `${v} peca(s)`} emptyText="Sem vendas no filtro." />
-              </ChartPanel>
+              {renderTabelaFaixas(
+                'giro',
+                giroDistribuicao,
+                giroVisao,
+                giroFaixaAberta,
+                setGiroFaixaAberta,
+                giroFiltrado.length,
+                'Tempo de giro',
+                'Quantidade de pecas vendidas por faixa de dias entre o cadastro e a venda. Clique numa faixa para expandir.',
+              )}
 
               <div style={{ display: 'grid', gridTemplateColumns: isCompact ? '1fr' : '1fr 1fr', gap: 18 }}>
                 <div style={cs.card}>
@@ -855,6 +1020,45 @@ export default function FaturamentoGeralPage() {
           </div>
         )}
       </div>
+
+      {configFaixasAberto && (
+        <div
+          onClick={() => setConfigFaixasAberto('')}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ ...cs.card, width: '100%', maxWidth: 420, padding: 20 }}
+          >
+            <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600, marginBottom: 6 }}>
+              Configurar faixas de {configFaixasAberto === 'giro' ? 'dias' : 'valor'}
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginBottom: 12 }}>
+              Informe os limites separados por espaco{configFaixasAberto === 'giro' ? ' (em dias)' : ' (em reais, use virgula ou ponto para centavos)'}. Ex.: {configFaixasAberto === 'giro' ? '7 15 30 60 90 180 365' : '300 600 1000 1500'}
+            </div>
+            <textarea
+              value={configFaixasTexto}
+              onChange={(e) => setConfigFaixasTexto(e.target.value)}
+              rows={3}
+              style={{ width: '100%', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 10px', fontSize: 13, fontFamily: 'Geist Mono, monospace', resize: 'vertical' as const }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+              <button
+                onClick={() => setConfigFaixasAberto('')}
+                style={{ ...cs.sel, cursor: 'pointer' }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={salvarConfigFaixas}
+                style={{ ...cs.sel, cursor: 'pointer', background: 'var(--ink)', color: 'var(--white)', borderColor: 'var(--ink)' }}
+              >
+                Salvar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

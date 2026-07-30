@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { getSaldoMercadoPagoPersistido } from './mercado-livre';
+import { carregarCategoriasEfetivasPorSku } from './curva-abc';
 
 export const faturamentoRouter = Router();
 
@@ -181,6 +182,18 @@ faturamentoRouter.get('/provisao', async (req, res, next) => {
     });
 
     res.json({ ok: true, linhas });
+  } catch (e) { next(e); }
+});
+
+// GET /faturamento/mapa-categorias — SKU base -> categorias efetivas, exatamente como
+// configurado na Curva ABC (modo todas/principal/especifica + unificacao). Usado pelo
+// drill-down "por categoria" das abas Tempo de Giro / Por Valor do Faturamento Geral.
+faturamentoRouter.get('/mapa-categorias', async (req, res, next) => {
+  try {
+    const mapa = await carregarCategoriasEfetivasPorSku();
+    const obj: Record<string, string[]> = {};
+    for (const [sku, categorias] of mapa.entries()) obj[sku] = categorias;
+    res.json({ ok: true, mapa: obj });
   } catch (e) { next(e); }
 });
 

@@ -3,7 +3,7 @@ import { prisma } from '../lib/prisma';
 
 export const curvaAbcRouter = Router();
 
-function baseSku(value: any) {
+export function baseSku(value: any) {
   return String(value || '').replace(/-\d+$/, '').toUpperCase().trim();
 }
 
@@ -11,7 +11,7 @@ type ModoAbc = 'todas' | 'principal' | 'especifica';
 type Contexto = { mapa: Map<string, string>; modo: ModoAbc; parentByNome: Map<string, string> };
 
 // Carrega mapa de unificação, modo de contagem e a hierarquia (nome→nome do pai) da Nuvemshop.
-async function carregarUnificacao(): Promise<Contexto> {
+export async function carregarUnificacao(): Promise<Contexto> {
   const mapa = new Map<string, string>();
   const parentByNome = new Map<string, string>();
   let modo: ModoAbc = 'todas';
@@ -84,7 +84,7 @@ function profundidade(nome: string, parentByNome: Map<string, string>): number {
 }
 
 // Categorias efetivas de um SKU aplicando modo + unificação (usada pelo relatório e pelo drill-down).
-function categoriasEfetivas(rawNomes: string[] | undefined, ctx: Contexto): string[] {
+export function categoriasEfetivas(rawNomes: string[] | undefined, ctx: Contexto): string[] {
   if (!rawNomes || !rawNomes.length) return ['Sem categoria'];
 
   // "Mais específica": SEMPRE 1 categoria por SKU (nunca conta 2x). Remove os pais quando há filha
@@ -110,6 +110,32 @@ function categoriasEfetivas(rawNomes: string[] | undefined, ctx: Contexto): stri
   if (!out.length) return ['Sem categoria'];
   if (ctx.modo === 'principal') return [out[0]]; // conta só na 1ª categoria
   return out; // 'todas'
+}
+
+// Carrega, pra TODOS os SKUs com categoria na Nuvemshop/manual, as categorias efetivas ja
+// aplicando modo (todas/principal/especifica) + unificacao configurados na Curva ABC. Reusado
+// fora deste arquivo (ex.: Faturamento Geral) pra que qualquer drill-down "por categoria"
+// bata exatamente com o que esta configurado aqui, sem duplicar a regra em outro lugar.
+export async function carregarCategoriasEfetivasPorSku(): Promise<Map<string, string[]>> {
+  const ctx = await carregarUnificacao();
+  let catRows: { sku: string; nome: string }[] = [];
+  try {
+    catRows = await prisma.$queryRaw<{ sku: string; nome: string }[]>`
+      SELECT "sku", "nome" FROM "SkuCategoria" ORDER BY "id" ASC
+    `;
+  } catch {
+    return new Map();
+  }
+  const rawPorSku = new Map<string, string[]>();
+  for (const r of catRows) {
+    const sku = baseSku(r.sku);
+    if (!rawPorSku.has(sku)) rawPorSku.set(sku, []);
+    const nome = String(r.nome || '').trim();
+    if (nome && !rawPorSku.get(sku)!.includes(nome)) rawPorSku.get(sku)!.push(nome);
+  }
+  const categoriasPorSku = new Map<string, string[]>();
+  for (const [sku, raw] of rawPorSku.entries()) categoriasPorSku.set(sku, categoriasEfetivas(raw, ctx));
+  return categoriasPorSku;
 }
 
 // GET /curva-abc/relatorio?motoId=&dataDe=&dataAte=
