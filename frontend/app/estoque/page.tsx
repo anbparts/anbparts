@@ -1738,7 +1738,8 @@ function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, onOpen
     e.preventDefault();
     const sinal = match[1] === '-' ? -1 : 1;
     const pct = Number(match[2].replace(',', '.'));
-    const base = precoBaseRef.current;
+    // Sempre calcula sobre o valor salvo no banco (peca.precoML), nunca sobre um percentual ja aplicado antes.
+    const base = peca ? precoOriginal : precoBaseRef.current;
     if (!Number.isFinite(pct) || !Number.isFinite(base) || base <= 0) return;
     const novo = Math.round(base * (1 + (sinal * pct) / 100) * 100) / 100;
     handlePrecoMlChange(String(novo));
