@@ -1713,7 +1713,8 @@ function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, onOpen
   }
 
   function handlePrecoMlChange(value: string) {
-    const normalized = value.trim().startsWith('%') ? value : value.replace(',', '.');
+    const permitido = value.replace(/[^0-9%+\-,.]/g, '');
+    const normalized = permitido.trim().startsWith('%') ? permitido : permitido.replace(',', '.');
     if (Number.isFinite(Number(normalized)) && normalized.trim() !== '') {
       precoBaseRef.current = Number(normalized);
     }
