@@ -1538,6 +1538,7 @@ function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, onOpen
   const [, setFreteTouched] = useState(false);
   const [taxasTouched, setTaxasTouched] = useState(false);
   const [temHistoricoPreco, setTemHistoricoPreco] = useState(false);
+  const precoBaseRef = useRef(0);
   const preview = calculatePecaPreview(form.precoML, form.valorFrete, form.valorTaxas);
   const precoOriginal = peca ? Number(peca.precoML || 0) : null;
   const taxaRateOriginal = peca && precoOriginal ? Number(peca.valorTaxas || 0) / precoOriginal : null;
@@ -1568,8 +1569,10 @@ function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, onOpen
         dataVenda: peca.dataVenda?.split('T')[0] || '',
         cadastro: peca.cadastro?.split('T')[0] || today(),
       });
+      precoBaseRef.current = Number(peca.precoML || 0);
     } else {
       setForm(empty);
+      precoBaseRef.current = 0;
     }
     setErr('');
     setShowPrejuizoModal(false);
@@ -1645,6 +1648,11 @@ function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, onOpen
       setErr(`A descricao tem ${descricaoLen} caracteres — o maximo e 60 (limite do titulo no Mercado Livre). Ajuste antes de salvar.`);
       return;
     }
+    const precoRaw = String(form.precoML || '').trim();
+    if (precoRaw && !Number.isFinite(Number(precoRaw))) {
+      setErr('Preco ML invalido. Se digitou um percentual (ex: %+10), aperte Enter no campo antes de salvar.');
+      return;
+    }
 
     setSaving(true);
     try {
@@ -1705,16 +1713,34 @@ function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, onOpen
   }
 
   function handlePrecoMlChange(value: string) {
+    const normalized = value.trim().startsWith('%') ? value : value.replace(',', '.');
+    if (Number.isFinite(Number(normalized)) && normalized.trim() !== '') {
+      precoBaseRef.current = Number(normalized);
+    }
     setForm((prev: any) => {
-      const next = { ...prev, precoML: value };
+      const next = { ...prev, precoML: normalized };
       if (!peca && !taxasTouched && suggestion?.taxaPadraoPct !== undefined) {
-        next.valorTaxas = moneyInputValue((Number(value) || 0) * (Number(suggestion?.taxaPadraoPct || 0) / 100));
+        next.valorTaxas = moneyInputValue((Number(normalized) || 0) * (Number(suggestion?.taxaPadraoPct || 0) / 100));
       } else if (peca && !taxasTouched && taxaRateOriginal !== null) {
         // Mantem a mesma taxa % implicita no valor original da peca, escalada pro novo preco.
-        next.valorTaxas = moneyInputValue((Number(value) || 0) * taxaRateOriginal);
+        next.valorTaxas = moneyInputValue((Number(normalized) || 0) * taxaRateOriginal);
       }
       return next;
     });
+  }
+
+  function handlePrecoMlKeyDown(e: any) {
+    if (e.key !== 'Enter') return;
+    const raw = String(form.precoML || '').trim();
+    const match = raw.match(/^%\s*([+-]?)\s*(\d+(?:[.,]\d+)?)$/);
+    if (!match) return;
+    e.preventDefault();
+    const sinal = match[1] === '-' ? -1 : 1;
+    const pct = Number(match[2].replace(',', '.'));
+    const base = precoBaseRef.current;
+    if (!Number.isFinite(pct) || !Number.isFinite(base) || base <= 0) return;
+    const novo = Math.round(base * (1 + (sinal * pct) / 100) * 100) / 100;
+    handlePrecoMlChange(String(novo));
   }
 
   function handleFreteChange(value: string) {
@@ -1833,10 +1859,11 @@ function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, onOpen
                     </div>
                     <input
                       style={cs.fi}
-                      type="number"
-                      placeholder="0,00"
+                      type="text"
+                      placeholder="0,00 (ou %+10 / %-10)"
                       value={form.precoML}
                       onChange={(e) => handlePrecoMlChange(e.target.value)}
+                      onKeyDown={handlePrecoMlKeyDown}
                     />
                     {reajusteInfo}
                   </div>
@@ -1898,10 +1925,11 @@ function PecaModal({ open, onClose, onSave, onCancelSale, onMarkPrejuizo, onOpen
                   </div>
                   <input
                     style={cs.fi}
-                    type="number"
-                    placeholder="0,00"
+                    type="text"
+                    placeholder="0,00 (ou %+10 / %-10)"
                     value={form.precoML}
                     onChange={(e) => handlePrecoMlChange(e.target.value)}
+                    onKeyDown={handlePrecoMlKeyDown}
                   />
                   {reajusteInfo}
                 </div>
