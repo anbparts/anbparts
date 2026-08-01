@@ -447,7 +447,14 @@ export default function FaturamentoGeralPage() {
     if (jaPago) status = 'pago';
     else if (diasParaPagar != null) status = 'projetado';
 
-    return { ...m, diasAtivo, receitaPorDia, pecasPorDia, saldoRestante, percentualPago, semCusto, jaPago, semVendas, diasParaPagar, dataPayback, diasParaEsgotar, status };
+    // Lucro futuro: receita ja recebida + receita projetada ate zerar o estoque no ritmo atual,
+    // menos o preco de compra. Reflete o lucro final esperado quando toda a moto for vendida.
+    const receitaFuturaProjetada = receitaPorDia * (diasParaEsgotar || 0);
+    const receitaTotalProjetada = m.receitaLiq + receitaFuturaProjetada;
+    const lucroFuturo = receitaTotalProjetada - m.precoCompra;
+    const pctLucroFuturo = m.precoCompra > 0 ? (lucroFuturo / m.precoCompra) * 100 : null;
+
+    return { ...m, diasAtivo, receitaPorDia, pecasPorDia, saldoRestante, percentualPago, semCusto, jaPago, semVendas, diasParaPagar, dataPayback, diasParaEsgotar, status, lucroFuturo, pctLucroFuturo };
   }).sort((a: any, b: any) => {
     const ordem = { pago: 0, projetado: 1, sem_dados: 2 };
     if (ordem[a.status as keyof typeof ordem] !== ordem[b.status as keyof typeof ordem]) {
@@ -461,6 +468,12 @@ export default function FaturamentoGeralPage() {
   const provisaoTotalRecuperado = provisaoFiltrado.reduce((sum: number, m: any) => sum + m.receitaLiq, 0);
   const provisaoTotalSaldo = provisaoTotalInvestido - provisaoTotalRecuperado;
   const provisaoPctGeral = provisaoTotalInvestido > 0 ? (provisaoTotalRecuperado / provisaoTotalInvestido) * 100 : 0;
+
+  const provisaoLucroFuturoTotal = provisaoCalculada.reduce((sum: number, m: any) => sum + m.lucroFuturo, 0);
+  const provisaoPctLucroValidos = provisaoCalculada.map((m: any) => m.pctLucroFuturo).filter((v: any) => v !== null) as number[];
+  const provisaoMediaPctLucro = provisaoPctLucroValidos.length
+    ? provisaoPctLucroValidos.reduce((sum: number, v: number) => sum + v, 0) / provisaoPctLucroValidos.length
+    : 0;
 
   function abrirConfigFaixas(tab: 'giro' | 'valor') {
     const atual = tab === 'giro' ? giroBreakpoints : valorBreakpoints;
@@ -680,6 +693,8 @@ export default function FaturamentoGeralPage() {
                   { label: 'Total recuperado', value: fmt(provisaoTotalRecuperado), color: 'var(--sage)' },
                   { label: 'Saldo restante', value: fmt(Math.max(0, provisaoTotalSaldo)), color: provisaoTotalSaldo > 0 ? '#c2410c' : 'var(--sage)' },
                   { label: '% pago geral', value: `${provisaoPctGeral.toFixed(1)}%`, color: 'var(--ink)' },
+                  { label: 'Lucro futuro', value: fmt(provisaoLucroFuturoTotal), color: provisaoLucroFuturoTotal >= 0 ? 'var(--sage)' : '#c2410c' },
+                  { label: 'Media % lucro', value: `${provisaoMediaPctLucro.toFixed(1)}%`, color: provisaoMediaPctLucro >= 0 ? 'var(--sage)' : '#c2410c' },
                 ].map((card) => (
                   <div key={card.label} style={cs.sCard}>
                     <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '0.6px', textTransform: 'uppercase', marginBottom: 10 }}>
