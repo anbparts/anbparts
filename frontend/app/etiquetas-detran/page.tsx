@@ -575,6 +575,7 @@ export default function EtiquetasDetranPage() {
       if (!resp.ok || data?.ok === false) {
         throw new Error(data?.error || 'Erro ao salvar nova etiqueta');
       }
+      const ehAvulsa = Boolean(data?.ehAvulsa);
 
       let avisoBling = '';
       try {
@@ -606,6 +607,8 @@ export default function EtiquetasDetranPage() {
 
       if (avisoBling) {
         alert(`Etiqueta salva no ANB, mas o Bling nao sincronizou: ${avisoBling}`);
+      } else if (ehAvulsa) {
+        alert('Etiqueta salva. Ela e uma etiqueta avulsa (nao bate com a cartela da moto) — enviada para Pendencia Etiqueta Avulsa, aguardando ativacao no DETRAN.');
       }
     } catch (e: any) {
       alert(e?.message || 'Erro ao salvar nova etiqueta');

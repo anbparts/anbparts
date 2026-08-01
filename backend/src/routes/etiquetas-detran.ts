@@ -916,7 +916,10 @@ etiquetasDetranRouter.get('/pendencias-ativacao', async (req, res, next) => {
         tipoPecaAvulsa: { not: null },
         detranEtiqueta: { not: null },
         emPrejuizo: false,
-        cadastro: { gte: ativacaoCutoff() },
+        OR: [
+          { cadastro: { gte: ativacaoCutoff() } },
+          { etiquetaAtribuidaEm: { gte: ativacaoCutoff() } },
+        ],
       },
       select: {
         id: true, idPeca: true, descricao: true, detranEtiqueta: true,
@@ -1035,7 +1038,15 @@ etiquetasDetranRouter.get('/pendencias-resumo', async (_req, res, next) => {
 
     // 2) ATIVACAO — etiqueta avulsa (≤30 dias) ainda nao ativada.
     const pecasAtiv = await prisma.peca.findMany({
-      where: { tipoPecaAvulsa: { not: null }, detranEtiqueta: { not: null }, emPrejuizo: false, cadastro: { gte: ativacaoCutoff() } },
+      where: {
+        tipoPecaAvulsa: { not: null },
+        detranEtiqueta: { not: null },
+        emPrejuizo: false,
+        OR: [
+          { cadastro: { gte: ativacaoCutoff() } },
+          { etiquetaAtribuidaEm: { gte: ativacaoCutoff() } },
+        ],
+      },
       select: { id: true, idPeca: true, descricao: true, detranEtiqueta: true, tipoPecaAvulsa: true, motoId: true },
     });
     if (pecasAtiv.length) {

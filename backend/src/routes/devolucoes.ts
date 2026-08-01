@@ -2,8 +2,20 @@ import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { syncDetranEtiquetaBling } from '../lib/sync-bling-detran';
 import { spDayStart, spDayEnd } from '../lib/timezone';
+import { sendDetranAtivacaoEmailIfNeeded } from '../lib/detran-alert';
 
 export const devolucoesRouter = Router();
+
+// Etiqueta é de cartela quando: termina em 001..034 (posição) E a base (sem os 3 dígitos)
+// é exatamente o prefixo da cartela da moto (detranCartelaId). Mesma regra usada no
+// pré-cadastro (cadastro.ts) e em etiquetas-detran.ts — duplicada aqui por convenção do projeto.
+function ehEtiquetaCartelaDaMoto(etq: unknown, cartelaBase: unknown) {
+  const s = String(etq || '').trim();
+  const base = String(cartelaBase || '').trim();
+  if (!base || s.length <= 3) return false;
+  const pos = Number(s.slice(-3));
+  return pos >= 1 && pos <= 34 && s.slice(0, -3) === base;
+}
 
 function hasEstoqueAction(req: any, action: string) {
   const user = req.authUser || {};
@@ -208,9 +220,12 @@ devolucoesRouter.post('/pendentes-etiqueta/:pecaId/nova-etiqueta', requirePenden
       select: {
         id: true,
         idPeca: true,
+        descricao: true,
+        motoId: true,
         etiquetaPendente: true,
         disponivel: true,
         detranEtiqueta: true,
+        tipoPecaAvulsa: true,
       },
     });
 
@@ -231,6 +246,20 @@ devolucoesRouter.post('/pendentes-etiqueta/:pecaId/nova-etiqueta', requirePenden
       return res.status(409).json({ ok: false, error: `Etiqueta ja esta cadastrada no SKU ${etiquetaEmUso.idPeca}` });
     }
 
+    // Verifica se a nova etiqueta e de cartela (bate com a cartela da moto) ou avulsa —
+    // mesma regra do pre-cadastro. Se for avulsa, marca a data de atribuicao (peca pode ter
+    // cadastro antigo) e reaproveita o Tipo de Peca ja salvo (a peca e a mesma, o tipo nao muda).
+    const moto = await (prisma as any).moto.findUnique({
+      where: { id: peca.motoId },
+      select: { marca: true, modelo: true, renavam: true, placa: true, chassi: true, notaFiscalEntrada: true, detranCartelaId: true },
+    });
+    const posicaoCartela = await prisma.motoDetranPosicao.findFirst({
+      where: { motoId: peca.motoId, idPeca: peca.idPeca, etiqueta: novaEtiqueta },
+      select: { id: true },
+    });
+    const ehCartela = Boolean(posicaoCartela) || ehEtiquetaCartelaDaMoto(novaEtiqueta, moto?.detranCartelaId);
+    const ehAvulsa = !ehCartela;
+
     const atualizada = await prisma.peca.update({
       where: { id: peca.id },
       data: {
@@ -240,11 +269,30 @@ devolucoesRouter.post('/pendentes-etiqueta/:pecaId/nova-etiqueta', requirePenden
         detranBaixada: false,
         detranBaixadaAt: null,
         etiquetaPendente: false,
+        etiquetaAtribuidaEm: ehAvulsa ? new Date() : null,
       },
     });
 
     await syncDetranEtiquetaBling(peca.idPeca);
 
-    res.json({ ok: true, peca: atualizada });
+    if (ehAvulsa && peca.tipoPecaAvulsa) {
+      try {
+        await sendDetranAtivacaoEmailIfNeeded([{
+          idPeca: peca.idPeca,
+          descricao: peca.descricao,
+          etiqueta: novaEtiqueta,
+          tipoPeca: peca.tipoPecaAvulsa,
+          motoLabel: moto ? [moto.marca, moto.modelo].filter(Boolean).join(' ') : null,
+          renavam: moto?.renavam || null,
+          placa: moto?.placa || null,
+          chassi: moto?.chassi || null,
+          notaFiscalEntrada: moto?.notaFiscalEntrada || null,
+        }]);
+      } catch (err) {
+        console.error('[ativacao-email] falha ao enviar alerta de ativacao (devolucao):', err);
+      }
+    }
+
+    res.json({ ok: true, peca: atualizada, ehAvulsa });
   } catch (e) { next(e); }
 });

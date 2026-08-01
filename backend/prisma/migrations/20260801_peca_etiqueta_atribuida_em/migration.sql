@@ -1,0 +1,1 @@
+ALTER TABLE "Peca" ADD COLUMN IF NOT EXISTS "etiquetaAtribuidaEm" TIMESTAMP(3);

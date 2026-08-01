@@ -75,6 +75,7 @@ model Peca {
   numeroPeca     String?
   numeroMotor    String?
   tipoPecaAvulsa String?
+  etiquetaAtribuidaEm DateTime? // data em que a etiqueta atual foi atribuida (ex: nova etiqueta pos-devolucao); usado pra janela de pendencia de ativacao quando a peca ja tem cadastro antigo
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
