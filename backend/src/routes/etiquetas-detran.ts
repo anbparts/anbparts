@@ -5,7 +5,7 @@ import { blingReq } from './bling';
 export const etiquetasDetranRouter = Router();
 const prisma = new PrismaClient();
 
-const DETRAN_TIPOS = [
+export const DETRAN_TIPOS = [
   'Balança', 'Banco', 'Bengala direita', 'Bengala esquerda', 'Bloco do motor',
   'Cabeçote', 'Carburador', 'Carenagem direita', 'Carenagem esquerda',
   'Carenagem frontal', 'Carenagem traseira', 'Estribo', 'Farol',
@@ -62,7 +62,7 @@ function getDetranStatusLabel(detranBaixada: boolean) {
 // sem exigir SKU já vinculado) com fallback pela posição (001-034) do numero da etiqueta e,
 // por ultimo, o tipo informado manualmente na peca/pre-cadastro avulso. Compartilhada entre
 // /validar (etiquetas ativas) e /validar-baixa (etiquetas baixadas).
-function calcularTipoPeca(etq: string, motoId: number | null | undefined, cartelaMap: Map<string, string>, tipoAvulsaFallback?: string | null) {
+export function calcularTipoPeca(etq: string, motoId: number | null | undefined, cartelaMap: Map<string, string>, tipoAvulsaFallback?: string | null) {
   const cartelaTipo = motoId != null ? cartelaMap.get(`${motoId}|${etq.toUpperCase()}`) : undefined;
   const match = etq.match(/^(.*?)(\d{3})$/);
   const posicao = match ? Number(match[2]) : 0;
@@ -70,7 +70,7 @@ function calcularTipoPeca(etq: string, motoId: number | null | undefined, cartel
   return cartelaTipo || (isCartela ? DETRAN_TIPOS[posicao - 1] : null) || tipoAvulsaFallback || null;
 }
 
-async function carregarCartelaMap(motoIds: number[]) {
+export async function carregarCartelaMap(motoIds: number[]) {
   const posicoesCartela = motoIds.length
     ? await prisma.motoDetranPosicao.findMany({
         where: { motoId: { in: motoIds } },
@@ -310,6 +310,7 @@ etiquetasDetranRouter.get('/', async (req, res, next) => {
           detranStatus: true, detranBaixada: true, detranBaixadaAt: true,
           disponivel: true, blingPedidoId: true, blingPedidoNum: true,
           dataVenda: true, motoId: true, tipoPecaAvulsa: true, cadastro: true,
+          etiquetaAtribuidaEm: true,
         },
         orderBy: { idPeca: 'asc' },
       }),
@@ -394,14 +395,17 @@ etiquetasDetranRouter.get('/', async (req, res, next) => {
         if (!textIncludes(tipoPecaVal, tipoPeca)) continue;
         if (!textIncludes(etq, etiqueta)) continue;
 
-        // Etiqueta avulsa (sem cartela) com tipo definido, cadastro <= 30 dias e sem ativação = Pendente Ativação.
+        // Etiqueta avulsa (sem cartela) com tipo definido, cadastro <= 30 dias (ou etiqueta atribuida
+        // <= 30 dias, ex: nova etiqueta pos-devolucao numa peca com cadastro antigo) e sem ativação = Pendente Ativação.
         // Acima de 30 dias ou já ativada = Ativa (a menos que esteja baixada).
+        const cadastroRecente = !!peca.cadastro && new Date(peca.cadastro) >= cutoffAtivacao;
+        const atribuidaRecente = !!(peca as any).etiquetaAtribuidaEm && new Date((peca as any).etiquetaAtribuidaEm) >= cutoffAtivacao;
         const ehAvulsaPendente = !etqBaixada
           && !cartelaTipo
           && !ehEtiquetaCartelaDaMoto(etq, cartelaBaseByMoto.get(peca.motoId))
           && !!(peca as any).tipoPecaAvulsa
           && !ativacoesMap.has(`${peca.id}|${etq}`)
-          && !!peca.cadastro && new Date(peca.cadastro) >= cutoffAtivacao;
+          && (cadastroRecente || atribuidaRecente);
         const statusLabel = etqBaixada ? 'Baixada' : (ehAvulsaPendente ? 'Pendente Ativação' : 'Ativa');
 
         linhas.push({

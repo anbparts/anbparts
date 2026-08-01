@@ -3,6 +3,7 @@ import { prisma } from '../lib/prisma';
 import { syncDetranEtiquetaBling } from '../lib/sync-bling-detran';
 import { spDayStart, spDayEnd } from '../lib/timezone';
 import { sendDetranAtivacaoEmailIfNeeded } from '../lib/detran-alert';
+import { calcularTipoPeca, carregarCartelaMap } from './etiquetas-detran';
 
 export const devolucoesRouter = Router();
 
@@ -248,7 +249,7 @@ devolucoesRouter.post('/pendentes-etiqueta/:pecaId/nova-etiqueta', requirePenden
 
     // Verifica se a nova etiqueta e de cartela (bate com a cartela da moto) ou avulsa —
     // mesma regra do pre-cadastro. Se for avulsa, marca a data de atribuicao (peca pode ter
-    // cadastro antigo) e reaproveita o Tipo de Peca ja salvo (a peca e a mesma, o tipo nao muda).
+    // cadastro antigo, entao a janela de pendencia de ativacao usa essa data em vez da antiga).
     const moto = await (prisma as any).moto.findUnique({
       where: { id: peca.motoId },
       select: { marca: true, modelo: true, renavam: true, placa: true, chassi: true, notaFiscalEntrada: true, detranCartelaId: true },
@@ -260,6 +261,22 @@ devolucoesRouter.post('/pendentes-etiqueta/:pecaId/nova-etiqueta', requirePenden
     const ehCartela = Boolean(posicaoCartela) || ehEtiquetaCartelaDaMoto(novaEtiqueta, moto?.detranCartelaId);
     const ehAvulsa = !ehCartela;
 
+    // O Tipo de Peca e da PECA, nao da etiqueta — nao muda so porque a etiqueta mudou. Toda peca
+    // de devolucao ja teve uma etiqueta antes (cartela ou avulsa), entao derivamos o tipo a partir
+    // dela com a MESMA logica usada no resto do modulo (calcularTipoPeca): cartela da moto
+    // (MotoDetranPosicao) -> posicao 001-034 -> tipoPecaAvulsa ja salvo, como ultimo fallback.
+    const ultimaDevolucao = await prisma.historicoDevolucao.findFirst({
+      where: { pecaId: peca.id },
+      orderBy: { dataDevolucao: 'desc' },
+      select: { etiquetasDetran: true },
+    });
+    const etiquetaAnterior = String(ultimaDevolucao?.etiquetasDetran || '').trim().toUpperCase();
+    const cartelaMap = await carregarCartelaMap([peca.motoId]);
+    const tipoDerivado = etiquetaAnterior
+      ? calcularTipoPeca(etiquetaAnterior, peca.motoId, cartelaMap, peca.tipoPecaAvulsa)
+      : peca.tipoPecaAvulsa;
+    const tipoPecaParaAtivacao = tipoDerivado || peca.tipoPecaAvulsa || 'Avulsa';
+
     const atualizada = await prisma.peca.update({
       where: { id: peca.id },
       data: {
@@ -270,18 +287,19 @@ devolucoesRouter.post('/pendentes-etiqueta/:pecaId/nova-etiqueta', requirePenden
         detranBaixadaAt: null,
         etiquetaPendente: false,
         etiquetaAtribuidaEm: ehAvulsa ? new Date() : null,
+        tipoPecaAvulsa: tipoPecaParaAtivacao,
       },
     });
 
     await syncDetranEtiquetaBling(peca.idPeca);
 
-    if (ehAvulsa && peca.tipoPecaAvulsa) {
+    if (ehAvulsa && tipoPecaParaAtivacao) {
       try {
         await sendDetranAtivacaoEmailIfNeeded([{
           idPeca: peca.idPeca,
           descricao: peca.descricao,
           etiqueta: novaEtiqueta,
-          tipoPeca: peca.tipoPecaAvulsa,
+          tipoPeca: tipoPecaParaAtivacao,
           motoLabel: moto ? [moto.marca, moto.modelo].filter(Boolean).join(' ') : null,
           renavam: moto?.renavam || null,
           placa: moto?.placa || null,
