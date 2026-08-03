@@ -2518,7 +2518,7 @@ export default function CadastroPage() {
                   <label style={s.label}>URL de Referência</label>
                   <input style={s.input} value={form.urlRef || ''} onChange={(e) => setForm((p: any) => ({ ...p, urlRef: e.target.value }))} placeholder="Ex: www.site.com.br/produto" />
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#f8fafc', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
                   <input
                     type="checkbox"
                     id="pecaRestrita"
@@ -2526,7 +2526,7 @@ export default function CadastroPage() {
                     onChange={(e) => setForm((p: any) => ({ ...p, pecaRestrita: e.target.checked }))}
                     style={{ width: 18, height: 18 }}
                   />
-                  <label htmlFor="pecaRestrita" style={{ fontSize: 13, fontWeight: 700, color: '#991b1b', cursor: 'pointer' }}>
+                  <label htmlFor="pecaRestrita" style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-700)', cursor: 'pointer' }}>
                     Peça Restrita - Sem Revenda
                   </label>
                 </div>
