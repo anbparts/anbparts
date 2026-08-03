@@ -50,6 +50,7 @@ type CadastroPeca = {
   numeroPeca?: string; numeroMotor?: string; detranEtiqueta?: string; tipoPecaAvulsa?: string; localizacao?: string;
   estoque: number; categoriaMLId?: string; categoriaMLNome?: string;
   urlRef?: string; fotoCapa?: string; fotoCapaNome?: string; status: string; blingProdutoId?: string;
+  pecaRestrita?: boolean;
   createdAt?: string;
   updatedAt?: string;
   moto: { id: number; marca: string; modelo: string; ano?: number; descricaoModelo?: string };
@@ -102,6 +103,7 @@ const EMPTY_FORM = {
   condicao: 'usado', peso: '', largura: '', altura: '', profundidade: '',
   numeroPeca: '', numeroMotor: '', detranEtiqueta: '', tipoPecaAvulsa: '', localizacao: '', estoque: '1',
   categoriaMLId: '', categoriaMLNome: '', urlRef: '', fotoCapa: '', fotoCapaNome: '',
+  pecaRestrita: false,
 };
 
 async function readApiResponse(resp: Response, fallback: string) {
@@ -400,6 +402,7 @@ export default function CadastroPage() {
   const [previewDiff, setPreviewDiff] = useState<any>({});
   const [previewFrete, setPreviewFrete] = useState(29.9);
   const [previewTaxa, setPreviewTaxa] = useState(17);
+  const [finalizarRestrita, setFinalizarRestrita] = useState(false);
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [confirmando, setConfirmando] = useState(false);
   const [etiquetas, setEtiquetas] = useState<string[]>(['']); // array de etiquetas detran
@@ -1129,6 +1132,7 @@ export default function CadastroPage() {
       tipoPecaAvulsa: item.tipoPecaAvulsa || '', localizacao: item.localizacao || '', estoque: String(item.estoque),
       categoriaMLId: item.categoriaMLId || '', categoriaMLNome: item.categoriaMLNome || '',
       urlRef: item.urlRef || '', fotoCapa: item.fotoCapa || '', fotoCapaNome: item.fotoCapaNome || '',
+      pecaRestrita: Boolean(item.pecaRestrita),
     });
     // Carregar etiquetas do campo concatenado (SP001 / SP002 / SP003)
     const etiquetasCarregadas = item.detranEtiqueta
@@ -1248,6 +1252,7 @@ export default function CadastroPage() {
         categoriaMLId: form.categoriaMLId || null, categoriaMLNome: form.categoriaMLNome || null,
         urlRef: form.urlRef || null,
         tipoPecaAvulsa: form.tipoPecaAvulsa || null,
+        pecaRestrita: Boolean(form.pecaRestrita),
       };
       const url = editItem ? `${API}/cadastro/${editItem.id}` : `${API}/cadastro`;
       const method = editItem ? 'PUT' : 'POST';
@@ -1325,8 +1330,8 @@ export default function CadastroPage() {
 
   async function abrirFinalizar(item: CadastroPeca) {
     if (!canCriarProdutoBling) return alert('Seu usuario nao tem permissao para criar produto Bling.');
-    if (!item.blingProdutoId) return alert('Produto não foi enviado ao Bling ainda. Salve o pré-cadastro primeiro.');
-    setItemFinalizar(item); setPreviewBling(null); setPreviewDiff({});
+    if (!item.pecaRestrita && !item.blingProdutoId) return alert('Produto não foi enviado ao Bling ainda. Salve o pré-cadastro primeiro.');
+    setItemFinalizar(item); setPreviewBling(null); setPreviewDiff({}); setFinalizarRestrita(false);
     setFinalizarFotoCapa(item.fotoCapa || '');
     setFinalizarFotoCapaNome(item.fotoCapaNome || '');
     setFotoPreviewOpen(false);
@@ -1339,7 +1344,10 @@ export default function CadastroPage() {
       const d = await resp.json();
       if (!d.ok) throw new Error(d.error || 'Erro');
       setPreviewBling(d.preview); setPreviewDiff(d.diff || {});
-      setPreviewFrete(d.preview.frete); setPreviewTaxa(d.preview.taxaPct);
+      setFinalizarRestrita(!!d.restrita);
+      if (!d.restrita) {
+        setPreviewFrete(d.preview.frete); setPreviewTaxa(d.preview.taxaPct);
+      }
     } catch (e: any) { alert(e.message); setModalFinalizar(false); }
     setLoadingPreview(false);
   }
@@ -1361,7 +1369,9 @@ export default function CadastroPage() {
       });
       const d = await resp.json();
       if (!d.ok) throw new Error(d.error || 'Erro');
-      alert(`✓ ${d.pecasCriadas?.length || 0} peça(s) lançada(s) no estoque!`);
+      alert(d.restrita
+        ? `✓ ${d.pecasCriadas?.length || 0} peça(s) registrada(s) em Prejuízo (Peça Restrita - Sem Revenda)!`
+        : `✓ ${d.pecasCriadas?.length || 0} peça(s) lançada(s) no estoque!`);
       setModalFinalizar(false); await loadCadastros();
     } catch (e: any) { alert(e.message); }
     setConfirmando(false);
@@ -2508,6 +2518,18 @@ export default function CadastroPage() {
                   <label style={s.label}>URL de Referência</label>
                   <input style={s.input} value={form.urlRef || ''} onChange={(e) => setForm((p: any) => ({ ...p, urlRef: e.target.value }))} placeholder="Ex: www.site.com.br/produto" />
                 </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 12px' }}>
+                  <input
+                    type="checkbox"
+                    id="pecaRestrita"
+                    checked={!!form.pecaRestrita}
+                    onChange={(e) => setForm((p: any) => ({ ...p, pecaRestrita: e.target.checked }))}
+                    style={{ width: 18, height: 18 }}
+                  />
+                  <label htmlFor="pecaRestrita" style={{ fontSize: 13, fontWeight: 700, color: '#991b1b', cursor: 'pointer' }}>
+                    Peça Restrita - Sem Revenda
+                  </label>
+                </div>
                 <div style={{ background: '#f8fafc', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', display: 'none' }}>
                   <input
                     ref={fotoInputRef}
@@ -2639,7 +2661,23 @@ export default function CadastroPage() {
               <button onClick={() => { setModalFinalizar(false); setFotoPreviewOpen(false); }} style={{ border: 'none', background: 'transparent', fontSize: 20, cursor: 'pointer', color: 'var(--gray-400)' }}>×</button>
             </div>
             <div style={{ padding: isPhone ? '14px' : '20px 24px', flex: 1, overflowY: 'auto' }}>
-              {loadingPreview ? <div style={{ textAlign: 'center', padding: 32, color: 'var(--gray-400)' }}>Buscando dados do Bling...</div> : previewBling ? (
+              {loadingPreview ? <div style={{ textAlign: 'center', padding: 32, color: 'var(--gray-400)' }}>Buscando dados...</div> : finalizarRestrita && previewBling ? (
+                <div style={{ display: 'grid', gap: 14 }}>
+                  <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: 12, fontSize: 13, color: '#991b1b' }}>
+                    Esta peça está marcada como <strong>Peça Restrita - Sem Revenda</strong>. Ela não passa pelo Bling/Mercado Livre/Nuvemshop — ao confirmar, será criada diretamente na tela de <strong>Prejuízo</strong>, com motivo "Peça Restrita - Sem Revenda".
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <div><div style={{ fontSize: 11, color: 'var(--gray-500)' }}>Descrição</div><div style={{ fontSize: 13, fontWeight: 500 }}>{previewBling.descricao}</div></div>
+                    <div><div style={{ fontSize: 11, color: 'var(--gray-500)' }}>Valor (Prejuízo)</div><div style={{ fontSize: 13, fontWeight: 700 }}>{`R$ ${Number(previewBling.precoVenda || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}</div></div>
+                    <div><div style={{ fontSize: 11, color: 'var(--gray-500)' }}>Estoque</div><div style={{ fontSize: 13, fontWeight: 500 }}>{previewBling.estoque}</div></div>
+                  </div>
+                  {Number(previewBling.estoque) > 1 && (
+                    <div style={{ background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 8, padding: 10, fontSize: 12, color: '#92400e' }}>
+                      ⚠ Estoque = {previewBling.estoque} → serão criados {previewBling.estoque} registros em Prejuízo: {itemFinalizar.idPeca}{Number(previewBling.estoque) > 1 ? `, ${itemFinalizar.idPeca}-2` : ''}{Number(previewBling.estoque) > 2 ? '...' : ''}
+                    </div>
+                  )}
+                </div>
+              ) : previewBling ? (
                 <div style={{ display: 'grid', gap: 14 }}>
                   <div style={{ display: 'none' }}>{[
                     { key: 'descricao', label: 'Título', val: previewBling.descricao },
@@ -2808,8 +2846,8 @@ export default function CadastroPage() {
             <div style={{ padding: isPhone ? '12px 14px calc(12px + env(safe-area-inset-bottom))' : '16px 24px', borderTop: '1px solid var(--border)', display: 'flex', gap: 10, justifyContent: 'flex-end', flexDirection: isPhone ? 'column-reverse' : 'row', flexShrink: 0 }}>
               <button onClick={() => { setModalFinalizar(false); setFotoPreviewOpen(false); }} style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', width: isPhone ? '100%' : undefined, justifyContent: 'center', minHeight: isPhone ? 42 : undefined }}>Cancelar</button>
               <button onClick={confirmarFinalizar} disabled={!canCriarProdutoBling || confirmando || !previewBling || loadingPreview}
-                style={{ ...s.btn, background: 'var(--green)', color: '#fff', opacity: (!canCriarProdutoBling || confirmando || !previewBling || loadingPreview) ? 0.7 : 1, width: isPhone ? '100%' : undefined, justifyContent: 'center', minHeight: isPhone ? 42 : undefined }}>
-                {confirmando ? 'Lançando...' : '✓ Confirmar e Lançar no Estoque'}
+                style={{ ...s.btn, background: finalizarRestrita ? '#dc2626' : 'var(--green)', color: '#fff', opacity: (!canCriarProdutoBling || confirmando || !previewBling || loadingPreview) ? 0.7 : 1, width: isPhone ? '100%' : undefined, justifyContent: 'center', minHeight: isPhone ? 42 : undefined }}>
+                {confirmando ? (finalizarRestrita ? 'Registrando...' : 'Lançando...') : (finalizarRestrita ? '✓ Confirmar e Registrar em Prejuízo' : '✓ Confirmar e Lançar no Estoque')}
               </button>
             </div>
           </div>

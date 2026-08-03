@@ -1,0 +1,1 @@
+ALTER TABLE "CadastroPeca" ADD COLUMN IF NOT EXISTS "pecaRestrita" BOOLEAN NOT NULL DEFAULT false;

@@ -148,6 +148,7 @@ model CadastroPeca {
   status           String   @default("pre_cadastro") // pre_cadastro | cadastrado
   urlRef           String?  // URL de referência do produto
   blingProdutoId   String?  // ID do produto criado no Bling
+  pecaRestrita     Boolean  @default(false) // "Peça Restrita - Sem Revenda": nao vai ao Bling; ao finalizar, cria a peca ja em prejuizo
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 

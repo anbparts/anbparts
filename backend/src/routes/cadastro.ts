@@ -540,7 +540,8 @@ cadastroRouter.get('/proximo-id/:motoId', async (req, res, next) => {
 // POST /cadastro - criar pré-cadastro e enviar ao Bling
 cadastroRouter.post('/', requireCadastroAction('criar_pre_cadastro'), async (req, res, next) => {
   try {
-    const { motoId, idPeca, descricao, descricaoPecaTitulo, descricaoPeca, precoVenda, condicao, peso, largura, altura, profundidade, numeroPeca, numeroMotor, detranEtiqueta, tipoPecaAvulsa, localizacao, estoque, categoriaMLId, categoriaMLNome, urlRef } = req.body;
+    const { motoId, idPeca, descricao, descricaoPecaTitulo, descricaoPeca, precoVenda, condicao, peso, largura, altura, profundidade, numeroPeca, numeroMotor, detranEtiqueta, tipoPecaAvulsa, localizacao, estoque, categoriaMLId, categoriaMLNome, urlRef, pecaRestrita } = req.body;
+    const ehPecaRestrita = Boolean(pecaRestrita);
 
     if (!motoId || !idPeca || !descricao) return res.status(400).json({ error: 'motoId, idPeca e descricao sao obrigatorios' });
     if (!String(idPeca || '').trim()) return res.status(400).json({ error: 'SKU (idPeca) é obrigatorio' });
@@ -572,9 +573,18 @@ cadastroRouter.post('/', requireCadastroAction('criar_pre_cadastro'), async (req
         categoriaMLNome: categoriaMLNome || null,
         urlRef: urlRef ? String(urlRef).trim() : null,
         status: 'pre_cadastro',
+        pecaRestrita: ehPecaRestrita,
       },
       include: { moto: { select: { id: true, marca: true, modelo: true, ano: true } } },
     });
+
+    // Peca restrita ("Peça Restrita - Sem Revenda") nunca vai ao Bling — fica disponivel
+    // somente na tela de pre-cadastro ate ser finalizada (ver POST /:id/finalizar).
+    if (ehPecaRestrita) {
+      const nomePasta = String(descricaoPecaTitulo || record.descricao).trim().slice(0, 60);
+      criarPastaPreCadastro(record.idPeca, nomePasta).catch(() => null);
+      return res.status(201).json({ ...record, _blingOk: true });
+    }
 
     // Enviar ao Bling
     try {
@@ -1040,7 +1050,8 @@ cadastroRouter.put('/:id', requireCadastroAction('editar_pre_cadastro'), async (
     if (!atual) return res.status(404).json({ error: 'Não encontrado' });
     if (atual.status === 'cadastrado') return res.status(400).json({ error: 'Cadastro já finalizado — não é possível editar' });
 
-    const { descricao, descricaoPeca, precoVenda, condicao, peso, largura, altura, profundidade, numeroPeca, numeroMotor, detranEtiqueta, tipoPecaAvulsa, localizacao, estoque, categoriaMLId, categoriaMLNome, urlRef } = req.body;
+    const { descricao, descricaoPeca, precoVenda, condicao, peso, largura, altura, profundidade, numeroPeca, numeroMotor, detranEtiqueta, tipoPecaAvulsa, localizacao, estoque, categoriaMLId, categoriaMLNome, urlRef, pecaRestrita } = req.body;
+    const ehPecaRestritaEfetiva = pecaRestrita !== undefined ? Boolean(pecaRestrita) : (atual as any).pecaRestrita;
     const detranEtiquetaEfetiva = detranEtiqueta !== undefined ? detranEtiqueta : atual.detranEtiqueta;
     const tipoPecaAvulsaEfetivo = tipoPecaAvulsa !== undefined ? tipoPecaAvulsa : atual.tipoPecaAvulsa;
     const numeroMotorEfetivo = numeroMotor !== undefined ? numeroMotor : (atual as any).numeroMotor;
@@ -1064,6 +1075,7 @@ cadastroRouter.put('/:id', requireCadastroAction('editar_pre_cadastro'), async (
     if (categoriaMLId !== undefined) data.categoriaMLId = categoriaMLId || null;
     if (categoriaMLNome !== undefined) data.categoriaMLNome = categoriaMLNome || null;
     if (urlRef !== undefined) data.urlRef = urlRef || null;
+    if (pecaRestrita !== undefined) data.pecaRestrita = Boolean(pecaRestrita);
 
     const record = await prisma.cadastroPeca.update({
       where: { id },
@@ -1074,6 +1086,11 @@ cadastroRouter.put('/:id', requireCadastroAction('editar_pre_cadastro'), async (
     // Renomeia a pasta do Drive quando a descrição muda (replica o nome digitado). Best-effort.
     if (data.descricao !== undefined && data.descricao !== atual.descricao) {
       renomearPastaPreCadastro(record.idPeca, data.descricao).catch(() => null);
+    }
+
+    // Peca restrita nunca vai ao Bling.
+    if (ehPecaRestritaEfetiva) {
+      return res.json({ ...record, _blingOk: true });
     }
 
     // Re-enviar ao Bling
@@ -1095,6 +1112,70 @@ cadastroRouter.post('/:id/finalizar', requireCadastroAction('criar_bling'), asyn
       include: { moto: { select: { id: true, marca: true, modelo: true } } },
     });
     if (!cadastro) return res.status(404).json({ error: 'Não encontrado' });
+
+    // Peca restrita ("Peça Restrita - Sem Revenda"): nunca foi ao Bling, entao nao ha o que
+    // buscar/comparar la. Finalizar aqui so cria a(s) Peca(s) ja em prejuizo, sem passar por
+    // Bling/Mercado Livre/Nuvemshop, e sem exigir blingProdutoId.
+    if ((cadastro as any).pecaRestrita) {
+      if (!req.body?.confirmar) {
+        return res.json({
+          ok: true,
+          restrita: true,
+          preview: {
+            descricao: cadastro.descricao,
+            precoVenda: Number(cadastro.precoVenda || 0),
+            estoque: cadastro.estoque || 1,
+          },
+        });
+      }
+
+      const qtd = Number(cadastro.estoque || 1);
+      const ids = gerarIdsPeca(cadastro.idPeca, qtd);
+      const valor = Number(cadastro.precoVenda || 0);
+      const pecasCriadas = [];
+
+      for (const idPeca of ids) {
+        const existing = await prisma.peca.findUnique({ where: { idPeca } });
+        if (existing) continue;
+        const peca = await (prisma as any).peca.create({
+          data: {
+            motoId: cadastro.motoId,
+            idPeca,
+            descricao: cadastro.descricao,
+            precoML: valor,
+            valorLiq: valor,
+            valorFrete: 0,
+            valorTaxas: 0,
+            disponivel: false,
+            emPrejuizo: true,
+            localizacao: cadastro.localizacao || null,
+            pesoLiquido: Number(cadastro.peso || 0),
+            pesoBruto: Number(cadastro.peso || 0),
+            largura: Number(cadastro.largura || 0),
+            altura: Number(cadastro.altura || 0),
+            profundidade: Number(cadastro.profundidade || 0),
+            numeroPeca: cadastro.numeroPeca || null,
+            numeroMotor: (cadastro as any).numeroMotor || null,
+            cadastro: new Date(),
+          },
+        });
+        await prisma.prejuizo.create({
+          data: {
+            data: new Date(),
+            detalhe: `${peca.idPeca} - ${peca.descricao}`,
+            motivo: 'Peça Restrita - Sem Revenda',
+            valor,
+            frete: 0,
+            pecaId: peca.id,
+          },
+        });
+        pecasCriadas.push(peca);
+      }
+
+      await prisma.cadastroPeca.update({ where: { id }, data: { status: 'cadastrado' } });
+      return res.json({ ok: true, restrita: true, pecasCriadas });
+    }
+
     if (!cadastro.blingProdutoId) return res.status(400).json({ error: 'Produto não foi enviado ao Bling ainda' });
 
     // Busca dados atuais do produto no Bling
