@@ -512,6 +512,9 @@ export default function DashboardPage() {
     ? motos.filter((moto) => String(moto?.marca || '').trim() === filtroMarcaMoto)
     : motos;
 
+  // Total geral (todas as motos, independente do filtro de marca) — base pro % de cada moto.
+  const valorEstoqueTotalGeral = motos.reduce((sum, moto) => sum + Number(moto.valorEstoque || 0), 0);
+
   const totaisVendasMes = resumoVendasMes?.totaisGerais || {
     totalPedidos: 0,
     totalItens: 0,
@@ -772,6 +775,7 @@ export default function DashboardPage() {
             const pctVendida = totalPecasMoto > 0 ? Math.round(((moto.qtdVendidas || 0) / totalPecasMoto) * 100) : 0;
             const pctRecuperada = moto.pctRecuperada || 0;
             const pctLucroPrev = (moto.precoCompra || 0) > 0 ? ((moto.lucro || 0) / moto.precoCompra) * 100 : 0;
+            const pctEstoqueMoto = valorEstoqueTotalGeral > 0 ? (Number(moto.valorEstoque || 0) / valorEstoqueTotalGeral) * 100 : 0;
             const skus = skuPorMoto[moto.id] || [];
 
             return (
@@ -857,6 +861,13 @@ export default function DashboardPage() {
                       label: '% lucro prev.',
                       value: `${pctLucroPrev.toFixed(1).replace('.', ',')}%`,
                       color: pctLucroPrev >= 0 ? 'var(--sage)' : 'var(--red)',
+                      sm: true,
+                    },
+                    { label: 'Vr Estoq. Disp.', value: fmt(moto.valorEstoque || 0), color: 'var(--blue-500)', sm: true },
+                    {
+                      label: '% Estoq. Disp.',
+                      value: `${pctEstoqueMoto.toFixed(1).replace('.', ',')}%`,
+                      color: 'var(--ink)',
                       sm: true,
                     },
                   ].map((stat) => (
