@@ -579,10 +579,9 @@ cadastroRouter.post('/', requireCadastroAction('criar_pre_cadastro'), async (req
     });
 
     // Peca restrita ("Peça Restrita - Sem Revenda") nunca vai ao Bling — fica disponivel
-    // somente na tela de pre-cadastro ate ser finalizada (ver POST /:id/finalizar).
+    // somente na tela de pre-cadastro ate ser finalizada (ver POST /:id/finalizar). Tambem nao
+    // cria pasta no Drive: sem revenda, sem anuncio, sem foto — nao ha o que guardar la.
     if (ehPecaRestrita) {
-      const nomePasta = String(descricaoPecaTitulo || record.descricao).trim().slice(0, 60);
-      criarPastaPreCadastro(record.idPeca, nomePasta).catch(() => null);
       return res.status(201).json({ ...record, _blingOk: true });
     }
 
@@ -1084,7 +1083,8 @@ cadastroRouter.put('/:id', requireCadastroAction('editar_pre_cadastro'), async (
     });
 
     // Renomeia a pasta do Drive quando a descrição muda (replica o nome digitado). Best-effort.
-    if (data.descricao !== undefined && data.descricao !== atual.descricao) {
+    // Peca restrita nunca teve pasta criada, entao nao tenta renomear.
+    if (!ehPecaRestritaEfetiva && data.descricao !== undefined && data.descricao !== atual.descricao) {
       renomearPastaPreCadastro(record.idPeca, data.descricao).catch(() => null);
     }
 
