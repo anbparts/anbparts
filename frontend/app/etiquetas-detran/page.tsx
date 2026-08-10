@@ -674,7 +674,7 @@ export default function EtiquetasDetranPage() {
 
   return (
     <>
-      <div style={{ ...s.topbar, height: isPhone ? 'auto' : 'var(--topbar-h)', minHeight: 'var(--topbar-h)', padding: isPhone ? '12px 14px' : '0 28px', alignItems: isPhone ? 'stretch' : 'center', flexDirection: isPhone ? 'column' : 'row' }}>
+      <div style={{ ...s.topbar, height: 'auto', minHeight: 'var(--topbar-h)', padding: isPhone ? '12px 14px' : '10px 28px', alignItems: isPhone ? 'stretch' : 'center', flexDirection: isPhone ? 'column' : 'row', flexWrap: 'wrap' as const, rowGap: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
           <div>
             <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)' }}>Etiquetas Detran</div>
@@ -688,7 +688,7 @@ export default function EtiquetasDetranPage() {
           </button>
           )}
         </div>
-        <div style={{ display: 'flex', gap: 8, flexDirection: isPhone ? 'column' : 'row', width: isPhone ? '100%' : undefined }}>
+        <div style={{ display: 'flex', gap: 8, flexDirection: isPhone ? 'column' : 'row', flexWrap: 'wrap' as const, rowGap: 8, width: isPhone ? '100%' : undefined, justifyContent: isPhone ? undefined : 'flex-end' }}>
           {canProcessarBaixa && (
           <button style={{ ...s.btn, background: '#7c3aed', color: '#fff', width: isPhone ? '100%' : undefined }} onClick={abrirPendencias}>
             Pendencias Baixa
