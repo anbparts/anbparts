@@ -950,9 +950,7 @@ motosRouter.get('/cartelas', async (req, res, next) => {
 
     const cartelasComPrefixo = cartelas.map((c) => ({ ...c, skuPrefix: prefixoPorMoto.get(c.motoId) || null }));
     cartelasComPrefixo.sort((a, b) => {
-      const pa = a.skuPrefix || `~${a.marca}${a.modelo}`;
-      const pb = b.skuPrefix || `~${b.marca}${b.modelo}`;
-      if (pa !== pb) return pa.localeCompare(pb);
+      if (a.motoId !== b.motoId) return a.motoId - b.motoId;
       if (a.ativa !== b.ativa) return a.ativa ? -1 : 1;
       return new Date(b.ativadaEm).getTime() - new Date(a.ativadaEm).getTime();
     });
