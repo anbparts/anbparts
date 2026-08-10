@@ -1750,7 +1750,7 @@ export default function EtiquetasDetranPage() {
               ) : (
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
-                    <tr>{['SKU', 'Moto', 'Cartela', 'Status', 'Desde', 'Ações'].map((h) => <th key={h} style={s.th}>{h}</th>)}</tr>
+                    <tr>{['ID', 'Moto', 'Cartela', 'Status', 'Desde', 'Ações'].map((h) => <th key={h} style={s.th}>{h}</th>)}</tr>
                   </thead>
                   <tbody>
                     {cartelas.map((c: any) => {
@@ -1762,7 +1762,14 @@ export default function EtiquetasDetranPage() {
                       return (
                         <Fragment key={c.id}>
                           <tr style={{ background: expandida ? 'var(--gray-50)' : undefined }}>
-                            <td style={{ ...s.td, fontFamily: 'Geist Mono, monospace', fontWeight: 700, color: 'var(--gray-700)' }}>{c.skuPrefix || '—'}</td>
+                            <td style={s.td}>
+                              <span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 12, color: 'var(--ink-muted)' }}>#{c.motoId}</span>
+                              {c.skuPrefix && (
+                                <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 10, fontWeight: 700, color: 'var(--blue-600)', background: 'var(--blue-50)', border: '1px solid var(--blue-200)', borderRadius: 4, padding: '1px 5px', marginTop: 3, display: 'inline-block', letterSpacing: '0.5px' }}>
+                                  {c.skuPrefix}
+                                </div>
+                              )}
+                            </td>
                             <td style={{ ...s.td, fontSize: 12.5 }}>{c.marca} {c.modelo}{c.ano ? ` ${c.ano}` : ''}</td>
                             <td style={s.td}>
                               <button type="button" onClick={() => alternarExpandirCartela(c.id)}
