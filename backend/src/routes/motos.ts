@@ -804,6 +804,24 @@ motosRouter.post('/:id/detran-cartela', requireMotosAction('etiqueta'), async (r
 
     const resultados: any[] = [];
 
+    // Cartela efetiva desta gravacao: o prefixo novo (se enviado) ou o que ja esta na moto
+    // (quando so as posicoes estao sendo salvas, sem trocar o prefixo). Usada pra achar/criar
+    // o registro em Cartela e espelhar as posicoes em CartelaPosicao (historico por cartela,
+    // ja que MotoDetranPosicao so guarda a cartela corrente).
+    const motoAntes = await prisma.moto.findUnique({ where: { id: motoId }, select: { detranCartelaId: true } });
+    const cartelaIdEfetivo = (typeof cartelaId === 'string' ? cartelaId.trim().toUpperCase() : '') || motoAntes?.detranCartelaId || '';
+    let cartelaRegistro: { id: number } | null = null;
+    if (cartelaIdEfetivo) {
+      // find-or-create via raw SQL (tabela nova — tolera client Prisma local desatualizado).
+      const cartelaRows = await prisma.$queryRaw<{ id: number }[]>`
+        INSERT INTO "Cartela" ("motoId", "cartelaId", "ativa", "ativadaEm", "createdAt", "updatedAt")
+        VALUES (${motoId}, ${cartelaIdEfetivo}, true, now(), now(), now())
+        ON CONFLICT ("motoId", "cartelaId") DO UPDATE SET "updatedAt" = "Cartela"."updatedAt"
+        RETURNING "id"
+      `;
+      cartelaRegistro = cartelaRows[0] || null;
+    }
+
     // 1. Agrupa etiquetas por SKU — mesmo SKU pode aparecer em múltiplas posições
     const etiquetasPorSku: Record<string, string[]> = {};
     for (const pos of posicoes) {
@@ -834,6 +852,20 @@ motosRouter.post('/:id/detran-cartela', requireMotosAction('etiqueta'), async (r
           etiqueta: etiqueta || null,
         },
       });
+
+      // Espelha na Cartela desta gravacao — preserva o snapshot mesmo apos trocar de cartela.
+      if (cartelaRegistro) {
+        const idPecaMirror = ehRemocao ? null : (idPeca || null);
+        await prisma.$executeRaw`
+          INSERT INTO "CartelaPosicao" ("cartelaRegistroId", "posicao", "tipo", "status", "idPeca", "etiqueta")
+          VALUES (${cartelaRegistro.id}, ${Number(posicao)}, ${tipo}, ${status || null}, ${idPecaMirror}, ${etiqueta || null})
+          ON CONFLICT ("cartelaRegistroId", "posicao") DO UPDATE SET
+            "tipo" = EXCLUDED."tipo",
+            "status" = EXCLUDED."status",
+            "idPeca" = EXCLUDED."idPeca",
+            "etiqueta" = EXCLUDED."etiqueta"
+        `;
+      }
     }
 
     // 3. Atualiza Peca e Bling agrupando etiquetas por SKU
@@ -896,6 +928,66 @@ motosRouter.post('/:id/detran-cartela', requireMotosAction('etiqueta'), async (r
   } catch (e) { next(e); }
 });
 
+// GET /motos/cartelas — lista o historico de cartelas Detran (ativas e inativas) de todas as motos.
+motosRouter.get('/cartelas', async (req, res, next) => {
+  try {
+    const cartelas = await prisma.$queryRaw<any[]>`
+      SELECT
+        c."id", c."motoId", c."cartelaId", c."ativa", c."ativadaEm", c."inativadaEm",
+        c."motivoInativacao", c."observacao",
+        m."marca", m."modelo", m."ano"
+      FROM "Cartela" c
+      JOIN "Moto" m ON m."id" = c."motoId"
+      ORDER BY c."ativa" DESC, c."ativadaEm" DESC
+    `;
+    res.json({ ok: true, total: cartelas.length, cartelas });
+  } catch (e) { next(e); }
+});
+
+// GET /motos/cartelas/:id/posicoes — snapshot das 34 posicoes de UMA cartela especifica
+// (ativa ou inativa), com descricao da peca quando o SKU ainda existir.
+motosRouter.get('/cartelas/:id/posicoes', async (req, res, next) => {
+  try {
+    const cartelaRegistroId = Number(req.params.id);
+    if (!Number.isFinite(cartelaRegistroId) || cartelaRegistroId <= 0) {
+      return res.status(400).json({ ok: false, error: 'id invalido' });
+    }
+    const posicoes = await prisma.$queryRaw<any[]>`
+      SELECT cp."id", cp."posicao", cp."tipo", cp."status", cp."idPeca", cp."etiqueta"
+      FROM "CartelaPosicao" cp
+      WHERE cp."cartelaRegistroId" = ${cartelaRegistroId}
+      ORDER BY cp."posicao" ASC
+    `;
+    const skus = Array.from(new Set(posicoes.map((p) => p.idPeca).filter(Boolean)));
+    const pecas = skus.length
+      ? await prisma.peca.findMany({ where: { idPeca: { in: skus } }, select: { idPeca: true, descricao: true } })
+      : [];
+    const descricaoPorSku = new Map(pecas.map((p) => [p.idPeca, p.descricao]));
+    const posicoesComDescricao = posicoes.map((p) => ({ ...p, descricao: p.idPeca ? (descricaoPorSku.get(p.idPeca) || null) : null }));
+    res.json({ ok: true, posicoes: posicoesComDescricao });
+  } catch (e) { next(e); }
+});
+
+// POST /motos/cartelas/:id/inativar — marca uma cartela como inativa (troca fisica, extravio, etc).
+motosRouter.post('/cartelas/:id/inativar', requireMotosAction('etiqueta'), async (req, res, next) => {
+  try {
+    const cartelaRegistroId = Number(req.params.id);
+    if (!Number.isFinite(cartelaRegistroId) || cartelaRegistroId <= 0) {
+      return res.status(400).json({ ok: false, error: 'id invalido' });
+    }
+    const motivo = req.body?.motivo ? String(req.body.motivo).trim().slice(0, 500) : null;
+
+    const atualizadas = await prisma.$executeRaw`
+      UPDATE "Cartela"
+      SET "ativa" = false, "inativadaEm" = now(), "motivoInativacao" = ${motivo}, "updatedAt" = now()
+      WHERE "id" = ${cartelaRegistroId} AND "ativa" = true
+    `;
+    if (!atualizadas) {
+      return res.status(400).json({ ok: false, error: 'Cartela nao encontrada ou ja esta inativa' });
+    }
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
 
 // ── Helper: gera buffer PDF do contrato ───────────────────────────────────────
 async function gerarPdfContrato(dados: Record<string, any>): Promise<Buffer> {

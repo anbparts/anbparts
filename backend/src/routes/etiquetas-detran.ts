@@ -128,8 +128,47 @@ function parseDetranStatusFilter(value: unknown) {
   const normalized = String(value || '').trim().toLowerCase();
   if (!normalized) return null;
   if (normalized === 'ativa' || normalized === 'ativo') return false;
-  if (normalized === 'baixada' || normalized === 'baixado') return true;
+  if (normalized === 'baixada' || normalized === 'baixado' || normalized === 'baixada_cartela_inativada') return true;
   return null;
+}
+
+function isCartelaInativadaFilter(value: unknown) {
+  return String(value || '').trim().toLowerCase() === 'baixada_cartela_inativada';
+}
+
+function prefixoEtiqueta(etq: unknown) {
+  const s = String(etq || '').trim();
+  const match = s.match(/^(.*?)(\d{3})$/);
+  return (match ? match[1] : s).toUpperCase();
+}
+
+// Etiquetas ja baixadas cuja cartela (prefixo) foi depois inativada ganham um rotulo a parte,
+// pra deixar claro que a venda aconteceu enquanto a cartela ainda estava em uso.
+function comLabelCartelaInativada(statusBase: string, motoId: number | null | undefined, etq: string, cartelasInativasPorMoto: Map<number, Set<string>>) {
+  if (statusBase !== 'Baixada' || motoId == null) return statusBase;
+  const prefixos = cartelasInativasPorMoto.get(motoId);
+  if (!prefixos || !prefixos.size) return statusBase;
+  return prefixos.has(prefixoEtiqueta(etq)) ? 'Baixada - Cartela Inativada' : statusBase;
+}
+
+// Tabela nova (Cartela) — tolera client Prisma local desatualizado / tabela ainda nao migrada.
+async function carregarCartelasInativasPorMoto(motoIds: number[]) {
+  const map = new Map<number, Set<string>>();
+  const ids = Array.from(new Set(motoIds.map((n) => Number(n)).filter((n) => Number.isInteger(n) && n > 0)));
+  if (!ids.length) return map;
+  try {
+    const rows = await prisma.$queryRawUnsafe<{ motoId: number; cartelaId: string }[]>(
+      `SELECT "motoId", "cartelaId" FROM "Cartela" WHERE "ativa" = false AND "motoId" IN (${ids.join(',')})`,
+    );
+    for (const r of rows) {
+      const motoId = Number(r.motoId);
+      if (!map.has(motoId)) map.set(motoId, new Set());
+      map.get(motoId)!.add(String(r.cartelaId || '').trim().toUpperCase());
+    }
+  } catch {
+    // tabela ainda não migrada — segue sem o enriquecimento
+  }
+  return map;
 }
 
 function isPreCadastroFilter(value: unknown) {
@@ -363,6 +402,7 @@ etiquetasDetranRouter.get('/', async (req, res, next) => {
 
     const baixasMap = await loadBaixasPorEtiqueta(pecas.map((p) => p.id));
     const ativacoesMap = await loadAtivacoesPorEtiqueta(pecas.map((p) => p.id));
+    const cartelasInativasPorMoto = await carregarCartelasInativasPorMoto(allMotoIds);
     const cutoffAtivacao = ativacaoCutoff();
 
     const linhas: any[] = [];
@@ -406,7 +446,10 @@ etiquetasDetranRouter.get('/', async (req, res, next) => {
           && !!(peca as any).tipoPecaAvulsa
           && !ativacoesMap.has(`${peca.id}|${etq}`)
           && (cadastroRecente || atribuidaRecente);
-        const statusLabel = etqBaixada ? 'Baixada' : (ehAvulsaPendente ? 'Pendente Ativação' : 'Ativa');
+        const statusLabel = etqBaixada
+          ? comLabelCartelaInativada('Baixada', peca.motoId, etq, cartelasInativasPorMoto)
+          : (ehAvulsaPendente ? 'Pendente Ativação' : 'Ativa');
+        if (isCartelaInativadaFilter(status) && statusLabel !== 'Baixada - Cartela Inativada') continue;
 
         linhas.push({
           pecaId: peca.id, sku: peca.idPeca, descricao: peca.descricao,
@@ -449,11 +492,14 @@ etiquetasDetranRouter.get('/', async (req, res, next) => {
         if (!textIncludes(tipoEtq, tipoEtiqueta)) continue;
         if (!textIncludes(tipoPecaVal, tipoPeca)) continue;
 
+        const statusHistorico = comLabelCartelaInativada(getDetranStatusLabel(row.etiquetaBaixada), row.motoId, etq, cartelasInativasPorMoto);
+        if (isCartelaInativadaFilter(status) && statusHistorico !== 'Baixada - Cartela Inativada') continue;
+
         linhas.push({
           pecaId: row.pecaId, sku: row.idPeca, descricao: row.descricao,
           tipoEtiqueta: tipoEtq, tipoPeca: tipoPecaVal, etiqueta: etq,
           qtdeEtiquetasSku: quantidadeEtiquetasSku,
-          status: getDetranStatusLabel(row.etiquetaBaixada),
+          status: statusHistorico,
           detranStatus: null, detranBaixada: row.etiquetaBaixada,
           detranBaixadaAt: null, disponivel: null,
           blingPedidoId: row.pedidoBlingId || null, blingPedidoNum: row.pedidoBlingNum || null,

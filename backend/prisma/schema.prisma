@@ -38,6 +38,7 @@ model Moto {
   cadastrosPeca     CadastroPeca[]
   devolucoes        HistoricoDevolucao[]
   detranPosicoes    MotoDetranPosicao[]
+  cartelas          Cartela[]
 }
 
 model Peca {
@@ -462,6 +463,47 @@ model MotoDetranPosicao {
 
   @@unique([motoId, posicao])
   @@index([motoId])
+}
+
+// Historico de cartelas Detran por moto. MotoDetranPosicao so guarda a cartela CORRENTE
+// (unique por motoId+posicao); esta tabela existe pra nao perder o registro de cartelas
+// trocadas/inativadas (data, motivo) — ver [[CartelaPosicao]] pro snapshot dos SKUs.
+model Cartela {
+  id               Int       @id @default(autoincrement())
+  motoId           Int
+  cartelaId        String    // prefixo (ex: "SP22102017701")
+  ativa            Boolean   @default(true)
+  ativadaEm        DateTime  @default(now())
+  inativadaEm      DateTime?
+  motivoInativacao String?
+  observacao       String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  moto     Moto             @relation(fields: [motoId], references: [id])
+  posicoes CartelaPosicao[]
+
+  @@unique([motoId, cartelaId])
+  @@index([motoId])
+  @@index([ativa])
+}
+
+// Snapshot das 34 posicoes de uma Cartela especifica (id numerico, nao o prefixo). Espelhada
+// a cada salvamento em MotoDetranPosicao (ver POST /motos/:id/detran-cartela), pra preservar
+// os SKUs de uma cartela mesmo depois dela ser substituida/inativada.
+model CartelaPosicao {
+  id                Int     @id @default(autoincrement())
+  cartelaRegistroId Int     // FK -> Cartela.id (nome distinto de Cartela.cartelaId, que e o prefixo)
+  posicao           Int     // 1 a 34
+  tipo              String
+  status            String?
+  idPeca            String?
+  etiqueta          String?
+
+  cartela Cartela @relation(fields: [cartelaRegistroId], references: [id])
+
+  @@unique([cartelaRegistroId, posicao])
+  @@index([cartelaRegistroId])
 }
 
 

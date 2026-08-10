@@ -24,6 +24,7 @@ const s: any = {
 const STATUS_COLORS: Record<string, { bg: string; color: string }> = {
   Ativa: { bg: '#ecfdf3', color: '#16a34a' },
   Baixada: { bg: '#fef2f2', color: '#dc2626' },
+  'Baixada - Cartela Inativada': { bg: '#f5f3ff', color: '#7c3aed' },
   'Pendente Ativação': { bg: '#fff7ed', color: '#c2410c' },
   'Pré-Cadastro': { bg: '#eff6ff', color: '#2563eb' },
   '-': { bg: '#f1f5f9', color: '#94a3b8' },
@@ -214,8 +215,18 @@ export default function EtiquetasDetranPage() {
   const [validacaoBaixaResult, setValidacaoBaixaResult] = useState<any>(null);
   const [validacaoBaixaFiltro, setValidacaoBaixaFiltro] = useState('todos');
   const [validacaoBaixaTexto, setValidacaoBaixaTexto] = useState('');
+  const [cartelasOpen, setCartelasOpen] = useState(false);
+  const [cartelas, setCartelas] = useState<any[]>([]);
+  const [loadingCartelas, setLoadingCartelas] = useState(false);
+  const [cartelaExpandidaId, setCartelaExpandidaId] = useState<number | null>(null);
+  const [cartelaPosicoesPorId, setCartelaPosicoesPorId] = useState<Record<number, any[]>>({});
+  const [loadingPosicoesCartelaId, setLoadingPosicoesCartelaId] = useState<number | null>(null);
+  const [inativarAbertoId, setInativarAbertoId] = useState<number | null>(null);
+  const [motivoInativacaoPorId, setMotivoInativacaoPorId] = useState<Record<number, string>>({});
+  const [inativandoCartelaId, setInativandoCartelaId] = useState<number | null>(null);
   const canProcessarBaixa = canProcessAction(user, 'etiquetas_detran', 'processar_baixa');
   const canProcessarDevolucao = canProcessAction(user, 'etiquetas_detran', 'processar_devolucao');
+  const canGerenciarCartelas = canProcessAction(user, 'motos', 'etiqueta');
   const linhasOrdenadas = useMemo(() => sortRows(linhas, sort), [linhas, sort]);
   const pendenciasOrdenadas = useMemo(() => sortRows(pendencias, pendenciasSort), [pendencias, pendenciasSort]);
 
@@ -532,6 +543,51 @@ export default function EtiquetasDetranPage() {
     setLoadingPendenciasDev(false);
   }
 
+  async function abrirCartelas() {
+    setCartelasOpen(true);
+    setLoadingCartelas(true);
+    setCartelaExpandidaId(null);
+    setInativarAbertoId(null);
+    try {
+      const resp = await fetch(`${API}/motos/cartelas`, { credentials: 'include' });
+      const data = await resp.json();
+      setCartelas(Array.isArray(data.cartelas) ? data.cartelas : []);
+    } catch { setCartelas([]); }
+    setLoadingCartelas(false);
+  }
+
+  async function alternarExpandirCartela(cartelaRegistroId: number) {
+    if (cartelaExpandidaId === cartelaRegistroId) { setCartelaExpandidaId(null); return; }
+    setCartelaExpandidaId(cartelaRegistroId);
+    if (cartelaPosicoesPorId[cartelaRegistroId]) return;
+    setLoadingPosicoesCartelaId(cartelaRegistroId);
+    try {
+      const resp = await fetch(`${API}/motos/cartelas/${cartelaRegistroId}/posicoes`, { credentials: 'include' });
+      const data = await resp.json();
+      setCartelaPosicoesPorId((prev) => ({ ...prev, [cartelaRegistroId]: Array.isArray(data.posicoes) ? data.posicoes : [] }));
+    } catch {
+      setCartelaPosicoesPorId((prev) => ({ ...prev, [cartelaRegistroId]: [] }));
+    }
+    setLoadingPosicoesCartelaId(null);
+  }
+
+  async function confirmarInativarCartela(cartelaRegistroId: number) {
+    if (!canGerenciarCartelas) return alert('Seu usuario nao tem permissao para gerenciar cartelas.');
+    setInativandoCartelaId(cartelaRegistroId);
+    try {
+      const motivo = String(motivoInativacaoPorId[cartelaRegistroId] || '').trim();
+      const resp = await fetch(`${API}/motos/cartelas/${cartelaRegistroId}/inativar`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify({ motivo: motivo || null }),
+      });
+      const data = await resp.json();
+      if (!resp.ok || data?.ok === false) throw new Error(data?.error || 'Erro ao inativar cartela');
+      setInativarAbertoId(null);
+      await abrirCartelas();
+    } catch (e: any) { alert(e?.message || 'Erro ao inativar cartela'); }
+    setInativandoCartelaId(null);
+  }
+
   async function abrirVerificarPendencias() {
     setModalResumo(true);
     setResumoLoading(true);
@@ -648,6 +704,11 @@ export default function EtiquetasDetranPage() {
             Pendências Devolução
           </button>
           )}
+          {canGerenciarCartelas && (
+          <button style={{ ...s.btn, background: '#0f766e', color: '#fff', width: isPhone ? '100%' : undefined }} onClick={abrirCartelas}>
+            Etiquetas
+          </button>
+          )}
           <label style={{ ...s.btn, background: '#059669', color: '#fff', width: isPhone ? '100%' : undefined, cursor: validacaoLoading ? 'wait' : 'pointer', opacity: validacaoLoading ? 0.7 : 1 }}>
             {validacaoLoading ? 'Processando...' : 'Validação Detran - Ativa'}
             <input type="file" accept=".xlsx,.xls" style={{ display: 'none' }} disabled={validacaoLoading} onChange={(e) => { setModalValidacao(true); rodarValidacaoDetran(e); }} />
@@ -702,6 +763,7 @@ export default function EtiquetasDetranPage() {
                 <option value="">Todos</option>
                 <option value="Ativa">Ativa</option>
                 <option value="Baixada">Baixada</option>
+                <option value="baixada_cartela_inativada">Baixada - Cartela Inativada</option>
                 <option value="pre-cadastro">Pré-Cadastro</option>
               </select>
             </div>
@@ -736,7 +798,7 @@ export default function EtiquetasDetranPage() {
                         <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-800)', marginTop: 3, lineHeight: 1.25 }}>{linha.descricao || '-'}</div>
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-end', flexShrink: 0 }}>
-                        {linha.status === 'Baixada' ? (
+                        {(linha.status === 'Baixada' || linha.status === 'Baixada - Cartela Inativada') ? (
                           <button type="button" onClick={() => abrirComprovante(linha, 'baixa')}
                             title="Abrir comprovante de baixa"
                             style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 999, background: stColors.bg, color: stColors.color, border: 'none', cursor: 'pointer', textDecoration: 'underline', fontFamily: 'inherit' }}>
@@ -835,7 +897,7 @@ export default function EtiquetasDetranPage() {
                       <td style={{ ...s.td, fontFamily: 'Geist Mono, monospace', fontSize: 12 }}>{linha.etiqueta}</td>
                       <td style={s.td}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-start' }}>
-                          {linha.status === 'Baixada' ? (
+                          {(linha.status === 'Baixada' || linha.status === 'Baixada - Cartela Inativada') ? (
                             <button type="button" onClick={() => abrirComprovante(linha, 'baixa')}
                               title="Abrir comprovante de baixa"
                               style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 5, background: stColors.bg, color: stColors.color, border: 'none', cursor: 'pointer', textDecoration: 'underline', fontFamily: 'inherit' }}>
@@ -1653,6 +1715,138 @@ export default function EtiquetasDetranPage() {
                             {isSaving ? 'Salvando...' : 'Salvar'}
                           </button>
                         </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Modal Etiquetas — Cartelas Detran */}
+      {cartelasOpen && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 500, display: 'flex', alignItems: isPhone ? 'stretch' : 'center', justifyContent: 'center', padding: isPhone ? 0 : 24, backdropFilter: 'blur(2px)' }}>
+          <div style={{ background: 'var(--white)', borderRadius: isPhone ? 0 : 14, width: '100%', maxWidth: isPhone ? undefined : 980, maxHeight: isPhone ? '100dvh' : '85vh', minHeight: isPhone ? '100dvh' : undefined, display: 'flex', flexDirection: 'column', boxShadow: isPhone ? 'none' : '0 16px 40px rgba(0,0,0,.15)', overflow: 'hidden' }}>
+            <div style={{ padding: isPhone ? '14px' : '16px 22px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+              <div>
+                <div style={{ fontFamily: 'Fraunces, serif', fontSize: 16, fontWeight: 600 }}>Etiquetas — Cartelas Detran</div>
+                <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>
+                  {loadingCartelas ? 'Carregando...' : `${cartelas.length} cartela(s) registrada(s)`}
+                </div>
+              </div>
+              <button onClick={() => setCartelasOpen(false)}
+                style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', fontSize: 16 }}>✕</button>
+            </div>
+            <div style={{ overflowY: 'auto', overflowX: 'auto', flex: 1 }}>
+              {loadingCartelas ? (
+                <div style={{ padding: 32, textAlign: 'center', color: 'var(--ink-muted)' }}>Buscando...</div>
+              ) : cartelas.length === 0 ? (
+                <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-muted)' }}>
+                  <div style={{ fontSize: 28, marginBottom: 8 }}>🏷</div>
+                  <div>Nenhuma cartela registrada ainda</div>
+                  <div style={{ fontSize: 12, marginTop: 6 }}>Cartelas sao registradas automaticamente ao salvar o ID da Cartela no botao 🏷 Etiqueta, na tela Motos.</div>
+                </div>
+              ) : (
+                <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 12, background: '#f8fafc' }}>
+                  {cartelas.map((c: any) => {
+                    const expandida = cartelaExpandidaId === c.id;
+                    const posicoesCartela = cartelaPosicoesPorId[c.id] || [];
+                    const posicoesComSku = posicoesCartela.filter((p) => p.idPeca);
+                    const inativarAberto = inativarAbertoId === c.id;
+                    const inativando = inativandoCartelaId === c.id;
+                    return (
+                      <div key={c.id} style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,.05)' }}>
+                        <div style={{ padding: '12px 16px', display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, borderBottom: '1px solid var(--border)', background: 'var(--gray-50)' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                            <button type="button" onClick={() => alternarExpandirCartela(c.id)}
+                              style={{ border: 'none', background: 'none', padding: 0, cursor: 'pointer', textAlign: 'left', fontFamily: 'Geist Mono, monospace', fontSize: 13, fontWeight: 700, color: '#2563eb', textDecoration: 'underline' }}>
+                              {c.cartelaId} {expandida ? '▲' : '▼'}
+                            </button>
+                            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-700)' }}>{c.marca} {c.modelo}{c.ano ? ` ${c.ano}` : ''}</span>
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-end' }}>
+                            <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 999, background: c.ativa ? '#ecfdf3' : '#f1f5f9', color: c.ativa ? '#16a34a' : '#64748b' }}>
+                              {c.ativa ? 'Ativa' : 'Inativa'}
+                            </span>
+                            <span style={{ fontSize: 11, color: 'var(--ink-muted)' }}>
+                              Ativa desde {c.ativadaEm ? new Date(c.ativadaEm).toLocaleDateString('pt-BR') : '—'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {!c.ativa && (
+                          <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)', background: '#fafafa' }}>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 3 }}>Inativada em</div>
+                            <div style={{ fontSize: 12, color: 'var(--gray-700)' }}>
+                              {c.inativadaEm ? new Date(c.inativadaEm).toLocaleDateString('pt-BR') : '—'}
+                              {c.motivoInativacao ? ` — ${c.motivoInativacao}` : ''}
+                            </div>
+                          </div>
+                        )}
+
+                        {c.ativa && canGerenciarCartelas && (
+                          <div style={{ padding: '10px 16px', borderBottom: inativarAberto || expandida ? '1px solid var(--border)' : 'none' }}>
+                            {inativarAberto ? (
+                              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                                <input
+                                  style={{ ...s.input, flex: 1, minWidth: 200 }}
+                                  placeholder="Motivo (opcional) — ex: cartela trocada, extraviada..."
+                                  value={motivoInativacaoPorId[c.id] || ''}
+                                  onChange={(e) => setMotivoInativacaoPorId((prev) => ({ ...prev, [c.id]: e.target.value }))}
+                                  disabled={inativando}
+                                />
+                                <button type="button" onClick={() => confirmarInativarCartela(c.id)} disabled={inativando}
+                                  style={{ ...s.btn, background: '#dc2626', color: '#fff', padding: '8px 16px', opacity: inativando ? 0.6 : 1 }}>
+                                  {inativando ? 'Inativando...' : 'Confirmar Inativação'}
+                                </button>
+                                <button type="button" onClick={() => setInativarAbertoId(null)} disabled={inativando}
+                                  style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', padding: '8px 16px' }}>
+                                  Cancelar
+                                </button>
+                              </div>
+                            ) : (
+                              <button type="button" onClick={() => setInativarAbertoId(c.id)}
+                                style={{ ...s.btn, background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', padding: '6px 14px', fontSize: 12 }}>
+                                Inativar cartela
+                              </button>
+                            )}
+                          </div>
+                        )}
+
+                        {expandida && (
+                          <div style={{ padding: '10px 16px' }}>
+                            {loadingPosicoesCartelaId === c.id ? (
+                              <div style={{ fontSize: 12, color: 'var(--ink-muted)', padding: '8px 0' }}>Carregando SKUs...</div>
+                            ) : posicoesComSku.length === 0 ? (
+                              <div style={{ fontSize: 12, color: 'var(--ink-muted)', padding: '8px 0' }}>Nenhum SKU vinculado a esta cartela.</div>
+                            ) : (
+                              <div style={{ overflowX: 'auto' }}>
+                                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                  <thead>
+                                    <tr>
+                                      {['Pos.', 'SKU', 'Descrição', 'Tipo', 'Etiqueta', 'Status'].map((h) => (
+                                        <th key={h} style={{ textAlign: 'left', padding: '6px 8px', fontSize: 10, fontWeight: 700, color: 'var(--ink-muted)', textTransform: 'uppercase', borderBottom: '1px solid var(--border)' }}>{h}</th>
+                                      ))}
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {posicoesComSku.map((p: any) => (
+                                      <tr key={p.id}>
+                                        <td style={{ padding: '6px 8px', fontSize: 12, fontFamily: 'Geist Mono, monospace' }}>{String(p.posicao).padStart(3, '0')}</td>
+                                        <td style={{ padding: '6px 8px', fontSize: 12, fontFamily: 'Geist Mono, monospace', color: '#2563eb', fontWeight: 700 }}>{p.idPeca}</td>
+                                        <td style={{ padding: '6px 8px', fontSize: 12, color: 'var(--gray-700)' }}>{p.descricao || '—'}</td>
+                                        <td style={{ padding: '6px 8px', fontSize: 12, color: 'var(--gray-700)' }}>{p.tipo}</td>
+                                        <td style={{ padding: '6px 8px', fontSize: 12, fontFamily: 'Geist Mono, monospace' }}>{p.etiqueta || '—'}</td>
+                                        <td style={{ padding: '6px 8px', fontSize: 12, color: 'var(--gray-700)' }}>{p.status || '—'}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
