@@ -1004,6 +1004,102 @@ motosRouter.post('/cartelas/:id/inativar', requireMotosAction('etiqueta'), async
   } catch (e) { next(e); }
 });
 
+// POST /motos/fix-temporario/hd03-cartela — TEMPORARIO, remover apos confirmar o resultado.
+// Corrige a troca manual de cartela feita direto no cadastro da peca pelo Nelson (moto HD03,
+// id 7): "SP22102020192xxx => SP22102020761xxx" digitado como texto solto no campo da peca.
+// Mesma logica do script SQL revisado com o Bruno, so que executada via Prisma (a aba Query do
+// Railway nao roda scripts multi-statement — sempre quebra com "syntax error near LIMIT").
+motosRouter.post('/fix-temporario/hd03-cartela', requireMotosAction('etiqueta'), async (req, res, next) => {
+  try {
+    const motoId = 7;
+    const CARTELA_ANTIGA = 'SP22102020192';
+    const CARTELA_NOVA = 'SP22102020761';
+
+    const trocasPosicao: { posicao: number; novo: string }[] = [
+      { posicao: 1, novo: 'SP22102020761001' },
+      { posicao: 2, novo: 'SP22102020761002' },
+      { posicao: 5, novo: 'SP22102020761005' },
+      { posicao: 6, novo: 'SP22102020761006' },
+      { posicao: 13, novo: 'SP22102020761013' },
+      { posicao: 16, novo: 'SP22102020761016' },
+      { posicao: 18, novo: 'SP22102020761018' },
+      { posicao: 19, novo: 'SP22102020761019' },
+      { posicao: 20, novo: 'SP22102020761020' },
+      { posicao: 23, novo: 'SP22102020761023' },
+      { posicao: 24, novo: 'SP22102020761024' },
+      { posicao: 30, novo: 'SP22102020761030' },
+      { posicao: 31, novo: 'SP22102020761031' },
+    ];
+    const trocasPeca: { idPeca: string; novo: string }[] = [
+      { idPeca: 'HD03_0003', novo: 'SP22102020761024' },
+      { idPeca: 'HD03_0004', novo: 'SP22102020761002' },
+      { idPeca: 'HD03_0006', novo: 'SP22102020761020' },
+      { idPeca: 'HD03_0017', novo: 'SP22102020761031' },
+      { idPeca: 'HD03_0049', novo: 'SP22102020761019' },
+      { idPeca: 'HD03_0065', novo: 'SP52302000265526 / SP22102020761023' },
+      { idPeca: 'HD03_0068', novo: 'SP22102020761018' },
+      { idPeca: 'HD03_0083', novo: 'SP22102020761030' },
+      { idPeca: 'HD03_0086', novo: 'SP22102020761016' },
+      { idPeca: 'HD03_0099', novo: 'SP22102020761001' },
+      { idPeca: 'HD03_0114', novo: 'SP22102020761013' },
+      { idPeca: 'HD03_0124', novo: 'SP22102020761006' },
+      { idPeca: 'HD03_0137', novo: 'SP22102020761005' },
+    ];
+
+    const resultado = await prisma.$transaction(async (tx) => {
+      // 0) Snapshot da cartela antiga (com os codigos ainda antigos) e marca como inativa.
+      const cartelaAntigaRows = await tx.$queryRaw<{ id: number }[]>`
+        INSERT INTO "Cartela" ("motoId", "cartelaId", "ativa", "ativadaEm", "inativadaEm", "motivoInativacao", "createdAt", "updatedAt")
+        VALUES (${motoId}, ${CARTELA_ANTIGA}, false, now(), now(), 'Cartela trocada por SP22102020761 (registro retroativo, corrigido apos ajuste manual)', now(), now())
+        ON CONFLICT ("motoId", "cartelaId") DO UPDATE SET "ativa" = false, "inativadaEm" = now(), "updatedAt" = now()
+        RETURNING "id"
+      `;
+      const cartelaAntigaId = cartelaAntigaRows[0].id;
+      await tx.$executeRaw`
+        INSERT INTO "CartelaPosicao" ("cartelaRegistroId", "posicao", "tipo", "status", "idPeca", "etiqueta")
+        SELECT ${cartelaAntigaId}, p."posicao", p."tipo", p."status", p."idPeca", p."etiqueta"
+        FROM "MotoDetranPosicao" p
+        WHERE p."motoId" = ${motoId}
+        ON CONFLICT ("cartelaRegistroId", "posicao") DO NOTHING
+      `;
+
+      // 1) Corrige as posicoes na cartela corrente da moto.
+      for (const t of trocasPosicao) {
+        await tx.motoDetranPosicao.updateMany({ where: { motoId, posicao: t.posicao }, data: { etiqueta: t.novo } });
+      }
+
+      // 2) Limpa o "X => Y" no cadastro de cada peca.
+      for (const p of trocasPeca) {
+        await tx.peca.updateMany({ where: { idPeca: p.idPeca }, data: { detranEtiqueta: p.novo } });
+      }
+
+      // 3) Atualiza o prefixo da moto.
+      await tx.moto.update({ where: { id: motoId }, data: { detranCartelaId: CARTELA_NOVA } });
+
+      // 4) Ativa a cartela nova com o snapshot ja corrigido.
+      const cartelaNovaRows = await tx.$queryRaw<{ id: number }[]>`
+        INSERT INTO "Cartela" ("motoId", "cartelaId", "ativa", "ativadaEm", "createdAt", "updatedAt")
+        VALUES (${motoId}, ${CARTELA_NOVA}, true, now(), now(), now())
+        ON CONFLICT ("motoId", "cartelaId") DO UPDATE SET "ativa" = true, "updatedAt" = now()
+        RETURNING "id"
+      `;
+      const cartelaNovaId = cartelaNovaRows[0].id;
+      await tx.$executeRaw`
+        INSERT INTO "CartelaPosicao" ("cartelaRegistroId", "posicao", "tipo", "status", "idPeca", "etiqueta")
+        SELECT ${cartelaNovaId}, p."posicao", p."tipo", p."status", p."idPeca", p."etiqueta"
+        FROM "MotoDetranPosicao" p
+        WHERE p."motoId" = ${motoId}
+        ON CONFLICT ("cartelaRegistroId", "posicao") DO UPDATE SET
+          "tipo" = EXCLUDED."tipo", "status" = EXCLUDED."status", "idPeca" = EXCLUDED."idPeca", "etiqueta" = EXCLUDED."etiqueta"
+      `;
+
+      return { cartelaAntigaId, cartelaNovaId };
+    });
+
+    res.json({ ok: true, resultado });
+  } catch (e) { next(e); }
+});
+
 // ── Helper: gera buffer PDF do contrato ───────────────────────────────────────
 async function gerarPdfContrato(dados: Record<string, any>): Promise<Buffer> {
   const valorExtensoNormalizado = String(dados.valorExtenso || '').trim().replace(/\s+reais$/i, '');
