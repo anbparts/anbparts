@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { API_BASE } from '@/lib/api-base';
 import { compressFotoCapaFile } from '@/lib/image-compression';
 import { useAuth } from '@/lib/auth';
@@ -1748,109 +1748,123 @@ export default function EtiquetasDetranPage() {
                   <div style={{ fontSize: 12, marginTop: 6 }}>Cartelas sao registradas automaticamente ao salvar o ID da Cartela no botao 🏷 Etiqueta, na tela Motos.</div>
                 </div>
               ) : (
-                <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 12, background: '#f8fafc' }}>
-                  {cartelas.map((c: any) => {
-                    const expandida = cartelaExpandidaId === c.id;
-                    const posicoesCartela = cartelaPosicoesPorId[c.id] || [];
-                    const posicoesComSku = posicoesCartela.filter((p) => p.idPeca);
-                    const inativarAberto = inativarAbertoId === c.id;
-                    const inativando = inativandoCartelaId === c.id;
-                    return (
-                      <div key={c.id} style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,.05)' }}>
-                        <div style={{ padding: '12px 16px', display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, borderBottom: '1px solid var(--border)', background: 'var(--gray-50)' }}>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                            <button type="button" onClick={() => alternarExpandirCartela(c.id)}
-                              style={{ border: 'none', background: 'none', padding: 0, cursor: 'pointer', textAlign: 'left', fontFamily: 'Geist Mono, monospace', fontSize: 13, fontWeight: 700, color: '#2563eb', textDecoration: 'underline' }}>
-                              {c.cartelaId} {expandida ? '▲' : '▼'}
-                            </button>
-                            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-700)' }}>{c.marca} {c.modelo}{c.ano ? ` ${c.ano}` : ''}</span>
-                          </div>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-end' }}>
-                            <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 999, background: c.ativa ? '#ecfdf3' : '#f1f5f9', color: c.ativa ? '#16a34a' : '#64748b' }}>
-                              {c.ativa ? 'Ativa' : 'Inativa'}
-                            </span>
-                            <span style={{ fontSize: 11, color: 'var(--ink-muted)' }}>
-                              Ativa desde {c.ativadaEm ? new Date(c.ativadaEm).toLocaleDateString('pt-BR') : '—'}
-                            </span>
-                          </div>
-                        </div>
-
-                        {!c.ativa && (
-                          <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)', background: '#fafafa' }}>
-                            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 3 }}>Inativada em</div>
-                            <div style={{ fontSize: 12, color: 'var(--gray-700)' }}>
-                              {c.inativadaEm ? new Date(c.inativadaEm).toLocaleDateString('pt-BR') : '—'}
-                              {c.motivoInativacao ? ` — ${c.motivoInativacao}` : ''}
-                            </div>
-                          </div>
-                        )}
-
-                        {c.ativa && canGerenciarCartelas && (
-                          <div style={{ padding: '10px 16px', borderBottom: inativarAberto || expandida ? '1px solid var(--border)' : 'none' }}>
-                            {inativarAberto ? (
-                              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                                <input
-                                  style={{ ...s.input, flex: 1, minWidth: 200 }}
-                                  placeholder="Motivo (opcional) — ex: cartela trocada, extraviada..."
-                                  value={motivoInativacaoPorId[c.id] || ''}
-                                  onChange={(e) => setMotivoInativacaoPorId((prev) => ({ ...prev, [c.id]: e.target.value }))}
-                                  disabled={inativando}
-                                />
-                                <button type="button" onClick={() => confirmarInativarCartela(c.id)} disabled={inativando}
-                                  style={{ ...s.btn, background: '#dc2626', color: '#fff', padding: '8px 16px', opacity: inativando ? 0.6 : 1 }}>
-                                  {inativando ? 'Inativando...' : 'Confirmar Inativação'}
-                                </button>
-                                <button type="button" onClick={() => setInativarAbertoId(null)} disabled={inativando}
-                                  style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', padding: '8px 16px' }}>
-                                  Cancelar
-                                </button>
-                              </div>
-                            ) : (
-                              <button type="button" onClick={() => setInativarAbertoId(c.id)}
-                                style={{ ...s.btn, background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', padding: '6px 14px', fontSize: 12 }}>
-                                Inativar cartela
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>{['SKU', 'Moto', 'Cartela', 'Status', 'Desde', 'Ações'].map((h) => <th key={h} style={s.th}>{h}</th>)}</tr>
+                  </thead>
+                  <tbody>
+                    {cartelas.map((c: any) => {
+                      const expandida = cartelaExpandidaId === c.id;
+                      const posicoesCartela = cartelaPosicoesPorId[c.id] || [];
+                      const posicoesComSku = posicoesCartela.filter((p) => p.idPeca);
+                      const inativarAberto = inativarAbertoId === c.id;
+                      const inativando = inativandoCartelaId === c.id;
+                      return (
+                        <Fragment key={c.id}>
+                          <tr style={{ background: expandida ? 'var(--gray-50)' : undefined }}>
+                            <td style={{ ...s.td, fontFamily: 'Geist Mono, monospace', fontWeight: 700, color: 'var(--gray-700)' }}>{c.skuPrefix || '—'}</td>
+                            <td style={{ ...s.td, fontSize: 12.5 }}>{c.marca} {c.modelo}{c.ano ? ` ${c.ano}` : ''}</td>
+                            <td style={s.td}>
+                              <button type="button" onClick={() => alternarExpandirCartela(c.id)}
+                                style={{ border: 'none', background: 'none', padding: 0, cursor: 'pointer', fontFamily: 'Geist Mono, monospace', fontSize: 12.5, fontWeight: 700, color: '#2563eb' }}>
+                                {c.cartelaId} <span style={{ fontSize: 10 }}>{expandida ? '▲' : '▼'}</span>
                               </button>
-                            )}
-                          </div>
-                        )}
+                            </td>
+                            <td style={s.td}>
+                              <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: c.ativa ? '#ecfdf3' : '#f1f5f9', color: c.ativa ? '#16a34a' : '#64748b' }}>
+                                {c.ativa ? 'Ativa' : 'Inativa'}
+                              </span>
+                            </td>
+                            <td style={{ ...s.td, fontSize: 12, color: 'var(--ink-muted)' }}>
+                              {c.ativa
+                                ? (c.ativadaEm ? new Date(c.ativadaEm).toLocaleDateString('pt-BR') : '—')
+                                : (c.inativadaEm ? `Inativa em ${new Date(c.inativadaEm).toLocaleDateString('pt-BR')}` : '—')}
+                            </td>
+                            <td style={s.td}>
+                              {c.ativa && canGerenciarCartelas && !inativarAberto && (
+                                <button type="button" onClick={() => setInativarAbertoId(c.id)}
+                                  style={{ border: 'none', background: 'none', padding: 0, cursor: 'pointer', fontSize: 11.5, color: '#94a3b8', textDecoration: 'underline' }}>
+                                  Inativar
+                                </button>
+                              )}
+                            </td>
+                          </tr>
 
-                        {expandida && (
-                          <div style={{ padding: '10px 16px' }}>
-                            {loadingPosicoesCartelaId === c.id ? (
-                              <div style={{ fontSize: 12, color: 'var(--ink-muted)', padding: '8px 0' }}>Carregando SKUs...</div>
-                            ) : posicoesComSku.length === 0 ? (
-                              <div style={{ fontSize: 12, color: 'var(--ink-muted)', padding: '8px 0' }}>Nenhum SKU vinculado a esta cartela.</div>
-                            ) : (
-                              <div style={{ overflowX: 'auto' }}>
-                                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                                  <thead>
-                                    <tr>
-                                      {['Pos.', 'SKU', 'Descrição', 'Tipo', 'Etiqueta', 'Status'].map((h) => (
-                                        <th key={h} style={{ textAlign: 'left', padding: '6px 8px', fontSize: 10, fontWeight: 700, color: 'var(--ink-muted)', textTransform: 'uppercase', borderBottom: '1px solid var(--border)' }}>{h}</th>
-                                      ))}
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {posicoesComSku.map((p: any) => (
-                                      <tr key={p.id}>
-                                        <td style={{ padding: '6px 8px', fontSize: 12, fontFamily: 'Geist Mono, monospace' }}>{String(p.posicao).padStart(3, '0')}</td>
-                                        <td style={{ padding: '6px 8px', fontSize: 12, fontFamily: 'Geist Mono, monospace', color: '#2563eb', fontWeight: 700 }}>{p.idPeca}</td>
-                                        <td style={{ padding: '6px 8px', fontSize: 12, color: 'var(--gray-700)' }}>{p.descricao || '—'}</td>
-                                        <td style={{ padding: '6px 8px', fontSize: 12, color: 'var(--gray-700)' }}>{p.tipo}</td>
-                                        <td style={{ padding: '6px 8px', fontSize: 12, fontFamily: 'Geist Mono, monospace' }}>{p.etiqueta || '—'}</td>
-                                        <td style={{ padding: '6px 8px', fontSize: 12, color: 'var(--gray-700)' }}>{p.status || '—'}</td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+                          {!c.ativa && c.motivoInativacao && (
+                            <tr>
+                              <td colSpan={6} style={{ ...s.td, fontSize: 11.5, color: 'var(--ink-muted)', paddingTop: 0, paddingBottom: 8 }}>
+                                Motivo: {c.motivoInativacao}
+                              </td>
+                            </tr>
+                          )}
+
+                          {inativarAberto && (
+                            <tr>
+                              <td colSpan={6} style={{ ...s.td, background: '#fef2f2' }}>
+                                <div style={{ fontSize: 12, fontWeight: 700, color: '#991b1b', marginBottom: 8 }}>
+                                  Inativar a cartela {c.cartelaId}? Essa ação não pode ser desfeita pela tela.
+                                </div>
+                                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                                  <input
+                                    style={{ ...s.input, flex: 1, minWidth: 200, background: 'var(--white)' }}
+                                    placeholder="Motivo (opcional) — ex: cartela trocada, extraviada..."
+                                    value={motivoInativacaoPorId[c.id] || ''}
+                                    onChange={(e) => setMotivoInativacaoPorId((prev) => ({ ...prev, [c.id]: e.target.value }))}
+                                    disabled={inativando}
+                                  />
+                                  <button type="button" onClick={() => confirmarInativarCartela(c.id)} disabled={inativando}
+                                    style={{ ...s.btn, background: '#dc2626', color: '#fff', padding: '7px 14px', fontSize: 12, opacity: inativando ? 0.6 : 1 }}>
+                                    {inativando ? 'Inativando...' : 'Confirmar inativação'}
+                                  </button>
+                                  <button type="button" onClick={() => setInativarAbertoId(null)} disabled={inativando}
+                                    style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', padding: '7px 14px', fontSize: 12 }}>
+                                    Cancelar
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+
+                          {expandida && (
+                            <tr>
+                              <td colSpan={6} style={{ padding: '4px 12px 14px', background: 'var(--gray-50)' }}>
+                                {loadingPosicoesCartelaId === c.id ? (
+                                  <div style={{ fontSize: 12, color: 'var(--ink-muted)', padding: '8px 0' }}>Carregando SKUs...</div>
+                                ) : posicoesComSku.length === 0 ? (
+                                  <div style={{ fontSize: 12, color: 'var(--ink-muted)', padding: '8px 0' }}>Nenhum SKU vinculado a esta cartela.</div>
+                                ) : (
+                                  <div style={{ overflowX: 'auto', background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 8 }}>
+                                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                      <thead>
+                                        <tr>
+                                          {['Pos.', 'SKU', 'Descrição', 'Tipo', 'Etiqueta', 'Status'].map((h) => (
+                                            <th key={h} style={{ textAlign: 'left', padding: '6px 8px', fontSize: 10, fontWeight: 700, color: 'var(--ink-muted)', textTransform: 'uppercase', borderBottom: '1px solid var(--border)' }}>{h}</th>
+                                          ))}
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {posicoesComSku.map((p: any) => (
+                                          <tr key={p.id}>
+                                            <td style={{ padding: '6px 8px', fontSize: 12, fontFamily: 'Geist Mono, monospace' }}>{String(p.posicao).padStart(3, '0')}</td>
+                                            <td style={{ padding: '6px 8px', fontSize: 12, fontFamily: 'Geist Mono, monospace', color: '#2563eb', fontWeight: 700 }}>{p.idPeca}</td>
+                                            <td style={{ padding: '6px 8px', fontSize: 12, color: 'var(--gray-700)' }}>{p.descricao || '—'}</td>
+                                            <td style={{ padding: '6px 8px', fontSize: 12, color: 'var(--gray-700)' }}>{p.tipo}</td>
+                                            <td style={{ padding: '6px 8px', fontSize: 12, fontFamily: 'Geist Mono, monospace' }}>{p.etiqueta || '—'}</td>
+                                            <td style={{ padding: '6px 8px', fontSize: 12, color: 'var(--gray-700)' }}>{p.status || '—'}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
               )}
             </div>
           </div>

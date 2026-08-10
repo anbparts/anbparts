@@ -931,16 +931,33 @@ motosRouter.post('/:id/detran-cartela', requireMotosAction('etiqueta'), async (r
 // GET /motos/cartelas — lista o historico de cartelas Detran (ativas e inativas) de todas as motos.
 motosRouter.get('/cartelas', async (req, res, next) => {
   try {
-    const cartelas = await prisma.$queryRaw<any[]>`
-      SELECT
-        c."id", c."motoId", c."cartelaId", c."ativa", c."ativadaEm", c."inativadaEm",
-        c."motivoInativacao", c."observacao",
-        m."marca", m."modelo", m."ano"
-      FROM "Cartela" c
-      JOIN "Moto" m ON m."id" = c."motoId"
-      ORDER BY c."ativa" DESC, c."ativadaEm" DESC
-    `;
-    res.json({ ok: true, total: cartelas.length, cartelas });
+    const [cartelas, blingCfg] = await Promise.all([
+      prisma.$queryRaw<any[]>`
+        SELECT
+          c."id", c."motoId", c."cartelaId", c."ativa", c."ativadaEm", c."inativadaEm",
+          c."motivoInativacao", c."observacao",
+          m."marca", m."modelo", m."ano"
+        FROM "Cartela" c
+        JOIN "Moto" m ON m."id" = c."motoId"
+      `,
+      prisma.blingConfig.findFirst({ select: { prefixos: true } }),
+    ]);
+
+    const prefixos: any[] = Array.isArray(blingCfg?.prefixos) ? (blingCfg!.prefixos as any[]) : [];
+    const prefixoPorMoto = new Map<number, string>(
+      prefixos.filter((p) => p?.motoId && p?.prefixo).map((p) => [Number(p.motoId), String(p.prefixo).toUpperCase()]),
+    );
+
+    const cartelasComPrefixo = cartelas.map((c) => ({ ...c, skuPrefix: prefixoPorMoto.get(c.motoId) || null }));
+    cartelasComPrefixo.sort((a, b) => {
+      const pa = a.skuPrefix || `~${a.marca}${a.modelo}`;
+      const pb = b.skuPrefix || `~${b.marca}${b.modelo}`;
+      if (pa !== pb) return pa.localeCompare(pb);
+      if (a.ativa !== b.ativa) return a.ativa ? -1 : 1;
+      return new Date(b.ativadaEm).getTime() - new Date(a.ativadaEm).getTime();
+    });
+
+    res.json({ ok: true, total: cartelasComPrefixo.length, cartelas: cartelasComPrefixo });
   } catch (e) { next(e); }
 });
 
