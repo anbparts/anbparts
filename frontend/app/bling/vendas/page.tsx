@@ -19,6 +19,12 @@ type Defaults = {
   taxaPadraoPct: number;
 };
 
+type TransportadoraConfig = {
+  id: number;
+  nome: string;
+  observacoes: { id: number; texto: string }[];
+};
+
 type Item = {
   entryKey: string;
   tipo: 'VENDA' | 'CANCELAMENTO';
@@ -480,8 +486,17 @@ export default function VendasBlingPage() {
   const [separacoesGeradas, setSeparacoesGeradas] = useState<Record<string, string>>({});
   const [defaults, setDefaults] = useState<Defaults>({ fretePadrao: 29.9, taxaPadraoPct: 17 });
   const [isPhone, setIsPhone] = useState(false);
+  const [transportadorasConfig, setTransportadorasConfig] = useState<TransportadoraConfig[]>([]);
+  const [pickerTransportador, setPickerTransportador] = useState<{ pedidoId: number; etapa: 'transportadoras' | 'observacoes'; transportadoraId?: number } | null>(null);
   const canAtualizarVendas = canProcessAction(user, 'bling_vendas', 'atualizar_vendas');
   const canRelatorioSeparacao = canProcessAction(user, 'bling_vendas', 'relatorio_separacao');
+
+  useEffect(() => {
+    fetch(`${API}/conf-separacao`, { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => setTransportadorasConfig(Array.isArray(d.transportadoras) ? d.transportadoras : []))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     fetch(`${API}/bling/config-produtos`)
@@ -768,6 +783,32 @@ export default function VendasBlingPage() {
         )),
       };
     });
+  }
+
+  function abrirPickerTransportador(pedidoId: number) {
+    setPickerTransportador({ pedidoId, etapa: 'transportadoras' });
+  }
+
+  function fecharPickerTransportador() {
+    setPickerTransportador(null);
+  }
+
+  function escolherTransportadora(pedidoId: number, t: TransportadoraConfig) {
+    if (t.observacoes.length > 1) {
+      setPickerTransportador({ pedidoId, etapa: 'observacoes', transportadoraId: t.id });
+      return;
+    }
+    updateSeparacaoPedido(pedidoId, 'transportador', t.nome);
+    if (t.observacoes.length === 1) {
+      updateSeparacaoPedido(pedidoId, 'observacoesInternas', t.observacoes[0].texto);
+    }
+    fecharPickerTransportador();
+  }
+
+  function escolherObservacao(pedidoId: number, nomeTransportadora: string, texto: string) {
+    updateSeparacaoPedido(pedidoId, 'transportador', nomeTransportadora);
+    updateSeparacaoPedido(pedidoId, 'observacoesInternas', texto);
+    fecharPickerTransportador();
   }
 
   function updateItem(idx: number, field: string, value: any) {
@@ -1185,14 +1226,68 @@ export default function VendasBlingPage() {
                           <div style={{ fontSize: 11.5, color: 'var(--gray-500)', marginTop: 5 }}>
                             Data da venda: {fmtDate(pedido.dataVenda)}
                           </div>
-                          <div style={{ marginTop: 8 }}>
-                            <label style={{ ...s.label, marginBottom: 6 }}>Transportador</label>
+                          <div style={{ marginTop: 8, position: 'relative' }}>
+                            <button
+                              type="button"
+                              onClick={() => abrirPickerTransportador(pedido.pedidoId)}
+                              style={{ ...s.label, marginBottom: 6, background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--blue-500)', textDecoration: 'underline' }}
+                            >
+                              Transportador
+                            </button>
                             <input
                               style={{ ...s.input, padding: '8px 10px' }}
                               value={pedido.transportador || ''}
                               onChange={(e) => updateSeparacaoPedido(pedido.pedidoId, 'transportador', e.target.value)}
                               placeholder="Nao informado"
                             />
+
+                            {pickerTransportador?.pedidoId === pedido.pedidoId && (
+                              <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: 4, zIndex: 40, width: 280, maxHeight: 260, overflowY: 'auto', background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,.12)' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', borderBottom: '1px solid var(--border)' }}>
+                                  <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase' }}>
+                                    {pickerTransportador.etapa === 'transportadoras' ? 'Escolha a transportadora' : 'Escolha o texto'}
+                                  </span>
+                                  <button type="button" onClick={fecharPickerTransportador} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 14, color: 'var(--gray-400)' }}>✕</button>
+                                </div>
+
+                                {pickerTransportador.etapa === 'transportadoras' ? (
+                                  transportadorasConfig.length ? (
+                                    transportadorasConfig.map((t) => (
+                                      <button
+                                        key={t.id}
+                                        type="button"
+                                        onClick={() => escolherTransportadora(pedido.pedidoId, t)}
+                                        style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 10px', border: 'none', borderTop: '1px solid var(--gray-100, #eef1f5)', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--gray-800)' }}
+                                      >
+                                        {t.nome}
+                                        {t.observacoes.length > 1 && (
+                                          <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--gray-400)' }}>({t.observacoes.length} textos)</span>
+                                        )}
+                                      </button>
+                                    ))
+                                  ) : (
+                                    <div style={{ padding: 12, fontSize: 12, color: 'var(--gray-400)' }}>
+                                      Nenhuma transportadora configurada. Configure em Conf. Separação.
+                                    </div>
+                                  )
+                                ) : (
+                                  (() => {
+                                    const t = transportadorasConfig.find((x) => x.id === pickerTransportador.transportadoraId);
+                                    if (!t) return null;
+                                    return t.observacoes.map((o) => (
+                                      <button
+                                        key={o.id}
+                                        type="button"
+                                        onClick={() => escolherObservacao(pedido.pedidoId, t.nome, o.texto)}
+                                        style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 10px', border: 'none', borderTop: '1px solid var(--gray-100, #eef1f5)', background: 'none', cursor: 'pointer', fontSize: 12.5, color: 'var(--gray-800)', whiteSpace: 'pre-wrap', lineHeight: 1.4 }}
+                                      >
+                                        {o.texto}
+                                      </button>
+                                    ));
+                                  })()
+                                )}
+                              </div>
+                            )}
                           </div>
                         </div>
 

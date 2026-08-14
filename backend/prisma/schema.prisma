@@ -676,6 +676,31 @@ model TextoTipoPeca {
   updatedAt DateTime @updatedAt
 }
 
+// Transportadoras configuradas pra Conf. Separacao — preenchem Transportador + Obs. Interna
+// no Relatorio de Separacao. Uma transportadora pode ter varios textos de observacao.
+model Transportadora {
+  id         Int      @id @default(autoincrement())
+  nome       String   @unique
+  ordem      Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  observacoes TransportadoraObservacao[]
+}
+
+model TransportadoraObservacao {
+  id               Int      @id @default(autoincrement())
+  transportadoraId Int
+  texto            String   @db.Text
+  ordem            Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  transportadora Transportadora @relation(fields: [transportadoraId], references: [id], onDelete: Cascade)
+
+  @@index([transportadoraId])
+}
+
 model BlingPedidoSeparacao {
   pedidoId   BigInt   @id
   separadoEm DateTime @default(now())

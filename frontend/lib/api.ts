@@ -199,6 +199,15 @@ export const api = {
     save: (data: any) => req<any>('/conf-texto-peca', { method: 'POST', body: JSON.stringify(data) }),
     remove: (tipo: string) => req<any>(`/conf-texto-peca/${encodeURIComponent(tipo)}`, { method: 'DELETE' }),
   },
+  confSeparacao: {
+    list: () => req<any>('/conf-separacao'),
+    criarTransportadora: (nome: string) => req<any>('/conf-separacao', { method: 'POST', body: JSON.stringify({ nome }) }),
+    renomearTransportadora: (id: number, nome: string) => req<any>(`/conf-separacao/${id}`, { method: 'PUT', body: JSON.stringify({ nome }) }),
+    removerTransportadora: (id: number) => req<any>(`/conf-separacao/${id}`, { method: 'DELETE' }),
+    adicionarObservacao: (transportadoraId: number, texto: string) => req<any>(`/conf-separacao/${transportadoraId}/observacoes`, { method: 'POST', body: JSON.stringify({ texto }) }),
+    editarObservacao: (obsId: number, texto: string) => req<any>(`/conf-separacao/observacoes/${obsId}`, { method: 'PUT', body: JSON.stringify({ texto }) }),
+    removerObservacao: (obsId: number) => req<any>(`/conf-separacao/observacoes/${obsId}`, { method: 'DELETE' }),
+  },
   bling: {
     relatorioVendas: (params?: Record<string, any>) => {
       const qs = params ? '?' + new URLSearchParams(params).toString() : '';

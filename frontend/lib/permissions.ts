@@ -32,6 +32,7 @@ export const PAGE_KEY_BY_HREF: Record<string, string> = {
   '/configuracoes-gerais': 'conf_emails',
   '/bling/config-produtos': 'conf_produtos_bling',
   '/conf-gerais': 'conf_gerais',
+  '/conf-separacao': 'conf_separacao',
   '/config-ml': 'conf_ml',
   '/conf-nuvemshop': 'conf_nuvemshop',
   '/conf-auditoria': 'conf_auditoria',

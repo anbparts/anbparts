@@ -80,6 +80,7 @@ export const NAV: NavGroup[] = [
       { href: '/configuracoes-gerais', icon: 'mail', label: 'Conf. E-mails' },
       { href: '/bling/config-produtos', icon: 'sliders', label: 'Conf. Produtos Bling' },
       { href: '/conf-gerais', icon: 'settings', label: 'Conf. Gerais' },
+      { href: '/conf-separacao', icon: 'truck', label: 'Conf. Separação' },
       { href: '/config-ml', icon: 'store', label: 'Conf. ML' },
       { href: '/conf-nuvemshop', icon: 'cloud', label: 'Conf. Nuvemshop' },
       { href: '/conf-gmail', icon: 'mail', label: 'Conf. Google' },
@@ -173,6 +174,7 @@ function SidebarIcon({ name, active, size = 16 }: { name: string; active: boolea
     terminal: <svg {...common}><path d="m4 17 6-5-6-5" /><path d="M12 19h8" /></svg>,
     'key-round': <svg {...common}><circle cx="8" cy="15" r="4" /><path d="M12 15h8" /><path d="M16 11v8" /></svg>,
     warehouse: <svg {...common}><path d="M22 8.35V20a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8.35A2 2 0 0 1 3.26 6.5l8-3.2a2 2 0 0 1 1.48 0l8 3.2A2 2 0 0 1 22 8.35Z" /><path d="M6 18h12" /><path d="M6 14h12" /><path d="M6 10h12" /></svg>,
+    truck: <svg {...common}><path d="M1 3h13v13H1z" /><path d="M14 8h4l3 3v5h-7V8Z" /><circle cx="5.5" cy="18.5" r="2" /><circle cx="17.5" cy="18.5" r="2" /></svg>,
   };
 
   return icons[name] || <span style={{ width: 16, height: 16 }} />;
