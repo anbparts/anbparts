@@ -634,7 +634,18 @@ pecasRouter.get('/', async (req, res, next) => {
     if (numeroPeca) {
       const numeroPecaText = String(numeroPeca).trim();
       if (numeroPecaText) {
-        andConditions.push({ numeroPeca: { contains: numeroPecaText, mode: 'insensitive' } });
+        // Compara ignorando hifen/espaco/pontuacao — "38520MKWD01" acha "38520-MKW-D01".
+        const numeroPecaNormalizado = numeroPecaText.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+        if (numeroPecaNormalizado) {
+          const numeroPecaIds = await prisma.$queryRaw<{ id: number }[]>`
+            SELECT "id" FROM "Peca"
+            WHERE "numeroPeca" IS NOT NULL
+              AND UPPER(regexp_replace("numeroPeca", '[^a-zA-Z0-9]', '', 'g')) LIKE ${`%${numeroPecaNormalizado}%`}
+          `;
+          andConditions.push({ id: { in: numeroPecaIds.map((r) => r.id) } });
+        } else {
+          andConditions.push({ numeroPeca: { contains: numeroPecaText, mode: 'insensitive' } });
+        }
       }
     }
     if (andConditions.length) {
