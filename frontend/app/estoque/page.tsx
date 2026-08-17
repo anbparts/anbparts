@@ -2571,6 +2571,23 @@ function HistoricoPrecoModal({ onClose, skuInicial }: any) {
 
   useEffect(() => { buscar(); }, []);
 
+  // Estatisticas por motivo: quantas vezes foi usado e quantos desses casos a peca acabou
+  // vendida (usa o mesmo status Vendido/Disponivel/Prejuizo ja calculado por linha).
+  const ordemMotivos = ['desconto_cliente', 'reajuste_mercado', 'reversao_automatica'];
+  const statsPorMotivo: Record<string, { total: number; vendidos: number; prejuizo: number }> = {};
+  for (const it of itens) {
+    const motivo = String(it.motivo || '');
+    if (!statsPorMotivo[motivo]) statsPorMotivo[motivo] = { total: 0, vendidos: 0, prejuizo: 0 };
+    const e = statsPorMotivo[motivo];
+    e.total += 1;
+    if (it.pecaEmPrejuizo) e.prejuizo += 1;
+    else if (it.pecaDisponivel === false) e.vendidos += 1;
+  }
+  const motivosPresentes = [
+    ...ordemMotivos.filter((m) => statsPorMotivo[m]),
+    ...Object.keys(statsPorMotivo).filter((m) => !ordemMotivos.includes(m)),
+  ];
+
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, backdropFilter: 'blur(2px)' }}>
       <div style={{ background: 'var(--white)', borderRadius: 16, width: '100%', maxWidth: 1100, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,.2)', overflow: 'hidden' }}>
@@ -2581,6 +2598,35 @@ function HistoricoPrecoModal({ onClose, skuInicial }: any) {
           </div>
           <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', fontSize: 16 }}>✕</button>
         </div>
+
+        {motivosPresentes.length > 0 && (
+          <div style={{ padding: '14px 22px', borderBottom: '1px solid var(--border)', background: 'var(--gray-50)', display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            {motivosPresentes.map((motivo) => {
+              const e = statsPorMotivo[motivo];
+              const pctVendido = e.total > 0 ? (e.vendidos / e.total) * 100 : 0;
+              return (
+                <div key={motivo} style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 16px', minWidth: 190 }}>
+                  <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 6 }}>
+                    {motivoLabel[motivo] || motivo}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                    <span style={{ fontFamily: 'Fraunces, serif', fontSize: 20, fontWeight: 700, color: 'var(--ink)' }}>{e.total}</span>
+                    <span style={{ fontSize: 11.5, color: 'var(--ink-muted)' }}>uso(s)</span>
+                  </div>
+                  <div style={{ fontSize: 12, marginTop: 4 }}>
+                    <span style={{ fontWeight: 700, color: pctVendido >= 50 ? '#16a34a' : pctVendido > 0 ? '#c2410c' : 'var(--ink-muted)' }}>
+                      {pctVendido.toFixed(0)}%
+                    </span>
+                    <span style={{ color: 'var(--ink-muted)' }}> converteu em venda ({e.vendidos}/{e.total})</span>
+                  </div>
+                  {e.prejuizo > 0 && (
+                    <div style={{ fontSize: 11, color: '#c2410c', marginTop: 2 }}>{e.prejuizo} em prejuízo</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         <div style={{ padding: '12px 22px', borderBottom: '1px solid var(--border)', background: 'var(--gray-50)', display: 'flex', gap: 10 }}>
           <input placeholder="Filtrar por SKU" value={skuFiltro} onChange={(e) => setSkuFiltro(e.target.value.toUpperCase())}
