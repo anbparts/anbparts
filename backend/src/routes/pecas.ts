@@ -930,16 +930,22 @@ pecasRouter.get('/historico-preco', requireEstoqueAction('editar'), async (req, 
     const skuFiltro = String(req.query?.sku || '').trim().toUpperCase();
     const limit = Math.max(1, Math.min(500, Number(req.query?.limit) || 200));
 
+    // LEFT JOIN com Peca pra saber se a peca ainda esta disponivel, foi vendida ou virou
+    // prejuizo — ajuda a conferir se um desconto/reajuste efetivamente resultou em venda.
     const rows = skuFiltro
       ? await prisma.$queryRaw<any[]>`
-          SELECT * FROM "HistoricoPrecoPeca"
-          WHERE "sku" ILIKE ${`%${skuFiltro}%`}
-          ORDER BY "criadoEm" DESC
+          SELECT h.*, p."disponivel" AS "pecaDisponivel", p."dataVenda" AS "pecaDataVenda", p."emPrejuizo" AS "pecaEmPrejuizo"
+          FROM "HistoricoPrecoPeca" h
+          LEFT JOIN "Peca" p ON p."id" = h."pecaId"
+          WHERE h."sku" ILIKE ${`%${skuFiltro}%`}
+          ORDER BY h."criadoEm" DESC
           LIMIT ${limit}
         `
       : await prisma.$queryRaw<any[]>`
-          SELECT * FROM "HistoricoPrecoPeca"
-          ORDER BY "criadoEm" DESC
+          SELECT h.*, p."disponivel" AS "pecaDisponivel", p."dataVenda" AS "pecaDataVenda", p."emPrejuizo" AS "pecaEmPrejuizo"
+          FROM "HistoricoPrecoPeca" h
+          LEFT JOIN "Peca" p ON p."id" = h."pecaId"
+          ORDER BY h."criadoEm" DESC
           LIMIT ${limit}
         `;
 

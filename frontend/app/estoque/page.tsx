@@ -2598,7 +2598,7 @@ function HistoricoPrecoModal({ onClose, skuInicial }: any) {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
               <thead>
                 <tr style={{ background: 'var(--gray-50)', position: 'sticky', top: 0 }}>
-                  {['SKU', 'Descrição', 'Anterior', 'Novo', '%', '', 'Motivo', 'Observação', 'Quando', 'Por'].map((h) => (
+                  {['SKU', 'Descrição', 'Anterior', 'Novo', '%', '', 'Motivo', 'Status', 'Observação', 'Quando', 'Por'].map((h) => (
                     <th key={h} style={{ textAlign: 'left', padding: '8px 12px', borderBottom: '1px solid var(--border)', color: 'var(--ink-muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -2618,6 +2618,19 @@ function HistoricoPrecoModal({ onClose, skuInicial }: any) {
                       <td style={{ padding: '8px 12px', fontFamily: 'Geist Mono, monospace', color: subiu ? '#16a34a' : '#dc2626' }}>{pct >= 0 ? '+' : ''}{pct.toFixed(1)}%</td>
                       <td style={{ padding: '8px 12px', fontSize: 15, color: subiu ? '#16a34a' : '#dc2626' }}>{subiu ? '↑' : '↓'}</td>
                       <td style={{ padding: '8px 12px' }}>{motivoLabel[it.motivo] || it.motivo}</td>
+                      <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>
+                        {it.pecaDisponivel == null ? (
+                          <span style={{ color: 'var(--ink-muted)' }}>—</span>
+                        ) : it.pecaEmPrejuizo ? (
+                          <span style={{ color: '#c2410c', fontWeight: 600 }}>Prejuízo</span>
+                        ) : it.pecaDisponivel === false ? (
+                          <span style={{ color: '#16a34a', fontWeight: 600 }}>
+                            Vendido{it.pecaDataVenda ? ` em ${fmtData(it.pecaDataVenda).split(',')[0]}` : ''}
+                          </span>
+                        ) : (
+                          <span style={{ color: '#2563eb', fontWeight: 600 }}>Disponível</span>
+                        )}
+                      </td>
                       <td style={{ padding: '8px 12px', color: 'var(--ink-muted)', maxWidth: 200 }}>{it.observacao || '—'}</td>
                       <td style={{ padding: '8px 12px', whiteSpace: 'nowrap', color: 'var(--ink-muted)' }}>{fmtData(it.criadoEm)}</td>
                       <td style={{ padding: '8px 12px', whiteSpace: 'nowrap', color: 'var(--ink-muted)' }}>{it.usuario || '—'}</td>
