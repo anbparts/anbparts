@@ -2573,10 +2573,14 @@ function HistoricoPrecoModal({ onClose, skuInicial }: any) {
 
   // Estatisticas por motivo: quantas vezes foi usado e quantos desses casos a peca acabou
   // vendida (usa o mesmo status Vendido/Disponivel/Prejuizo ja calculado por linha).
-  const ordemMotivos = ['desconto_cliente', 'reajuste_mercado', 'reversao_automatica'];
+  // "reversao_automatica" fica de fora — ela e disparada justamente quando o desconto NAO
+  // virou venda em 3 dias, entao uma % de conversao dela nao tem significado (seria sempre 0%).
+  const MOTIVOS_SEM_ESTATISTICA = new Set(['reversao_automatica']);
+  const ordemMotivos = ['desconto_cliente', 'reajuste_mercado'];
   const statsPorMotivo: Record<string, { total: number; vendidos: number; prejuizo: number }> = {};
   for (const it of itens) {
     const motivo = String(it.motivo || '');
+    if (MOTIVOS_SEM_ESTATISTICA.has(motivo)) continue;
     if (!statsPorMotivo[motivo]) statsPorMotivo[motivo] = { total: 0, vendidos: 0, prejuizo: 0 };
     const e = statsPorMotivo[motivo];
     e.total += 1;
