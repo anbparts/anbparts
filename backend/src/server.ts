@@ -32,6 +32,20 @@ import { startFotosDrivePendentesScheduler } from './lib/fotos-drive-aviso';
 import { startDetranBaixaDigestScheduler } from './lib/detran-baixa-digest';
 import { startReversaoPrecoDescontoScheduler } from './lib/reversao-preco-desconto';
 
+// Sem esses handlers, uma promise rejeitada sem .catch() em QUALQUER lugar do processo
+// (nao so nessa requisicao) derruba o Node inteiro (padrao desde o Node 15). O Railway reinicia
+// (ON_FAILURE), mas quem estava com uma requisicao aberta na hora recebe um "Internal Server
+// Error" em texto puro do proxy, em vez do JSON de erro do errorMiddleware — foi exatamente
+// esse o sintoma reportado no relatorio de separacao manual. Loga pra dar pra achar a causa raiz
+// da proxima vez, e evita a queda no caso de unhandledRejection (isolado aquele fluxo async).
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection]', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException]', err);
+  process.exit(1);
+});
+
 const app = express();
 
 app.use(cors({

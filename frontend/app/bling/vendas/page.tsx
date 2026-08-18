@@ -6,6 +6,22 @@ import { canProcessAction } from '@/lib/permissions';
 
 const API = API_BASE;
 
+// Le a resposta com segurança: se o servidor cair no meio (ou o proxy devolver texto puro tipo
+// "Internal Server Error" em vez do JSON de erro do app), mostra uma mensagem legível em vez do
+// SyntaxError cru do JSON.parse.
+async function parseJsonResponse(response: Response) {
+  const texto = await response.text();
+  try {
+    return JSON.parse(texto);
+  } catch {
+    throw new Error(
+      texto.trim()
+        ? `O servidor respondeu algo inesperado (status ${response.status}). Tente novamente em instantes.`
+        : `Erro no servidor (status ${response.status}). Tente novamente em instantes.`,
+    );
+  }
+}
+
 const s: any = {
   topbar: { height: 'var(--topbar-h)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 28px', background: 'var(--white)', borderBottom: '1px solid var(--border)', position: 'sticky' as const, top: 0, zIndex: 50 },
   card: { background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 12, padding: 22, marginBottom: 14 },
@@ -662,7 +678,7 @@ export default function VendasBlingPage() {
       if (dataInicio) params.set('dataInicio', dataInicio);
       if (dataFim) params.set('dataFim', dataFim);
       const response = await fetch(`${API}/bling/relatorio-separacao-manual/pedidos?${params.toString()}`);
-      const data = await response.json();
+      const data = await parseJsonResponse(response);
       if (!response.ok || !data.ok) {
         setErroPedidosManuais(data.error || 'Nao foi possivel carregar os pedidos importados do ANB.');
         return;
@@ -751,7 +767,7 @@ export default function VendasBlingPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pedidoIds: pedidosManuaisSelecionados, dataInicio, dataFim }),
       });
-      const data = await response.json();
+      const data = await parseJsonResponse(response);
       if (!response.ok || !data.ok) {
         alert(data.error || 'Erro ao carregar relatorio manual de separacao');
         return;

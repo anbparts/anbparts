@@ -1410,7 +1410,12 @@ async function findBlingProductsByCodes(codes: string[], opts: { forceRefresh?: 
     targetCodes.add(code);
   }
 
-  while (targetCodes.size > 0) {
+  // Limite de paginas de seguranca: sem isso, um codigo que nao existe mais no Bling faz o loop
+  // varrer o catalogo inteiro (nunca acha pra tirar de targetCodes), deixando a requisicao aberta
+  // por muito tempo — janela maior pra qualquer erro nao tratado em outro lugar do processo
+  // derrubar o servidor no meio dela (ver process.on('unhandledRejection') em server.ts).
+  const MAX_PAGINAS_BUSCA_PRODUTOS = 50;
+  while (targetCodes.size > 0 && pagina <= MAX_PAGINAS_BUSCA_PRODUTOS) {
     const data = await blingReq(`/produtos?pagina=${pagina}&limite=100&criterio=2`) as any;
     const produtos = data?.data || [];
     if (!produtos.length) break;
