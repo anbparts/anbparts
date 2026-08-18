@@ -1242,7 +1242,7 @@ export default function VendasBlingPage() {
                           <div style={{ fontSize: 11.5, color: 'var(--gray-500)', marginTop: 5 }}>
                             Data da venda: {fmtDate(pedido.dataVenda)}
                           </div>
-                          <div style={{ marginTop: 8, position: 'relative' }}>
+                          <div style={{ marginTop: 8 }}>
                             <button
                               type="button"
                               onClick={() => abrirPickerTransportador(pedido.pedidoId)}
@@ -1256,54 +1256,6 @@ export default function VendasBlingPage() {
                               onChange={(e) => updateSeparacaoPedido(pedido.pedidoId, 'transportador', e.target.value)}
                               placeholder="Nao informado"
                             />
-
-                            {pickerTransportador?.pedidoId === pedido.pedidoId && (
-                              <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: 4, zIndex: 40, width: 280, maxHeight: 260, overflowY: 'auto', background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,.12)' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', borderBottom: '1px solid var(--border)' }}>
-                                  <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase' }}>
-                                    {pickerTransportador.etapa === 'transportadoras' ? 'Escolha a transportadora' : 'Escolha o texto'}
-                                  </span>
-                                  <button type="button" onClick={fecharPickerTransportador} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 14, color: 'var(--gray-400)' }}>✕</button>
-                                </div>
-
-                                {pickerTransportador.etapa === 'transportadoras' ? (
-                                  transportadorasConfig.length ? (
-                                    transportadorasConfig.map((t) => (
-                                      <button
-                                        key={t.id}
-                                        type="button"
-                                        onClick={() => escolherTransportadora(pedido.pedidoId, t)}
-                                        style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 10px', border: 'none', borderTop: '1px solid var(--gray-100, #eef1f5)', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--gray-800)' }}
-                                      >
-                                        {t.nome}
-                                        {t.observacoes.length > 1 && (
-                                          <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--gray-400)' }}>({t.observacoes.length} textos)</span>
-                                        )}
-                                      </button>
-                                    ))
-                                  ) : (
-                                    <div style={{ padding: 12, fontSize: 12, color: 'var(--gray-400)' }}>
-                                      Nenhuma transportadora configurada. Configure em Conf. Separação.
-                                    </div>
-                                  )
-                                ) : (
-                                  (() => {
-                                    const t = transportadorasConfig.find((x) => x.id === pickerTransportador.transportadoraId);
-                                    if (!t) return null;
-                                    return t.observacoes.map((o) => (
-                                      <button
-                                        key={o.id}
-                                        type="button"
-                                        onClick={() => escolherObservacao(pedido.pedidoId, t.nome, o.texto)}
-                                        style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 10px', border: 'none', borderTop: '1px solid var(--gray-100, #eef1f5)', background: 'none', cursor: 'pointer', fontSize: 12.5, color: 'var(--gray-800)', whiteSpace: 'pre-wrap', lineHeight: 1.4 }}
-                                      >
-                                        {o.texto}
-                                      </button>
-                                    ));
-                                  })()
-                                )}
-                              </div>
-                            )}
                           </div>
                         </div>
 
@@ -1704,6 +1656,56 @@ export default function VendasBlingPage() {
                 </div>
               ))}
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {pickerTransportador ? (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }} onClick={fecharPickerTransportador}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 14, width: '100%', maxWidth: 380, maxHeight: '70vh', overflowY: 'auto', boxShadow: '0 12px 32px rgba(0,0,0,.12)' }}>
+            <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, background: 'var(--white)' }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-700)' }}>
+                {pickerTransportador.etapa === 'transportadoras' ? 'Escolha a transportadora' : 'Escolha o texto'}
+              </span>
+              <button type="button" onClick={fecharPickerTransportador} style={{ width: 26, height: 26, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', fontSize: 13, color: 'var(--gray-500)' }}>✕</button>
+            </div>
+
+            {pickerTransportador.etapa === 'transportadoras' ? (
+              transportadorasConfig.length ? (
+                transportadorasConfig.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => escolherTransportadora(pickerTransportador.pedidoId, t)}
+                    style={{ display: 'block', width: '100%', textAlign: 'left', padding: '11px 18px', border: 'none', borderTop: '1px solid var(--gray-100, #eef1f5)', background: 'none', cursor: 'pointer', fontSize: 13.5, color: 'var(--gray-800)' }}
+                  >
+                    {t.nome}
+                    {t.observacoes.length > 1 && (
+                      <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--gray-400)' }}>({t.observacoes.length} textos)</span>
+                    )}
+                  </button>
+                ))
+              ) : (
+                <div style={{ padding: 18, fontSize: 12.5, color: 'var(--gray-400)' }}>
+                  Nenhuma transportadora configurada. Configure em Conf. Separação.
+                </div>
+              )
+            ) : (
+              (() => {
+                const t = transportadorasConfig.find((x) => x.id === pickerTransportador.transportadoraId);
+                if (!t) return null;
+                return t.observacoes.map((o) => (
+                  <button
+                    key={o.id}
+                    type="button"
+                    onClick={() => escolherObservacao(pickerTransportador.pedidoId, t.nome, o.texto)}
+                    style={{ display: 'block', width: '100%', textAlign: 'left', padding: '11px 18px', border: 'none', borderTop: '1px solid var(--gray-100, #eef1f5)', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--gray-800)', whiteSpace: 'pre-wrap', lineHeight: 1.4 }}
+                  >
+                    {o.texto}
+                  </button>
+                ));
+              })()
+            )}
           </div>
         </div>
       ) : null}

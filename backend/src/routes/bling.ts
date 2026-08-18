@@ -620,6 +620,18 @@ async function saveConfig(data: any) {
   }
 }
 
+// Bling as vezes fica indisponivel e quem responde e o Cloudflare deles (504/502, pagina HTML
+// gigante) em vez do Bling. Sem isso, essa pagina inteira (varios KB) virava a mensagem do erro
+// — poluia os logs e podia estourar limite de tamanho de resposta em algum proxy no meio do caminho.
+function resumirErroBling(corpo: string) {
+  const texto = String(corpo || '').trim();
+  if (/^<(!doctype|html)/i.test(texto)) {
+    const tituloMatch = texto.match(/<title>([^<]*)<\/title>/i);
+    return tituloMatch ? `Bling indisponivel no momento (${tituloMatch[1].trim()})` : 'Bling indisponivel no momento (resposta HTML inesperada)';
+  }
+  return texto.slice(0, 300);
+}
+
 export async function blingReq(pathUrl: string, options: any = {}, retries = 3): Promise<any> {
   const cfg = await getConfig();
   let token = cfg.accessToken;
@@ -643,18 +655,29 @@ export async function blingReq(pathUrl: string, options: any = {}, retries = 3):
   if (resp.status === 429) {
     const err = await resp.text();
     if (/por dia/i.test(err)) {
-      throw new Error(`Bling API 429: ${err.slice(0, 200)}`);
+      throw new Error(`Bling API 429: ${resumirErroBling(err)}`);
     }
     if (retries > 0) {
       await sleep(2000);
       return blingReq(pathUrl, options, retries - 1);
     }
-    throw new Error(`Bling API 429: ${err.slice(0, 200)}`);
+    throw new Error(`Bling API 429: ${resumirErroBling(err)}`);
+  }
+
+  // 502/503/504 costumam ser falha passageira do Bling/Cloudflare — vale uma nova tentativa
+  // antes de desistir, igual ja fazemos pro 429.
+  if ([502, 503, 504].includes(resp.status)) {
+    const err = await resp.text();
+    if (retries > 0) {
+      await sleep(2000);
+      return blingReq(pathUrl, options, retries - 1);
+    }
+    throw new Error(`Bling API ${resp.status}: ${resumirErroBling(err)}`);
   }
 
   if (!resp.ok) {
     const err = await resp.text();
-    throw new Error(`Bling API ${resp.status}: ${err.slice(0, 2000)}`);
+    throw new Error(`Bling API ${resp.status}: ${resumirErroBling(err)}`);
   }
 
   // Respostas sem corpo (ex.: DELETE -> 204 No Content) nao podem ser parseadas como JSON.
