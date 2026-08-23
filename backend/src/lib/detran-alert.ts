@@ -135,11 +135,15 @@ export type DetranAtivacaoEmailItem = {
   notaFiscalEntradaData?: Date | string | null;
 };
 
+// Data "pura" (so o dia) — extrai Y/M/D do texto ISO direto, sem passar por
+// Date/toLocaleDateString: mesmo com timeZone explicito, meia-noite UTC ainda e reinterpretada
+// e "volta" um dia (21h do dia anterior em America/Sao_Paulo).
 function formatarDataNf(data: Date | string | null | undefined) {
   if (!data) return '';
-  const d = new Date(data);
-  if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+  const texto = data instanceof Date ? data.toISOString() : String(data);
+  const match = texto.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return '';
+  return `${match[3]}/${match[2]}/${match[1]}`;
 }
 
 function nfEntradaLabel(item: DetranAtivacaoEmailItem) {

@@ -104,10 +104,20 @@ function formatDate(value: unknown) {
   return date.toLocaleDateString('pt-BR');
 }
 
+// Data "pura" (so o dia, sem hora com significado) — extrai Y/M/D do texto ISO direto,
+// sem passar por Date/toLocaleDateString, que reinterpreta no fuso do navegador e pode
+// voltar um dia (meia-noite UTC vira 21h do dia anterior no Brasil).
+function formatDataSemFuso(value: unknown) {
+  const texto = String(value || '');
+  const match = texto.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return '-';
+  return `${match[3]}/${match[2]}/${match[1]}`;
+}
+
 function nfEntradaLabel(linha: any) {
   const numero = String(linha?.notaFiscalEntrada || '').trim();
   if (!numero) return '-';
-  const data = formatDate(linha?.notaFiscalEntradaData);
+  const data = formatDataSemFuso(linha?.notaFiscalEntradaData);
   return data !== '-' ? `${numero} (${data})` : numero;
 }
 
