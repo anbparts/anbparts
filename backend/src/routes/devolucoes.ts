@@ -252,7 +252,7 @@ devolucoesRouter.post('/pendentes-etiqueta/:pecaId/nova-etiqueta', requirePenden
     // cadastro antigo, entao a janela de pendencia de ativacao usa essa data em vez da antiga).
     const moto = await (prisma as any).moto.findUnique({
       where: { id: peca.motoId },
-      select: { marca: true, modelo: true, renavam: true, placa: true, chassi: true, notaFiscalEntrada: true, detranCartelaId: true },
+      select: { marca: true, modelo: true, renavam: true, placa: true, chassi: true, notaFiscalEntrada: true, notaFiscalEntradaData: true, detranCartelaId: true },
     });
     const posicaoCartela = await prisma.motoDetranPosicao.findFirst({
       where: { motoId: peca.motoId, idPeca: peca.idPeca, etiqueta: novaEtiqueta },
@@ -305,6 +305,7 @@ devolucoesRouter.post('/pendentes-etiqueta/:pecaId/nova-etiqueta', requirePenden
           placa: moto?.placa || null,
           chassi: moto?.chassi || null,
           notaFiscalEntrada: moto?.notaFiscalEntrada || null,
+          notaFiscalEntradaData: moto?.notaFiscalEntradaData || null,
         }]);
       } catch (err) {
         console.error('[ativacao-email] falha ao enviar alerta de ativacao (devolucao):', err);

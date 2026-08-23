@@ -132,7 +132,21 @@ export type DetranAtivacaoEmailItem = {
   placa?: string | null;
   chassi?: string | null;
   notaFiscalEntrada?: string | null;
+  notaFiscalEntradaData?: Date | string | null;
 };
+
+function formatarDataNf(data: Date | string | null | undefined) {
+  if (!data) return '';
+  const d = new Date(data);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+}
+
+function nfEntradaLabel(item: DetranAtivacaoEmailItem) {
+  const numero = item.notaFiscalEntrada || '-';
+  const data = formatarDataNf(item.notaFiscalEntradaData);
+  return data ? `${numero} (${data})` : numero;
+}
 
 function renderAtivacaoEmailHtml(items: DetranAtivacaoEmailItem[]) {
   const rows = items.map((item) => `
@@ -144,7 +158,7 @@ function renderAtivacaoEmailHtml(items: DetranAtivacaoEmailItem[]) {
       <td style="padding:12px 12px;border-bottom:1px solid #e2e8f0;font-size:12px;color:#0f172a;">${escapeHtml(item.placa || '-')}</td>
       <td style="padding:12px 12px;border-bottom:1px solid #e2e8f0;font-family:'JetBrains Mono',Consolas,monospace;font-size:12px;color:#0f172a;">${escapeHtml(item.chassi || '-')}</td>
       <td style="padding:12px 12px;border-bottom:1px solid #e2e8f0;font-family:'JetBrains Mono',Consolas,monospace;font-size:12px;color:#0f172a;">${escapeHtml(item.renavam || '-')}</td>
-      <td style="padding:12px 12px;border-bottom:1px solid #e2e8f0;font-size:12px;color:#0f172a;">${escapeHtml(item.notaFiscalEntrada || '-')}</td>
+      <td style="padding:12px 12px;border-bottom:1px solid #e2e8f0;font-size:12px;color:#0f172a;">${escapeHtml(nfEntradaLabel(item))}</td>
     </tr>
   `).join('');
 
@@ -176,7 +190,7 @@ function renderAtivacaoEmailText(items: DetranAtivacaoEmailItem[]) {
       `Numero da Peca Avulsa (etiqueta): ${item.etiqueta}`,
       `Moto: ${item.motoLabel || '-'}`,
       `Placa: ${item.placa || '-'} | Chassi: ${item.chassi || '-'} | Renavam: ${item.renavam || '-'}`,
-      `NF de Entrada: ${item.notaFiscalEntrada || '-'}`,
+      `NF de Entrada: ${nfEntradaLabel(item)}`,
       '',
     ].join('\n')),
   ].join('\n');

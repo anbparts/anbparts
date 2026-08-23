@@ -143,6 +143,7 @@ const motoSchema = z.object({
   observacoes:       z.string().optional().nullable(),
   etiquetaSkuLabel:  z.string().optional().nullable(),
   notaFiscalEntrada: z.string().optional().nullable(),
+  notaFiscalEntradaData: z.string().optional().nullable(),
 });
 
 const detranEtiquetaStatusSchema = z.object({
@@ -313,6 +314,7 @@ motosRouter.get('/', async (req, res, next) => {
           descricaoModelo: true,
           etiquetaSkuLabel: true,
           notaFiscalEntrada: true,
+          notaFiscalEntradaData: true,
           // anexos (Json com base64) NAO entra aqui — contamos via query separada abaixo.
         },
         orderBy: { id: 'asc' }
@@ -454,6 +456,7 @@ motosRouter.get('/', async (req, res, next) => {
         descricaoModelo: m.descricaoModelo,
         etiquetaSkuLabel: m.etiquetaSkuLabel,
         notaFiscalEntrada: m.notaFiscalEntrada,
+        notaFiscalEntradaData: m.notaFiscalEntradaData,
         qtdDisp:        disponiveis.qtd,
         qtdVendidas:    vendidas.qtd,
         receitaTotal:   receita,
@@ -750,6 +753,7 @@ motosRouter.post('/', requireMotosAction('criar'), async (req, res, next) => {
       data: {
         ...data,
         dataCompra: data.dataCompra ? new Date(data.dataCompra) : null,
+        notaFiscalEntradaData: data.notaFiscalEntradaData ? new Date(data.notaFiscalEntradaData) : null,
       }
     });
     res.status(201).json(moto);
@@ -765,6 +769,9 @@ motosRouter.put('/:id', requireMotosAction('editar'), async (req, res, next) => 
       data: {
         ...data,
         dataCompra: data.dataCompra ? new Date(data.dataCompra) : undefined,
+        notaFiscalEntradaData: data.notaFiscalEntradaData !== undefined
+          ? (data.notaFiscalEntradaData ? new Date(data.notaFiscalEntradaData) : null)
+          : undefined,
       }
     });
     res.json(moto);

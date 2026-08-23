@@ -104,6 +104,13 @@ function formatDate(value: unknown) {
   return date.toLocaleDateString('pt-BR');
 }
 
+function nfEntradaLabel(linha: any) {
+  const numero = String(linha?.notaFiscalEntrada || '').trim();
+  if (!numero) return '-';
+  const data = formatDate(linha?.notaFiscalEntradaData);
+  return data !== '-' ? `${numero} (${data})` : numero;
+}
+
 function getSortValue(row: any, key: string) {
   if (key === 'dataVenda') {
     const time = row?.dataVenda ? new Date(row.dataVenda).getTime() : 0;
@@ -1255,7 +1262,7 @@ export default function EtiquetasDetranPage() {
                           <div style={{ fontSize: 11.5, color: 'var(--gray-500)', marginTop: 2 }}>{linha.motoLabel || '-'}</div>
                         </div>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                          {[['Tipo de Peça', linha.tipoPeca], ['Nº Peça Avulsa', linha.etiqueta], ['Placa', linha.placa], ['Chassi', linha.chassi], ['Renavam', linha.renavam], ['NF Entrada', linha.notaFiscalEntrada]].map(([lbl, val]) => (
+                          {[['Tipo de Peça', linha.tipoPeca], ['Nº Peça Avulsa', linha.etiqueta], ['Placa', linha.placa], ['Chassi', linha.chassi], ['Renavam', linha.renavam], ['NF Entrada', nfEntradaLabel(linha)]].map(([lbl, val]) => (
                             <div key={String(lbl)} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 8 }}>
                               <div style={{ fontSize: 10, color: 'var(--gray-500)', marginBottom: 3 }}>{lbl}</div>
                               <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11.5 }}>{val || '-'}</div>
@@ -1290,7 +1297,7 @@ export default function EtiquetasDetranPage() {
                           <td style={{ ...s.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, whiteSpace: 'nowrap' }}>{linha.renavam || '-'}</td>
                           <td style={{ ...s.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, whiteSpace: 'nowrap' }}>{linha.placa || '-'}</td>
                           <td style={{ ...s.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, whiteSpace: 'nowrap' }}>{linha.chassi || '-'}</td>
-                          <td style={{ ...s.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, whiteSpace: 'nowrap' }}>{linha.notaFiscalEntrada || '-'}</td>
+                          <td style={{ ...s.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, whiteSpace: 'nowrap' }}>{nfEntradaLabel(linha)}</td>
                           <td style={{ ...s.td, whiteSpace: 'nowrap' }}>
                             <button onClick={() => abrirModalAtivar(linha)} disabled={confirmandoAtivacao === key}
                               style={{ ...s.btn, background: '#c2410c', color: '#fff', padding: '5px 12px', fontSize: 12, opacity: confirmandoAtivacao === key ? 0.6 : 1 }}>

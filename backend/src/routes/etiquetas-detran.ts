@@ -985,7 +985,7 @@ etiquetasDetranRouter.get('/pendencias-ativacao', async (req, res, next) => {
     const [motos, posicoes, ativacoesMap] = await Promise.all([
       (prisma as any).moto.findMany({
         where: { id: { in: motoIds } },
-        select: { id: true, marca: true, modelo: true, renavam: true, placa: true, chassi: true, notaFiscalEntrada: true, detranCartelaId: true },
+        select: { id: true, marca: true, modelo: true, renavam: true, placa: true, chassi: true, notaFiscalEntrada: true, notaFiscalEntradaData: true, detranCartelaId: true },
       }),
       prisma.motoDetranPosicao.findMany({
         where: { motoId: { in: motoIds }, idPeca: { not: null } },
@@ -1020,6 +1020,7 @@ etiquetasDetranRouter.get('/pendencias-ativacao', async (req, res, next) => {
           placa: moto.placa || null,
           chassi: moto.chassi || null,
           notaFiscalEntrada: moto.notaFiscalEntrada || null,
+          notaFiscalEntradaData: moto.notaFiscalEntradaData || null,
           motoLabel: [moto.marca, moto.modelo].filter(Boolean).join(' ') || null,
           cadastro: peca.cadastro,
           disponivel: peca.disponivel,

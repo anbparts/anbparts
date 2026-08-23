@@ -1293,7 +1293,7 @@ cadastroRouter.post('/:id/finalizar', requireCadastroAction('criar_bling'), asyn
         try {
           const motoAtivacao = await prisma.moto.findUnique({
             where: { id: cadastro.motoId },
-            select: { marca: true, modelo: true, renavam: true, placa: true, chassi: true, notaFiscalEntrada: true, detranCartelaId: true } as any,
+            select: { marca: true, modelo: true, renavam: true, placa: true, chassi: true, notaFiscalEntrada: true, notaFiscalEntradaData: true, detranCartelaId: true } as any,
           }) as any;
           // Só etiquetas avulsas precisam de ativação. Cartela = posição 001-034 E base == prefixo da moto.
           const cartelaBase = String(motoAtivacao?.detranCartelaId || '').trim();
@@ -1319,6 +1319,7 @@ cadastroRouter.post('/:id/finalizar', requireCadastroAction('criar_bling'), asyn
                 placa: motoAtivacao?.placa || null,
                 chassi: motoAtivacao?.chassi || null,
                 notaFiscalEntrada: motoAtivacao?.notaFiscalEntrada || null,
+                notaFiscalEntradaData: motoAtivacao?.notaFiscalEntradaData || null,
               })),
           );
           await sendDetranAtivacaoEmailIfNeeded(itensAtivacao);
