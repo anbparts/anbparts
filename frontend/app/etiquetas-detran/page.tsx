@@ -114,6 +114,12 @@ function formatDataSemFuso(value: unknown) {
   return `${match[3]}/${match[2]}/${match[1]}`;
 }
 
+// So pra exibicao nas telas de Pendencias — tira o traco da placa (ex: "EXG-0F89" -> "EXG0F89").
+function formatPlacaSemTraco(value: unknown) {
+  const texto = String(value || '').trim();
+  return texto ? texto.replace(/-/g, '') : '';
+}
+
 function nfEntradaLabel(linha: any) {
   const numero = String(linha?.notaFiscalEntrada || '').trim();
   if (!numero) return '-';
@@ -1272,7 +1278,7 @@ export default function EtiquetasDetranPage() {
                           <div style={{ fontSize: 11.5, color: 'var(--gray-500)', marginTop: 2 }}>{linha.motoLabel || '-'}</div>
                         </div>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                          {[['Tipo de Peça', linha.tipoPeca], ['Nº Peça Avulsa', linha.etiqueta], ['Placa', linha.placa], ['Chassi', linha.chassi], ['Renavam', linha.renavam], ['NF Entrada', nfEntradaLabel(linha)]].map(([lbl, val]) => (
+                          {[['Tipo de Peça', linha.tipoPeca], ['Nº Peça Avulsa', linha.etiqueta], ['Placa', formatPlacaSemTraco(linha.placa)], ['Chassi', linha.chassi], ['Renavam', linha.renavam], ['NF Entrada', nfEntradaLabel(linha)]].map(([lbl, val]) => (
                             <div key={String(lbl)} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 8 }}>
                               <div style={{ fontSize: 10, color: 'var(--gray-500)', marginBottom: 3 }}>{lbl}</div>
                               <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11.5 }}>{val || '-'}</div>
@@ -1305,7 +1311,7 @@ export default function EtiquetasDetranPage() {
                           <td style={{ ...s.td, fontSize: 12 }}>{linha.tipoPeca || '-'}</td>
                           <td style={{ ...s.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, fontWeight: 700, color: '#c2410c', whiteSpace: 'nowrap' }}>{linha.etiqueta}</td>
                           <td style={{ ...s.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, whiteSpace: 'nowrap' }}>{linha.renavam || '-'}</td>
-                          <td style={{ ...s.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, whiteSpace: 'nowrap' }}>{linha.placa || '-'}</td>
+                          <td style={{ ...s.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, whiteSpace: 'nowrap' }}>{formatPlacaSemTraco(linha.placa) || '-'}</td>
                           <td style={{ ...s.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, whiteSpace: 'nowrap' }}>{linha.chassi || '-'}</td>
                           <td style={{ ...s.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, whiteSpace: 'nowrap' }}>{nfEntradaLabel(linha)}</td>
                           <td style={{ ...s.td, whiteSpace: 'nowrap' }}>
@@ -1692,7 +1698,7 @@ export default function EtiquetasDetranPage() {
                           </div>
                           <div>
                             <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 3 }}>Placa</div>
-                            <div style={{ fontSize: 12, fontFamily: 'Geist Mono, monospace', color: 'var(--gray-700)' }}>{p.moto?.placa || '—'}</div>
+                            <div style={{ fontSize: 12, fontFamily: 'Geist Mono, monospace', color: 'var(--gray-700)' }}>{formatPlacaSemTraco(p.moto?.placa) || '—'}</div>
                           </div>
                         </div>
 
