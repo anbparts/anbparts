@@ -156,12 +156,18 @@ faturamentoRouter.get('/provisao', async (req, res, next) => {
       if (!agg) continue;
       if (p.disponivel) {
         agg.qtdEstoque += 1;
-      } else if (p.dataVenda) {
+      } else {
+        // Vendida = disponivel:false, igual o resto do sistema conta (ex: GET /motos). Nao exige
+        // dataVenda preenchida — uma peca pode ficar indisponivel um pouco antes da data de
+        // venda ser registrada (sync em etapas), e antes so contava aqui se tivesse dataVenda,
+        // fazendo a peca "sumir" do calculo (nem estoque, nem vendida) e a receita ficar a menor.
         agg.receitaLiq += Number(p.valorLiq);
         agg.qtdVendida += 1;
-        const venda = new Date(p.dataVenda);
-        if (!agg.primeiraVenda || venda < agg.primeiraVenda) agg.primeiraVenda = venda;
-        if (!agg.ultimaVenda || venda > agg.ultimaVenda) agg.ultimaVenda = venda;
+        if (p.dataVenda) {
+          const venda = new Date(p.dataVenda);
+          if (!agg.primeiraVenda || venda < agg.primeiraVenda) agg.primeiraVenda = venda;
+          if (!agg.ultimaVenda || venda > agg.ultimaVenda) agg.ultimaVenda = venda;
+        }
       }
     }
 
