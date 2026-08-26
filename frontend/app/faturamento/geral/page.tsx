@@ -730,17 +730,25 @@ export default function FaturamentoGeralPage() {
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
-                      <tr>{['Moto', 'Investido', 'Recuperado', '% pago', 'Saldo', 'Ritmo (R$/dia)', 'Dias p/ pagar', 'Previsao', 'Pecas rest.', 'Dias p/ esgotar'].map((h) => (
+                      <tr>{['ID', 'Moto', 'Investido', 'Recuperado', '% pago', 'Saldo', 'Ritmo (R$/dia)', 'Dias p/ pagar', 'Previsao', 'Pecas rest.', 'Dias p/ esgotar'].map((h) => (
                         <th key={h} style={cs.th}>{h}</th>
                       ))}</tr>
                     </thead>
                     <tbody>
                       {provisaoCalculada.length === 0 ? (
-                        <tr><td colSpan={10} style={{ ...cs.td, textAlign: 'center', color: 'var(--ink-muted)', padding: '30px 20px' }}>Sem dados no filtro</td></tr>
+                        <tr><td colSpan={11} style={{ ...cs.td, textAlign: 'center', color: 'var(--ink-muted)', padding: '30px 20px' }}>Sem dados no filtro</td></tr>
                       ) : provisaoCalculada.map((m: any) => {
                         const pctColor = m.jaPago ? '#16a34a' : (m.percentualPago || 0) >= 60 ? '#16a34a' : (m.percentualPago || 0) >= 25 ? '#d97706' : '#6b7280';
                         return (
                           <tr key={m.motoId}>
+                            <td style={cs.td}>
+                              <span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 12, color: 'var(--ink-muted)' }}>#{m.motoId}</span>
+                              {m.skuPrefix && (
+                                <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 10, fontWeight: 700, color: 'var(--blue-600)', background: 'var(--blue-50)', border: '1px solid var(--blue-200)', borderRadius: 4, padding: '1px 5px', marginTop: 3, display: 'inline-block', letterSpacing: '0.5px' }}>
+                                  {m.skuPrefix}
+                                </div>
+                              )}
+                            </td>
                             <td style={{ ...cs.td, fontSize: 12.5 }}>{m.moto}</td>
                             <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, ...sensitiveMaskStyle(hidden) }}>{sensitiveText(fmt(m.precoCompra), hidden)}</td>
                             <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, color: 'var(--sage)', ...sensitiveMaskStyle(hidden) }}>{sensitiveText(fmt(m.receitaLiq), hidden)}</td>

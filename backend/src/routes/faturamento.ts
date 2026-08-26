@@ -146,6 +146,11 @@ faturamentoRouter.get('/provisao', async (req, res, next) => {
       where: { emPrejuizo: false },
       select: { motoId: true, disponivel: true, valorLiq: true, dataVenda: true },
     });
+    const blingCfg = await prisma.blingConfig.findFirst({ select: { prefixos: true } });
+    const prefixos: any[] = Array.isArray(blingCfg?.prefixos) ? (blingCfg!.prefixos as any[]) : [];
+    const prefixoPorMoto = new Map<number, string>(
+      prefixos.filter((p) => p?.motoId && p?.prefixo).map((p) => [Number(p.motoId), String(p.prefixo).toUpperCase()]),
+    );
 
     const porMoto = new Map<number, { receitaLiq: number; qtdVendida: number; qtdEstoque: number; primeiraVenda: Date | null; ultimaVenda: Date | null }>();
     for (const moto of motos) {
@@ -175,6 +180,7 @@ faturamentoRouter.get('/provisao', async (req, res, next) => {
       const agg = porMoto.get(moto.id)!;
       return {
         motoId: moto.id,
+        skuPrefix: prefixoPorMoto.get(moto.id) || null,
         moto: `${moto.marca} ${moto.modelo}`,
         marca: moto.marca,
         motoAno: moto.ano,
