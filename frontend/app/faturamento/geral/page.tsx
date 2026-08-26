@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { ChartPanel, DonutChart, HeatmapChart, HorizontalBarChart, ViewModeSwitch, type ViewMode } from '@/components/finance/Charts';
 import { api } from '@/lib/api';
 import { API_BASE } from '@/lib/api-base';
@@ -208,15 +208,22 @@ export default function FaturamentoGeralPage() {
     setValorVisao(carregarVisaoSalva(VALOR_VISAO_KEY));
   }, []);
 
+  // Busca de novo toda vez que entra na aba Tempo de Giro/Por Valor vindo de fora dela (nao so
+  // na primeira vez) — sem isso, uma venda feita depois de a tela ja ter carregado nunca aparecia
+  // ate recarregar a pagina inteira. So nao refaz ao alternar entre giro<->valor (mesmo dataset).
+  const estavaEmGiroOuValor = useRef(false);
   useEffect(() => {
-    if ((modo !== 'giro' && modo !== 'valor') || giroData) return;
-    setGiroLoading(true);
-    fetch(`${API}/faturamento/tempo-giro`, { credentials: 'include' })
-      .then((r) => r.json())
-      .then((d) => setGiroData(Array.isArray(d?.linhas) ? d.linhas : []))
-      .catch(() => setGiroData([]))
-      .finally(() => setGiroLoading(false));
-  }, [modo, giroData]);
+    const agora = modo === 'giro' || modo === 'valor';
+    if (agora && !estavaEmGiroOuValor.current) {
+      setGiroLoading(true);
+      fetch(`${API}/faturamento/tempo-giro`, { credentials: 'include' })
+        .then((r) => r.json())
+        .then((d) => setGiroData(Array.isArray(d?.linhas) ? d.linhas : []))
+        .catch(() => setGiroData([]))
+        .finally(() => setGiroLoading(false));
+    }
+    estavaEmGiroOuValor.current = agora;
+  }, [modo]);
 
   useEffect(() => {
     if ((modo !== 'giro' && modo !== 'valor') || mapaCategoriasCarregado) return;
@@ -227,15 +234,21 @@ export default function FaturamentoGeralPage() {
       .catch(() => setMapaCategorias({}));
   }, [modo, mapaCategoriasCarregado]);
 
+  // Mesmo motivo do efeito acima: sem isso, a Provisao ficava com o retrato de quando a tela
+  // foi aberta pela primeira vez, mesmo depois de vendas novas.
+  const estavaEmProvisao = useRef(false);
   useEffect(() => {
-    if (modo !== 'provisao' || provisaoData) return;
-    setProvisaoLoading(true);
-    fetch(`${API}/faturamento/provisao`, { credentials: 'include' })
-      .then((r) => r.json())
-      .then((d) => setProvisaoData(Array.isArray(d?.linhas) ? d.linhas : []))
-      .catch(() => setProvisaoData([]))
-      .finally(() => setProvisaoLoading(false));
-  }, [modo, provisaoData]);
+    const agora = modo === 'provisao';
+    if (agora && !estavaEmProvisao.current) {
+      setProvisaoLoading(true);
+      fetch(`${API}/faturamento/provisao`, { credentials: 'include' })
+        .then((r) => r.json())
+        .then((d) => setProvisaoData(Array.isArray(d?.linhas) ? d.linhas : []))
+        .catch(() => setProvisaoData([]))
+        .finally(() => setProvisaoLoading(false));
+    }
+    estavaEmProvisao.current = agora;
+  }, [modo]);
 
   const anos = Array.from(new Set(data.map((item: any) => item.ano))).sort((a, b) => b - a);
   const filtered = data.filter((item) => !filtAno || item.ano === Number(filtAno));
