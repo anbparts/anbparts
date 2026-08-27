@@ -102,6 +102,7 @@ export default function FaturamentoMotoPage() {
   const [filtMarca, setFiltMarca] = useState('');
   const [filtAno, setFiltAno] = useState(currentYear());
   const [filtMes, setFiltMes] = useState('');
+  const [relatorioSort, setRelatorioSort] = useState<{ key: string; dir: 'asc' | 'desc' }>({ key: 'ano', dir: 'desc' });
   const [loading, setLoading] = useState(true);
   const [modo, setModo] = useState<ViewMode>('grafico');
   const [estoqueData, setEstoqueData] = useState<{ meses: string[]; porMoto: any[]; consolidado: any[] } | null>(null);
@@ -156,12 +157,38 @@ export default function FaturamentoMotoPage() {
   )).sort();
   const anos = Array.from(new Set(data.map((item: any) => item.ano))).sort((a, b) => b - a);
 
-  const filtered = data.filter((item) => (
+  const filteredSemOrdenar = data.filter((item) => (
     (!filtMarca || marcaDaMoto(item.moto) === filtMarca) &&
     (!filtMoto || item.moto === filtMoto) &&
     (!filtAno || item.ano === Number(filtAno)) &&
     (!filtMes || item.mes === Number(filtMes))
   ));
+
+  function valorOrdenacaoRelatorio(item: any, key: string) {
+    if (key === 'receita') return Number(item.receitaLiq || item.receita || 0);
+    if (key === 'qtd') return Number(item.qtd || 0);
+    if (key === 'mes') return Number(item.mes || 0);
+    if (key === 'ano') return Number(item.ano || 0);
+    if (key === 'moto') return String(item.moto || '');
+    return '';
+  }
+
+  const filtered = [...filteredSemOrdenar].sort((a, b) => {
+    const va = valorOrdenacaoRelatorio(a, relatorioSort.key);
+    const vb = valorOrdenacaoRelatorio(b, relatorioSort.key);
+    const dir = relatorioSort.dir === 'asc' ? 1 : -1;
+    if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
+    return String(va).localeCompare(String(vb), 'pt-BR', { sensitivity: 'base', numeric: true }) * dir;
+  });
+
+  function toggleRelatorioSort(key: string) {
+    setRelatorioSort((atual) => ({ key, dir: atual.key === key && atual.dir === 'asc' ? 'desc' : 'asc' }));
+  }
+
+  function indicadorRelatorioSort(key: string) {
+    if (relatorioSort.key !== key) return '';
+    return relatorioSort.dir === 'asc' ? ' ▲' : ' ▼';
+  }
 
   const totalReceita = filtered.reduce((sum, item) => sum + Number(item.receitaLiq || item.receita || 0), 0);
   const totalQtd = filtered.reduce((sum, item) => sum + Number(item.qtd || 0), 0);
@@ -559,7 +586,19 @@ export default function FaturamentoMotoPage() {
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
-                    <tr>{['Moto', 'Mes', 'Ano', 'Receita', 'Qtd. pecas'].map((header) => <th key={header} style={cs.th}>{header}</th>)}</tr>
+                    <tr>
+                      {[
+                        { label: 'Moto', key: 'moto' },
+                        { label: 'Mes', key: 'mes' },
+                        { label: 'Ano', key: 'ano' },
+                        { label: 'Receita', key: 'receita' },
+                        { label: 'Qtd. pecas', key: 'qtd' },
+                      ].map((header) => (
+                        <th key={header.key} style={{ ...cs.th, cursor: 'pointer', userSelect: 'none' as const }} onClick={() => toggleRelatorioSort(header.key)}>
+                          {header.label}{indicadorRelatorioSort(header.key)}
+                        </th>
+                      ))}
+                    </tr>
                   </thead>
                   <tbody>
                     {loading ? (
