@@ -113,6 +113,11 @@ faturamentoRouter.get('/tempo-giro', async (req, res, next) => {
         moto: { select: { id: true, marca: true, modelo: true, ano: true } },
       },
     });
+    const blingCfgGiro = await prisma.blingConfig.findFirst({ select: { prefixos: true } });
+    const prefixosGiro: any[] = Array.isArray(blingCfgGiro?.prefixos) ? (blingCfgGiro!.prefixos as any[]) : [];
+    const prefixoPorMotoGiro = new Map<number, string>(
+      prefixosGiro.filter((p) => p?.motoId && p?.prefixo).map((p) => [Number(p.motoId), String(p.prefixo).toUpperCase()]),
+    );
 
     const linhas = pecas
       .map((p) => {
@@ -123,6 +128,7 @@ faturamentoRouter.get('/tempo-giro', async (req, res, next) => {
           idPeca: p.idPeca,
           skuBase: getBaseSku(p.idPeca),
           motoId: p.moto.id,
+          skuPrefix: prefixoPorMotoGiro.get(p.moto.id) || null,
           moto: `${p.moto.marca} ${p.moto.modelo}`,
           motoAno: p.moto.ano,
           cadastro: p.cadastro,

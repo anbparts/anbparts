@@ -197,6 +197,8 @@ export default function FaturamentoMotoPage() {
   const porPeriodoMap = new Map<string, { label: string; receita: number; qtd: number; mes: number; ano: number }>();
   const heatmapMotoMap = new Map<number, {
     label: string;
+    motoNome: string;
+    skuPrefix: string | null;
     totalReceita: number;
     totalQtd: number;
     cells: Map<string, { receita: number; qtd: number }>;
@@ -230,11 +232,15 @@ export default function FaturamentoMotoPage() {
 
     const heatmapMoto = heatmapMotoMap.get(motoKey) || {
       label: motoLabel,
+      motoNome: item.moto,
+      skuPrefix: sku || null,
       totalReceita: 0,
       totalQtd: 0,
       cells: new Map<string, { receita: number; qtd: number }>(),
     };
     heatmapMoto.label = motoLabel;
+    heatmapMoto.motoNome = item.moto;
+    heatmapMoto.skuPrefix = sku || null;
     heatmapMoto.totalReceita += receita;
     heatmapMoto.totalQtd += qtd;
     const currentCell = heatmapMoto.cells.get(period) || { receita: 0, qtd: 0 };
@@ -271,10 +277,10 @@ export default function FaturamentoMotoPage() {
         .map(([key, value]) => ({ key, label: value.label }))
         .slice(-12);
 
-  const heatmapRows = Array.from(heatmapMotoMap.values())
-    .sort((a, b) => b.totalReceita - a.totalReceita)
-    .map((moto) => ({
-      label: moto.label,
+  const heatmapRows = Array.from(heatmapMotoMap.entries())
+    .sort((a, b) => b[1].totalReceita - a[1].totalReceita)
+    .map(([motoId, moto]) => ({
+      label: `#${motoId} · ${moto.label}`,
       note: `${moto.totalQtd} pecas · ${fmt(moto.totalReceita)}`,
       cells: heatmapPeriods.map((period) => {
         const current = moto.cells.get(period.key) || { receita: 0, qtd: 0 };
@@ -310,11 +316,13 @@ export default function FaturamentoMotoPage() {
     };
   });
 
-  const motoMonthlyCards = Array.from(heatmapMotoMap.values())
-    .sort((a, b) => b.totalReceita - a.totalReceita)
+  const motoMonthlyCards = Array.from(heatmapMotoMap.entries())
+    .sort((a, b) => b[1].totalReceita - a[1].totalReceita)
     .slice(0, isPhone ? 4 : isTabletPortrait ? 6 : 8)
-    .map((moto) => ({
-      label: moto.label,
+    .map(([motoId, moto]) => ({
+      motoId,
+      label: moto.motoNome,
+      skuPrefix: moto.skuPrefix,
       totalReceita: moto.totalReceita,
       totalQtd: moto.totalQtd,
       activeMonths: heatmapPeriods
@@ -496,12 +504,22 @@ export default function FaturamentoMotoPage() {
                       <div style={{ display: 'grid', gap: 12 }}>
                         <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink)' }}>Motos com resultado no periodo</div>
                         {motoMonthlyCards.map((moto) => (
-                          <div key={moto.label} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: isPhone ? 12 : 14 }}>
+                          <div key={moto.motoId} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: isPhone ? 12 : 14 }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-                              <div style={{ minWidth: 0 }}>
-                                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>{moto.label}</div>
-                                <div style={{ marginTop: 4, fontSize: 11, color: 'var(--ink-muted)', fontFamily: 'Geist Mono, monospace', ...sensitiveMaskStyle(hidden) }}>
-                                  {sensitiveText(`${moto.totalQtd} pecas • ${fmt(moto.totalReceita)}`, hidden)}
+                              <div style={{ minWidth: 0, display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                                <div style={{ flexShrink: 0 }}>
+                                  <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11.5, color: 'var(--ink-muted)' }}>#{moto.motoId}</div>
+                                  {moto.skuPrefix && (
+                                    <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 10, fontWeight: 700, color: 'var(--blue-600)', background: 'var(--blue-50)', border: '1px solid var(--blue-200)', borderRadius: 4, padding: '1px 5px', marginTop: 3, display: 'inline-block', letterSpacing: '0.5px' }}>
+                                      {moto.skuPrefix}
+                                    </div>
+                                  )}
+                                </div>
+                                <div style={{ minWidth: 0 }}>
+                                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>{moto.label}</div>
+                                  <div style={{ marginTop: 4, fontSize: 11, color: 'var(--ink-muted)', fontFamily: 'Geist Mono, monospace', ...sensitiveMaskStyle(hidden) }}>
+                                    {sensitiveText(`${moto.totalQtd} pecas • ${fmt(moto.totalReceita)}`, hidden)}
+                                  </div>
                                 </div>
                               </div>
                             </div>
@@ -514,7 +532,7 @@ export default function FaturamentoMotoPage() {
                               }}
                             >
                               {moto.activeMonths.length ? moto.activeMonths.map((month) => (
-                                <div key={`${moto.label}-${month.label}`} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', background: 'var(--gray-50)' }}>
+                                <div key={`${moto.motoId}-${month.label}`} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', background: 'var(--gray-50)' }}>
                                   <div style={{ fontSize: 10.5, color: 'var(--ink-muted)', fontFamily: 'Geist Mono, monospace', textTransform: 'uppercase' }}>{month.label}</div>
                                   <div style={{ marginTop: 6, fontSize: 12, color: 'var(--sage)', fontWeight: 700, ...sensitiveMaskStyle(hidden) }}>
                                     {sensitiveText(fmt(month.receita), hidden)}
