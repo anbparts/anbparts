@@ -560,6 +560,14 @@ export default function FaturamentoMotoPage() {
                   <div style={{ color: 'var(--ink-muted)', fontSize: 13 }}>Sem dados</div>
                 ) : filtered.map((item, index) => (
                   <div key={`${item.moto}-${item.ano}-${item.mes}-${index}`} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                      <span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11.5, color: 'var(--ink-muted)' }}>#{item.motoId}</span>
+                      {item.skuPrefix && (
+                        <span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 10, fontWeight: 700, color: 'var(--blue-600)', background: 'var(--blue-50)', border: '1px solid var(--blue-200)', borderRadius: 4, padding: '1px 5px', letterSpacing: '0.5px' }}>
+                          {item.skuPrefix}
+                        </span>
+                      )}
+                    </div>
                     <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>{item.moto}</div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
                       <div>
@@ -588,25 +596,38 @@ export default function FaturamentoMotoPage() {
                   <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
                     <tr>
                       {[
+                        { label: 'ID', key: '' },
                         { label: 'Moto', key: 'moto' },
                         { label: 'Mes', key: 'mes' },
                         { label: 'Ano', key: 'ano' },
                         { label: 'Receita', key: 'receita' },
                         { label: 'Qtd. pecas', key: 'qtd' },
                       ].map((header) => (
-                        <th key={header.key} style={{ ...cs.th, cursor: 'pointer', userSelect: 'none' as const }} onClick={() => toggleRelatorioSort(header.key)}>
-                          {header.label}{indicadorRelatorioSort(header.key)}
-                        </th>
+                        header.key ? (
+                          <th key={header.key} style={{ ...cs.th, cursor: 'pointer', userSelect: 'none' as const }} onClick={() => toggleRelatorioSort(header.key)}>
+                            {header.label}{indicadorRelatorioSort(header.key)}
+                          </th>
+                        ) : (
+                          <th key="id" style={cs.th}>{header.label}</th>
+                        )
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {loading ? (
-                      <tr><td colSpan={5} style={{ ...cs.td, textAlign: 'center', color: 'var(--ink-muted)', borderBottom: 'none' }}>Carregando...</td></tr>
+                      <tr><td colSpan={6} style={{ ...cs.td, textAlign: 'center', color: 'var(--ink-muted)', borderBottom: 'none' }}>Carregando...</td></tr>
                     ) : filtered.length === 0 ? (
-                      <tr><td colSpan={5} style={{ ...cs.td, textAlign: 'center', color: 'var(--ink-muted)', padding: '40px 20px', borderBottom: 'none' }}>Sem dados</td></tr>
+                      <tr><td colSpan={6} style={{ ...cs.td, textAlign: 'center', color: 'var(--ink-muted)', padding: '40px 20px', borderBottom: 'none' }}>Sem dados</td></tr>
                     ) : filtered.map((item, index) => (
                       <tr key={`${item.moto}-${item.ano}-${item.mes}-${index}`}>
+                        <td style={cs.td}>
+                          <span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 12, color: 'var(--ink-muted)' }}>#{item.motoId}</span>
+                          {item.skuPrefix && (
+                            <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 10, fontWeight: 700, color: 'var(--blue-600)', background: 'var(--blue-50)', border: '1px solid var(--blue-200)', borderRadius: 4, padding: '1px 5px', marginTop: 3, display: 'inline-block', letterSpacing: '0.5px' }}>
+                              {item.skuPrefix}
+                            </div>
+                          )}
+                        </td>
                         <td style={cs.td}>{item.moto}</td>
                         <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12 }}>{MESES_FULL[item.mes - 1]}</td>
                         <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12 }}>{item.ano}</td>

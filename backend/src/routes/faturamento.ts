@@ -71,6 +71,11 @@ faturamentoRouter.get('/por-moto', async (req, res, next) => {
       where: { disponivel: false, emPrejuizo: false, dataVenda: { not: null } },
       select: { valorLiq: true, precoML: true, dataVenda: true, moto: { select: { id: true, marca: true, modelo: true } } }
     });
+    const blingCfg = await prisma.blingConfig.findFirst({ select: { prefixos: true } });
+    const prefixos: any[] = Array.isArray(blingCfg?.prefixos) ? (blingCfg!.prefixos as any[]) : [];
+    const prefixoPorMoto = new Map<number, string>(
+      prefixos.filter((p) => p?.motoId && p?.prefixo).map((p) => [Number(p.motoId), String(p.prefixo).toUpperCase()]),
+    );
 
     const por_moto_mes: Record<string, any> = {};
     pecas.forEach(p => {
@@ -79,6 +84,7 @@ faturamentoRouter.get('/por-moto', async (req, res, next) => {
       const key = `${p.moto.id}-${d.getFullYear()}-${d.getMonth() + 1}`;
       if (!por_moto_mes[key]) por_moto_mes[key] = {
         motoId: p.moto.id,
+        skuPrefix: prefixoPorMoto.get(p.moto.id) || null,
         moto: `${p.moto.marca} ${p.moto.modelo}`,
         mes: d.getMonth() + 1, ano: d.getFullYear(),
         receita: 0, receitaLiq: 0, qtd: 0
