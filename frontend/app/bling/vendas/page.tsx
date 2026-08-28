@@ -348,16 +348,19 @@ async function baixarSeparacaoPdf(relatorio: SeparacaoRelatorio) {
     const metaRowY = titleY + 2.5;
     const noteX = marginX + leftWidth + columnGap;
 
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10.5);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
     doc.setTextColor(15, 23, 42);
     doc.text(`Pedido #${pedido.pedidoNum}`, marginX, titleY);
 
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    doc.setTextColor(71, 85, 105);
     doc.setFontSize(7.7);
+    doc.setTextColor(71, 85, 105);
     doc.text(`Data da venda: ${fmtDate(pedido.dataVenda)}`, marginX, metaRowY);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.3);
+    doc.setTextColor(15, 23, 42);
     doc.text(`Transportador: ${pedido.transportador || 'Nao informado'}`, marginX, metaRowY + 3.4);
 
     doc.setDrawColor(191, 219, 254);
@@ -417,11 +420,11 @@ async function baixarSeparacaoPdf(relatorio: SeparacaoRelatorio) {
         fontSize: 6,
       },
       columnStyles: {
-        0: { cellWidth: 22 },
-        1: { cellWidth: 105 },
+        0: { cellWidth: 22, fontStyle: 'bold' },
+        1: { cellWidth: 105, fontStyle: 'bold' },
         2: { cellWidth: 10, halign: 'center' },
-        3: { cellWidth: 38 },
-        4: { cellWidth: 50 },
+        3: { cellWidth: 38, fontStyle: 'bold' },
+        4: { cellWidth: 50, fontStyle: 'bold' },
         5: { cellWidth: 48 },
       },
     });
