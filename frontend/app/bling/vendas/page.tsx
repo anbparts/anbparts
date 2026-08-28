@@ -1024,6 +1024,18 @@ export default function VendasBlingPage() {
                 </button>
                 <button
                   type="button"
+                  onClick={() => selecionarPedidosManuais(
+                    pedidosManuaisFiltrados
+                      .filter((pedido) => !pedidoSeparadoEm(pedido.pedidoId))
+                      .map((pedido) => pedido.pedidoId),
+                  )}
+                  disabled={!pedidosManuaisNaoSeparados}
+                  style={{ ...s.btn, ...phoneButtonStyle, background: 'var(--white)', color: 'var(--gray-800)', border: '1px solid #cbd5e1', opacity: !pedidosManuaisNaoSeparados ? 0.5 : 1 }}
+                >
+                  Selecionar Pendentes
+                </button>
+                <button
+                  type="button"
                   onClick={() => setPedidosManuaisSelecionados([])}
                   disabled={!pedidosManuaisSelecionados.length}
                   style={{ ...s.btn, ...phoneButtonStyle, background: 'var(--white)', color: 'var(--gray-800)', border: '1px solid #cbd5e1', opacity: !pedidosManuaisSelecionados.length ? 0.5 : 1 }}
