@@ -154,6 +154,8 @@ export default function InvestimentosPage() {
   const [loading, setLoading] = useState(true);
   const [filtroSocio, setFiltroSocio] = useState('');
   const [filtroAno, setFiltroAno] = useState('');
+  const [filtroTipo, setFiltroTipo] = useState('');
+  const [ordenacao, setOrdenacao] = useState<{ key: string; dir: 'asc' | 'desc' }>({ key: 'data', dir: 'desc' });
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [modo, setModo] = useState<ViewMode>('grafico');
@@ -259,10 +261,44 @@ export default function InvestimentosPage() {
     rows.map((item) => new Date(item.data).getFullYear()).filter((ano) => Number.isFinite(ano)),
   )).sort((a, b) => b - a);
 
+  const tiposDisponiveis = Array.from(new Set(
+    rows.map((item) => normalizeTipo(item.tipo)),
+  )).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+
   const filtradas = rows.filter((item) => {
     const ano = new Date(item.data).getFullYear();
     return (!filtroSocio || item.socio === filtroSocio)
-      && (!filtroAno || ano === Number(filtroAno));
+      && (!filtroAno || ano === Number(filtroAno))
+      && (!filtroTipo || normalizeTipo(item.tipo) === filtroTipo);
+  });
+
+  function valorOrdenacao(item: any, key: string) {
+    if (key === 'valor') return Number(item.valor || 0);
+    if (key === 'data') return new Date(item.data).getTime();
+    if (key === 'moto') return resolveAporteLabel(item.moto, item.tipo, motosMap);
+    if (key === 'tipo') return normalizeTipo(item.tipo);
+    return String(item[key] || '');
+  }
+
+  function toggleOrdenacao(key: string) {
+    setOrdenacao((atual) => (
+      atual.key === key
+        ? { key, dir: atual.dir === 'asc' ? 'desc' : 'asc' }
+        : { key, dir: key === 'valor' || key === 'data' ? 'desc' : 'asc' }
+    ));
+  }
+
+  function indicadorOrdenacao(key: string) {
+    if (ordenacao.key !== key) return '';
+    return ordenacao.dir === 'asc' ? ' ▲' : ' ▼';
+  }
+
+  const filtradasOrdenadas = [...filtradas].sort((a, b) => {
+    const dir = ordenacao.dir === 'asc' ? 1 : -1;
+    const av = valorOrdenacao(a, ordenacao.key);
+    const bv = valorOrdenacao(b, ordenacao.key);
+    if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir;
+    return String(av).localeCompare(String(bv), 'pt-BR', { numeric: true, sensitivity: 'base' }) * dir;
   });
 
   const totalGeral = rows.reduce((sum, item) => sum + Number(item.valor || 0), 0);
@@ -364,7 +400,7 @@ export default function InvestimentosPage() {
   const summaryColumns = isPhone ? '1fr' : isTabletPortrait ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fit, minmax(170px, 1fr))';
   const formGridColumns = isPhone ? '1fr' : isTabletPortrait ? 'repeat(2, minmax(0, 1fr))' : isTabletLandscape ? 'repeat(3, minmax(0, 1fr))' : 'repeat(5, minmax(140px, 1fr))';
   const chartColumns = isPhone || isTabletPortrait ? '1fr' : 'minmax(0, 1fr) minmax(0, 1.1fr)';
-  const filterControlsColumns = isPhone ? '1fr' : isTabletPortrait ? 'repeat(2, minmax(0, 1fr))' : 'auto auto';
+  const filterControlsColumns = isPhone ? '1fr' : isTabletPortrait ? 'repeat(2, minmax(0, 1fr))' : 'auto auto auto';
   const useMonthlyCards = isPhone || isTabletPortrait || isTabletLandscape;
 
   function resetFormState() {
@@ -606,6 +642,10 @@ export default function InvestimentosPage() {
                 <option value="">Todos os socios</option>
                 {SOCIOS.map((socio) => <option key={socio}>{socio}</option>)}
               </select>
+              <select style={{ ...inputStyle, width: isPhone ? '100%' : 'auto', cursor: 'pointer' }} value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value)}>
+                <option value="">Todos os tipos</option>
+                {tiposDisponiveis.map((tipo) => <option key={tipo} value={tipo}>{tipo}</option>)}
+              </select>
             </div>
           </div>
         </div>
@@ -638,8 +678,8 @@ export default function InvestimentosPage() {
               <div style={{ padding: 28, color: 'var(--ink-muted)', fontSize: 13 }}>Carregando...</div>
             ) : useCardReportLayout ? (
               <div style={{ display: 'grid', gap: 12, padding: isPhone ? 14 : 16 }}>
-                {filtradas.length ? (
-                  filtradas.map((item) => (
+                {filtradasOrdenadas.length ? (
+                  filtradasOrdenadas.map((item) => (
                     <div key={item.id} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: isPhone ? 14 : 16, background: 'var(--white)' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
                         <div style={{ fontSize: 12, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)' }}>
@@ -682,15 +722,38 @@ export default function InvestimentosPage() {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: isTabletLandscape ? 12 : 13 }}>
                   <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
                     <tr>
-                      {['Data', 'Socio', 'Tipo', 'Moto / Item', 'Valor', 'Acoes'].map((header) => (
-                        <th key={header} style={{ padding: '9px 16px', textAlign: header === 'Valor' ? 'right' : 'left', fontFamily: 'Geist Mono, monospace', fontSize: 10, letterSpacing: '.7px', textTransform: 'uppercase', color: 'var(--ink-muted)', fontWeight: 500 }}>
-                          {header}
+                      {[
+                        { label: 'Data', key: 'data' },
+                        { label: 'Socio', key: 'socio' },
+                        { label: 'Tipo', key: 'tipo' },
+                        { label: 'Moto / Item', key: 'moto' },
+                        { label: 'Valor', key: 'valor' },
+                        { label: 'Acoes', key: '' },
+                      ].map(({ label, key }) => (
+                        <th
+                          key={label}
+                          onClick={key ? () => toggleOrdenacao(key) : undefined}
+                          style={{
+                            padding: '9px 16px',
+                            textAlign: label === 'Valor' ? 'right' : 'left',
+                            fontFamily: 'Geist Mono, monospace',
+                            fontSize: 10,
+                            letterSpacing: '.7px',
+                            textTransform: 'uppercase',
+                            color: 'var(--ink-muted)',
+                            fontWeight: 500,
+                            cursor: key ? 'pointer' : 'default',
+                            userSelect: 'none',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {label}{key ? indicadorOrdenacao(key) : ''}
                         </th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {filtradas.map((item) => (
+                    {filtradasOrdenadas.map((item) => (
                       <tr key={item.id} style={{ borderBottom: '1px solid var(--gray-100)' }}>
                         <td style={{ padding: '9px 16px', fontFamily: 'Geist Mono, monospace', fontSize: 12, color: 'var(--ink-muted)' }}>{new Date(item.data).toLocaleDateString('pt-BR')}</td>
                         <td style={{ padding: '9px 16px' }}>
