@@ -1118,7 +1118,9 @@ function PecaDetalheModal({ open, peca, onClose, onSaved, canEditarPeca = false,
   const [fotoCapaArquivo, setFotoCapaArquivo] = useState('');
   const [fotoPreviewOpen, setFotoPreviewOpen] = useState(false);
   const [armazenagem, setArmazenagem] = useState<{ loading: boolean; endereco: string | null }>({ loading: false, endereco: null });
+  const [textoAnuncio, setTextoAnuncio] = useState<{ loading: boolean; html: string | null; erro: string | null }>({ loading: false, html: null, erro: null });
   const [infSkuCopiado, setInfSkuCopiado] = useState(false);
+  const [refBlingLoading, setRefBlingLoading] = useState(false);
   const fotoInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -1159,6 +1161,26 @@ function PecaDetalheModal({ open, peca, onClose, onSaved, canEditarPeca = false,
       });
     return () => { cancelado = true; };
   }, [open, peca?.localizacao]);
+
+  useEffect(() => {
+    if (!open || editando || !peca?.idPeca) {
+      setTextoAnuncio({ loading: false, html: null, erro: null });
+      return;
+    }
+    let cancelado = false;
+    setTextoAnuncio({ loading: true, html: null, erro: null });
+    fetch(`${API_BASE}/cadastro/descricao-peca?sku=${encodeURIComponent(peca.idPeca)}`, { credentials: 'include' })
+      .then((resp) => resp.json())
+      .then((data) => {
+        if (cancelado) return;
+        if (!data?.ok) { setTextoAnuncio({ loading: false, html: null, erro: data?.error || 'Nao encontrado no Bling' }); return; }
+        setTextoAnuncio({ loading: false, html: data.descricaoCurta || '', erro: null });
+      })
+      .catch((e) => {
+        if (!cancelado) setTextoAnuncio({ loading: false, html: null, erro: e?.message || 'Erro ao consultar Bling' });
+      });
+    return () => { cancelado = true; };
+  }, [open, editando, peca?.idPeca]);
 
   if (!open || !peca) return null;
 
@@ -1269,6 +1291,36 @@ function PecaDetalheModal({ open, peca, onClose, onSaved, canEditarPeca = false,
     }
   }
 
+  async function buscarReferenciaBlingAtual() {
+    setRefBlingLoading(true);
+    try {
+      const resp = await fetch(`${API_BASE}/cadastro/bling-referencia/${encodeURIComponent(peca.idPeca)}`, { credentials: 'include' });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || data.ok === false) {
+        alert(data.error || 'Erro ao consultar SKU no Bling');
+        return;
+      }
+
+      const preenchidos: string[] = [];
+      const next = { ...form };
+      if (!next.pesoLiquido && data.peso != null) { next.pesoLiquido = String(data.peso); preenchidos.push('Peso'); }
+      if (!next.largura && data.largura != null) { next.largura = String(data.largura); preenchidos.push('Largura'); }
+      if (!next.altura && data.altura != null) { next.altura = String(data.altura); preenchidos.push('Altura'); }
+      if (!next.profundidade && data.profundidade != null) { next.profundidade = String(data.profundidade); preenchidos.push('Profundidade'); }
+      if (!next.numeroPeca && data.numeroPeca) { next.numeroPeca = data.numeroPeca; preenchidos.push('Número da Peça'); }
+      setForm(next);
+      setEditando(true);
+
+      alert(preenchidos.length
+        ? `Preenchido a partir do Bling: ${preenchidos.join(', ')}. Revise e clique em Salvar.`
+        : 'Nenhum campo vazio pra preencher — os dados ja estao completos ou o Bling tambem nao tem essas informacoes.');
+    } catch (e: any) {
+      alert('Erro ao consultar Bling: ' + (e.message || e));
+    } finally {
+      setRefBlingLoading(false);
+    }
+  }
+
   async function handleFotoCapaChange(event: any) {
     const file = event.target?.files?.[0];
     event.target.value = '';
@@ -1333,6 +1385,21 @@ function PecaDetalheModal({ open, peca, onClose, onSaved, canEditarPeca = false,
               <Field label="Profundidade (cm)" value={peca.profundidade != null ? Number(peca.profundidade) : null} />
               <Field label="Localização"       value={peca.localizacao} />
               <Field label="Armazenagem"       value={armazenagem.loading ? 'Consultando...' : (armazenagem.endereco || 'Nao configurada')} mono />
+              <div style={{ gridColumn: '1 / -1' }}>
+                <div style={{ background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px' }}>
+                  <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', marginBottom: 4 }}>Descrição da Peça (corpo do anúncio — Bling)</div>
+                  {textoAnuncio.loading ? (
+                    <div style={{ fontSize: 13, color: 'var(--gray-300)' }}>Consultando Bling...</div>
+                  ) : textoAnuncio.erro ? (
+                    <div style={{ fontSize: 13, color: 'var(--gray-300)' }}>{textoAnuncio.erro}</div>
+                  ) : (
+                    <div
+                      style={{ fontSize: 13, color: 'var(--gray-800)', maxHeight: 200, overflowY: 'auto' }}
+                      dangerouslySetInnerHTML={{ __html: textoAnuncio.html || '<span style="color:var(--gray-300)">—</span>' }}
+                    />
+                  )}
+                </div>
+              </div>
               <div style={{ gridColumn: '1 / -1' }}><Field label="Número de Peça" value={peca.numeroPeca} mono /></div>
               <div style={{ gridColumn: '1 / -1' }}><Field label="Número do Motor" value={peca.numeroMotor} mono /></div>
               <div style={{ gridColumn: '1 / -1' }}><Field label="Etiqueta Detran" value={peca.detranEtiqueta} mono /></div>
@@ -1397,6 +1464,9 @@ function PecaDetalheModal({ open, peca, onClose, onSaved, canEditarPeca = false,
               <button onClick={copiarInfSku} style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink-soft)', borderColor: 'var(--border-strong)' }}>
                 {infSkuCopiado ? '✅ Copiado!' : '📋 Inf. SKU'}
               </button>
+              {canEditarPeca && <button onClick={buscarReferenciaBlingAtual} disabled={refBlingLoading} style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink-soft)', borderColor: 'var(--border-strong)', opacity: refBlingLoading ? 0.7 : 1 }}>
+                {refBlingLoading ? 'Consultando...' : '📥 Referência Bling'}
+              </button>}
               {canEditarPeca && <button onClick={() => {
             // Re-popula o form com os dados atuais da peça ao entrar em edição
             setForm({
