@@ -1345,8 +1345,9 @@ export default function CadastroPage() {
     setRefSkuLoading(false);
   }
 
-  function aplicarReferenciaSku() {
+  async function aplicarReferenciaSku() {
     if (!refSkuResultado) return;
+    if (!modal) await openNovo();
     if (refSkuResultado.nome) handleDescricaoPecaTituloChange(refSkuResultado.nome);
     setForm((p: any) => ({
       ...p,
@@ -1987,6 +1988,7 @@ export default function CadastroPage() {
               {canCriarPreCadastro && (
                 <button style={{ ...s.btn, background: 'var(--gray-800)', color: '#fff', fontSize: isPhone ? 12 : 12.5, padding: isPhone ? '7px 12px' : '7px 14px' }} onClick={openNovo}>+ Novo Pré-cadastro</button>
               )}
+              <button style={{ ...s.btn, background: 'var(--white)', color: 'var(--ink-soft)', border: '1px solid var(--border)', fontSize: isPhone ? 12 : 12.5, padding: isPhone ? '7px 10px' : '7px 12px' }} onClick={abrirReferenciaSku}>📥 Referência Bling</button>
               <button style={{ ...s.btn, background: 'var(--white)', color: 'var(--ink-soft)', border: '1px solid var(--border)', fontSize: isPhone ? 12 : 12.5, padding: isPhone ? '7px 10px' : '7px 12px' }} onClick={openConfig}>⚙️ Configuração</button>
             </div>
           )}
