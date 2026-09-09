@@ -1186,6 +1186,84 @@ function PecaDetalheModal({ open, peca, onClose, onSaved, canEditarPeca = false,
 
   const fotoCapaDisplayName = fotoCapaNome || (fotoCapaArquivo ? 'foto-capa.jpg' : '');
 
+  // Grava os campos físicos/localização no ANB e propaga pro Bling e pras demais
+  // variações do mesmo SKU base. Usado tanto pelo Salvar manual quanto pelo
+  // preenchimento silencioso via Referência Bling — nenhum dos dois fecha/troca de tela aqui.
+  async function persistirCampos(valores: any) {
+    const API = API_BASE;
+    const atualizacaoPeca: any = {
+      motoId: peca.motoId,
+      descricao: peca.descricao,
+      precoML: Number(peca.precoML),
+      valorFrete: Number(peca.valorFrete),
+      valorTaxas: Number(peca.valorTaxas),
+      disponivel: peca.disponivel,
+      largura: valores.largura ? Number(valores.largura) : null,
+      altura: valores.altura ? Number(valores.altura) : null,
+      profundidade: valores.profundidade ? Number(valores.profundidade) : null,
+      pesoLiquido: valores.pesoLiquido ? Number(valores.pesoLiquido) : null,
+      pesoBruto: valores.pesoLiquido ? Number(valores.pesoLiquido) : null,
+      localizacao: valores.localizacao || null,
+      detranEtiqueta: valores.detranEtiqueta || null,
+      numeroPeca: valores.numeroPeca || null,
+      numeroMotor: valores.numeroMotor || null,
+    };
+    await fetch(`${API}/pecas/${peca.id}`, {
+      method: 'PUT', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(atualizacaoPeca),
+    });
+    // SKU base (remove sufixo -2, -3, etc)
+    const baseSku = peca.idPeca.replace(/-\d+$/, '');
+    const camposCompartilhados = {
+      largura: atualizacaoPeca.largura,
+      altura: atualizacaoPeca.altura,
+      profundidade: atualizacaoPeca.profundidade,
+      pesoLiquido: atualizacaoPeca.pesoLiquido,
+      pesoBruto: atualizacaoPeca.pesoBruto,
+      localizacao: atualizacaoPeca.localizacao,
+      numeroPeca: atualizacaoPeca.numeroPeca,
+    };
+
+    // Atualiza no Bling via sync-bling-peca (resolve ID automaticamente pelo SKU base)
+    const blingResp = await fetch(`${API}/cadastro/sync-bling-peca`, {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        blingProdutoId: peca.blingProdutoId || null,
+        sku: baseSku,
+        ...camposCompartilhados,
+        detranEtiqueta: atualizacaoPeca.detranEtiqueta,
+        concatDetranEtiquetasVariacoes: true,
+      }),
+    });
+    const blingData = await blingResp.json();
+    if (!blingData.ok) console.warn('[sync-bling] Aviso:', blingData.error);
+
+    // Atualiza TODAS as variações do mesmo SKU base no ANB
+    const pecasResp = await fetch(`${API}/pecas?sku=${encodeURIComponent(baseSku)}&per=50`, { credentials: 'include' });
+    const pecasData = await pecasResp.json();
+    const todasVariacoes: any[] = (pecasData?.data || []).filter((p: any) =>
+      p.idPeca === baseSku || p.idPeca.startsWith(`${baseSku}-`)
+    );
+    for (const variacao of todasVariacoes) {
+      if (variacao.id === peca.id) continue;
+      await fetch(`${API}/pecas/${variacao.id}`, {
+        method: 'PUT', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          motoId: variacao.motoId,
+          descricao: variacao.descricao,
+          precoML: Number(variacao.precoML),
+          valorFrete: Number(variacao.valorFrete),
+          valorTaxas: Number(variacao.valorTaxas),
+          disponivel: variacao.disponivel,
+          ...camposCompartilhados,
+        }),
+      });
+    }
+  }
+
   async function salvarDimensoes() {
     if (!canEditarPeca) {
       alert('Seu usuario nao tem permissao para editar pecas.');
@@ -1193,83 +1271,7 @@ function PecaDetalheModal({ open, peca, onClose, onSaved, canEditarPeca = false,
     }
     setSaving(true);
     try {
-      const API = API_BASE;
-      // Atualiza no ANB — envia APENAS os campos editáveis do modal
-      // Preserva todos os outros campos usando PATCH-style (só manda o que mudou)
-      const atualizacaoPeca: any = {
-        // Campos obrigatórios pelo schema (mantém os atuais se não editados)
-        motoId: peca.motoId,
-        descricao: peca.descricao,
-        precoML: Number(peca.precoML),
-        valorFrete: Number(peca.valorFrete),
-        valorTaxas: Number(peca.valorTaxas),
-        disponivel: peca.disponivel,
-        // Campos físicos editados
-        largura: form.largura ? Number(form.largura) : null,
-        altura: form.altura ? Number(form.altura) : null,
-        profundidade: form.profundidade ? Number(form.profundidade) : null,
-        pesoLiquido: form.pesoLiquido ? Number(form.pesoLiquido) : null,
-        pesoBruto: form.pesoLiquido ? Number(form.pesoLiquido) : null,
-        localizacao: form.localizacao || null,
-        detranEtiqueta: form.detranEtiqueta || null,
-        numeroPeca: form.numeroPeca || null,
-        numeroMotor: form.numeroMotor || null,
-      };
-      await fetch(`${API}/pecas/${peca.id}`, {
-        method: 'PUT', credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(atualizacaoPeca),
-      });
-      // SKU base (remove sufixo -2, -3, etc)
-      const baseSku = peca.idPeca.replace(/-\d+$/, '');
-      const camposCompartilhados = {
-        largura: form.largura ? Number(form.largura) : null,
-        altura: form.altura ? Number(form.altura) : null,
-        profundidade: form.profundidade ? Number(form.profundidade) : null,
-        pesoLiquido: form.pesoLiquido ? Number(form.pesoLiquido) : null,
-        pesoBruto: form.pesoLiquido ? Number(form.pesoLiquido) : null,
-        localizacao: form.localizacao || null,
-        numeroPeca: form.numeroPeca || null,
-      };
-
-      // Atualiza no Bling via sync-bling-peca (resolve ID automaticamente pelo SKU base)
-      const blingResp = await fetch(`${API}/cadastro/sync-bling-peca`, {
-        method: 'POST', credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          blingProdutoId: peca.blingProdutoId || null,
-          sku: baseSku,
-          ...camposCompartilhados,
-          detranEtiqueta: form.detranEtiqueta || null,
-          concatDetranEtiquetasVariacoes: true,
-        }),
-      });
-      const blingData = await blingResp.json();
-      if (!blingData.ok) console.warn('[sync-bling] Aviso:', blingData.error);
-
-      // Atualiza TODAS as variações do mesmo SKU base no ANB
-      const pecasResp = await fetch(`${API}/pecas?sku=${encodeURIComponent(baseSku)}&per=50`, { credentials: 'include' });
-      const pecasData = await pecasResp.json();
-      const todasVariacoes: any[] = (pecasData?.data || []).filter((p: any) =>
-        p.idPeca === baseSku || p.idPeca.startsWith(`${baseSku}-`)
-      );
-      for (const variacao of todasVariacoes) {
-        if (variacao.id === peca.id) continue;
-        await fetch(`${API}/pecas/${variacao.id}`, {
-          method: 'PUT', credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            motoId: variacao.motoId,
-            descricao: variacao.descricao,
-            precoML: Number(variacao.precoML),
-            valorFrete: Number(variacao.valorFrete),
-            valorTaxas: Number(variacao.valorTaxas),
-            disponivel: variacao.disponivel,
-            ...camposCompartilhados,
-          }),
-        });
-      }
-
+      await persistirCampos(form);
       setEditando(false);
       onSaved?.();
       onClose();
@@ -1301,19 +1303,18 @@ function PecaDetalheModal({ open, peca, onClose, onSaved, canEditarPeca = false,
         return;
       }
 
-      const preenchidos: string[] = [];
       const next = { ...form };
-      if (!next.pesoLiquido && data.peso != null) { next.pesoLiquido = String(data.peso); preenchidos.push('Peso'); }
-      if (!next.largura && data.largura != null) { next.largura = String(data.largura); preenchidos.push('Largura'); }
-      if (!next.altura && data.altura != null) { next.altura = String(data.altura); preenchidos.push('Altura'); }
-      if (!next.profundidade && data.profundidade != null) { next.profundidade = String(data.profundidade); preenchidos.push('Profundidade'); }
-      if (!next.numeroPeca && data.numeroPeca) { next.numeroPeca = data.numeroPeca; preenchidos.push('Número da Peça'); }
-      setForm(next);
-      setEditando(true);
+      let mudou = false;
+      if (!next.pesoLiquido && data.peso != null) { next.pesoLiquido = String(data.peso); mudou = true; }
+      if (!next.largura && data.largura != null) { next.largura = String(data.largura); mudou = true; }
+      if (!next.altura && data.altura != null) { next.altura = String(data.altura); mudou = true; }
+      if (!next.profundidade && data.profundidade != null) { next.profundidade = String(data.profundidade); mudou = true; }
+      if (!next.numeroPeca && data.numeroPeca) { next.numeroPeca = data.numeroPeca; mudou = true; }
+      if (!mudou) return;
 
-      alert(preenchidos.length
-        ? `Preenchido a partir do Bling: ${preenchidos.join(', ')}. Revise e clique em Salvar.`
-        : 'Nenhum campo vazio pra preencher — os dados ja estao completos ou o Bling tambem nao tem essas informacoes.');
+      setForm(next);
+      await persistirCampos(next);
+      onSaved?.();
     } catch (e: any) {
       alert('Erro ao consultar Bling: ' + (e.message || e));
     } finally {
@@ -1378,12 +1379,12 @@ function PecaDetalheModal({ open, peca, onClose, onSaved, canEditarPeca = false,
         {!editando ? (
           <>
             <div style={{ padding: '20px 22px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <Field label="Peso Líquido (kg)" value={peca.pesoLiquido != null ? Number(peca.pesoLiquido) : null} />
-              <Field label="Peso Bruto (kg)"   value={peca.pesoBruto   != null ? Number(peca.pesoBruto)   : null} />
-              <Field label="Largura (cm)"      value={peca.largura      != null ? Number(peca.largura)      : null} />
-              <Field label="Altura (cm)"       value={peca.altura       != null ? Number(peca.altura)       : null} />
-              <Field label="Profundidade (cm)" value={peca.profundidade != null ? Number(peca.profundidade) : null} />
-              <Field label="Localização"       value={peca.localizacao} />
+              <Field label="Peso Líquido (kg)" value={form.pesoLiquido !== '' ? Number(form.pesoLiquido) : null} />
+              <Field label="Peso Bruto (kg)"   value={form.pesoLiquido !== '' ? Number(form.pesoLiquido) : null} />
+              <Field label="Largura (cm)"      value={form.largura      !== '' ? Number(form.largura)      : null} />
+              <Field label="Altura (cm)"       value={form.altura       !== '' ? Number(form.altura)       : null} />
+              <Field label="Profundidade (cm)" value={form.profundidade !== '' ? Number(form.profundidade) : null} />
+              <Field label="Localização"       value={form.localizacao} />
               <Field label="Armazenagem"       value={armazenagem.loading ? 'Consultando...' : (armazenagem.endereco || 'Nao configurada')} mono />
               <div style={{ gridColumn: '1 / -1' }}>
                 <div style={{ background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px' }}>
@@ -1400,9 +1401,9 @@ function PecaDetalheModal({ open, peca, onClose, onSaved, canEditarPeca = false,
                   )}
                 </div>
               </div>
-              <div style={{ gridColumn: '1 / -1' }}><Field label="Número de Peça" value={peca.numeroPeca} mono /></div>
-              <div style={{ gridColumn: '1 / -1' }}><Field label="Número do Motor" value={peca.numeroMotor} mono /></div>
-              <div style={{ gridColumn: '1 / -1' }}><Field label="Etiqueta Detran" value={peca.detranEtiqueta} mono /></div>
+              <div style={{ gridColumn: '1 / -1' }}><Field label="Número de Peça" value={form.numeroPeca} mono /></div>
+              <div style={{ gridColumn: '1 / -1' }}><Field label="Número do Motor" value={form.numeroMotor} mono /></div>
+              <div style={{ gridColumn: '1 / -1' }}><Field label="Etiqueta Detran" value={form.detranEtiqueta} mono /></div>
               <div style={{ gridColumn: '1 / -1', background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px' }}>
                 <input
                   ref={fotoInputRef}
