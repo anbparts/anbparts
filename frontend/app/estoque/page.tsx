@@ -1117,6 +1117,8 @@ function PecaDetalheModal({ open, peca, onClose, onSaved, canEditarPeca = false,
   const [fotoCapaNome, setFotoCapaNome] = useState('');
   const [fotoCapaArquivo, setFotoCapaArquivo] = useState('');
   const [fotoPreviewOpen, setFotoPreviewOpen] = useState(false);
+  const [armazenagem, setArmazenagem] = useState<{ loading: boolean; endereco: string | null }>({ loading: false, endereco: null });
+  const [infSkuCopiado, setInfSkuCopiado] = useState(false);
   const fotoInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -1137,6 +1139,26 @@ function PecaDetalheModal({ open, peca, onClose, onSaved, canEditarPeca = false,
     setEditando(canEditarPeca && iniciarEditando);
     setFotoPreviewOpen(false);
   }, [peca, iniciarEditando]);
+
+  useEffect(() => {
+    const localizacao = String(peca?.localizacao || '').trim();
+    if (!open || !localizacao) {
+      setArmazenagem({ loading: false, endereco: null });
+      return;
+    }
+    let cancelado = false;
+    setArmazenagem({ loading: true, endereco: null });
+    fetch(`${API_BASE}/armazenagem/local/${encodeURIComponent(localizacao)}`, { credentials: 'include' })
+      .then((resp) => resp.json())
+      .then((data) => {
+        if (cancelado) return;
+        setArmazenagem({ loading: false, endereco: data?.enderecoCompleto || null });
+      })
+      .catch(() => {
+        if (!cancelado) setArmazenagem({ loading: false, endereco: null });
+      });
+    return () => { cancelado = true; };
+  }, [open, peca?.localizacao]);
 
   if (!open || !peca) return null;
 
@@ -1233,6 +1255,20 @@ function PecaDetalheModal({ open, peca, onClose, onSaved, canEditarPeca = false,
     setSaving(false);
   }
 
+  async function copiarInfSku() {
+    const localizacaoTexto = peca.localizacao
+      ? `${peca.localizacao}${armazenagem.endereco ? ` ( ${armazenagem.endereco} )` : ''}`
+      : '—';
+    const texto = `${peca.idPeca} - ${peca.descricao}\nLocalizacao: ${localizacaoTexto}`;
+    try {
+      await navigator.clipboard.writeText(texto);
+      setInfSkuCopiado(true);
+      setTimeout(() => setInfSkuCopiado(false), 1800);
+    } catch (e: any) {
+      alert('Erro ao copiar: ' + e.message);
+    }
+  }
+
   async function handleFotoCapaChange(event: any) {
     const file = event.target?.files?.[0];
     event.target.value = '';
@@ -1296,6 +1332,7 @@ function PecaDetalheModal({ open, peca, onClose, onSaved, canEditarPeca = false,
               <Field label="Altura (cm)"       value={peca.altura       != null ? Number(peca.altura)       : null} />
               <Field label="Profundidade (cm)" value={peca.profundidade != null ? Number(peca.profundidade) : null} />
               <Field label="Localização"       value={peca.localizacao} />
+              <Field label="Armazenagem"       value={armazenagem.loading ? 'Consultando...' : (armazenagem.endereco || 'Nao configurada')} mono />
               <div style={{ gridColumn: '1 / -1' }}><Field label="Número de Peça" value={peca.numeroPeca} mono /></div>
               <div style={{ gridColumn: '1 / -1' }}><Field label="Número do Motor" value={peca.numeroMotor} mono /></div>
               <div style={{ gridColumn: '1 / -1' }}><Field label="Etiqueta Detran" value={peca.detranEtiqueta} mono /></div>
@@ -1355,7 +1392,11 @@ function PecaDetalheModal({ open, peca, onClose, onSaved, canEditarPeca = false,
                 </div>
               </div>
             </div>
-            <div style={{ padding: '0 22px 20px', display: 'flex', justifyContent: 'space-between' }}>
+            <div style={{ padding: '0 22px 20px', display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button onClick={copiarInfSku} style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink-soft)', borderColor: 'var(--border-strong)' }}>
+                {infSkuCopiado ? '✅ Copiado!' : '📋 Inf. SKU'}
+              </button>
               {canEditarPeca && <button onClick={() => {
             // Re-popula o form com os dados atuais da peça ao entrar em edição
             setForm({
@@ -1371,6 +1412,7 @@ function PecaDetalheModal({ open, peca, onClose, onSaved, canEditarPeca = false,
             setEditando(true);
           }} style={{ ...cs.btn, background: 'var(--gray-800)', color: '#fff' }}>✏️ Editar</button>
               }
+              </div>
               <button onClick={onClose} style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink-soft)', borderColor: 'var(--border-strong)' }}>Fechar</button>
             </div>
           </>

@@ -366,6 +366,27 @@ armazenagemRouter.get('/caixas', async (_req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// GET /armazenagem/local/:localizacao
+// Consulta pontual (tempo real) do endereco de armazenagem de uma unica caixa/localizacao.
+armazenagemRouter.get('/local/:localizacao', async (req, res, next) => {
+  try {
+    const localizacao = decodeURIComponent(req.params.localizacao).trim();
+    if (!localizacao) return res.json({ alocada: false, enderecoCompleto: null });
+
+    const aloc = await prisma.boxStorageLocation.findUnique({
+      where: { localizacao },
+      include: { detail: { include: { posicao: { include: { area: true } } } } },
+    });
+
+    if (!aloc) return res.json({ alocada: false, enderecoCompleto: null });
+
+    res.json({
+      alocada: true,
+      enderecoCompleto: `${aloc.detail.posicao.area.nome} › ${aloc.detail.posicao.nome} › ${aloc.detail.nome}`,
+    });
+  } catch (e) { next(e); }
+});
+
 // ─── HISTÓRICO ────────────────────────────────────────────────────────────────
 
 // GET /armazenagem/historico/:localizacao
