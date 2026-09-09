@@ -223,6 +223,122 @@ function ChecklistValidacao({ form }: { form: any }) {
   );
 }
 
+function ReferenciaSkuModal({
+  open,
+  skuInput,
+  loading,
+  error,
+  resultado,
+  onChangeSkuInput,
+  onBuscar,
+  onAplicar,
+  onClose,
+}: {
+  open: boolean;
+  skuInput: string;
+  loading: boolean;
+  error: string;
+  resultado: any;
+  onChangeSkuInput: (value: string) => void;
+  onBuscar: () => void;
+  onAplicar: () => void;
+  onClose: () => void;
+}) {
+  if (!open) return null;
+
+  function Field({ label, value, mono = false }: { label: string; value?: any; mono?: boolean }) {
+    const display = value != null && value !== '' ? String(value) : '—';
+    return (
+      <div style={{ background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
+        <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--gray-500)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', marginBottom: 4 }}>{label}</div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: display === '—' ? 'var(--gray-300)' : 'var(--gray-800)', fontFamily: mono ? 'Geist Mono, monospace' : 'inherit', overflowWrap: 'anywhere' as const }}>{display}</div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 260, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--white)', borderRadius: 14, width: '100%', maxWidth: 640, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
+        <div style={{ padding: '18px 22px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 600 }}>Puxar Referência do Bling</div>
+            <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 4 }}>Consulta em tempo real — nada é salvo, só serve de apoio pra preencher o pré-cadastro.</div>
+          </div>
+          <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer' }}>×</button>
+        </div>
+
+        <div style={{ padding: 20 }}>
+          <label style={s.label}>SKU de referência</label>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input
+              style={s.input}
+              value={skuInput}
+              onChange={(e) => onChangeSkuInput(e.target.value.toUpperCase())}
+              onKeyDown={(e) => { if (e.key === 'Enter' && skuInput.trim() && !loading) onBuscar(); }}
+              placeholder="Ex: HD03_0048"
+              autoFocus
+            />
+            <button
+              type="button"
+              onClick={onBuscar}
+              disabled={loading || !skuInput.trim()}
+              style={{ ...s.btn, background: 'var(--gray-800)', color: '#fff', opacity: (loading || !skuInput.trim()) ? 0.6 : 1, whiteSpace: 'nowrap' as const }}
+            >
+              {loading ? 'Buscando...' : '🔍 Buscar'}
+            </button>
+          </div>
+
+          {error && (
+            <div style={{ marginTop: 12, background: '#fff7f7', border: '1px solid #fecaca', color: '#dc2626', borderRadius: 8, padding: '10px 12px', fontSize: 12.5 }}>
+              {error}
+            </div>
+          )}
+
+          {resultado && (
+            <div style={{ marginTop: 16, display: 'grid', gap: 10 }}>
+              <Field label="SKU" value={resultado.sku} mono />
+              <Field label="Descrição (título)" value={resultado.nome} />
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+                <Field label="Peso (kg)" value={resultado.peso} />
+                <Field label="Largura (cm)" value={resultado.largura} />
+                <Field label="Altura (cm)" value={resultado.altura} />
+                <Field label="Prof. (cm)" value={resultado.profundidade} />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <Field label="Preço de Venda" value={resultado.precoVenda != null ? `R$ ${Number(resultado.precoVenda).toFixed(2)}` : null} />
+                <Field label="Localização (Bling)" value={resultado.localizacaoBling} />
+              </div>
+              <Field label="Número da Peça (fabricante)" value={resultado.numeroPeca} mono />
+              <Field label="URL de Referência" value={resultado.urlRef} />
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--gray-500)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', marginBottom: 4 }}>Descrição da Peça (corpo do anúncio)</div>
+                <div
+                  style={{ background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', fontSize: 13, maxHeight: 220, overflowY: 'auto' }}
+                  dangerouslySetInnerHTML={{ __html: resultado.descricaoPeca || '<span style="color:var(--gray-300)">—</span>' }}
+                />
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--gray-400)' }}>
+                Localização, número da peça e URL são só referência — não serão copiados (são específicos daquele SKU/moto).
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div style={{ padding: '14px 22px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <button onClick={onClose} style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)' }}>Fechar</button>
+          <button
+            onClick={onAplicar}
+            disabled={!resultado}
+            style={{ ...s.btn, background: 'var(--gray-800)', color: '#fff', opacity: !resultado ? 0.5 : 1 }}
+          >
+            ✅ Aplicar ao formulário
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Colunas da tabela de Cadastro (SKU). key=null => não ordenável.
 const CADASTRO_COLUNAS: { label: string; key: string | null }[] = [
   { label: 'ID Peça', key: 'idPeca' },
@@ -414,6 +530,11 @@ export default function CadastroPage() {
   const [finalizarFotoCapaNome, setFinalizarFotoCapaNome] = useState('');
   const fotoInputRef = useRef<HTMLInputElement | null>(null);
   const isBruno = String(user?.username || '').trim().toLowerCase() === 'bruno';
+  const [refSkuModalOpen, setRefSkuModalOpen] = useState(false);
+  const [refSkuInput, setRefSkuInput] = useState('');
+  const [refSkuLoading, setRefSkuLoading] = useState(false);
+  const [refSkuError, setRefSkuError] = useState('');
+  const [refSkuResultado, setRefSkuResultado] = useState<any>(null);
 
   useEffect(() => { loadSupportData(); }, []);
   useEffect(() => { loadCadastros(); }, [filters, somentePendentes]);
@@ -1199,6 +1320,44 @@ export default function CadastroPage() {
     document.execCommand(cmd, false);
     const el = document.getElementById('descricaoPeca-wysiwyg');
     if (el) setForm((p: any) => ({ ...p, descricaoPeca: el.innerHTML }));
+  }
+
+  function abrirReferenciaSku() {
+    setRefSkuInput('');
+    setRefSkuError('');
+    setRefSkuResultado(null);
+    setRefSkuModalOpen(true);
+  }
+
+  async function buscarReferenciaSku() {
+    const sku = refSkuInput.trim();
+    if (!sku) return;
+    setRefSkuLoading(true);
+    setRefSkuError('');
+    setRefSkuResultado(null);
+    try {
+      const resp = await fetch(`${API}/cadastro/bling-referencia/${encodeURIComponent(sku)}`, { credentials: 'include' });
+      const data = await readApiResponse(resp, 'Erro ao consultar SKU no Bling');
+      setRefSkuResultado(data);
+    } catch (e: any) {
+      setRefSkuError(e.message || 'Erro ao consultar SKU no Bling');
+    }
+    setRefSkuLoading(false);
+  }
+
+  function aplicarReferenciaSku() {
+    if (!refSkuResultado) return;
+    if (refSkuResultado.nome) handleDescricaoPecaTituloChange(refSkuResultado.nome);
+    setForm((p: any) => ({
+      ...p,
+      descricaoPeca: refSkuResultado.descricaoPeca || p.descricaoPeca,
+      precoVenda: refSkuResultado.precoVenda != null ? String(refSkuResultado.precoVenda) : p.precoVenda,
+      peso: refSkuResultado.peso != null ? String(refSkuResultado.peso) : p.peso,
+      largura: refSkuResultado.largura != null ? String(refSkuResultado.largura) : p.largura,
+      altura: refSkuResultado.altura != null ? String(refSkuResultado.altura) : p.altura,
+      profundidade: refSkuResultado.profundidade != null ? String(refSkuResultado.profundidade) : p.profundidade,
+    }));
+    setRefSkuModalOpen(false);
   }
 
   async function handleFotoCapaChange(event: any) {
@@ -2620,6 +2779,7 @@ export default function CadastroPage() {
             {/* Footer */}
             <div style={{ padding: isPhone ? '12px 14px calc(12px + env(safe-area-inset-bottom))' : '14px 24px', borderTop: '1px solid var(--border)', display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'center', flexDirection: isPhone ? 'column-reverse' : 'row', flexShrink: 0 }}>
               <button onClick={() => setModal(false)} style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', width: isPhone ? '100%' : undefined, justifyContent: 'center', minHeight: isPhone ? 42 : undefined }}>Cancelar</button>
+              <button onClick={abrirReferenciaSku} style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', width: isPhone ? '100%' : undefined, justifyContent: 'center', minHeight: isPhone ? 42 : undefined }}>📥 Referência Bling</button>
               {editItem && isBruno && (
                 <button onClick={() => excluir()} disabled={excluindo}
                   style={{ ...s.btn, background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', opacity: excluindo ? 0.7 : 1, width: isPhone ? '100%' : undefined, justifyContent: 'center', minHeight: isPhone ? 42 : undefined }}>
@@ -2633,6 +2793,17 @@ export default function CadastroPage() {
           </div>
         </div>
       )}
+      <ReferenciaSkuModal
+        open={refSkuModalOpen}
+        skuInput={refSkuInput}
+        loading={refSkuLoading}
+        error={refSkuError}
+        resultado={refSkuResultado}
+        onChangeSkuInput={setRefSkuInput}
+        onBuscar={buscarReferenciaSku}
+        onAplicar={aplicarReferenciaSku}
+        onClose={() => setRefSkuModalOpen(false)}
+      />
       {modalFinalizar && fotoPreviewOpen && finalizarFotoCapa && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 205, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
           <div style={{ background: 'var(--white)', borderRadius: 14, width: '100%', maxWidth: 960, maxHeight: '90vh', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.24)' }}>

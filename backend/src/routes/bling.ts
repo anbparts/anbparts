@@ -873,7 +873,7 @@ function hasNestedProperty(source: any, path: string[]) {
   return true;
 }
 
-function resolveBlingLocation(produto: any, detail?: any) {
+export function resolveBlingLocation(produto: any, detail?: any) {
   const candidates = [
     { source: produto, path: ['localizacao'] },
     { source: produto, path: ['estoque', 'localizacao'] },
@@ -1417,7 +1417,7 @@ async function listPedidos(dataInicio?: string, dataFim?: string, situacoes?: nu
   return Array.from(pedidosMap.values());
 }
 
-async function findBlingProductsByCodes(codes: string[], opts: { forceRefresh?: boolean } = {}) {
+export async function findBlingProductsByCodes(codes: string[], opts: { forceRefresh?: boolean } = {}) {
   const uniqueCodes = Array.from(new Set(codes.map((code) => getBaseSku(code)).filter(Boolean)));
   const found = new Map<string, any>();
   const targetCodes = new Set<string>();

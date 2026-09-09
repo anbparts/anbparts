@@ -3,7 +3,7 @@ import { prisma } from '../lib/prisma';
 import { compressDataUrlImage, normalizeImageFileName } from '../lib/image';
 import { buscarCadastroFotos, buscarCadastroFotosAnb, buscarCadastroFotosDrive, enviarCadastroFotosManual, processarCadastroFotos, verificarCadastroFotoSku, verificarFotosCadastroPeca, getPastaPreCadastroDoSku, analisarFotosSku, apagarPastaDrive, escanearFotosDrive, processarPastaFotosDrive, novoResultadoFotoDrive } from '../lib/fotos-cadastro';
 import type { FotoDriveResultado } from '../lib/fotos-cadastro';
-import { blingReq, fetchProdutoLojaLinksByProductId, resolveBlingMercadoLivreItemId, resolveBlingMercadoLivreLinkWithFallback } from './bling';
+import { blingReq, fetchBlingProductDetailById, findBlingProductsByCodes, resolveBlingLocation, fetchProdutoLojaLinksByProductId, resolveBlingMercadoLivreItemId, resolveBlingMercadoLivreLinkWithFallback } from './bling';
 import { criarPastaPreCadastro, renomearPastaPreCadastro } from './google-drive';
 import { mercadoLivreReq } from '../lib/mercado-livre';
 import { nuvemReq, buscarProdutoNuvemshopPorSku } from './nuvemshop';
@@ -534,6 +534,45 @@ cadastroRouter.get('/proximo-id/:motoId', async (req, res, next) => {
     const proximo = maiorNum + 1;
     const sugestao = `${prefixo}_${String(proximo).padStart(4, '0')}`;
     res.json({ prefixo, proximo, sugestao });
+  } catch (e) { next(e); }
+});
+
+// GET /cadastro/bling-referencia/:sku
+// Consulta em tempo real (sem gravar nada) os dados de um SKU ja cadastrado no Bling,
+// pra usar como referencia/modelo ao pre-cadastrar a mesma peca em outra moto.
+cadastroRouter.get('/bling-referencia/:sku', async (req, res, next) => {
+  try {
+    const skuInformado = String(req.params.sku || '').trim().toUpperCase();
+    if (!skuInformado) return res.status(400).json({ error: 'Informe o SKU de referencia.' });
+
+    const baseSku = getBaseSku(skuInformado);
+    const produtos = await findBlingProductsByCodes([baseSku], { forceRefresh: true });
+    const produto = produtos.get(baseSku);
+    if (!produto?.id) return res.status(404).json({ error: `SKU ${skuInformado} nao encontrado no Bling.` });
+
+    const detail = await fetchBlingProductDetailById(Number(produto.id), { forceRefresh: true });
+    if (!detail) return res.status(404).json({ error: `Nao foi possivel carregar os detalhes do SKU ${skuInformado} no Bling.` });
+
+    const camposCustomizados: any[] = Array.isArray(detail.camposCustomizados) ? detail.camposCustomizados : [];
+    const campoValor = (idCampoCustomizado: number) => {
+      const campo = camposCustomizados.find((c: any) => Number(c?.idCampoCustomizado) === idCampoCustomizado);
+      return campo?.valor != null ? String(campo.valor).trim() : '';
+    };
+
+    res.json({
+      ok: true,
+      sku: baseSku,
+      nome: detail.nome || '',
+      descricaoPeca: detail.descricaoCurta || '',
+      precoVenda: detail.preco != null ? Number(detail.preco) : null,
+      peso: detail.pesoLiquido != null ? Number(detail.pesoLiquido) : null,
+      largura: detail.dimensoes?.largura != null ? Number(detail.dimensoes.largura) : null,
+      altura: detail.dimensoes?.altura != null ? Number(detail.dimensoes.altura) : null,
+      profundidade: detail.dimensoes?.profundidade != null ? Number(detail.dimensoes.profundidade) : null,
+      numeroPeca: campoValor(BLING_NUMERO_PECA_CAMPO_ID),
+      urlRef: campoValor(BLING_URL_REF_CAMPO_ID),
+      localizacaoBling: resolveBlingLocation(produto, detail).location,
+    });
   } catch (e) { next(e); }
 });
 
