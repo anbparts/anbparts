@@ -158,6 +158,11 @@ export default function MercadoLivrePerguntasPage() {
   const [historicoLoading, setHistoricoLoading] = useState(false);
   const [historicoError, setHistoricoError] = useState('');
   const [historico, setHistorico] = useState<any | null>(null);
+  const [buscaHistoricoAberta, setBuscaHistoricoAberta] = useState(false);
+  const [buscaHistoricoQuery, setBuscaHistoricoQuery] = useState('');
+  const [buscaHistoricoLoading, setBuscaHistoricoLoading] = useState(false);
+  const [buscaHistoricoError, setBuscaHistoricoError] = useState('');
+  const [buscaHistoricoResultado, setBuscaHistoricoResultado] = useState<any | null>(null);
 
   const shellOffset = isDesktop ? 0 : 64;
   const pagePadding = isPhone ? 14 : isTabletPortrait ? 18 : isTabletLandscape ? 22 : 28;
@@ -282,6 +287,36 @@ export default function MercadoLivrePerguntasPage() {
     setHistoricoError('');
   }
 
+  function abrirBuscaHistorico() {
+    setBuscaHistoricoAberta(true);
+    setBuscaHistoricoQuery('');
+    setBuscaHistoricoError('');
+    setBuscaHistoricoResultado(null);
+  }
+
+  function fecharBuscaHistorico() {
+    setBuscaHistoricoAberta(false);
+    setBuscaHistoricoLoading(false);
+    setBuscaHistoricoError('');
+  }
+
+  async function buscarHistoricoGeral() {
+    const q = buscaHistoricoQuery.trim();
+    if (!q) return;
+
+    setBuscaHistoricoLoading(true);
+    setBuscaHistoricoError('');
+    try {
+      const data = await api.mercadoLivre.buscarHistoricoPerguntas(q);
+      setBuscaHistoricoResultado(data);
+    } catch (error: any) {
+      setBuscaHistoricoError(error.message || 'Erro ao buscar historico de perguntas');
+      setBuscaHistoricoResultado(null);
+    } finally {
+      setBuscaHistoricoLoading(false);
+    }
+  }
+
   if (loading) {
     return (
       <>
@@ -369,6 +404,20 @@ export default function MercadoLivrePerguntasPage() {
             }}
           >
             <PendingChip count={perguntas.length} fullWidth={false} />
+            <button
+              style={{
+                ...s.btnBase,
+                flex: isPhone ? 1 : undefined,
+                minWidth: isPhone ? 0 : 160,
+                minHeight: 40,
+                background: 'var(--white)',
+                color: 'var(--gray-700)',
+                borderColor: '#dbe3ef',
+              }}
+              onClick={abrirBuscaHistorico}
+            >
+              Histórico de Perguntas
+            </button>
             <button
               style={{
                 ...s.btnBase,
@@ -868,6 +917,218 @@ export default function MercadoLivrePerguntasPage() {
                             </div>
                             <div style={{ fontSize: 12.5, color: 'var(--gray-600)' }}>
                               {formatDateTime(item.dataPergunta)}{item.nomeCliente ? ` - ${item.nomeCliente}` : item.clienteId ? ` - Cliente ${item.clienteId}` : ''}
+                            </div>
+                          </div>
+                          <span
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              alignSelf: isPhone ? 'flex-start' : 'center',
+                              padding: '4px 9px',
+                              borderRadius: 999,
+                              fontSize: 11.5,
+                              fontWeight: 700,
+                              background: statusStyle.bg,
+                              color: statusStyle.color,
+                              border: `1px solid ${statusStyle.border}`,
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {questionStatusLabel(item.status)}
+                          </span>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '1fr 1fr', gap: 0 }}>
+                          <div style={{ padding: 12, borderRight: isPhone ? 'none' : '1px solid #e2e8f0', borderBottom: isPhone ? '1px solid #e2e8f0' : 'none' }}>
+                            <div style={{ fontSize: 11, color: 'var(--gray-400)', textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: 8 }}>
+                              Pergunta
+                            </div>
+                            <div style={{ fontSize: 13.5, lineHeight: 1.7, color: 'var(--gray-800)', overflowWrap: 'anywhere' }}>
+                              {item.texto || '-'}
+                            </div>
+                          </div>
+                          <div style={{ padding: 12, background: item.respostaTexto ? '#fbfdff' : '#fff' }}>
+                            <div style={{ fontSize: 11, color: 'var(--gray-400)', textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: 8 }}>
+                              Resposta {item.respondidaEm ? `- ${formatDateTime(item.respondidaEm)}` : ''}
+                            </div>
+                            <div style={{ fontSize: 13.5, lineHeight: 1.7, color: item.respostaTexto ? 'var(--gray-800)' : 'var(--gray-400)', overflowWrap: 'anywhere' }}>
+                              {item.respostaTexto || 'Ainda sem resposta'}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {buscaHistoricoAberta ? (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 1200,
+            background: 'rgba(15, 23, 42, 0.52)',
+            display: 'flex',
+            alignItems: isPhone ? 'stretch' : 'center',
+            justifyContent: 'center',
+            padding: isPhone ? 0 : 24,
+          }}
+          onClick={fecharBuscaHistorico}
+        >
+          <div
+            style={{
+              width: isPhone ? '100%' : 'min(940px, calc(100vw - 48px))',
+              maxHeight: isPhone ? '100vh' : '86vh',
+              background: 'var(--white)',
+              borderRadius: isPhone ? 0 : 16,
+              border: isPhone ? 'none' : '1px solid var(--border)',
+              boxShadow: '0 24px 70px rgba(15, 23, 42, 0.28)',
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div
+              style={{
+                padding: isPhone ? '16px 16px 14px' : '18px 22px',
+                borderBottom: '1px solid var(--border)',
+                display: 'flex',
+                alignItems: 'flex-start',
+                justifyContent: 'space-between',
+                gap: 16,
+              }}
+            >
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: isPhone ? 18 : 20, fontWeight: 700, color: 'var(--gray-800)', lineHeight: 1.2 }}>
+                  Histórico de Perguntas
+                </div>
+                <div style={{ marginTop: 5, fontSize: 12.5, color: 'var(--gray-500)', lineHeight: 1.5 }}>
+                  Busque por palavra-chave, SKU, número de peça ou cliente. Se o termo bater com o SKU ou número de peça de uma peça cadastrada, o histórico de outras peças com a mesma marca e número de peça também aparece.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={fecharBuscaHistorico}
+                style={{
+                  ...s.btnBase,
+                  minHeight: 34,
+                  padding: '7px 12px',
+                  background: '#f8fafc',
+                  borderColor: '#dbe3ef',
+                  color: 'var(--gray-700)',
+                  flexShrink: 0,
+                }}
+              >
+                Fechar
+              </button>
+            </div>
+
+            <div style={{ padding: isPhone ? '14px 16px 0' : '18px 22px 0', display: 'flex', gap: 8 }}>
+              <input
+                style={s.input}
+                value={buscaHistoricoQuery}
+                onChange={(e) => setBuscaHistoricoQuery(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && buscaHistoricoQuery.trim() && !buscaHistoricoLoading) buscarHistoricoGeral(); }}
+                placeholder="Ex: BM03_0080, 17118530393, bateria, nome do cliente..."
+                autoFocus
+              />
+              <button
+                type="button"
+                onClick={buscarHistoricoGeral}
+                disabled={buscaHistoricoLoading || !buscaHistoricoQuery.trim()}
+                style={{
+                  ...s.btnBase,
+                  minHeight: 40,
+                  padding: '9px 16px',
+                  background: 'var(--blue-500)',
+                  color: '#fff',
+                  opacity: (buscaHistoricoLoading || !buscaHistoricoQuery.trim()) ? 0.6 : 1,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {buscaHistoricoLoading ? 'Buscando...' : 'Buscar'}
+              </button>
+            </div>
+
+            <div style={{ padding: isPhone ? 14 : 18, overflowY: 'auto' }}>
+              {buscaHistoricoLoading ? (
+                <div style={{ padding: 18, color: 'var(--gray-500)', fontSize: 13 }}>
+                  Buscando histórico...
+                </div>
+              ) : buscaHistoricoError ? (
+                <div
+                  style={{
+                    background: '#fef2f2',
+                    border: '1px solid #fecaca',
+                    borderRadius: 12,
+                    padding: 14,
+                    color: '#b91c1c',
+                    fontSize: 13,
+                    lineHeight: 1.6,
+                  }}
+                >
+                  {buscaHistoricoError}
+                </div>
+              ) : !buscaHistoricoResultado ? (
+                <div style={{ padding: 16, color: 'var(--gray-400)', fontSize: 13 }}>
+                  Digite um termo e clique em Buscar.
+                </div>
+              ) : !(buscaHistoricoResultado.perguntas || []).length ? (
+                <div
+                  style={{
+                    background: '#f8fafc',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: 12,
+                    padding: 16,
+                    color: 'var(--gray-500)',
+                    fontSize: 13,
+                  }}
+                >
+                  Nenhuma pergunta encontrada para esse termo.
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gap: 10 }}>
+                  <div style={{ fontSize: 12.5, color: 'var(--gray-500)', marginBottom: 2 }}>
+                    {(buscaHistoricoResultado.perguntas || []).length} pergunta(s), da mais recente para a mais antiga.
+                    {buscaHistoricoResultado.relacionadaPorPecaEquivalente ? ' Inclui peças com mesma marca e número de peça.' : ''}
+                  </div>
+                  {(buscaHistoricoResultado.perguntas || []).map((item: any) => {
+                    const statusStyle = questionStatusStyle(item.status);
+                    return (
+                      <div
+                        key={item.questionId}
+                        style={{
+                          border: '1px solid #e2e8f0',
+                          borderRadius: 12,
+                          background: '#fff',
+                          overflow: 'hidden',
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: 'flex',
+                            flexDirection: isPhone ? 'column' : 'row',
+                            justifyContent: 'space-between',
+                            gap: 8,
+                            padding: '10px 12px',
+                            background: '#f8fafc',
+                            borderBottom: '1px solid #e2e8f0',
+                          }}
+                        >
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: 11, fontFamily: 'JetBrains Mono, monospace', color: 'var(--gray-400)', marginBottom: 4 }}>
+                              Pergunta #{item.questionId || '-'} {item.sku ? `— ${item.sku}` : ''}
+                            </div>
+                            <div style={{ fontSize: 12.5, color: 'var(--gray-600)' }}>
+                              {formatDateTime(item.dataPergunta)}{item.nomeCliente ? ` - ${item.nomeCliente}` : ''}
+                              {item.tituloAnuncio ? ` - ${item.tituloAnuncio}` : ''}
                             </div>
                           </div>
                           <span

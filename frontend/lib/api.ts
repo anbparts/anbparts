@@ -178,6 +178,7 @@ export const api = {
     perguntas: () => req<any[]>('/mercado-livre/perguntas'),
     syncPerguntas: () => req<any>('/mercado-livre/perguntas/sync', { method: 'POST' }),
     historicoPerguntasAnuncio: (itemId: string) => req<any>(`/mercado-livre/perguntas/anuncios/${encodeURIComponent(itemId)}/historico`),
+    buscarHistoricoPerguntas: (q: string) => req<any>(`/mercado-livre/perguntas/historico?q=${encodeURIComponent(q)}`),
     responderPergunta: (questionId: string, text: string) => req<any>(`/mercado-livre/perguntas/${questionId}/responder`, {
       method: 'POST',
       body: JSON.stringify({ text }),

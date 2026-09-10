@@ -2782,6 +2782,91 @@ mercadoLivreRouter.get('/perguntas/anuncios/:itemId/historico', async (req, res,
   }
 });
 
+// GET /mercado-livre/perguntas/historico?q=...
+// Busca no historico local (todas as perguntas ja recebidas/respondidas, qualquer status),
+// por palavra-chave, SKU, numero de peca, cliente, etc. Quando o termo buscado bate
+// exatamente com o SKU ou numero de peca de alguma peca, amplia o resultado incluindo
+// tambem o historico de outras pecas com a MESMA MARCA + MESMO NUMERO DE PECA (peca
+// intercambiavel entre motos diferentes).
+mercadoLivreRouter.get('/perguntas/historico', async (req, res, next) => {
+  try {
+    const q = String(req.query?.q || '').trim();
+    if (!q) return res.json({ ok: true, total: 0, perguntas: [] });
+
+    const perguntasDiretas = await prisma.mercadoLivrePergunta.findMany({
+      where: {
+        OR: [
+          { texto: { contains: q, mode: 'insensitive' } },
+          { respostaTexto: { contains: q, mode: 'insensitive' } },
+          { sku: { contains: q, mode: 'insensitive' } },
+          { idPeca: { contains: q, mode: 'insensitive' } },
+          { descricao: { contains: q, mode: 'insensitive' } },
+          { tituloAnuncio: { contains: q, mode: 'insensitive' } },
+          { nomeCliente: { contains: q, mode: 'insensitive' } },
+        ],
+      },
+      orderBy: { dataPergunta: 'desc' },
+      take: 200,
+    });
+
+    // Termo bate direto com SKU ou numero de peca de alguma peca cadastrada?
+    const pecasPorTermo = await prisma.peca.findMany({
+      where: {
+        OR: [
+          { idPeca: { equals: q, mode: 'insensitive' } },
+          { numeroPeca: { equals: q, mode: 'insensitive' } },
+        ],
+      },
+      select: { id: true, numeroPeca: true, moto: { select: { marca: true } } },
+    });
+
+    let extras: any[] = [];
+    const paresMarcaPeca = pecasPorTermo
+      .filter((p) => p.numeroPeca && p.moto?.marca)
+      .map((p) => ({ numeroPeca: p.numeroPeca as string, marca: p.moto!.marca }));
+
+    if (paresMarcaPeca.length) {
+      const relacionadas = await prisma.peca.findMany({
+        where: {
+          OR: paresMarcaPeca.map((p) => ({
+            numeroPeca: { equals: p.numeroPeca, mode: 'insensitive' },
+            moto: { marca: { equals: p.marca, mode: 'insensitive' } },
+          })),
+        },
+        select: { id: true, idPeca: true },
+      });
+
+      const idsRelacionados = relacionadas.map((p) => p.id);
+      const skusRelacionados = Array.from(new Set(relacionadas.map((p) => p.idPeca.replace(/-\d+$/, ''))));
+
+      if (idsRelacionados.length || skusRelacionados.length) {
+        extras = await prisma.mercadoLivrePergunta.findMany({
+          where: {
+            OR: [
+              { pecaId: { in: idsRelacionados } },
+              { sku: { in: skusRelacionados, mode: 'insensitive' } },
+            ],
+          },
+          orderBy: { dataPergunta: 'desc' },
+          take: 200,
+        });
+      }
+    }
+
+    const merged = new Map<string, any>();
+    [...perguntasDiretas, ...extras].forEach((p) => merged.set(p.questionId, p));
+    const perguntas = Array.from(merged.values()).sort((a, b) => {
+      const aDate = a.dataPergunta ? new Date(a.dataPergunta).getTime() : 0;
+      const bDate = b.dataPergunta ? new Date(b.dataPergunta).getTime() : 0;
+      return bDate - aDate;
+    });
+
+    res.json({ ok: true, total: perguntas.length, perguntas, relacionadaPorPecaEquivalente: extras.length > 0 });
+  } catch (e) {
+    next(e);
+  }
+});
+
 mercadoLivreRouter.post('/perguntas/:questionId/responder', async (req, res, next) => {
   try {
     const questionId = normalizeText(req.params.questionId);
