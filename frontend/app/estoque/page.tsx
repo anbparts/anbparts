@@ -1118,7 +1118,7 @@ function PecaDetalheModal({ open, peca, onClose, onSaved, canEditarPeca = false,
   const [fotoCapaArquivo, setFotoCapaArquivo] = useState('');
   const [fotoPreviewOpen, setFotoPreviewOpen] = useState(false);
   const [armazenagem, setArmazenagem] = useState<{ loading: boolean; endereco: string | null }>({ loading: false, endereco: null });
-  const [textoAnuncio, setTextoAnuncio] = useState<{ loading: boolean; html: string | null; erro: string | null }>({ loading: false, html: null, erro: null });
+  const [textoAnuncio, setTextoAnuncio] = useState<{ loading: boolean; html: string | null; erro: string | null; aberto: boolean }>({ loading: false, html: null, erro: null, aberto: false });
   const [infSkuCopiado, setInfSkuCopiado] = useState(false);
   const [refBlingLoading, setRefBlingLoading] = useState(false);
   const fotoInputRef = useRef<HTMLInputElement | null>(null);
@@ -1163,24 +1163,25 @@ function PecaDetalheModal({ open, peca, onClose, onSaved, canEditarPeca = false,
   }, [open, peca?.localizacao]);
 
   useEffect(() => {
-    if (!open || editando || !peca?.idPeca) {
-      setTextoAnuncio({ loading: false, html: null, erro: null });
+    setTextoAnuncio({ loading: false, html: null, erro: null, aberto: false });
+  }, [open, peca?.idPeca]);
+
+  function toggleTextoAnuncio() {
+    if (textoAnuncio.aberto) {
+      setTextoAnuncio((prev) => ({ ...prev, aberto: false }));
       return;
     }
-    let cancelado = false;
-    setTextoAnuncio({ loading: true, html: null, erro: null });
+    setTextoAnuncio((prev) => ({ ...prev, aberto: true, loading: true, erro: null }));
     fetch(`${API_BASE}/cadastro/descricao-peca?sku=${encodeURIComponent(peca.idPeca)}`, { credentials: 'include' })
       .then((resp) => resp.json())
       .then((data) => {
-        if (cancelado) return;
-        if (!data?.ok) { setTextoAnuncio({ loading: false, html: null, erro: data?.error || 'Nao encontrado no Bling' }); return; }
-        setTextoAnuncio({ loading: false, html: data.descricaoCurta || '', erro: null });
+        if (!data?.ok) { setTextoAnuncio((prev) => ({ ...prev, loading: false, html: null, erro: data?.error || 'Nao encontrado no Bling' })); return; }
+        setTextoAnuncio((prev) => ({ ...prev, loading: false, html: data.descricaoCurta || '', erro: null }));
       })
       .catch((e) => {
-        if (!cancelado) setTextoAnuncio({ loading: false, html: null, erro: e?.message || 'Erro ao consultar Bling' });
+        setTextoAnuncio((prev) => ({ ...prev, loading: false, html: null, erro: e?.message || 'Erro ao consultar Bling' }));
       });
-    return () => { cancelado = true; };
-  }, [open, editando, peca?.idPeca]);
+  }
 
   if (!open || !peca) return null;
 
@@ -1388,16 +1389,27 @@ function PecaDetalheModal({ open, peca, onClose, onSaved, canEditarPeca = false,
               <Field label="Armazenagem"       value={armazenagem.loading ? 'Consultando...' : (armazenagem.endereco || 'Nao configurada')} mono />
               <div style={{ gridColumn: '1 / -1' }}>
                 <div style={{ background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px' }}>
-                  <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', marginBottom: 4 }}>Descrição da Peça (corpo do anúncio — Bling)</div>
-                  {textoAnuncio.loading ? (
-                    <div style={{ fontSize: 13, color: 'var(--gray-300)' }}>Consultando Bling...</div>
-                  ) : textoAnuncio.erro ? (
-                    <div style={{ fontSize: 13, color: 'var(--gray-300)' }}>{textoAnuncio.erro}</div>
-                  ) : (
-                    <div
-                      style={{ fontSize: 13, color: 'var(--gray-800)', maxHeight: 200, overflowY: 'auto' }}
-                      dangerouslySetInnerHTML={{ __html: textoAnuncio.html || '<span style="color:var(--gray-300)">—</span>' }}
-                    />
+                  <button
+                    type="button"
+                    onClick={toggleTextoAnuncio}
+                    style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, fontWeight: 600, color: 'var(--blue-500)', textTransform: 'uppercase' as const, letterSpacing: '0.05em' }}
+                  >
+                    <span style={{ display: 'inline-block', transform: textoAnuncio.aberto ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }}>▶</span>
+                    Descrição da Peça (corpo do anúncio — Bling)
+                  </button>
+                  {textoAnuncio.aberto && (
+                    <div style={{ marginTop: 8 }}>
+                      {textoAnuncio.loading ? (
+                        <div style={{ fontSize: 13, color: 'var(--gray-300)' }}>Consultando Bling...</div>
+                      ) : textoAnuncio.erro ? (
+                        <div style={{ fontSize: 13, color: 'var(--gray-300)' }}>{textoAnuncio.erro}</div>
+                      ) : (
+                        <div
+                          style={{ fontSize: 13, color: 'var(--gray-800)', maxHeight: 200, overflowY: 'auto' }}
+                          dangerouslySetInnerHTML={{ __html: textoAnuncio.html || '<span style="color:var(--gray-300)">—</span>' }}
+                        />
+                      )}
+                    </div>
                   )}
                 </div>
               </div>
