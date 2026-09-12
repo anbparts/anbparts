@@ -66,6 +66,7 @@ model Peca {
   valorTaxas  Decimal  @default(0) @db.Decimal(12, 2)
   disponivel  Boolean  @default(true)
   emPrejuizo  Boolean  @default(false)
+  sucata      Boolean  @default(false) // peca de sucata (nao vai a Bling/ML/Nuvemshop); venda tratada via pedido "SUCATA" na Importacao de Vendas
   dataVenda   DateTime?
   blingPedidoId  String?
   blingPedidoNum String?
@@ -97,6 +98,7 @@ model Peca {
   @@index([motoId, disponivel, emPrejuizo, cadastro])
   @@index([blingPedidoNum])
   @@index([dataVenda])
+  @@index([sucata, disponivel])
   @@index([emPrejuizo])
   @@index([numeroPeca])
   @@index([detranStatus])
@@ -151,6 +153,7 @@ model CadastroPeca {
   urlRef           String?  // URL de referência do produto
   blingProdutoId   String?  // ID do produto criado no Bling
   pecaRestrita     Boolean  @default(false) // "Peça Restrita - Sem Revenda": nao vai ao Bling; ao finalizar, cria a peca ja em prejuizo
+  sucata           Boolean  @default(false) // peca de sucata: gera pasta no Drive mas nao vai a Bling; ao finalizar, cria a peca disponivel com sucata=true
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 

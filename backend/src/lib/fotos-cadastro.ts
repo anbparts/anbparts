@@ -89,6 +89,18 @@ function baseSku(value: any) {
   return normalizeSku(value).replace(/-\d+$/, '');
 }
 
+// Verifica se um SKU (base) esta flegado como sucata, na Peca ja finalizada ou ainda no
+// pre-cadastro. Sucata nao precisa de tratamento de imagem (nem cobranca por WhatsApp) e,
+// no Fotos Drive, so tem a pasta movida — sem descompactar/tratar/apagar nada.
+async function ehSkuSucata(sku: string): Promise<boolean> {
+  const base = baseSku(sku);
+  if (!base) return false;
+  const peca = await prisma.peca.findFirst({ where: { idPeca: base }, select: { sucata: true } as any });
+  if (peca) return Boolean((peca as any).sucata);
+  const cadastro = await prisma.cadastroPeca.findFirst({ where: { idPeca: base }, select: { sucata: true } as any });
+  return Boolean((cadastro as any)?.sucata);
+}
+
 function buildAnbFotoCapaNome(sku: string, extension = 'jpg') {
   const safeExtension = String(extension || 'jpg').replace(/^\.+/, '') || 'jpg';
   return `${baseSku(sku) || 'FOTO'}_Capa.${safeExtension}`;
@@ -317,7 +329,9 @@ export async function listarPastasPendentesTratamento(): Promise<PastaPendenteTr
     );
     if (fotos.length < 2) continue;                       // precisa de 2+ fotos
     if (fotos.some((f: any) => ehNomeFotoTratada(f.name))) continue; // ja tratada
-    pendentes.push({ sku: extrairSkuDaPasta(pasta.name), nome: normalizeText(pasta.name), totalFotos: fotos.length });
+    const sku = extrairSkuDaPasta(pasta.name);
+    if (await ehSkuSucata(sku)) continue; // sucata nao precisa de tratamento nem cobranca por WhatsApp
+    pendentes.push({ sku, nome: normalizeText(pasta.name), totalFotos: fotos.length });
   }
   return pendentes;
 }
@@ -537,11 +551,15 @@ export async function escanearFotosDrive(input: { sku?: any; dataDe?: any; dataA
     const imagens = arquivos.filter((f: any) => normalizeText(f.mimeType).startsWith('image/'));
     const zips = arquivos.filter((f: any) => ehArquivoZip(f.name));
     const foraPadrao = imagens.filter((f: any) => !ehNomeFotoTratada(f.name));
-    if (zips.length >= 1 && foraPadrao.length >= 2) {
+    const sku = extrairSkuDaPasta(pasta.name);
+    // Sucata nao precisa de tratamento (zip/2+ fotos) — qualquer pasta com pelo menos 1
+    // arquivo ja pode ser processada (o processamento so vai mover, sem tratar nada).
+    const qualificaSucata = arquivos.length >= 1 && (await ehSkuSucata(sku));
+    if (qualificaSucata || (zips.length >= 1 && foraPadrao.length >= 2)) {
       candidatas.push({
         pastaId: String(pasta.id),
         nome: normalizeText(pasta.name),
-        sku: extrairSkuDaPasta(pasta.name),
+        sku,
         fotosForaPadrao: foraPadrao.length,
         zips: zips.length,
       });
@@ -596,6 +614,25 @@ export async function processarPastaFotosDrive(pastaId: string, resultado: FotoD
     if (!pastaMotoId) {
       resultado.status = 'erro';
       resultado.mensagem = `Sem pasta da moto configurada para o SKU ${resultado.sku} (verifique o cadastro do SKU e o mapeamento da moto). Nada foi alterado.`;
+      return resultado;
+    }
+
+    // SKU de sucata: nao trata nada (sem descompactar/descartar/apagar) — so move a pasta
+    // como esta (zip e fotos originais inclusos) pra pasta oficial da moto.
+    if (await ehSkuSucata(resultado.sku)) {
+      etapas.extrairZip = 'pulado';
+      etapas.descartarBrancos = 'pulado';
+      etapas.gravarFotos = 'pulado';
+      etapas.limparAntigas = 'pulado';
+      const movedSucata = await moverPastaDrive(pastaId, pastaMotoId, pastaRaizId);
+      etapas.moverPasta = movedSucata ? 'ok' : 'erro';
+      if (!movedSucata) {
+        resultado.status = 'erro';
+        resultado.mensagem = 'Sucata: falhou ao mover a pasta.';
+        return resultado;
+      }
+      resultado.status = 'processado';
+      resultado.mensagem = 'Sucata: pasta movida sem tratamento (zip e fotos originais preservados).';
       return resultado;
     }
 
