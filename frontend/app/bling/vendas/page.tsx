@@ -493,6 +493,8 @@ export default function VendasBlingPage() {
   const [textoNfeModal, setTextoNfeModal] = useState<{ pedidoNum: string; itens: any[] } | null>(null);
   const [itens, setItens] = useState<Item[]>([]);
   const [buscou, setBuscou] = useState(false);
+  const [sucataPendentesLista, setSucataPendentesLista] = useState<any[]>([]);
+  const [sucataSelecao, setSucataSelecao] = useState<Record<string, number[]>>({});
   const [buscouSeparacao, setBuscouSeparacao] = useState(false);
   const [relatorioSeparacao, setRelatorioSeparacao] = useState<SeparacaoRelatorio | null>(null);
   const [relatorioSeparacaoModo, setRelatorioSeparacaoModo] = useState<'automatico' | 'manual'>('automatico');
@@ -621,10 +623,31 @@ export default function VendasBlingPage() {
         _valorLiq: String(item.valorLiq || 0),
       })));
       setBuscou(true);
+      carregarSucataPendentes();
     } catch (e: any) {
       alert(`Erro: ${e.message}`);
     }
     setBuscando(false);
+  }
+
+  async function carregarSucataPendentes() {
+    try {
+      const resp = await fetch(`${API}/sucata?status=pendente`);
+      const data = await resp.json();
+      if (data?.ok) setSucataPendentesLista(data.pecas || []);
+    } catch { /* nao bloqueia a tela de vendas se a lista de sucata falhar */ }
+  }
+
+  function ehLinhaSucata(item: Item) {
+    return String(item.skuBling || '').trim().toUpperCase() === 'SUCATA';
+  }
+
+  function toggleSucataSelecao(entryKey: string, pecaId: number) {
+    setSucataSelecao((prev) => {
+      const atual = prev[entryKey] || [];
+      const next = atual.includes(pecaId) ? atual.filter((id) => id !== pecaId) : [...atual, pecaId];
+      return { ...prev, [entryKey]: next };
+    });
   }
 
   async function buscarRelatorioSeparacao() {
@@ -880,6 +903,44 @@ export default function VendasBlingPage() {
     updateItem(idx, '_baixando', false);
   }
 
+  async function confirmarVendaSucata(idx: number) {
+    if (!canAtualizarVendas) {
+      alert('Seu usuario nao tem permissao para atualizar vendas.');
+      return;
+    }
+    const item = itens[idx];
+    const pecaIds = sucataSelecao[item.entryKey] || [];
+    if (!pecaIds.length || !item._dataVenda) return;
+
+    updateItem(idx, '_baixando', true);
+    try {
+      const response = await fetch(`${API}/bling/baixar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pecaIds,
+          pedidoId: item.pedidoId,
+          pedidoNum: item.pedidoNum,
+          dataVenda: item._dataVenda,
+          precoVenda: Number(item._precoML) || item.precoVenda,
+          frete: Number(item._frete) || 0,
+          taxaValor: Number(item._taxaValor) || 0,
+          valorLiq: Number(item._valorLiq) || 0,
+        }),
+      });
+      const data = await response.json();
+      if (data.ok) {
+        updateItem(idx, '_confirmado', true);
+        setSucataPendentesLista((prev) => prev.filter((p) => !pecaIds.includes(p.id)));
+      } else {
+        updateItem(idx, '_erro', data.error || 'Erro ao confirmar venda de sucata');
+      }
+    } catch (e: any) {
+      updateItem(idx, '_erro', e.message);
+    }
+    updateItem(idx, '_baixando', false);
+  }
+
   async function aprovarCancelamento(idx: number) {
     if (!canAtualizarVendas) {
       alert('Seu usuario nao tem permissao para atualizar vendas.');
@@ -913,7 +974,8 @@ export default function VendasBlingPage() {
 
   const pendentes = itens.filter((item) => item.tipo === 'VENDA' && item.encontrada && !item.jaVendida && !item._confirmado);
   const confirmados = itens.filter((item) => item.tipo === 'VENDA' && item._confirmado);
-  const naoAchados = itens.filter((item) => item.tipo === 'VENDA' && !item.encontrada);
+  const sucataImportacao = itens.filter((item) => item.tipo === 'VENDA' && !item.encontrada && !item._confirmado && ehLinhaSucata(item));
+  const naoAchados = itens.filter((item) => item.tipo === 'VENDA' && !item.encontrada && !item._confirmado && !ehLinhaSucata(item));
 
   const cancelPendentes = itens.filter((item) => item.tipo === 'CANCELAMENTO' && item.baixaVinculada && item.encontrada && !item.jaEstornada && !item._cancelamentoAprovado);
   const cancelAprovados = itens.filter((item) => item.tipo === 'CANCELAMENTO' && item._cancelamentoAprovado);
@@ -1618,6 +1680,78 @@ export default function VendasBlingPage() {
           </div>
         )}
 
+        {sucataImportacao.length > 0 && (
+          <div style={{ marginBottom: 24 }}>
+            <div style={{ fontSize: 15, fontWeight: 600, color: '#b45309', marginBottom: 12 }}>Vendas de Sucata pendentes - {sucataImportacao.length}</div>
+            {sucataImportacao.map((item) => {
+              const realIdx = itens.indexOf(item);
+              const selecionadas = sucataSelecao[item.entryKey] || [];
+              return (
+                <div key={item.entryKey} style={{ ...s.card, borderLeft: '3px solid #b45309' }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
+                    <span style={{ background: '#fef3c7', color: '#b45309', padding: '2px 10px', borderRadius: 6, fontSize: 12, fontFamily: 'JetBrains Mono, monospace', fontWeight: 600 }}>Pedido #{item.pedidoNum}</span>
+                    <span style={{ background: '#fef3c7', color: '#b45309', padding: '2px 10px', borderRadius: 6, fontSize: 12, fontFamily: 'JetBrains Mono, monospace' }}>SUCATA</span>
+                  </div>
+
+                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 16 }}>{item.descricao}</div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12, marginBottom: 14 }}>
+                    <div>
+                      <label style={s.label}>Data da venda</label>
+                      <input style={s.input} type="date" value={item._dataVenda || ''} onChange={(e) => updateItem(realIdx, '_dataVenda', e.target.value)} />
+                    </div>
+                    <div>
+                      <label style={s.label}>Preco ML (R$)</label>
+                      <input style={s.input} type="number" step="0.01" value={item._precoML || ''} onChange={(e) => updateFinanceiro(realIdx, '_precoML', e.target.value)} placeholder="0,00" />
+                    </div>
+                    <div>
+                      <label style={s.label}>Frete (R$)</label>
+                      <input style={s.input} type="number" step="0.01" value={item._frete || ''} onChange={(e) => updateFinanceiro(realIdx, '_frete', e.target.value)} placeholder="0,00" />
+                    </div>
+                    <div>
+                      <label style={s.label}>Taxa ML (%)</label>
+                      <input style={s.input} type="number" step="0.01" value={item._taxaPct || ''} onChange={(e) => updateFinanceiro(realIdx, '_taxaPct', e.target.value)} placeholder="17" />
+                    </div>
+                    <div>
+                      <label style={{ ...s.label, color: 'var(--green)', fontWeight: 600 }}>Valor liquido (R$)</label>
+                      <input style={{ ...s.input, background: '#f0fdf4', borderColor: '#86efac', fontWeight: 600, color: 'var(--green)' }} readOnly value={item._valorLiq || ''} />
+                    </div>
+                  </div>
+
+                  <div style={{ marginBottom: 12 }}>
+                    <label style={s.label}>Selecione a(s) sucata(s) pendente(s) que esse pedido representa</label>
+                    {sucataPendentesLista.length === 0 ? (
+                      <div style={{ fontSize: 12, color: 'var(--gray-500)' }}>Nenhuma sucata pendente encontrada.</div>
+                    ) : (
+                      <div style={{ display: 'grid', gap: 6, maxHeight: 180, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8, padding: 8 }}>
+                        {sucataPendentesLista.map((p: any) => (
+                          <label key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, cursor: 'pointer' }}>
+                            <input type="checkbox" checked={selecionadas.includes(p.id)} onChange={() => toggleSucataSelecao(item.entryKey, p.id)} />
+                            <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 600 }}>{p.idPeca}</span>
+                            <span style={{ color: 'var(--gray-500)' }}>{p.descricao}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {item._erro && <div style={{ fontSize: 12, color: 'var(--red)', marginBottom: 8 }}>{item._erro}</div>}
+
+                  {canAtualizarVendas && (
+                    <button
+                      onClick={() => confirmarVendaSucata(realIdx)}
+                      disabled={item._baixando || !item._dataVenda || !selecionadas.length}
+                      style={{ ...s.btn, background: '#b45309', color: '#fff', opacity: (item._baixando || !item._dataVenda || !selecionadas.length) ? 0.6 : 1 }}
+                    >
+                      {item._baixando ? 'Salvando...' : `Confirmar venda (${selecionadas.length})`}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         {naoAchados.length > 0 && (
           <div style={{ background: 'var(--red-light)', border: '1px solid #fca5a5', borderRadius: 10, padding: '16px 18px', marginBottom: 20 }}>
             <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--red)', marginBottom: 8 }}>Vendas nao encontradas no ANB ({naoAchados.length})</div>
@@ -1648,7 +1782,7 @@ export default function VendasBlingPage() {
           </div>
         )}
 
-        {buscou && pendentes.length === 0 && confirmados.length === 0 && naoAchados.length === 0 && cancelPendentes.length === 0 && cancelAprovados.length === 0 && cancelSemBaixa.length === 0 && cancelJaAplicados.length === 0 && cancelNaoAchados.length === 0 && (
+        {buscou && pendentes.length === 0 && confirmados.length === 0 && sucataImportacao.length === 0 && naoAchados.length === 0 && cancelPendentes.length === 0 && cancelAprovados.length === 0 && cancelSemBaixa.length === 0 && cancelJaAplicados.length === 0 && cancelNaoAchados.length === 0 && (
           <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--gray-400)', fontSize: 14 }}>Nenhuma venda ou cancelamento encontrado no periodo.</div>
         )}
       </div>
