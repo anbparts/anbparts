@@ -517,6 +517,8 @@ pecasRouter.get('/', async (req, res, next) => {
     const skuText = normalizeIdPeca(String(sku || ''));
     const detranEtiquetaText = String(detranEtiquetaTexto || '').trim().toUpperCase();
     const where: any = (searchText || skuText) ? {} : { emPrejuizo: false };
+    // Peca de sucata fica so na tela Sucata, nunca aparece aqui no Estoque (mesmo buscando por SKU).
+    where.sucata = false;
     const andConditions: any[] = [];
     if (motoId) where.motoId = Number(motoId);
     if (marca) {
@@ -715,7 +717,8 @@ pecasRouter.get('/caixas', async (_req, res, next) => {
         where: {
           disponivel: true,
           emPrejuizo: false,
-        },
+          sucata: false,
+        } as any,
         select: {
           idPeca: true,
           localizacao: true,

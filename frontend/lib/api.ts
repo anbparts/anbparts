@@ -72,6 +72,9 @@ export const api = {
     bulkDelete: (ids: number[]) => req<any>('/pecas/bulk-delete', { method: 'POST', body: JSON.stringify({ ids }) }),
     delete: (id: number)    => req<any>(`/pecas/${id}`, { method: 'DELETE' }),
   },
+  sucata: {
+    list: (status: 'pendente' | 'vendida') => req<any>(`/sucata?status=${status}`),
+  },
   inventario: {
     atual: () => req<any>('/inventario/atual'),
     opcoes: () => req<any>('/inventario/opcoes'),

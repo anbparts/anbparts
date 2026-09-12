@@ -69,6 +69,7 @@ export const NAV: NavGroup[] = [
     section: 'Operacoes',
     items: [
       { href: '/armazenagem', icon: 'warehouse', label: 'Armazenagem' },
+      { href: '/sucata', icon: 'recycle', label: 'Sucata' },
     ],
   },
   {
@@ -175,6 +176,7 @@ function SidebarIcon({ name, active, size = 16 }: { name: string; active: boolea
     'key-round': <svg {...common}><circle cx="8" cy="15" r="4" /><path d="M12 15h8" /><path d="M16 11v8" /></svg>,
     warehouse: <svg {...common}><path d="M22 8.35V20a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8.35A2 2 0 0 1 3.26 6.5l8-3.2a2 2 0 0 1 1.48 0l8 3.2A2 2 0 0 1 22 8.35Z" /><path d="M6 18h12" /><path d="M6 14h12" /><path d="M6 10h12" /></svg>,
     truck: <svg {...common}><path d="M1 3h13v13H1z" /><path d="M14 8h4l3 3v5h-7V8Z" /><circle cx="5.5" cy="18.5" r="2" /><circle cx="17.5" cy="18.5" r="2" /></svg>,
+    recycle: <svg {...common}><path d="M7 19H4.815a1.83 1.83 0 0 1-1.57-.881 1.785 1.785 0 0 1-.004-1.784L7.196 9.5" /><path d="M11 19h8.203a1.83 1.83 0 0 0 1.556-.89 1.784 1.784 0 0 0 0-1.775l-1.226-2.12" /><path d="m14 16-3 3 3 3" /><path d="M8.293 13.596 4.875 9.5 8.293 5.404" /><path d="m9.344 5.811 1.756-3.04a1.83 1.83 0 0 1 1.546-.891 1.784 1.784 0 0 1 1.54.888l4.076 7.06" /><path d="m13.378 9.633 4.096 1.098 1.097-4.096" /></svg>,
   };
 
   return icons[name] || <span style={{ width: 16, height: 16 }} />;

@@ -72,6 +72,9 @@ export const APP_PERMISSION_CATALOG: AppPagePermission[] = [
     { key: 'aplicar', label: 'Aplicar na Nuvemshop' },
   ] },
   { key: 'armazenagem', label: 'Armazenagem', href: '/armazenagem', actions: [{ key: 'editar', label: 'Editar estrutura e alocacoes' }] },
+  { key: 'sucata', label: 'Sucata', href: '/sucata', actions: [
+    { key: 'gerar_texto', label: 'Gerar texto pra pedido/NF', description: 'Libera selecionar sucatas pendentes e copiar o texto pro pedido/nota fiscal.' },
+  ] },
   { key: 'configuracoes', label: 'Configuracoes', href: '/configuracoes', actions: [
     { key: 'usuarios', label: 'Gerenciar usuarios' },
     { key: 'permissoes', label: 'Gerenciar permissoes' },

@@ -26,6 +26,7 @@ export const PAGE_KEY_BY_HREF: Record<string, string> = {
   '/mercado-livre/perguntas': 'mercado_livre_perguntas',
   '/nuvemshop/produtos': 'nuvemshop_produtos',
   '/armazenagem': 'armazenagem',
+  '/sucata': 'sucata',
   '/configuracoes': 'configuracoes',
   '/conf-meta': 'conf_meta',
   '/bling': 'conf_bling',
