@@ -2233,7 +2233,7 @@ export default function CadastroPage() {
               </button>
             </div>
           </div>
-          {loading ? <div style={{ textAlign: 'center', padding: 32, color: 'var(--gray-400)' }}>Carregando...</div> :
+          {loading && !data.data.length ? <div style={{ textAlign: 'center', padding: 32, color: 'var(--gray-400)' }}>Carregando...</div> :
             data.data.length === 0 ? <div style={{ textAlign: 'center', padding: 32, color: 'var(--gray-400)' }}>Nenhum cadastro encontrado.</div> : isPhone ? (
             <div style={{ display: 'grid', gap: 10 }}>
               {data.data.map((item) => {
