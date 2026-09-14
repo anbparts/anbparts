@@ -23,7 +23,7 @@ sucataRouter.get('/', async (req, res, next) => {
         blingPedidoId: true,
         blingPedidoNum: true,
         cadastro: true,
-        moto: { select: { id: true, marca: true, modelo: true, ano: true } },
+        moto: { select: { id: true, marca: true, modelo: true, ano: true, placa: true, chassi: true } },
       },
       orderBy: status === 'vendida' ? { dataVenda: 'desc' } : { cadastro: 'desc' },
     });

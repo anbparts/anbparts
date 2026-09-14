@@ -63,7 +63,14 @@ export default function SucataPage() {
   async function copiarTexto() {
     const escolhidas = pecas.filter((p) => selecionadas.has(p.id));
     if (!escolhidas.length) return;
-    const texto = escolhidas.map((p) => `${p.idPeca} - ${p.descricao}`).join(' / ');
+    const texto = escolhidas.map((p) => [
+      p.idPeca,
+      p.descricao,
+      p.moto?.marca || '-',
+      p.moto?.ano || '-',
+      p.moto?.placa || '-',
+      p.moto?.chassi || '-',
+    ].join(' / ')).join('\n');
     try {
       await navigator.clipboard.writeText(texto);
       setCopiado(true);
