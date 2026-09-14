@@ -6395,12 +6395,13 @@ blingRouter.post('/sync/vendas', async (req, res, next) => {
     const defaults = getProdutoDefaults(cfg);
     const { dataInicio, dataFim } = req.body;
 
-    const todasPecas = await prisma.peca.findMany({
+    const todasPecas = await (prisma as any).peca.findMany({
       select: {
         id: true,
         idPeca: true,
         disponivel: true,
         emPrejuizo: true,
+        sucata: true,
         precoML: true,
         valorFrete: true,
         valorTaxas: true,
@@ -6413,6 +6414,14 @@ blingRouter.post('/sync/vendas', async (req, res, next) => {
     });
     const reservedVendaPecaIds = new Set<number>();
     const reservedCancelPecaIds = new Set<number>();
+    // Pedidos "SUCATA" ja confirmados anteriormente (existe peca de sucata vinculada a esse
+    // pedidoId) — evita que a linha SUCATA continue aparecendo como pendente pra sempre, ja que
+    // ela nunca casa por SKU (nao tem Peca com idPeca = "SUCATA") como as vendas normais.
+    const pedidosSucataResolvidos = new Set(
+      todasPecas
+        .filter((p: any) => p.sucata && p.blingPedidoId)
+        .map((p: any) => String(p.blingPedidoId)),
+    );
 
     const pedidosConcluidos = await listPedidos(dataInicio, dataFim, [STATUS_ID_CONCLUIDO]);
     const pedidosGerais = await listPedidos(dataInicio, dataFim);
@@ -6518,6 +6527,11 @@ blingRouter.post('/sync/vendas', async (req, res, next) => {
         // representa e feita manualmente na tela, na confirmacao da Importacao de Vendas.
         const ehSucataLinha = String(skuBling || '').trim().toUpperCase() === 'SUCATA';
         if (ehSucataLinha) {
+          // Ja foi confirmada antes (tem Peca de sucata vinculada a esse pedidoId)? Nao gera
+          // linha nenhuma — senao ficaria pendente pra sempre, ja que nao ha "SKU SUCATA" real
+          // no estoque pra casar e detectar que ja foi baixada, diferente de uma venda normal.
+          if (pedidosSucataResolvidos.has(String(pedidoId))) continue;
+
           // Preco*quantidade menos a fatia proporcional do desconto do PEDIDO (o desconto do
           // Bling e no total do pedido, nao por item — ver descontosPorLinha acima). Ex: 0,68 x
           // 178 = 121,04, desconto do pedido de 1,04 cai todo nessa linha (unico item) = 120,00.
