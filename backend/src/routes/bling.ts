@@ -6465,7 +6465,7 @@ blingRouter.post('/sync/vendas', async (req, res, next) => {
       const taxasPorLinha = distributeProportionally(taxaComissao, subtotais);
 
       for (const [lineIndex, itemInfo] of itensPedido.entries()) {
-        const { original: item, skuBling, idBling, quantidade, precoVenda } = itemInfo;
+        const { original: item, skuBling, idBling, quantidade, precoVenda, subtotal } = itemInfo;
         const linkedPecas = findLinkedPecasByPedido(
           todasPecas,
           pedidoId,
@@ -6498,7 +6498,11 @@ blingRouter.post('/sync/vendas', async (req, res, next) => {
         // representa e feita manualmente na tela, na confirmacao da Importacao de Vendas.
         const ehSucataLinha = String(skuBling || '').trim().toUpperCase() === 'SUCATA';
         if (ehSucataLinha) {
-          const precoVendaLinha = roundMoney(precoVenda * quantidade);
+          // Usa o total real da linha reportado pelo Bling (subtotal = valorTotal do item, ja
+          // liquido de qualquer desconto aplicado na venda) — NAO precoVenda*quantidade, que
+          // ignoraria descontos por item (ex: 0,68 x 178 = 121,04, mas o Bling deu desconto e
+          // o valorTotal real foi 120,00).
+          const precoVendaLinha = roundMoney(subtotal > 0 ? subtotal : precoVenda * quantidade);
           const valorLiqLinha = roundMoney(precoVendaLinha - freteLinha - taxaLinha);
           itens.push({
             entryKey: `${baseKey}-${isCancelado ? 'cancel' : 'sale'}-sucata`,

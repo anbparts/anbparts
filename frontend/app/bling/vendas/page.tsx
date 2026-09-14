@@ -912,6 +912,12 @@ export default function VendasBlingPage() {
     const pecaIds = sucataSelecao[item.entryKey] || [];
     if (!pecaIds.length || !item._dataVenda) return;
 
+    // /bling/baixar aplica o mesmo valor em TODAS as pecaIds via updateMany — como aqui uma
+    // sucata pode ser dividida entre varios chassis, distribui o valor total do pedido
+    // igualmente entre os selecionados antes de enviar (senao cada um levaria o valor cheio).
+    const qtdSelecionadas = pecaIds.length;
+    const dividir = (valor: number) => Math.round((valor / qtdSelecionadas) * 100) / 100;
+
     updateItem(idx, '_baixando', true);
     try {
       const response = await fetch(`${API}/bling/baixar`, {
@@ -922,10 +928,10 @@ export default function VendasBlingPage() {
           pedidoId: item.pedidoId,
           pedidoNum: item.pedidoNum,
           dataVenda: item._dataVenda,
-          precoVenda: Number(item._precoML) || item.precoVenda,
-          frete: Number(item._frete) || 0,
-          taxaValor: Number(item._taxaValor) || 0,
-          valorLiq: Number(item._valorLiq) || 0,
+          precoVenda: dividir(Number(item._precoML) || item.precoVenda),
+          frete: dividir(Number(item._frete) || 0),
+          taxaValor: dividir(Number(item._taxaValor) || 0),
+          valorLiq: dividir(Number(item._valorLiq) || 0),
         }),
       });
       const data = await response.json();
@@ -1731,6 +1737,11 @@ export default function VendasBlingPage() {
                             <span style={{ color: 'var(--gray-500)' }}>{p.descricao}</span>
                           </label>
                         ))}
+                      </div>
+                    )}
+                    {selecionadas.length > 0 && (
+                      <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 6 }}>
+                        Valor líquido dividido entre {selecionadas.length} chassi(s): {fmtMoney(Math.round(((Number(item._valorLiq) || 0) / selecionadas.length) * 100) / 100)} cada
                       </div>
                     )}
                   </div>
