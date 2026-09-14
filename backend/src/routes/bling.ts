@@ -6490,6 +6490,50 @@ blingRouter.post('/sync/vendas', async (req, res, next) => {
           return quantidade > 1 ? `${baseSku} [${unitIndex + 1}]` : baseSku;
         };
 
+        // Produto placa-holder "SUCATA": nao representa unidades individuais casaveis 1-a-1 com
+        // pecas do estoque (a quantidade pode ser peso/kg ou qualquer contagem interna do Bling,
+        // nao a quantidade de itens de sucata). Por isso gera 1 unica linha pro pedido inteiro, em
+        // vez de explodir em "quantidade" linhas repetidas (o que gerava centenas de cards iguais
+        // quando a quantidade vinha alta). A escolha de quais sucatas pendentes esse pedido
+        // representa e feita manualmente na tela, na confirmacao da Importacao de Vendas.
+        const ehSucataLinha = String(skuBling || '').trim().toUpperCase() === 'SUCATA';
+        if (ehSucataLinha) {
+          const precoVendaLinha = roundMoney(precoVenda * quantidade);
+          const valorLiqLinha = roundMoney(precoVendaLinha - freteLinha - taxaLinha);
+          itens.push({
+            entryKey: `${baseKey}-${isCancelado ? 'cancel' : 'sale'}-sucata`,
+            tipo: isCancelado ? 'CANCELAMENTO' : 'VENDA',
+            statusLabel,
+            pedidoId,
+            pedidoNum,
+            dataVenda,
+            idPeca: 'SUCATA',
+            descricao: item.produto?.nome || item.descricao || '',
+            skuBling,
+            quantidade,
+            quantidadePedido: quantidade,
+            quantidadeJaBaixada: 0,
+            precoVenda: precoVendaLinha,
+            frete: freteLinha,
+            taxaPct,
+            taxaValor: taxaLinha,
+            valorLiq: valorLiqLinha,
+            encontrada: false,
+            baixaVinculada: false,
+            jaVendida: false,
+            jaEstornada: false,
+            pecaId: null,
+            pecaIds: [],
+            moto: null,
+            precoMLAtual: null,
+            fretePadrao: defaults.fretePadrao,
+            taxaPadraoPct: defaults.taxaPadraoPct,
+            taxaPadraoValor: taxaLinha,
+            valorLiqPadrao: valorLiqLinha,
+          });
+          continue;
+        }
+
         if (isCancelado) {
           for (let unitIndex = 0; unitIndex < quantidade; unitIndex += 1) {
             const pecaCancelada = linkedVendidas[unitIndex];
