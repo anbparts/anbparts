@@ -6463,6 +6463,15 @@ blingRouter.post('/sync/vendas', async (req, res, next) => {
       const subtotais = itensPedido.map((item: any) => item.subtotal);
       const fretesPorLinha = distributeProportionally(fretePositivo, subtotais);
       const taxasPorLinha = distributeProportionally(taxaComissao, subtotais);
+      // Desconto do pedido (Bling: pedido.desconto = { valor, unidade: 'REAL'|'PERCENTUAL' }) —
+      // e um desconto no total do PEDIDO, nao por item (o campo "desconto" de cada item ja esta
+      // embutido no "valor" unitario). Distribui proporcionalmente pelos itens, igual frete/taxa.
+      const descontoPedidoRaw = toNumber(pedido?.desconto?.valor, 0);
+      const subtotalPedido = subtotais.reduce((sum: number, value: number) => sum + value, 0);
+      const descontoPedidoValor = String(pedido?.desconto?.unidade || '').toUpperCase() === 'PERCENTUAL'
+        ? roundMoney(subtotalPedido * (descontoPedidoRaw / 100))
+        : roundMoney(descontoPedidoRaw);
+      const descontosPorLinha = distributeProportionally(descontoPedidoValor, subtotais);
 
       for (const [lineIndex, itemInfo] of itensPedido.entries()) {
         const { original: item, skuBling, idBling, quantidade, precoVenda, subtotal } = itemInfo;
@@ -6498,11 +6507,11 @@ blingRouter.post('/sync/vendas', async (req, res, next) => {
         // representa e feita manualmente na tela, na confirmacao da Importacao de Vendas.
         const ehSucataLinha = String(skuBling || '').trim().toUpperCase() === 'SUCATA';
         if (ehSucataLinha) {
-          // Usa o total real da linha reportado pelo Bling (subtotal = valorTotal do item, ja
-          // liquido de qualquer desconto aplicado na venda) — NAO precoVenda*quantidade, que
-          // ignoraria descontos por item (ex: 0,68 x 178 = 121,04, mas o Bling deu desconto e
-          // o valorTotal real foi 120,00).
-          const precoVendaLinha = roundMoney(subtotal > 0 ? subtotal : precoVenda * quantidade);
+          // Preco*quantidade menos a fatia proporcional do desconto do PEDIDO (o desconto do
+          // Bling e no total do pedido, nao por item — ver descontosPorLinha acima). Ex: 0,68 x
+          // 178 = 121,04, desconto do pedido de 1,04 cai todo nessa linha (unico item) = 120,00.
+          const descontoLinha = descontosPorLinha[lineIndex] || 0;
+          const precoVendaLinha = roundMoney((subtotal > 0 ? subtotal : precoVenda * quantidade) - descontoLinha);
           const valorLiqLinha = roundMoney(precoVendaLinha - freteLinha - taxaLinha);
           itens.push({
             entryKey: `${baseKey}-${isCancelado ? 'cancel' : 'sale'}-sucata`,
