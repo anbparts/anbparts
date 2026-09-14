@@ -114,13 +114,14 @@ type ContaBancaria = {
   conta: string;
   cnpj: string;
   titular: string;
+  chavesPix: string[];
 };
 
-const EMPTY_CONTA: ContaBancaria = { banco: '', agencia: '', conta: '', cnpj: '', titular: '' };
+const EMPTY_CONTA: ContaBancaria = { banco: '', agencia: '', conta: '', cnpj: '', titular: '', chavesPix: [] };
 
 const DEFAULT_CONTAS: ContaBancaria[] = [
-  { banco: '323 – Mercado Pago S.A.', agencia: '0001', conta: '1928335729-2', cnpj: '60.100.111/0001-00', titular: 'ANB PARTS LTDA' },
-  { banco: '077 – Banco Inter S.A.',  agencia: '0001', conta: '43554117-0',   cnpj: '60.100.111/0001-00', titular: 'ANB PARTS LTDA' },
+  { banco: '323 – Mercado Pago S.A.', agencia: '0001', conta: '1928335729-2', cnpj: '60.100.111/0001-00', titular: 'ANB PARTS LTDA', chavesPix: [] },
+  { banco: '077 – Banco Inter S.A.',  agencia: '0001', conta: '43554117-0',   cnpj: '60.100.111/0001-00', titular: 'ANB PARTS LTDA', chavesPix: [] },
 ];
 
 function getBankColor(banco: string): string {
@@ -464,6 +465,7 @@ export default function EmpresaPage() {
                   `Conta: ${conta.conta}`,
                   `CNPJ: ${conta.cnpj}`,
                   `Titular: ${conta.titular}`,
+                  ...(conta.chavesPix || []).filter(Boolean).map((chave, i) => `Chave PIX${(conta.chavesPix || []).filter(Boolean).length > 1 ? ` ${i + 1}` : ''}: ${chave}`),
                 ].join('\n');
                 try {
                   if (navigator.clipboard?.writeText) {
@@ -485,6 +487,18 @@ export default function EmpresaPage() {
 
               function updateConta(field: keyof ContaBancaria, value: string) {
                 setContasBancarias((prev) => prev.map((c, i) => i === idx ? { ...c, [field]: value } : c));
+              }
+
+              function addChavePix() {
+                setContasBancarias((prev) => prev.map((c, i) => i === idx ? { ...c, chavesPix: [...(c.chavesPix || []), ''] } : c));
+              }
+
+              function updateChavePix(pixIdx: number, value: string) {
+                setContasBancarias((prev) => prev.map((c, i) => i === idx ? { ...c, chavesPix: (c.chavesPix || []).map((chave, j) => j === pixIdx ? value : chave) } : c));
+              }
+
+              function removeChavePix(pixIdx: number) {
+                setContasBancarias((prev) => prev.map((c, i) => i === idx ? { ...c, chavesPix: (c.chavesPix || []).filter((_, j) => j !== pixIdx) } : c));
               }
 
               return (
@@ -536,6 +550,49 @@ export default function EmpresaPage() {
                           <span style={{ fontSize: 13, fontFamily: ['conta', 'agencia', 'cnpj'].includes(field) ? 'Geist Mono, monospace' : 'Geist, sans-serif', color: 'var(--gray-800)', fontWeight: field === 'titular' ? 600 : 500 }}>
                             {conta[field] || '—'}
                           </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Chaves PIX */}
+                  <div style={{ padding: '0 16px 14px', display: 'grid', gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: '.5px' }}>Chaves PIX</span>
+                      {canEdit && (
+                        <button
+                          type="button"
+                          onClick={addChavePix}
+                          style={{ ...cs.btn, padding: '3px 10px', fontSize: 11, background: 'var(--gray-50)', color: 'var(--ink-soft)', border: '1px solid var(--border)' }}
+                        >
+                          + Chave PIX
+                        </button>
+                      )}
+                    </div>
+                    {(conta.chavesPix || []).length === 0 && !canEdit && (
+                      <span style={{ fontSize: 13, color: 'var(--gray-800)' }}>—</span>
+                    )}
+                    {(conta.chavesPix || []).map((chave, pixIdx) => (
+                      <div key={pixIdx} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        {canEdit ? (
+                          <>
+                            <input
+                              value={chave}
+                              onChange={(e) => updateChavePix(pixIdx, e.target.value)}
+                              placeholder="CPF/CNPJ, e-mail, telefone ou chave aleatória"
+                              style={{ ...cs.fi, marginTop: 0, flex: 1, fontFamily: 'Geist Mono, monospace', fontSize: 13, padding: '5px 8px' }}
+                            />
+                            <button
+                              type="button"
+                              title="Remover chave PIX"
+                              onClick={() => removeChavePix(pixIdx)}
+                              style={{ background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 6, width: 26, height: 26, cursor: 'pointer', color: 'var(--ink-muted)', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                            >
+                              ×
+                            </button>
+                          </>
+                        ) : (
+                          <span style={{ fontSize: 13, fontFamily: 'Geist Mono, monospace', color: 'var(--gray-800)' }}>{chave || '—'}</span>
                         )}
                       </div>
                     ))}

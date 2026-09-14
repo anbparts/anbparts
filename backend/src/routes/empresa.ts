@@ -12,6 +12,7 @@ const contaBancariaSchema = z.object({
   conta:    z.string().default(''),
   cnpj:     z.string().default(''),
   titular:  z.string().default(''),
+  chavesPix: z.array(z.string()).optional().default([]),
 });
 
 const empresaPayloadSchema = z.object({
@@ -75,7 +76,7 @@ function normalizeEmpresaAnexos(value: unknown) {
   return anexos;
 }
 
-function normalizeContasBancarias(value: unknown): Array<{ banco: string; agencia: string; conta: string; cnpj: string; titular: string }> {
+function normalizeContasBancarias(value: unknown): Array<{ banco: string; agencia: string; conta: string; cnpj: string; titular: string; chavesPix: string[] }> {
   const source = value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
@@ -87,6 +88,7 @@ function normalizeContasBancarias(value: unknown): Array<{ banco: string; agenci
     conta:   normalizeText(item?.conta),
     cnpj:    normalizeText(item?.cnpj),
     titular: normalizeText(item?.titular),
+    chavesPix: Array.isArray(item?.chavesPix) ? item.chavesPix.map((chave: unknown) => normalizeText(chave)).filter(Boolean) : [],
   }));
 }
 
@@ -229,6 +231,7 @@ empresaRouter.post('/', async (req, res, next) => {
       conta:   normalizeText(c.conta),
       cnpj:    normalizeText(c.cnpj),
       titular: normalizeText(c.titular),
+      chavesPix: Array.isArray(c.chavesPix) ? c.chavesPix.map((chave) => normalizeText(chave)).filter(Boolean) : [],
     }));
 
     // empresaAnexos guarda APENAS os metadados pequenos (sem base64) — os documentos vão pra EmpresaAnexo.
