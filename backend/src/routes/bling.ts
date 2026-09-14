@@ -5572,7 +5572,7 @@ blingRouter.get('/relatorio-vendas', async (req, res, next) => {
       });
     }
 
-    const pecas = await prisma.peca.findMany({
+    const pecas = await (prisma as any).peca.findMany({
       where: { AND: andFilters },
       select: {
         id: true,
@@ -5585,6 +5585,7 @@ blingRouter.get('/relatorio-vendas', async (req, res, next) => {
         dataVenda: true,
         blingPedidoId: true,
         blingPedidoNum: true,
+        sucata: true,
         moto: {
           select: {
             id: true,
@@ -5627,6 +5628,9 @@ blingRouter.get('/relatorio-vendas', async (req, res, next) => {
       valorFrete: 0,
       valorLiq: 0,
     };
+    // Sucata: varias pecas (chassis) podem representar 1 unica venda do pedido "SUCATA" —
+    // conta como 1 item por pedido em vez de 1 por chassi selecionado.
+    const pedidosSucataJaContados = new Set<string>();
 
     for (const peca of pecas) {
       const pedidoNum = String(peca.blingPedidoNum || '').trim();
@@ -5666,13 +5670,20 @@ blingRouter.get('/relatorio-vendas', async (req, res, next) => {
 
       const pedidoGroup = pedidosMap.get(pedidoNum);
       pedidoGroup.itens.push(item);
-      pedidoGroup.quantidadeItens += 1;
+
+      const ehSucata = Boolean((peca as any).sucata);
+      const contaComoItem = !ehSucata || !pedidosSucataJaContados.has(pedidoNum);
+      if (ehSucata) pedidosSucataJaContados.add(pedidoNum);
+      if (contaComoItem) {
+        pedidoGroup.quantidadeItens += 1;
+        totaisGerais.totalItens += 1;
+      }
+
       pedidoGroup.subtotalPrecoML = roundMoney(pedidoGroup.subtotalPrecoML + item.precoML);
       pedidoGroup.subtotalTaxas = roundMoney(pedidoGroup.subtotalTaxas + item.valorTaxas);
       pedidoGroup.subtotalFrete = roundMoney(pedidoGroup.subtotalFrete + item.valorFrete);
       pedidoGroup.subtotalValorLiq = roundMoney(pedidoGroup.subtotalValorLiq + item.valorLiq);
 
-      totaisGerais.totalItens += 1;
       totaisGerais.precoML = roundMoney(totaisGerais.precoML + item.precoML);
       totaisGerais.valorTaxas = roundMoney(totaisGerais.valorTaxas + item.valorTaxas);
       totaisGerais.valorFrete = roundMoney(totaisGerais.valorFrete + item.valorFrete);
