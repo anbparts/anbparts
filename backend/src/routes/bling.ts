@@ -2491,7 +2491,8 @@ async function loadLocalSkuResumoByCodes(codigos: string[]) {
 }
 
 async function loadAllLocalSkuResumo(escopo = 'full') {
-  const pecas = await prisma.peca.findMany({
+  const pecas: any[] = await (prisma as any).peca.findMany({
+    where: { sucata: false },
     select: {
       id: true,
       idPeca: true,
@@ -5629,8 +5630,8 @@ blingRouter.get('/relatorio-vendas', async (req, res, next) => {
       valorLiq: 0,
     };
     // Sucata: varias pecas (chassis) podem representar 1 unica venda do pedido "SUCATA" —
-    // conta como 1 item por pedido em vez de 1 por chassi selecionado.
-    const pedidosSucataJaContados = new Set<string>();
+    // conta e aparece como 1 item consolidado por pedido em vez de 1 por chassi selecionado.
+    const sucataItemPorPedido = new Map<string, any>();
 
     for (const peca of pecas) {
       const pedidoNum = String(peca.blingPedidoNum || '').trim();
@@ -5669,12 +5670,24 @@ blingRouter.get('/relatorio-vendas', async (req, res, next) => {
       }
 
       const pedidoGroup = pedidosMap.get(pedidoNum);
-      pedidoGroup.itens.push(item);
-
       const ehSucata = Boolean((peca as any).sucata);
-      const contaComoItem = !ehSucata || !pedidosSucataJaContados.has(pedidoNum);
-      if (ehSucata) pedidosSucataJaContados.add(pedidoNum);
-      if (contaComoItem) {
+
+      if (ehSucata) {
+        const itemExistente = sucataItemPorPedido.get(pedidoNum);
+        if (itemExistente) {
+          itemExistente.idPeca = `${itemExistente.idPeca}, ${item.idPeca}`;
+          itemExistente.precoML = roundMoney(itemExistente.precoML + item.precoML);
+          itemExistente.valorTaxas = roundMoney(itemExistente.valorTaxas + item.valorTaxas);
+          itemExistente.valorFrete = roundMoney(itemExistente.valorFrete + item.valorFrete);
+          itemExistente.valorLiq = roundMoney(itemExistente.valorLiq + item.valorLiq);
+        } else {
+          sucataItemPorPedido.set(pedidoNum, item);
+          pedidoGroup.itens.push(item);
+          pedidoGroup.quantidadeItens += 1;
+          totaisGerais.totalItens += 1;
+        }
+      } else {
+        pedidoGroup.itens.push(item);
         pedidoGroup.quantidadeItens += 1;
         totaisGerais.totalItens += 1;
       }
