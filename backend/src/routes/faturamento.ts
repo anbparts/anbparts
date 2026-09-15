@@ -299,9 +299,11 @@ faturamentoRouter.get('/dashboard', async (req, res, next) => {
 // GET /faturamento/estoque-percentual — % do estoque vendido por mês/moto
 faturamentoRouter.get('/estoque-percentual', async (req, res, next) => {
   try {
-    // Buscar todas as peças com dados necessários (excluindo prejuízos)
-    const pecas = await prisma.peca.findMany({
-      where: { emPrejuizo: false },
+    // Buscar todas as peças com dados necessários (excluindo prejuízos e sucata — sucata nao
+    // tem valor declarado enquanto em estoque, so ganha precoML/valorLiq na venda, o que
+    // distorce o % (aparenta vender mais do que "tinha" em estoque).
+    const pecas: any[] = await (prisma as any).peca.findMany({
+      where: { emPrejuizo: false, sucata: false },
       select: {
         valorLiq: true,
         precoML:  true,
