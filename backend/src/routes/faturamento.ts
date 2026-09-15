@@ -42,10 +42,14 @@ async function loadDashboardMercadoPagoSaldo() {
 // GET /faturamento/geral — receita líquida mensal (Valor Líquido = já descontado taxa+frete)
 faturamentoRouter.get('/geral', async (req, res, next) => {
   try {
-    const pecas = await prisma.peca.findMany({
+    const pecas: any[] = await (prisma as any).peca.findMany({
       where: { disponivel: false, emPrejuizo: false, dataVenda: { not: null } },
-      select: { valorLiq: true, precoML: true, dataVenda: true }
+      select: { valorLiq: true, precoML: true, dataVenda: true, sucata: true, blingPedidoNum: true }
     });
+
+    // Sucata: varios chassis (pecas) podem representar 1 unica venda do mesmo pedido —
+    // conta como 1 unidade no "qtd" em vez de 1 por chassi, mas soma a receita normalmente.
+    const pedidosSucataContadosPorMes = new Set<string>();
 
     const por_mes: Record<string, any> = {};
     pecas.forEach(p => {
@@ -55,7 +59,13 @@ faturamentoRouter.get('/geral', async (req, res, next) => {
       if (!por_mes[key]) por_mes[key] = { receita: 0, receitaLiq: 0, qtd: 0, mes: d.getMonth() + 1, ano: d.getFullYear() };
       por_mes[key].receita    += Number(p.precoML);   // bruta
       por_mes[key].receitaLiq += Number(p.valorLiq);  // líquida
-      por_mes[key].qtd        += 1;
+
+      const ehSucata = Boolean(p.sucata);
+      const pedidoNum = String(p.blingPedidoNum || '').trim();
+      const chaveSucata = `${key}::${pedidoNum}`;
+      const contaComoItem = !ehSucata || !pedidoNum || !pedidosSucataContadosPorMes.has(chaveSucata);
+      if (ehSucata && pedidoNum) pedidosSucataContadosPorMes.add(chaveSucata);
+      if (contaComoItem) por_mes[key].qtd += 1;
     });
 
     res.json(Object.values(por_mes).sort((a, b) =>
@@ -67,15 +77,18 @@ faturamentoRouter.get('/geral', async (req, res, next) => {
 // GET /faturamento/por-moto — receita por moto/mês
 faturamentoRouter.get('/por-moto', async (req, res, next) => {
   try {
-    const pecas = await prisma.peca.findMany({
+    const pecas: any[] = await (prisma as any).peca.findMany({
       where: { disponivel: false, emPrejuizo: false, dataVenda: { not: null } },
-      select: { valorLiq: true, precoML: true, dataVenda: true, moto: { select: { id: true, marca: true, modelo: true } } }
+      select: { valorLiq: true, precoML: true, dataVenda: true, sucata: true, blingPedidoNum: true, moto: { select: { id: true, marca: true, modelo: true } } }
     });
     const blingCfg = await prisma.blingConfig.findFirst({ select: { prefixos: true } });
     const prefixos: any[] = Array.isArray(blingCfg?.prefixos) ? (blingCfg!.prefixos as any[]) : [];
     const prefixoPorMoto = new Map<number, string>(
       prefixos.filter((p) => p?.motoId && p?.prefixo).map((p) => [Number(p.motoId), String(p.prefixo).toUpperCase()]),
     );
+
+    // Sucata: varios chassis da mesma moto no mesmo pedido contam como 1 unidade no "qtd".
+    const pedidosSucataContadosPorMotoMes = new Set<string>();
 
     const por_moto_mes: Record<string, any> = {};
     pecas.forEach(p => {
@@ -91,7 +104,13 @@ faturamentoRouter.get('/por-moto', async (req, res, next) => {
       };
       por_moto_mes[key].receita    += Number(p.precoML);
       por_moto_mes[key].receitaLiq += Number(p.valorLiq);
-      por_moto_mes[key].qtd        += 1;
+
+      const ehSucata = Boolean(p.sucata);
+      const pedidoNum = String(p.blingPedidoNum || '').trim();
+      const chaveSucata = `${key}::${pedidoNum}`;
+      const contaComoItem = !ehSucata || !pedidoNum || !pedidosSucataContadosPorMotoMes.has(chaveSucata);
+      if (ehSucata && pedidoNum) pedidosSucataContadosPorMotoMes.add(chaveSucata);
+      if (contaComoItem) por_moto_mes[key].qtd += 1;
     });
 
     res.json(Object.values(por_moto_mes).sort((a, b) =>
