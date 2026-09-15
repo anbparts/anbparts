@@ -173,22 +173,37 @@ function StatusBadge({ status, onClick }: { status: 'pago' | 'pendente'; onClick
   );
 }
 
-function InfoPill({ label, title }: { label: string; title: string }) {
+function InfoPill({ label, title, copyValue }: { label: string; title: string; copyValue?: string }) {
+  const [copiado, setCopiado] = useState(false);
+  const podeCopiar = Boolean(copyValue);
+
+  async function handleClick() {
+    if (!copyValue) return;
+    try {
+      await navigator.clipboard.writeText(copyValue);
+      setCopiado(true);
+      setTimeout(() => setCopiado(false), 1500);
+    } catch {
+      alert('Não foi possível copiar. Selecione e copie manualmente.');
+    }
+  }
+
   return (
     <span
-      title={title}
+      title={copiado ? 'Copiado!' : title}
+      onClick={podeCopiar ? handleClick : undefined}
       style={{
         padding: '3px 8px',
         borderRadius: 999,
         fontSize: 10,
         fontWeight: 700,
-        background: 'var(--gray-50)',
-        border: '1px solid var(--border)',
-        color: 'var(--gray-700)',
-        cursor: 'help',
+        background: copiado ? '#ecfdf5' : 'var(--gray-50)',
+        border: `1px solid ${copiado ? '#6ee7b7' : 'var(--border)'}`,
+        color: copiado ? '#047857' : 'var(--gray-700)',
+        cursor: podeCopiar ? 'pointer' : 'help',
       }}
     >
-      {label}
+      {copiado ? 'Copiado!' : label}
     </span>
   );
 }
@@ -1326,8 +1341,8 @@ export default function DespesasPage() {
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                         <StatusBadge status={item.statusPagamento} onClick={() => setPagamentoDespesa(item)} />
                         {item.dataPagamento && <span style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)' }}>{formatDateBr(item.dataPagamento)}</span>}
-                        {item.chavePix ? <InfoPill label="PIX" title={item.chavePix} /> : null}
-                        {item.codigoBarras ? <InfoPill label="Barras" title={item.codigoBarras} /> : null}
+                        {item.chavePix ? <InfoPill label="PIX" title={item.chavePix} copyValue={item.chavePix} /> : null}
+                        {item.codigoBarras ? <InfoPill label="Barras" title={item.codigoBarras} copyValue={item.codigoBarras} /> : null}
                         {item.observacao ? <InfoPill label="Obs" title={item.observacao} /> : null}
                         {item.recorrenciaTipo ? <InfoPill label={recurrenceLabel(item.recorrenciaTipo)} title={`Recorrente ate ${formatDateBr(item.recorrenciaFim)}`} /> : null}
                         <FileButton label="PDF" despesaId={item.id} tipo="anexo" fileName={item.anexoNome} />
@@ -1389,8 +1404,8 @@ export default function DespesasPage() {
                         <td style={{ padding: '9px 16px', textAlign: 'right', fontFamily: 'Geist Mono, monospace', fontSize: 13, color: 'var(--red)', fontWeight: 500 }}>{fmt(Number(item.valor || 0))}</td>
                         <td style={{ padding: '9px 16px' }}>
                           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                            {item.chavePix ? <InfoPill label="PIX" title={item.chavePix} /> : null}
-                            {item.codigoBarras ? <InfoPill label="Barras" title={item.codigoBarras} /> : null}
+                            {item.chavePix ? <InfoPill label="PIX" title={item.chavePix} copyValue={item.chavePix} /> : null}
+                            {item.codigoBarras ? <InfoPill label="Barras" title={item.codigoBarras} copyValue={item.codigoBarras} /> : null}
                             {item.observacao ? <InfoPill label="Obs" title={item.observacao} /> : null}
                             {item.recorrenciaTipo ? <InfoPill label={recurrenceLabel(item.recorrenciaTipo)} title={`Recorrente ate ${formatDateBr(item.recorrenciaFim)}`} /> : null}
                             {item.recorrenciaGerada ? <InfoPill label="Planejada" title="Lancamento criado automaticamente pela serie recorrente" /> : null}
