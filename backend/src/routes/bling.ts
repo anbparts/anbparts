@@ -700,6 +700,7 @@ async function refreshAccessToken() {
     headers: {
       Authorization: `Basic ${creds}`,
       'Content-Type': 'application/x-www-form-urlencoded',
+      'enable-jwt': '1',
     },
     body: new URLSearchParams({
       grant_type: 'refresh_token',
@@ -4726,6 +4727,7 @@ blingRouter.get('/callback', async (req, res, next) => {
       headers: {
         Authorization: `Basic ${creds}`,
         'Content-Type': 'application/x-www-form-urlencoded',
+        'enable-jwt': '1',
       },
       body: new URLSearchParams({
         grant_type: 'authorization_code',
