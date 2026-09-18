@@ -87,8 +87,11 @@ faturamentoRouter.get('/por-moto', async (req, res, next) => {
       prefixos.filter((p) => p?.motoId && p?.prefixo).map((p) => [Number(p.motoId), String(p.prefixo).toUpperCase()]),
     );
 
-    // Sucata: varios chassis da mesma moto no mesmo pedido contam como 1 unidade no "qtd".
-    const pedidosSucataContadosPorMotoMes = new Set<string>();
+    // Sucata: um unico pedido pode ter chassis de varias motos diferentes (1 chassi de cada).
+    // A receita e' dividida normalmente entre as motos, mas a CONTAGEM tem que valer 1 unica vez
+    // no total do periodo (nao 1 por moto tocada) — por isso o set e' global por pedido/mes,
+    // sem entrar o motoId na chave: so a primeira moto encontrada daquele pedido ganha o "+1".
+    const pedidosSucataJaContadosNoMes = new Set<string>();
 
     const por_moto_mes: Record<string, any> = {};
     pecas.forEach(p => {
@@ -107,9 +110,9 @@ faturamentoRouter.get('/por-moto', async (req, res, next) => {
 
       const ehSucata = Boolean(p.sucata);
       const pedidoNum = String(p.blingPedidoNum || '').trim();
-      const chaveSucata = `${key}::${pedidoNum}`;
-      const contaComoItem = !ehSucata || !pedidoNum || !pedidosSucataContadosPorMotoMes.has(chaveSucata);
-      if (ehSucata && pedidoNum) pedidosSucataContadosPorMotoMes.add(chaveSucata);
+      const chaveSucataMes = `${d.getFullYear()}-${d.getMonth() + 1}::${pedidoNum}`;
+      const contaComoItem = !ehSucata || !pedidoNum || !pedidosSucataJaContadosNoMes.has(chaveSucataMes);
+      if (ehSucata && pedidoNum) pedidosSucataJaContadosNoMes.add(chaveSucataMes);
       if (contaComoItem) por_moto_mes[key].qtd += 1;
     });
 
