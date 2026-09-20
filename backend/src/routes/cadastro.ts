@@ -154,6 +154,13 @@ function getNumeroMotorValidationMessage(detranEtiqueta: any, tipoPecaAvulsa: an
   return null;
 }
 
+// Padrao oficial da etiqueta Detran: "SP" + 14 numeros, 16 posicoes no total.
+function etiquetaDetranForaDoPadrao(detranEtiqueta: any) {
+  const etiq = String(detranEtiqueta || '').trim().toUpperCase();
+  if (!etiq) return false; // vazia nao e' "fora do padrao": so valida quando preenchida
+  return !/^SP\d{14}$/.test(etiq);
+}
+
 function isBrunoAuthUser(req: any) {
   return String(req?.authUser?.username || '').trim().toLowerCase() === 'bruno';
 }
@@ -966,6 +973,7 @@ cadastroRouter.get('/resumo', async (req, res, next) => {
         idPeca: true, descricao: true, motoId: true, status: true,
         peso: true, largura: true, altura: true, profundidade: true,
         numeroPeca: true, localizacao: true, precoVenda: true, fotoCadastroVerificada: true,
+        detranEtiqueta: true,
         moto: { select: { marca: true, modelo: true } },
       },
       orderBy: { createdAt: 'desc' },
@@ -992,6 +1000,7 @@ cadastroRouter.get('/resumo', async (req, res, next) => {
         if (p.numeroPeca == null || String(p.numeroPeca).trim() === '') dadosFaltando.push('nº peça');
         if (p.localizacao == null || String(p.localizacao).trim() === '') dadosFaltando.push('localização');
         if (!(Number(p.precoVenda) > 0)) dadosFaltando.push('preço');
+        if (etiquetaDetranForaDoPadrao((p as any).detranEtiqueta)) dadosFaltando.push('Etiqueta Detran');
 
         // Imagens (3 estados) — "tratada" exige 2+ arquivos com nome no padrão (Capa/02...):
         //  completo            = zip na pasta pendente OU 2+ fotos TRATADAS (Capa/02) na moto oficial
