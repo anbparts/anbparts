@@ -716,7 +716,7 @@ export default function CadastroPage() {
     const video = cameraVideoRef.current;
     if (!video || !video.videoWidth) return;
     if (cameraFotos.length >= CAMERA_MAX_FOTOS) { setCameraErro(`Máximo de ${CAMERA_MAX_FOTOS} fotos por SKU.`); return; }
-    const maxDim = 2560;
+    const maxDim = 4096;
     let w = video.videoWidth, h = video.videoHeight;
     if (Math.max(w, h) > maxDim) {
       const escala = maxDim / Math.max(w, h);
@@ -729,7 +729,7 @@ export default function CadastroPage() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     ctx.drawImage(video, 0, 0, w, h);
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.97);
     setCameraFotos((prev) => [...prev, dataUrl]);
     setCameraErro('');
   }
