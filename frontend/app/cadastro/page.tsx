@@ -410,7 +410,16 @@ export default function CadastroPage() {
   const [cameraEnviando, setCameraEnviando] = useState(false);
   const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
+  const cameraScrollPosRef = useRef(0);
   const CAMERA_MAX_FOTOS = 12;
+
+  function restaurarScrollPosCamera() {
+    const y = cameraScrollPosRef.current;
+    // Roda depois do modal sair da tela e do alert() fechar (ambos podem mexer no scroll do
+    // navegador mobile) — 2 tentativas garantem que a posição final seja a que estava antes.
+    requestAnimationFrame(() => window.scrollTo(0, y));
+    setTimeout(() => window.scrollTo(0, y), 150);
+  }
   // Aba "Fotos Drive" (processamento do zip do Canva)
   const [fdModo, setFdModo] = useState<'data' | 'sku'>('data');
   const [fdDataDe, setFdDataDe] = useState('');
@@ -662,6 +671,7 @@ export default function CadastroPage() {
   }
 
   async function abrirCamera(sku: string) {
+    cameraScrollPosRef.current = window.scrollY;
     setCameraErro('');
     setCameraFotos([]);
     setCameraSku(sku);
@@ -699,6 +709,7 @@ export default function CadastroPage() {
     setCameraSku(null);
     setCameraFotos([]);
     setCameraErro('');
+    restaurarScrollPosCamera();
   }
 
   function tirarFotoCamera() {
@@ -743,6 +754,7 @@ export default function CadastroPage() {
       setCameraSku(null);
       setCameraFotos([]);
       alert(`${data.enviadas || cameraFotos.length} foto(s) enviada(s) para a pasta do SKU no Drive.`);
+      restaurarScrollPosCamera();
     } catch (e: any) {
       setCameraErro(e?.message || 'Erro ao enviar fotos.');
     }
