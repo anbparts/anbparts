@@ -669,10 +669,11 @@ export default function CadastroPage() {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: { ideal: 'environment' },
-          // Sem isso o navegador entrega o preview em baixa resolucao (ex.: 640x480) por padrao —
-          // pede explicitamente a maior resolucao que a camera do aparelho suportar.
+          // width/height iguais (sem viesar formato paisagem/retrato) — o navegador entrega a
+          // maior resolucao do sensor respeitando a orientacao fisica real do aparelho no
+          // momento (vertical se o celular estiver em pe, deitada se estiver deitado).
           width: { ideal: 4096 },
-          height: { ideal: 2160 },
+          height: { ideal: 4096 },
         },
         audio: false,
       });
