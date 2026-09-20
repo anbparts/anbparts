@@ -667,7 +667,13 @@ export default function CadastroPage() {
     setCameraSku(sku);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' } },
+        video: {
+          facingMode: { ideal: 'environment' },
+          // Sem isso o navegador entrega o preview em baixa resolucao (ex.: 640x480) por padrao —
+          // pede explicitamente a maior resolucao que a camera do aparelho suportar.
+          width: { ideal: 4096 },
+          height: { ideal: 2160 },
+        },
         audio: false,
       });
       cameraStreamRef.current = stream;
@@ -698,7 +704,7 @@ export default function CadastroPage() {
     const video = cameraVideoRef.current;
     if (!video || !video.videoWidth) return;
     if (cameraFotos.length >= CAMERA_MAX_FOTOS) { setCameraErro(`Máximo de ${CAMERA_MAX_FOTOS} fotos por SKU.`); return; }
-    const maxDim = 1920;
+    const maxDim = 2560;
     let w = video.videoWidth, h = video.videoHeight;
     if (Math.max(w, h) > maxDim) {
       const escala = maxDim / Math.max(w, h);
@@ -711,7 +717,7 @@ export default function CadastroPage() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     ctx.drawImage(video, 0, 0, w, h);
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
     setCameraFotos((prev) => [...prev, dataUrl]);
     setCameraErro('');
   }
