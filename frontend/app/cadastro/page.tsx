@@ -403,6 +403,14 @@ export default function CadastroPage() {
   const [resumoFiltroSku, setResumoFiltroSku] = useState('');
   const [skusCopiados, setSkusCopiados] = useState(false);
   const [paginaCadastro, setPaginaCadastro] = useState<'sku' | 'fotos-drive' | 'fotos' | 'categoria'>('sku');
+  // Camera de foto direto na pagina (mobile): tira fotos do SKU e sobe tudo pro Drive ao finalizar
+  const [cameraSku, setCameraSku] = useState<string | null>(null);
+  const [cameraFotos, setCameraFotos] = useState<string[]>([]);
+  const [cameraErro, setCameraErro] = useState('');
+  const [cameraEnviando, setCameraEnviando] = useState(false);
+  const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
+  const CAMERA_MAX_FOTOS = 12;
   // Aba "Fotos Drive" (processamento do zip do Canva)
   const [fdModo, setFdModo] = useState<'data' | 'sku'>('data');
   const [fdDataDe, setFdDataDe] = useState('');
@@ -651,6 +659,87 @@ export default function CadastroPage() {
     } catch {
       alert('Não foi possível copiar. Selecione e copie manualmente.');
     }
+  }
+
+  async function abrirCamera(sku: string) {
+    setCameraErro('');
+    setCameraFotos([]);
+    setCameraSku(sku);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' } },
+        audio: false,
+      });
+      cameraStreamRef.current = stream;
+      // O <video> só existe depois do modal renderizar (cameraSku setado); aguarda o próximo tick.
+      setTimeout(() => {
+        if (cameraVideoRef.current) cameraVideoRef.current.srcObject = stream;
+      }, 0);
+    } catch {
+      setCameraErro('Não foi possível acessar a câmera. Verifique a permissão do navegador.');
+    }
+  }
+
+  function pararCameraStream() {
+    cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+    cameraStreamRef.current = null;
+    if (cameraVideoRef.current) cameraVideoRef.current.srcObject = null;
+  }
+
+  function fecharCamera() {
+    if (cameraFotos.length && !confirm(`Descartar ${cameraFotos.length} foto(s) tirada(s) e sair sem enviar?`)) return;
+    pararCameraStream();
+    setCameraSku(null);
+    setCameraFotos([]);
+    setCameraErro('');
+  }
+
+  function tirarFotoCamera() {
+    const video = cameraVideoRef.current;
+    if (!video || !video.videoWidth) return;
+    if (cameraFotos.length >= CAMERA_MAX_FOTOS) { setCameraErro(`Máximo de ${CAMERA_MAX_FOTOS} fotos por SKU.`); return; }
+    const maxDim = 1920;
+    let w = video.videoWidth, h = video.videoHeight;
+    if (Math.max(w, h) > maxDim) {
+      const escala = maxDim / Math.max(w, h);
+      w = Math.round(w * escala);
+      h = Math.round(h * escala);
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.drawImage(video, 0, 0, w, h);
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+    setCameraFotos((prev) => [...prev, dataUrl]);
+    setCameraErro('');
+  }
+
+  function removerFotoCamera(idx: number) {
+    setCameraFotos((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  async function finalizarFotosCamera() {
+    if (!cameraSku || !cameraFotos.length) return;
+    setCameraEnviando(true);
+    setCameraErro('');
+    try {
+      const resp = await fetch(`${API}/cadastro/fotos/camera`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sku: cameraSku, fotos: cameraFotos }),
+      });
+      const data = await readApiResponse(resp, 'Erro ao enviar fotos');
+      pararCameraStream();
+      setCameraSku(null);
+      setCameraFotos([]);
+      alert(`${data.enviadas || cameraFotos.length} foto(s) enviada(s) para a pasta do SKU no Drive.`);
+    } catch (e: any) {
+      setCameraErro(e?.message || 'Erro ao enviar fotos.');
+    }
+    setCameraEnviando(false);
   }
 
   function toggleSortCadastro(key: string) {
@@ -2242,7 +2331,13 @@ export default function CadastroPage() {
                   <div key={item.id} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 12, background: 'var(--white)', display: 'grid', gap: 10 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
                       <div style={{ minWidth: 0 }}>
-                        <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--blue-600)', fontWeight: 700 }}>{item.idPeca}</div>
+                        <button
+                          onClick={() => abrirCamera(item.idPeca)}
+                          title="Tirar fotos do SKU com a câmera"
+                          style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--blue-600)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                        >
+                          📷 {item.idPeca}
+                        </button>
                         <div style={{ fontSize: 13, color: 'var(--gray-800)', fontWeight: 600, marginTop: 3, lineHeight: 1.25 }}>{item.descricao}</div>
                         <div style={{ fontSize: 11.5, color: 'var(--gray-500)', marginTop: 4 }}>{item.moto?.marca} {item.moto?.modelo}</div>
                         <div style={{ fontSize: 11.5, color: 'var(--gray-500)', marginTop: 3 }}>Pre-cadastro: {formatDateBr(item.createdAt)}</div>
@@ -3088,6 +3183,53 @@ export default function CadastroPage() {
               <button onClick={() => setModalConfig(false)} style={{ ...s.btn, background: 'var(--white)', color: 'var(--ink-soft)', border: '1px solid var(--border)' }}>Cancelar</button>
               <button onClick={salvarConfig} disabled={savingConfig} style={{ ...s.btn, background: 'var(--gray-800)', color: '#fff', opacity: savingConfig ? 0.7 : 1 }}>{savingConfig ? 'Salvando...' : 'Salvar'}</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Camera: fotos do SKU direto na pagina, sobem pro Drive ao finalizar */}
+      {cameraSku && (
+        <div style={{ position: 'fixed', inset: 0, background: '#000', zIndex: 300, display: 'flex', flexDirection: 'column' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', background: '#111' }}>
+            <div style={{ color: '#fff', fontFamily: 'JetBrains Mono, monospace', fontSize: 13, fontWeight: 700 }}>📷 {cameraSku} — {cameraFotos.length}/{CAMERA_MAX_FOTOS}</div>
+            <button onClick={fecharCamera} style={{ background: 'none', border: 'none', color: '#fff', fontSize: 20, cursor: 'pointer', padding: 4 }}>×</button>
+          </div>
+
+          <div style={{ flex: 1, position: 'relative', background: '#000', overflow: 'hidden' }}>
+            {cameraErro && (
+              <div style={{ position: 'absolute', top: 10, left: 10, right: 10, background: '#fef2f2', color: '#b91c1c', padding: '8px 12px', borderRadius: 8, fontSize: 12, zIndex: 2 }}>{cameraErro}</div>
+            )}
+            <video ref={cameraVideoRef} autoPlay playsInline muted style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+          </div>
+
+          {cameraFotos.length > 0 && (
+            <div style={{ display: 'flex', gap: 8, overflowX: 'auto', padding: '10px 12px', background: '#111' }}>
+              {cameraFotos.map((foto, idx) => (
+                <div key={idx} style={{ position: 'relative', flexShrink: 0 }}>
+                  <img src={foto} style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 8 }} />
+                  <button
+                    onClick={() => removerFotoCamera(idx)}
+                    style={{ position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: '50%', background: '#dc2626', color: '#fff', border: '2px solid #111', fontSize: 12, lineHeight: '16px', cursor: 'pointer', padding: 0 }}
+                  >×</button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 20, padding: '16px 14px 24px', background: '#111' }}>
+            <button
+              onClick={tirarFotoCamera}
+              disabled={cameraFotos.length >= CAMERA_MAX_FOTOS}
+              style={{ width: 64, height: 64, borderRadius: '50%', background: cameraFotos.length >= CAMERA_MAX_FOTOS ? '#4b5563' : '#fff', border: '4px solid #6b7280', cursor: cameraFotos.length >= CAMERA_MAX_FOTOS ? 'default' : 'pointer' }}
+              title="Tirar foto"
+            />
+            <button
+              onClick={finalizarFotosCamera}
+              disabled={!cameraFotos.length || cameraEnviando}
+              style={{ ...s.btn, background: cameraFotos.length ? '#16a34a' : '#374151', color: '#fff', opacity: !cameraFotos.length || cameraEnviando ? 0.6 : 1, padding: '10px 18px' }}
+            >
+              {cameraEnviando ? 'Enviando...' : `Finalizar (${cameraFotos.length})`}
+            </button>
           </div>
         </div>
       )}

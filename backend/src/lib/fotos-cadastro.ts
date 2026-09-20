@@ -3,6 +3,7 @@ import { compressDataUrlImage, normalizeImageFileName } from './image';
 import { createHash } from 'crypto';
 import { inflateRawSync } from 'zlib';
 const GOOGLE_DRIVE_UPLOAD_URL = 'https://www.googleapis.com/upload/drive/v3';
+const MAX_FOTOS_CAMERA_POR_SKU = 12;
 
 // Leitor de ZIP nativo (sem dependencia externa). Le pela central directory:
 // suporta metodo 0 (stored) e 8 (deflate), que e o que o Canva exporta.
@@ -371,6 +372,57 @@ export async function getPastaPreCadastroDoSku(sku: string): Promise<{ pastaId: 
     'files(id)',
   );
   return { pastaId: String(pasta.id), nome: normalizeText(pasta.name), fotos: fotos.length };
+}
+
+// Recebe fotos tiradas pela camera do celular (data URLs, ja comprimidas no navegador) e sobe
+// direto na pasta de fotos pendentes do SKU no Drive — sem passar por zip/Canva. Se a pasta ainda
+// nao existir (ex.: peca restrita, que normalmente nao gera pasta), cria na hora.
+export async function enviarFotosCameraPreCadastro(input: { sku: string; fotos: string[] }) {
+  const sku = baseSku(input?.sku);
+  if (!sku) throw new Error('SKU obrigatorio.');
+
+  const fotos = Array.isArray(input?.fotos)
+    ? input.fotos.filter((foto) => typeof foto === 'string' && foto.trim())
+    : [];
+  if (!fotos.length) throw new Error('Nenhuma foto recebida.');
+  if (fotos.length > MAX_FOTOS_CAMERA_POR_SKU) throw new Error(`Maximo de ${MAX_FOTOS_CAMERA_POR_SKU} fotos por SKU.`);
+
+  let pastaId = (await getPastaPreCadastroDoSku(sku)).pastaId;
+  if (!pastaId) {
+    const { criarPastaPreCadastro } = await import('../routes/google-drive');
+    const cadastro = await prisma.cadastroPeca.findUnique({ where: { idPeca: sku }, select: { descricao: true } });
+    pastaId = await criarPastaPreCadastro(sku, cadastro?.descricao || sku);
+  }
+  if (!pastaId) throw new Error('Nao foi possivel localizar ou criar a pasta do SKU no Drive.');
+
+  const resultados: { nome: string; ok: boolean; error?: string }[] = [];
+  let indice = 0;
+  for (const dataUrl of fotos) {
+    indice += 1;
+    const match = String(dataUrl).trim().match(/^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i);
+    if (!match) {
+      resultados.push({ nome: `foto-${indice}`, ok: false, error: 'Formato de imagem invalido.' });
+      continue;
+    }
+    const mimeType = match[1].toLowerCase();
+    const buffer = Buffer.from(match[2].replace(/\s/g, ''), 'base64');
+    const extensao = mimeType.includes('png') ? 'png' : mimeType.includes('webp') ? 'webp' : 'jpg';
+    const nome = normalizeImageFileName(`${sku}_camera_${Date.now()}_${indice}`, extensao);
+    try {
+      await uploadArquivoParaPasta(pastaId, nome, mimeType, buffer);
+      resultados.push({ nome, ok: true });
+    } catch (e: any) {
+      resultados.push({ nome, ok: false, error: String(e?.message || e) });
+    }
+  }
+
+  return {
+    ok: true,
+    sku,
+    pastaId,
+    enviadas: resultados.filter((r) => r.ok).length,
+    resultados,
+  };
 }
 
 // Apaga definitivamente uma pasta do Drive pelo id. 404 = ja nao existe (consideramos ok).

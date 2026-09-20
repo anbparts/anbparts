@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { compressDataUrlImage, normalizeImageFileName } from '../lib/image';
-import { buscarCadastroFotos, buscarCadastroFotosAnb, buscarCadastroFotosDrive, enviarCadastroFotosManual, processarCadastroFotos, verificarCadastroFotoSku, verificarFotosCadastroPeca, getPastaPreCadastroDoSku, analisarFotosSku, apagarPastaDrive, escanearFotosDrive, processarPastaFotosDrive, novoResultadoFotoDrive } from '../lib/fotos-cadastro';
+import { buscarCadastroFotos, buscarCadastroFotosAnb, buscarCadastroFotosDrive, enviarCadastroFotosManual, processarCadastroFotos, verificarCadastroFotoSku, verificarFotosCadastroPeca, getPastaPreCadastroDoSku, analisarFotosSku, apagarPastaDrive, escanearFotosDrive, processarPastaFotosDrive, novoResultadoFotoDrive, enviarFotosCameraPreCadastro } from '../lib/fotos-cadastro';
 import type { FotoDriveResultado } from '../lib/fotos-cadastro';
 import { blingReq, fetchBlingProductDetailById, findBlingProductsByCodes, resolveBlingLocation, fetchProdutoLojaLinksByProductId, resolveBlingMercadoLivreItemId, resolveBlingMercadoLivreLinkWithFallback } from './bling';
 import { criarPastaPreCadastro, renomearPastaPreCadastro } from './google-drive';
@@ -1098,6 +1098,17 @@ cadastroRouter.post('/fotos/enviar-manual', requireCadastroAction('enviar_fotos'
     const result = await enviarCadastroFotosManual(req.body || {});
     res.json(result);
   } catch (e) { next(e); }
+});
+
+// POST /cadastro/fotos/camera — fotos tiradas pela camera do celular direto na pagina, sobem
+// direto na pasta de fotos pendentes do SKU no Drive (sem passar por zip/Canva).
+cadastroRouter.post('/fotos/camera', requireCadastroAction('enviar_fotos'), async (req, res, next) => {
+  try {
+    const result = await enviarFotosCameraPreCadastro(req.body || {});
+    res.json(result);
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message || 'Erro ao enviar fotos.' });
+  }
 });
 
 // PUT /cadastro/:id
