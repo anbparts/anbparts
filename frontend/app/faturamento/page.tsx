@@ -151,15 +151,25 @@ export default function FaturamentoMotoPage() {
   }, [modo]);
 
   const marcas = Array.from(new Set(data.map((item: any) => marcaDaMoto(item.moto)))).sort();
-  const motos = Array.from(new Set(data
+  const motosUnicasMap = new Map<number, { motoId: number; moto: string; skuPrefix: string }>();
+  data
     .filter((item: any) => !filtMarca || marcaDaMoto(item.moto) === filtMarca)
-    .map((item: any) => item.moto)
-  )).sort();
+    .forEach((item: any) => {
+      if (!motosUnicasMap.has(item.motoId)) {
+        motosUnicasMap.set(item.motoId, {
+          motoId: item.motoId,
+          moto: item.moto,
+          skuPrefix: (skuPorMoto[item.motoId] || []).join(' - '),
+        });
+      }
+    });
+  const motosUnicas = Array.from(motosUnicasMap.values()).sort((a, b) => a.moto.localeCompare(b.moto, 'pt-BR'));
+  const motoSelecionada = motosUnicas.find((m) => String(m.motoId) === filtMoto);
   const anos = Array.from(new Set(data.map((item: any) => item.ano))).sort((a, b) => b - a);
 
   const filteredSemOrdenar = data.filter((item) => (
     (!filtMarca || marcaDaMoto(item.moto) === filtMarca) &&
-    (!filtMoto || item.moto === filtMoto) &&
+    (!filtMoto || String(item.motoId) === filtMoto) &&
     (!filtAno || item.ano === Number(filtAno)) &&
     (!filtMes || item.mes === Number(filtMes))
   ));
@@ -427,7 +437,11 @@ export default function FaturamentoMotoPage() {
                 </select>
                 <select style={{ ...cs.sel, width: isCompact ? '100%' : undefined }} value={filtMoto} onChange={(e) => setFiltMoto(e.target.value)}>
                   <option value="">Todas as motos</option>
-                  {motos.map((moto) => <option key={moto} value={moto}>{moto}</option>)}
+                  {motosUnicas.map((m) => (
+                    <option key={m.motoId} value={String(m.motoId)}>
+                      {`#${m.motoId}${m.skuPrefix ? ` ${m.skuPrefix}` : ''} - ${m.moto}`}
+                    </option>
+                  ))}
                 </select>
                 <select style={{ ...cs.sel, width: isCompact ? '100%' : undefined }} value={filtAno} onChange={(e) => setFiltAno(e.target.value)}>
                   <option value="">Todos os anos</option>
@@ -556,7 +570,7 @@ export default function FaturamentoMotoPage() {
               </ChartPanel>
 
               <ChartPanel
-                title={filtMoto ? `Ranking e participacao de ${filtMoto}` : 'Ranking de motos e participacao na receita'}
+                title={motoSelecionada ? `Ranking e participacao de ${motoSelecionada.moto}` : 'Ranking de motos e participacao na receita'}
                 subtitle="Cada linha mostra a receita liquida da moto no filtro atual e sua participacao dentro do total."
                 accent="#16a34a"
               >
