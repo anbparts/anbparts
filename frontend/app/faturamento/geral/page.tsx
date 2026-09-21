@@ -107,14 +107,14 @@ function medianaDias(valores: number[]) {
 }
 
 function subLinhasPorVisao(itens: any[], visao: 'sku' | 'categoria' | 'moto', mapaCategorias: Record<string, string[]>) {
-  const mapa = new Map<string, { qtd: number; moto?: string; descricao?: string }>();
+  const mapa = new Map<string, { qtd: number; moto?: string; descricao?: string; motoId?: number; skuPrefix?: string | null }>();
   itens.forEach((l: any) => {
     if (visao === 'sku') {
-      const atual = mapa.get(l.skuBase) || { qtd: 0, moto: l.moto, descricao: l.descricao || '' };
+      const atual = mapa.get(l.skuBase) || { qtd: 0, moto: l.moto, descricao: l.descricao || '', motoId: l.motoId, skuPrefix: l.skuPrefix || null };
       atual.qtd += 1;
       mapa.set(l.skuBase, atual);
     } else if (visao === 'moto') {
-      const atual = mapa.get(l.moto) || { qtd: 0 };
+      const atual = mapa.get(l.moto) || { qtd: 0, motoId: l.motoId, skuPrefix: l.skuPrefix || null };
       atual.qtd += 1;
       mapa.set(l.moto, atual);
     } else {
@@ -128,7 +128,7 @@ function subLinhasPorVisao(itens: any[], visao: 'sku' | 'categoria' | 'moto', ma
     }
   });
   return Array.from(mapa.entries())
-    .map(([label, v]) => ({ label, qtd: v.qtd, pct: itens.length ? (v.qtd / itens.length) * 100 : 0, moto: v.moto, descricao: v.descricao }))
+    .map(([label, v]) => ({ label, qtd: v.qtd, pct: itens.length ? (v.qtd / itens.length) * 100 : 0, moto: v.moto, descricao: v.descricao, motoId: v.motoId, skuPrefix: v.skuPrefix }))
     .sort((a, b) => b.qtd - a.qtd);
 }
 
@@ -602,6 +602,14 @@ export default function FaturamentoGeralPage() {
                     {aberta && subLinhas.map((s) => (
                       <tr key={`${faixa.label}-${s.label}`}>
                         <td style={{ ...cs.td, fontSize: 12.5, paddingLeft: 32 }}>
+                          {s.motoId != null && (
+                            <span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11, color: 'var(--ink-muted)', marginRight: 6 }}>#{s.motoId}</span>
+                          )}
+                          {s.skuPrefix && (
+                            <span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 10, fontWeight: 700, color: 'var(--blue-600)', background: 'var(--blue-50)', border: '1px solid var(--blue-200)', borderRadius: 4, padding: '1px 5px', marginRight: 6, display: 'inline-block', letterSpacing: '0.5px' }}>
+                              {s.skuPrefix}
+                            </span>
+                          )}
                           {s.label}
                           {s.descricao && <span style={{ color: 'var(--ink-muted)', marginLeft: 8 }}>— {s.descricao}</span>}
                           {s.moto && <span style={{ color: 'var(--ink-muted)', marginLeft: 8, fontSize: 11.5 }}>· {s.moto}</span>}
