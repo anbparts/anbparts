@@ -185,6 +185,8 @@ export default function FaturamentoGeralPage() {
   const [giroMoto, setGiroMoto] = useState('');
   const [valorFaixaAberta, setValorFaixaAberta] = useState('');
   const [giroFaixaAberta, setGiroFaixaAberta] = useState('');
+  const [valorMotoAberta, setValorMotoAberta] = useState('');
+  const [giroMotoAberta, setGiroMotoAberta] = useState('');
   const [provisaoData, setProvisaoData] = useState<any[] | null>(null);
   const [provisaoLoading, setProvisaoLoading] = useState(false);
   const [provisaoMarca, setProvisaoMarca] = useState('');
@@ -538,6 +540,8 @@ export default function FaturamentoGeralPage() {
     visao: 'sku' | 'categoria' | 'moto',
     faixaAberta: string,
     setFaixaAberta: (v: string) => void,
+    motoAberta: string,
+    setMotoAberta: (v: string) => void,
     totalGeral: number,
     colunaFaixa: string,
     subtitulo: string,
@@ -599,25 +603,51 @@ export default function FaturamentoGeralPage() {
                       <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontWeight: 700 }}>{faixa.qtd}</td>
                       <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontWeight: 700 }}>{faixa.pct.toFixed(1)}%</td>
                     </tr>
-                    {aberta && subLinhas.map((s) => (
-                      <tr key={`${faixa.label}-${s.label}`}>
-                        <td style={{ ...cs.td, fontSize: 12.5, paddingLeft: 32 }}>
-                          {s.motoId != null && (
-                            <span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11, color: 'var(--ink-muted)', marginRight: 6 }}>#{s.motoId}</span>
-                          )}
-                          {s.skuPrefix && (
-                            <span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 10, fontWeight: 700, color: 'var(--blue-600)', background: 'var(--blue-50)', border: '1px solid var(--blue-200)', borderRadius: 4, padding: '1px 5px', marginRight: 6, display: 'inline-block', letterSpacing: '0.5px' }}>
-                              {s.skuPrefix}
-                            </span>
-                          )}
-                          {s.label}
-                          {s.descricao && <span style={{ color: 'var(--ink-muted)', marginLeft: 8 }}>— {s.descricao}</span>}
-                          {s.moto && <span style={{ color: 'var(--ink-muted)', marginLeft: 8, fontSize: 11.5 }}>· {s.moto}</span>}
-                        </td>
-                        <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12.5 }}>{s.qtd}</td>
-                        <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12.5 }}>{s.pct.toFixed(1)}%</td>
-                      </tr>
-                    ))}
+                    {aberta && subLinhas.map((s) => {
+                      const chaveMoto = `${faixa.label}::${s.label}`;
+                      const motoExpandida = visao === 'moto' && motoAberta === chaveMoto;
+                      const pecasDaMoto = motoExpandida
+                        ? faixa.itens.filter((item: any) => item.motoId === s.motoId)
+                          .sort((a: any, b: any) => String(a.idPeca).localeCompare(String(b.idPeca), 'pt-BR', { numeric: true }))
+                        : [];
+                      return (
+                        <Fragment key={`${faixa.label}-${s.label}`}>
+                          <tr
+                            onClick={visao === 'moto' ? () => setMotoAberta(motoExpandida ? '' : chaveMoto) : undefined}
+                            style={visao === 'moto' ? { cursor: 'pointer' } : undefined}
+                          >
+                            <td style={{ ...cs.td, fontSize: 12.5, paddingLeft: 32 }}>
+                              {visao === 'moto' && <span style={{ display: 'inline-block', width: 16, color: 'var(--ink-muted)' }}>{motoExpandida ? '−' : '+'}</span>}
+                              {s.motoId != null && (
+                                <span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11, color: 'var(--ink-muted)', marginRight: 6 }}>#{s.motoId}</span>
+                              )}
+                              {s.skuPrefix && (
+                                <span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 10, fontWeight: 700, color: 'var(--blue-600)', background: 'var(--blue-50)', border: '1px solid var(--blue-200)', borderRadius: 4, padding: '1px 5px', marginRight: 6, display: 'inline-block', letterSpacing: '0.5px' }}>
+                                  {s.skuPrefix}
+                                </span>
+                              )}
+                              {s.label}
+                              {s.descricao && <span style={{ color: 'var(--ink-muted)', marginLeft: 8 }}>— {s.descricao}</span>}
+                              {s.moto && <span style={{ color: 'var(--ink-muted)', marginLeft: 8, fontSize: 11.5 }}>· {s.moto}</span>}
+                            </td>
+                            <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12.5 }}>{s.qtd}</td>
+                            <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12.5 }}>{s.pct.toFixed(1)}%</td>
+                          </tr>
+                          {motoExpandida && pecasDaMoto.map((item: any, i: number) => (
+                            <tr key={`${chaveMoto}-${item.idPeca}-${i}`}>
+                              <td style={{ ...cs.td, fontSize: 12, paddingLeft: 60, color: 'var(--ink-muted)' }}>
+                                <span style={{ fontFamily: 'Geist Mono, monospace', color: 'var(--ink)' }}>{item.idPeca}</span>
+                                {item.descricao && <span> — {item.descricao}</span>}
+                                <span style={{ marginLeft: 8 }}>
+                                  {tab === 'giro' ? `· ${item.diasGiro} dia(s)` : `· ${fmt(item.valor)}`}
+                                </span>
+                              </td>
+                              <td style={cs.td} colSpan={2} />
+                            </tr>
+                          ))}
+                        </Fragment>
+                      );
+                    })}
                   </Fragment>
                 );
               })}
@@ -813,6 +843,8 @@ export default function FaturamentoGeralPage() {
               valorVisao,
               valorFaixaAberta,
               setValorFaixaAberta,
+              valorMotoAberta,
+              setValorMotoAberta,
               valorTotalGeral,
               'Por valor',
               'Quantidade de pecas vendidas por faixa de preco. Clique numa faixa para expandir.',
@@ -844,6 +876,8 @@ export default function FaturamentoGeralPage() {
                 giroVisao,
                 giroFaixaAberta,
                 setGiroFaixaAberta,
+                giroMotoAberta,
+                setGiroMotoAberta,
                 giroFiltrado.length,
                 'Tempo de giro',
                 'Quantidade de pecas vendidas por faixa de dias entre o cadastro e a venda. Clique numa faixa para expandir.',
