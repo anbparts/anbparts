@@ -107,18 +107,24 @@ function medianaDias(valores: number[]) {
 }
 
 function subLinhasPorVisao(itens: any[], visao: 'sku' | 'categoria', mapaCategorias: Record<string, string[]>) {
-  const mapa = new Map<string, number>();
+  const mapa = new Map<string, { qtd: number; moto?: string }>();
   itens.forEach((l: any) => {
     if (visao === 'sku') {
-      mapa.set(l.skuBase, (mapa.get(l.skuBase) || 0) + 1);
+      const atual = mapa.get(l.skuBase) || { qtd: 0, moto: l.moto };
+      atual.qtd += 1;
+      mapa.set(l.skuBase, atual);
     } else {
       const categorias = mapaCategorias[l.skuBase];
       const lista = categorias && categorias.length ? categorias : ['Sem categoria'];
-      lista.forEach((categoria) => mapa.set(categoria, (mapa.get(categoria) || 0) + 1));
+      lista.forEach((categoria) => {
+        const atual = mapa.get(categoria) || { qtd: 0 };
+        atual.qtd += 1;
+        mapa.set(categoria, atual);
+      });
     }
   });
   return Array.from(mapa.entries())
-    .map(([label, qtd]) => ({ label, qtd, pct: itens.length ? (qtd / itens.length) * 100 : 0 }))
+    .map(([label, v]) => ({ label, qtd: v.qtd, pct: itens.length ? (v.qtd / itens.length) * 100 : 0, moto: v.moto }))
     .sort((a, b) => b.qtd - a.qtd);
 }
 
@@ -591,7 +597,10 @@ export default function FaturamentoGeralPage() {
                     </tr>
                     {aberta && subLinhas.map((s) => (
                       <tr key={`${faixa.label}-${s.label}`}>
-                        <td style={{ ...cs.td, fontSize: 12.5, paddingLeft: 32 }}>{s.label}</td>
+                        <td style={{ ...cs.td, fontSize: 12.5, paddingLeft: 32 }}>
+                          {s.label}
+                          {s.moto && <span style={{ color: 'var(--ink-muted)', marginLeft: 8, fontSize: 11.5 }}>· {s.moto}</span>}
+                        </td>
                         <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12.5 }}>{s.qtd}</td>
                         <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12.5 }}>{s.pct.toFixed(1)}%</td>
                       </tr>
