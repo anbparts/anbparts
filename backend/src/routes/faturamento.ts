@@ -131,7 +131,7 @@ faturamentoRouter.get('/tempo-giro', async (req, res, next) => {
     const pecas = await prisma.peca.findMany({
       where: { disponivel: false, emPrejuizo: false, dataVenda: { not: null } },
       select: {
-        idPeca: true, cadastro: true, dataVenda: true, precoML: true,
+        idPeca: true, descricao: true, cadastro: true, dataVenda: true, precoML: true,
         moto: { select: { id: true, marca: true, modelo: true, ano: true } },
       },
     });
@@ -148,6 +148,7 @@ faturamentoRouter.get('/tempo-giro', async (req, res, next) => {
         const diasGiro = Math.max(0, Math.round((venda.getTime() - cad.getTime()) / 86400000));
         return {
           idPeca: p.idPeca,
+          descricao: p.descricao || '',
           skuBase: getBaseSku(p.idPeca),
           motoId: p.moto.id,
           skuPrefix: prefixoPorMotoGiro.get(p.moto.id) || null,

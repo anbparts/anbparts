@@ -88,10 +88,10 @@ function carregarBreakpointsSalvos(chave: string, padrao: number[]): number[] {
   }
 }
 
-function carregarVisaoSalva(chave: string): 'sku' | 'categoria' {
+function carregarVisaoSalva(chave: string): 'sku' | 'categoria' | 'moto' {
   if (typeof window === 'undefined') return 'sku';
   const valor = window.localStorage.getItem(chave);
-  return valor === 'categoria' ? 'categoria' : 'sku';
+  return valor === 'categoria' || valor === 'moto' ? valor : 'sku';
 }
 
 function mediaDias(valores: number[]) {
@@ -106,13 +106,17 @@ function medianaDias(valores: number[]) {
   return ordenado.length % 2 !== 0 ? ordenado[meio] : (ordenado[meio - 1] + ordenado[meio]) / 2;
 }
 
-function subLinhasPorVisao(itens: any[], visao: 'sku' | 'categoria', mapaCategorias: Record<string, string[]>) {
-  const mapa = new Map<string, { qtd: number; moto?: string }>();
+function subLinhasPorVisao(itens: any[], visao: 'sku' | 'categoria' | 'moto', mapaCategorias: Record<string, string[]>) {
+  const mapa = new Map<string, { qtd: number; moto?: string; descricao?: string }>();
   itens.forEach((l: any) => {
     if (visao === 'sku') {
-      const atual = mapa.get(l.skuBase) || { qtd: 0, moto: l.moto };
+      const atual = mapa.get(l.skuBase) || { qtd: 0, moto: l.moto, descricao: l.descricao || '' };
       atual.qtd += 1;
       mapa.set(l.skuBase, atual);
+    } else if (visao === 'moto') {
+      const atual = mapa.get(l.moto) || { qtd: 0 };
+      atual.qtd += 1;
+      mapa.set(l.moto, atual);
     } else {
       const categorias = mapaCategorias[l.skuBase];
       const lista = categorias && categorias.length ? categorias : ['Sem categoria'];
@@ -124,7 +128,7 @@ function subLinhasPorVisao(itens: any[], visao: 'sku' | 'categoria', mapaCategor
     }
   });
   return Array.from(mapa.entries())
-    .map(([label, v]) => ({ label, qtd: v.qtd, pct: itens.length ? (v.qtd / itens.length) * 100 : 0, moto: v.moto }))
+    .map(([label, v]) => ({ label, qtd: v.qtd, pct: itens.length ? (v.qtd / itens.length) * 100 : 0, moto: v.moto, descricao: v.descricao }))
     .sort((a, b) => b.qtd - a.qtd);
 }
 
@@ -188,8 +192,8 @@ export default function FaturamentoGeralPage() {
   const [mapaCategoriasCarregado, setMapaCategoriasCarregado] = useState(false);
   const [giroBreakpoints, setGiroBreakpoints] = useState<number[]>(GIRO_BREAKPOINTS_DEFAULT);
   const [valorBreakpoints, setValorBreakpoints] = useState<number[]>(VALOR_BREAKPOINTS_DEFAULT);
-  const [giroVisao, setGiroVisao] = useState<'sku' | 'categoria'>('sku');
-  const [valorVisao, setValorVisao] = useState<'sku' | 'categoria'>('sku');
+  const [giroVisao, setGiroVisao] = useState<'sku' | 'categoria' | 'moto'>('sku');
+  const [valorVisao, setValorVisao] = useState<'sku' | 'categoria' | 'moto'>('sku');
   const [configFaixasAberto, setConfigFaixasAberto] = useState<'giro' | 'valor' | ''>('');
   const [configFaixasTexto, setConfigFaixasTexto] = useState('');
   const { hidden } = useCompanyValueVisibility();
@@ -518,7 +522,7 @@ export default function FaturamentoGeralPage() {
     setConfigFaixasAberto('');
   }
 
-  function alterarVisao(tab: 'giro' | 'valor', visao: 'sku' | 'categoria') {
+  function alterarVisao(tab: 'giro' | 'valor', visao: 'sku' | 'categoria' | 'moto') {
     if (tab === 'giro') {
       setGiroVisao(visao);
       window.localStorage.setItem(GIRO_VISAO_KEY, visao);
@@ -531,7 +535,7 @@ export default function FaturamentoGeralPage() {
   function renderTabelaFaixas(
     tab: 'giro' | 'valor',
     faixas: { label: string; qtd: number; pct: number; itens: any[] }[],
-    visao: 'sku' | 'categoria',
+    visao: 'sku' | 'categoria' | 'moto',
     faixaAberta: string,
     setFaixaAberta: (v: string) => void,
     totalGeral: number,
@@ -547,7 +551,7 @@ export default function FaturamentoGeralPage() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 6, overflow: 'hidden' }}>
-              {(['sku', 'categoria'] as const).map((v) => (
+              {(['sku', 'categoria', 'moto'] as const).map((v) => (
                 <button
                   key={v}
                   onClick={() => alterarVisao(tab, v)}
@@ -560,7 +564,7 @@ export default function FaturamentoGeralPage() {
                     color: visao === v ? 'var(--white)' : 'var(--ink)',
                   }}
                 >
-                  {v === 'sku' ? 'SKU' : 'Categoria'}
+                  {v === 'sku' ? 'SKU' : v === 'categoria' ? 'Categoria' : 'Moto'}
                 </button>
               ))}
             </div>
@@ -599,6 +603,7 @@ export default function FaturamentoGeralPage() {
                       <tr key={`${faixa.label}-${s.label}`}>
                         <td style={{ ...cs.td, fontSize: 12.5, paddingLeft: 32 }}>
                           {s.label}
+                          {s.descricao && <span style={{ color: 'var(--ink-muted)', marginLeft: 8 }}>— {s.descricao}</span>}
                           {s.moto && <span style={{ color: 'var(--ink-muted)', marginLeft: 8, fontSize: 11.5 }}>· {s.moto}</span>}
                         </td>
                         <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12.5 }}>{s.qtd}</td>
