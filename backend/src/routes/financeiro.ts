@@ -901,13 +901,17 @@ financeiroRouter.get('/despesas-receita', async (req, res, next) => {
     const ano = Number(req.query.ano) || new Date().getFullYear();
     const mes = Number(req.query.mes) || 0;
 
-    const [pecasVendidas, despesas] = await Promise.all([
+    const [pecasVendidas, despesas, investimentos] = await Promise.all([
       prisma.peca.findMany({
         where: { disponivel: false, emPrejuizo: false, dataVenda: { not: null } },
         select: { precoML: true, valorTaxas: true, valorFrete: true, dataVenda: true },
       }),
       prisma.despesa.findMany({
         select: { data: true, detalhes: true, categoria: true, valor: true, statusPagamento: true },
+      }),
+      prisma.investimento.findMany({
+        select: { id: true, data: true, socio: true, tipo: true, moto: true, valor: true },
+        orderBy: [{ data: 'desc' }, { id: 'desc' }],
       }),
     ]);
 
@@ -986,6 +990,42 @@ financeiroRouter.get('/despesas-receita', async (req, res, next) => {
 
     const categoriasComValor = todasCategorias.filter((cat) => (totalPorCategoria[cat] || 0) > 0);
 
+    // Cruzamento Investimento x Despesa: um investimento "replicado" pelo botao Replicar Despesa
+    // vira uma despesa paga com a MESMA data e o MESMO valor — nao ha vinculo direto no banco
+    // entre as duas tabelas, entao o match e por data+valor, um-pra-um (cada despesa so "cobre"
+    // 1 investimento, pra nao contar a mesma despesa cobrindo varios investimentos iguais).
+    const despesasDisponiveis = new Map<string, number>();
+    for (const d of despesas) {
+      if (d.statusPagamento !== 'pago') continue;
+      const chave = `${toStoredDateKey(d.data)}::${toNumber(d.valor).toFixed(2)}`;
+      despesasDisponiveis.set(chave, (despesasDisponiveis.get(chave) || 0) + 1);
+    }
+
+    const investimentosFiltrados = investimentos.filter((inv) => matchesYearMonth(inv.data, ano, mes || null));
+    const investimentosComStatus = investimentosFiltrados.map((inv) => {
+      const chave = `${toStoredDateKey(inv.data)}::${toNumber(inv.valor).toFixed(2)}`;
+      const disponiveis = despesasDisponiveis.get(chave) || 0;
+      const replicado = disponiveis > 0;
+      if (replicado) despesasDisponiveis.set(chave, disponiveis - 1);
+      return {
+        id: inv.id,
+        data: inv.data,
+        socio: inv.socio,
+        tipo: normalizeInvestimentoTipo(inv.tipo),
+        moto: inv.moto,
+        valor: toNumber(inv.valor),
+        replicado,
+      };
+    });
+
+    const totalInvestido = investimentosComStatus.reduce((sum, item) => sum + item.valor, 0);
+    const totalInvestidoReplicado = investimentosComStatus
+      .filter((item) => item.replicado)
+      .reduce((sum, item) => sum + item.valor, 0);
+    const itensNaoReplicados = investimentosComStatus
+      .filter((item) => !item.replicado)
+      .sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime());
+
     res.json({
       ano,
       mes: mes || null,
@@ -999,6 +1039,14 @@ financeiroRouter.get('/despesas-receita', async (req, res, next) => {
         totalSaidas,
         resultadoBruto: totalResultadoBruto,
         porCategoria: totalPorCategoria,
+      },
+      investimentos: {
+        total: totalInvestido,
+        totalReplicado: totalInvestidoReplicado,
+        totalNaoReplicado: totalInvestido - totalInvestidoReplicado,
+        qtdTotal: investimentosComStatus.length,
+        qtdNaoReplicados: itensNaoReplicados.length,
+        itensNaoReplicados,
       },
     });
   } catch (e) {

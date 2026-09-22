@@ -92,6 +92,14 @@ export default function DespesasReceitaPage() {
     resultadoBruto: 0,
     porCategoria: {},
   };
+  const investimentos = payload?.investimentos || {
+    total: 0,
+    totalReplicado: 0,
+    totalNaoReplicado: 0,
+    qtdTotal: 0,
+    qtdNaoReplicados: 0,
+    itensNaoReplicados: [] as any[],
+  };
 
   function pctReceita(value: number) {
     if (!totals.receitaBruta || value === 0) return '';
@@ -288,6 +296,101 @@ export default function DespesasReceitaPage() {
             )}
           </div>
         )}
+
+        <div style={{ ...cs.card, marginTop: 20 }}>
+          <div style={{ padding: isCompact ? '14px 16px' : '14px 18px', borderBottom: '1px solid var(--border)' }}>
+            <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>Investimentos x Despesas</div>
+            <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>
+              Cruzamento entre os investimentos lancados e as despesas replicadas (mesma data e mesmo valor). Destaca o que ainda nao foi replicado como despesa no periodo filtrado.
+            </div>
+          </div>
+
+          {loading ? (
+            <div style={{ padding: 24, color: 'var(--ink-muted)', fontSize: 13 }}>Carregando...</div>
+          ) : (
+            <>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fit, minmax(190px, 1fr))',
+                  gap: 14,
+                  padding: isCompact ? 16 : 18,
+                }}
+              >
+                {[
+                  { label: 'Total investido no periodo', value: investimentos.total, color: 'var(--ink)' },
+                  { label: 'Ja replicado como despesa', value: investimentos.totalReplicado, color: 'var(--green)' },
+                  {
+                    label: 'Nao replicado',
+                    value: investimentos.totalNaoReplicado,
+                    color: investimentos.totalNaoReplicado > 0 ? 'var(--red)' : 'var(--green)',
+                  },
+                ].map((card) => (
+                  <div
+                    key={card.label}
+                    style={{
+                      ...cs.sCard,
+                      border: card.label === 'Nao replicado' && investimentos.totalNaoReplicado > 0 ? '1px solid var(--red)' : cs.sCard.border,
+                    }}
+                  >
+                    <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '.6px', textTransform: 'uppercase', marginBottom: 8 }}>
+                      {card.label}
+                    </div>
+                    <div style={{ fontFamily: 'Fraunces, serif', fontSize: 22, fontWeight: 500, color: card.color, ...sensitiveMaskStyle(hidden) }}>
+                      {sensitiveText(fmt(card.value), hidden)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {investimentos.qtdNaoReplicados === 0 ? (
+                <div style={{ padding: '0 18px 18px', fontSize: 13, color: 'var(--green)' }}>
+                  Tudo certo — todos os investimentos do periodo ja tem despesa replicada.
+                </div>
+              ) : (
+                <div style={{ padding: '0 18px 18px' }}>
+                  <div style={{ fontSize: 12.5, color: 'var(--ink-muted)', marginBottom: 10 }}>
+                    {investimentos.qtdNaoReplicados} investimento(s) sem despesa replicada. Va em <strong>Investimentos</strong> e use o botao "Replicar Despesa" pra corrigir.
+                  </div>
+                  {isCompact ? (
+                    <div style={{ display: 'grid', gap: 10 }}>
+                      {investimentos.itensNaoReplicados.map((item: any) => (
+                        <div key={item.id} style={{ border: '1px solid var(--red)', borderRadius: 10, padding: 12, background: '#fef2f2' }}>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>{new Date(item.data).toLocaleDateString('pt-BR')} — {item.socio}</div>
+                          <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 4 }}>{item.tipo}{item.moto ? ` · ${item.moto}` : ''}</div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--red)', marginTop: 6, ...sensitiveMaskStyle(hidden) }}>
+                            {sensitiveText(fmt(Number(item.valor || 0)), hidden)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
+                          <tr>{['Data', 'Socio', 'Tipo', 'Moto/Item', 'Valor'].map((h) => <th key={h} style={cs.th}>{h}</th>)}</tr>
+                        </thead>
+                        <tbody>
+                          {investimentos.itensNaoReplicados.map((item: any) => (
+                            <tr key={item.id} style={{ background: '#fef2f2' }}>
+                              <td style={{ ...cs.td, fontWeight: 600 }}>{new Date(item.data).toLocaleDateString('pt-BR')}</td>
+                              <td style={cs.td}>{item.socio}</td>
+                              <td style={cs.td}>{item.tipo}</td>
+                              <td style={cs.td}>{item.moto || '—'}</td>
+                              <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontWeight: 700, color: 'var(--red)', ...sensitiveMaskStyle(hidden) }}>
+                                {sensitiveText(fmt(Number(item.valor || 0)), hidden)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+        </div>
       </div>
     </>
   );
