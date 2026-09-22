@@ -65,6 +65,10 @@ export default function DespesasReceitaPage() {
   const [filtroAno, setFiltroAno] = useState(currentYear);
   const [filtroMes, setFiltroMes] = useState(currentMonth);
   const [payload, setPayload] = useState<any>(null);
+  const [painelSelecionadas, setPainelSelecionadas] = useState<string[]>([]);
+  const [painelCarregando, setPainelCarregando] = useState(true);
+  const [painelSalvando, setPainelSalvando] = useState(false);
+  const [painelSalvo, setPainelSalvo] = useState(false);
   const { hidden } = useCompanyValueVisibility();
   const viewportMode = useFinancialViewportMode();
   const isPhone = viewportMode === 'phone';
@@ -80,6 +84,31 @@ export default function DespesasReceitaPage() {
       .then(setPayload)
       .finally(() => setLoading(false));
   }, [filtroAno, filtroMes]);
+
+  // Carrega a ultima variante salva do painel personalizado (uma unica vez, ao abrir a tela).
+  useEffect(() => {
+    api.financeiro.painelDespesasReceita.get()
+      .then((res) => setPainelSelecionadas(Array.isArray(res?.linhas) ? res.linhas : []))
+      .catch(() => setPainelSelecionadas([]))
+      .finally(() => setPainelCarregando(false));
+  }, []);
+
+  function togglePainelLinha(key: string) {
+    setPainelSalvo(false);
+    setPainelSelecionadas((atual) => (atual.includes(key) ? atual.filter((k) => k !== key) : [...atual, key]));
+  }
+
+  async function salvarPainelVariante() {
+    setPainelSalvando(true);
+    try {
+      await api.financeiro.painelDespesasReceita.save(painelSelecionadas);
+      setPainelSalvo(true);
+      setTimeout(() => setPainelSalvo(false), 2500);
+    } catch (e: any) {
+      alert(e?.message || 'Erro ao salvar a variante do painel.');
+    }
+    setPainelSalvando(false);
+  }
 
   const months = Array.isArray(payload?.months) ? payload.months : [];
   const categorias: string[] = Array.isArray(payload?.categorias) ? payload.categorias : [];
@@ -150,6 +179,54 @@ export default function DespesasReceitaPage() {
       buildRow('Resultado bruto', 'resultadoBruto', 'Receita bruta menos as saidas do periodo'),
     ];
   }, [months, categorias, totals]);
+
+  // Registro mestre de linhas disponiveis pro painel personalizado — mesmos campos do painel
+  // fixo acima, mais as 3 novas de investimento (total / replicado / nao replicado) por mes.
+  const linhasDisponiveis = useMemo(() => {
+    const buildLinha = (key: string, label: string, field: string, note?: string) => ({
+      key,
+      label,
+      note,
+      cells: months.map((item: any) => ({
+        label: MESES[(item.mes || 1) - 1] || item.label,
+        value: Number(item[field] || 0),
+        displayValue: fmt(Number(item[field] || 0)),
+      })),
+    });
+
+    const categoriaLinhas = categorias
+      .filter((cat) => (totals.porCategoria?.[cat] || 0) > 0)
+      .map((cat) => ({
+        key: `categoria:${cat}`,
+        label: `↳ ${cat}`,
+        note: `Despesas da categoria ${cat}`,
+        cells: months.map((item: any) => ({
+          label: MESES[(item.mes || 1) - 1] || item.label,
+          value: Number(item.despesasPorCategoria?.[cat] || 0),
+          displayValue: fmt(Number(item.despesasPorCategoria?.[cat] || 0)),
+        })),
+      }));
+
+    return [
+      buildLinha('receitaBruta', 'Receita bruta', 'receitaBruta', 'Base bruta das vendas por mes'),
+      buildLinha('taxasMl', 'Taxas ML', 'taxasMl', 'Taxas cobradas pelo Mercado Livre'),
+      buildLinha('fretePago', 'Frete pago', 'fretePago', 'Frete vinculado as vendas do periodo'),
+      buildLinha('despesasGerais', 'Despesas gerais', 'despesasGerais', 'Despesas cadastradas no periodo'),
+      ...categoriaLinhas,
+      buildLinha('totalSaidas', 'Saidas totais', 'totalSaidas', 'Taxas + frete + despesas gerais'),
+      buildLinha('resultadoBruto', 'Resultado bruto', 'resultadoBruto', 'Receita bruta menos as saidas do periodo'),
+      buildLinha('investimentoTotal', 'Investimento total', 'investimentoTotal', 'Total investido no mes'),
+      buildLinha('investimentoReplicado', 'Investimento replicado', 'investimentoReplicado', 'Investimento ja lancado como despesa'),
+      buildLinha('investimentoNaoReplicado', 'Investimento nao replicado', 'investimentoNaoReplicado', 'Investimento AINDA sem despesa replicada'),
+    ];
+  }, [months, categorias, totals]);
+
+  const painelPersonalizadoRows = useMemo(
+    () => painelSelecionadas
+      .map((key) => linhasDisponiveis.find((linha) => linha.key === key))
+      .filter(Boolean) as typeof linhasDisponiveis,
+    [painelSelecionadas, linhasDisponiveis],
+  );
 
   const anosDisponiveis = useMemo(() => {
     const current = Number(filtroAno) || new Date().getFullYear();
@@ -390,6 +467,70 @@ export default function DespesasReceitaPage() {
               )}
             </>
           )}
+        </div>
+
+        <div style={{ ...cs.card, marginTop: 20 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, padding: isCompact ? '14px 16px' : '14px 18px', borderBottom: '1px solid var(--border)' }}>
+            <div>
+              <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>Painel personalizado</div>
+              <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>
+                Escolha as linhas que quer ver (incluindo as diferencas de investimento) e salve como variante — a ultima variante salva e sempre a que carrega ao abrir esta tela.
+              </div>
+            </div>
+            <button
+              onClick={salvarPainelVariante}
+              disabled={painelSalvando}
+              style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: painelSalvo ? 'var(--green)' : 'var(--blue-500)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: painelSalvando ? 0.7 : 1, whiteSpace: 'nowrap' }}
+            >
+              {painelSalvando ? 'Salvando...' : painelSalvo ? 'Variante salva!' : 'Salvar variante'}
+            </button>
+          </div>
+
+          <div style={{ padding: isCompact ? 16 : 18 }}>
+            {painelCarregando ? (
+              <div style={{ color: 'var(--ink-muted)', fontSize: 13 }}>Carregando variante salva...</div>
+            ) : (
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fill, minmax(220px, 1fr))',
+                  gap: 8,
+                  marginBottom: 18,
+                }}
+              >
+                {linhasDisponiveis.map((linha) => {
+                  const marcada = painelSelecionadas.includes(linha.key);
+                  return (
+                    <label
+                      key={linha.key}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        padding: '8px 10px',
+                        border: `1px solid ${marcada ? 'var(--blue-500)' : 'var(--border)'}`,
+                        borderRadius: 8,
+                        background: marcada ? '#eff6ff' : 'var(--white)',
+                        cursor: 'pointer',
+                        fontSize: 12.5,
+                      }}
+                    >
+                      <input type="checkbox" checked={marcada} onChange={() => togglePainelLinha(linha.key)} />
+                      {linha.label}
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+
+            {painelPersonalizadoRows.length === 0 ? (
+              <div style={{ color: 'var(--ink-muted)', fontSize: 13, padding: '10px 0' }}>
+                Nenhuma linha selecionada ainda. Marque as linhas acima pra montar o painel.
+              </div>
+            ) : (
+              <HeatmapChart rows={painelPersonalizadoRows} rowHeaderLabel="Linha" valueFormatter={fmt} emptyText="Sem periodos para exibir." />
+            )}
+          </div>
         </div>
       </div>
     </>

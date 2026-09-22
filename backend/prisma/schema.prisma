@@ -321,6 +321,7 @@ model ConfiguracaoGeral {
   googleDrivePreCadastroPastaId  String   @default("") // ID da pasta raiz dos pré-cadastros
   cadastroMotoIdDefault     Int?              // Moto pré-selecionada ao abrir novo pré-cadastro
   curvaAbcModoMultiplas     String   @default("todas") // todas | principal (SKU em várias categorias)
+  painelDespesasReceitaLinhas Json   @default("[]") // chaves das linhas selecionadas no painel personalizado (variante salva)
   createdAt                 DateTime @default(now())
   updatedAt                 DateTime @updatedAt
 }

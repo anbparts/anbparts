@@ -928,6 +928,34 @@ financeiroRouter.get('/despesas-receita', async (req, res, next) => {
       .filter((cat) => !CATEGORIAS_EXCLUIDAS.includes(cat.toLowerCase()))
       .sort();
 
+    // Cruzamento Investimento x Despesa: um investimento "replicado" pelo botao Replicar Despesa
+    // vira uma despesa paga com a MESMA data e o MESMO valor — nao ha vinculo direto no banco
+    // entre as duas tabelas, entao o match e por data+valor, um-pra-um (cada despesa so "cobre"
+    // 1 investimento, pra nao contar a mesma despesa cobrindo varios investimentos iguais).
+    // Feito com TODOS os investimentos/despesas (nao so o periodo filtrado) pra dar pra montar
+    // o breakdown mes a mes do painel personalizado.
+    const despesasDisponiveis = new Map<string, number>();
+    for (const d of despesas) {
+      if (d.statusPagamento !== 'pago') continue;
+      const chave = `${toStoredDateKey(d.data)}::${toNumber(d.valor).toFixed(2)}`;
+      despesasDisponiveis.set(chave, (despesasDisponiveis.get(chave) || 0) + 1);
+    }
+    const investimentosComStatusTodos = investimentos.map((inv) => {
+      const chave = `${toStoredDateKey(inv.data)}::${toNumber(inv.valor).toFixed(2)}`;
+      const disponiveis = despesasDisponiveis.get(chave) || 0;
+      const replicado = disponiveis > 0;
+      if (replicado) despesasDisponiveis.set(chave, disponiveis - 1);
+      return {
+        id: inv.id,
+        data: inv.data,
+        socio: inv.socio,
+        tipo: normalizeInvestimentoTipo(inv.tipo),
+        moto: inv.moto,
+        valor: toNumber(inv.valor),
+        replicado,
+      };
+    });
+
     const months = monthIndexes.map((monthIndex) => {
       const receitaBruta = pecasVendidas
         .filter((item) => matchesYearMonth(item.dataVenda, ano, monthIndex))
@@ -960,6 +988,11 @@ financeiroRouter.get('/despesas-receita', async (req, res, next) => {
       const totalSaidas = taxasMl + fretePago + despesasMes;
       const resultadoBruto = receitaBruta - totalSaidas;
 
+      const investimentosMes = investimentosComStatusTodos.filter((item) => matchesYearMonth(item.data, ano, monthIndex));
+      const investimentoTotal = investimentosMes.reduce((sum, item) => sum + item.valor, 0);
+      const investimentoReplicado = investimentosMes.filter((item) => item.replicado).reduce((sum, item) => sum + item.valor, 0);
+      const investimentoNaoReplicado = investimentoTotal - investimentoReplicado;
+
       return {
         ano,
         mes: monthIndex,
@@ -972,6 +1005,9 @@ financeiroRouter.get('/despesas-receita', async (req, res, next) => {
         despesasPorCategoria,
         totalSaidas,
         resultadoBruto,
+        investimentoTotal,
+        investimentoReplicado,
+        investimentoNaoReplicado,
       };
     });
 
@@ -990,39 +1026,12 @@ financeiroRouter.get('/despesas-receita', async (req, res, next) => {
 
     const categoriasComValor = todasCategorias.filter((cat) => (totalPorCategoria[cat] || 0) > 0);
 
-    // Cruzamento Investimento x Despesa: um investimento "replicado" pelo botao Replicar Despesa
-    // vira uma despesa paga com a MESMA data e o MESMO valor — nao ha vinculo direto no banco
-    // entre as duas tabelas, entao o match e por data+valor, um-pra-um (cada despesa so "cobre"
-    // 1 investimento, pra nao contar a mesma despesa cobrindo varios investimentos iguais).
-    const despesasDisponiveis = new Map<string, number>();
-    for (const d of despesas) {
-      if (d.statusPagamento !== 'pago') continue;
-      const chave = `${toStoredDateKey(d.data)}::${toNumber(d.valor).toFixed(2)}`;
-      despesasDisponiveis.set(chave, (despesasDisponiveis.get(chave) || 0) + 1);
-    }
-
-    const investimentosFiltrados = investimentos.filter((inv) => matchesYearMonth(inv.data, ano, mes || null));
-    const investimentosComStatus = investimentosFiltrados.map((inv) => {
-      const chave = `${toStoredDateKey(inv.data)}::${toNumber(inv.valor).toFixed(2)}`;
-      const disponiveis = despesasDisponiveis.get(chave) || 0;
-      const replicado = disponiveis > 0;
-      if (replicado) despesasDisponiveis.set(chave, disponiveis - 1);
-      return {
-        id: inv.id,
-        data: inv.data,
-        socio: inv.socio,
-        tipo: normalizeInvestimentoTipo(inv.tipo),
-        moto: inv.moto,
-        valor: toNumber(inv.valor),
-        replicado,
-      };
-    });
-
-    const totalInvestido = investimentosComStatus.reduce((sum, item) => sum + item.valor, 0);
-    const totalInvestidoReplicado = investimentosComStatus
-      .filter((item) => item.replicado)
-      .reduce((sum, item) => sum + item.valor, 0);
-    const itensNaoReplicados = investimentosComStatus
+    // Agregados de investimento pro periodo filtrado — somados a partir do breakdown mensal
+    // (ja cruzado com despesas acima) pra ficar consistente com o resto dos totais desta rota.
+    const totalInvestido = months.reduce((sum, item) => sum + item.investimentoTotal, 0);
+    const totalInvestidoReplicado = months.reduce((sum, item) => sum + item.investimentoReplicado, 0);
+    const investimentosDoPeriodo = investimentosComStatusTodos.filter((item) => matchesYearMonth(item.data, ano, mes || null));
+    const itensNaoReplicados = investimentosDoPeriodo
       .filter((item) => !item.replicado)
       .sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime());
 
@@ -1044,11 +1053,43 @@ financeiroRouter.get('/despesas-receita', async (req, res, next) => {
         total: totalInvestido,
         totalReplicado: totalInvestidoReplicado,
         totalNaoReplicado: totalInvestido - totalInvestidoReplicado,
-        qtdTotal: investimentosComStatus.length,
+        qtdTotal: investimentosDoPeriodo.length,
         qtdNaoReplicados: itensNaoReplicados.length,
         itensNaoReplicados,
       },
     });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// Painel personalizado da tela Despesas x Receita: guarda so a lista de chaves das linhas que o
+// usuario escolheu (a "variante"). Uma unica variante global, sempre sobrescrita ao salvar de novo.
+financeiroRouter.get('/despesas-receita/painel-config', async (_req, res, next) => {
+  try {
+    const rows = await prisma.$queryRaw<{ painelDespesasReceitaLinhas: any }[]>`
+      SELECT "painelDespesasReceitaLinhas" FROM "ConfiguracaoGeral" LIMIT 1
+    `;
+    const linhas = Array.isArray(rows?.[0]?.painelDespesasReceitaLinhas) ? rows[0].painelDespesasReceitaLinhas : [];
+    res.json({ ok: true, linhas });
+  } catch (e) {
+    next(e);
+  }
+});
+
+financeiroRouter.post('/despesas-receita/painel-config', async (req, res, next) => {
+  try {
+    const linhas = Array.isArray(req.body?.linhas)
+      ? req.body.linhas.filter((v: any) => typeof v === 'string').map((v: string) => v.trim()).filter(Boolean)
+      : [];
+
+    const existe = await prisma.configuracaoGeral.findFirst({ select: { id: true } });
+    if (!existe) return res.status(400).json({ error: 'Configuracao geral nao encontrada' });
+
+    await prisma.$executeRaw`
+      UPDATE "ConfiguracaoGeral" SET "painelDespesasReceitaLinhas" = ${JSON.stringify(linhas)}::jsonb WHERE "id" = ${existe.id}
+    `;
+    res.json({ ok: true, linhas });
   } catch (e) {
     next(e);
   }

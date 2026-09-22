@@ -119,6 +119,10 @@ export const api = {
       const qs = params ? '?' + new URLSearchParams(params).toString() : '';
       return req<any>(`/financeiro/despesas-receita${qs}`);
     },
+    painelDespesasReceita: {
+      get: () => req<{ ok: boolean; linhas: string[] }>('/financeiro/despesas-receita/painel-config'),
+      save: (linhas: string[]) => req<{ ok: boolean; linhas: string[] }>('/financeiro/despesas-receita/painel-config', { method: 'POST', body: JSON.stringify({ linhas }) }),
+    },
     despesas: {
       list: () => req<any[]>('/financeiro/despesas'),
       getAnexo: (id: number) => req<{ nome: string | null; dataUrl: string }>(`/financeiro/despesas/${id}/anexo`),
