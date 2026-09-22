@@ -207,6 +207,29 @@ export default function DespesasReceitaPage() {
         })),
       }));
 
+    // Cada diferenca (investimento sem despesa replicada, do quadro "Investimentos x Despesas"
+    // acima) vira uma linha propria e selecionavel — o valor so aparece no mes daquele lancamento.
+    const diferencaLinhas = (investimentos.itensNaoReplicados || []).map((item: any) => {
+      const dataItem = new Date(item.data);
+      const mesItem = dataItem.getMonth() + 1;
+      const anoItem = dataItem.getFullYear();
+      const valor = Number(item.valor || 0);
+      return {
+        key: `diferenca:${item.id}`,
+        label: `⚠ ${dataItem.toLocaleDateString('pt-BR')} · ${item.socio} · ${item.tipo}${item.moto ? ` · ${item.moto}` : ''}`,
+        note: `Investimento sem despesa replicada — ${fmt(valor)}`,
+        cells: months.map((m: any) => {
+          const bate = Number(m.ano) === anoItem && Number(m.mes) === mesItem;
+          const val = bate ? valor : 0;
+          return {
+            label: MESES[(m.mes || 1) - 1] || m.label,
+            value: val,
+            displayValue: fmt(val),
+          };
+        }),
+      };
+    });
+
     return [
       buildLinha('receitaBruta', 'Receita bruta', 'receitaBruta', 'Base bruta das vendas por mes'),
       buildLinha('taxasMl', 'Taxas ML', 'taxasMl', 'Taxas cobradas pelo Mercado Livre'),
@@ -218,8 +241,9 @@ export default function DespesasReceitaPage() {
       buildLinha('investimentoTotal', 'Investimento total', 'investimentoTotal', 'Total investido no mes'),
       buildLinha('investimentoReplicado', 'Investimento replicado', 'investimentoReplicado', 'Investimento ja lancado como despesa'),
       buildLinha('investimentoNaoReplicado', 'Investimento nao replicado', 'investimentoNaoReplicado', 'Investimento AINDA sem despesa replicada'),
+      ...diferencaLinhas,
     ];
-  }, [months, categorias, totals]);
+  }, [months, categorias, totals, investimentos]);
 
   const painelPersonalizadoRows = useMemo(
     () => painelSelecionadas
@@ -490,37 +514,78 @@ export default function DespesasReceitaPage() {
             {painelCarregando ? (
               <div style={{ color: 'var(--ink-muted)', fontSize: 13 }}>Carregando variante salva...</div>
             ) : (
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fill, minmax(220px, 1fr))',
-                  gap: 8,
-                  marginBottom: 18,
-                }}
-              >
-                {linhasDisponiveis.map((linha) => {
-                  const marcada = painelSelecionadas.includes(linha.key);
-                  return (
-                    <label
-                      key={linha.key}
+              <>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fill, minmax(220px, 1fr))',
+                    gap: 8,
+                    marginBottom: linhasDisponiveis.some((linha) => linha.key.startsWith('diferenca:')) ? 0 : 18,
+                  }}
+                >
+                  {linhasDisponiveis.filter((linha) => !linha.key.startsWith('diferenca:')).map((linha) => {
+                    const marcada = painelSelecionadas.includes(linha.key);
+                    return (
+                      <label
+                        key={linha.key}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          padding: '8px 10px',
+                          border: `1px solid ${marcada ? 'var(--blue-500)' : 'var(--border)'}`,
+                          borderRadius: 8,
+                          background: marcada ? '#eff6ff' : 'var(--white)',
+                          cursor: 'pointer',
+                          fontSize: 12.5,
+                        }}
+                      >
+                        <input type="checkbox" checked={marcada} onChange={() => togglePainelLinha(linha.key)} />
+                        {linha.label}
+                      </label>
+                    );
+                  })}
+                </div>
+
+                {linhasDisponiveis.some((linha) => linha.key.startsWith('diferenca:')) && (
+                  <div style={{ marginTop: 16 }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--red)', marginBottom: 8 }}>
+                      Diferencas (investimentos sem despesa replicada no periodo filtrado)
+                    </div>
+                    <div
                       style={{
-                        display: 'flex',
-                        alignItems: 'center',
+                        display: 'grid',
+                        gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fill, minmax(280px, 1fr))',
                         gap: 8,
-                        padding: '8px 10px',
-                        border: `1px solid ${marcada ? 'var(--blue-500)' : 'var(--border)'}`,
-                        borderRadius: 8,
-                        background: marcada ? '#eff6ff' : 'var(--white)',
-                        cursor: 'pointer',
-                        fontSize: 12.5,
+                        marginBottom: 18,
                       }}
                     >
-                      <input type="checkbox" checked={marcada} onChange={() => togglePainelLinha(linha.key)} />
-                      {linha.label}
-                    </label>
-                  );
-                })}
-              </div>
+                      {linhasDisponiveis.filter((linha) => linha.key.startsWith('diferenca:')).map((linha) => {
+                        const marcada = painelSelecionadas.includes(linha.key);
+                        return (
+                          <label
+                            key={linha.key}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 8,
+                              padding: '8px 10px',
+                              border: `1px solid ${marcada ? 'var(--red)' : '#fecaca'}`,
+                              borderRadius: 8,
+                              background: marcada ? '#fef2f2' : 'var(--white)',
+                              cursor: 'pointer',
+                              fontSize: 12.5,
+                            }}
+                          >
+                            <input type="checkbox" checked={marcada} onChange={() => togglePainelLinha(linha.key)} />
+                            {linha.label}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </>
             )}
 
             {painelPersonalizadoRows.length === 0 ? (
