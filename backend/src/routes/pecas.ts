@@ -6,8 +6,48 @@ import { cancelarVendaComDevolucaoEtiqueta } from '../lib/cancelamento-venda';
 import { z } from 'zod';
 import { spDayStart, spDayEnd } from '../lib/timezone';
 import { getConfiguracaoGeral, saveConfiguracaoGeral } from '../lib/configuracoes-gerais';
+import { blingReq, findBlingProductsByCodes } from './bling';
 
 export const pecasRouter = Router();
+
+function getBaseSkuPeca(value: any) {
+  return String(value || '').trim().toUpperCase().replace(/-\d+$/, '');
+}
+
+async function getPrimeiroDepositoAtivoIdBling() {
+  try {
+    const dep = await blingReq('/depositos?pagina=1&limite=1&situacoes[]=1') as any;
+    return Number(dep?.data?.[0]?.id || 0) || null;
+  } catch {
+    return null;
+  }
+}
+
+// Baixa 1 unidade do estoque do produto no Bling (best-effort — nao bloqueia o fluxo local se
+// o produto nao existir la ou a chamada falhar). Usado quando uma peca vai pra Prejuizo/Restrita,
+// pra o anuncio parar de vender uma peca que nao esta mais disponivel.
+async function darBaixaEstoqueBling(idPeca: string, observacoes: string) {
+  try {
+    const baseSku = getBaseSkuPeca(idPeca);
+    if (!baseSku) return;
+    const produtosByCode = await findBlingProductsByCodes([baseSku]);
+    const produto = produtosByCode.get(baseSku);
+    if (!produto?.id) return;
+
+    const estoquePayload: any = {
+      produto: { id: Number(produto.id) },
+      operacao: 'S',
+      quantidade: 1,
+      observacoes,
+    };
+    const depositoId = await getPrimeiroDepositoAtivoIdBling();
+    if (depositoId) estoquePayload.deposito = { id: depositoId };
+
+    await blingReq('/estoques', { method: 'POST', body: JSON.stringify(estoquePayload) });
+  } catch (e: any) {
+    console.error('[prejuizo] Falha ao dar baixa no estoque do Bling:', e?.message);
+  }
+}
 
 // ===== Rotina de limpeza automatica das fotos de capa de pecas ja vendidas =====
 // Peca e unica: depois de vendida ha mais de X dias, nao sera revendida, entao a foto
@@ -1164,6 +1204,8 @@ pecasRouter.patch('/:id/prejuizo', requireEstoqueAction('editar'), async (req, r
 
       return prejuizo;
     });
+
+    void darBaixaEstoqueBling(peca.idPeca, `Baixa por prejuizo - ${detalhe}`);
 
     res.json(result);
   } catch (e) { next(e); }
