@@ -422,7 +422,7 @@ export default function InvestimentosPage() {
         tipo: form.tipo,
         moto: form.moto || null,
         valor: Number(form.valor),
-        replicarDespesa: !editingId && replicarDespesa ? {
+        replicarDespesa: replicarDespesa ? {
           data: form.data,
           detalhes: investimentoTituloParaDespesa(form),
           categoria: replicarDespesa.categoria,
@@ -557,13 +557,13 @@ export default function InvestimentosPage() {
                 <input style={inputStyle} type="number" step="0.01" placeholder="0,00" value={form.valor} onChange={(e) => setForm((value) => ({ ...value, valor: e.target.value }))} />
               </div>
             </div>
-            {!editingId && (
-              <div style={{ marginTop: 14, border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px', background: '#fafcff' }}>
+            <div style={{ marginTop: 14, border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px', background: '#fafcff' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: isPhone ? 'stretch' : 'center', flexDirection: isPhone ? 'column' : 'row', gap: 10 }}>
                   <div>
                     <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Replicar Despesa</div>
                     <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 4 }}>
                       Opcional. Ao salvar o investimento, o ANB tambem cria uma despesa paga com a mesma data de lancamento e quitacao.
+                      {editingId ? ' Se voce ja tinha replicado essa despesa ao criar, evite replicar de novo aqui pra nao duplicar.' : ''}
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -606,7 +606,6 @@ export default function InvestimentosPage() {
                   </div>
                 )}
               </div>
-            )}
             <div style={{ display: 'flex', flexDirection: isPhone ? 'column' : 'row', justifyContent: 'flex-end', gap: 10, marginTop: 14 }}>
               <button
                 onClick={salvar}
@@ -784,7 +783,7 @@ export default function InvestimentosPage() {
           </div>
         )}
       </div>
-      {showReplicarDespesaModal && !editingId && (
+      {showReplicarDespesaModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, .46)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 18, zIndex: 200 }}>
           <div style={{ width: '100%', maxWidth: 620, background: 'var(--white)', borderRadius: 14, border: '1px solid var(--border)', boxShadow: '0 22px 50px rgba(15, 23, 42, .18)', overflow: 'hidden' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 22px', borderBottom: '1px solid var(--border)' }}>

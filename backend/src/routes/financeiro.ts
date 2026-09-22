@@ -823,22 +823,56 @@ financeiroRouter.post('/investimentos', async (req, res, next) => {
 
 financeiroRouter.put('/investimentos/:id', async (req, res, next) => {
   try {
-    const parsed = investimentoSchema.parse({
+    const parsed = investimentoCreateSchema.parse({
       ...req.body,
       tipo: normalizeInvestimentoTipo(req.body?.tipo),
     });
 
-    const row = await prisma.investimento.update({
-      where: { id: Number(req.params.id) },
-      data: {
-        data: new Date(parsed.data),
-        socio: parsed.socio,
-        tipo: parsed.tipo,
-        moto: normalizeText(parsed.moto),
-        valor: parsed.valor,
-      },
+    const despesaReplicada = parsed.replicarDespesa
+      ? {
+          data: parseDateOnlyInput(parsed.replicarDespesa.data),
+          detalhes: parsed.replicarDespesa.detalhes,
+          categoria: parsed.replicarDespesa.categoria || 'Outros',
+          valor: parsed.replicarDespesa.valor,
+          observacao: normalizeText(parsed.replicarDespesa.observacao),
+        }
+      : null;
+
+    const result = await prisma.$transaction(async (tx) => {
+      const investimento = await tx.investimento.update({
+        where: { id: Number(req.params.id) },
+        data: {
+          data: new Date(parsed.data),
+          socio: parsed.socio,
+          tipo: parsed.tipo,
+          moto: normalizeText(parsed.moto),
+          valor: parsed.valor,
+        },
+      });
+
+      const despesa = despesaReplicada
+        ? await tx.despesa.create({
+            data: {
+              data: despesaReplicada.data,
+              detalhes: despesaReplicada.detalhes,
+              categoria: despesaReplicada.categoria,
+              valor: despesaReplicada.valor,
+              statusPagamento: 'pago',
+              dataPagamento: despesaReplicada.data,
+              observacao: despesaReplicada.observacao,
+            },
+          })
+        : null;
+
+      return { investimento, despesa };
     });
-    res.json({ ...row, tipo: normalizeInvestimentoTipo(row.tipo), valor: toNumber(row.valor) });
+
+    res.json({
+      ...result.investimento,
+      tipo: normalizeInvestimentoTipo(result.investimento.tipo),
+      valor: toNumber(result.investimento.valor),
+      despesaReplicada: result.despesa ? mapDespesaRow(result.despesa) : null,
+    });
   } catch (e) {
     next(e);
   }
