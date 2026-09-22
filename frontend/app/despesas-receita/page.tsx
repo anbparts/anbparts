@@ -180,77 +180,60 @@ export default function DespesasReceitaPage() {
     ];
   }, [months, categorias, totals]);
 
-  // Registro mestre de linhas disponiveis pro painel personalizado — mesmos campos do painel
-  // fixo acima, mais as 3 novas de investimento (total / replicado / nao replicado) por mes.
-  const linhasDisponiveis = useMemo(() => {
-    const buildLinha = (key: string, label: string, field: string, note?: string) => ({
-      key,
-      label,
-      note,
-      cells: months.map((item: any) => ({
-        label: MESES[(item.mes || 1) - 1] || item.label,
-        value: Number(item[field] || 0),
-        displayValue: fmt(Number(item[field] || 0)),
+  // Diferencas disponiveis pro painel personalizado: cada investimento sem despesa replicada
+  // (do quadro "Investimentos x Despesas" acima) vira uma linha propria e selecionavel — o valor
+  // so aparece no mes daquele lancamento.
+  const diferencasDisponiveis = useMemo(() => (investimentos.itensNaoReplicados || []).map((item: any) => {
+    const dataItem = new Date(item.data);
+    const mesItem = dataItem.getMonth() + 1;
+    const anoItem = dataItem.getFullYear();
+    const valor = Number(item.valor || 0);
+    return {
+      key: `diferenca:${item.id}`,
+      label: `⚠ ${dataItem.toLocaleDateString('pt-BR')} · ${item.socio} · ${item.tipo}${item.moto ? ` · ${item.moto}` : ''}`,
+      note: `Investimento sem despesa replicada — ${fmt(valor)}`,
+      cells: months.map((m: any) => {
+        const bate = Number(m.ano) === anoItem && Number(m.mes) === mesItem;
+        const val = bate ? valor : 0;
+        return {
+          label: MESES[(m.mes || 1) - 1] || m.label,
+          value: val,
+          displayValue: fmt(val),
+        };
+      }),
+    };
+  }), [months, investimentos]);
+
+  // Painel personalizado = o mesmo painel padrao de cima, com as diferencas escolhidas entrando
+  // negativas logo antes do resultado — e o resultado recalculado descontando elas.
+  const painelPersonalizadoRows = useMemo(() => {
+    if (!heatmapRows.length) return [];
+    const diferencasSelecionadas = diferencasDisponiveis.filter((linha) => painelSelecionadas.includes(linha.key));
+    const linhasSemResultado = heatmapRows.slice(0, -1);
+    const linhaResultado = heatmapRows[heatmapRows.length - 1];
+
+    const diferencasNegativas = diferencasSelecionadas.map((linha) => ({
+      label: linha.label,
+      note: linha.note,
+      cells: linha.cells.map((c) => ({
+        label: c.label,
+        value: -c.value,
+        displayValue: c.value !== 0 ? `- ${fmt(c.value)}` : fmt(0),
       })),
-    });
+    }));
 
-    const categoriaLinhas = categorias
-      .filter((cat) => (totals.porCategoria?.[cat] || 0) > 0)
-      .map((cat) => ({
-        key: `categoria:${cat}`,
-        label: `↳ ${cat}`,
-        note: `Despesas da categoria ${cat}`,
-        cells: months.map((item: any) => ({
-          label: MESES[(item.mes || 1) - 1] || item.label,
-          value: Number(item.despesasPorCategoria?.[cat] || 0),
-          displayValue: fmt(Number(item.despesasPorCategoria?.[cat] || 0)),
-        })),
-      }));
+    const resultadoAjustado = {
+      label: diferencasSelecionadas.length ? 'Resultado final (com diferencas)' : linhaResultado.label,
+      note: diferencasSelecionadas.length ? 'Resultado bruto menos as diferencas selecionadas' : linhaResultado.note,
+      cells: linhaResultado.cells.map((c, idx) => {
+        const diffMes = diferencasSelecionadas.reduce((sum, linha) => sum + Number(linha.cells[idx]?.value || 0), 0);
+        const val = c.value - diffMes;
+        return { label: c.label, value: val, displayValue: fmt(val) };
+      }),
+    };
 
-    // Cada diferenca (investimento sem despesa replicada, do quadro "Investimentos x Despesas"
-    // acima) vira uma linha propria e selecionavel — o valor so aparece no mes daquele lancamento.
-    const diferencaLinhas = (investimentos.itensNaoReplicados || []).map((item: any) => {
-      const dataItem = new Date(item.data);
-      const mesItem = dataItem.getMonth() + 1;
-      const anoItem = dataItem.getFullYear();
-      const valor = Number(item.valor || 0);
-      return {
-        key: `diferenca:${item.id}`,
-        label: `⚠ ${dataItem.toLocaleDateString('pt-BR')} · ${item.socio} · ${item.tipo}${item.moto ? ` · ${item.moto}` : ''}`,
-        note: `Investimento sem despesa replicada — ${fmt(valor)}`,
-        cells: months.map((m: any) => {
-          const bate = Number(m.ano) === anoItem && Number(m.mes) === mesItem;
-          const val = bate ? valor : 0;
-          return {
-            label: MESES[(m.mes || 1) - 1] || m.label,
-            value: val,
-            displayValue: fmt(val),
-          };
-        }),
-      };
-    });
-
-    return [
-      buildLinha('receitaBruta', 'Receita bruta', 'receitaBruta', 'Base bruta das vendas por mes'),
-      buildLinha('taxasMl', 'Taxas ML', 'taxasMl', 'Taxas cobradas pelo Mercado Livre'),
-      buildLinha('fretePago', 'Frete pago', 'fretePago', 'Frete vinculado as vendas do periodo'),
-      buildLinha('despesasGerais', 'Despesas gerais', 'despesasGerais', 'Despesas cadastradas no periodo'),
-      ...categoriaLinhas,
-      buildLinha('totalSaidas', 'Saidas totais', 'totalSaidas', 'Taxas + frete + despesas gerais'),
-      buildLinha('resultadoBruto', 'Resultado bruto', 'resultadoBruto', 'Receita bruta menos as saidas do periodo'),
-      buildLinha('investimentoTotal', 'Investimento total', 'investimentoTotal', 'Total investido no mes'),
-      buildLinha('investimentoReplicado', 'Investimento replicado', 'investimentoReplicado', 'Investimento ja lancado como despesa'),
-      buildLinha('investimentoNaoReplicado', 'Investimento nao replicado', 'investimentoNaoReplicado', 'Investimento AINDA sem despesa replicada'),
-      ...diferencaLinhas,
-    ];
-  }, [months, categorias, totals, investimentos]);
-
-  const painelPersonalizadoRows = useMemo(
-    () => painelSelecionadas
-      .map((key) => linhasDisponiveis.find((linha) => linha.key === key))
-      .filter(Boolean) as typeof linhasDisponiveis,
-    [painelSelecionadas, linhasDisponiveis],
-  );
+    return [...linhasSemResultado, ...diferencasNegativas, resultadoAjustado];
+  }, [heatmapRows, diferencasDisponiveis, painelSelecionadas]);
 
   const anosDisponiveis = useMemo(() => {
     const current = Number(filtroAno) || new Date().getFullYear();
@@ -498,7 +481,7 @@ export default function DespesasReceitaPage() {
             <div>
               <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>Painel personalizado</div>
               <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>
-                Escolha as linhas que quer ver (incluindo as diferencas de investimento) e salve como variante — a ultima variante salva e sempre a que carrega ao abrir esta tela.
+                Mesmo painel padrao de cima, com as diferencas (investimentos sem despesa replicada) que voce escolher entrando negativas antes do resultado final. Salve como variante — a ultima variante salva e sempre a que carrega ao abrir esta tela.
               </div>
             </div>
             <button
@@ -513,17 +496,23 @@ export default function DespesasReceitaPage() {
           <div style={{ padding: isCompact ? 16 : 18 }}>
             {painelCarregando ? (
               <div style={{ color: 'var(--ink-muted)', fontSize: 13 }}>Carregando variante salva...</div>
+            ) : diferencasDisponiveis.length === 0 ? (
+              <div style={{ color: 'var(--ink-muted)', fontSize: 13, marginBottom: 18 }}>
+                Nenhuma diferenca (investimento sem despesa replicada) no periodo filtrado.
+              </div>
             ) : (
-              <>
+              <div style={{ marginBottom: 18 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--red)', marginBottom: 8 }}>
+                  Diferencas (investimentos sem despesa replicada no periodo filtrado)
+                </div>
                 <div
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fill, minmax(220px, 1fr))',
+                    gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fill, minmax(280px, 1fr))',
                     gap: 8,
-                    marginBottom: linhasDisponiveis.some((linha) => linha.key.startsWith('diferenca:')) ? 0 : 18,
                   }}
                 >
-                  {linhasDisponiveis.filter((linha) => !linha.key.startsWith('diferenca:')).map((linha) => {
+                  {diferencasDisponiveis.map((linha) => {
                     const marcada = painelSelecionadas.includes(linha.key);
                     return (
                       <label
@@ -533,9 +522,9 @@ export default function DespesasReceitaPage() {
                           alignItems: 'center',
                           gap: 8,
                           padding: '8px 10px',
-                          border: `1px solid ${marcada ? 'var(--blue-500)' : 'var(--border)'}`,
+                          border: `1px solid ${marcada ? 'var(--red)' : '#fecaca'}`,
                           borderRadius: 8,
-                          background: marcada ? '#eff6ff' : 'var(--white)',
+                          background: marcada ? '#fef2f2' : 'var(--white)',
                           cursor: 'pointer',
                           fontSize: 12.5,
                         }}
@@ -546,55 +535,10 @@ export default function DespesasReceitaPage() {
                     );
                   })}
                 </div>
-
-                {linhasDisponiveis.some((linha) => linha.key.startsWith('diferenca:')) && (
-                  <div style={{ marginTop: 16 }}>
-                    <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--red)', marginBottom: 8 }}>
-                      Diferencas (investimentos sem despesa replicada no periodo filtrado)
-                    </div>
-                    <div
-                      style={{
-                        display: 'grid',
-                        gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fill, minmax(280px, 1fr))',
-                        gap: 8,
-                        marginBottom: 18,
-                      }}
-                    >
-                      {linhasDisponiveis.filter((linha) => linha.key.startsWith('diferenca:')).map((linha) => {
-                        const marcada = painelSelecionadas.includes(linha.key);
-                        return (
-                          <label
-                            key={linha.key}
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: 8,
-                              padding: '8px 10px',
-                              border: `1px solid ${marcada ? 'var(--red)' : '#fecaca'}`,
-                              borderRadius: 8,
-                              background: marcada ? '#fef2f2' : 'var(--white)',
-                              cursor: 'pointer',
-                              fontSize: 12.5,
-                            }}
-                          >
-                            <input type="checkbox" checked={marcada} onChange={() => togglePainelLinha(linha.key)} />
-                            {linha.label}
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
-
-            {painelPersonalizadoRows.length === 0 ? (
-              <div style={{ color: 'var(--ink-muted)', fontSize: 13, padding: '10px 0' }}>
-                Nenhuma linha selecionada ainda. Marque as linhas acima pra montar o painel.
               </div>
-            ) : (
-              <HeatmapChart rows={painelPersonalizadoRows} rowHeaderLabel="Linha" valueFormatter={fmt} emptyText="Sem periodos para exibir." />
             )}
+
+            <HeatmapChart rows={painelPersonalizadoRows} rowHeaderLabel="Linha" valueFormatter={fmt} emptyText="Sem periodos para exibir." />
           </div>
         </div>
       </div>
