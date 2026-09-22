@@ -88,14 +88,14 @@ export default function DespesasReceitaPage() {
   // Carrega a ultima variante salva do painel personalizado (uma unica vez, ao abrir a tela).
   useEffect(() => {
     api.financeiro.painelDespesasReceita.get()
-      .then((res) => setPainelSelecionadas(Array.isArray(res?.linhas) ? res.linhas : []))
+      .then((res: { ok: boolean; linhas: string[] }) => setPainelSelecionadas(Array.isArray(res?.linhas) ? res.linhas : []))
       .catch(() => setPainelSelecionadas([]))
       .finally(() => setPainelCarregando(false));
   }, []);
 
   function togglePainelLinha(key: string) {
     setPainelSalvo(false);
-    setPainelSelecionadas((atual) => (atual.includes(key) ? atual.filter((k) => k !== key) : [...atual, key]));
+    setPainelSelecionadas((atual: string[]) => (atual.includes(key) ? atual.filter((k: string) => k !== key) : [...atual, key]));
   }
 
   async function salvarPainelVariante() {
@@ -208,14 +208,14 @@ export default function DespesasReceitaPage() {
   // negativas logo antes do resultado — e o resultado recalculado descontando elas.
   const painelPersonalizadoRows = useMemo(() => {
     if (!heatmapRows.length) return [];
-    const diferencasSelecionadas = diferencasDisponiveis.filter((linha) => painelSelecionadas.includes(linha.key));
+    const diferencasSelecionadas = diferencasDisponiveis.filter((linha: any) => painelSelecionadas.includes(linha.key));
     const linhasSemResultado = heatmapRows.slice(0, -1);
     const linhaResultado = heatmapRows[heatmapRows.length - 1];
 
-    const diferencasNegativas = diferencasSelecionadas.map((linha) => ({
+    const diferencasNegativas = diferencasSelecionadas.map((linha: any) => ({
       label: linha.label,
       note: linha.note,
-      cells: linha.cells.map((c) => ({
+      cells: linha.cells.map((c: any) => ({
         label: c.label,
         value: -c.value,
         displayValue: c.value !== 0 ? `- ${fmt(c.value)}` : fmt(0),
@@ -225,8 +225,8 @@ export default function DespesasReceitaPage() {
     const resultadoAjustado = {
       label: diferencasSelecionadas.length ? 'Resultado final (com diferencas)' : linhaResultado.label,
       note: diferencasSelecionadas.length ? 'Resultado bruto menos as diferencas selecionadas' : linhaResultado.note,
-      cells: linhaResultado.cells.map((c, idx) => {
-        const diffMes = diferencasSelecionadas.reduce((sum, linha) => sum + Number(linha.cells[idx]?.value || 0), 0);
+      cells: linhaResultado.cells.map((c: any, idx: number) => {
+        const diffMes = diferencasSelecionadas.reduce((sum: number, linha: any) => sum + Number(linha.cells[idx]?.value || 0), 0);
         const val = c.value - diffMes;
         return { label: c.label, value: val, displayValue: fmt(val) };
       }),
@@ -512,7 +512,7 @@ export default function DespesasReceitaPage() {
                     gap: 8,
                   }}
                 >
-                  {diferencasDisponiveis.map((linha) => {
+                  {diferencasDisponiveis.map((linha: any) => {
                     const marcada = painelSelecionadas.includes(linha.key);
                     return (
                       <label
