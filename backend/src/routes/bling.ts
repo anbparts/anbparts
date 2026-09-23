@@ -641,6 +641,9 @@ export async function blingReq(pathUrl: string, options: any = {}, retries = 3):
     headers: {
       Authorization: `Bearer ${currentToken}`,
       'Content-Type': 'application/json',
+      // Exigido pelo Bling em TODA requisicao autenticada durante a migracao pro padrao JWT,
+      // nao so na obtencao/renovacao do token (ver https://developer.bling.com.br/migracao-jwt).
+      'enable-jwt': '1',
       ...(options.headers || {}),
     },
   });
