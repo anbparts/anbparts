@@ -4934,11 +4934,14 @@ blingRouter.get('/debug-ml-link', async (req, res, next) => {
 
     // API nova de Anuncios (o que aparece na tela "Anuncios ja exportados" do Bling) — testando
     // ao vivo pra ver o formato real da resposta (a doc oficial nao deixa claro onde fica o
-    // codigo/link externo do marketplace).
+    // codigo/link externo do marketplace). Exige tipoIntegracao + idLoja (usa o idLoja do
+    // primeiro lojaRow, que ja identifica a integracao Mercado Livre desse produto).
+    const idLojaMl = lojaRows[0]?.loja?.id ? Number(lojaRows[0].loja.id) : null;
     let anunciosLista: any = null;
     let anunciosDetalhe: any[] = [];
     try {
-      anunciosLista = await blingReq(`/anuncios?idProduto=${Number(produto.id)}&limite=100`);
+      if (!idLojaMl) throw new Error('Sem idLoja (nenhum lojaRow encontrado) para consultar /anuncios.');
+      anunciosLista = await blingReq(`/anuncios?idProduto=${Number(produto.id)}&limite=100&tipoIntegracao=MercadoLivre&idLoja=${idLojaMl}`);
       const anuncioIds: number[] = normalizeApiArray(anunciosLista?.data).map((a: any) => Number(a.id)).filter(Boolean);
       anunciosDetalhe = await Promise.all(anuncioIds.map(async (id) => {
         try { return await blingReq(`/anuncios/${id}`); } catch (e: any) { return { erro: e?.message, id }; }
