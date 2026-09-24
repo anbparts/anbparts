@@ -793,7 +793,12 @@ export function resolveBlingMercadoLivreItemId(produto: any, detail?: any, lojaR
 }
 
 function buildMercadoLivreItemLink(code: string | null) {
-  return code ? `https://produto.mercadolivre.com.br/${code}` : null;
+  if (!code) return null;
+  // O formato real do link exige hifen logo apos "MLB" (ex.: MLB-1234567890) — os codigos que
+  // circulam pelo sistema ficam normalizados SEM hifen (MLB1234567890), entao precisa recolocar
+  // aqui na hora de montar a URL, senao o Mercado Livre responde "pagina nao existe".
+  const comHifen = code.replace(/^(MLB)(\d+)$/i, '$1-$2');
+  return `https://produto.mercadolivre.com.br/${comHifen}`;
 }
 
 async function resolveMercadoLivrePublicLinkByItemCode(code: string | null) {
@@ -4898,6 +4903,43 @@ blingRouter.post('/sync/produtos', async (req, res, next) => {
   }
 });
 
+// GET /bling/debug-ml-link?sku=HD01_0054 — diagnostico pontual: mostra exatamente de onde cada
+// candidato a codigo ML esta vindo (lojaRows / detail / produto) pra achar a fonte do dado errado.
+// So leitura, nao altera nada. Remover depois de resolver o caso do link com codigo trocado.
+blingRouter.get('/debug-ml-link', async (req, res, next) => {
+  try {
+    const sku = getBaseSku(String(req.query?.sku || ''));
+    if (!sku) return res.status(400).json({ error: 'Informe ?sku=' });
+
+    const produtosByCode = await findBlingProductsByCodes([sku], { forceRefresh: true });
+    const produto = produtosByCode.get(sku);
+    if (!produto?.id) return res.json({ ok: true, sku, encontradoNoBling: false });
+
+    const detail = await fetchBlingProductDetailById(Number(produto.id), { forceRefresh: true });
+    const lojaRows = await fetchProdutoLojaLinksByProductId(Number(produto.id), { forceRefresh: true });
+
+    const codigoPorLojaRow = lojaRows.map((row: any, idx: number) => ({ idx, codigo: findFirstMercadoLivreItemCode(row) }));
+    const codigoDetail = findFirstMercadoLivreItemCode(detail);
+    const codigoProduto = findFirstMercadoLivreItemCode(produto);
+    const resolvido = resolveBlingMercadoLivreItemId(produto, detail, lojaRows);
+
+    res.json({
+      ok: true,
+      sku,
+      produtoIdBling: produto.id,
+      resolvido,
+      codigoPorLojaRow,
+      codigoDetail,
+      codigoProduto,
+      lojaRows,
+      produto,
+      detail,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
 blingRouter.post('/atualizar-link-ml-skus', async (req, res, next) => {
   try {
     const skus: string[] = Array.isArray(req.body?.skus) ? req.body.skus : [];
@@ -4954,7 +4996,7 @@ blingRouter.post('/atualizar-link-ml-skus', async (req, res, next) => {
       if (itemIdBling) {
         // Tem anúncio no Bling: atualiza mercadoLivreItemId + permalink
         const permalink = await getMercadoLivreItemPermalink(itemIdBling)
-          || `https://produto.mercadolivre.com.br/${itemIdBling}`;
+          || buildMercadoLivreItemLink(itemIdBling);
 
         const ids = pecasDeste.map((p) => Number(p.id));
         await prisma.peca.updateMany({
