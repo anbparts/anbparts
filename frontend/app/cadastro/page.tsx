@@ -91,6 +91,22 @@ type CadastroCategoriaLinha = {
 };
 type CadastroCategoriaSugestao = { sku: string; categorias: { id: number; nome: string }[]; tags: string[] };
 
+type ManutencaoFotosLinha = {
+  sku: string;
+  ok: boolean;
+  erro: string;
+  totalFotos: number;
+  pastaFotos: string;
+  temMl: boolean;
+  temNuvemshop: boolean;
+  status: 'pendente' | 'processando' | 'concluido' | 'erro';
+  etapaAtual: string;
+  mlOk: boolean | null;
+  mlErro: string;
+  nuvemshopOk: boolean | null;
+  nuvemshopErro: string;
+};
+
 const FOTOS_SISTEMAS_PROCESSAMENTO: CadastroFotosSistema[] = ['anb', 'ml', 'nuvemshop'];
 const FOTOS_SISTEMA_LABEL: Record<CadastroFotosSistema, string> = {
   anb: 'ANB',
@@ -404,30 +420,114 @@ export default function CadastroPage() {
   const [skusCopiados, setSkusCopiados] = useState(false);
   const [paginaCadastro, setPaginaCadastro] = useState<'sku' | 'fotos-drive' | 'fotos' | 'categoria' | 'fotos-manutencao'>('sku');
   // Fotos - Manutencao: substitui as fotos de anuncios ja publicados (ML/Nuvemshop) pelas fotos
-  // ja tratadas na pasta oficial da moto (rodar Fotos Drive antes e' obrigatorio).
+  // ja tratadas na pasta oficial da moto (rodar Fotos Drive antes e' obrigatorio). Processa 1 SKU
+  // por vez, etapa por etapa, pra mostrar o avanco na tela (igual a aba Fotos Anúncios).
   const [manutencaoSkusInput, setManutencaoSkusInput] = useState('');
-  const [manutencaoExecutando, setManutencaoExecutando] = useState(false);
-  const [manutencaoResultado, setManutencaoResultado] = useState<any[] | null>(null);
+  const [manutencaoPreparando, setManutencaoPreparando] = useState(false);
+  const [manutencaoProcessando, setManutencaoProcessando] = useState(false);
+  const [manutencaoLinhas, setManutencaoLinhas] = useState<ManutencaoFotosLinha[]>([]);
+  const [manutencaoSkuAtual, setManutencaoSkuAtual] = useState('');
   const [manutencaoErro, setManutencaoErro] = useState('');
 
-  async function executarManutencaoFotosUi() {
+  function atualizarManutencaoLinha(sku: string, patch: Partial<ManutencaoFotosLinha>) {
+    setManutencaoLinhas((prev: ManutencaoFotosLinha[]) => prev.map((l) => (l.sku === sku ? { ...l, ...patch } : l)));
+  }
+
+  async function prepararManutencaoUi() {
     if (!manutencaoSkusInput.trim()) return;
-    setManutencaoExecutando(true);
+    setManutencaoPreparando(true);
     setManutencaoErro('');
-    setManutencaoResultado(null);
+    setManutencaoLinhas([]);
     try {
-      const resp = await fetch(`${API}/cadastro/fotos/manutencao`, {
+      const resp = await fetch(`${API}/cadastro/fotos/manutencao/preparar`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ skus: manutencaoSkusInput }),
       });
-      const data = await readApiResponse(resp, 'Erro na manutencao de fotos');
-      setManutencaoResultado(Array.isArray(data.itens) ? data.itens : []);
+      const data = await readApiResponse(resp, 'Erro ao preparar manutencao de fotos');
+      const itens: any[] = Array.isArray(data.itens) ? data.itens : [];
+      setManutencaoLinhas(itens.map((item) => ({
+        sku: item.sku,
+        ok: Boolean(item.ok),
+        erro: item.erro || '',
+        totalFotos: item.totalFotos || 0,
+        pastaFotos: item.pastaFotos || '',
+        temMl: Boolean(item.temMl),
+        temNuvemshop: Boolean(item.temNuvemshop),
+        status: item.ok ? 'pendente' : 'erro',
+        etapaAtual: '',
+        mlOk: null,
+        mlErro: '',
+        nuvemshopOk: null,
+        nuvemshopErro: '',
+      })));
     } catch (e: any) {
-      setManutencaoErro(e?.message || 'Erro na manutencao de fotos.');
+      setManutencaoErro(e?.message || 'Erro ao preparar manutencao de fotos.');
     }
-    setManutencaoExecutando(false);
+    setManutencaoPreparando(false);
+  }
+
+  async function manutencaoPostJson(path: string, body: any) {
+    const resp = await fetch(`${API}${path}`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    return readApiResponse(resp, 'Erro na manutencao de fotos');
+  }
+
+  async function processarManutencaoTodos() {
+    const pendentes = manutencaoLinhas.filter((l: ManutencaoFotosLinha) => l.ok && l.status === 'pendente');
+    if (!pendentes.length) return;
+    setManutencaoProcessando(true);
+
+    for (const linha of pendentes) {
+      setManutencaoSkuAtual(linha.sku);
+      atualizarManutencaoLinha(linha.sku, { status: 'processando' });
+
+      if (linha.temMl) {
+        atualizarManutencaoLinha(linha.sku, { etapaAtual: 'Subindo fotos novas no Mercado Livre...' });
+        try {
+          const up = await manutencaoPostJson('/cadastro/fotos/manutencao/ml-upload', { sku: linha.sku });
+          if (up.ok) {
+            atualizarManutencaoLinha(linha.sku, { etapaAtual: 'Trocando fotos no Mercado Livre...' });
+            const troca = await manutencaoPostJson('/cadastro/fotos/manutencao/ml-trocar', { itemId: up.itemId, ids: up.ids });
+            atualizarManutencaoLinha(linha.sku, { mlOk: Boolean(troca.ok), mlErro: troca.erro || '' });
+          } else {
+            atualizarManutencaoLinha(linha.sku, { mlOk: false, mlErro: up.erro || 'Falha ao subir fotos.' });
+          }
+        } catch (e: any) {
+          atualizarManutencaoLinha(linha.sku, { mlOk: false, mlErro: e?.message || 'Erro no Mercado Livre.' });
+        }
+      } else {
+        atualizarManutencaoLinha(linha.sku, { mlOk: false, mlErro: 'SKU sem item vinculado no Mercado Livre.' });
+      }
+
+      if (linha.temNuvemshop) {
+        atualizarManutencaoLinha(linha.sku, { etapaAtual: 'Apagando fotos antigas na Nuvemshop...' });
+        try {
+          const limpar = await manutencaoPostJson('/cadastro/fotos/manutencao/nuvemshop-limpar', { sku: linha.sku });
+          if (limpar.ok) {
+            atualizarManutencaoLinha(linha.sku, { etapaAtual: 'Enviando fotos novas na Nuvemshop...' });
+            const enviar = await manutencaoPostJson('/cadastro/fotos/manutencao/nuvemshop-enviar', { sku: linha.sku });
+            atualizarManutencaoLinha(linha.sku, { nuvemshopOk: Boolean(enviar.ok), nuvemshopErro: enviar.erro || '' });
+          } else {
+            atualizarManutencaoLinha(linha.sku, { nuvemshopOk: false, nuvemshopErro: limpar.erro || 'Falha ao apagar fotos antigas.' });
+          }
+        } catch (e: any) {
+          atualizarManutencaoLinha(linha.sku, { nuvemshopOk: false, nuvemshopErro: e?.message || 'Erro na Nuvemshop.' });
+        }
+      } else {
+        atualizarManutencaoLinha(linha.sku, { nuvemshopOk: false, nuvemshopErro: 'SKU sem produto encontrado na Nuvemshop.' });
+      }
+
+      atualizarManutencaoLinha(linha.sku, { status: 'concluido', etapaAtual: '' });
+    }
+
+    setManutencaoSkuAtual('');
+    setManutencaoProcessando(false);
   }
   // Camera de foto direto na pagina (mobile): tira fotos do SKU e sobe tudo pro Drive ao finalizar
   const [cameraSku, setCameraSku] = useState<string | null>(null);
@@ -1884,73 +1984,105 @@ export default function CadastroPage() {
     </>
   );
 
-  const renderFotosManutencaoConteudo = () => (
-    <>
-      <div style={{ ...s.card, padding: isPhone ? '14px' : '18px' }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 4 }}>Manutenção de fotos em anúncios já publicados</div>
-        <div style={{ fontSize: 12, color: 'var(--gray-500)', marginBottom: 14, lineHeight: 1.5 }}>
-          Substitui <b>todas</b> as fotos do anúncio no Mercado Livre e na Nuvemshop pelas fotos já tratadas na pasta oficial da moto. Rode o <b>Fotos Drive</b> primeiro (é de lá que vêm as fotos novas) — as antigas são removidas dos dois marketplaces.
-        </div>
-        <label style={s.label}>SKUs</label>
-        <textarea
-          style={{ ...s.input, minHeight: isPhone ? 150 : 110, resize: 'vertical' }}
-          value={manutencaoSkusInput}
-          onChange={(e: any) => setManutencaoSkusInput(e.target.value)}
-          placeholder={'HD04_0001\nPN_0001\nYM01_0001'}
-        />
-        <button
-          onClick={executarManutencaoFotosUi}
-          disabled={manutencaoExecutando || !manutencaoSkusInput.trim()}
-          style={{ ...s.btn, marginTop: 10, background: '#7c3aed', color: '#fff', opacity: manutencaoExecutando ? 0.7 : 1, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}
-        >
-          {manutencaoExecutando ? 'Substituindo fotos...' : 'Substituir fotos'}
-        </button>
-        {manutencaoErro && <div style={{ marginTop: 10, fontSize: 12, color: '#dc2626' }}>⚠ {manutencaoErro}</div>}
-      </div>
+  const renderFotosManutencaoConteudo = () => {
+    const total = manutencaoLinhas.length;
+    const prontos = manutencaoLinhas.filter((l: ManutencaoFotosLinha) => l.ok).length;
+    const concluidos = manutencaoLinhas.filter((l: ManutencaoFotosLinha) => l.status === 'concluido').length;
+    const pendentesParaProcessar = manutencaoLinhas.filter((l: ManutencaoFotosLinha) => l.ok && l.status === 'pendente').length;
 
-      {manutencaoResultado && (
-        <div style={{ ...s.card, padding: isPhone ? '12px' : '16px', marginTop: 14 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 12 }}>
-            {manutencaoResultado.length} SKU(s) processado(s)
+    return (
+      <>
+        <div style={{ ...s.card, padding: isPhone ? '14px' : '18px' }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 4 }}>Manutenção de fotos em anúncios já publicados</div>
+          <div style={{ fontSize: 12, color: 'var(--gray-500)', marginBottom: 14, lineHeight: 1.5 }}>
+            Substitui <b>todas</b> as fotos do anúncio no Mercado Livre e na Nuvemshop pelas fotos já tratadas na pasta oficial da moto. Rode o <b>Fotos Drive</b> primeiro (é de lá que vêm as fotos novas) — as antigas são removidas dos dois marketplaces.
           </div>
-          <div style={{ display: 'grid', gap: 10 }}>
-            {manutencaoResultado.map((item: any) => {
-              if (item.erro && !item.ml && !item.nuvemshop) {
+          <label style={s.label}>SKUs</label>
+          <textarea
+            style={{ ...s.input, minHeight: isPhone ? 150 : 110, resize: 'vertical' }}
+            value={manutencaoSkusInput}
+            onChange={(e: any) => setManutencaoSkusInput(e.target.value)}
+            placeholder={'HD04_0001\nPN_0001\nYM01_0001'}
+          />
+          <button
+            onClick={prepararManutencaoUi}
+            disabled={manutencaoPreparando || manutencaoProcessando || !manutencaoSkusInput.trim()}
+            style={{ ...s.btn, marginTop: 10, background: '#7c3aed', color: '#fff', opacity: (manutencaoPreparando || manutencaoProcessando) ? 0.7 : 1, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}
+          >
+            {manutencaoPreparando ? 'Buscando...' : 'Buscar SKUs'}
+          </button>
+          {manutencaoErro && <div style={{ marginTop: 10, fontSize: 12, color: '#dc2626' }}>⚠ {manutencaoErro}</div>}
+        </div>
+
+        {total > 0 && (
+          <div style={{ ...s.card, padding: isPhone ? '12px' : '16px', marginTop: 14 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-800)' }}>
+                {total} SKU(s) · {prontos} pronto(s) · {concluidos} concluído(s)
+              </div>
+              <button
+                onClick={processarManutencaoTodos}
+                disabled={manutencaoProcessando || pendentesParaProcessar === 0}
+                style={{ ...s.btn, background: '#16a34a', color: '#fff', opacity: (manutencaoProcessando || pendentesParaProcessar === 0) ? 0.6 : 1 }}
+              >
+                {manutencaoProcessando ? 'Processando...' : `Processar ${pendentesParaProcessar} SKU(s)`}
+              </button>
+            </div>
+
+            <div style={{ display: 'grid', gap: 10 }}>
+              {manutencaoLinhas.map((linha: ManutencaoFotosLinha) => {
+                const emProcessamento = linha.sku === manutencaoSkuAtual;
+                if (!linha.ok) {
+                  return (
+                    <div key={linha.sku} style={{ border: '1px solid #fecaca', borderRadius: 8, padding: 12, background: '#fef2f2' }}>
+                      <div style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: 'var(--gray-800)' }}>{linha.sku}</div>
+                      <div style={{ fontSize: 12, color: '#dc2626', marginTop: 4 }}>⚠ {linha.erro}</div>
+                    </div>
+                  );
+                }
                 return (
-                  <div key={item.sku} style={{ border: '1px solid #fecaca', borderRadius: 8, padding: 12, background: '#fef2f2' }}>
-                    <div style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: 'var(--gray-800)' }}>{item.sku}</div>
-                    <div style={{ fontSize: 12, color: '#dc2626', marginTop: 4 }}>⚠ {item.erro}</div>
+                  <div key={linha.sku} style={{ border: emProcessamento ? '2px solid #7c3aed' : '1px solid var(--border)', borderRadius: 8, padding: 12, background: emProcessamento ? '#faf5ff' : 'var(--white)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                      <div style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: 'var(--gray-800)' }}>{linha.sku}</div>
+                      <div style={{ fontSize: 11.5, color: 'var(--gray-500)' }}>{linha.totalFotos} foto(s) na pasta oficial</div>
+                    </div>
+
+                    {linha.status === 'processando' && linha.etapaAtual && (
+                      <div style={{ marginTop: 6 }}>
+                        <span style={s.badge('#6d28d9', '#faf5ff', '#c4b5fd')}>{linha.etapaAtual}</span>
+                      </div>
+                    )}
+                    {linha.status === 'pendente' && (
+                      <div style={{ marginTop: 6 }}>
+                        <span style={s.badge('var(--gray-500)', '#f1f5f9', 'var(--border)')}>Aguardando</span>
+                      </div>
+                    )}
+
+                    {(linha.mlOk !== null || linha.nuvemshopOk !== null) && (
+                      <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '1fr 1fr', gap: 8, marginTop: 8 }}>
+                        <div style={{ padding: '8px 10px', borderRadius: 6, background: linha.mlOk ? '#f0fdf4' : linha.mlOk === false ? '#fef2f2' : '#f8fafc' }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: linha.mlOk ? '#16a34a' : linha.mlOk === false ? '#dc2626' : 'var(--gray-500)' }}>
+                            Mercado Livre {linha.mlOk ? '✓ substituído' : linha.mlOk === false ? '✗' : '…'}
+                          </div>
+                          {linha.mlErro && <div style={{ fontSize: 11, color: '#dc2626', marginTop: 3 }}>{linha.mlErro}</div>}
+                        </div>
+                        <div style={{ padding: '8px 10px', borderRadius: 6, background: linha.nuvemshopOk ? '#f0fdf4' : linha.nuvemshopOk === false ? '#fef2f2' : '#f8fafc' }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: linha.nuvemshopOk ? '#16a34a' : linha.nuvemshopOk === false ? '#dc2626' : 'var(--gray-500)' }}>
+                            Nuvemshop {linha.nuvemshopOk ? '✓ substituído' : linha.nuvemshopOk === false ? '✗' : '…'}
+                          </div>
+                          {linha.nuvemshopErro && <div style={{ fontSize: 11, color: '#dc2626', marginTop: 3 }}>{linha.nuvemshopErro}</div>}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
-              }
-              return (
-                <div key={item.sku} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 12 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-                    <div style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: 'var(--gray-800)' }}>{item.sku}</div>
-                    <div style={{ fontSize: 11.5, color: 'var(--gray-500)' }}>{item.totalFotos} foto(s) na pasta oficial</div>
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '1fr 1fr', gap: 8, marginTop: 8 }}>
-                    <div style={{ padding: '8px 10px', borderRadius: 6, background: item.ml?.substituido ? '#f0fdf4' : '#fef2f2' }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: item.ml?.substituido ? '#16a34a' : '#dc2626' }}>
-                        Mercado Livre {item.ml?.substituido ? '✓ substituído' : '✗'}
-                      </div>
-                      {item.ml?.erro && <div style={{ fontSize: 11, color: '#dc2626', marginTop: 3 }}>{item.ml.erro}</div>}
-                    </div>
-                    <div style={{ padding: '8px 10px', borderRadius: 6, background: item.nuvemshop?.substituido ? '#f0fdf4' : '#fef2f2' }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: item.nuvemshop?.substituido ? '#16a34a' : '#dc2626' }}>
-                        Nuvemshop {item.nuvemshop?.substituido ? '✓ substituído' : '✗'}
-                      </div>
-                      {item.nuvemshop?.erro && <div style={{ fontSize: 11, color: '#dc2626', marginTop: 3 }}>{item.nuvemshop.erro}</div>}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+              })}
+            </div>
           </div>
-        </div>
-      )}
-    </>
-  );
+        )}
+      </>
+    );
+  };
 
   const renderCategoriaConteudo = () => (
     <>

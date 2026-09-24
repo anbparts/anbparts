@@ -1201,16 +1201,63 @@ function limitarFotosMercadoLivre<T>(fotos: T[], imagensAtuais: number) {
 }
 
 // ===== Manutencao de Fotos: substitui TODAS as fotos de um anuncio ja publicado pelas novas =====
+// Quebrado em etapas granulares (nao 1 funcao so) pra o frontend poder mostrar o avanco de cada
+// SKU etapa por etapa (Subindo fotos ML, Trocando fotos ML, Apagando fotos Nuvemshop, ...).
 
-// ML: sobe cada foto nova (upload fica "solto", nao conta no limite do anuncio ate ser vinculado)
-// e depois faz 1 unico PUT no item so com os IDs novos — isso troca o array inteiro de fotos,
-// as antigas que nao forem citadas somem. Evita o problema de "12 antigas + novas > limite".
-async function substituirFotosMercadoLivre(itemId: string, fotos: DriveFoto[]) {
+// Resolve o contexto comum a todas as etapas de um SKU: peca finalizada, fotos ja tratadas na
+// pasta oficial da moto (Fotos Drive precisa ter rodado antes), item ML e produto Nuvemshop.
+async function resolverContextoManutencaoFotos(sku: string) {
+  const base = baseSku(sku);
+  const peca = await prisma.peca.findFirst({
+    where: { idPeca: base },
+    select: { idPeca: true, descricao: true, motoId: true, mercadoLivreItemId: true, mercadoLivreLink: true },
+  });
+  if (!peca) return { ok: false as const, erro: 'SKU nao encontrado como peca ja finalizada no ANB.' };
+
+  const { fotos, pasta } = await buscarFotosDriveSku(peca.motoId, base);
+  if (!fotos.length) return { ok: false as const, erro: 'Nenhuma foto encontrada na pasta oficial da moto para este SKU. Rode o Fotos Drive primeiro.' };
+
+  const itemId = normalizeText(peca.mercadoLivreItemId) || parseMercadoLivreItemId(peca.mercadoLivreLink) || null;
+  let produtoId: number | string | null = null;
+  try {
+    const produto = await buscarProdutoNuvemshopPorSku(base);
+    produtoId = produto?.id ?? null;
+  } catch { /* segue sem nuvemshop — a etapa dedicada reporta o erro se tentar usar */ }
+
+  return { ok: true as const, sku: base, pasta, fotos, itemId, produtoId };
+}
+
+// Preparacao: valida todos os SKUs da lista de uma vez (so metadados/Drive, rapido) pra montar a
+// listagem inicial na tela antes de processar 1 por 1.
+export async function prepararManutencaoFotos(skusInput: any) {
+  const skus = Array.from(new Set(parseSkuList(skusInput).map(baseSku).filter(Boolean)));
+  const itens = await Promise.all(skus.map(async (sku) => {
+    const ctx = await resolverContextoManutencaoFotos(sku);
+    if (!ctx.ok) return { sku, ok: false, erro: ctx.erro };
+    return {
+      sku: ctx.sku,
+      ok: true,
+      totalFotos: ctx.fotos.length,
+      pastaFotos: ctx.pasta,
+      temMl: Boolean(ctx.itemId),
+      temNuvemshop: Boolean(ctx.produtoId),
+    };
+  }));
+  return { ok: true, itens };
+}
+
+// Etapa 1/4 — ML: sobe cada foto nova. Fica "solta" (nao vinculada ao item ainda), entao nao
+// conta no limite de 12 do anuncio nesse momento.
+export async function manutencaoFotosMlUpload(sku: string) {
+  const ctx = await resolverContextoManutencaoFotos(sku);
+  if (!ctx.ok) return { ok: false, erro: ctx.erro };
+  if (!ctx.itemId) return { ok: false, erro: 'SKU sem item vinculado no Mercado Livre.' };
+
   const resultados: any[] = [];
-  const novosIds: string[] = [];
+  const ids: string[] = [];
   const token = await getMercadoLivreTokenForUpload();
 
-  for (const foto of fotos.slice(0, MERCADO_LIVRE_MAX_FOTOS)) {
+  for (const foto of ctx.fotos.slice(0, MERCADO_LIVRE_MAX_FOTOS)) {
     try {
       const downloaded = await downloadDriveFoto(foto);
       const form = new FormData();
@@ -1234,97 +1281,71 @@ async function substituirFotosMercadoLivre(itemId: string, fotos: DriveFoto[]) {
       }
       if (!uploadResp.ok || !uploadData?.id) throw new Error(getApiErrorMessage(uploadData, `Upload ML ${uploadResp.status}`));
 
-      novosIds.push(uploadData.id);
-      resultados.push({ sistema: 'ml', nome: foto.nome, ok: true, id: uploadData.id });
+      ids.push(uploadData.id);
+      resultados.push({ nome: foto.nome, ok: true, id: uploadData.id });
       await pauseUploadBatch(resultados.length - 1);
     } catch (e: any) {
-      resultados.push({ sistema: 'ml', nome: foto.nome, ok: false, error: e?.message || String(e) });
+      resultados.push({ nome: foto.nome, ok: false, error: e?.message || String(e) });
     }
   }
 
-  if (!novosIds.length) {
-    return { resultados, substituido: false, erro: 'Nenhuma foto nova foi enviada com sucesso — nada foi trocado no anuncio.' };
-  }
+  return {
+    ok: ids.length > 0,
+    itemId: ctx.itemId,
+    ids,
+    resultados,
+    erro: ids.length ? null : 'Nenhuma foto nova foi enviada com sucesso — nada sera trocado no anuncio.',
+  };
+}
 
+// Etapa 2/4 — ML: 1 unico PUT no item so com os IDs novos (upados na etapa anterior). Substitui
+// o array inteiro de fotos — as antigas que nao forem citadas somem. Evita "12 antigas + novas".
+export async function manutencaoFotosMlTrocar(itemId: string, ids: string[]) {
+  if (!itemId) return { ok: false, erro: 'Item ML nao informado.' };
+  if (!Array.isArray(ids) || !ids.length) return { ok: false, erro: 'Nenhuma foto nova pra trocar.' };
   try {
-    // 1 unico PUT com so os IDs novos: substitui o array inteiro de fotos do item.
     await mercadoLivreReq(`/items/${encodeURIComponent(itemId)}`, {
       method: 'PUT',
-      body: JSON.stringify({ pictures: novosIds.map((id) => ({ id })) }),
+      body: JSON.stringify({ pictures: ids.map((id) => ({ id })) }),
     });
-    return { resultados, substituido: true, erro: null as string | null };
+    return { ok: true, erro: null as string | null };
   } catch (e: any) {
-    return { resultados, substituido: false, erro: e?.message || String(e) };
+    return { ok: false, erro: e?.message || String(e) };
   }
 }
 
-// Nuvemshop: apaga uma a uma as imagens atuais do produto (DELETE por id) e sobe as novas.
-async function substituirFotosNuvemshop(produtoId: number | string, fotos: DriveFoto[]) {
-  const resultados: any[] = [];
-  let atuais: any[] = [];
+// Etapa 3/4 — Nuvemshop: apaga uma a uma as imagens atuais do produto (DELETE por id).
+export async function manutencaoFotosNuvemshopLimpar(sku: string) {
+  const ctx = await resolverContextoManutencaoFotos(sku);
+  if (!ctx.ok) return { ok: false, erro: ctx.erro };
+  if (!ctx.produtoId) return { ok: false, erro: 'SKU sem produto encontrado na Nuvemshop.' };
+
   try {
-    atuais = await listarImagensNuvemshop(produtoId);
-  } catch (e: any) {
-    return { resultados, substituido: false, erro: `Falha ao listar imagens atuais: ${e?.message || e}` };
-  }
-
-  for (const img of atuais) {
-    try {
-      await nuvemReq(`/products/${encodeURIComponent(String(produtoId))}/images/${encodeURIComponent(String(img.id))}`, { method: 'DELETE' });
-      resultados.push({ sistema: 'nuvemshop', nome: `apagar imagem #${img.id}`, ok: true });
-    } catch (e: any) {
-      resultados.push({ sistema: 'nuvemshop', nome: `apagar imagem #${img.id}`, ok: false, error: e?.message || String(e) });
+    const atuais = await listarImagensNuvemshop(ctx.produtoId);
+    let falhas = 0;
+    for (const img of atuais) {
+      try {
+        await nuvemReq(`/products/${encodeURIComponent(String(ctx.produtoId))}/images/${encodeURIComponent(String(img.id))}`, { method: 'DELETE' });
+      } catch {
+        falhas += 1;
+      }
+      await sleep(200);
     }
-    await sleep(200);
+    return { ok: true, produtoId: ctx.produtoId, apagadas: atuais.length - falhas, falhas, erro: null as string | null };
+  } catch (e: any) {
+    return { ok: false, erro: e?.message || String(e) };
   }
-
-  const uploadResultados = await uploadNuvemshopDrive(produtoId, fotos, 0);
-  resultados.push(...uploadResultados);
-  const substituido = uploadResultados.some((r) => r.ok);
-  return { resultados, substituido, erro: substituido ? null as string | null : 'Nenhuma foto nova foi enviada com sucesso.' };
 }
 
-// Orquestra a manutencao de fotos por SKU: busca a peca ja finalizada + as fotos ja tratadas na
-// pasta oficial da moto (rodar o Fotos Drive antes e' obrigatorio) e substitui no ML e Nuvemshop.
-export async function executarManutencaoFotos(skusInput: any) {
-  const skus = Array.from(new Set(parseSkuList(skusInput).map(baseSku).filter(Boolean)));
-  const itens: any[] = [];
+// Etapa 4/4 — Nuvemshop: sobe as fotos novas (produto ja esta limpo pela etapa anterior).
+export async function manutencaoFotosNuvemshopEnviar(sku: string) {
+  const ctx = await resolverContextoManutencaoFotos(sku);
+  if (!ctx.ok) return { ok: false, erro: ctx.erro };
+  if (!ctx.produtoId) return { ok: false, erro: 'SKU sem produto encontrado na Nuvemshop.' };
 
-  for (const sku of skus) {
-    const peca = await prisma.peca.findFirst({
-      where: { idPeca: sku },
-      select: { idPeca: true, descricao: true, motoId: true, mercadoLivreItemId: true, mercadoLivreLink: true },
-    });
-    if (!peca) {
-      itens.push({ sku, erro: 'SKU nao encontrado como peca ja finalizada no ANB.' });
-      continue;
-    }
-
-    const { fotos, pasta } = await buscarFotosDriveSku(peca.motoId, sku);
-    if (!fotos.length) {
-      itens.push({ sku, erro: 'Nenhuma foto encontrada na pasta oficial da moto para este SKU. Rode o Fotos Drive primeiro.' });
-      continue;
-    }
-
-    const itemId = normalizeText(peca.mercadoLivreItemId) || parseMercadoLivreItemId(peca.mercadoLivreLink);
-    const ml = itemId
-      ? { itemId, ...(await substituirFotosMercadoLivre(itemId, fotos)) }
-      : { itemId: null, substituido: false, erro: 'SKU sem item vinculado no Mercado Livre.', resultados: [] };
-
-    let nuvemshop: any;
-    try {
-      const produto = await buscarProdutoNuvemshopPorSku(sku);
-      nuvemshop = produto?.id
-        ? { produtoId: produto.id, ...(await substituirFotosNuvemshop(produto.id, fotos)) }
-        : { produtoId: null, substituido: false, erro: 'SKU sem produto encontrado na Nuvemshop.', resultados: [] };
-    } catch (e: any) {
-      nuvemshop = { produtoId: null, substituido: false, erro: e?.message || String(e), resultados: [] };
-    }
-
-    itens.push({ sku, pastaFotos: pasta, totalFotos: fotos.length, ml, nuvemshop });
-  }
-
-  return { ok: true, itens };
+  const resultados = await uploadNuvemshopDrive(ctx.produtoId, ctx.fotos, 0);
+  const ok = resultados.some((r: any) => r.ok);
+  return { ok, resultados, erro: ok ? null as string | null : 'Nenhuma foto nova foi enviada com sucesso.' };
 }
 
 function normalizarManualFotos(value: any): ManualFoto[] {

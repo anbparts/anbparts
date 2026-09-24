@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { compressDataUrlImage, normalizeImageFileName } from '../lib/image';
-import { buscarCadastroFotos, buscarCadastroFotosAnb, buscarCadastroFotosDrive, enviarCadastroFotosManual, processarCadastroFotos, verificarCadastroFotoSku, verificarFotosCadastroPeca, getPastaPreCadastroDoSku, analisarFotosSku, apagarPastaDrive, escanearFotosDrive, processarPastaFotosDrive, novoResultadoFotoDrive, enviarFotosCameraPreCadastro, executarManutencaoFotos } from '../lib/fotos-cadastro';
+import { buscarCadastroFotos, buscarCadastroFotosAnb, buscarCadastroFotosDrive, enviarCadastroFotosManual, processarCadastroFotos, verificarCadastroFotoSku, verificarFotosCadastroPeca, getPastaPreCadastroDoSku, analisarFotosSku, apagarPastaDrive, escanearFotosDrive, processarPastaFotosDrive, novoResultadoFotoDrive, enviarFotosCameraPreCadastro, prepararManutencaoFotos, manutencaoFotosMlUpload, manutencaoFotosMlTrocar, manutencaoFotosNuvemshopLimpar, manutencaoFotosNuvemshopEnviar } from '../lib/fotos-cadastro';
 import type { FotoDriveResultado } from '../lib/fotos-cadastro';
 import { blingReq, fetchBlingProductDetailById, findBlingProductsByCodes, resolveBlingLocation, fetchProdutoLojaLinksByProductId, resolveBlingMercadoLivreItemId, resolveBlingMercadoLivreLinkWithFallback } from './bling';
 import { criarPastaPreCadastro, renomearPastaPreCadastro } from './google-drive';
@@ -1111,15 +1111,46 @@ cadastroRouter.post('/fotos/camera', requireCadastroAction('enviar_fotos'), asyn
   }
 });
 
-// POST /cadastro/fotos/manutencao — substitui TODAS as fotos de anuncios ja publicados (ML e
-// Nuvemshop) pelas fotos ja tratadas na pasta oficial da moto. Rodar o Fotos Drive antes e'
-// obrigatorio (e' de la que as fotos "novas" vem).
-cadastroRouter.post('/fotos/manutencao', requireCadastroAction('enviar_fotos'), async (req, res, next) => {
+// Manutencao de Fotos — substitui TODAS as fotos de anuncios ja publicados (ML e Nuvemshop) pelas
+// fotos ja tratadas na pasta oficial da moto. Rodar o Fotos Drive antes e' obrigatorio. Quebrado
+// em etapas pra o frontend processar 1 SKU por vez e mostrar o avanco de cada etapa na tela.
+cadastroRouter.post('/fotos/manutencao/preparar', requireCadastroAction('enviar_fotos'), async (req, res, next) => {
   try {
-    const result = await executarManutencaoFotos(req.body?.skus);
-    res.json(result);
+    res.json(await prepararManutencaoFotos(req.body?.skus));
   } catch (e: any) {
-    res.status(400).json({ error: e?.message || 'Erro na manutencao de fotos.' });
+    res.status(400).json({ error: e?.message || 'Erro ao preparar manutencao de fotos.' });
+  }
+});
+
+cadastroRouter.post('/fotos/manutencao/ml-upload', requireCadastroAction('enviar_fotos'), async (req, res, next) => {
+  try {
+    res.json(await manutencaoFotosMlUpload(String(req.body?.sku || '')));
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message || 'Erro ao subir fotos no Mercado Livre.' });
+  }
+});
+
+cadastroRouter.post('/fotos/manutencao/ml-trocar', requireCadastroAction('enviar_fotos'), async (req, res, next) => {
+  try {
+    res.json(await manutencaoFotosMlTrocar(String(req.body?.itemId || ''), Array.isArray(req.body?.ids) ? req.body.ids : []));
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message || 'Erro ao trocar fotos no Mercado Livre.' });
+  }
+});
+
+cadastroRouter.post('/fotos/manutencao/nuvemshop-limpar', requireCadastroAction('enviar_fotos'), async (req, res, next) => {
+  try {
+    res.json(await manutencaoFotosNuvemshopLimpar(String(req.body?.sku || '')));
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message || 'Erro ao apagar fotos antigas na Nuvemshop.' });
+  }
+});
+
+cadastroRouter.post('/fotos/manutencao/nuvemshop-enviar', requireCadastroAction('enviar_fotos'), async (req, res, next) => {
+  try {
+    res.json(await manutencaoFotosNuvemshopEnviar(String(req.body?.sku || '')));
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message || 'Erro ao enviar fotos novas na Nuvemshop.' });
   }
 });
 
