@@ -255,3 +255,84 @@ empresaRouter.post('/', async (req, res, next) => {
     next(e);
   }
 });
+
+// ===== Cofre de acessos/senhas (bloco na pagina Empresa) =====
+// A senha NUNCA sai na listagem — so pelo endpoint dedicado de revelar, clicado sob demanda.
+
+const senhaAcessoSchema = z.object({
+  servico: z.string().min(1, 'Servico e obrigatorio'),
+  usuario: z.string().optional().default(''),
+  senha: z.string().optional().default(''),
+  observacao: z.string().optional().nullable(),
+});
+
+empresaRouter.get('/senhas', async (_req, res, next) => {
+  try {
+    const rows = await prisma.$queryRaw<any[]>`
+      SELECT "id", "servico", "usuario", "observacao", "createdAt", "updatedAt"
+      FROM "SenhaAcesso"
+      ORDER BY "servico" ASC
+    `;
+    res.json({ ok: true, itens: rows });
+  } catch (e) {
+    next(e);
+  }
+});
+
+empresaRouter.get('/senhas/:id/senha', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const rows = await prisma.$queryRaw<{ senha: string }[]>`
+      SELECT "senha" FROM "SenhaAcesso" WHERE "id" = ${id}
+    `;
+    if (!rows.length) return res.status(404).json({ error: 'Nao encontrado' });
+    res.json({ ok: true, senha: rows[0].senha });
+  } catch (e) {
+    next(e);
+  }
+});
+
+empresaRouter.post('/senhas', async (req, res, next) => {
+  try {
+    const payload = senhaAcessoSchema.parse(req.body || {});
+    const rows = await prisma.$queryRaw<any[]>`
+      INSERT INTO "SenhaAcesso" ("servico", "usuario", "senha", "observacao", "updatedAt")
+      VALUES (${payload.servico.trim()}, ${payload.usuario.trim()}, ${payload.senha}, ${normalizeText(payload.observacao) || null}, now())
+      RETURNING "id", "servico", "usuario", "observacao", "createdAt", "updatedAt"
+    `;
+    res.json({ ok: true, item: rows[0] });
+  } catch (e) {
+    next(e);
+  }
+});
+
+empresaRouter.put('/senhas/:id', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const payload = senhaAcessoSchema.parse(req.body || {});
+    const rows = await prisma.$queryRaw<any[]>`
+      UPDATE "SenhaAcesso" SET
+        "servico" = ${payload.servico.trim()},
+        "usuario" = ${payload.usuario.trim()},
+        "senha" = ${payload.senha},
+        "observacao" = ${normalizeText(payload.observacao) || null},
+        "updatedAt" = now()
+      WHERE "id" = ${id}
+      RETURNING "id", "servico", "usuario", "observacao", "createdAt", "updatedAt"
+    `;
+    if (!rows.length) return res.status(404).json({ error: 'Nao encontrado' });
+    res.json({ ok: true, item: rows[0] });
+  } catch (e) {
+    next(e);
+  }
+});
+
+empresaRouter.delete('/senhas/:id', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    await prisma.$executeRaw`DELETE FROM "SenhaAcesso" WHERE "id" = ${id}`;
+    res.json({ ok: true });
+  } catch (e) {
+    next(e);
+  }
+});

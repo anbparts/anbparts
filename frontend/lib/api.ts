@@ -157,6 +157,13 @@ export const api = {
     get: () => req<any>('/empresa'),
     anexo: (key: string) => req<any>(`/empresa/anexos/${encodeURIComponent(key)}`),
     save: (data: any) => req<any>('/empresa', { method: 'POST', body: JSON.stringify(data) }),
+    senhas: {
+      list: () => req<{ ok: boolean; itens: any[] }>('/empresa/senhas'),
+      revelar: (id: number) => req<{ ok: boolean; senha: string }>(`/empresa/senhas/${id}/senha`),
+      create: (data: any) => req<{ ok: boolean; item: any }>('/empresa/senhas', { method: 'POST', body: JSON.stringify(data) }),
+      update: (id: number, data: any) => req<{ ok: boolean; item: any }>(`/empresa/senhas/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+      delete: (id: number) => req<{ ok: boolean }>(`/empresa/senhas/${id}`, { method: 'DELETE' }),
+    },
   },
   // Stub legado — módulo Detran removido, mantido só para não quebrar build das páginas antigas
   detran: {

@@ -119,6 +119,15 @@ type ContaBancaria = {
 
 const EMPTY_CONTA: ContaBancaria = { banco: '', agencia: '', conta: '', cnpj: '', titular: '', chavesPix: [] };
 
+type SenhaAcessoItem = {
+  id: number;
+  servico: string;
+  usuario: string;
+  observacao: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 const DEFAULT_CONTAS: ContaBancaria[] = [
   { banco: '323 – Mercado Pago S.A.', agencia: '0001', conta: '1928335729-2', cnpj: '60.100.111/0001-00', titular: 'ANB PARTS LTDA', chavesPix: [] },
   { banco: '077 – Banco Inter S.A.',  agencia: '0001', conta: '43554117-0',   cnpj: '60.100.111/0001-00', titular: 'ANB PARTS LTDA', chavesPix: [] },
@@ -160,6 +169,107 @@ export default function EmpresaPage() {
   const [extras, setExtras] = useState<Array<{ id: string; name: string; dataUrl?: string } | null>>([]);
   const [contasBancarias, setContasBancarias] = useState<ContaBancaria[]>([]);
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
+
+  // ── Cofre de acessos/senhas ──
+  const [senhas, setSenhas] = useState<SenhaAcessoItem[]>([]);
+  const [senhasLoading, setSenhasLoading] = useState(true);
+  const [senhasReveladas, setSenhasReveladas] = useState<Record<number, string>>({});
+  const [senhaRevelando, setSenhaRevelando] = useState<number | null>(null);
+  const [senhaCopiado, setSenhaCopiado] = useState<string>('');
+  const [senhaModalAberto, setSenhaModalAberto] = useState(false);
+  const [senhaEditandoId, setSenhaEditandoId] = useState<number | null>(null);
+  const [senhaForm, setSenhaForm] = useState({ servico: '', usuario: '', senha: '', observacao: '' });
+  const [senhaSalvando, setSenhaSalvando] = useState(false);
+  const [senhaErro, setSenhaErro] = useState('');
+
+  async function carregarSenhas() {
+    setSenhasLoading(true);
+    try {
+      const res = await api.empresa.senhas.list();
+      setSenhas(Array.isArray(res?.itens) ? res.itens : []);
+    } catch { /* silencioso: bloco independente do resto da pagina */ }
+    setSenhasLoading(false);
+  }
+
+  useEffect(() => {
+    carregarSenhas();
+  }, []);
+
+  function abrirNovaSenha() {
+    setSenhaEditandoId(null);
+    setSenhaForm({ servico: '', usuario: '', senha: '', observacao: '' });
+    setSenhaErro('');
+    setSenhaModalAberto(true);
+  }
+
+  async function abrirEditarSenha(item: SenhaAcessoItem) {
+    setSenhaEditandoId(item.id);
+    setSenhaErro('');
+    let senhaAtual = senhasReveladas[item.id] || '';
+    if (!senhaAtual) {
+      try {
+        const res = await api.empresa.senhas.revelar(item.id);
+        senhaAtual = res?.senha || '';
+      } catch { /* deixa em branco se falhar; usuario redigita se precisar trocar */ }
+    }
+    setSenhaForm({ servico: item.servico || '', usuario: item.usuario || '', senha: senhaAtual, observacao: item.observacao || '' });
+    setSenhaModalAberto(true);
+  }
+
+  async function salvarSenha() {
+    if (!senhaForm.servico.trim()) { setSenhaErro('Servico e obrigatorio.'); return; }
+    setSenhaSalvando(true);
+    setSenhaErro('');
+    try {
+      if (senhaEditandoId) {
+        await api.empresa.senhas.update(senhaEditandoId, senhaForm);
+      } else {
+        await api.empresa.senhas.create(senhaForm);
+      }
+      setSenhaModalAberto(false);
+      setSenhasReveladas({});
+      await carregarSenhas();
+    } catch (e: any) {
+      setSenhaErro(e?.message || 'Erro ao salvar.');
+    }
+    setSenhaSalvando(false);
+  }
+
+  async function excluirSenha(item: SenhaAcessoItem) {
+    if (!confirm(`Excluir o acesso "${item.servico}"?`)) return;
+    try {
+      await api.empresa.senhas.delete(item.id);
+      await carregarSenhas();
+    } catch (e: any) {
+      alert(e?.message || 'Erro ao excluir.');
+    }
+  }
+
+  async function toggleRevelarSenha(item: SenhaAcessoItem) {
+    if (senhasReveladas[item.id] !== undefined) {
+      setSenhasReveladas((atual: Record<number, string>) => { const novo = { ...atual }; delete novo[item.id]; return novo; });
+      return;
+    }
+    setSenhaRevelando(item.id);
+    try {
+      const res = await api.empresa.senhas.revelar(item.id);
+      setSenhasReveladas((atual: Record<number, string>) => ({ ...atual, [item.id]: res?.senha || '' }));
+    } catch (e: any) {
+      alert(e?.message || 'Erro ao revelar a senha.');
+    }
+    setSenhaRevelando(null);
+  }
+
+  async function copiarCampoSenha(texto: string, chave: string) {
+    if (!texto) return;
+    try {
+      await navigator.clipboard.writeText(texto);
+      setSenhaCopiado(chave);
+      setTimeout(() => setSenhaCopiado(''), 1500);
+    } catch {
+      alert('Nao foi possivel copiar. Selecione e copie manualmente.');
+    }
+  }
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -613,6 +723,123 @@ export default function EmpresaPage() {
             })}
           </div>
         </div>
+
+        {/* ── Acessos e Senhas ── */}
+        <div style={cs.card}>
+          <div style={{ padding: isPhone ? '14px' : '16px 18px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+            <div>
+              <div style={{ fontFamily: 'Fraunces, serif', fontSize: 16, fontWeight: 600 }}>Acessos e Senhas</div>
+              <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 4 }}>Cofre de acessos da empresa — e-mails, plataformas, sistemas</div>
+            </div>
+            {canEdit && (
+              <button type="button" onClick={abrirNovaSenha} style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)' }}>
+                + Novo acesso
+              </button>
+            )}
+          </div>
+
+          {senhasLoading ? (
+            <div style={{ padding: 24, textAlign: 'center', color: 'var(--ink-muted)', fontSize: 13 }}>Carregando...</div>
+          ) : senhas.length === 0 ? (
+            <div style={{ padding: 24, textAlign: 'center', color: 'var(--ink-muted)', fontSize: 13 }}>Nenhum acesso cadastrado ainda.</div>
+          ) : (
+            <div style={{ padding: isPhone ? 12 : 16, display: 'grid', gap: 12 }}>
+              {senhas.map((item: SenhaAcessoItem) => {
+                const revelada = senhasReveladas[item.id];
+                const chaveUsuario = `${item.id}-usuario`;
+                const chaveSenha = `${item.id}-senha`;
+                return (
+                  <div key={item.id} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 14, background: 'var(--white)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
+                      <div style={{ fontWeight: 700, color: 'var(--ink)', fontSize: 14 }}>{item.servico}</div>
+                      {canEdit && (
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button type="button" onClick={() => abrirEditarSenha(item)} style={{ ...cs.btn, padding: '5px 10px', fontSize: 11.5, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--ink)' }}>Editar</button>
+                          <button type="button" onClick={() => excluirSenha(item)} style={{ ...cs.btn, padding: '5px 10px', fontSize: 11.5, background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c' }}>Excluir</button>
+                        </div>
+                      )}
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '1fr 1fr', gap: 8, marginTop: 10 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, border: '1px solid var(--border)', borderRadius: 8, padding: '7px 10px', background: 'var(--gray-50)' }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 10, color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: '.4px' }}>Usuário</div>
+                          <div style={{ fontSize: 13, color: 'var(--ink)', wordBreak: 'break-all' }}>{item.usuario || '—'}</div>
+                        </div>
+                        {item.usuario && (
+                          <button type="button" onClick={() => copiarCampoSenha(item.usuario, chaveUsuario)} title="Copiar usuário" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, padding: 4, color: senhaCopiado === chaveUsuario ? '#16a34a' : 'var(--ink-muted)' }}>
+                            {senhaCopiado === chaveUsuario ? '✓' : '📋'}
+                          </button>
+                        )}
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, border: '1px solid var(--border)', borderRadius: 8, padding: '7px 10px', background: 'var(--gray-50)' }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 10, color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: '.4px' }}>Senha</div>
+                          <div style={{ fontSize: 13, color: 'var(--ink)', fontFamily: 'Geist Mono, monospace', wordBreak: 'break-all' }}>
+                            {revelada !== undefined ? revelada : '••••••••'}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => toggleRevelarSenha(item)}
+                          disabled={senhaRevelando === item.id}
+                          title={revelada !== undefined ? 'Ocultar senha' : 'Ver senha'}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, padding: 4, color: 'var(--ink-muted)', opacity: senhaRevelando === item.id ? 0.5 : 1 }}
+                        >
+                          {senhaRevelando === item.id ? '…' : revelada !== undefined ? '🙈' : '👁️'}
+                        </button>
+                        {revelada !== undefined && (
+                          <button type="button" onClick={() => copiarCampoSenha(revelada, chaveSenha)} title="Copiar senha" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, padding: 4, color: senhaCopiado === chaveSenha ? '#16a34a' : 'var(--ink-muted)' }}>
+                            {senhaCopiado === chaveSenha ? '✓' : '📋'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {item.observacao && (
+                      <div style={{ marginTop: 8, fontSize: 12, color: 'var(--ink-muted)' }}>{item.observacao}</div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {senhaModalAberto && (
+          <div onClick={() => setSenhaModalAberto(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,.55)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+            <div onClick={(e: any) => e.stopPropagation()} style={{ background: 'var(--white)', borderRadius: 12, width: '100%', maxWidth: 440, maxHeight: '90vh', overflowY: 'auto' }}>
+              <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ fontFamily: 'Fraunces, serif', fontSize: 16, fontWeight: 600 }}>{senhaEditandoId ? 'Editar acesso' : 'Novo acesso'}</div>
+                <button onClick={() => setSenhaModalAberto(false)} style={{ border: 'none', background: 'var(--gray-100)', width: 28, height: 28, borderRadius: 8, cursor: 'pointer', fontSize: 14, color: 'var(--gray-600)' }}>×</button>
+              </div>
+              <div style={{ padding: 20, display: 'grid', gap: 12 }}>
+                <div>
+                  <div style={cs.fl}>Serviço *</div>
+                  <input style={cs.fi} value={senhaForm.servico} onChange={(e: any) => setSenhaForm((v: any) => ({ ...v, servico: e.target.value }))} placeholder="Ex: Gmail, Mercado Livre..." />
+                </div>
+                <div>
+                  <div style={cs.fl}>Usuário</div>
+                  <input style={cs.fi} value={senhaForm.usuario} onChange={(e: any) => setSenhaForm((v: any) => ({ ...v, usuario: e.target.value }))} placeholder="E-mail ou login" />
+                </div>
+                <div>
+                  <div style={cs.fl}>Senha</div>
+                  <input style={cs.fi} type="text" value={senhaForm.senha} onChange={(e: any) => setSenhaForm((v: any) => ({ ...v, senha: e.target.value }))} placeholder="Senha" />
+                </div>
+                <div>
+                  <div style={cs.fl}>Observação</div>
+                  <textarea style={{ ...cs.fi, minHeight: 70, resize: 'vertical' as const }} value={senhaForm.observacao} onChange={(e: any) => setSenhaForm((v: any) => ({ ...v, observacao: e.target.value }))} placeholder="Texto livre" />
+                </div>
+                {senhaErro && <div style={{ fontSize: 12, color: 'var(--red)' }}>{senhaErro}</div>}
+              </div>
+              <div style={{ padding: '12px 20px 16px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                <button onClick={() => setSenhaModalAberto(false)} style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink-soft)', border: '1px solid var(--border)' }}>Cancelar</button>
+                <button onClick={salvarSenha} disabled={senhaSalvando} style={{ ...cs.btn, background: 'var(--ink)', color: '#fff', opacity: senhaSalvando ? 0.7 : 1 }}>{senhaSalvando ? 'Salvando...' : 'Salvar'}</button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div style={cs.card}>
           <div style={{ padding: '16px 18px', borderBottom: '1px solid var(--border)' }}>

@@ -335,6 +335,18 @@ model EmpresaAnexo {
   updatedAt DateTime @default(now()) @updatedAt
 }
 
+// Cofre de acessos/senhas da empresa (bloco na pagina Empresa). A senha so e' retornada pelo
+// endpoint dedicado de revelar (GET /empresa/senhas/:id/senha) — a listagem normal nunca inclui.
+model SenhaAcesso {
+  id         Int      @id @default(autoincrement())
+  servico    String
+  usuario    String   @default("")
+  senha      String   @default("")
+  observacao String?  @db.Text
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
 // Anexos das motos em tabela dedicada (1 linha por anexo), fora do JSON Moto.anexos.
 // Permite checar/zipar um anexo sem carregar todos os outros. PDFs ficam comprimidos (Brotli).
 model MotoAnexo {
