@@ -785,10 +785,19 @@ function normalizeMercadoLivreItemCode(value: any) {
   return permalink ? permalink[1].replace(/[-_ ]+/g, '') : null;
 }
 
+// Remove "camposCustomizados" antes de varrer o objeto por um codigo MLB: esses campos sao texto
+// livre (ex.: "URL de Referencia" de concorrente pra comparar preco) e podem conter o link de
+// um anuncio de OUTRO vendedor por coincidencia — nunca sao a fonte real do vinculo do Bling.
+function semCamposCustomizados(value: any) {
+  if (!value || typeof value !== 'object') return value;
+  const { camposCustomizados, ...resto } = value;
+  return resto;
+}
+
 export function resolveBlingMercadoLivreItemId(produto: any, detail?: any, lojaRows: any[] = []) {
   return lojaRows.map((row: any) => findFirstMercadoLivreItemCode(row)).find(Boolean)
-    || findFirstMercadoLivreItemCode(detail)
-    || findFirstMercadoLivreItemCode(produto)
+    || findFirstMercadoLivreItemCode(semCamposCustomizados(detail))
+    || findFirstMercadoLivreItemCode(semCamposCustomizados(produto))
     || null;
 }
 
@@ -918,7 +927,7 @@ function resolveBlingMercadoLivreLink(produto: any, detail?: any, lojaRows: any[
     }
   }
 
-  for (const source of [detail, produto]) {
+  for (const source of [semCamposCustomizados(detail), semCamposCustomizados(produto)]) {
     if (!source) continue;
     const found = findFirstMercadoLivreLink(source);
     if (found) {
@@ -4923,6 +4932,21 @@ blingRouter.get('/debug-ml-link', async (req, res, next) => {
     const codigoProduto = findFirstMercadoLivreItemCode(produto);
     const resolvido = resolveBlingMercadoLivreItemId(produto, detail, lojaRows);
 
+    // API nova de Anuncios (o que aparece na tela "Anuncios ja exportados" do Bling) — testando
+    // ao vivo pra ver o formato real da resposta (a doc oficial nao deixa claro onde fica o
+    // codigo/link externo do marketplace).
+    let anunciosLista: any = null;
+    let anunciosDetalhe: any[] = [];
+    try {
+      anunciosLista = await blingReq(`/anuncios?idProduto=${Number(produto.id)}&limite=100`);
+      const anuncioIds: number[] = normalizeApiArray(anunciosLista?.data).map((a: any) => Number(a.id)).filter(Boolean);
+      anunciosDetalhe = await Promise.all(anuncioIds.map(async (id) => {
+        try { return await blingReq(`/anuncios/${id}`); } catch (e: any) { return { erro: e?.message, id }; }
+      }));
+    } catch (e: any) {
+      anunciosLista = { erro: e?.message };
+    }
+
     res.json({
       ok: true,
       sku,
@@ -4931,6 +4955,8 @@ blingRouter.get('/debug-ml-link', async (req, res, next) => {
       codigoPorLojaRow,
       codigoDetail,
       codigoProduto,
+      anunciosLista,
+      anunciosDetalhe,
       lojaRows,
       produto,
       detail,
