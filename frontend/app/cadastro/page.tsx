@@ -402,7 +402,33 @@ export default function CadastroPage() {
   const [resumoFiltro, setResumoFiltro] = useState<'' | 'liberadas' | 'pendentes' | 'pendente_imagens' | 'sem_fotos'>('');
   const [resumoFiltroSku, setResumoFiltroSku] = useState('');
   const [skusCopiados, setSkusCopiados] = useState(false);
-  const [paginaCadastro, setPaginaCadastro] = useState<'sku' | 'fotos-drive' | 'fotos' | 'categoria'>('sku');
+  const [paginaCadastro, setPaginaCadastro] = useState<'sku' | 'fotos-drive' | 'fotos' | 'categoria' | 'fotos-manutencao'>('sku');
+  // Fotos - Manutencao: substitui as fotos de anuncios ja publicados (ML/Nuvemshop) pelas fotos
+  // ja tratadas na pasta oficial da moto (rodar Fotos Drive antes e' obrigatorio).
+  const [manutencaoSkusInput, setManutencaoSkusInput] = useState('');
+  const [manutencaoExecutando, setManutencaoExecutando] = useState(false);
+  const [manutencaoResultado, setManutencaoResultado] = useState<any[] | null>(null);
+  const [manutencaoErro, setManutencaoErro] = useState('');
+
+  async function executarManutencaoFotosUi() {
+    if (!manutencaoSkusInput.trim()) return;
+    setManutencaoExecutando(true);
+    setManutencaoErro('');
+    setManutencaoResultado(null);
+    try {
+      const resp = await fetch(`${API}/cadastro/fotos/manutencao`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ skus: manutencaoSkusInput }),
+      });
+      const data = await readApiResponse(resp, 'Erro na manutencao de fotos');
+      setManutencaoResultado(Array.isArray(data.itens) ? data.itens : []);
+    } catch (e: any) {
+      setManutencaoErro(e?.message || 'Erro na manutencao de fotos.');
+    }
+    setManutencaoExecutando(false);
+  }
   // Camera de foto direto na pagina (mobile): tira fotos do SKU e sobe tudo pro Drive ao finalizar
   const [cameraSku, setCameraSku] = useState<string | null>(null);
   const [cameraFotos, setCameraFotos] = useState<string[]>([]);
@@ -1858,6 +1884,74 @@ export default function CadastroPage() {
     </>
   );
 
+  const renderFotosManutencaoConteudo = () => (
+    <>
+      <div style={{ ...s.card, padding: isPhone ? '14px' : '18px' }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 4 }}>Manutenção de fotos em anúncios já publicados</div>
+        <div style={{ fontSize: 12, color: 'var(--gray-500)', marginBottom: 14, lineHeight: 1.5 }}>
+          Substitui <b>todas</b> as fotos do anúncio no Mercado Livre e na Nuvemshop pelas fotos já tratadas na pasta oficial da moto. Rode o <b>Fotos Drive</b> primeiro (é de lá que vêm as fotos novas) — as antigas são removidas dos dois marketplaces.
+        </div>
+        <label style={s.label}>SKUs</label>
+        <textarea
+          style={{ ...s.input, minHeight: isPhone ? 150 : 110, resize: 'vertical' }}
+          value={manutencaoSkusInput}
+          onChange={(e: any) => setManutencaoSkusInput(e.target.value)}
+          placeholder={'HD04_0001\nPN_0001\nYM01_0001'}
+        />
+        <button
+          onClick={executarManutencaoFotosUi}
+          disabled={manutencaoExecutando || !manutencaoSkusInput.trim()}
+          style={{ ...s.btn, marginTop: 10, background: '#7c3aed', color: '#fff', opacity: manutencaoExecutando ? 0.7 : 1, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}
+        >
+          {manutencaoExecutando ? 'Substituindo fotos...' : 'Substituir fotos'}
+        </button>
+        {manutencaoErro && <div style={{ marginTop: 10, fontSize: 12, color: '#dc2626' }}>⚠ {manutencaoErro}</div>}
+      </div>
+
+      {manutencaoResultado && (
+        <div style={{ ...s.card, padding: isPhone ? '12px' : '16px', marginTop: 14 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 12 }}>
+            {manutencaoResultado.length} SKU(s) processado(s)
+          </div>
+          <div style={{ display: 'grid', gap: 10 }}>
+            {manutencaoResultado.map((item: any) => {
+              if (item.erro && !item.ml && !item.nuvemshop) {
+                return (
+                  <div key={item.sku} style={{ border: '1px solid #fecaca', borderRadius: 8, padding: 12, background: '#fef2f2' }}>
+                    <div style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: 'var(--gray-800)' }}>{item.sku}</div>
+                    <div style={{ fontSize: 12, color: '#dc2626', marginTop: 4 }}>⚠ {item.erro}</div>
+                  </div>
+                );
+              }
+              return (
+                <div key={item.sku} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 12 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                    <div style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: 'var(--gray-800)' }}>{item.sku}</div>
+                    <div style={{ fontSize: 11.5, color: 'var(--gray-500)' }}>{item.totalFotos} foto(s) na pasta oficial</div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '1fr 1fr', gap: 8, marginTop: 8 }}>
+                    <div style={{ padding: '8px 10px', borderRadius: 6, background: item.ml?.substituido ? '#f0fdf4' : '#fef2f2' }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: item.ml?.substituido ? '#16a34a' : '#dc2626' }}>
+                        Mercado Livre {item.ml?.substituido ? '✓ substituído' : '✗'}
+                      </div>
+                      {item.ml?.erro && <div style={{ fontSize: 11, color: '#dc2626', marginTop: 3 }}>{item.ml.erro}</div>}
+                    </div>
+                    <div style={{ padding: '8px 10px', borderRadius: 6, background: item.nuvemshop?.substituido ? '#f0fdf4' : '#fef2f2' }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: item.nuvemshop?.substituido ? '#16a34a' : '#dc2626' }}>
+                        Nuvemshop {item.nuvemshop?.substituido ? '✓ substituído' : '✗'}
+                      </div>
+                      {item.nuvemshop?.erro && <div style={{ fontSize: 11, color: '#dc2626', marginTop: 3 }}>{item.nuvemshop.erro}</div>}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </>
+  );
+
   const renderCategoriaConteudo = () => (
     <>
       <div style={{ ...s.card, padding: isPhone ? '14px' : '18px' }}>
@@ -2080,7 +2174,7 @@ export default function CadastroPage() {
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', width: isPhone ? '100%' : undefined, justifyContent: isPhone ? 'space-between' : 'flex-end' }}>
           <div style={{ display: 'inline-flex', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', background: 'var(--white)' }}>
-            {(['sku', 'fotos-drive', 'fotos', 'categoria'] as const).map((tab, index, arr) => (
+            {(['sku', 'fotos-drive', 'fotos', 'categoria', 'fotos-manutencao'] as const).map((tab, index, arr) => (
               <button
                 key={tab}
                 onClick={() => setPaginaCadastro(tab)}
@@ -2095,7 +2189,7 @@ export default function CadastroPage() {
                   cursor: 'pointer',
                 }}
               >
-                {tab === 'sku' ? 'SKU' : tab === 'fotos-drive' ? 'Fotos Drive' : tab === 'fotos' ? 'Fotos Anúncios' : 'Categoria'}
+                {tab === 'sku' ? 'SKU' : tab === 'fotos-drive' ? 'Fotos Drive' : tab === 'fotos' ? 'Fotos Anúncios' : tab === 'categoria' ? 'Categoria' : 'Fotos - Manutenção'}
               </button>
             ))}
           </div>
@@ -2112,7 +2206,7 @@ export default function CadastroPage() {
       </div>
 
       <div style={{ padding: isPhone ? '14px' : '20px 24px' }}>
-        {paginaCadastro === 'categoria' ? renderCategoriaConteudo() : paginaCadastro === 'fotos-drive' ? renderFotosDriveConteudo() : paginaCadastro === 'fotos' ? (
+        {paginaCadastro === 'categoria' ? renderCategoriaConteudo() : paginaCadastro === 'fotos-drive' ? renderFotosDriveConteudo() : paginaCadastro === 'fotos-manutencao' ? renderFotosManutencaoConteudo() : paginaCadastro === 'fotos' ? (
           <>
             <div style={{ ...s.card, padding: isPhone ? '14px' : '18px' }}>
               <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 12 }}>Buscar SKUs para fotos</div>

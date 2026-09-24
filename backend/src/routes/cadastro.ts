@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { compressDataUrlImage, normalizeImageFileName } from '../lib/image';
-import { buscarCadastroFotos, buscarCadastroFotosAnb, buscarCadastroFotosDrive, enviarCadastroFotosManual, processarCadastroFotos, verificarCadastroFotoSku, verificarFotosCadastroPeca, getPastaPreCadastroDoSku, analisarFotosSku, apagarPastaDrive, escanearFotosDrive, processarPastaFotosDrive, novoResultadoFotoDrive, enviarFotosCameraPreCadastro } from '../lib/fotos-cadastro';
+import { buscarCadastroFotos, buscarCadastroFotosAnb, buscarCadastroFotosDrive, enviarCadastroFotosManual, processarCadastroFotos, verificarCadastroFotoSku, verificarFotosCadastroPeca, getPastaPreCadastroDoSku, analisarFotosSku, apagarPastaDrive, escanearFotosDrive, processarPastaFotosDrive, novoResultadoFotoDrive, enviarFotosCameraPreCadastro, executarManutencaoFotos } from '../lib/fotos-cadastro';
 import type { FotoDriveResultado } from '../lib/fotos-cadastro';
 import { blingReq, fetchBlingProductDetailById, findBlingProductsByCodes, resolveBlingLocation, fetchProdutoLojaLinksByProductId, resolveBlingMercadoLivreItemId, resolveBlingMercadoLivreLinkWithFallback } from './bling';
 import { criarPastaPreCadastro, renomearPastaPreCadastro } from './google-drive';
@@ -1108,6 +1108,18 @@ cadastroRouter.post('/fotos/camera', requireCadastroAction('enviar_fotos'), asyn
     res.json(result);
   } catch (e: any) {
     res.status(400).json({ error: e?.message || 'Erro ao enviar fotos.' });
+  }
+});
+
+// POST /cadastro/fotos/manutencao — substitui TODAS as fotos de anuncios ja publicados (ML e
+// Nuvemshop) pelas fotos ja tratadas na pasta oficial da moto. Rodar o Fotos Drive antes e'
+// obrigatorio (e' de la que as fotos "novas" vem).
+cadastroRouter.post('/fotos/manutencao', requireCadastroAction('enviar_fotos'), async (req, res, next) => {
+  try {
+    const result = await executarManutencaoFotos(req.body?.skus);
+    res.json(result);
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message || 'Erro na manutencao de fotos.' });
   }
 });
 
