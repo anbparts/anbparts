@@ -5074,15 +5074,28 @@ blingRouter.post('/atualizar-link-ml-skus', async (req, res, next) => {
 
       // ID do anúncio atual no Bling — tenta primeiro a API de Anuncios (mais confiavel), cai
       // pro vinculo legado (/produtos/lojas, detail, produto) se ela nao achar nada.
-      const itemIdBling = (await resolveMercadoLivreItemIdViaAnuncios(Number(produto.id), lojaRows))
+      let itemIdBling = (await resolveMercadoLivreItemIdViaAnuncios(Number(produto.id), lojaRows))
         || resolveBlingMercadoLivreItemId(produto, detail, lojaRows);
+
+      // Ultima tentativa antes de desistir: a mesma resolucao robusta do Pre-Cadastro (varre mais
+      // candidatos em lojaRows/detail e tenta resolver o link publico) — cobre o caso de anuncio
+      // recem-publicado que ainda nao apareceu em /anuncios nem no vinculo produtos/lojas.
+      let linkResolvidoPeloFallback: string | null = null;
+      if (!itemIdBling) {
+        const resolved = await resolveBlingMercadoLivreLinkWithFallback(produto, detail, lojaRows);
+        if (resolved.link) {
+          linkResolvidoPeloFallback = resolved.link;
+          itemIdBling = normalizeMercadoLivreItemCode(resolved.link);
+        }
+      }
 
       const pecasDeste = pecasBySkuBase.get(skuBase) || [];
       if (!pecasDeste.length) continue;
 
       if (itemIdBling) {
         // Tem anúncio no Bling: atualiza mercadoLivreItemId + permalink
-        const permalink = await getMercadoLivreItemPermalink(itemIdBling)
+        const permalink = linkResolvidoPeloFallback
+          || await getMercadoLivreItemPermalink(itemIdBling)
           || buildMercadoLivreItemLink(itemIdBling);
 
         const ids = pecasDeste.map((p) => Number(p.id));
