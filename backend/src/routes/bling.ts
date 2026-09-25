@@ -827,13 +827,13 @@ async function resolveMercadoLivreItemIdViaAnuncios(produtoId: number, _lojaRows
     for (const url of tentativas) {
       try {
         const lista = await blingReq(url);
-        const anuncioIds: number[] = normalizeApiArray(lista?.data).map((a: any) => Number(a.id)).filter(Boolean);
-        for (const id of anuncioIds) {
-          try {
-            const detalhe = await blingReq(`/anuncios/${id}`);
-            const code = findFirstMercadoLivreItemCode(detalhe);
-            if (code) return code;
-          } catch { /* tenta o proximo anuncio */ }
+        const anuncios: any[] = normalizeApiArray(lista?.data);
+        // O codigo do item ML (anuncioLoja.id) ja vem na propria listagem — NAO buscar o detalhe
+        // em /anuncios/{id}: essa chamada sempre falha com 400 aqui porque exige um parametro
+        // tipoIntegracao que este fluxo nao tem como preencher (confirmado via /bling/debug-ml-link).
+        for (const anuncio of anuncios) {
+          const code = findFirstMercadoLivreItemCode(anuncio);
+          if (code) return code;
         }
       } catch { /* essa tentativa falhou — segue pra proxima */ }
     }
