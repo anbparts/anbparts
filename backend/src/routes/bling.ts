@@ -794,6 +794,38 @@ function semCamposCustomizados(value: any) {
   return resto;
 }
 
+// Fonte nova e mais confiavel: a API de Anuncios do Bling (mesma coisa que a tela "Anuncios ja
+// exportados" mostra). O vinculo legado (/produtos/lojas) pode ficar travado com um "codigo"
+// antigo que nao e' nem o formato MLB (visto na pratica: numero de 9 digitos sem relacao com o
+// item real). Exige tipoIntegracao + idLoja, que pegamos do primeiro lojaRow do produto.
+async function resolveMercadoLivreItemIdViaAnuncios(produtoId: number, lojaRows: any[]): Promise<string | null> {
+  const idLojaMl = lojaRows[0]?.loja?.id ? Number(lojaRows[0].loja.id) : null;
+  if (!idLojaMl) return null;
+
+  // Tenta com situacao=1 (Publicado) primeiro; se vier vazio, tenta sem filtro de situacao —
+  // na pratica um anuncio "Publicado" na tela do Bling voltou vazio com esse filtro, entao o
+  // enum pode nao bater exatamente com o que a tela usa.
+  const tentativas = [
+    `/anuncios?idProduto=${produtoId}&limite=100&tipoIntegracao=MercadoLivre&idLoja=${idLojaMl}&situacao=1`,
+    `/anuncios?idProduto=${produtoId}&limite=100&tipoIntegracao=MercadoLivre&idLoja=${idLojaMl}`,
+  ];
+
+  for (const url of tentativas) {
+    try {
+      const lista = await blingReq(url);
+      const anuncioIds: number[] = normalizeApiArray(lista?.data).map((a: any) => Number(a.id)).filter(Boolean);
+      for (const id of anuncioIds) {
+        try {
+          const detalhe = await blingReq(`/anuncios/${id}`);
+          const code = findFirstMercadoLivreItemCode(detalhe);
+          if (code) return code;
+        } catch { /* tenta o proximo anuncio */ }
+      }
+    } catch { /* essa tentativa falhou — segue pra proxima (ou pro fallback, se acabou) */ }
+  }
+  return null;
+}
+
 export function resolveBlingMercadoLivreItemId(produto: any, detail?: any, lojaRows: any[] = []) {
   return lojaRows.map((row: any) => findFirstMercadoLivreItemCode(row)).find(Boolean)
     || findFirstMercadoLivreItemCode(semCamposCustomizados(detail))
@@ -4930,7 +4962,8 @@ blingRouter.get('/debug-ml-link', async (req, res, next) => {
     const codigoPorLojaRow = lojaRows.map((row: any, idx: number) => ({ idx, codigo: findFirstMercadoLivreItemCode(row) }));
     const codigoDetail = findFirstMercadoLivreItemCode(detail);
     const codigoProduto = findFirstMercadoLivreItemCode(produto);
-    const resolvido = resolveBlingMercadoLivreItemId(produto, detail, lojaRows);
+    const codigoViaAnuncios = await resolveMercadoLivreItemIdViaAnuncios(Number(produto.id), lojaRows);
+    const resolvido = codigoViaAnuncios || resolveBlingMercadoLivreItemId(produto, detail, lojaRows);
 
     // API nova de Anuncios (o que aparece na tela "Anuncios ja exportados" do Bling) — testando
     // ao vivo pra ver o formato real da resposta (a doc oficial nao deixa claro onde fica o
@@ -4955,6 +4988,7 @@ blingRouter.get('/debug-ml-link', async (req, res, next) => {
       sku,
       produtoIdBling: produto.id,
       resolvido,
+      codigoViaAnuncios,
       codigoPorLojaRow,
       codigoDetail,
       codigoProduto,
@@ -5016,8 +5050,10 @@ blingRouter.post('/atualizar-link-ml-skus', async (req, res, next) => {
       const detail = await fetchBlingProductDetailById(Number(produto.id), { forceRefresh: true });
       const lojaRows = await fetchProdutoLojaLinksByProductId(Number(produto.id), { forceRefresh: true });
 
-      // ID do anúncio atual no Bling
-      const itemIdBling = resolveBlingMercadoLivreItemId(produto, detail, lojaRows);
+      // ID do anúncio atual no Bling — tenta primeiro a API de Anuncios (mais confiavel), cai
+      // pro vinculo legado (/produtos/lojas, detail, produto) se ela nao achar nada.
+      const itemIdBling = (await resolveMercadoLivreItemIdViaAnuncios(Number(produto.id), lojaRows))
+        || resolveBlingMercadoLivreItemId(produto, detail, lojaRows);
 
       const pecasDeste = pecasBySkuBase.get(skuBase) || [];
       if (!pecasDeste.length) continue;
