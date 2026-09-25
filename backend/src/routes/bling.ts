@@ -794,34 +794,49 @@ function semCamposCustomizados(value: any) {
   return resto;
 }
 
+// Canais de venda conectados de verdade (Mercado Livre, Shopee, ...) — fonte AUTORITATIVA do
+// idLoja/idCanalVenda a usar em /anuncios. O "loja.id" que vinha do vinculo legado
+// (/produtos/lojas) e' outra coisa (visto na pratica: nao bate com nenhum anuncio real).
+let canaisVendaMlCache: { expiresAt: number; ids: number[] } | null = null;
+async function listarCanaisVendaMercadoLivre(): Promise<number[]> {
+  if (canaisVendaMlCache && canaisVendaMlCache.expiresAt > Date.now()) return canaisVendaMlCache.ids;
+  const data = await blingReq(`/canais-venda?limite=100&tipos[]=MercadoLivre&situacao=1`);
+  const ids = normalizeApiArray(data?.data).map((c: any) => Number(c.id)).filter(Boolean);
+  canaisVendaMlCache = { expiresAt: Date.now() + 10 * 60 * 1000, ids };
+  return ids;
+}
+
 // Fonte nova e mais confiavel: a API de Anuncios do Bling (mesma coisa que a tela "Anuncios ja
-// exportados" mostra). O vinculo legado (/produtos/lojas) pode ficar travado com um "codigo"
-// antigo que nao e' nem o formato MLB (visto na pratica: numero de 9 digitos sem relacao com o
-// item real). Exige tipoIntegracao + idLoja, que pegamos do primeiro lojaRow do produto.
-async function resolveMercadoLivreItemIdViaAnuncios(produtoId: number, lojaRows: any[]): Promise<string | null> {
-  const idLojaMl = lojaRows[0]?.loja?.id ? Number(lojaRows[0].loja.id) : null;
-  if (!idLojaMl) return null;
+// exportados" mostra), usando o(s) canal(is) de venda Mercado Livre de verdade como idLoja.
+async function resolveMercadoLivreItemIdViaAnuncios(produtoId: number, _lojaRows: any[]): Promise<string | null> {
+  let idsCanais: number[] = [];
+  try {
+    idsCanais = await listarCanaisVendaMercadoLivre();
+  } catch {
+    return null;
+  }
+  if (!idsCanais.length) return null;
 
-  // Tenta com situacao=1 (Publicado) primeiro; se vier vazio, tenta sem filtro de situacao —
-  // na pratica um anuncio "Publicado" na tela do Bling voltou vazio com esse filtro, entao o
-  // enum pode nao bater exatamente com o que a tela usa.
-  const tentativas = [
-    `/anuncios?idProduto=${produtoId}&limite=100&tipoIntegracao=MercadoLivre&idLoja=${idLojaMl}&situacao=1`,
-    `/anuncios?idProduto=${produtoId}&limite=100&tipoIntegracao=MercadoLivre&idLoja=${idLojaMl}`,
-  ];
+  for (const idLoja of idsCanais) {
+    // Tenta com situacao=1 (Publicado) primeiro; se vier vazio, tenta sem filtro de situacao.
+    const tentativas = [
+      `/anuncios?idProduto=${produtoId}&limite=100&tipoIntegracao=MercadoLivre&idLoja=${idLoja}&situacao=1`,
+      `/anuncios?idProduto=${produtoId}&limite=100&tipoIntegracao=MercadoLivre&idLoja=${idLoja}`,
+    ];
 
-  for (const url of tentativas) {
-    try {
-      const lista = await blingReq(url);
-      const anuncioIds: number[] = normalizeApiArray(lista?.data).map((a: any) => Number(a.id)).filter(Boolean);
-      for (const id of anuncioIds) {
-        try {
-          const detalhe = await blingReq(`/anuncios/${id}`);
-          const code = findFirstMercadoLivreItemCode(detalhe);
-          if (code) return code;
-        } catch { /* tenta o proximo anuncio */ }
-      }
-    } catch { /* essa tentativa falhou — segue pra proxima (ou pro fallback, se acabou) */ }
+    for (const url of tentativas) {
+      try {
+        const lista = await blingReq(url);
+        const anuncioIds: number[] = normalizeApiArray(lista?.data).map((a: any) => Number(a.id)).filter(Boolean);
+        for (const id of anuncioIds) {
+          try {
+            const detalhe = await blingReq(`/anuncios/${id}`);
+            const code = findFirstMercadoLivreItemCode(detalhe);
+            if (code) return code;
+          } catch { /* tenta o proximo anuncio */ }
+        }
+      } catch { /* essa tentativa falhou — segue pra proxima */ }
+    }
   }
   return null;
 }
@@ -4965,22 +4980,29 @@ blingRouter.get('/debug-ml-link', async (req, res, next) => {
     const codigoViaAnuncios = await resolveMercadoLivreItemIdViaAnuncios(Number(produto.id), lojaRows);
     const resolvido = codigoViaAnuncios || resolveBlingMercadoLivreItemId(produto, detail, lojaRows);
 
-    // API nova de Anuncios (o que aparece na tela "Anuncios ja exportados" do Bling) — testando
-    // ao vivo pra ver o formato real da resposta (a doc oficial nao deixa claro onde fica o
-    // codigo/link externo do marketplace). Exige tipoIntegracao + idLoja (usa o idLoja do
-    // primeiro lojaRow, que ja identifica a integracao Mercado Livre desse produto).
-    const idLojaMl = lojaRows[0]?.loja?.id ? Number(lojaRows[0].loja.id) : null;
-    let anunciosLista: any = null;
-    let anunciosDetalhe: any[] = [];
+    // Canais de venda ML de verdade (fonte do idLoja correto) + API de Anuncios pra cada um,
+    // pra ver o formato real da resposta.
+    let canaisVenda: any = null;
+    const anunciosPorCanal: any[] = [];
     try {
-      if (!idLojaMl) throw new Error('Sem idLoja (nenhum lojaRow encontrado) para consultar /anuncios.');
-      anunciosLista = await blingReq(`/anuncios?idProduto=${Number(produto.id)}&limite=100&tipoIntegracao=MercadoLivre&idLoja=${idLojaMl}`);
-      const anuncioIds: number[] = normalizeApiArray(anunciosLista?.data).map((a: any) => Number(a.id)).filter(Boolean);
-      anunciosDetalhe = await Promise.all(anuncioIds.map(async (id) => {
-        try { return await blingReq(`/anuncios/${id}`); } catch (e: any) { return { erro: e?.message, id }; }
-      }));
+      canaisVenda = await blingReq(`/canais-venda?limite=100&tipos[]=MercadoLivre&situacao=1`);
+      const idsCanais: number[] = normalizeApiArray(canaisVenda?.data).map((c: any) => Number(c.id)).filter(Boolean);
+      for (const idLoja of idsCanais) {
+        let anunciosLista: any = null;
+        let anunciosDetalhe: any[] = [];
+        try {
+          anunciosLista = await blingReq(`/anuncios?idProduto=${Number(produto.id)}&limite=100&tipoIntegracao=MercadoLivre&idLoja=${idLoja}`);
+          const anuncioIds: number[] = normalizeApiArray(anunciosLista?.data).map((a: any) => Number(a.id)).filter(Boolean);
+          anunciosDetalhe = await Promise.all(anuncioIds.map(async (id) => {
+            try { return await blingReq(`/anuncios/${id}`); } catch (e: any) { return { erro: e?.message, id }; }
+          }));
+        } catch (e: any) {
+          anunciosLista = { erro: e?.message };
+        }
+        anunciosPorCanal.push({ idLoja, anunciosLista, anunciosDetalhe });
+      }
     } catch (e: any) {
-      anunciosLista = { erro: e?.message };
+      canaisVenda = { erro: e?.message };
     }
 
     res.json({
@@ -4992,8 +5014,8 @@ blingRouter.get('/debug-ml-link', async (req, res, next) => {
       codigoPorLojaRow,
       codigoDetail,
       codigoProduto,
-      anunciosLista,
-      anunciosDetalhe,
+      canaisVenda,
+      anunciosPorCanal,
       lojaRows,
       produto,
       detail,
