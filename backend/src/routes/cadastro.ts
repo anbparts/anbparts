@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { compressDataUrlImage, normalizeImageFileName } from '../lib/image';
-import { buscarCadastroFotos, buscarCadastroFotosAnb, buscarCadastroFotosDrive, enviarCadastroFotosManual, processarCadastroFotos, verificarCadastroFotoSku, verificarFotosCadastroPeca, getPastaPreCadastroDoSku, analisarFotosSku, apagarPastaDrive, escanearFotosDrive, processarPastaFotosDrive, novoResultadoFotoDrive, enviarFotosCameraPreCadastro, prepararManutencaoFotos, manutencaoFotosMlUpload, manutencaoFotosMlTrocar, manutencaoFotosNuvemshopLimpar, manutencaoFotosNuvemshopEnviar } from '../lib/fotos-cadastro';
+import { buscarCadastroFotos, buscarCadastroFotosAnb, buscarCadastroFotosDrive, enviarCadastroFotosManual, processarCadastroFotos, verificarCadastroFotoSku, verificarFotosCadastroPeca, getPastaPreCadastroDoSku, analisarFotosSku, apagarPastaDrive, escanearFotosDrive, processarPastaFotosDrive, novoResultadoFotoDrive, enviarFotoCameraPreCadastro, apagarFotoCameraPreCadastro, prepararManutencaoFotos, manutencaoFotosMlUpload, manutencaoFotosMlTrocar, manutencaoFotosNuvemshopLimpar, manutencaoFotosNuvemshopEnviar } from '../lib/fotos-cadastro';
 import type { FotoDriveResultado } from '../lib/fotos-cadastro';
 import { blingReq, fetchBlingProductDetailById, findBlingProductsByCodes, resolveBlingLocation, fetchProdutoLojaLinksByProductId, resolveBlingMercadoLivreItemId, resolveBlingMercadoLivreLinkWithFallback } from './bling';
 import { criarPastaPreCadastro, renomearPastaPreCadastro } from './google-drive';
@@ -1100,14 +1100,26 @@ cadastroRouter.post('/fotos/enviar-manual', requireCadastroAction('enviar_fotos'
   } catch (e) { next(e); }
 });
 
-// POST /cadastro/fotos/camera — fotos tiradas pela camera do celular direto na pagina, sobem
-// direto na pasta de fotos pendentes do SKU no Drive (sem passar por zip/Canva).
+// POST /cadastro/fotos/camera — UMA foto tirada pela camera do celular direto na pagina, sobe
+// direto na pasta de fotos pendentes do SKU no Drive (sem passar por zip/Canva). Chamada uma vez
+// por foto tirada (nao mais em lote) para nao estourar o limite de tamanho de requisicao.
 cadastroRouter.post('/fotos/camera', requireCadastroAction('enviar_fotos'), async (req, res, next) => {
   try {
-    const result = await enviarFotosCameraPreCadastro(req.body || {});
+    const result = await enviarFotoCameraPreCadastro(req.body || {});
     res.json(result);
   } catch (e: any) {
-    res.status(400).json({ error: e?.message || 'Erro ao enviar fotos.' });
+    res.status(400).json({ error: e?.message || 'Erro ao enviar foto.' });
+  }
+});
+
+// DELETE /cadastro/fotos/camera — apaga do Drive uma foto ja enviada pela camera (usuario
+// removeu da lista depois do upload ter concluido).
+cadastroRouter.delete('/fotos/camera', requireCadastroAction('enviar_fotos'), async (req, res, next) => {
+  try {
+    const result = await apagarFotoCameraPreCadastro(req.body || {});
+    res.json(result);
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message || 'Erro ao apagar foto.' });
   }
 });
 

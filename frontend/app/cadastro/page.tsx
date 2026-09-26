@@ -529,11 +529,12 @@ export default function CadastroPage() {
     setManutencaoSkuAtual('');
     setManutencaoProcessando(false);
   }
-  // Camera de foto direto na pagina (mobile): tira fotos do SKU e sobe tudo pro Drive ao finalizar
+  // Camera de foto direto na pagina (mobile): cada foto tirada sobe pro Drive na hora (nao mais em
+  // lote no "Finalizar" — lote de ate 12 fotos em alta resolucao estourava o limite de requisicao).
+  type CameraFoto = { id: string; dataUrl: string; status: 'enviando' | 'ok' | 'erro'; fileId?: string; pastaId?: string; error?: string };
   const [cameraSku, setCameraSku] = useState<string | null>(null);
-  const [cameraFotos, setCameraFotos] = useState<string[]>([]);
+  const [cameraFotos, setCameraFotos] = useState<CameraFoto[]>([]);
   const [cameraErro, setCameraErro] = useState('');
-  const [cameraEnviando, setCameraEnviando] = useState(false);
   const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const cameraScrollPosRef = useRef(0);
@@ -830,7 +831,10 @@ export default function CadastroPage() {
   }
 
   function fecharCamera() {
-    if (cameraFotos.length && !confirm(`Descartar ${cameraFotos.length} foto(s) tirada(s) e sair sem enviar?`)) return;
+    // Fotos com status "ok" ja subiram pro Drive (sobem na hora, nao mais so no Finalizar) —
+    // fechar nao descarta nada que ja foi enviado. So avisa se alguma falhou e ficaria pra tras.
+    const comErro = cameraFotos.filter((f) => f.status === 'erro').length;
+    if (comErro && !confirm(`${comErro} foto(s) falharam ao enviar e não foram salvas. Sair mesmo assim?`)) return;
     pararCameraStream();
     setCameraSku(null);
     setCameraFotos([]);
@@ -856,35 +860,67 @@ export default function CadastroPage() {
     if (!ctx) return;
     ctx.drawImage(video, 0, 0, w, h);
     const dataUrl = canvas.toDataURL('image/jpeg', 0.97);
-    setCameraFotos((prev) => [...prev, dataUrl]);
+    const id = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    setCameraFotos((prev) => [...prev, { id, dataUrl, status: 'enviando' }]);
     setCameraErro('');
+    enviarFotoCameraServidor(id, dataUrl);
   }
 
-  function removerFotoCamera(idx: number) {
-    setCameraFotos((prev) => prev.filter((_, i) => i !== idx));
-  }
-
-  async function finalizarFotosCamera() {
-    if (!cameraSku || !cameraFotos.length) return;
-    setCameraEnviando(true);
-    setCameraErro('');
+  // Sobe a foto assim que e tirada (nao espera o "Finalizar") — cada uma vira uma requisicao
+  // pequena, entao 12 fotos em alta resolucao nao estouram mais limite nenhum.
+  async function enviarFotoCameraServidor(id: string, dataUrl: string) {
+    const skuAtual = cameraSku;
+    if (!skuAtual) return;
     try {
       const resp = await fetch(`${API}/cadastro/fotos/camera`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sku: cameraSku, fotos: cameraFotos }),
+        body: JSON.stringify({ sku: skuAtual, foto: dataUrl }),
       });
-      const data = await readApiResponse(resp, 'Erro ao enviar fotos');
-      pararCameraStream();
-      setCameraSku(null);
-      setCameraFotos([]);
-      alert(`${data.enviadas || cameraFotos.length} foto(s) enviada(s) para a pasta do SKU no Drive.`);
-      restaurarScrollPosCamera();
+      const data = await readApiResponse(resp, 'Erro ao enviar foto');
+      setCameraFotos((prev) => prev.map((f) => (f.id === id ? { ...f, status: 'ok', fileId: data.fileId, pastaId: data.pastaId } : f)));
     } catch (e: any) {
-      setCameraErro(e?.message || 'Erro ao enviar fotos.');
+      setCameraFotos((prev) => prev.map((f) => (f.id === id ? { ...f, status: 'erro', error: e?.message || 'Erro ao enviar foto.' } : f)));
     }
-    setCameraEnviando(false);
+  }
+
+  // Foto ja enviada (verde) precisa ser apagada do Drive tambem, senao fica orfa na pasta do SKU.
+  async function removerFotoCamera(id: string) {
+    const foto = cameraFotos.find((f) => f.id === id);
+    if (!foto || foto.status === 'enviando') return; // evita corrida com o upload em andamento
+    setCameraFotos((prev) => prev.filter((f) => f.id !== id));
+    if (foto.status === 'ok' && foto.fileId) {
+      try {
+        const resp = await fetch(`${API}/cadastro/fotos/camera`, {
+          method: 'DELETE',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fileId: foto.fileId, pastaId: foto.pastaId }),
+        });
+        if (!resp.ok) throw new Error();
+      } catch {
+        alert('A foto foi removida da lista, mas pode não ter sido apagada do Drive. Verifique a pasta do SKU.');
+      }
+    }
+  }
+
+  function finalizarFotosCamera() {
+    if (!cameraFotos.length) return;
+    if (cameraFotos.some((f) => f.status === 'enviando')) {
+      setCameraErro('Aguarde o envio de todas as fotos terminar.');
+      return;
+    }
+    const enviadas = cameraFotos.filter((f) => f.status === 'ok').length;
+    const comErro = cameraFotos.filter((f) => f.status === 'erro').length;
+    pararCameraStream();
+    setCameraSku(null);
+    setCameraFotos([]);
+    setCameraErro('');
+    restaurarScrollPosCamera();
+    alert(comErro
+      ? `${enviadas} foto(s) enviada(s). ${comErro} falharam e não foram enviadas — tire essas fotos de novo se precisar.`
+      : `${enviadas} foto(s) enviada(s) para a pasta do SKU no Drive.`);
   }
 
   function toggleSortCadastro(key: string) {
@@ -3449,12 +3485,24 @@ export default function CadastroPage() {
 
           {cameraFotos.length > 0 && (
             <div style={{ display: 'flex', gap: 8, overflowX: 'auto', padding: '10px 12px', background: '#111' }}>
-              {cameraFotos.map((foto, idx) => (
-                <div key={idx} style={{ position: 'relative', flexShrink: 0 }}>
-                  <img src={foto} style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 8 }} />
+              {cameraFotos.map((foto) => (
+                <div key={foto.id} style={{ position: 'relative', flexShrink: 0 }}>
+                  <img src={foto.dataUrl} style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 8, opacity: foto.status === 'enviando' ? 0.5 : 1 }} />
+                  {foto.status === 'enviando' && (
+                    <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <div style={{ width: 18, height: 18, border: '2px solid #fff', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                    </div>
+                  )}
+                  {foto.status === 'ok' && (
+                    <div title="Enviada" style={{ position: 'absolute', bottom: -4, right: -4, width: 18, height: 18, borderRadius: '50%', background: '#16a34a', color: '#fff', border: '2px solid #111', fontSize: 11, lineHeight: '14px', textAlign: 'center' }}>✓</div>
+                  )}
+                  {foto.status === 'erro' && (
+                    <div title={foto.error || 'Falha ao enviar'} style={{ position: 'absolute', bottom: -4, right: -4, width: 18, height: 18, borderRadius: '50%', background: '#dc2626', color: '#fff', border: '2px solid #111', fontSize: 11, lineHeight: '14px', textAlign: 'center' }}>!</div>
+                  )}
                   <button
-                    onClick={() => removerFotoCamera(idx)}
-                    style={{ position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: '50%', background: '#dc2626', color: '#fff', border: '2px solid #111', fontSize: 12, lineHeight: '16px', cursor: 'pointer', padding: 0 }}
+                    onClick={() => removerFotoCamera(foto.id)}
+                    disabled={foto.status === 'enviando'}
+                    style={{ position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: '50%', background: foto.status === 'enviando' ? '#6b7280' : '#dc2626', color: '#fff', border: '2px solid #111', fontSize: 12, lineHeight: '16px', cursor: foto.status === 'enviando' ? 'default' : 'pointer', padding: 0 }}
                   >×</button>
                 </div>
               ))}
@@ -3470,10 +3518,10 @@ export default function CadastroPage() {
             />
             <button
               onClick={finalizarFotosCamera}
-              disabled={!cameraFotos.length || cameraEnviando}
-              style={{ ...s.btn, background: cameraFotos.length ? '#16a34a' : '#374151', color: '#fff', opacity: !cameraFotos.length || cameraEnviando ? 0.6 : 1, padding: '10px 18px' }}
+              disabled={!cameraFotos.length || cameraFotos.some((f) => f.status === 'enviando')}
+              style={{ ...s.btn, background: cameraFotos.length ? '#16a34a' : '#374151', color: '#fff', opacity: !cameraFotos.length || cameraFotos.some((f) => f.status === 'enviando') ? 0.6 : 1, padding: '10px 18px' }}
             >
-              {cameraEnviando ? 'Enviando...' : `Finalizar (${cameraFotos.length})`}
+              {cameraFotos.some((f) => f.status === 'enviando') ? 'Enviando...' : `Finalizar (${cameraFotos.length})`}
             </button>
           </div>
         </div>
