@@ -808,7 +808,7 @@ async function listarCanaisVendaMercadoLivre(): Promise<number[]> {
 
 // Fonte nova e mais confiavel: a API de Anuncios do Bling (mesma coisa que a tela "Anuncios ja
 // exportados" mostra), usando o(s) canal(is) de venda Mercado Livre de verdade como idLoja.
-async function resolveMercadoLivreItemIdViaAnuncios(produtoId: number, _lojaRows: any[]): Promise<string | null> {
+export async function resolveMercadoLivreItemIdViaAnuncios(produtoId: number, _lojaRows: any[]): Promise<string | null> {
   let idsCanais: number[] = [];
   try {
     idsCanais = await listarCanaisVendaMercadoLivre();
@@ -848,7 +848,7 @@ export function resolveBlingMercadoLivreItemId(produto: any, detail?: any, lojaR
     || null;
 }
 
-function buildMercadoLivreItemLink(code: string | null) {
+export function buildMercadoLivreItemLink(code: string | null) {
   if (!code) return null;
   // O formato real do link exige hifen logo apos "MLB" (ex.: MLB-1234567890) — os codigos que
   // circulam pelo sistema ficam normalizados SEM hifen (MLB1234567890), entao precisa recolocar

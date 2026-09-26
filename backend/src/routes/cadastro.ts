@@ -3,9 +3,9 @@ import { prisma } from '../lib/prisma';
 import { compressDataUrlImage, normalizeImageFileName } from '../lib/image';
 import { buscarCadastroFotos, buscarCadastroFotosAnb, buscarCadastroFotosDrive, enviarCadastroFotosManual, processarCadastroFotos, verificarCadastroFotoSku, verificarFotosCadastroPeca, getPastaPreCadastroDoSku, analisarFotosSku, apagarPastaDrive, escanearFotosDrive, processarPastaFotosDrive, novoResultadoFotoDrive, enviarFotoCameraPreCadastro, apagarFotoCameraPreCadastro, prepararManutencaoFotos, manutencaoFotosMlUpload, manutencaoFotosMlTrocar, manutencaoFotosNuvemshopLimpar, manutencaoFotosNuvemshopEnviar } from '../lib/fotos-cadastro';
 import type { FotoDriveResultado } from '../lib/fotos-cadastro';
-import { blingReq, fetchBlingProductDetailById, findBlingProductsByCodes, resolveBlingLocation, fetchProdutoLojaLinksByProductId, resolveBlingMercadoLivreItemId, resolveBlingMercadoLivreLinkWithFallback } from './bling';
+import { blingReq, fetchBlingProductDetailById, findBlingProductsByCodes, resolveBlingLocation, fetchProdutoLojaLinksByProductId, resolveBlingMercadoLivreItemId, resolveBlingMercadoLivreLinkWithFallback, resolveMercadoLivreItemIdViaAnuncios, buildMercadoLivreItemLink } from './bling';
 import { criarPastaPreCadastro, renomearPastaPreCadastro } from './google-drive';
-import { mercadoLivreReq } from '../lib/mercado-livre';
+import { mercadoLivreReq, getMercadoLivreItemPermalink } from '../lib/mercado-livre';
 import { nuvemReq, buscarProdutoNuvemshopPorSku } from './nuvemshop';
 import { sendDetranAtivacaoEmailIfNeeded } from '../lib/detran-alert';
 
@@ -1372,13 +1372,20 @@ cadastroRouter.post('/:id/finalizar', requireCadastroAction('criar_bling'), asyn
     const blingData = await blingReq(`/produtos/${cadastro.blingProdutoId}`);
     const b = blingData?.data || {};
 
-    // Busca link do anúncio ML no Bling
+    // Busca link do anúncio ML no Bling — tenta primeiro a API de Anuncios (mais confiavel, pega
+    // anuncio publicado direto pelo Bling sem passar pela integracao de anuncios do ANB), cai pro
+    // vinculo legado (produtos/lojas, detail, produto) se ela nao achar nada. Mesma resolucao do
+    // botao "Atualizar Link ML" do Estoque (bling.ts), pra nao ficar cego a anuncios que so
+    // aparecem no modulo novo de Anuncios do Bling.
     let mercadoLivreLink: string | null = null;
     let mercadoLivreItemId: string | null = null;
     try {
       const lojaRows = await fetchProdutoLojaLinksByProductId(Number(cadastro.blingProdutoId));
-      mercadoLivreItemId = resolveBlingMercadoLivreItemId(null, b, lojaRows);
-      mercadoLivreLink   = (await resolveBlingMercadoLivreLinkWithFallback(null, b, lojaRows)).link;
+      mercadoLivreItemId = (await resolveMercadoLivreItemIdViaAnuncios(Number(cadastro.blingProdutoId), lojaRows))
+        || resolveBlingMercadoLivreItemId(null, b, lojaRows);
+      mercadoLivreLink = mercadoLivreItemId
+        ? (await getMercadoLivreItemPermalink(mercadoLivreItemId)) || buildMercadoLivreItemLink(mercadoLivreItemId)
+        : (await resolveBlingMercadoLivreLinkWithFallback(null, b, lojaRows)).link;
     } catch { /* sem anuncio ainda */ }
 
     // Busca config de taxa e frete
