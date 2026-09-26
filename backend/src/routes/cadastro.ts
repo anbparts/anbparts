@@ -154,11 +154,16 @@ function getNumeroMotorValidationMessage(detranEtiqueta: any, tipoPecaAvulsa: an
   return null;
 }
 
-// Padrao oficial da etiqueta Detran: "SP" + 14 numeros, 16 posicoes no total.
+// Padrao oficial da etiqueta Detran: "SP" + 14 numeros, 16 posicoes no total. Um SKU pode ter
+// mais de uma etiqueta (mesmo formato de "SP... / SP..." usado no lancamento de pecas em estoque
+// — ver split('/') em distribuirEtiquetas) — valida cada uma individualmente.
 function etiquetaDetranForaDoPadrao(detranEtiqueta: any) {
-  const etiq = String(detranEtiqueta || '').trim().toUpperCase();
-  if (!etiq) return false; // vazia nao e' "fora do padrao": so valida quando preenchida
-  return !/^SP\d{14}$/.test(etiq);
+  const bruto = String(detranEtiqueta || '').trim();
+  if (!bruto) return false; // vazia nao e' "fora do padrao": so valida quando preenchida
+
+  const etiquetas = bruto.split('/').map((e) => e.trim().toUpperCase()).filter(Boolean);
+  if (!etiquetas.length) return false;
+  return etiquetas.some((etiq) => !/^SP\d{14}$/.test(etiq));
 }
 
 function isBrunoAuthUser(req: any) {
