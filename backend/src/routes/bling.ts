@@ -48,6 +48,56 @@ blingRouter.post('/debug-raw', async (req, res, next) => {
   } catch (e: any) { res.status(400).json({ error: e?.message }); }
 });
 
+// GET /bling/categorias-export — pagina toda a arvore de Categorias de Produto do Bling e
+// devolve com o caminho completo (pai > filho), pra base do de/para com marketplaces (Shopee, etc).
+blingRouter.get('/categorias-export', async (_req, res, next) => {
+  try {
+    const categorias: { id: number; descricao: string; categoriaPaiId: number | null }[] = [];
+    let pagina = 1;
+    const MAX_PAGINAS = 50; // seguranca: nao deve existir arvore de categoria com 5000+ linhas
+    while (pagina <= MAX_PAGINAS) {
+      const data = await blingReq(`/categorias/produtos?pagina=${pagina}&limite=100`) as any;
+      const lista = data?.data || [];
+      if (!lista.length) break;
+      for (const c of lista) {
+        categorias.push({
+          id: Number(c.id),
+          descricao: String(c.descricao || ''),
+          categoriaPaiId: c.categoriaPai?.id ? Number(c.categoriaPai.id) : null,
+        });
+      }
+      if (lista.length < 100) break;
+      pagina += 1;
+      await sleep(250);
+    }
+
+    const byId = new Map(categorias.map((c) => [c.id, c]));
+    function caminho(c: { id: number; descricao: string; categoriaPaiId: number | null }): string {
+      const partes: string[] = [c.descricao];
+      let atual = c;
+      let guard = 0;
+      while (atual.categoriaPaiId && guard < 10) {
+        const pai = byId.get(atual.categoriaPaiId);
+        if (!pai) break;
+        partes.unshift(pai.descricao);
+        atual = pai;
+        guard += 1;
+      }
+      return partes.join(' > ');
+    }
+
+    const resultado = categorias.map((c) => ({
+      id: c.id,
+      descricao: c.descricao,
+      categoriaPaiId: c.categoriaPaiId,
+      caminho: caminho(c),
+    }));
+    res.json({ ok: true, total: resultado.length, categorias: resultado });
+  } catch (e) {
+    next(e);
+  }
+});
+
 const BLING_API = 'https://api.bling.com.br/Api/v3';
 const BLING_OAUTH = 'https://api.bling.com.br/Api/v3/oauth/token';
 const DEFAULT_FRETE_PADRAO = 29.9;
