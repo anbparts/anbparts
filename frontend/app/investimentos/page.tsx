@@ -56,6 +56,19 @@ function resolveAporteLabel(motoItem: any, tipo: any, motosMap: Map<number, stri
   return raw;
 }
 
+// Converte o valor do filtro de periodo ("mes:3", "tri:2", "sem:1") na lista de meses (1-12)
+// que ele cobre. Retorna null quando nao ha filtro (periodo completo).
+function mesesDoFiltroPeriodo(periodo: string): number[] | null {
+  if (!periodo) return null;
+  const [tipo, valorTexto] = periodo.split(':');
+  const n = Number(valorTexto);
+  if (!n) return null;
+  if (tipo === 'mes') return [n];
+  if (tipo === 'tri') return [1, 2, 3].map((offset) => (n - 1) * 3 + offset);
+  if (tipo === 'sem') return [1, 2, 3, 4, 5, 6].map((offset) => (n - 1) * 6 + offset);
+  return null;
+}
+
 function monthKey(dateValue: string) {
   const date = new Date(dateValue);
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
@@ -155,6 +168,9 @@ export default function InvestimentosPage() {
   const [filtroSocio, setFiltroSocio] = useState('');
   const [filtroAno, setFiltroAno] = useState('');
   const [filtroTipo, setFiltroTipo] = useState('');
+  // Periodo dentro do ano: mes especifico, trimestre ou semestre. Codificado como "tipo:numero"
+  // (ex.: "mes:3", "tri:2", "sem:1") pra caber num unico seletor.
+  const [filtroPeriodo, setFiltroPeriodo] = useState('');
   const [ordenacao, setOrdenacao] = useState<{ key: string; dir: 'asc' | 'desc' }>({ key: 'data', dir: 'desc' });
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -265,11 +281,15 @@ export default function InvestimentosPage() {
     rows.map((item) => normalizeTipo(item.tipo)),
   )).sort((a, b) => a.localeCompare(b, 'pt-BR'));
 
+  const mesesPeriodo = mesesDoFiltroPeriodo(filtroPeriodo);
   const filtradas = rows.filter((item) => {
-    const ano = new Date(item.data).getFullYear();
+    const dataItem = new Date(item.data);
+    const ano = dataItem.getFullYear();
+    const mes = dataItem.getMonth() + 1;
     return (!filtroSocio || item.socio === filtroSocio)
       && (!filtroAno || ano === Number(filtroAno))
-      && (!filtroTipo || normalizeTipo(item.tipo) === filtroTipo);
+      && (!filtroTipo || normalizeTipo(item.tipo) === filtroTipo)
+      && (!mesesPeriodo || mesesPeriodo.includes(mes));
   });
 
   function valorOrdenacao(item: any, key: string) {
@@ -400,7 +420,7 @@ export default function InvestimentosPage() {
   const summaryColumns = isPhone ? '1fr' : isTabletPortrait ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fit, minmax(170px, 1fr))';
   const formGridColumns = isPhone ? '1fr' : isTabletPortrait ? 'repeat(2, minmax(0, 1fr))' : isTabletLandscape ? 'repeat(3, minmax(0, 1fr))' : 'repeat(5, minmax(140px, 1fr))';
   const chartColumns = isPhone || isTabletPortrait ? '1fr' : 'minmax(0, 1fr) minmax(0, 1.1fr)';
-  const filterControlsColumns = isPhone ? '1fr' : isTabletPortrait ? 'repeat(2, minmax(0, 1fr))' : 'auto auto auto';
+  const filterControlsColumns = isPhone ? '1fr' : isTabletPortrait ? 'repeat(2, minmax(0, 1fr))' : 'auto auto auto auto';
   const useMonthlyCards = isPhone || isTabletPortrait || isTabletLandscape;
 
   function resetFormState() {
@@ -644,6 +664,24 @@ export default function InvestimentosPage() {
               <select style={{ ...inputStyle, width: isPhone ? '100%' : 'auto', cursor: 'pointer' }} value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value)}>
                 <option value="">Todos os tipos</option>
                 {tiposDisponiveis.map((tipo) => <option key={tipo} value={tipo}>{tipo}</option>)}
+              </select>
+              <select style={{ ...inputStyle, width: isPhone ? '100%' : 'auto', cursor: 'pointer' }} value={filtroPeriodo} onChange={(e) => setFiltroPeriodo(e.target.value)}>
+                <option value="">Periodo completo</option>
+                <optgroup label="Mes">
+                  {MESES.map((mes, index) => (
+                    <option key={`mes:${index + 1}`} value={`mes:${index + 1}`}>{mes}</option>
+                  ))}
+                </optgroup>
+                <optgroup label="Trimestre">
+                  <option value="tri:1">1º Trimestre (Jan-Mar)</option>
+                  <option value="tri:2">2º Trimestre (Abr-Jun)</option>
+                  <option value="tri:3">3º Trimestre (Jul-Set)</option>
+                  <option value="tri:4">4º Trimestre (Out-Dez)</option>
+                </optgroup>
+                <optgroup label="Semestre">
+                  <option value="sem:1">1º Semestre (Jan-Jun)</option>
+                  <option value="sem:2">2º Semestre (Jul-Dez)</option>
+                </optgroup>
               </select>
             </div>
           </div>
