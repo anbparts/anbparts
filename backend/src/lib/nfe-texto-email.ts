@@ -7,7 +7,7 @@ import {
   renderEmailPanel,
   sendResendEmail,
 } from './email';
-import { DETRAN_TIPOS, posicaoDaEtiqueta, tipoPorPosicao, preencherTemplateNfe } from './nfe-texto';
+import { preencherTemplateNfe, resolverTipoPecaNfe } from './nfe-texto';
 
 type NfeTextoTarget = { idPeca: string; descricao: string; tipo: string; texto: string };
 
@@ -21,11 +21,8 @@ function escapeHtml(value: any) {
 }
 
 // Mesma regra do relatorio: avulsa pelo tipoPecaAvulsa, cartela pela posicao da etiqueta.
-function resolveTipoPeca(peca: any): string | null {
-  const avulsa = String(peca?.tipoPecaAvulsa || '').trim();
-  if (avulsa && DETRAN_TIPOS.includes(avulsa)) return avulsa;
-  const pos = posicaoDaEtiqueta(peca?.detranEtiqueta);
-  return pos ? tipoPorPosicao(pos) : null;
+function resolveTipoPeca(peca: any, templates?: Map<string, string>): string | null {
+  return resolverTipoPecaNfe(peca, templates);
 }
 
 // Bloco por peca: cabecalho (SKU + descricao + tipo) e o texto preenchido, em destaque e facil de copiar.
@@ -98,7 +95,7 @@ export async function sendNfeTextoEmailIfNeeded(pecaIds: number[]) {
 
   const targets: NfeTextoTarget[] = [];
   for (const peca of pecas as any[]) {
-    const tipo = resolveTipoPeca(peca);
+    const tipo = resolveTipoPeca(peca, templates);
     const template = tipo ? templates.get(tipo) : null;
     if (!tipo || !template) continue;
     const texto = String(preencherTemplateNfe(template, { moto: peca.moto, peca }) || '').trim();

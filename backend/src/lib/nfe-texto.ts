@@ -48,6 +48,25 @@ export function posicaoDaEtiqueta(etiqueta: string | null | undefined): number |
   return n >= 1 && n <= DETRAN_TIPOS.length ? n : null;
 }
 
+// Uma peça pode ter mais de uma etiqueta ("SP...005/SP...006" — ex.: bloco do motor + cabeçote).
+// Devolve o tipo de cada etiqueta, na ordem, ignorando as que não resolvem.
+export function tiposDaEtiqueta(etiqueta: string | null | undefined): string[] {
+  return String(etiqueta || '')
+    .split('/')
+    .map((e) => posicaoDaEtiqueta(e))
+    .map((pos) => (pos ? tipoPorPosicao(pos) : null))
+    .filter((t): t is string => !!t);
+}
+
+// Resolve o tipo da peça: avulsa pelo tipoPecaAvulsa; cartela pelas etiquetas, preferindo o
+// primeiro tipo que tenha template ativo (senão o primeiro tipo resolvido).
+export function resolverTipoPecaNfe(peca: any, templates?: Map<string, string>): string | null {
+  const avulsa = String(peca?.tipoPecaAvulsa || '').trim();
+  if (avulsa && DETRAN_TIPOS.includes(avulsa)) return avulsa;
+  const tipos = tiposDaEtiqueta(peca?.detranEtiqueta);
+  return tipos.find((t) => templates?.has(t)) || tipos[0] || null;
+}
+
 // Substitui as variáveis {{key}} pelos valores (moto/peça). O que nao tiver valor fica em branco.
 export function preencherTemplateNfe(
   template: string,

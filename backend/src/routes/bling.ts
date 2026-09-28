@@ -5,7 +5,7 @@ import {
   DEFAULT_RESEND_FROM,
   getConfiguracaoGeral,
 } from '../lib/configuracoes-gerais';
-import { DETRAN_TIPOS, posicaoDaEtiqueta, tipoPorPosicao, preencherTemplateNfe } from '../lib/nfe-texto';
+import { preencherTemplateNfe, resolverTipoPecaNfe } from '../lib/nfe-texto';
 import {
   buildDatedEmailSubject,
   renderAlertEmailLayout,
@@ -6227,11 +6227,8 @@ async function buildRelatorioSeparacaoFromPedidoIds(
 }
 
 // Resolve o tipo DETRAN de uma peça: avulsa pelo tipoPecaAvulsa, cartela pela posição da etiqueta.
-function resolveTipoPecaDetran(peca: any): string | null {
-  const avulsa = String(peca?.tipoPecaAvulsa || '').trim();
-  if (avulsa && DETRAN_TIPOS.includes(avulsa)) return avulsa;
-  const pos = posicaoDaEtiqueta(peca?.detranEtiqueta);
-  return pos ? tipoPorPosicao(pos) : null;
+function resolveTipoPecaDetran(peca: any, templates?: Map<string, string>): string | null {
+  return resolverTipoPecaNfe(peca, templates);
 }
 
 // Para cada item do relatório, anexa o texto NF-e preenchido se o tipo da peça tiver template ativo.
@@ -6267,7 +6264,7 @@ async function enriquecerSeparacaoComTextoNfe(pedidos: any[]) {
       item.textoNfe = null;
       item.textoNfeTipo = null;
       if (!peca) continue;
-      const tipo = resolveTipoPecaDetran(peca);
+      const tipo = resolveTipoPecaDetran(peca, templates);
       const template = tipo ? templates.get(tipo) : null;
       if (!template) continue;
       item.textoNfeTipo = tipo;
