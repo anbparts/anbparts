@@ -54,6 +54,9 @@ model Peca {
   fotoCapaArquivo String? @db.Text
   mercadoLivreItemId String?
   mercadoLivreLink String?
+  shopeeItemId       String?
+  shopeeLink         String?
+  shopeeCategoriaId  String?
   detranBaixada  Boolean  @default(false)
   detranBaixadaAt DateTime?
   detranComprovanteNome String?
@@ -245,6 +248,8 @@ model BlingConfig {
   auditoriaLinkMlUltimaExecucaoEm DateTime?
   nuvemshopAtiva   Boolean @default(false)
   nuvemshopLojaId  Int     @default(205449158)
+  shopeeAtiva      Boolean @default(false)
+  shopeeLojaId     Int?
   exibirBuscarProdutos Boolean @default(true)
   exibirCompararCSV    Boolean @default(true)
   updatedAt                   DateTime @default(now()) @updatedAt

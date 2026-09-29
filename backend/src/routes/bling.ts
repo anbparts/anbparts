@@ -98,6 +98,121 @@ blingRouter.get('/categorias-export', async (_req, res, next) => {
   }
 });
 
+// GET /bling/anuncio-categorias?tipo=Shopee&idLoja=X&idCategoriaPai=Y (opcional) — navega a arvore
+// de categorias de ANUNCIO do Bling pra um marketplace especifico (diferente das Categorias de
+// Produto: essa e a categoria ja traduzida pro canal, usada no POST /anuncios).
+blingRouter.get('/anuncio-categorias', async (req, res, next) => {
+  try {
+    const tipo = String(req.query?.tipo || '').trim();
+    const idCategoriaPai = String(req.query?.idCategoriaPai || '').trim();
+    if (!tipo) return res.status(400).json({ error: 'tipo e obrigatorio' });
+
+    const cfg = await getConfig();
+    const idLoja = tipo === 'Shopee' ? cfg.shopeeLojaId : null;
+    if (!idLoja) return res.status(400).json({ error: `Loja do ${tipo} nao configurada em Configuracao` });
+
+    let path = `/categorias-anuncio?tipo=${encodeURIComponent(tipo)}&idLoja=${encodeURIComponent(idLoja)}&limite=100`;
+    if (idCategoriaPai) path += `&idCategoria=${encodeURIComponent(idCategoriaPai)}`;
+    const data = await blingReq(path);
+    res.json(data);
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message || 'Erro ao buscar categorias de anuncio' });
+  }
+});
+
+// GET /bling/anuncio-categoria/:id?tipo=Shopee&idLoja=X — detalhe de uma categoria de anuncio
+// (atributos e se cada um e obrigatorio), pra montar o formulario antes de criar o anuncio.
+blingRouter.get('/anuncio-categoria/:id', async (req, res, next) => {
+  try {
+    const id = String(req.params.id || '').trim();
+    const tipo = String(req.query?.tipo || '').trim();
+    if (!id) return res.status(400).json({ error: 'id obrigatorio' });
+
+    const cfg = await getConfig();
+    const idLoja = tipo === 'Shopee' ? cfg.shopeeLojaId : null;
+    const qs = [tipo && `tipo=${encodeURIComponent(tipo)}`, idLoja && `idLoja=${encodeURIComponent(idLoja)}`].filter(Boolean);
+    const path = `/categorias-anuncio/${encodeURIComponent(id)}${qs.length ? `?${qs.join('&')}` : ''}`;
+    const data = await blingReq(path);
+    res.json(data);
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message || 'Erro ao buscar detalhe da categoria de anuncio' });
+  }
+});
+
+// POST /bling/anuncio-criar — cria o anuncio no marketplace (via integracao do Bling) pro SKU
+// informado, com a categoria e atributos ja escolhidos na tela, e salva o ID do anuncio na peca.
+blingRouter.post('/anuncio-criar', async (req, res, next) => {
+  try {
+    const sku = getBaseSku(String(req.body?.sku || ''));
+    const integracaoTipo = String(req.body?.integracaoTipo || '').trim();
+    const categoriaId = String(req.body?.categoriaId || '').trim();
+    const atributos = Array.isArray(req.body?.atributos)
+      ? req.body.atributos.filter((a: any) => a?.id != null && String(a?.valor ?? '').trim() !== '')
+      : [];
+    if (!sku) return res.status(400).json({ error: 'sku obrigatorio' });
+    if (!integracaoTipo) return res.status(400).json({ error: 'integracaoTipo obrigatorio' });
+    if (!categoriaId) return res.status(400).json({ error: 'categoriaId obrigatorio' });
+
+    const cfg = await getConfig();
+    const idLoja = integracaoTipo === 'Shopee' ? cfg.shopeeLojaId : null;
+    if (!idLoja) return res.status(400).json({ error: `Loja do ${integracaoTipo} nao configurada em Configuracao` });
+
+    const produtosByCode = await findBlingProductsByCodes([sku], { forceRefresh: true });
+    const produto = produtosByCode.get(sku);
+    if (!produto?.id) return res.status(404).json({ error: 'Produto nao encontrado no Bling' });
+
+    const detail = await fetchBlingProductDetailById(Number(produto.id), { forceRefresh: true });
+    const imagens = [
+      ...(detail?.midia?.imagens?.internas || []),
+      ...(detail?.midia?.imagens?.externas || []),
+    ]
+      .map((img: any, idx: number) => ({ url: typeof img === 'string' ? img : (img?.link || ''), ordem: idx + 1 }))
+      .filter((i: any) => i.url);
+
+    const descricaoTexto = String(detail?.descricaoCurta || produto?.descricaoCurta || '')
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    const payload = {
+      variacoes: [{
+        produto: { id: Number(produto.id) },
+        integracao: { tipo: integracaoTipo },
+        loja: { id: Number(idLoja) },
+        nome: String(produto.nome || detail?.nome || '').slice(0, 60),
+        descricao: descricaoTexto,
+        preco: { valor: Number(produto.preco || detail?.preco || 0) },
+        categoria: { id: categoriaId },
+        atributos: atributos.map((a: any) => ({ id: String(a.id), valor: String(a.valor) })),
+        imagens,
+      }],
+    };
+
+    const respostaBling = await blingReq('/anuncios', { method: 'POST', body: JSON.stringify(payload) });
+    const anuncioIdBling = respostaBling?.data?.[0]?.id ?? respostaBling?.data?.id ?? null;
+
+    if (integracaoTipo === 'Shopee') {
+      const pecas = await prisma.peca.findMany({
+        where: { OR: [{ idPeca: sku }, { idPeca: { startsWith: `${sku}-` } }] },
+        select: { id: true },
+      });
+      if (pecas.length) {
+        await prisma.peca.updateMany({
+          where: { id: { in: pecas.map((p) => p.id) } },
+          data: {
+            shopeeItemId: anuncioIdBling != null ? String(anuncioIdBling) : null,
+            shopeeCategoriaId: categoriaId,
+          },
+        });
+      }
+    }
+
+    res.json({ ok: true, payloadEnviado: payload, respostaBling, anuncioIdBling });
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message || 'Erro ao criar anuncio' });
+  }
+});
+
 const BLING_API = 'https://api.bling.com.br/Api/v3';
 const BLING_OAUTH = 'https://api.bling.com.br/Api/v3/oauth/token';
 const DEFAULT_FRETE_PADRAO = 29.9;
@@ -646,6 +761,8 @@ function getAuditoriaDefaults(cfg: any) {
     nuvemshopAtiva: !!cfg?.nuvemshopAtiva,
     nuvemshopLojaId: Number(cfg?.nuvemshopLojaId || 205449158),
     mercadoLivreLojaId: 205204423, // informativo, fixo por enquanto
+    shopeeAtiva: !!cfg?.shopeeAtiva,
+    shopeeLojaId: cfg?.shopeeLojaId ? Number(cfg.shopeeLojaId) : null,
   };
 }
 
@@ -4513,6 +4630,8 @@ blingRouter.get('/config-produtos', async (_req, res, next) => {
       prefixos: cfg.prefixos || [],
       fretePadrao: cfg.fretePadrao,
       taxaPadraoPct: cfg.taxaPadraoPct,
+      shopeeAtiva: cfg.shopeeAtiva,
+      shopeeLojaId: cfg.shopeeLojaId,
     });
   } catch (e) {
     next(e);
@@ -4529,11 +4648,17 @@ blingRouter.post('/config-produtos', async (req, res, next) => {
     const taxaPadraoPct = req.body?.taxaPadraoPct !== undefined
       ? roundMoney(Math.max(0, toNumber(req.body?.taxaPadraoPct, DEFAULT_TAXA_PADRAO_PCT)))
       : current.taxaPadraoPct;
+    const shopeeAtiva = req.body?.shopeeAtiva == null ? current.shopeeAtiva : !!req.body.shopeeAtiva;
+    const shopeeLojaId = req.body?.shopeeLojaId !== undefined
+      ? (req.body.shopeeLojaId ? Number(req.body.shopeeLojaId) : null)
+      : current.shopeeLojaId;
 
     await saveConfig({
       prefixos,
       fretePadrao,
       taxaPadraoPct,
+      shopeeAtiva,
+      shopeeLojaId,
     });
 
     res.json({ ok: true });

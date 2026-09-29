@@ -418,7 +418,26 @@ export default function CadastroPage() {
   const [resumoFiltro, setResumoFiltro] = useState<'' | 'liberadas' | 'pendentes' | 'pendente_imagens' | 'sem_fotos'>('');
   const [resumoFiltroSku, setResumoFiltroSku] = useState('');
   const [skusCopiados, setSkusCopiados] = useState(false);
-  const [paginaCadastro, setPaginaCadastro] = useState<'sku' | 'fotos-drive' | 'fotos' | 'categoria' | 'fotos-manutencao'>('sku');
+  const [paginaCadastro, setPaginaCadastro] = useState<'sku' | 'fotos-drive' | 'anuncio' | 'fotos' | 'categoria' | 'fotos-manutencao'>('sku');
+  // Aba Anuncio: cria o anuncio no marketplace (hoje so Shopee, via integracao do Bling) pro SKU
+  // informado — escolhe a categoria (arvore traduzida pelo Bling) e preenche os atributos
+  // obrigatorios antes de disparar o POST /anuncios.
+  const ANUNCIO_CANAIS = ['nuvemshop', 'mercadolivre', 'shopee'] as const;
+  type AnuncioCanal = typeof ANUNCIO_CANAIS[number];
+  const [anuncioCanaisAtivos, setAnuncioCanaisAtivos] = useState<AnuncioCanal[]>(['shopee']);
+  const [anuncioSku, setAnuncioSku] = useState('');
+  const [anuncioSkuBuscado, setAnuncioSkuBuscado] = useState('');
+  const [anuncioBuscando, setAnuncioBuscando] = useState(false);
+  const [anuncioErro, setAnuncioErro] = useState('');
+  type AnuncioCategoriaNode = { id: number; descricao: string };
+  const [anuncioCategoriaTrilha, setAnuncioCategoriaTrilha] = useState<AnuncioCategoriaNode[]>([]);
+  const [anuncioCategoriaLista, setAnuncioCategoriaLista] = useState<AnuncioCategoriaNode[]>([]);
+  const [anuncioCategoriaCarregando, setAnuncioCategoriaCarregando] = useState(false);
+  const [anuncioCategoriaEscolhida, setAnuncioCategoriaEscolhida] = useState<AnuncioCategoriaNode | null>(null);
+  const [anuncioAtributos, setAnuncioAtributos] = useState<{ id: string; nome: string; obrigatorio: boolean; valor: string }[]>([]);
+  const [anuncioAtributosCarregando, setAnuncioAtributosCarregando] = useState(false);
+  const [anuncioCriando, setAnuncioCriando] = useState(false);
+  const [anuncioResultado, setAnuncioResultado] = useState<any>(null);
   // Fotos - Manutencao: substitui as fotos de anuncios ja publicados (ML/Nuvemshop) pelas fotos
   // ja tratadas na pasta oficial da moto (rodar Fotos Drive antes e' obrigatorio). Processa 1 SKU
   // por vez, etapa por etapa, pra mostrar o avanco na tela (igual a aba Fotos Anúncios).
@@ -1904,6 +1923,243 @@ export default function CadastroPage() {
   }
   const fdPendentes = fdItens.filter(i => i.status === 'pendente' || i.status === 'erro').length;
 
+  function toggleAnuncioCanal(canal: AnuncioCanal) {
+    if (canal !== 'shopee') return; // ML e Nuvemshop ainda nao implementados nessa aba
+    setAnuncioCanaisAtivos((prev) => (prev.includes(canal) ? prev.filter((c) => c !== canal) : [...prev, canal]));
+  }
+
+  async function carregarAnuncioCategorias(idCategoriaPai?: number) {
+    setAnuncioCategoriaCarregando(true);
+    setAnuncioErro('');
+    try {
+      const url = `${API}/bling/anuncio-categorias?tipo=Shopee${idCategoriaPai ? `&idCategoriaPai=${idCategoriaPai}` : ''}`;
+      const resp = await fetch(url, { credentials: 'include' });
+      const data = await readApiResponse(resp, 'Erro ao buscar categorias');
+      const lista = Array.isArray(data?.data) ? data.data : [];
+      setAnuncioCategoriaLista(lista.map((c: any) => ({ id: Number(c.id), descricao: String(c.descricao || c.nome || '') })));
+    } catch (e: any) {
+      setAnuncioErro(e?.message || 'Erro ao buscar categorias.');
+      setAnuncioCategoriaLista([]);
+    }
+    setAnuncioCategoriaCarregando(false);
+  }
+
+  async function buscarAnuncioSku() {
+    const sku = anuncioSku.trim().toUpperCase();
+    if (!sku) return;
+    setAnuncioSkuBuscado(sku);
+    setAnuncioCategoriaEscolhida(null);
+    setAnuncioAtributos([]);
+    setAnuncioResultado(null);
+    setAnuncioCategoriaTrilha([]);
+    await carregarAnuncioCategorias();
+  }
+
+  async function entrarNaCategoria(node: AnuncioCategoriaNode) {
+    setAnuncioCategoriaTrilha((prev) => [...prev, node]);
+    await carregarAnuncioCategorias(node.id);
+  }
+
+  async function voltarTrilhaCategoria(indexAlvo: number) {
+    const novaTrilha = anuncioCategoriaTrilha.slice(0, indexAlvo);
+    setAnuncioCategoriaTrilha(novaTrilha);
+    setAnuncioCategoriaEscolhida(null);
+    setAnuncioAtributos([]);
+    await carregarAnuncioCategorias(novaTrilha.length ? novaTrilha[novaTrilha.length - 1].id : undefined);
+  }
+
+  async function escolherCategoriaFolha(node: AnuncioCategoriaNode) {
+    setAnuncioCategoriaEscolhida(node);
+    setAnuncioAtributosCarregando(true);
+    setAnuncioErro('');
+    setAnuncioResultado(null);
+    try {
+      const resp = await fetch(`${API}/bling/anuncio-categoria/${node.id}?tipo=Shopee`, { credentials: 'include' });
+      const data = await readApiResponse(resp, 'Erro ao buscar atributos da categoria');
+      const bruto = Array.isArray(data?.data) ? data.data : (data?.data ? [data.data] : []);
+      setAnuncioAtributos(bruto.map((a: any) => ({
+        id: String(a.id),
+        nome: String(a.nome || a.descricao || `Atributo ${a.id}`),
+        obrigatorio: !!a.obrigatorio,
+        valor: '',
+      })));
+    } catch (e: any) {
+      setAnuncioErro(e?.message || 'Erro ao buscar atributos da categoria.');
+      setAnuncioAtributos([]);
+    }
+    setAnuncioAtributosCarregando(false);
+  }
+
+  function atualizarValorAtributo(id: string, valor: string) {
+    setAnuncioAtributos((prev) => prev.map((a) => (a.id === id ? { ...a, valor } : a)));
+  }
+
+  async function criarAnuncioShopee() {
+    if (!anuncioSkuBuscado || !anuncioCategoriaEscolhida) return;
+    const faltando = anuncioAtributos.filter((a) => a.obrigatorio && !a.valor.trim());
+    if (faltando.length) {
+      setAnuncioErro(`Preencha os atributos obrigatórios: ${faltando.map((a) => a.nome).join(', ')}`);
+      return;
+    }
+    setAnuncioCriando(true);
+    setAnuncioErro('');
+    setAnuncioResultado(null);
+    try {
+      const resp = await fetch(`${API}/bling/anuncio-criar`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sku: anuncioSkuBuscado,
+          integracaoTipo: 'Shopee',
+          categoriaId: String(anuncioCategoriaEscolhida.id),
+          atributos: anuncioAtributos.filter((a) => a.valor.trim()).map((a) => ({ id: a.id, valor: a.valor })),
+        }),
+      });
+      const data = await readApiResponse(resp, 'Erro ao criar anúncio');
+      setAnuncioResultado(data);
+    } catch (e: any) {
+      setAnuncioErro(e?.message || 'Erro ao criar anúncio.');
+    }
+    setAnuncioCriando(false);
+  }
+
+  const renderAnuncioConteudo = () => (
+    <>
+      <div style={{ ...s.card, padding: isPhone ? '14px' : '18px' }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 4 }}>Criar anúncio</div>
+        <div style={{ fontSize: 12, color: 'var(--gray-500)', marginBottom: 14, lineHeight: 1.5 }}>
+          Cria o anúncio no marketplace através da integração do Bling e grava o ID do anúncio na peça.
+        </div>
+
+        <label style={s.label}>Canais</label>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+          {ANUNCIO_CANAIS.map((canal) => {
+            const ativo = anuncioCanaisAtivos.includes(canal);
+            const disponivel = canal === 'shopee';
+            const label = canal === 'nuvemshop' ? 'Nuvemshop' : canal === 'mercadolivre' ? 'Mercado Livre' : 'Shopee';
+            return (
+              <button
+                key={canal}
+                onClick={() => toggleAnuncioCanal(canal)}
+                disabled={!disponivel}
+                title={disponivel ? undefined : 'Em breve'}
+                style={{
+                  ...s.btn,
+                  background: ativo ? '#ee4d2d' : 'var(--white)',
+                  color: ativo ? '#fff' : disponivel ? 'var(--gray-600)' : 'var(--gray-400)',
+                  border: '1px solid var(--border)',
+                  opacity: disponivel ? 1 : 0.6,
+                  cursor: disponivel ? 'pointer' : 'default',
+                }}
+              >
+                {ativo ? '✓ ' : ''}{label}{disponivel ? '' : ' (em breve)'}
+              </button>
+            );
+          })}
+        </div>
+
+        <label style={s.label}>SKU</label>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <input
+            style={{ ...s.input, flex: 1 }}
+            value={anuncioSku}
+            onChange={(e: any) => setAnuncioSku(e.target.value)}
+            onKeyDown={(e: any) => { if (e.key === 'Enter') buscarAnuncioSku(); }}
+            placeholder="BM03_0119"
+          />
+          <button
+            onClick={buscarAnuncioSku}
+            disabled={anuncioBuscando || !anuncioSku.trim()}
+            style={{ ...s.btn, background: '#7c3aed', color: '#fff', opacity: !anuncioSku.trim() ? 0.6 : 1 }}
+          >
+            Buscar
+          </button>
+        </div>
+        {anuncioErro && <div style={{ marginTop: 10, fontSize: 12, color: '#dc2626' }}>⚠ {anuncioErro}</div>}
+      </div>
+
+      {anuncioSkuBuscado && anuncioCanaisAtivos.includes('shopee') && (
+        <div style={{ ...s.card, padding: isPhone ? '14px' : '18px', marginTop: 14 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 10 }}>
+            Categoria Shopee — {anuncioSkuBuscado}
+          </div>
+
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10, fontSize: 12 }}>
+            <button onClick={() => voltarTrilhaCategoria(0)} style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', padding: 0 }}>Raiz</button>
+            {anuncioCategoriaTrilha.map((node, idx) => (
+              <span key={node.id}>
+                {' > '}
+                <button onClick={() => voltarTrilhaCategoria(idx + 1)} style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', padding: 0 }}>{node.descricao}</button>
+              </span>
+            ))}
+          </div>
+
+          {anuncioCategoriaCarregando ? (
+            <div style={{ fontSize: 12, color: 'var(--gray-500)' }}>Carregando...</div>
+          ) : anuncioCategoriaLista.length ? (
+            <div style={{ display: 'grid', gap: 6 }}>
+              {anuncioCategoriaLista.map((node) => (
+                <div key={node.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px' }}>
+                  <span style={{ fontSize: 12.5 }}>{node.descricao}</span>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button onClick={() => entrarNaCategoria(node)} style={{ ...s.btn, fontSize: 11, padding: '4px 8px', background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)' }}>Ver subcategorias</button>
+                    <button onClick={() => escolherCategoriaFolha(node)} style={{ ...s.btn, fontSize: 11, padding: '4px 8px', background: anuncioCategoriaEscolhida?.id === node.id ? '#16a34a' : '#ee4d2d', color: '#fff' }}>
+                      {anuncioCategoriaEscolhida?.id === node.id ? '✓ Selecionada' : 'Usar esta'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{ fontSize: 12, color: 'var(--gray-500)' }}>Nenhuma subcategoria — ou use "Usar esta" na categoria acima.</div>
+          )}
+        </div>
+      )}
+
+      {anuncioCategoriaEscolhida && (
+        <div style={{ ...s.card, padding: isPhone ? '14px' : '18px', marginTop: 14 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 10 }}>
+            Atributos — {anuncioCategoriaEscolhida.descricao}
+          </div>
+          {anuncioAtributosCarregando ? (
+            <div style={{ fontSize: 12, color: 'var(--gray-500)' }}>Carregando atributos...</div>
+          ) : anuncioAtributos.length ? (
+            <div style={{ display: 'grid', gap: 10 }}>
+              {anuncioAtributos.map((a) => (
+                <div key={a.id}>
+                  <label style={s.label}>{a.nome}{a.obrigatorio ? ' *' : ''}</label>
+                  <input style={s.input} value={a.valor} onChange={(e: any) => atualizarValorAtributo(a.id, e.target.value)} />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{ fontSize: 12, color: 'var(--gray-500)' }}>Essa categoria não tem atributos configurados.</div>
+          )}
+
+          <button
+            onClick={criarAnuncioShopee}
+            disabled={anuncioCriando}
+            style={{ ...s.btn, marginTop: 14, background: '#ee4d2d', color: '#fff', opacity: anuncioCriando ? 0.7 : 1 }}
+          >
+            {anuncioCriando ? 'Criando...' : 'Criar Anúncio na Shopee'}
+          </button>
+        </div>
+      )}
+
+      {anuncioResultado && (
+        <div style={{ ...s.card, padding: isPhone ? '14px' : '18px', marginTop: 14, background: '#f0fdf4', border: '1px solid #86efac' }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#16a34a', marginBottom: 6 }}>
+            {anuncioResultado.anuncioIdBling ? `✓ Anúncio criado — ID ${anuncioResultado.anuncioIdBling}` : 'Requisição concluída'}
+          </div>
+          <pre style={{ fontSize: 11, whiteSpace: 'pre-wrap', color: 'var(--gray-600)', maxHeight: 300, overflow: 'auto' }}>
+            {JSON.stringify(anuncioResultado.respostaBling, null, 2)}
+          </pre>
+        </div>
+      )}
+    </>
+  );
+
   const renderFotosDriveConteudo = () => (
     <>
       <div style={{ ...s.card, padding: isPhone ? '14px' : '18px' }}>
@@ -2342,7 +2598,7 @@ export default function CadastroPage() {
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', width: isPhone ? '100%' : undefined, justifyContent: isPhone ? 'space-between' : 'flex-end' }}>
           <div style={{ display: 'inline-flex', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', background: 'var(--white)' }}>
-            {(['sku', 'fotos-drive', 'fotos', 'categoria', 'fotos-manutencao'] as const).map((tab, index, arr) => (
+            {(['sku', 'fotos-drive', 'anuncio', 'fotos', 'categoria', 'fotos-manutencao'] as const).map((tab, index, arr) => (
               <button
                 key={tab}
                 onClick={() => setPaginaCadastro(tab)}
@@ -2357,7 +2613,7 @@ export default function CadastroPage() {
                   cursor: 'pointer',
                 }}
               >
-                {tab === 'sku' ? 'SKU' : tab === 'fotos-drive' ? 'Fotos Drive' : tab === 'fotos' ? 'Fotos Anúncios' : tab === 'categoria' ? 'Categoria' : 'Fotos - Manutenção'}
+                {tab === 'sku' ? 'SKU' : tab === 'fotos-drive' ? 'Fotos Drive' : tab === 'anuncio' ? 'Anúncio' : tab === 'fotos' ? 'Fotos Anúncios' : tab === 'categoria' ? 'Categoria' : 'Fotos - Manutenção'}
               </button>
             ))}
           </div>
@@ -2374,7 +2630,7 @@ export default function CadastroPage() {
       </div>
 
       <div style={{ padding: isPhone ? '14px' : '20px 24px' }}>
-        {paginaCadastro === 'categoria' ? renderCategoriaConteudo() : paginaCadastro === 'fotos-drive' ? renderFotosDriveConteudo() : paginaCadastro === 'fotos-manutencao' ? renderFotosManutencaoConteudo() : paginaCadastro === 'fotos' ? (
+        {paginaCadastro === 'categoria' ? renderCategoriaConteudo() : paginaCadastro === 'fotos-drive' ? renderFotosDriveConteudo() : paginaCadastro === 'anuncio' ? renderAnuncioConteudo() : paginaCadastro === 'fotos-manutencao' ? renderFotosManutencaoConteudo() : paginaCadastro === 'fotos' ? (
           <>
             <div style={{ ...s.card, padding: isPhone ? '14px' : '18px' }}>
               <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 12 }}>Buscar SKUs para fotos</div>
