@@ -111,7 +111,7 @@ blingRouter.get('/anuncio-categorias', async (req, res, next) => {
     const idLoja = tipo === 'Shopee' ? cfg.shopeeLojaId : null;
     if (!idLoja) return res.status(400).json({ error: `Loja do ${tipo} nao configurada em Configuracao` });
 
-    let path = `/categorias-anuncio?tipo=${encodeURIComponent(tipo)}&idLoja=${encodeURIComponent(idLoja)}&limite=100`;
+    let path = `/anuncios/categorias?tipoIntegracao=${encodeURIComponent(tipo)}&idLoja=${encodeURIComponent(idLoja)}&limite=100`;
     if (idCategoriaPai) path += `&idCategoria=${encodeURIComponent(idCategoriaPai)}`;
     const data = await blingReq(path);
     res.json(data);
@@ -130,8 +130,8 @@ blingRouter.get('/anuncio-categoria/:id', async (req, res, next) => {
 
     const cfg = await getConfig();
     const idLoja = tipo === 'Shopee' ? cfg.shopeeLojaId : null;
-    const qs = [tipo && `tipo=${encodeURIComponent(tipo)}`, idLoja && `idLoja=${encodeURIComponent(idLoja)}`].filter(Boolean);
-    const path = `/categorias-anuncio/${encodeURIComponent(id)}${qs.length ? `?${qs.join('&')}` : ''}`;
+    const qs = [tipo && `tipoIntegracao=${encodeURIComponent(tipo)}`, idLoja && `idLoja=${encodeURIComponent(idLoja)}`].filter(Boolean);
+    const path = `/anuncios/categorias/${encodeURIComponent(id)}${qs.length ? `?${qs.join('&')}` : ''}`;
     const data = await blingReq(path);
     res.json(data);
   } catch (e: any) {
@@ -189,7 +189,8 @@ blingRouter.post('/anuncio-criar', async (req, res, next) => {
     };
 
     const respostaBling = await blingReq('/anuncios', { method: 'POST', body: JSON.stringify(payload) });
-    const anuncioIdBling = respostaBling?.data?.[0]?.id ?? respostaBling?.data?.id ?? null;
+    // Confirmado no schema oficial (POST /anuncios, 201): { data: { id, idsVariacoes: [] } } — objeto, nao array.
+    const anuncioIdBling = respostaBling?.data?.id ?? null;
 
     if (integracaoTipo === 'Shopee') {
       const pecas = await prisma.peca.findMany({
