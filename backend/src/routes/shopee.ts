@@ -169,6 +169,7 @@ shopeeRouter.post('/anuncio/criar', async (req, res, next) => {
 
     const peca = await prisma.peca.findFirst({
       where: { OR: [{ idPeca: sku }, { idPeca: { startsWith: `${sku}-` } }] },
+      include: { moto: { select: { marca: true } } },
       orderBy: { idPeca: 'asc' },
     });
     if (!peca) return res.status(404).json({ error: 'SKU nao encontrado no ANB' });
@@ -208,6 +209,7 @@ shopeeRouter.post('/anuncio/criar', async (req, res, next) => {
       itemSku: sku,
       stock: qtdDisponivel,
       logisticId: canal.logistic_id,
+      marcaMoto: (peca as any).moto?.marca || null,
     });
 
     let blingResultado: any = null;

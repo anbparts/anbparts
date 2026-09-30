@@ -250,6 +250,47 @@ export async function shopeeGetLogisticChannel(): Promise<{ logistic_id: number;
   return { logistic_id: logisticId, nome: String(habilitado.logistics_channel_name || habilitado.channel_name || logisticId) };
 }
 
+// GET /api/v2/product/get_brand_list — marcas validas pra uma categoria (algumas categorias exigem
+// brand obrigatorio no add_item, ex: "Brand information required"). Prioridade: (1) a marca da moto
+// do produto (Honda, Yamaha, BMW...), se ela existir na lista de marcas aceitas por essa categoria
+// na Shopee; (2) a opcao generica "NoBrand" (brand_id 0), quando existir; (3) a primeira da lista.
+// Nao cacheamos porque e' especifico por categoria (ao contrario do canal de logistica, que e' fixo
+// pra loja inteira).
+// Remove acentos/caixa pra comparacao "igual" (ex: "BMW" == "bmw"). Mantem espacos/hifen.
+function normalizarNomeMarca(valor: any) {
+  return String(valor || '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
+// Alem de normalizarNomeMarca, remove tudo que nao for letra/numero — pra igualar nomes compostos
+// escritos diferente (ex: "Harley Davidson" no nosso sistema vs "Harley-Davidson" na Shopee).
+function normalizarNomeMarcaEstrito(valor: any) {
+  return normalizarNomeMarca(valor).replace(/[^a-z0-9]/g, '');
+}
+
+export async function shopeeGetBrandForCategory(categoryId: number, marcaMoto?: string | null): Promise<{ brand_id: number; original_brand_name: string } | null> {
+  const payload = await shopeeReq(`/api/v2/product/get_brand_list?category_id=${categoryId}&status=1&offset=0&page_size=20`);
+  const marcas = payload?.response?.brand_list || [];
+  if (!marcas.length) return null;
+
+  const marcaMotoEstrita = normalizarNomeMarcaEstrito(marcaMoto);
+  // 1a tentativa: igual ignorando espaco/hifen/acento (cobre "Harley Davidson" vs "Harley-Davidson").
+  let daMoto = marcaMotoEstrita
+    ? marcas.find((m: any) => normalizarNomeMarcaEstrito(m.original_brand_name) === marcaMotoEstrita || normalizarNomeMarcaEstrito(m.display_brand_name) === marcaMotoEstrita)
+    : null;
+  // 2a tentativa: um nome "contem" o outro (cobre coisas como so "Harley" vs "Harley Davidson").
+  if (!daMoto && marcaMotoEstrita) {
+    daMoto = marcas.find((m: any) => {
+      const nomeOriginal = normalizarNomeMarcaEstrito(m.original_brand_name);
+      const nomeExibicao = normalizarNomeMarcaEstrito(m.display_brand_name);
+      return (nomeOriginal && (nomeOriginal.includes(marcaMotoEstrita) || marcaMotoEstrita.includes(nomeOriginal)))
+        || (nomeExibicao && (nomeExibicao.includes(marcaMotoEstrita) || marcaMotoEstrita.includes(nomeExibicao)));
+    });
+  }
+  const semMarca = marcas.find((m: any) => Number(m.brand_id) === 0);
+  const escolhida = daMoto || semMarca || marcas[0];
+  return { brand_id: Number(escolhida.brand_id), original_brand_name: String(escolhida.original_brand_name || 'NoBrand') };
+}
+
 export type ShopeeAddItemInput = {
   itemName: string;
   description: string;
@@ -263,6 +304,7 @@ export type ShopeeAddItemInput = {
   itemSku: string;
   stock: number;
   logisticId: number;
+  marcaMoto?: string | null;
 };
 
 // POST /api/v2/product/add_item — cria o anuncio. So os campos que a doc oficial confirma como
@@ -272,6 +314,7 @@ export type ShopeeAddItemInput = {
 // (error_invalid_category_attribute etc.) que a gente repassa pro usuario, em vez de tentar
 // adivinhar de antemao quais atributos cada uma das ~90 categorias exige.
 export async function shopeeAddItem(input: ShopeeAddItemInput) {
+  const brand = await shopeeGetBrandForCategory(input.categoryId, input.marcaMoto);
   const payload = await shopeeReq('/api/v2/product/add_item', {
     method: 'POST',
     body: {
@@ -290,6 +333,7 @@ export async function shopeeAddItem(input: ShopeeAddItemInput) {
       item_sku: input.itemSku,
       condition: 'USED',
       seller_stock: [{ stock: Math.max(1, Math.round(input.stock)) }],
+      ...(brand ? { brand: { brand_id: brand.brand_id, original_brand_name: brand.original_brand_name } } : {}),
     },
   });
   const itemId = payload?.response?.item_id;
