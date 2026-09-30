@@ -2960,6 +2960,9 @@ export default function EstoquePage() {
   const colStorageKey = getColumnStorageKey(user?.username);
   const [data, setData] = useState<any>({ total: 0, totalDisp: 0, totalVend: 0, totalEtiquetas: 0, data: [] });
   const [exportando, setExportando] = useState(false);
+  const [exportandoShopeeCategorias, setExportandoShopeeCategorias] = useState(false);
+  const [importandoShopeeCategorias, setImportandoShopeeCategorias] = useState(false);
+  const shopeeCategoriasFileInputRef = useRef<HTMLInputElement | null>(null);
   const [motos, setMotos] = useState<any[]>([]);
   const [prefixosMoto, setPrefixosMoto] = useState<Array<{ prefixo: string; motoId: number }>>([]);
   const [caixaOptions, setCaixaOptions] = useState<CaixaFilterOption[]>([]);
@@ -3633,6 +3636,58 @@ export default function EstoquePage() {
     }
   }
 
+  // Exporta 1 JSON por SKU base (sem -1/-2/...) com os campos usados pra decidir a categoria da
+  // Shopee. Pensado pra sair do sistema, ser classificado (por IA) e reimportado via botão abaixo.
+  async function exportarSkusShopeeCategorias() {
+    setExportandoShopeeCategorias(true);
+    try {
+      const resp = await fetch(`${API_BASE}/pecas/export-shopee-categorias`, { credentials: 'include' });
+      const data = await resp.json();
+      if (!resp.ok || data?.ok === false) throw new Error(data?.error || 'Erro ao exportar');
+
+      const blob = new Blob([JSON.stringify(data.skus, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const now = new Date();
+      a.href = url;
+      a.download = `skus_shopee_categorias_${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      alert(`Erro ao exportar SKUs (Shopee): ${e.message}`);
+    } finally {
+      setExportandoShopeeCategorias(false);
+    }
+  }
+
+  // Importa o JSON classificado de volta: [{ sku, shopeeCategoriaId }]. Grava em todas as pecas
+  // daquele SKU base (SKU, SKU-1, SKU-2...).
+  async function importarSkusShopeeCategorias(file: File) {
+    setImportandoShopeeCategorias(true);
+    try {
+      const texto = await file.text();
+      const itens = JSON.parse(texto);
+      if (!Array.isArray(itens)) throw new Error('Arquivo precisa ser uma lista [{sku, shopeeCategoriaId}]');
+
+      const resp = await fetch(`${API_BASE}/pecas/import-shopee-categorias`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ itens }),
+      });
+      const data = await resp.json();
+      if (!resp.ok || data?.ok === false) throw new Error(data?.error || 'Erro ao importar');
+
+      const falhasTexto = data.falhas?.length ? `\n\nFalhas (${data.falhas.length}):\n${data.falhas.slice(0, 10).map((f: any) => `${f.sku}: ${f.erro}`).join('\n')}` : '';
+      alert(`${data.atualizados} de ${data.total} SKU(s) atualizados com a categoria Shopee.${falhasTexto}`);
+      loadPecas();
+    } catch (e: any) {
+      alert(`Erro ao importar categorias Shopee: ${e.message}`);
+    } finally {
+      setImportandoShopeeCategorias(false);
+    }
+  }
+
   async function handleSelecionarTodasFiltradas() {
     setSelecionandoTudo(true);
     try {
@@ -4175,6 +4230,33 @@ export default function EstoquePage() {
                 disabled={exportando}
               >
                 {exportando ? 'Exportando...' : '↓ Exportar Excel'}
+              </button>
+              <button
+                style={{ ...cs.btn, background: 'var(--white)', border: '1px solid var(--border)', color: exportandoShopeeCategorias ? 'var(--ink-muted)' : 'var(--ink)', padding: '6px 14px', fontSize: 13, width: isPhone ? '100%' : undefined, opacity: exportandoShopeeCategorias ? 0.6 : 1 }}
+                onClick={exportarSkusShopeeCategorias}
+                disabled={exportandoShopeeCategorias}
+                title="Exporta 1 JSON por SKU (sem variações -1/-2/...) com os campos usados pra classificar a categoria da Shopee"
+              >
+                {exportandoShopeeCategorias ? 'Exportando...' : '↓ SKUs p/ Categoria Shopee'}
+              </button>
+              <input
+                ref={shopeeCategoriasFileInputRef}
+                type="file"
+                accept="application/json"
+                style={{ display: 'none' }}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) importarSkusShopeeCategorias(file);
+                  e.target.value = '';
+                }}
+              />
+              <button
+                style={{ ...cs.btn, background: 'var(--white)', border: '1px solid var(--border)', color: importandoShopeeCategorias ? 'var(--ink-muted)' : 'var(--ink)', padding: '6px 14px', fontSize: 13, width: isPhone ? '100%' : undefined, opacity: importandoShopeeCategorias ? 0.6 : 1 }}
+                onClick={() => shopeeCategoriasFileInputRef.current?.click()}
+                disabled={importandoShopeeCategorias}
+                title="Importa o JSON classificado de volta: [{ sku, shopeeCategoriaId }]"
+              >
+                {importandoShopeeCategorias ? 'Importando...' : '↑ Importar Categorias Shopee'}
               </button>
               <button
                 type="button"

@@ -529,6 +529,88 @@ function calculateManualSaleValues(
   };
 }
 
+// GET /pecas/export-shopee-categorias — 1 linha por SKU BASE (peca disponivel), com os campos
+// usados pra decidir a categoria da Shopee. Agrupa SKU/SKU-1/SKU-2/... num so registro, ja que
+// todos compartilham a mesma peca/categoria.
+pecasRouter.get('/export-shopee-categorias', async (_req, res, next) => {
+  try {
+    const pecas = await prisma.peca.findMany({
+      where: { disponivel: true },
+      select: {
+        idPeca: true,
+        descricao: true,
+        tipoPecaAvulsa: true,
+        numeroPeca: true,
+        shopeeCategoriaId: true,
+        moto: { select: { marca: true, modelo: true } },
+      },
+      orderBy: { idPeca: 'asc' },
+    });
+
+    const porSkuBase = new Map<string, any>();
+    for (const p of pecas) {
+      const base = getBaseSkuPeca(p.idPeca);
+      if (!base || porSkuBase.has(base)) continue;
+      porSkuBase.set(base, {
+        sku: base,
+        descricao: p.descricao || '',
+        tipoPeca: p.tipoPecaAvulsa || null,
+        numeroPeca: p.numeroPeca || null,
+        marca: p.moto?.marca || null,
+        modelo: p.moto?.modelo || null,
+        shopeeCategoriaIdAtual: p.shopeeCategoriaId || null,
+      });
+    }
+
+    res.json({ ok: true, total: porSkuBase.size, skus: Array.from(porSkuBase.values()) });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// POST /pecas/import-shopee-categorias — body: { itens: [{ sku, shopeeCategoriaId }] }. Aplica em
+// TODAS as pecas daquele SKU base (SKU, SKU-1, SKU-2...). Valida que o codigo existe em
+// ShopeeCategoria antes de gravar.
+pecasRouter.post('/import-shopee-categorias', async (req, res, next) => {
+  try {
+    const itens = Array.isArray(req.body?.itens) ? req.body.itens : [];
+    if (!itens.length) return res.status(400).json({ error: 'Nenhum item informado' });
+
+    const codigosValidos = new Set(
+      (await prisma.shopeeCategoria.findMany({ select: { id: true } })).map((c) => c.id),
+    );
+
+    const resultado: Array<{ sku: string; ok: boolean; pecasAtualizadas?: number; erro?: string }> = [];
+    for (const item of itens) {
+      const sku = getBaseSkuPeca(item?.sku);
+      const categoriaId = Number(item?.shopeeCategoriaId);
+      if (!sku || !categoriaId) {
+        resultado.push({ sku: String(item?.sku || ''), ok: false, erro: 'sku ou shopeeCategoriaId invalido' });
+        continue;
+      }
+      if (!codigosValidos.has(categoriaId)) {
+        resultado.push({ sku, ok: false, erro: `categoria ${categoriaId} nao existe em ShopeeCategoria` });
+        continue;
+      }
+
+      const r = await prisma.peca.updateMany({
+        where: { OR: [{ idPeca: sku }, { idPeca: { startsWith: `${sku}-` } }] },
+        data: { shopeeCategoriaId: String(categoriaId) },
+      });
+      resultado.push({ sku, ok: true, pecasAtualizadas: r.count });
+    }
+
+    res.json({
+      ok: true,
+      total: resultado.length,
+      atualizados: resultado.filter((r) => r.ok).length,
+      falhas: resultado.filter((r) => !r.ok),
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
 // GET /pecas
 pecasRouter.get('/', async (req, res, next) => {
   try {
