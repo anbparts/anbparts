@@ -1226,6 +1226,22 @@ function limitarFotosShopee<T>(fotos: T[], imagensAtuais: number) {
   return fotos.slice(0, vagas);
 }
 
+// Usado no fluxo de CRIACAO de anuncio (aba Anuncio): busca as fotos do Drive do SKU e sobe pra
+// Shopee, devolvendo so os image_id (o item ainda nem existe na Shopee nesse ponto, entao nao ha
+// o que mesclar com fotos existentes — isso e' diferente de uploadShopeeDrive, que e' pro fluxo de
+// ANEXAR fotos a um anuncio ja criado).
+export async function prepararImagensShopeeParaNovoItem(motoId: number, sku: string): Promise<string[]> {
+  const drive = await buscarFotosDriveSku(motoId, sku);
+  const fotos = drive.fotos.slice(0, SHOPEE_MAX_FOTOS);
+  const imageIds: string[] = [];
+  for (const foto of fotos) {
+    const downloaded = await downloadDriveFoto(foto);
+    const imageId = await shopeeUploadImage(downloaded.buffer, foto.nome || 'foto.jpg');
+    imageIds.push(imageId);
+  }
+  return imageIds;
+}
+
 // ===== Manutencao de Fotos: substitui TODAS as fotos de um anuncio ja publicado pelas novas =====
 // Quebrado em etapas granulares (nao 1 funcao so) pra o frontend poder mostrar o avanco de cada
 // SKU etapa por etapa (Subindo fotos ML, Trocando fotos ML, Apagando fotos Nuvemshop, ...).

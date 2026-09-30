@@ -232,3 +232,66 @@ export async function shopeeUpdateItemImages(itemId: string, imageIdList: string
     body: { item_id: Number(itemId), image: { image_id_list: imageIdList } },
   });
 }
+
+// GET /api/v2/logistics/get_channel_list — canais de logistica habilitados na loja. Precisamos de
+// pelo menos 1 logistic_id valido pra criar qualquer anuncio (campo obrigatorio do add_item).
+// Cacheado em memoria por processo (raramente muda) pra nao chamar isso a cada SKU da fila.
+let canaisLogisticaCache: { ts: number; canais: any[] } | null = null;
+export async function shopeeGetLogisticChannel(): Promise<{ logistic_id: number; nome: string }> {
+  const agora = Date.now();
+  if (!canaisLogisticaCache || agora - canaisLogisticaCache.ts > 10 * 60_000) {
+    const payload = await shopeeReq('/api/v2/logistics/get_channel_list');
+    const canais = payload?.response?.logistics_channel_list || payload?.response?.logistic_channel_list || [];
+    canaisLogisticaCache = { ts: agora, canais };
+  }
+  const habilitado = canaisLogisticaCache.canais.find((c: any) => c.enabled);
+  if (!habilitado) throw new Error('Nenhum canal de logistica habilitado encontrado na loja Shopee (get_channel_list).');
+  return { logistic_id: Number(habilitado.logistic_id), nome: String(habilitado.logistics_channel_name || habilitado.channel_name || habilitado.logistic_id) };
+}
+
+export type ShopeeAddItemInput = {
+  itemName: string;
+  description: string;
+  price: number;
+  weightKg: number;
+  packageHeightCm: number;
+  packageLengthCm: number;
+  packageWidthCm: number;
+  categoryId: number;
+  imageIdList: string[];
+  itemSku: string;
+  stock: number;
+  logisticId: number;
+};
+
+// POST /api/v2/product/add_item — cria o anuncio. So os campos que a doc oficial confirma como
+// obrigatorios (original_price, description, weight, item_name, logistic_info[], category_id,
+// image.image_id_list; condition = obrigatorio no Brasil). Categorias especificas podem exigir
+// attribute_list/compatibility_info alem disso — nesses casos a Shopee retorna um erro claro
+// (error_invalid_category_attribute etc.) que a gente repassa pro usuario, em vez de tentar
+// adivinhar de antemao quais atributos cada uma das ~90 categorias exige.
+export async function shopeeAddItem(input: ShopeeAddItemInput) {
+  const payload = await shopeeReq('/api/v2/product/add_item', {
+    method: 'POST',
+    body: {
+      original_price: input.price,
+      description: input.description,
+      weight: input.weightKg,
+      item_name: input.itemName,
+      dimension: {
+        package_height: Math.max(1, Math.round(input.packageHeightCm)),
+        package_length: Math.max(1, Math.round(input.packageLengthCm)),
+        package_width: Math.max(1, Math.round(input.packageWidthCm)),
+      },
+      logistic_info: [{ logistic_id: input.logisticId, enabled: true }],
+      category_id: input.categoryId,
+      image: { image_id_list: input.imageIdList },
+      item_sku: input.itemSku,
+      condition: 'USED',
+      seller_stock: [{ stock: Math.max(1, Math.round(input.stock)) }],
+    },
+  });
+  const itemId = payload?.response?.item_id;
+  if (!itemId) throw new Error('Shopee nao retornou item_id na criacao do anuncio.');
+  return { itemId: String(itemId), raw: payload?.response };
+}

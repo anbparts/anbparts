@@ -332,60 +332,65 @@ blingRouter.post('/shopee/preparar-sku', async (req, res, next) => {
   }
 });
 
-// POST /bling/shopee/informar-anuncio — avisa o Bling que um SKU ja tem um anuncio na Shopee
-// (criado por fora, direto na Shopee — nao atraves do Bling), gravando o ID do anuncio no vinculo
-// produto-loja (/produtos/lojas.codigo — o mesmo campo que o Bling usa quando ele mesmo publica).
-// Cria o vinculo produto-loja se ainda nao existir (sem depender do "Preparar SKU", que e' so pra
-// quando o BLING vai fazer a exportacao). Enquanto nao temos a criacao real do anuncio na Shopee
-// implementada, `shopeeItemId` pode ser um valor de teste — essa rota so cobre o "avisar o Bling",
-// pra ja deixar esse pedaco funcionando; sera reaproveitada quando o anuncio real existir.
+// Avisa o Bling que um SKU ja tem um anuncio na Shopee (criado por fora, direto na Shopee — nao
+// atraves do Bling), gravando o ID do anuncio no vinculo produto-loja (/produtos/lojas.codigo — o
+// mesmo campo que o Bling usa quando ele mesmo publica). Cria o vinculo produto-loja se ainda nao
+// existir (sem depender do "Preparar SKU", que e' so pra quando o BLING vai fazer a exportacao).
+// Extraida como funcao pra ser reaproveitada tanto pela rota abaixo quanto pelo fluxo de criacao
+// de anuncio (POST /shopee/anuncio/criar), que chama isso automaticamente logo apos criar o item.
+export async function informarAnuncioShopeeNoBling(sku: string, shopeeItemId: string) {
+  const skuBase = getBaseSku(sku);
+  if (!skuBase) throw new Error('sku obrigatorio');
+  if (!shopeeItemId) throw new Error('shopeeItemId obrigatorio');
+
+  const cfg = await getConfig();
+  const idLoja = cfg.shopeeLojaId;
+  if (!idLoja) throw new Error('Loja da Shopee nao configurada em Configuracao');
+
+  const produtosByCode = await findBlingProductsByCodes([skuBase], { forceRefresh: true });
+  const produto = produtosByCode.get(skuBase);
+  if (!produto?.id) throw new Error('Produto nao encontrado no Bling');
+  const produtoId = Number(produto.id);
+
+  const prodLojas = await blingReq(`/produtos/lojas?idProduto=${produtoId}&idLoja=${idLoja}&limite=10`) as any;
+  const prodLojaExistente = (prodLojas?.data || [])[0];
+
+  const bodyProdutoLoja = {
+    produto: { id: produtoId },
+    loja: { id: Number(idLoja) },
+    codigo: shopeeItemId,
+    preco: Number(prodLojaExistente?.preco || produto.preco || 0),
+    categoriasProdutos: Array.isArray(prodLojaExistente?.categoriasProdutos) && prodLojaExistente.categoriasProdutos.length
+      ? prodLojaExistente.categoriasProdutos.map((c: any) => ({ id: Number(c.id) }))
+      : undefined,
+  };
+
+  let produtoLojaId: number;
+  let acao: string;
+  if (prodLojaExistente) {
+    await blingReq(`/produtos/lojas/${prodLojaExistente.id}`, { method: 'PUT', body: JSON.stringify(bodyProdutoLoja) });
+    produtoLojaId = prodLojaExistente.id;
+    acao = 'atualizou vinculo produto-loja existente com o codigo informado';
+  } else {
+    const criado = await blingReq('/produtos/lojas', { method: 'POST', body: JSON.stringify(bodyProdutoLoja) }) as any;
+    produtoLojaId = Number(criado?.data?.id);
+    acao = 'criou vinculo produto-loja com o codigo informado';
+  }
+
+  const r = await prisma.peca.updateMany({
+    where: { OR: [{ idPeca: skuBase }, { idPeca: { startsWith: `${skuBase}-` } }] },
+    data: { shopeeItemId },
+  });
+
+  return { ok: true, sku: skuBase, produtoId, shopeeItemId, produtoLojaId, acao, pecasAtualizadas: r.count };
+}
+
+// POST /bling/shopee/informar-anuncio — wrapper HTTP da funcao acima, pra uso avulso via console
+// ou pela aba Anuncio (botao "Avisar Bling" com ID manual).
 blingRouter.post('/shopee/informar-anuncio', async (req, res, next) => {
   try {
-    const sku = getBaseSku(String(req.body?.sku || ''));
-    const shopeeItemId = String(req.body?.shopeeItemId || '').trim();
-    if (!sku) return res.status(400).json({ error: 'sku obrigatorio' });
-    if (!shopeeItemId) return res.status(400).json({ error: 'shopeeItemId obrigatorio' });
-
-    const cfg = await getConfig();
-    const idLoja = cfg.shopeeLojaId;
-    if (!idLoja) return res.status(400).json({ error: 'Loja da Shopee nao configurada em Configuracao' });
-
-    const produtosByCode = await findBlingProductsByCodes([sku], { forceRefresh: true });
-    const produto = produtosByCode.get(sku);
-    if (!produto?.id) return res.status(404).json({ error: 'Produto nao encontrado no Bling' });
-    const produtoId = Number(produto.id);
-
-    const prodLojas = await blingReq(`/produtos/lojas?idProduto=${produtoId}&idLoja=${idLoja}&limite=10`) as any;
-    const prodLojaExistente = (prodLojas?.data || [])[0];
-
-    const bodyProdutoLoja = {
-      produto: { id: produtoId },
-      loja: { id: Number(idLoja) },
-      codigo: shopeeItemId,
-      preco: Number(prodLojaExistente?.preco || produto.preco || 0),
-      categoriasProdutos: Array.isArray(prodLojaExistente?.categoriasProdutos) && prodLojaExistente.categoriasProdutos.length
-        ? prodLojaExistente.categoriasProdutos.map((c: any) => ({ id: Number(c.id) }))
-        : undefined,
-    };
-
-    let produtoLojaId: number;
-    let acao: string;
-    if (prodLojaExistente) {
-      await blingReq(`/produtos/lojas/${prodLojaExistente.id}`, { method: 'PUT', body: JSON.stringify(bodyProdutoLoja) });
-      produtoLojaId = prodLojaExistente.id;
-      acao = 'atualizou vinculo produto-loja existente com o codigo informado';
-    } else {
-      const criado = await blingReq('/produtos/lojas', { method: 'POST', body: JSON.stringify(bodyProdutoLoja) }) as any;
-      produtoLojaId = Number(criado?.data?.id);
-      acao = 'criou vinculo produto-loja com o codigo informado';
-    }
-
-    const r = await prisma.peca.updateMany({
-      where: { OR: [{ idPeca: sku }, { idPeca: { startsWith: `${sku}-` } }] },
-      data: { shopeeItemId },
-    });
-
-    res.json({ ok: true, sku, produtoId, shopeeItemId, produtoLojaId, acao, pecasAtualizadas: r.count });
+    const resultado = await informarAnuncioShopeeNoBling(String(req.body?.sku || ''), String(req.body?.shopeeItemId || '').trim());
+    res.json(resultado);
   } catch (e: any) {
     res.status(400).json({ error: e?.message || 'Erro ao informar anuncio ao Bling' });
   }

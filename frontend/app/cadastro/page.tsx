@@ -421,15 +421,45 @@ export default function CadastroPage() {
   const [resumoFiltroSku, setResumoFiltroSku] = useState('');
   const [skusCopiados, setSkusCopiados] = useState(false);
   const [paginaCadastro, setPaginaCadastro] = useState<'sku' | 'fotos-drive' | 'anuncio' | 'fotos' | 'categoria' | 'fotos-manutencao'>('sku');
-  // Aba Anuncio — por enquanto so faz uma coisa: avisar o Bling que um SKU ja tem um anuncio na
-  // Shopee (SKU + ID do anuncio -> POST /bling/shopee/informar-anuncio). A criacao do anuncio em
-  // si (categoria, atributos, fotos) ainda nao existe no sistema; quando existir, essa chamada ao
-  // Bling sera reaproveitada logo apos criar o anuncio de verdade.
+  // Aba Anuncio: (1) cria anuncios na Shopee de verdade (busca SKUs, categoria com ajuste manual,
+  // fila 1-a-1 com progresso — mesmo padrao da aba Fotos Anuncios), avisando o Bling em seguida;
+  // (2) "Avisar Bling" manual (SKU + ID digitado), pra quando o anuncio ja existe por fora.
   const [anuncioSku, setAnuncioSku] = useState('');
   const [anuncioItemId, setAnuncioItemId] = useState('');
   const [anuncioEnviando, setAnuncioEnviando] = useState(false);
   const [anuncioErro, setAnuncioErro] = useState('');
   const [anuncioResultado, setAnuncioResultado] = useState<any>(null);
+  type ShopeeCategoriaOpcao = { id: number; categoria: string; subcategoria: string; nivel3: string; nivel4: string; permitido: boolean; caminho: string; generica: boolean };
+  type AnuncioCriarLinha = {
+    sku: string;
+    encontrado: boolean;
+    erro?: string;
+    descricao?: string;
+    moto?: { marca?: string; modelo?: string; ano?: number } | null;
+    preco?: number;
+    peso?: number | null;
+    largura?: number | null;
+    altura?: number | null;
+    profundidade?: number | null;
+    estoque?: number;
+    shopeeItemId?: string | null;
+    jaTemAnuncio?: boolean;
+    categoriaAtual?: ShopeeCategoriaOpcao | null;
+    categoriaEscolhidaId?: number | null;
+    selecionado?: boolean;
+    status?: 'pendente' | 'processando' | 'ok' | 'erro';
+    resultado?: any;
+    erroProcessamento?: string;
+  };
+  const [shopeeCategorias, setShopeeCategorias] = useState<ShopeeCategoriaOpcao[]>([]);
+  const [anuncioCriarSkusInput, setAnuncioCriarSkusInput] = useState('');
+  const [anuncioCriarBuscando, setAnuncioCriarBuscando] = useState(false);
+  const [anuncioCriarLinhas, setAnuncioCriarLinhas] = useState<AnuncioCriarLinha[]>([]);
+  const [anuncioCriarProcessando, setAnuncioCriarProcessando] = useState(false);
+  const [anuncioCriarSkuAtual, setAnuncioCriarSkuAtual] = useState('');
+  const [anuncioCriarProgresso, setAnuncioCriarProgresso] = useState({ atual: 0, total: 0 });
+  const [categoriaModalSku, setCategoriaModalSku] = useState<string | null>(null);
+  const [categoriaModalBusca, setCategoriaModalBusca] = useState('');
   // Fotos - Manutencao: substitui as fotos de anuncios ja publicados (ML/Nuvemshop) pelas fotos
   // ja tratadas na pasta oficial da moto (rodar Fotos Drive antes e' obrigatorio). Processa 1 SKU
   // por vez, etapa por etapa, pra mostrar o avanco na tela (igual a aba Fotos Anúncios).
@@ -1916,6 +1946,84 @@ export default function CadastroPage() {
   }
   const fdPendentes = fdItens.filter(i => i.status === 'pendente' || i.status === 'erro').length;
 
+  async function carregarShopeeCategorias() {
+    if (shopeeCategorias.length) return;
+    try {
+      const resp = await fetch(`${API}/shopee/categorias`, { credentials: 'include' });
+      const data = await readApiResponse(resp, 'Erro ao buscar categorias Shopee');
+      setShopeeCategorias(Array.isArray(data.categorias) ? data.categorias : []);
+    } catch (e: any) {
+      alert(e?.message || 'Erro ao buscar categorias Shopee.');
+    }
+  }
+
+  async function buscarLinhasAnuncioCriar() {
+    const skus = normalizarListaSkus(anuncioCriarSkusInput);
+    if (!skus.length) return alert('Informe ao menos 1 SKU.');
+    setAnuncioCriarBuscando(true);
+    setAnuncioCriarLinhas([]);
+    carregarShopeeCategorias();
+    try {
+      const resp = await fetch(`${API}/shopee/anuncio/buscar`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ skus }),
+      });
+      const data = await readApiResponse(resp, 'Erro ao buscar SKUs');
+      const linhas: AnuncioCriarLinha[] = (Array.isArray(data.linhas) ? data.linhas : []).map((linha: any) => ({
+        ...linha,
+        categoriaEscolhidaId: linha.categoriaAtual?.id ?? null,
+        selecionado: !!linha.encontrado && !linha.jaTemAnuncio,
+        status: 'pendente',
+      }));
+      setAnuncioCriarLinhas(linhas);
+    } catch (e: any) {
+      alert(e?.message || 'Erro ao buscar SKUs.');
+    }
+    setAnuncioCriarBuscando(false);
+  }
+
+  function toggleAnuncioCriarSelecionado(sku: string) {
+    setAnuncioCriarLinhas((prev) => prev.map((linha) => linha.sku === sku ? { ...linha, selecionado: !linha.selecionado } : linha));
+  }
+
+  function escolherCategoriaParaLinha(sku: string, categoriaId: number) {
+    setAnuncioCriarLinhas((prev) => prev.map((linha) => linha.sku === sku ? { ...linha, categoriaEscolhidaId: categoriaId } : linha));
+    setCategoriaModalSku(null);
+    setCategoriaModalBusca('');
+  }
+
+  async function processarAnunciosCriarFila() {
+    const linhasParaProcessar = anuncioCriarLinhas.filter((linha) => linha.selecionado && linha.encontrado);
+    if (!linhasParaProcessar.length) return alert('Nenhum SKU selecionado.');
+    setAnuncioCriarProcessando(true);
+    setAnuncioCriarProgresso({ atual: 0, total: linhasParaProcessar.length });
+
+    for (let index = 0; index < linhasParaProcessar.length; index += 1) {
+      const linha = linhasParaProcessar[index];
+      setAnuncioCriarSkuAtual(linha.sku);
+      setAnuncioCriarProgresso({ atual: index, total: linhasParaProcessar.length });
+      setAnuncioCriarLinhas((prev) => prev.map((item) => item.sku === linha.sku ? { ...item, status: 'processando' } : item));
+      try {
+        const resp = await fetch(`${API}/shopee/anuncio/criar`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sku: linha.sku, categoriaId: linha.categoriaEscolhidaId }),
+        });
+        const data = await readApiResponse(resp, `Erro ao criar anuncio do SKU ${linha.sku}`);
+        setAnuncioCriarLinhas((prev) => prev.map((item) => item.sku === linha.sku ? { ...item, status: 'ok', resultado: data, selecionado: false, jaTemAnuncio: true, shopeeItemId: data.shopeeItemId } : item));
+      } catch (e: any) {
+        setAnuncioCriarLinhas((prev) => prev.map((item) => item.sku === linha.sku ? { ...item, status: 'erro', erroProcessamento: e?.message || String(e) } : item));
+      }
+    }
+
+    setAnuncioCriarProgresso({ atual: linhasParaProcessar.length, total: linhasParaProcessar.length });
+    setAnuncioCriarSkuAtual('');
+    setAnuncioCriarProcessando(false);
+  }
+
   async function informarAnuncioBling() {
     const sku = anuncioSku.trim().toUpperCase();
     const shopeeItemId = anuncioItemId.trim();
@@ -1938,9 +2046,187 @@ export default function CadastroPage() {
     setAnuncioEnviando(false);
   }
 
+  const categoriaModalLinha = anuncioCriarLinhas.find((l) => l.sku === categoriaModalSku) || null;
+  const categoriaModalFiltradas = shopeeCategorias.filter((c) => {
+    const termo = categoriaModalBusca.trim().toLowerCase();
+    if (!termo) return true;
+    return c.caminho.toLowerCase().includes(termo);
+  });
+
+  const renderCategoriaBadge = (cat?: ShopeeCategoriaOpcao | null) => {
+    if (!cat) return <span style={{ fontSize: 11, color: '#dc2626', fontWeight: 700 }}>Sem categoria</span>;
+    if (!cat.permitido) return <span title="Categoria bloqueada na Shopee (permitido=false)" style={{ fontSize: 11, color: '#991b1b', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 5, padding: '2px 6px', fontWeight: 700 }}>🚫 {cat.nivel4}</span>;
+    if (cat.generica) return <span title="Categoria genérica — sem correspondência específica pra essa peça" style={{ fontSize: 11, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 5, padding: '2px 6px', fontWeight: 700 }}>⚠ {cat.categoria} &gt; {cat.subcategoria} &gt; Outros</span>;
+    return <span style={{ fontSize: 11, color: '#166534', background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 5, padding: '2px 6px', fontWeight: 700 }}>{cat.caminho}</span>;
+  };
+
+  const anuncioCriarSelecionadosCount = anuncioCriarLinhas.filter((l) => l.selecionado).length;
+
   const renderAnuncioConteudo = () => (
     <>
       <div style={{ ...s.card, padding: isPhone ? '14px' : '18px' }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 4 }}>Criar anúncios na Shopee</div>
+        <div style={{ fontSize: 12, color: 'var(--gray-500)', marginBottom: 14, lineHeight: 1.5 }}>
+          Informe os SKUs (um por linha, vírgula ou espaço). Linhas sem anúncio já criado vêm selecionadas por padrão;
+          linhas que já possuem anúncio vêm desmarcadas e destacadas — não é possível recriar.
+        </div>
+        <textarea
+          value={anuncioCriarSkusInput}
+          onChange={(e: any) => setAnuncioCriarSkusInput(e.target.value)}
+          placeholder={'BM03_0119\nBM03_0120'}
+          rows={3}
+          style={{ ...s.input, width: '100%', resize: 'vertical' as const, fontFamily: 'JetBrains Mono, monospace', fontSize: 12.5 }}
+        />
+        <button
+          onClick={buscarLinhasAnuncioCriar}
+          disabled={anuncioCriarBuscando || !anuncioCriarSkusInput.trim()}
+          style={{ ...s.btn, marginTop: 10, background: '#7c3aed', color: '#fff', opacity: anuncioCriarBuscando || !anuncioCriarSkusInput.trim() ? 0.6 : 1 }}
+        >
+          {anuncioCriarBuscando ? 'Buscando...' : 'Buscar SKUs'}
+        </button>
+      </div>
+
+      {anuncioCriarLinhas.length > 0 && (
+        <div style={{ ...s.card, padding: isPhone ? '14px' : '18px', marginTop: 14 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-800)' }}>
+              {anuncioCriarLinhas.length} SKU(s) · {anuncioCriarSelecionadosCount} selecionado(s)
+            </div>
+            <button
+              onClick={processarAnunciosCriarFila}
+              disabled={anuncioCriarProcessando || anuncioCriarSelecionadosCount === 0}
+              style={{ ...s.btn, background: '#ee4d2d', color: '#fff', opacity: anuncioCriarProcessando || anuncioCriarSelecionadosCount === 0 ? 0.6 : 1 }}
+            >
+              {anuncioCriarProcessando
+                ? `Criando ${anuncioCriarSkuAtual} (${anuncioCriarProgresso.atual + 1}/${anuncioCriarProgresso.total})...`
+                : `Criar ${anuncioCriarSelecionadosCount} anúncio(s) selecionado(s)`}
+            </button>
+          </div>
+
+          <div style={{ display: 'grid', gap: 8 }}>
+            {anuncioCriarLinhas.map((linha) => {
+              const isAtual = linha.sku === anuncioCriarSkuAtual && anuncioCriarProcessando;
+              return (
+                <div key={linha.sku} style={{
+                  border: isAtual ? '2px solid #7c3aed' : '1px solid var(--border)',
+                  borderRadius: 8,
+                  padding: '10px 12px',
+                  background: linha.jaTemAnuncio ? '#fffbeb' : (isAtual ? '#faf5ff' : 'var(--white)'),
+                  display: 'grid',
+                  gap: 6,
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, minWidth: 0 }}>
+                      <input
+                        type="checkbox"
+                        checked={!!linha.selecionado}
+                        disabled={!linha.encontrado || !!linha.jaTemAnuncio}
+                        onChange={() => toggleAnuncioCriarSelecionado(linha.sku)}
+                        style={{ marginTop: 3 }}
+                      />
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--blue-600)', fontWeight: 800 }}>{linha.sku}</div>
+                        {linha.encontrado ? (
+                          <>
+                            <div style={{ fontSize: 12.5, color: 'var(--gray-800)', fontWeight: 600 }}>{linha.descricao}</div>
+                            <div style={{ fontSize: 11, color: 'var(--gray-500)', marginTop: 2 }}>
+                              R$ {Number(linha.preco || 0).toFixed(2)} · estoque {linha.estoque} · {linha.moto?.marca} {linha.moto?.modelo}
+                            </div>
+                          </>
+                        ) : (
+                          <div style={{ fontSize: 12, color: '#dc2626' }}>{linha.erro || 'SKU não encontrado'}</div>
+                        )}
+                      </div>
+                    </div>
+                    {linha.jaTemAnuncio && (
+                      <span style={{ fontSize: 11, color: '#92400e', background: '#fef3c7', border: '1px solid #fde68a', borderRadius: 5, padding: '3px 8px', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                        Já possui anúncio (item {linha.shopeeItemId})
+                      </span>
+                    )}
+                  </div>
+
+                  {linha.encontrado && !linha.jaTemAnuncio && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginLeft: 28 }}>
+                      {renderCategoriaBadge(
+                        linha.categoriaEscolhidaId != null
+                          ? shopeeCategorias.find((c) => c.id === linha.categoriaEscolhidaId) || linha.categoriaAtual
+                          : linha.categoriaAtual,
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => { carregarShopeeCategorias(); setCategoriaModalSku(linha.sku); setCategoriaModalBusca(''); }}
+                        style={{ fontSize: 11, color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
+                      >
+                        Trocar categoria
+                      </button>
+                    </div>
+                  )}
+
+                  {linha.status === 'ok' && (
+                    <div style={{ marginLeft: 28, fontSize: 12, color: '#16a34a', fontWeight: 700 }}>
+                      ✓ Anúncio criado — item {linha.resultado?.shopeeItemId} ({linha.resultado?.fotosEnviadas} foto(s)){linha.resultado?.blingErro ? ` — ⚠ Bling: ${linha.resultado.blingErro}` : ' — Bling avisado'}
+                    </div>
+                  )}
+                  {linha.status === 'erro' && (
+                    <div style={{ marginLeft: 28, fontSize: 12, color: '#dc2626' }}>✗ {linha.erroProcessamento}</div>
+                  )}
+                  {isAtual && (
+                    <div style={{ marginLeft: 28, fontSize: 12, color: '#7c3aed', fontWeight: 700 }}>⏳ Criando anúncio...</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {categoriaModalSku && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }} onClick={() => setCategoriaModalSku(null)}>
+          <div style={{ background: '#fff', borderRadius: 14, width: '100%', maxWidth: 560, maxHeight: '80vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ padding: '16px 18px 10px', borderBottom: '1px solid var(--border)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--gray-800)' }}>Categoria Shopee — {categoriaModalSku}</div>
+                <button onClick={() => setCategoriaModalSku(null)} style={{ border: 'none', background: 'none', fontSize: 18, cursor: 'pointer', color: 'var(--gray-400)' }}>✕</button>
+              </div>
+              {categoriaModalLinha?.categoriaAtual && (
+                <div style={{ marginTop: 6, fontSize: 11.5, color: 'var(--gray-500)' }}>
+                  Atual: {renderCategoriaBadge(categoriaModalLinha.categoriaAtual)}
+                </div>
+              )}
+              <input
+                autoFocus
+                value={categoriaModalBusca}
+                onChange={(e: any) => setCategoriaModalBusca(e.target.value)}
+                placeholder="Buscar categoria (ex: bengala, farol, cabeçote...)"
+                style={{ ...s.input, marginTop: 10 }}
+              />
+            </div>
+            <div style={{ overflowY: 'auto', padding: '6px 10px' }}>
+              {!shopeeCategorias.length ? (
+                <div style={{ padding: 20, textAlign: 'center' as const, fontSize: 12, color: 'var(--gray-400)' }}>Carregando categorias...</div>
+              ) : categoriaModalFiltradas.length === 0 ? (
+                <div style={{ padding: 20, textAlign: 'center' as const, fontSize: 12, color: 'var(--gray-400)' }}>Nenhuma categoria encontrada pra "{categoriaModalBusca}".</div>
+              ) : categoriaModalFiltradas.map((cat) => (
+                <button
+                  key={cat.id}
+                  onClick={() => categoriaModalSku && escolherCategoriaParaLinha(categoriaModalSku, cat.id)}
+                  style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, width: '100%',
+                    textAlign: 'left' as const, padding: '9px 10px', border: 'none', borderBottom: '1px solid var(--gray-100)',
+                    background: categoriaModalLinha?.categoriaEscolhidaId === cat.id ? '#f5f3ff' : 'transparent', cursor: 'pointer',
+                  }}
+                >
+                  <span style={{ fontSize: 12.5, color: cat.permitido ? 'var(--gray-700)' : '#991b1b' }}>{cat.caminho}</span>
+                  {!cat.permitido && <span style={{ fontSize: 10, color: '#991b1b', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 4, padding: '1px 5px', fontWeight: 700, whiteSpace: 'nowrap' }}>Bloqueada</span>}
+                  {cat.permitido && cat.generica && <span style={{ fontSize: 10, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 4, padding: '1px 5px', fontWeight: 700, whiteSpace: 'nowrap' }}>Genérica</span>}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div style={{ ...s.card, padding: isPhone ? '14px' : '18px', marginTop: 14 }}>
         <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 4 }}>Avisar Bling do anúncio Shopee</div>
         <div style={{ fontSize: 12, color: 'var(--gray-500)', marginBottom: 14, lineHeight: 1.5 }}>
           A criação do anúncio na Shopee ainda não existe no sistema — por enquanto, informe manualmente o SKU e o ID do
