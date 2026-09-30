@@ -65,13 +65,14 @@ type CadastroFotosLinha = {
   anb: { fotos: number; ok: boolean };
   ml: { fotos: number; encontrado: boolean; itemId?: string | null; erro?: string };
   nuvemshop: { fotos: number; encontrado: boolean; produtoId?: number | null; erro?: string };
-  flags: { anb: boolean; ml: boolean; nuvemshop: boolean };
+  shopee: { fotos: number; encontrado: boolean; itemId?: string | null; erro?: string };
+  flags: { anb: boolean; ml: boolean; nuvemshop: boolean; shopee: boolean };
   temFlag: boolean;
   drive?: { fotos: number | null; pasta?: string };
   status?: string;
 };
 
-type CadastroFotosSistema = 'anb' | 'ml' | 'nuvemshop';
+type CadastroFotosSistema = 'anb' | 'ml' | 'nuvemshop' | 'shopee';
 type CadastroFotoDrive = { id: string; nome: string; mimeType: string; size?: string | number | null };
 type CadastroFotoManualLocal = { id: string; nome: string; dataUrl: string; base64: string; mimeType: string; status?: 'aguardando' | 'enviando' | 'ok' | 'erro'; erro?: string };
 type CategoriaNuvemshop = { id: number; nome?: string; name?: any; parent_id?: number | null };
@@ -107,11 +108,12 @@ type ManutencaoFotosLinha = {
   nuvemshopErro: string;
 };
 
-const FOTOS_SISTEMAS_PROCESSAMENTO: CadastroFotosSistema[] = ['anb', 'ml', 'nuvemshop'];
+const FOTOS_SISTEMAS_PROCESSAMENTO: CadastroFotosSistema[] = ['anb', 'ml', 'nuvemshop', 'shopee'];
 const FOTOS_SISTEMA_LABEL: Record<CadastroFotosSistema, string> = {
   anb: 'ANB',
   ml: 'Mercado Livre',
   nuvemshop: 'Nuvemshop',
+  shopee: 'Shopee',
 };
 const CATEGORIA_PACOTES_STORAGE_KEY = 'anb.cadastro.categoria.pacotes';
 
@@ -988,7 +990,7 @@ export default function CadastroPage() {
 
       for (let index = 0; index < skusParaVerificar.length; index += 1) {
         const sku = skusParaVerificar[index];
-        setFotosBuscaStatus(`Buscando fotos Nuvemshop, Mercado Livre e Drive (${index + 1}/${skusParaVerificar.length}) - ${sku}`);
+        setFotosBuscaStatus(`Buscando fotos Nuvemshop, Mercado Livre, Shopee e Drive (${index + 1}/${skusParaVerificar.length}) - ${sku}`);
         try {
           const skuResp = await fetch(`${API}/cadastro/fotos/verificar-sku`, {
             method: 'POST',
@@ -1193,11 +1195,11 @@ export default function CadastroPage() {
     }
   }
 
-  function atualizarFlagFoto(sku: string, sistema: 'anb' | 'ml' | 'nuvemshop', checked: boolean) {
+  function atualizarFlagFoto(sku: string, sistema: CadastroFotosSistema, checked: boolean) {
     setFotosLinhas((prev) => prev.map((linha) => {
       if (linha.sku !== sku) return linha;
       const flags = { ...linha.flags, [sistema]: checked };
-      return { ...linha, flags, temFlag: flags.anb || flags.ml || flags.nuvemshop };
+      return { ...linha, flags, temFlag: flags.anb || flags.ml || flags.nuvemshop || flags.shopee };
     }));
     if (checked) {
       setFotosSelecionados((prev) => new Set(prev).add(sku));
@@ -1227,9 +1229,10 @@ export default function CadastroPage() {
     setFotosLinhas((prev) => ordenarFotosLinhas(prev.map((linha) => {
       if (linha.sku !== sku) return linha;
       const atual = Number((linha as any)[sistema]?.fotos || 0);
-      const proximo = sistema === 'anb' ? Math.max(1, atual) : Math.min(sistema === 'ml' ? 12 : 999, atual + Math.max(0, enviadas));
+      const limite = sistema === 'ml' ? 12 : sistema === 'shopee' ? 9 : 999;
+      const proximo = sistema === 'anb' ? Math.max(1, atual) : Math.min(limite, atual + Math.max(0, enviadas));
       const flags = { ...linha.flags, [sistema]: false };
-      const temFlag = flags.anb || flags.ml || flags.nuvemshop;
+      const temFlag = flags.anb || flags.ml || flags.nuvemshop || flags.shopee;
       if (!temFlag) removerSelecao = true;
       return {
         ...linha,
@@ -1252,7 +1255,7 @@ export default function CadastroPage() {
     for (const detalhe of detalhes || []) {
       if (detalhe?.ok === false) continue;
       const sistema = detalhe.sistema as CadastroFotosSistema;
-      if (!(['anb', 'ml', 'nuvemshop'] as CadastroFotosSistema[]).includes(sistema)) continue;
+      if (!(['anb', 'ml', 'nuvemshop', 'shopee'] as CadastroFotosSistema[]).includes(sistema)) continue;
       atualizarContadorFotosLocal(sku, sistema, sistema === 'anb' ? 1 : Number(detalhe.enviados || detalhe.enviada || 0));
     }
   }
@@ -1268,7 +1271,7 @@ export default function CadastroPage() {
   async function processarFotosCadastro() {
     if (!canEnviarFotos) return alert('Seu usuario nao tem permissao para enviar fotos.');
     const linhas = fotosLinhas
-      .filter((linha) => fotosSelecionados.has(linha.sku) && (linha.flags.anb || linha.flags.ml || linha.flags.nuvemshop))
+      .filter((linha) => fotosSelecionados.has(linha.sku) && (linha.flags.anb || linha.flags.ml || linha.flags.nuvemshop || linha.flags.shopee))
       .map((linha) => ({ sku: linha.sku, flags: linha.flags }));
     if (!linhas.length) return alert('Nenhum SKU pendente selecionado.');
 
@@ -1300,7 +1303,7 @@ export default function CadastroPage() {
               method: 'POST',
               credentials: 'include',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ linhas: [{ sku: linha.sku, flags: { anb: false, ml: false, nuvemshop: false, [sistema]: true } }] }),
+              body: JSON.stringify({ linhas: [{ sku: linha.sku, flags: { anb: false, ml: false, nuvemshop: false, shopee: false, [sistema]: true } }] }),
             });
             const data = await readApiResponse(resp, `Erro ao processar fotos ${FOTOS_SISTEMA_LABEL[sistema]} do SKU ${linha.sku}`);
             const resultado = Array.isArray(data.resultados) ? data.resultados[0] : null;
@@ -2548,12 +2551,12 @@ export default function CadastroPage() {
                           <input type="checkbox" checked={fotosSelecionados.has(linha.sku)} disabled={!linha.temFlag} onChange={() => toggleFotosSelecionado(linha.sku)} style={{ width: 18, height: 18 }} />
                         </div>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8 }}>
-                          {(['anb', 'ml', 'nuvemshop'] as const).map((sistema) => {
+                          {(['anb', 'ml', 'nuvemshop', 'shopee'] as const).map((sistema) => {
                             const info: any = linha[sistema];
                             const isSistemaProcessando = linha.sku === fotosProcessandoSku && sistema === fotosProcessandoSistema;
                             return (
                               <div key={sistema} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, border: isSistemaProcessando ? '2px solid #7c3aed' : '1px solid var(--border)', borderRadius: 8, padding: '9px 10px', background: isSistemaProcessando ? '#f5f3ff' : '#fcfdff' }}>
-                                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--gray-700)' }}>{sistema === 'anb' ? 'ANB' : sistema === 'ml' ? 'ML' : 'Nuvemshop'}: {Number(info?.fotos || 0)} foto(s)</span>
+                                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--gray-700)' }}>{sistema === 'anb' ? 'ANB' : sistema === 'ml' ? 'ML' : sistema === 'nuvemshop' ? 'Nuvemshop' : 'Shopee'}: {Number(info?.fotos || 0)} foto(s)</span>
                                 <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
                                   <button type="button" disabled={!canEnviarFotos} onClick={(e) => { e.preventDefault(); e.stopPropagation(); abrirModalFotosManual(linha, sistema); }} style={{ border: 'none', background: 'transparent', cursor: canEnviarFotos ? 'pointer' : 'not-allowed', color: Number(info?.fotos || 0) > 0 ? 'var(--green)' : '#dc2626', fontSize: 16, padding: 0, opacity: canEnviarFotos ? 1 : 0.45 }}>📷</button>
                                   <input type="checkbox" checked={!!linha.flags[sistema]} onChange={(e) => atualizarFlagFoto(linha.sku, sistema, e.target.checked)} />
@@ -2571,7 +2574,7 @@ export default function CadastroPage() {
                       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                         <thead style={{ background: 'var(--gray-50)' }}><tr>
                           <th style={{ ...s.th, width: 38 }}><input type="checkbox" checked={fotosPendentes > 0 && fotosSelecionados.size === fotosPendentes} onChange={(e) => e.target.checked ? selecionarFotosPendentes() : setFotosSelecionados(new Set())} /></th>
-                          {['SKU', 'Descricao', 'Drive', 'ANB', 'ML', 'Nuvemshop', 'Status'].map((h) => <th key={h} style={s.th}>{h}</th>)}
+                          {['SKU', 'Descricao', 'Drive', 'ANB', 'ML', 'Nuvemshop', 'Shopee', 'Status'].map((h) => <th key={h} style={s.th}>{h}</th>)}
                         </tr></thead>
                         <tbody>
                           {fotosLinhas.map((linha) => (
@@ -2588,7 +2591,7 @@ export default function CadastroPage() {
                                   <span style={{ fontSize: 12, fontWeight: 800, color: '#dc2626' }}>📂 0</span>
                                 )}
                               </td>
-                              {(['anb', 'ml', 'nuvemshop'] as const).map((sistema) => {
+                              {(['anb', 'ml', 'nuvemshop', 'shopee'] as const).map((sistema) => {
                                 const info: any = linha[sistema];
                                 const isSistemaProcessando = linha.sku === fotosProcessandoSku && sistema === fotosProcessandoSistema;
                                 return (

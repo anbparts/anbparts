@@ -2,6 +2,7 @@ import { prisma } from './prisma';
 import { compressDataUrlImage, normalizeImageFileName } from './image';
 import { createHash } from 'crypto';
 import { inflateRawSync } from 'zlib';
+import { shopeeGetItemBaseInfo, shopeeUploadImage, shopeeUpdateItemImages } from './shopee-api';
 const GOOGLE_DRIVE_UPLOAD_URL = 'https://www.googleapis.com/upload/drive/v3';
 
 // Leitor de ZIP nativo (sem dependencia externa). Le pela central directory:
@@ -48,6 +49,7 @@ const GOOGLE_DRIVE_URL = 'https://www.googleapis.com/drive/v3';
 const NUVEMSHOP_USER_AGENT = 'ANB Parts (contato@anbparts.com.br)';
 const MERCADO_LIVRE_API = 'https://api.mercadolibre.com';
 const MERCADO_LIVRE_MAX_FOTOS = 12;
+const SHOPEE_MAX_FOTOS = 9;
 
 type DriveFoto = {
   id: string;
@@ -56,7 +58,7 @@ type DriveFoto = {
   size?: string | number | null;
 };
 
-type FotoDestino = 'anb' | 'ml' | 'nuvemshop';
+type FotoDestino = 'anb' | 'ml' | 'nuvemshop' | 'shopee';
 type ManualFoto = {
   nome: string;
   dataUrl?: string;
@@ -1193,6 +1195,37 @@ function limitarFotosMercadoLivre<T>(fotos: T[], imagensAtuais: number) {
   return fotos.slice(0, vagas);
 }
 
+// Shopee substitui a lista inteira de imagens a cada update_item (diferente do ML, que e
+// aditivo por foto) — por isso baixa/sobe cada foto nova, mas so chama update_item UMA vez no
+// final, com [ids que ja existiam + ids novos].
+async function uploadShopeeDrive(itemId: string, fotos: DriveFoto[], imageIdsAtuais: string[]) {
+  const resultados: any[] = [];
+  const novosIds: string[] = [];
+
+  for (const foto of fotos) {
+    try {
+      const downloaded = await downloadDriveFoto(foto);
+      const imageId = await shopeeUploadImage(downloaded.buffer, foto.nome || 'foto.jpg');
+      novosIds.push(imageId);
+      resultados.push({ sistema: 'shopee', nome: foto.nome, ok: true, id: imageId });
+      await pauseUploadBatch(resultados.length - 1);
+    } catch (e: any) {
+      resultados.push({ sistema: 'shopee', nome: foto.nome, ok: false, error: e?.message || String(e) });
+    }
+  }
+
+  if (novosIds.length) {
+    await shopeeUpdateItemImages(itemId, [...imageIdsAtuais, ...novosIds]);
+  }
+
+  return resultados;
+}
+
+function limitarFotosShopee<T>(fotos: T[], imagensAtuais: number) {
+  const vagas = Math.max(0, SHOPEE_MAX_FOTOS - Math.max(0, Number(imagensAtuais) || 0));
+  return fotos.slice(0, vagas);
+}
+
 // ===== Manutencao de Fotos: substitui TODAS as fotos de um anuncio ja publicado pelas novas =====
 // Quebrado em etapas granulares (nao 1 funcao so) pra o frontend poder mostrar o avanco de cada
 // SKU etapa por etapa (Subindo fotos ML, Trocando fotos ML, Apagando fotos Nuvemshop, ...).
@@ -1389,6 +1422,7 @@ async function getPecasParaFotos(input: { skus?: any; dataDe?: string; dataAte?:
       fotoCapaArquivo: true,
       mercadoLivreItemId: true,
       mercadoLivreLink: true,
+      shopeeItemId: true,
       cadastro: true,
       moto: { select: { marca: true, modelo: true, ano: true } },
     },
@@ -1416,6 +1450,10 @@ async function montarLinhaCadastroFotos(peca: any, verificarExternos: boolean) {
   let mlEncontrado = false;
   let mlErro = '';
   const mlItemId = normalizeText(peca.mercadoLivreItemId) || parseMercadoLivreItemId(peca.mercadoLivreLink);
+  let shopeeFotos = 0;
+  let shopeeEncontrado = false;
+  let shopeeErro = '';
+  const shopeeItemId = normalizeText(peca.shopeeItemId);
 
   if (verificarExternos) {
     try {
@@ -1438,17 +1476,28 @@ async function montarLinhaCadastroFotos(peca: any, verificarExternos: boolean) {
     } catch (e: any) {
       mlErro = e?.message || String(e);
     }
+
+    try {
+      if (shopeeItemId) {
+        const item = await shopeeGetItemBaseInfo(shopeeItemId);
+        shopeeEncontrado = true;
+        shopeeFotos = Array.isArray(item?.image?.image_id_list) ? item.image.image_id_list.length : 0;
+      }
+    } catch (e: any) {
+      shopeeErro = e?.message || String(e);
+    }
   }
 
   const flags = {
     anb: anbFotos === 0,
     nuvemshop: verificarExternos && nuvemshopEncontrado && nuvemshopFotos <= 2,
     ml: verificarExternos && mlEncontrado && mlFotos <= 2,
+    shopee: verificarExternos && shopeeEncontrado && shopeeFotos <= 2,
   };
-  const temFlag = flags.anb || flags.nuvemshop || flags.ml;
+  const temFlag = flags.anb || flags.nuvemshop || flags.ml || flags.shopee;
   let driveResumo = { fotos: null as number | null, pasta: '' };
 
-  if (flags.nuvemshop || flags.ml) {
+  if (flags.nuvemshop || flags.ml || flags.shopee) {
     try {
       const drive = await buscarFotosDriveSku(peca.motoId, sku);
       driveResumo = { fotos: drive.fotos.length, pasta: drive.pasta };
@@ -1465,6 +1514,7 @@ async function montarLinhaCadastroFotos(peca: any, verificarExternos: boolean) {
     anb: { fotos: anbFotos, ok: anbFotos > 0 },
     ml: { fotos: mlFotos, encontrado: mlEncontrado, itemId: mlItemId || null, erro: mlErro },
     nuvemshop: { fotos: nuvemshopFotos, encontrado: nuvemshopEncontrado, produtoId: nuvemshopProdutoId, erro: nuvemshopErro },
+    shopee: { fotos: shopeeFotos, encontrado: shopeeEncontrado, itemId: shopeeItemId || null, erro: shopeeErro },
     flags,
     temFlag,
     drive: driveResumo,
@@ -1517,7 +1567,7 @@ export async function processarCadastroFotos(rowsInput: CadastroFotosRowInput[])
   for (const row of rowsInput) {
     const sku = baseSku(row.sku);
     const flags = row.flags || {};
-    const sistemas = (['anb', 'ml', 'nuvemshop'] as FotoDestino[]).filter((sistema) => !!flags[sistema]);
+    const sistemas = (['anb', 'ml', 'nuvemshop', 'shopee'] as FotoDestino[]).filter((sistema) => !!flags[sistema]);
     if (!sku || !sistemas.length) continue;
 
     const peca = await prisma.peca.findFirst({
@@ -1531,6 +1581,7 @@ export async function processarCadastroFotos(rowsInput: CadastroFotosRowInput[])
         fotoCapaNome: true,
         mercadoLivreItemId: true,
         mercadoLivreLink: true,
+        shopeeItemId: true,
       },
     });
     if (!peca) {
@@ -1599,6 +1650,24 @@ export async function processarCadastroFotos(rowsInput: CadastroFotosRowInput[])
       }
     }
 
+    if (flags.shopee) {
+      try {
+        const itemId = normalizeText(peca.shopeeItemId);
+        if (!itemId) throw new Error('Item ID da Shopee nao encontrado no SKU.');
+        const item = await shopeeGetItemBaseInfo(itemId);
+        const idsAtuais: string[] = Array.isArray(item?.image?.image_id_list) ? item.image.image_id_list : [];
+        const fotosParaEnviar = limitarFotosShopee(drive.fotos, idsAtuais.length);
+        if (!fotosParaEnviar.length) {
+          detalhes.push({ sistema: 'shopee', ok: true, enviados: 0, limite: SHOPEE_MAX_FOTOS, resultados: [{ sistema: 'shopee', ok: true, pulada: true, error: `Shopee ja esta com ${SHOPEE_MAX_FOTOS} fotos.` }] });
+        } else {
+          const envios = await uploadShopeeDrive(itemId, fotosParaEnviar, idsAtuais);
+          detalhes.push({ sistema: 'shopee', ok: envios.some((item) => item.ok), enviados: envios.filter((item) => item.ok).length, resultados: envios });
+        }
+      } catch (e: any) {
+        detalhes.push({ sistema: 'shopee', ok: false, error: e?.message || String(e) });
+      }
+    }
+
     resultados.push({
       sku,
       ok: detalhes.length > 0 && detalhes.every((item) => item.ok !== false),
@@ -1652,7 +1721,7 @@ export async function enviarCadastroFotosManual(input: {
   const imagensManuais = normalizarManualFotos(input.imagens);
 
   if (!sku) throw new Error('SKU obrigatorio.');
-  if (!(['anb', 'ml', 'nuvemshop'] as FotoDestino[]).includes(sistema)) throw new Error('Sistema invalido.');
+  if (!(['anb', 'ml', 'nuvemshop', 'shopee'] as FotoDestino[]).includes(sistema)) throw new Error('Sistema invalido.');
   if (origem === 'manual' && !imagensManuais.length) throw new Error('Selecione ao menos uma foto do computador.');
   if (origem === 'drive' && !fotosSelecionadas.length) throw new Error('Selecione ao menos uma foto do Drive.');
 
@@ -1666,6 +1735,7 @@ export async function enviarCadastroFotosManual(input: {
       fotoCapaArquivo: true,
       mercadoLivreItemId: true,
       mercadoLivreLink: true,
+      shopeeItemId: true,
     },
   });
   if (!peca) throw new Error('SKU nao encontrado no ANB.');
@@ -1714,6 +1784,35 @@ export async function enviarCadastroFotosManual(input: {
       : fotosSelecionadas;
     if (!fotosParaEnviar.length) return { ok: true, sistema, sku, enviadas: 0, resultados: [{ sistema, ok: true, pulada: true, error: 'Capa pulada porque o produto ja possui foto.' }] };
     const resultados = await uploadNuvemshopDrive(produto.id, fotosParaEnviar, 0);
+    return { ok: true, sistema, sku, enviadas: resultados.filter((item) => item.ok).length, resultados };
+  }
+
+  if (sistema === 'shopee') {
+    const itemId = normalizeText(peca.shopeeItemId);
+    if (!itemId) throw new Error('Item ID da Shopee nao encontrado no SKU.');
+    const item = await shopeeGetItemBaseInfo(itemId);
+    const idsAtuais: string[] = Array.isArray(item?.image?.image_id_list) ? item.image.image_id_list : [];
+    if (origem === 'manual') {
+      const buffers = imagensManuais.map((foto) => ({ nome: foto.nome, buffer: Buffer.from(manualFotoToBase64(foto), 'base64') }));
+      const fotosLimitadas = buffers.slice(0, Math.max(0, SHOPEE_MAX_FOTOS - idsAtuais.length));
+      if (!fotosLimitadas.length) return { ok: true, sistema, sku, enviadas: 0, resultados: [{ sistema, ok: true, pulada: true, error: `Shopee ja esta com ${SHOPEE_MAX_FOTOS} fotos.` }] };
+      const novosIds: string[] = [];
+      const resultados: any[] = [];
+      for (const foto of fotosLimitadas) {
+        try {
+          const imageId = await shopeeUploadImage(foto.buffer, foto.nome || 'foto.jpg');
+          novosIds.push(imageId);
+          resultados.push({ sistema, nome: foto.nome, ok: true, id: imageId });
+        } catch (e: any) {
+          resultados.push({ sistema, nome: foto.nome, ok: false, error: e?.message || String(e) });
+        }
+      }
+      if (novosIds.length) await shopeeUpdateItemImages(itemId, [...idsAtuais, ...novosIds]);
+      return { ok: true, sistema, sku, enviadas: resultados.filter((item) => item.ok).length, resultados };
+    }
+    const fotosLimitadas = limitarFotosShopee(fotosSelecionadas, idsAtuais.length);
+    if (!fotosLimitadas.length) return { ok: true, sistema, sku, enviadas: 0, resultados: [{ sistema, ok: true, pulada: true, error: `Shopee ja esta com ${SHOPEE_MAX_FOTOS} fotos.` }] };
+    const resultados = await uploadShopeeDrive(itemId, fotosLimitadas, idsAtuais);
     return { ok: true, sistema, sku, enviadas: resultados.filter((item) => item.ok).length, resultados };
   }
 

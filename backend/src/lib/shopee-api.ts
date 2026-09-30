@@ -1,11 +1,11 @@
 import crypto from 'crypto';
 import { prisma } from './prisma';
 
-// Hosts confirmados na documentacao oficial (Authorization and Authentication, Shopee Open
-// Platform, 2026-07-23). O host de API de sandbox varia entre exemplos da doc (.sg vs .com.br) —
-// deixamos configuravel por env pra nao travar em cima de um host nao 100% confirmado; o de
-// producao (partner.shopeemobile.com) esta confirmado e fixo.
-const SHOPEE_API_HOST_LIVE = 'https://partner.shopeemobile.com';
+// Hosts confirmados na documentacao oficial (API reference > v2.media_space.upload_image, que
+// lista os hosts por regiao/ambiente explicitamente) e validados ao vivo: o callback de
+// autorizacao (GetAccessToken) via SHOPEE_API_HOST_SANDBOX ja funcionou de ponta a ponta com a
+// loja de teste sandbox (shopId 227946191). Brasil usa host regional proprio em producao.
+const SHOPEE_API_HOST_LIVE = process.env.SHOPEE_API_HOST_LIVE || 'https://openplatform.shopee.com.br';
 const SHOPEE_API_HOST_SANDBOX = process.env.SHOPEE_API_HOST_SANDBOX || 'https://openplatform.sandbox.test-stable.shopee.sg';
 
 function getPartnerId() {
@@ -163,4 +163,60 @@ export async function shopeeReq(path: string, init?: { method?: string; body?: a
   }
 
   return payload;
+}
+
+// POST /api/v2/media_space/upload_image — multipart/form-data (campo "image" = arquivo). Ate 10MB,
+// JPG/JPEG/PNG. Retorna response.image_info.image_id (usado no update_item depois). Confirmado na
+// doc oficial (v2.media_space.upload_image, Request Parameters).
+export async function shopeeUploadImage(fileBuffer: Buffer, fileName: string) {
+  let config = await getShopeeConfig();
+  if (!config.accessToken || !config.shopId) throw new Error('Shopee nao autorizada. Conecte a loja em Configuracao.');
+
+  const precisaRenovar = config.expiresAt ? new Date(config.expiresAt).getTime() < Date.now() + 60_000 : false;
+  if (precisaRenovar) {
+    await shopeeRefreshToken();
+    config = await getShopeeConfig();
+  }
+
+  async function doUpload(accessToken: string) {
+    const url = buildShopUrl(config.environment, '/api/v2/media_space/upload_image', accessToken, config.shopId);
+    const form = new FormData();
+    form.append('image', new Blob([fileBuffer]), fileName);
+    return fetch(url, { method: 'POST', body: form as any });
+  }
+
+  let response = await doUpload(config.accessToken);
+  let payload: any = await response.json().catch(() => ({}));
+
+  if (payload?.error && /token/i.test(String(payload.error))) {
+    const novoToken = await shopeeRefreshToken();
+    response = await doUpload(novoToken);
+    payload = await response.json().catch(() => ({}));
+  }
+
+  if (!response.ok || payload?.error) {
+    throw new Error(payload?.message || payload?.error || `Shopee ${response.status}`);
+  }
+
+  const imageId = payload?.response?.image_info?.image_id;
+  if (!imageId) throw new Error('Shopee nao retornou image_id no upload.');
+  return String(imageId);
+}
+
+// GET /api/v2/product/get_item_base_info — busca o item pra saber quantas fotos ja tem (mesmo
+// padrao do buscarProdutoNuvemshopPorSku / mercadoLivreReq('/items/:id') em fotos-cadastro.ts).
+export async function shopeeGetItemBaseInfo(itemId: string) {
+  const payload = await shopeeReq(`/api/v2/product/get_item_base_info?item_id_list=${encodeURIComponent(itemId)}&need_tax_info=false&need_complaint_policy=false`);
+  const item = payload?.response?.item_list?.[0];
+  if (!item) throw new Error('Item nao encontrado na Shopee.');
+  return item;
+}
+
+// POST /api/v2/product/update_item — usado aqui so pra anexar as novas fotos (image.image_id_list),
+// reenviando tambem as que ja existiam pra nao perde-las (a API substitui a lista inteira).
+export async function shopeeUpdateItemImages(itemId: string, imageIdList: string[]) {
+  return shopeeReq('/api/v2/product/update_item', {
+    method: 'POST',
+    body: { item_id: Number(itemId), image: { image_id_list: imageIdList } },
+  });
 }
