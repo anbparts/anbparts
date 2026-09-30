@@ -10,6 +10,22 @@ function getBaseSku(value: any) {
   return String(value || '').trim().toUpperCase().replace(/-\d+$/, '');
 }
 
+// Converte o HTML da descricao do Bling pra texto puro MANTENDO as quebras de linha (a Shopee
+// aceita \n na description) — <br>/</p>/</div> viram quebra de linha antes de tirar as outras tags,
+// senao o texto perde a formatacao em paragrafos (ficava tudo numa linha so).
+function htmlParaTextoComQuebras(html: string) {
+  return String(html || '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|li|h[1-6])>/gi, '\n')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n[ \t]+/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 // GET /shopee/debug-raw?path=PATH — proxy direto pra API da Shopee (debug), mesmo padrao do
 // /bling/debug-raw — assina a chamada como Shop API (access_token/shop_id) e devolve a resposta
 // crua, pra diagnosticar sem depender de suposicao de nome de campo/host/permissao.
@@ -208,10 +224,7 @@ shopeeRouter.post('/anuncio/criar', async (req, res, next) => {
       const produtoBling = produtosByCode.get(sku);
       if (produtoBling?.id) {
         const detail = await fetchBlingProductDetailById(Number(produtoBling.id), { forceRefresh: true });
-        descricaoBling = String((detail as any)?.descricaoCurta || (produtoBling as any)?.descricaoCurta || '')
-          .replace(/<[^>]*>/g, ' ')
-          .replace(/\s+/g, ' ')
-          .trim();
+        descricaoBling = htmlParaTextoComQuebras((detail as any)?.descricaoCurta || (produtoBling as any)?.descricaoCurta || '');
       }
     } catch (e) {
       // Bling fora do ar/produto nao encontrado nao pode travar a criacao do anuncio — cai pro
