@@ -760,6 +760,34 @@ model NuvemshopCategoria {
   atualizadoEm DateTime @updatedAt
 }
 
+// Espelho da arvore oficial de categorias da Shopee (Cadastros > Product Mapping > Categories no
+// Seller Center) — a API de categorias da Shopee nao esta acessivel ainda (app pendente de
+// aprovacao), entao essa lista foi capturada manualmente. "id" e o ID real da categoria na Shopee.
+model ShopeeCategoria {
+  id           Int      @id // ID da categoria na Shopee (nao autoincrement — e o ID real de la)
+  categoria    String   // ex: "Peças e Acessórios para Veículos"
+  subcategoria String   // ex: "Peças de Reposição para Motocicletas" | "Acessórios para Motociclet"
+  nivel3       String   @default("") // ex: "Chassis", "Motor" — vazio quando a subcategoria ja e' folha
+  nivel4       String   // nome da categoria folha (o que aparece pro comprador)
+  permitido    Boolean  @default(true) // false = "Não Permitido" na Shopee (ex: Amortecedores, Freios, Baterias)
+  atualizadoEm DateTime @updatedAt
+
+  @@index([nivel4])
+}
+
+// Vinculo generico categoria do Bling <-> categoria de um marketplace externo (Shopee, OLX, etc).
+// "codigoExterno" e o ID/codigo que o marketplace usa (ex: 102439 = Bengalas na Shopee).
+model CategoriaVinculoMarketplace {
+  id             Int      @id @default(autoincrement())
+  categoriaBlingId Int
+  marketplace    String   // 'shopee' | 'olx' | ...
+  codigoExterno  String
+  descricaoExterno String @default("")
+  atualizadoEm   DateTime @updatedAt
+
+  @@unique([categoriaBlingId, marketplace])
+}
+
 // Saldo do Mercado Pago persistido (calculado 1x/dia pelo job das 7:30). O dashboard só LÊ daqui,
 // nunca consulta o MP ao vivo. Singleton (id=1).
 model MercadoPagoSaldoCache {
