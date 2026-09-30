@@ -1229,10 +1229,12 @@ function limitarFotosShopee<T>(fotos: T[], imagensAtuais: number) {
 // Usado no fluxo de CRIACAO de anuncio (aba Anuncio): busca as fotos do Drive do SKU e sobe pra
 // Shopee, devolvendo so os image_id (o item ainda nem existe na Shopee nesse ponto, entao nao ha
 // o que mesclar com fotos existentes — isso e' diferente de uploadShopeeDrive, que e' pro fluxo de
-// ANEXAR fotos a um anuncio ja criado).
-export async function prepararImagensShopeeParaNovoItem(motoId: number, sku: string): Promise<string[]> {
+// ANEXAR fotos a um anuncio ja criado). `maxFotos` default 1: a criacao so precisa do minimo
+// exigido pela Shopee (>=1 imagem) — o resto das fotos fica por conta da aba Fotos Anuncios, que
+// ja detecta itens com poucas fotos e completa depois, sem pesar a etapa de criacao do anuncio.
+export async function prepararImagensShopeeParaNovoItem(motoId: number, sku: string, maxFotos = 1): Promise<string[]> {
   const drive = await buscarFotosDriveSku(motoId, sku);
-  const fotos = drive.fotos.slice(0, SHOPEE_MAX_FOTOS);
+  const fotos = drive.fotos.slice(0, Math.max(1, Math.min(maxFotos, SHOPEE_MAX_FOTOS)));
   const imageIds: string[] = [];
   for (const foto of fotos) {
     const downloaded = await downloadDriveFoto(foto);

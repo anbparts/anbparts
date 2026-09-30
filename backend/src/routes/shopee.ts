@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { getShopeeConfig, saveShopeeConfig, shopeeExchangeCodeForToken, shopeeReq, shopeeAddItem, shopeeGetLogisticChannel } from '../lib/shopee-api';
 import { prepararImagensShopeeParaNovoItem } from '../lib/fotos-cadastro';
-import { informarAnuncioShopeeNoBling } from './bling';
+import { informarAnuncioShopeeNoBling, findBlingProductsByCodes, fetchBlingProductDetailById } from './bling';
 import { prisma } from '../lib/prisma';
 
 export const shopeeRouter = Router();
@@ -186,7 +186,10 @@ shopeeRouter.post('/anuncio/criar', async (req, res, next) => {
     });
     if (!qtdDisponivel) return res.status(400).json({ error: 'Nenhuma unidade disponivel em estoque pra esse SKU' });
 
-    const imageIdList = await prepararImagensShopeeParaNovoItem(peca.motoId, sku);
+    // So sobe 1 foto pra criacao (minimo exigido pela Shopee) — o resto fica a cargo da aba Fotos
+    // Anuncios, que ja detecta itens com poucas fotos e completa depois. Isso evita empilhar o
+    // upload de ate 9 fotos na mesma chamada que ja precisa ir ate o Bling buscar a descricao.
+    const imageIdList = await prepararImagensShopeeParaNovoItem(peca.motoId, sku, 1);
     if (!imageIdList.length) return res.status(400).json({ error: 'Nenhuma foto encontrada no Drive pra esse SKU — o anuncio precisa de pelo menos 1 imagem.' });
 
     const canal = await shopeeGetLogisticChannel();
@@ -196,9 +199,28 @@ shopeeRouter.post('/anuncio/criar', async (req, res, next) => {
     if (!peca.largura || !peca.altura || !peca.profundidade) return res.status(400).json({ error: 'SKU sem dimensoes completas (largura/altura/profundidade) cadastradas.' });
     if (!Number(peca.precoML)) return res.status(400).json({ error: 'SKU sem preco cadastrado.' });
 
+    // Descricao completa vem do Bling (mesmo campo/tratamento usado no fluxo de anuncio-criar via
+    // integracao do Bling: descricaoCurta, com html removido) — o texto local (peca.descricao) e'
+    // curto demais (usado so como titulo). Se o Bling nao tiver nada, cai pro texto local mesmo.
+    let descricaoBling = '';
+    try {
+      const produtosByCode = await findBlingProductsByCodes([sku], { forceRefresh: true });
+      const produtoBling = produtosByCode.get(sku);
+      if (produtoBling?.id) {
+        const detail = await fetchBlingProductDetailById(Number(produtoBling.id), { forceRefresh: true });
+        descricaoBling = String((detail as any)?.descricaoCurta || (produtoBling as any)?.descricaoCurta || '')
+          .replace(/<[^>]*>/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+      }
+    } catch (e) {
+      // Bling fora do ar/produto nao encontrado nao pode travar a criacao do anuncio — cai pro
+      // texto local como fallback.
+    }
+
     const criado = await shopeeAddItem({
       itemName: peca.descricao.slice(0, 120),
-      description: peca.descricao,
+      description: descricaoBling || peca.descricao,
       price: Number(peca.precoML),
       weightKg: peso,
       packageHeightCm: Number(peca.altura),
