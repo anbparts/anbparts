@@ -26,6 +26,7 @@ import { notificacoesRouter } from './routes/notificacoes';
 import { nuvemshopRouter } from './routes/nuvemshop';
 import { pecasRouter, startLimpezaFotosPecaScheduler } from './routes/pecas';
 import { sucataRouter } from './routes/sucata';
+import { shopeeRouter } from './routes/shopee';
 import { authMiddleware } from './middlewares/auth';
 import { errorMiddleware } from './middlewares/error';
 import { startFotosPendentesWhatsappScheduler } from './lib/fotos-pendentes-whatsapp';
@@ -85,6 +86,7 @@ app.use('/notificacoes', notificacoesRouter);
 app.use('/nuvemshop', nuvemshopRouter);
 app.use('/pecas', pecasRouter);
 app.use('/sucata', sucataRouter);
+app.use('/shopee', shopeeRouter);
 
 app.use(errorMiddleware);
 

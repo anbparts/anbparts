@@ -389,6 +389,20 @@ model MercadoLivreConfig {
   updatedAt    DateTime @updatedAt
 }
 
+// Config da integracao direta com a API da Shopee (Open Platform). partnerId/partnerKey vem de
+// variavel de ambiente (SHOPEE_PARTNER_ID / SHOPEE_PARTNER_KEY) — aqui so fica o que resulta da
+// autorizacao da loja (shopId, tokens). environment: 'sandbox' | 'live' (controla qual host usar).
+model ShopeeConfig {
+  id           Int      @id @default(autoincrement())
+  environment  String   @default("sandbox")
+  shopId       String   @default("")
+  accessToken  String   @default("")
+  refreshToken String   @default("")
+  expiresAt    DateTime?
+  connectedAt  DateTime?
+  updatedAt    DateTime @updatedAt
+}
+
 model MercadoLivrePergunta {
   id               Int      @id @default(autoincrement())
   questionId       String   @unique
