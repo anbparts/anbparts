@@ -244,9 +244,10 @@ export async function shopeeGetLogisticChannel(): Promise<{ logistic_id: number;
     const canais = payload?.response?.logistics_channel_list || payload?.response?.logistic_channel_list || [];
     canaisLogisticaCache = { ts: agora, canais };
   }
-  const habilitado = canaisLogisticaCache.canais.find((c: any) => c.enabled);
+  const habilitado = canaisLogisticaCache.canais.find((c: any) => c.enabled && (c.logistics_channel_id || c.logistic_id));
   if (!habilitado) throw new Error('Nenhum canal de logistica habilitado encontrado na loja Shopee (get_channel_list).');
-  return { logistic_id: Number(habilitado.logistic_id), nome: String(habilitado.logistics_channel_name || habilitado.channel_name || habilitado.logistic_id) };
+  const logisticId = Number(habilitado.logistics_channel_id || habilitado.logistic_id);
+  return { logistic_id: logisticId, nome: String(habilitado.logistics_channel_name || habilitado.channel_name || logisticId) };
 }
 
 export type ShopeeAddItemInput = {
