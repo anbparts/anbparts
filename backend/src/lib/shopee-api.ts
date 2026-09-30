@@ -60,23 +60,35 @@ function sign(partnerKey: string, parts: (string | number)[]) {
 
 // Assina e monta a URL pra uma chamada "Public API" (sem access_token/shop_id) — usada só pelo
 // GetAccessToken/RefreshAccessToken, que autenticam com code/refresh_token no corpo.
+// Separa o pathname (o que entra na assinatura) de uma eventual query string ja presente em
+// `path` (ex: "/api/v2/product/get_item_base_info?item_id_list=123") — a assinatura usa so o
+// pathname, e a query original precisa ser preservada (com "&", nao um segundo "?") na URL final.
+function splitPath(path: string) {
+  const idx = path.indexOf('?');
+  return idx === -1 ? { pathname: path, query: '' } : { pathname: path.slice(0, idx), query: path.slice(idx + 1) };
+}
+
 function buildPublicUrl(environment: string, path: string) {
+  const { pathname, query } = splitPath(path);
   const partnerId = getPartnerId();
   const partnerKey = getPartnerKey();
   const timestamp = Math.floor(Date.now() / 1000);
-  const signature = sign(partnerKey, [partnerId, path, timestamp]);
+  const signature = sign(partnerKey, [partnerId, pathname, timestamp]);
   const host = getApiHost(environment);
-  return `${host}${path}?partner_id=${partnerId}&timestamp=${timestamp}&sign=${signature}`;
+  const authQuery = `partner_id=${partnerId}&timestamp=${timestamp}&sign=${signature}`;
+  return `${host}${pathname}?${query ? `${query}&` : ''}${authQuery}`;
 }
 
 // Assina e monta a URL pra uma "Shop API" (com access_token/shop_id no sign base string).
 function buildShopUrl(environment: string, path: string, accessToken: string, shopId: string) {
+  const { pathname, query } = splitPath(path);
   const partnerId = getPartnerId();
   const partnerKey = getPartnerKey();
   const timestamp = Math.floor(Date.now() / 1000);
-  const signature = sign(partnerKey, [partnerId, path, timestamp, accessToken, shopId]);
+  const signature = sign(partnerKey, [partnerId, pathname, timestamp, accessToken, shopId]);
   const host = getApiHost(environment);
-  return `${host}${path}?partner_id=${partnerId}&timestamp=${timestamp}&sign=${signature}&access_token=${accessToken}&shop_id=${shopId}`;
+  const authQuery = `partner_id=${partnerId}&timestamp=${timestamp}&sign=${signature}&access_token=${accessToken}&shop_id=${shopId}`;
+  return `${host}${pathname}?${query ? `${query}&` : ''}${authQuery}`;
 }
 
 // POST /api/v2/auth/token/get — troca o `code` (+ shop_id) recebido no callback pelo primeiro par

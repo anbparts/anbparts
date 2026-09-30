@@ -1,7 +1,19 @@
 import { Router } from 'express';
-import { getShopeeConfig, saveShopeeConfig, shopeeExchangeCodeForToken } from '../lib/shopee-api';
+import { getShopeeConfig, saveShopeeConfig, shopeeExchangeCodeForToken, shopeeReq } from '../lib/shopee-api';
 
 export const shopeeRouter = Router();
+
+// GET /shopee/debug-raw?path=PATH — proxy direto pra API da Shopee (debug), mesmo padrao do
+// /bling/debug-raw — assina a chamada como Shop API (access_token/shop_id) e devolve a resposta
+// crua, pra diagnosticar sem depender de suposicao de nome de campo/host/permissao.
+shopeeRouter.get('/debug-raw', async (req, res, next) => {
+  try {
+    const path = String(req.query.path || '');
+    if (!path) return res.status(400).json({ error: 'path obrigatorio' });
+    const data = await shopeeReq(path);
+    res.json(data);
+  } catch (e: any) { res.status(400).json({ error: e?.message }); }
+});
 
 function getFrontendBase() {
   return (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
