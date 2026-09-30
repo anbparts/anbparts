@@ -332,12 +332,13 @@ blingRouter.post('/shopee/preparar-sku', async (req, res, next) => {
   }
 });
 
-// POST /bling/shopee/informar-anuncio — avisa o Bling que um SKU ja tem um anuncio na Shopee,
-// gravando o ID do anuncio no vinculo produto-loja (/produtos/lojas.codigo — o mesmo campo que o
-// Bling usa quando ele mesmo publica). So sabe fazer isso quando o vinculo produto-loja ja existe
-// (rodar /bling/shopee/preparar-sku primeiro). Enquanto nao temos a criacao real do anuncio na
-// Shopee implementada, `shopeeItemId` pode ser um valor de teste — essa rota so cobre o "avisar o
-// Bling", pra ja deixar esse pedaco funcionando; sera reaproveitada quando o anuncio real existir.
+// POST /bling/shopee/informar-anuncio — avisa o Bling que um SKU ja tem um anuncio na Shopee
+// (criado por fora, direto na Shopee — nao atraves do Bling), gravando o ID do anuncio no vinculo
+// produto-loja (/produtos/lojas.codigo — o mesmo campo que o Bling usa quando ele mesmo publica).
+// Cria o vinculo produto-loja se ainda nao existir (sem depender do "Preparar SKU", que e' so pra
+// quando o BLING vai fazer a exportacao). Enquanto nao temos a criacao real do anuncio na Shopee
+// implementada, `shopeeItemId` pode ser um valor de teste — essa rota so cobre o "avisar o Bling",
+// pra ja deixar esse pedaco funcionando; sera reaproveitada quando o anuncio real existir.
 blingRouter.post('/shopee/informar-anuncio', async (req, res, next) => {
   try {
     const sku = getBaseSku(String(req.body?.sku || ''));
@@ -356,29 +357,35 @@ blingRouter.post('/shopee/informar-anuncio', async (req, res, next) => {
 
     const prodLojas = await blingReq(`/produtos/lojas?idProduto=${produtoId}&idLoja=${idLoja}&limite=10`) as any;
     const prodLojaExistente = (prodLojas?.data || [])[0];
-    if (!prodLojaExistente) {
-      return res.status(400).json({ error: 'Vinculo produto-loja ainda nao existe — rode "Preparar SKU" (categoria Shopee) antes de informar o anuncio.' });
-    }
 
-    await blingReq(`/produtos/lojas/${prodLojaExistente.id}`, {
-      method: 'PUT',
-      body: JSON.stringify({
-        produto: { id: produtoId },
-        loja: { id: Number(idLoja) },
-        codigo: shopeeItemId,
-        preco: Number(prodLojaExistente.preco || produto.preco || 0),
-        categoriasProdutos: Array.isArray(prodLojaExistente.categoriasProdutos) && prodLojaExistente.categoriasProdutos.length
-          ? prodLojaExistente.categoriasProdutos.map((c: any) => ({ id: Number(c.id) }))
-          : undefined,
-      }),
-    });
+    const bodyProdutoLoja = {
+      produto: { id: produtoId },
+      loja: { id: Number(idLoja) },
+      codigo: shopeeItemId,
+      preco: Number(prodLojaExistente?.preco || produto.preco || 0),
+      categoriasProdutos: Array.isArray(prodLojaExistente?.categoriasProdutos) && prodLojaExistente.categoriasProdutos.length
+        ? prodLojaExistente.categoriasProdutos.map((c: any) => ({ id: Number(c.id) }))
+        : undefined,
+    };
+
+    let produtoLojaId: number;
+    let acao: string;
+    if (prodLojaExistente) {
+      await blingReq(`/produtos/lojas/${prodLojaExistente.id}`, { method: 'PUT', body: JSON.stringify(bodyProdutoLoja) });
+      produtoLojaId = prodLojaExistente.id;
+      acao = 'atualizou vinculo produto-loja existente com o codigo informado';
+    } else {
+      const criado = await blingReq('/produtos/lojas', { method: 'POST', body: JSON.stringify(bodyProdutoLoja) }) as any;
+      produtoLojaId = Number(criado?.data?.id);
+      acao = 'criou vinculo produto-loja com o codigo informado';
+    }
 
     const r = await prisma.peca.updateMany({
       where: { OR: [{ idPeca: sku }, { idPeca: { startsWith: `${sku}-` } }] },
       data: { shopeeItemId },
     });
 
-    res.json({ ok: true, sku, produtoId, shopeeItemId, produtoLojaId: prodLojaExistente.id, pecasAtualizadas: r.count });
+    res.json({ ok: true, sku, produtoId, shopeeItemId, produtoLojaId, acao, pecasAtualizadas: r.count });
   } catch (e: any) {
     res.status(400).json({ error: e?.message || 'Erro ao informar anuncio ao Bling' });
   }
