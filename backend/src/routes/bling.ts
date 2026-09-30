@@ -214,6 +214,176 @@ blingRouter.post('/anuncio-criar', async (req, res, next) => {
   }
 });
 
+const BLING_MARCA_CAMPO_ID = 2821430;
+
+// POST /bling/shopee/preparar-sku — automatiza, pra um SKU, tudo que descobrimos manualmente no
+// caso do BM03_0119: vincula a categoria do Bling a uma categoria da loja (/categorias/lojas, uma
+// vez por categoria), marca essa categoria no vinculo produto-loja (/produtos/lojas), garante
+// codigo/ID-na-loja vazio quando o produto ainda nunca foi exportado (nao mexe se ja tiver um
+// codigo real — sinal de que ja existe na Shopee), sincroniza o preco, e reenvia os campos
+// customizados garantindo a Marca (nunca so a Marca sozinha — sempre junto com o resto, senao
+// apaga os outros, foi o que aconteceu na mao). So ESCREVE no Bling se `aplicar: true`; sem isso
+// e' dry-run (so mostra o que faria).
+blingRouter.post('/shopee/preparar-sku', async (req, res, next) => {
+  try {
+    const sku = getBaseSku(String(req.body?.sku || ''));
+    const aplicar = !!req.body?.aplicar;
+    if (!sku) return res.status(400).json({ error: 'sku obrigatorio' });
+
+    const cfg = await getConfig();
+    const idLoja = cfg.shopeeLojaId;
+    if (!idLoja) return res.status(400).json({ error: 'Loja da Shopee nao configurada em Configuracao' });
+
+    const produtosByCode = await findBlingProductsByCodes([sku], { forceRefresh: true });
+    const produto = produtosByCode.get(sku);
+    if (!produto?.id) return res.status(404).json({ error: 'Produto nao encontrado no Bling' });
+    const produtoId = Number(produto.id);
+
+    const detail = await fetchBlingProductDetailById(produtoId, { forceRefresh: true });
+    const categoriaBlingId = Number(detail?.categoria?.id || (produto as any)?.categoria?.id || 0);
+    if (!categoriaBlingId) return res.status(400).json({ error: 'Produto sem categoria definida no Bling' });
+
+    const relatorio: any = { sku, produtoId, categoriaBlingId, modo: aplicar ? 'aplicar' : 'dry-run', avisos: [] as string[], acoes: [] as string[] };
+
+    const dims = detail?.dimensoes || {};
+    for (const [lado, valor] of Object.entries({ largura: dims.largura, altura: dims.altura, profundidade: dims.profundidade })) {
+      if (Number(valor) > 60) relatorio.avisos.push(`${lado} = ${valor}cm > 60cm (limite do canal de frete testado na Shopee) — confira antes de exportar`);
+    }
+
+    const vinculo = await prisma.categoriaVinculoMarketplace.findUnique({
+      where: { categoriaBlingId_marketplace: { categoriaBlingId, marketplace: 'shopee' } },
+    });
+    if (!vinculo) {
+      relatorio.pronto = false;
+      relatorio.avisos.push(`Categoria Bling ${categoriaBlingId} ainda nao tem vinculo Shopee cadastrado em CategoriaVinculoMarketplace`);
+      return res.json({ ok: true, ...relatorio });
+    }
+    relatorio.categoriaShopee = { codigo: vinculo.codigoExterno, descricao: vinculo.descricaoExterno };
+
+    if (!aplicar) {
+      relatorio.pronto = true;
+      return res.json({ ok: true, ...relatorio });
+    }
+
+    const categoriasLojas = await blingReq(`/categorias/lojas?idLoja=${idLoja}&idCategoriaProduto=${categoriaBlingId}&limite=10`) as any;
+    const catLojaExistente = (categoriasLojas?.data || [])[0];
+    if (!catLojaExistente) {
+      await blingReq('/categorias/lojas', {
+        method: 'POST',
+        body: JSON.stringify({
+          loja: { id: Number(idLoja) },
+          categoriaProduto: { id: categoriaBlingId },
+          codigo: vinculo.codigoExterno,
+          descricao: vinculo.descricaoExterno || vinculo.codigoExterno,
+        }),
+      });
+      relatorio.acoes.push('criou vinculo categoria-loja (/categorias/lojas)');
+    } else {
+      relatorio.acoes.push('vinculo categoria-loja ja existia');
+    }
+
+    const prodLojas = await blingReq(`/produtos/lojas?idProduto=${produtoId}&idLoja=${idLoja}&limite=10`) as any;
+    const prodLojaExistente = (prodLojas?.data || [])[0];
+    const jaExportado = !!(prodLojaExistente?.codigo && String(prodLojaExistente.codigo) !== '0');
+    const bodyProdutoLoja = {
+      produto: { id: produtoId },
+      loja: { id: Number(idLoja) },
+      codigo: jaExportado ? prodLojaExistente.codigo : null,
+      preco: Number(produto.preco || detail?.preco || 0),
+      categoriasProdutos: [{ id: categoriaBlingId }],
+    };
+    if (prodLojaExistente) {
+      await blingReq(`/produtos/lojas/${prodLojaExistente.id}`, { method: 'PUT', body: JSON.stringify(bodyProdutoLoja) });
+      relatorio.acoes.push(jaExportado ? 'atualizou vinculo produto-loja (ja exportado, manteve codigo)' : 'atualizou vinculo produto-loja (codigo em branco, ainda nao exportado)');
+    } else {
+      await blingReq('/produtos/lojas', { method: 'POST', body: JSON.stringify(bodyProdutoLoja) });
+      relatorio.acoes.push('criou vinculo produto-loja');
+    }
+
+    const pecaComMoto = await prisma.peca.findFirst({
+      where: { OR: [{ idPeca: sku }, { idPeca: { startsWith: `${sku}-` } }] },
+      include: { moto: true },
+    });
+    const marca = pecaComMoto?.moto?.marca
+      || (await prisma.cadastroPeca.findUnique({ where: { idPeca: sku }, include: { moto: true } }))?.moto?.marca
+      || null;
+
+    if (marca) {
+      const camposAtuais: any[] = Array.isArray(detail?.camposCustomizados) ? detail.camposCustomizados : [];
+      const semMarca = camposAtuais.filter((c: any) => Number(c.idCampoCustomizado) !== BLING_MARCA_CAMPO_ID);
+      await blingReq(`/produtos/${produtoId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          camposCustomizados: [
+            ...semMarca.map((c: any) => ({ idCampoCustomizado: c.idCampoCustomizado, valor: c.valor, item: c.item || '' })),
+            { idCampoCustomizado: BLING_MARCA_CAMPO_ID, valor: marca, item: '' },
+          ],
+        }),
+      });
+      relatorio.acoes.push(`garantiu Marca="${marca}" nos campos customizados (reenviando os demais junto)`);
+    } else {
+      relatorio.avisos.push('nao achei a marca da moto no nosso banco pra esse SKU — Marca nao foi tocada');
+    }
+
+    relatorio.pronto = true;
+    res.json({ ok: true, ...relatorio });
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message || 'Erro ao preparar SKU para Shopee' });
+  }
+});
+
+// POST /bling/shopee/informar-anuncio — avisa o Bling que um SKU ja tem um anuncio na Shopee,
+// gravando o ID do anuncio no vinculo produto-loja (/produtos/lojas.codigo — o mesmo campo que o
+// Bling usa quando ele mesmo publica). So sabe fazer isso quando o vinculo produto-loja ja existe
+// (rodar /bling/shopee/preparar-sku primeiro). Enquanto nao temos a criacao real do anuncio na
+// Shopee implementada, `shopeeItemId` pode ser um valor de teste — essa rota so cobre o "avisar o
+// Bling", pra ja deixar esse pedaco funcionando; sera reaproveitada quando o anuncio real existir.
+blingRouter.post('/shopee/informar-anuncio', async (req, res, next) => {
+  try {
+    const sku = getBaseSku(String(req.body?.sku || ''));
+    const shopeeItemId = String(req.body?.shopeeItemId || '').trim();
+    if (!sku) return res.status(400).json({ error: 'sku obrigatorio' });
+    if (!shopeeItemId) return res.status(400).json({ error: 'shopeeItemId obrigatorio' });
+
+    const cfg = await getConfig();
+    const idLoja = cfg.shopeeLojaId;
+    if (!idLoja) return res.status(400).json({ error: 'Loja da Shopee nao configurada em Configuracao' });
+
+    const produtosByCode = await findBlingProductsByCodes([sku], { forceRefresh: true });
+    const produto = produtosByCode.get(sku);
+    if (!produto?.id) return res.status(404).json({ error: 'Produto nao encontrado no Bling' });
+    const produtoId = Number(produto.id);
+
+    const prodLojas = await blingReq(`/produtos/lojas?idProduto=${produtoId}&idLoja=${idLoja}&limite=10`) as any;
+    const prodLojaExistente = (prodLojas?.data || [])[0];
+    if (!prodLojaExistente) {
+      return res.status(400).json({ error: 'Vinculo produto-loja ainda nao existe — rode "Preparar SKU" (categoria Shopee) antes de informar o anuncio.' });
+    }
+
+    await blingReq(`/produtos/lojas/${prodLojaExistente.id}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        produto: { id: produtoId },
+        loja: { id: Number(idLoja) },
+        codigo: shopeeItemId,
+        preco: Number(prodLojaExistente.preco || produto.preco || 0),
+        categoriasProdutos: Array.isArray(prodLojaExistente.categoriasProdutos) && prodLojaExistente.categoriasProdutos.length
+          ? prodLojaExistente.categoriasProdutos.map((c: any) => ({ id: Number(c.id) }))
+          : undefined,
+      }),
+    });
+
+    const r = await prisma.peca.updateMany({
+      where: { OR: [{ idPeca: sku }, { idPeca: { startsWith: `${sku}-` } }] },
+      data: { shopeeItemId },
+    });
+
+    res.json({ ok: true, sku, produtoId, shopeeItemId, produtoLojaId: prodLojaExistente.id, pecasAtualizadas: r.count });
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message || 'Erro ao informar anuncio ao Bling' });
+  }
+});
+
 const BLING_API = 'https://api.bling.com.br/Api/v3';
 const BLING_OAUTH = 'https://api.bling.com.br/Api/v3/oauth/token';
 const DEFAULT_FRETE_PADRAO = 29.9;
