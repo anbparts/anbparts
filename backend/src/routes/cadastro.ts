@@ -8,6 +8,7 @@ import { criarPastaPreCadastro, renomearPastaPreCadastro } from './google-drive'
 import { mercadoLivreReq, getMercadoLivreItemPermalink } from '../lib/mercado-livre';
 import { nuvemReq, buscarProdutoNuvemshopPorSku } from './nuvemshop';
 import { sendDetranAtivacaoEmailIfNeeded } from '../lib/detran-alert';
+import { sugerirShopeeCategoriaId } from '../lib/shopeeCategoria';
 
 const CAMPOS_COMPLETOS_WHERE = {
   peso: { not: null as null },
@@ -623,6 +624,7 @@ cadastroRouter.post('/', requireCadastroAction('criar_pre_cadastro'), async (req
         estoque: Number(estoque) || 1,
         categoriaMLId: categoriaMLId || null,
         categoriaMLNome: categoriaMLNome || null,
+        shopeeCategoriaId: String(sugerirShopeeCategoriaId(descricao, tipoPecaAvulsa)),
         urlRef: urlRef ? String(urlRef).trim() : null,
         status: 'pre_cadastro',
         pecaRestrita: ehPecaRestrita,
@@ -809,6 +811,7 @@ cadastroRouter.post('/copiar-peca/:pecaId', requireCadastroAction('criar_pre_cad
           fotoCapaArquivo: origem.fotoCapaArquivo,
           mercadoLivreItemId: origem.mercadoLivreItemId || null,
           mercadoLivreLink: origem.mercadoLivreLink || null,
+          shopeeCategoriaId: (origem as any).shopeeCategoriaId || null,
           precoML: Number(origem.precoML || 0),
           valorLiq: Number(origem.valorLiq || 0),
           valorFrete: Number(origem.valorFrete || 0),
@@ -1204,6 +1207,13 @@ cadastroRouter.put('/:id', requireCadastroAction('editar_pre_cadastro'), async (
     if (estoque !== undefined) data.estoque = Number(estoque);
     if (categoriaMLId !== undefined) data.categoriaMLId = categoriaMLId || null;
     if (categoriaMLNome !== undefined) data.categoriaMLNome = categoriaMLNome || null;
+    // Recalcula a sugestao de categoria Shopee sempre que a descricao ou o tipo de peca mudam.
+    if (descricao !== undefined || tipoPecaAvulsa !== undefined) {
+      data.shopeeCategoriaId = String(sugerirShopeeCategoriaId(
+        descricao !== undefined ? descricao : atual.descricao,
+        tipoPecaAvulsaEfetivo,
+      ));
+    }
     if (urlRef !== undefined) data.urlRef = urlRef || null;
     if (pecaRestrita !== undefined) data.pecaRestrita = Boolean(pecaRestrita);
     if (sucata !== undefined) data.sucata = Boolean(sucata);
@@ -1293,6 +1303,7 @@ cadastroRouter.post('/:id/finalizar', requireCadastroAction('criar_bling'), asyn
             profundidade: Number(cadastro.profundidade || 0),
             numeroPeca: cadastro.numeroPeca || null,
             numeroMotor: (cadastro as any).numeroMotor || null,
+            shopeeCategoriaId: (cadastro as any).shopeeCategoriaId || null,
             cadastro: new Date(),
           },
         });
@@ -1356,6 +1367,7 @@ cadastroRouter.post('/:id/finalizar', requireCadastroAction('criar_bling'), asyn
             profundidade: Number(cadastro.profundidade || 0),
             numeroPeca: cadastro.numeroPeca || null,
             numeroMotor: (cadastro as any).numeroMotor || null,
+            shopeeCategoriaId: (cadastro as any).shopeeCategoriaId || null,
             cadastro: new Date(),
           },
         });
@@ -1463,6 +1475,7 @@ cadastroRouter.post('/:id/finalizar', requireCadastroAction('criar_bling'), asyn
             profundidade: bProf || Number(cadastro.profundidade || 0),
             numeroPeca: cadastro.numeroPeca || null,
             numeroMotor: (cadastro as any).numeroMotor || null,
+            shopeeCategoriaId: (cadastro as any).shopeeCategoriaId || null,
             tipoPecaAvulsa: cadastro.tipoPecaAvulsa || null,
             // Cada unidade recebe seu grupo de etiquetas (1 ou mais), juntas por " / ".
             detranEtiqueta: (gruposEtiquetas[i] && gruposEtiquetas[i].length)
