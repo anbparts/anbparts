@@ -1,7 +1,19 @@
 import { Router } from 'express';
-import { getMagaluConfig, saveMagaluConfig, magaluExchangeCodeForToken } from '../lib/magalu-api';
+import { getMagaluConfig, saveMagaluConfig, magaluExchangeCodeForToken, magaluReq } from '../lib/magalu-api';
 
 export const magaluRouter = Router();
+
+// GET /magalu/debug-raw?path=PATH — proxy direto pra API do Magalu (debug), mesmo padrao do
+// /shopee/debug-raw — assina a chamada com o access_token salvo e devolve a resposta crua, pra
+// diagnosticar sem depender de suposicao de formato/permissao.
+magaluRouter.get('/debug-raw', async (req, res, next) => {
+  try {
+    const path = String(req.query.path || '');
+    if (!path) return res.status(400).json({ error: 'path obrigatorio' });
+    const data = await magaluReq(path);
+    res.json(data);
+  } catch (e: any) { res.status(400).json({ error: e?.message }); }
+});
 
 function getFrontendBase() {
   return (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
@@ -34,6 +46,8 @@ const MAGALU_SCOPES_LIST = [
   'open:order-delivery-seller:read',
   'open:order-delivery-seller:write',
   'open:order-invoice-seller:read',
+  'open:portfolio-categories-seller:read',
+  'open:portfolio-categories-channel:read',
 ];
 const MAGALU_SCOPES = MAGALU_SCOPES_LIST.join(' ');
 
