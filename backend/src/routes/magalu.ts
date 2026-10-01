@@ -20,7 +20,7 @@ function getRedirectUri() {
 // Escopos que vamos usar (Produtos: SKU/Preco/Estoque/Score/Autopecas + Pedidos) — confirmados nas
 // tabelas "Escopos necessarios" de /docs/apis/products/overview e /docs/apis/orders/overview. O
 // client criado via CLI IDM precisa ter esses mesmos escopos liberados (--scopes/--scopes-default).
-const MAGALU_SCOPES = [
+const MAGALU_SCOPES_LIST = [
   'open:portfolio-skus-seller:read',
   'open:portfolio-skus-seller:write',
   'open:portfolio-prices-seller:read',
@@ -34,7 +34,16 @@ const MAGALU_SCOPES = [
   'open:order-delivery-seller:read',
   'open:order-delivery-seller:write',
   'open:order-invoice-seller:read',
-].join(' ');
+];
+const MAGALU_SCOPES = MAGALU_SCOPES_LIST.join(' ');
+
+// Escopos que precisam de aprovacao manual da Magalu antes de poder ser usados (confirmado ao
+// rodar `idm client create`: "Scope open:portfolio-scores-seller:read needs approval to be used").
+// Pedir um escopo pendente explicitamente na URL de consentimento faz o /oauth/authorize responder
+// 400 — mesmo ele ja estando registrado como --scopes-default do client. Entao tiramos da URL de
+// autorizacao (continua valendo como default assim que a Magalu aprovar).
+const MAGALU_SCOPES_PENDENTES_APROVACAO = ['open:portfolio-scores-seller:read'];
+const MAGALU_SCOPES_PARA_AUTORIZACAO = MAGALU_SCOPES_LIST.filter((s) => !MAGALU_SCOPES_PENDENTES_APROVACAO.includes(s)).join(' ');
 
 // GET /magalu/auth-url — monta a URL manual de consentimento (doc: "Geracao Manual de URL de
 // Consentimento"), pra tela de Configuracao so precisar redirecionar o navegador.
@@ -45,7 +54,7 @@ magaluRouter.get('/auth-url', async (_req, res, next) => {
     const params = new URLSearchParams({
       client_id: config.clientId,
       redirect_uri: getRedirectUri(),
-      scope: MAGALU_SCOPES,
+      scope: MAGALU_SCOPES_PARA_AUTORIZACAO,
       response_type: 'code',
       choose_tenants: 'true',
     });
