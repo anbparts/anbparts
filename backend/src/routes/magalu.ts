@@ -3,14 +3,16 @@ import { getMagaluConfig, saveMagaluConfig, magaluExchangeCodeForToken, magaluRe
 
 export const magaluRouter = Router();
 
-// GET /magalu/debug-raw?path=PATH — proxy direto pra API do Magalu (debug), mesmo padrao do
-// /shopee/debug-raw — assina a chamada com o access_token salvo e devolve a resposta crua, pra
-// diagnosticar sem depender de suposicao de formato/permissao.
+// GET /magalu/debug-raw?path=PATH&host=https://services.magalu.com — proxy direto pra API do
+// Magalu (debug), mesmo padrao do /shopee/debug-raw — assina a chamada com o access_token salvo e
+// devolve a resposta crua. `host` e opcional, pra testar um host diferente do padrao do ambiente
+// (ex: categorias pode estar em services.magalu.com em vez de api.magalu.com).
 magaluRouter.get('/debug-raw', async (req, res, next) => {
   try {
     const path = String(req.query.path || '');
     if (!path) return res.status(400).json({ error: 'path obrigatorio' });
-    const data = await magaluReq(path);
+    const hostOverride = String(req.query.host || '') || undefined;
+    const data = await magaluReq(path, { hostOverride });
     res.json(data);
   } catch (e: any) { res.status(400).json({ error: e?.message }); }
 });

@@ -102,7 +102,7 @@ async function magaluRefreshToken() {
 
 // Chamada generica autenticada nas APIs do Magalu (Produtos, Pedidos, Autopecas, etc). Renova o
 // token sozinho se estiver perto de vencer ou se a resposta vier com erro de autenticacao.
-export async function magaluReq(path: string, init?: { method?: string; body?: any }) {
+export async function magaluReq(path: string, init?: { method?: string; body?: any; hostOverride?: string }) {
   let config = await getMagaluConfig();
   if (!config.accessToken) throw new Error('Magalu nao autorizado. Conecte em Configuracao.');
 
@@ -113,7 +113,7 @@ export async function magaluReq(path: string, init?: { method?: string; body?: a
   }
 
   async function doRequest(accessToken: string) {
-    const host = getApiHost(config.environment);
+    const host = init?.hostOverride || getApiHost(config.environment);
     return fetch(`${host}${path}`, {
       method: init?.method || 'GET',
       headers: {
