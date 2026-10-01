@@ -403,6 +403,21 @@ model ShopeeConfig {
   updatedAt    DateTime @updatedAt
 }
 
+// Config da integracao direta com a API do Magalu (Open API / Plataforma do Grupo Magalu). Ao
+// contrario da Shopee, o client_id/client_secret NAO sao globais por variavel de ambiente — sao
+// gerados pelo proprio Bruno via CLI "IDM" (ID Magalu) e precisam ficar configuraveis aqui.
+model MagaluConfig {
+  id           Int      @id @default(autoincrement())
+  environment  String   @default("sandbox")
+  clientId     String   @default("")
+  clientSecret String   @default("")
+  accessToken  String   @default("")
+  refreshToken String   @default("")
+  expiresAt    DateTime?
+  connectedAt  DateTime?
+  updatedAt    DateTime @updatedAt
+}
+
 model MercadoLivrePergunta {
   id               Int      @id @default(autoincrement())
   questionId       String   @unique

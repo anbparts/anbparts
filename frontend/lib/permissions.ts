@@ -36,6 +36,8 @@ export const PAGE_KEY_BY_HREF: Record<string, string> = {
   '/conf-separacao': 'conf_separacao',
   '/config-ml': 'conf_ml',
   '/conf-nuvemshop': 'conf_nuvemshop',
+  '/config-shopee': 'conf_shopee',
+  '/config-magalu': 'conf_magalu',
   '/conf-auditoria': 'conf_auditoria',
   '/conf-gmail': 'conf_gmail',
   '/conf-google-drive': 'conf_google_drive',

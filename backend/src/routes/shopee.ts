@@ -66,6 +66,14 @@ shopeeRouter.post('/config', async (req, res, next) => {
   } catch (e: any) { res.status(400).json({ error: e?.message }); }
 });
 
+// POST /shopee/desconectar — limpa os tokens salvos (o seller precisa autorizar de novo depois).
+shopeeRouter.post('/desconectar', async (_req, res, next) => {
+  try {
+    await saveShopeeConfig({ shopId: '', accessToken: '', refreshToken: '', expiresAt: null, connectedAt: null });
+    res.json({ ok: true });
+  } catch (e: any) { res.status(400).json({ error: e?.message }); }
+});
+
 // GET /shopee/callback — a Shopee redireciona pra ca depois que o vendedor autoriza (Console >
 // App List > Authorize, com Redirect URL = https://sistema.anbparts.com.br/api/shopee/callback).
 // Recebe ?code=...&shop_id=..., troca pelo primeiro par access_token/refresh_token e salva.
