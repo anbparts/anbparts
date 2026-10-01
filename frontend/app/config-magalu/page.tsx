@@ -161,11 +161,11 @@ export default function ConfigMagaluPage() {
             </div>
             <div>
               <label style={s.label}>Client ID</label>
-              <input style={s.input} value={clientId} onChange={(e) => setClientId(e.target.value)} placeholder={status?.clientId || 'Cole aqui o Client ID gerado pela CLI IDM'} />
+              <input style={s.input} autoComplete="off" name="magalu-client-id-nao-autofill" value={clientId} onChange={(e) => setClientId(e.target.value)} placeholder={status?.clientId || 'Cole aqui o Client ID gerado pela CLI IDM'} />
             </div>
             <div>
               <label style={s.label}>Client Secret</label>
-              <input style={s.input} type="password" value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} placeholder={status?.clientId ? 'Ja configurado. Preencha so para trocar.' : 'Cole aqui o Client Secret'} />
+              <input style={s.input} type="password" autoComplete="new-password" name="magalu-client-secret-nao-autofill" value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} placeholder={status?.clientId ? 'Ja configurado. Preencha so para trocar.' : 'Cole aqui o Client Secret'} />
             </div>
           </div>
 
