@@ -239,7 +239,20 @@ export async function magaluCreateSku(input: MagaluCreateSkuInput) {
 // A criacao de SKU e' assincrona (202 + trace_id): preco/estoque so funcionam depois que o SKU
 // existe de fato do lado deles (antes disso respondem 404 "Resource Not Found"). Consulta
 // GET /skus/:sku ate aparecer (404 = ainda processando) ou estourar o tempo.
-export async function magaluAguardarSku(sku: string, tentativas = 20, intervaloMs = 3000) {
+// GET /v0/traces?code=<sku> — confirmado na doc (Traces > Consultar). Devolve o resultado das
+// operacoes assincronas daquele codigo, com `message` e `severity` (info|warning|error|critical).
+// Exige o escopo open:trace:read. Retorna null se o escopo nao estiver liberado.
+export async function magaluTracesPorCodigo(code: string): Promise<Array<{ severity: string; message: string; reference: string; sent_at: string }> | null> {
+  try {
+    const data = await magaluReq(`/v0/traces?code=${encodeURIComponent(code)}&_limit=10`);
+    const results: any[] = Array.isArray(data?.results) ? data.results : [];
+    return results.map((t) => ({ severity: String(t.severity || ''), message: String(t.message || ''), reference: String(t.reference || ''), sent_at: String(t.sent_at || t.created_at || '') }));
+  } catch {
+    return null;
+  }
+}
+
+export async function magaluAguardarSku(sku: string, tentativas = 5, intervaloMs = 3000) {
   let ultimoErro = '';
   for (let i = 0; i < tentativas; i += 1) {
     try {
@@ -250,7 +263,13 @@ export async function magaluAguardarSku(sku: string, tentativas = 20, intervaloM
     }
     await new Promise((resolve) => setTimeout(resolve, intervaloMs));
   }
-  throw new Error(`SKU ${sku} aceito pelo Magalu mas ainda nao disponivel apos ${Math.round((tentativas * intervaloMs) / 1000)}s (processamento assincrono) — ${ultimoErro}`);
+  const traces = await magaluTracesPorCodigo(sku);
+  const detalhe = traces === null
+    ? 'nao foi possivel consultar os traces (escopo open:trace:read nao liberado)'
+    : traces.length
+      ? traces.map((t) => `[${t.severity}] ${t.message}`).join(' || ')
+      : 'nenhum trace registrado ainda';
+  throw new Error(`SKU ${sku} aceito pelo Magalu mas ainda nao confirmado apos ${Math.round((tentativas * intervaloMs) / 1000)}s. Traces: ${detalhe}. Tente novamente em instantes (a criacao e retomavel).`);
 }
 
 // POST /seller/v1/portfolios/prices/:sku — confirmado na doc oficial (Produtos > Precos > Criar).

@@ -10,6 +10,7 @@ import {
   magaluUpdateSkuImages,
   magaluGetSku,
   magaluAguardarSku,
+  magaluTracesPorCodigo,
 } from '../lib/magalu-api';
 import { baixarFotoDrivePorId, buscarFotosDriveSku } from '../lib/fotos-cadastro';
 import { informarAnuncioMagaluNoBling } from './bling';
@@ -153,6 +154,7 @@ const MAGALU_SCOPES_LIST = [
   'open:order-invoice-seller:read',
   'open:portfolio-categories-seller:read',
   'open:portfolio-categories-channel:read',
+  'open:trace:read',
 ];
 const MAGALU_SCOPES = MAGALU_SCOPES_LIST.join(' ');
 
@@ -350,8 +352,8 @@ magaluRouter.post('/anuncio/criar', async (req, res, next) => {
         imageUrls,
       });
 
+    await magaluAguardarSku(sku);
     try {
-      await magaluAguardarSku(sku);
       await magaluSetPrice(sku, Number(peca.precoML));
       await magaluSetStock(sku, qtdDisponivel);
     } catch (e: any) {
@@ -415,6 +417,15 @@ magaluRouter.post('/anuncio/completar-fotos', async (req, res, next) => {
   } catch (e: any) {
     res.status(400).json({ error: e?.message || 'Erro ao completar fotos no Magalu' });
   }
+});
+
+// GET /magalu/traces?code=<sku> — resultado das operacoes assincronas daquele SKU (motivo de recusa).
+magaluRouter.get('/traces', async (req, res) => {
+  const code = String(req.query.code || '').trim();
+  if (!code) return res.status(400).json({ error: 'code obrigatorio' });
+  const traces = await magaluTracesPorCodigo(code);
+  if (traces === null) return res.status(400).json({ error: 'Nao foi possivel consultar traces (escopo open:trace:read nao liberado no client?).' });
+  res.json({ ok: true, code, traces });
 });
 
 // GET /magalu/anuncio/status?sku=X — consulta o SKU direto na Magalu (usado pra conferir quantas
