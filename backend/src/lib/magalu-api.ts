@@ -165,7 +165,9 @@ let magaluWarehouseCache: { ts: number; warehouseId: string | null } | null = nu
 export async function getMagaluWarehouseId(): Promise<string | null> {
   const agora = Date.now();
   if (!magaluWarehouseCache || agora - magaluWarehouseCache.ts > 10 * 60_000) {
-    const payload = await magaluReq('/seller/v1/portfolios/me/warehouses');
+    // `branch` e' opcional no POST de estoque; contas sem CD cadastrado devolvem 404 aqui — nesse
+    // caso segue sem branch em vez de falhar a criacao.
+    const payload = await magaluReq('/seller/v1/portfolios/me/warehouses').catch(() => null);
     const primeiro = (payload?.results || [])[0];
     magaluWarehouseCache = { ts: agora, warehouseId: primeiro?.id ? String(primeiro.id) : null };
   }
