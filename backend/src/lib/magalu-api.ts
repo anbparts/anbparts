@@ -137,3 +137,149 @@ export async function magaluReq(path: string, init?: { method?: string; body?: a
   }
   return payload;
 }
+
+// GET /seller/v1/portfolios/me — confirmado na doc oficial (Seller > Consultar informacoes do
+// seller). Devolve tenant/channel/seller — e' daqui que pegamos o channel.id real da loja (nao
+// precisa ficar fixo/hardcoded), usado em channels[], prices e stocks. Cacheado em memoria por
+// processo (raramente muda), mesmo padrao do canal de logistica da Shopee.
+let magaluSellerInfoCache: { ts: number; info: { channelId: string } } | null = null;
+export async function getMagaluSellerInfo(): Promise<{ channelId: string }> {
+  const agora = Date.now();
+  if (!magaluSellerInfoCache || agora - magaluSellerInfoCache.ts > 10 * 60_000) {
+    const payload = await magaluReq('/seller/v1/portfolios/me');
+    const channelId = String(payload?.channel?.id || '');
+    if (!channelId) throw new Error('Magalu nao retornou channel.id em /seller/v1/portfolios/me.');
+    magaluSellerInfoCache = { ts: agora, info: { channelId } };
+  }
+  return magaluSellerInfoCache.info;
+}
+
+// GET /seller/v1/portfolios/me/warehouses — confirmado na doc oficial (Seller > Consultar CDs de
+// estoque do seller). Usado como branch.id opcional no POST de estoque. Cacheado igual acima.
+let magaluWarehouseCache: { ts: number; warehouseId: string | null } | null = null;
+export async function getMagaluWarehouseId(): Promise<string | null> {
+  const agora = Date.now();
+  if (!magaluWarehouseCache || agora - magaluWarehouseCache.ts > 10 * 60_000) {
+    const payload = await magaluReq('/seller/v1/portfolios/me/warehouses');
+    const primeiro = (payload?.results || [])[0];
+    magaluWarehouseCache = { ts: agora, warehouseId: primeiro?.id ? String(primeiro.id) : null };
+  }
+  return magaluWarehouseCache.warehouseId;
+}
+
+export type MagaluCreateSkuInput = {
+  sku: string;
+  title: string;
+  description: string;
+  brand: string;
+  categoryId: string;
+  weightKg: number;
+  heightCm: number;
+  lengthCm: number;
+  widthCm: number;
+  imageUrls: string[];
+  ean?: string | null;
+};
+
+// POST /seller/v1/portfolios/skus — confirmado na doc oficial (Produtos > SKUs > Criar). So os
+// campos que a doc marca como REQUIRED no schema. `condition: 'USED'` fixo (nosso negocio e' peca
+// desmontada usada). `group` usa o proprio SKU como id com main_variation:true, ja que nao temos
+// produtos com variacao (cor/tamanho) — cada peca e' um grupo de 1 item, ele mesmo (ver doc: group.id
+// e group.main_variation sao obrigatorios, mas a doc nao explica o conceito de grupo em detalhe;
+// essa e' a interpretacao mais direta pra produto sem variacao). `attributes`/`datasheet` ficam
+// vazios por enquanto — sao especificos por categoria (ainda nao mapeada, ver pendencia de
+// Categorias) e a API deve retornar erro claro se algum for obrigatorio pra essa categoria, igual
+// fizemos com a Shopee (preferimos deixar a API apontar o que falta a adivinhar antecipadamente).
+export async function magaluCreateSku(input: MagaluCreateSkuInput) {
+  const { channelId } = await getMagaluSellerInfo();
+  const payload = await magaluReq('/seller/v1/portfolios/skus', {
+    method: 'POST',
+    body: {
+      active: true,
+      attributes: [],
+      brand: input.brand.slice(0, 100),
+      category: { id: input.categoryId },
+      channels: [{ id: channelId }],
+      condition: 'USED',
+      datasheet: [],
+      description: input.description.slice(0, 7000),
+      dimensions: [
+        {
+          name: 'package',
+          height: { unit: 'cm', value: Math.max(1, Math.round(input.heightCm)) },
+          length: { unit: 'cm', value: Math.max(1, Math.round(input.lengthCm)) },
+          width: { unit: 'cm', value: Math.max(1, Math.round(input.widthCm)) },
+          weight: { unit: 'g', value: Math.max(1, Math.round(input.weightKg * 1000)) },
+        },
+      ],
+      extra_data: [],
+      fulfillment: false,
+      group: { id: input.sku.slice(0, 50), main_variation: true },
+      has_ean: !!input.ean,
+      identifiers: input.ean ? [{ type: 'ean', value: input.ean }] : [],
+      images: input.imageUrls.map((url) => ({ reference: url, type: 'image/jpeg' })),
+      perishable: false,
+      podcasts: [],
+      sku: input.sku.slice(0, 32),
+      title: input.title.slice(0, 150),
+      type: 'product',
+      videos: [],
+    },
+  });
+  // Resposta e' assincrona (202 + trace_id) — a doc nao devolve o SKU criado na hora. O proprio
+  // `sku` que mandamos e' o identificador usado nas chamadas seguintes (preco/estoque/consulta).
+  return { sku: input.sku, traceId: payload?.trace_id || null };
+}
+
+// POST /seller/v1/portfolios/prices/:sku — confirmado na doc oficial (Produtos > Precos > Criar).
+// Valores em centavos (normalizer:100), moeda BRL (nao e' o default — a doc usa USD como default).
+export async function magaluSetPrice(sku: string, precoReais: number) {
+  const { channelId } = await getMagaluSellerInfo();
+  const centavos = Math.max(0, Math.round(precoReais * 100));
+  return magaluReq(`/seller/v1/portfolios/prices/${encodeURIComponent(sku)}`, {
+    method: 'POST',
+    body: {
+      channel: { id: channelId },
+      currency: 'BRL',
+      list_price: centavos,
+      price: centavos,
+      normalizer: 100,
+    },
+  });
+}
+
+// POST /seller/v1/portfolios/stocks/:sku — confirmado na doc oficial (Produtos > Estoques > Criar).
+// `branch` (CD) e opcional no schema — inclui se a conta tiver algum CD configurado.
+export async function magaluSetStock(sku: string, quantidade: number) {
+  const { channelId } = await getMagaluSellerInfo();
+  const warehouseId = await getMagaluWarehouseId();
+  return magaluReq(`/seller/v1/portfolios/stocks/${encodeURIComponent(sku)}`, {
+    method: 'POST',
+    body: {
+      channel: { id: channelId },
+      ...(warehouseId ? { branch: { id: warehouseId } } : {}),
+      quantity: Math.max(0, Math.round(quantidade)),
+      type: 'AVAILABLE',
+    },
+  });
+}
+
+// PATCH /seller/v1/portfolios/skus/:sku — confirmado na doc oficial (Produtos > SKUs > Atualizar
+// (parcial)). Usado pela aba Fotos Anuncios pra trocar so as fotos de um SKU ja criado — como o
+// Magalu so aceita URL (nao upload binario), as fotos sao servidas pelo nosso proxy publico
+// GET /magalu/imagem/:id (ver routes/magalu.ts).
+export async function magaluUpdateSkuImages(sku: string, imageUrls: string[]) {
+  return magaluReq(`/seller/v1/portfolios/skus/${encodeURIComponent(sku)}`, {
+    method: 'PATCH',
+    body: {
+      images: imageUrls.map((url) => ({ reference: url, type: 'image/jpeg' })),
+    },
+  });
+}
+
+// GET /seller/v1/portfolios/skus/:sku — confirmado na doc oficial (Produtos > SKUs > Consultar pelo
+// SKU). Usado pra saber quantas fotos o SKU ja tem antes de completar (mesmo padrao do
+// shopeeGetItemBaseInfo).
+export async function magaluGetSku(sku: string) {
+  return magaluReq(`/seller/v1/portfolios/skus/${encodeURIComponent(sku)}`);
+}

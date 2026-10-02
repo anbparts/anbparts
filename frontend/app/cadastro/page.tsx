@@ -66,13 +66,14 @@ type CadastroFotosLinha = {
   ml: { fotos: number; encontrado: boolean; itemId?: string | null; erro?: string };
   nuvemshop: { fotos: number; encontrado: boolean; produtoId?: number | null; erro?: string };
   shopee: { fotos: number; encontrado: boolean; itemId?: string | null; erro?: string };
-  flags: { anb: boolean; ml: boolean; nuvemshop: boolean; shopee: boolean };
+  magalu: { fotos: number; encontrado: boolean; itemId?: string | null; erro?: string };
+  flags: { anb: boolean; ml: boolean; nuvemshop: boolean; shopee: boolean; magalu: boolean };
   temFlag: boolean;
   drive?: { fotos: number | null; pasta?: string };
   status?: string;
 };
 
-type CadastroFotosSistema = 'anb' | 'ml' | 'nuvemshop' | 'shopee';
+type CadastroFotosSistema = 'anb' | 'ml' | 'nuvemshop' | 'shopee' | 'magalu';
 type CadastroFotoDrive = { id: string; nome: string; mimeType: string; size?: string | number | null };
 type CadastroFotoManualLocal = { id: string; nome: string; dataUrl: string; base64: string; mimeType: string; status?: 'aguardando' | 'enviando' | 'ok' | 'erro'; erro?: string };
 type CategoriaNuvemshop = { id: number; nome?: string; name?: any; parent_id?: number | null };
@@ -108,12 +109,13 @@ type ManutencaoFotosLinha = {
   nuvemshopErro: string;
 };
 
-const FOTOS_SISTEMAS_PROCESSAMENTO: CadastroFotosSistema[] = ['anb', 'ml', 'nuvemshop', 'shopee'];
+const FOTOS_SISTEMAS_PROCESSAMENTO: CadastroFotosSistema[] = ['anb', 'ml', 'nuvemshop', 'shopee', 'magalu'];
 const FOTOS_SISTEMA_LABEL: Record<CadastroFotosSistema, string> = {
   anb: 'ANB',
   ml: 'Mercado Livre',
   nuvemshop: 'Nuvemshop',
   shopee: 'Shopee',
+  magalu: 'Magalu',
 };
 const CATEGORIA_PACOTES_STORAGE_KEY = 'anb.cadastro.categoria.pacotes';
 
@@ -421,15 +423,29 @@ export default function CadastroPage() {
   const [resumoFiltroSku, setResumoFiltroSku] = useState('');
   const [skusCopiados, setSkusCopiados] = useState(false);
   const [paginaCadastro, setPaginaCadastro] = useState<'sku' | 'fotos-drive' | 'anuncio' | 'fotos' | 'categoria' | 'fotos-manutencao'>('sku');
-  // Aba Anuncio: (1) cria anuncios na Shopee de verdade (busca SKUs, categoria com ajuste manual,
-  // fila 1-a-1 com progresso — mesmo padrao da aba Fotos Anuncios), avisando o Bling em seguida;
-  // (2) "Avisar Bling" manual (SKU + ID digitado), pra quando o anuncio ja existe por fora.
-  const [anuncioSku, setAnuncioSku] = useState('');
-  const [anuncioItemId, setAnuncioItemId] = useState('');
-  const [anuncioEnviando, setAnuncioEnviando] = useState(false);
-  const [anuncioErro, setAnuncioErro] = useState('');
-  const [anuncioResultado, setAnuncioResultado] = useState<any>(null);
+  // Aba Anuncio: cria anuncios de verdade em varios marketplaces (busca SKUs, categoria com ajuste
+  // manual, fila 1-a-1 com progresso — mesmo padrao da aba Fotos Anuncios), avisando o Bling
+  // automaticamente em seguida. Hoje: Shopee (categoria mapeada) e Magalu (categoria ainda
+  // pendente de mapeamento — ver reference_magalu_api). Cada SKU pode ser criado em 1+ marketplaces
+  // no mesmo lote; cada marketplace tem seu proprio status/erro, independente dos outros.
+  type AnuncioMarketplaceId = 'shopee' | 'magalu';
+  const ANUNCIO_MARKETPLACES: { id: AnuncioMarketplaceId; label: string; cor: string }[] = [
+    { id: 'shopee', label: 'Shopee', cor: '#ee4d2d' },
+    { id: 'magalu', label: 'Magalu', cor: '#0047bb' },
+  ];
   type ShopeeCategoriaOpcao = { id: number; categoria: string; subcategoria: string; nivel3: string; nivel4: string; permitido: boolean; caminho: string; generica: boolean };
+  type AnuncioLinhaMarketplace = {
+    disponivel: boolean; // esse marketplace foi incluido nessa busca
+    jaTemAnuncio: boolean;
+    itemId: string | null;
+    categoriaAtual: ShopeeCategoriaOpcao | null;
+    categoriaEscolhidaId: number | null;
+    categoriaPendente: boolean; // true = mapeamento automatico de categoria ainda nao existe (Magalu)
+    selecionado: boolean;
+    status: 'pendente' | 'processando' | 'ok' | 'erro';
+    resultado: any;
+    erroProcessamento: string;
+  };
   type AnuncioCriarLinha = {
     sku: string;
     encontrado: boolean;
@@ -442,23 +458,22 @@ export default function CadastroPage() {
     altura?: number | null;
     profundidade?: number | null;
     estoque?: number;
-    shopeeItemId?: string | null;
-    jaTemAnuncio?: boolean;
-    categoriaAtual?: ShopeeCategoriaOpcao | null;
-    categoriaEscolhidaId?: number | null;
-    selecionado?: boolean;
-    status?: 'pendente' | 'processando' | 'ok' | 'erro';
-    resultado?: any;
-    erroProcessamento?: string;
+    marketplaces: Record<AnuncioMarketplaceId, AnuncioLinhaMarketplace>;
   };
+  function criarMarketplaceVazio(): AnuncioLinhaMarketplace {
+    return { disponivel: false, jaTemAnuncio: false, itemId: null, categoriaAtual: null, categoriaEscolhidaId: null, categoriaPendente: false, selecionado: false, status: 'pendente', resultado: null, erroProcessamento: '' };
+  }
   const [shopeeCategorias, setShopeeCategorias] = useState<ShopeeCategoriaOpcao[]>([]);
+  const [anuncioMarketplacesSelecionados, setAnuncioMarketplacesSelecionados] = useState<Set<AnuncioMarketplaceId>>(new Set(['shopee']));
   const [anuncioCriarSkusInput, setAnuncioCriarSkusInput] = useState('');
   const [anuncioCriarBuscando, setAnuncioCriarBuscando] = useState(false);
   const [anuncioCriarLinhas, setAnuncioCriarLinhas] = useState<AnuncioCriarLinha[]>([]);
   const [anuncioCriarProcessando, setAnuncioCriarProcessando] = useState(false);
   const [anuncioCriarSkuAtual, setAnuncioCriarSkuAtual] = useState('');
+  const [anuncioCriarMarketplaceAtual, setAnuncioCriarMarketplaceAtual] = useState<AnuncioMarketplaceId | ''>('');
   const [anuncioCriarProgresso, setAnuncioCriarProgresso] = useState({ atual: 0, total: 0 });
   const [categoriaModalSku, setCategoriaModalSku] = useState<string | null>(null);
+  const [categoriaModalMarketplace, setCategoriaModalMarketplace] = useState<AnuncioMarketplaceId>('shopee');
   const [categoriaModalBusca, setCategoriaModalBusca] = useState('');
   // Fotos - Manutencao: substitui as fotos de anuncios ja publicados (ML/Nuvemshop) pelas fotos
   // ja tratadas na pasta oficial da moto (rodar Fotos Drive antes e' obrigatorio). Processa 1 SKU
@@ -1229,7 +1244,7 @@ export default function CadastroPage() {
     setFotosLinhas((prev) => prev.map((linha) => {
       if (linha.sku !== sku) return linha;
       const flags = { ...linha.flags, [sistema]: checked };
-      return { ...linha, flags, temFlag: flags.anb || flags.ml || flags.nuvemshop || flags.shopee };
+      return { ...linha, flags, temFlag: flags.anb || flags.ml || flags.nuvemshop || flags.shopee || flags.magalu };
     }));
     if (checked) {
       setFotosSelecionados((prev) => new Set(prev).add(sku));
@@ -1259,10 +1274,10 @@ export default function CadastroPage() {
     setFotosLinhas((prev) => ordenarFotosLinhas(prev.map((linha) => {
       if (linha.sku !== sku) return linha;
       const atual = Number((linha as any)[sistema]?.fotos || 0);
-      const limite = sistema === 'ml' ? 12 : sistema === 'shopee' ? 9 : 999;
+      const limite = sistema === 'ml' ? 12 : sistema === 'shopee' ? 9 : sistema === 'magalu' ? 8 : 999;
       const proximo = sistema === 'anb' ? Math.max(1, atual) : Math.min(limite, atual + Math.max(0, enviadas));
       const flags = { ...linha.flags, [sistema]: false };
-      const temFlag = flags.anb || flags.ml || flags.nuvemshop || flags.shopee;
+      const temFlag = flags.anb || flags.ml || flags.nuvemshop || flags.shopee || flags.magalu;
       if (!temFlag) removerSelecao = true;
       return {
         ...linha,
@@ -1285,7 +1300,7 @@ export default function CadastroPage() {
     for (const detalhe of detalhes || []) {
       if (detalhe?.ok === false) continue;
       const sistema = detalhe.sistema as CadastroFotosSistema;
-      if (!(['anb', 'ml', 'nuvemshop', 'shopee'] as CadastroFotosSistema[]).includes(sistema)) continue;
+      if (!(['anb', 'ml', 'nuvemshop', 'shopee', 'magalu'] as CadastroFotosSistema[]).includes(sistema)) continue;
       atualizarContadorFotosLocal(sku, sistema, sistema === 'anb' ? 1 : Number(detalhe.enviados || detalhe.enviada || 0));
     }
   }
@@ -1301,7 +1316,7 @@ export default function CadastroPage() {
   async function processarFotosCadastro() {
     if (!canEnviarFotos) return alert('Seu usuario nao tem permissao para enviar fotos.');
     const linhas = fotosLinhas
-      .filter((linha) => fotosSelecionados.has(linha.sku) && (linha.flags.anb || linha.flags.ml || linha.flags.nuvemshop || linha.flags.shopee))
+      .filter((linha) => fotosSelecionados.has(linha.sku) && (linha.flags.anb || linha.flags.ml || linha.flags.nuvemshop || linha.flags.shopee || linha.flags.magalu))
       .map((linha) => ({ sku: linha.sku, flags: linha.flags }));
     if (!linhas.length) return alert('Nenhum SKU pendente selecionado.');
 
@@ -1333,7 +1348,7 @@ export default function CadastroPage() {
               method: 'POST',
               credentials: 'include',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ linhas: [{ sku: linha.sku, flags: { anb: false, ml: false, nuvemshop: false, shopee: false, [sistema]: true } }] }),
+              body: JSON.stringify({ linhas: [{ sku: linha.sku, flags: { anb: false, ml: false, nuvemshop: false, shopee: false, magalu: false, [sistema]: true } }] }),
             });
             const data = await readApiResponse(resp, `Erro ao processar fotos ${FOTOS_SISTEMA_LABEL[sistema]} do SKU ${linha.sku}`);
             const resultado = Array.isArray(data.resultados) ? data.resultados[0] : null;
@@ -1957,93 +1972,141 @@ export default function CadastroPage() {
     }
   }
 
+  function toggleAnuncioMarketplace(mk: AnuncioMarketplaceId) {
+    setAnuncioMarketplacesSelecionados((prev) => {
+      const next = new Set(prev);
+      if (next.has(mk)) next.delete(mk); else next.add(mk);
+      return next;
+    });
+  }
+
   async function buscarLinhasAnuncioCriar() {
     const skus = normalizarListaSkus(anuncioCriarSkusInput);
     if (!skus.length) return alert('Informe ao menos 1 SKU.');
+    const marketplaces = Array.from(anuncioMarketplacesSelecionados);
+    if (!marketplaces.length) return alert('Selecione ao menos 1 marketplace.');
     setAnuncioCriarBuscando(true);
     setAnuncioCriarLinhas([]);
-    carregarShopeeCategorias();
+    if (marketplaces.includes('shopee')) carregarShopeeCategorias();
+
     try {
-      const resp = await fetch(`${API}/shopee/anuncio/buscar`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ skus }),
-      });
-      const data = await readApiResponse(resp, 'Erro ao buscar SKUs');
-      const linhas: AnuncioCriarLinha[] = (Array.isArray(data.linhas) ? data.linhas : []).map((linha: any) => ({
-        ...linha,
-        categoriaEscolhidaId: linha.categoriaAtual?.id ?? null,
-        selecionado: !!linha.encontrado && !linha.jaTemAnuncio,
-        status: 'pendente',
+      const respostasPorMarketplace = await Promise.all(marketplaces.map(async (mk) => {
+        const resp = await fetch(`${API}/${mk}/anuncio/buscar`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ skus }),
+        });
+        const data = await readApiResponse(resp, `Erro ao buscar SKUs no ${mk}`);
+        return { mk, linhas: Array.isArray(data.linhas) ? data.linhas : [] };
       }));
-      setAnuncioCriarLinhas(linhas);
+
+      const porSku = new Map<string, AnuncioCriarLinha>();
+      for (const { mk, linhas } of respostasPorMarketplace) {
+        for (const linha of linhas) {
+          let acumulado = porSku.get(linha.sku);
+          if (!acumulado) {
+            acumulado = {
+              sku: linha.sku,
+              encontrado: !!linha.encontrado,
+              erro: linha.erro,
+              descricao: linha.descricao,
+              moto: linha.moto,
+              preco: linha.preco,
+              peso: linha.peso,
+              largura: linha.largura,
+              altura: linha.altura,
+              profundidade: linha.profundidade,
+              estoque: linha.estoque,
+              marketplaces: { shopee: criarMarketplaceVazio(), magalu: criarMarketplaceVazio() },
+            };
+            porSku.set(linha.sku, acumulado);
+          }
+          const itemId = linha.shopeeItemId ?? linha.magaluItemId ?? null;
+          acumulado.marketplaces[mk as AnuncioMarketplaceId] = {
+            disponivel: true,
+            jaTemAnuncio: !!linha.jaTemAnuncio,
+            itemId,
+            categoriaAtual: linha.categoriaAtual || null,
+            categoriaEscolhidaId: linha.categoriaAtual?.id ?? null,
+            categoriaPendente: !!linha.categoriaPendente,
+            selecionado: !!linha.encontrado && !linha.jaTemAnuncio,
+            status: 'pendente',
+            resultado: null,
+            erroProcessamento: '',
+          };
+        }
+      }
+
+      setAnuncioCriarLinhas(Array.from(porSku.values()));
     } catch (e: any) {
       alert(e?.message || 'Erro ao buscar SKUs.');
     }
     setAnuncioCriarBuscando(false);
   }
 
-  function toggleAnuncioCriarSelecionado(sku: string) {
-    setAnuncioCriarLinhas((prev) => prev.map((linha) => linha.sku === sku ? { ...linha, selecionado: !linha.selecionado } : linha));
+  function toggleAnuncioCriarSelecionado(sku: string, mk: AnuncioMarketplaceId) {
+    setAnuncioCriarLinhas((prev) => prev.map((linha) => {
+      if (linha.sku !== sku) return linha;
+      const atual = linha.marketplaces[mk];
+      return { ...linha, marketplaces: { ...linha.marketplaces, [mk]: { ...atual, selecionado: !atual.selecionado } } };
+    }));
   }
 
-  function escolherCategoriaParaLinha(sku: string, categoriaId: number) {
-    setAnuncioCriarLinhas((prev) => prev.map((linha) => linha.sku === sku ? { ...linha, categoriaEscolhidaId: categoriaId } : linha));
+  function escolherCategoriaParaLinha(sku: string, mk: AnuncioMarketplaceId, categoriaId: number) {
+    setAnuncioCriarLinhas((prev) => prev.map((linha) => {
+      if (linha.sku !== sku) return linha;
+      const atual = linha.marketplaces[mk];
+      return { ...linha, marketplaces: { ...linha.marketplaces, [mk]: { ...atual, categoriaEscolhidaId: categoriaId } } };
+    }));
     setCategoriaModalSku(null);
     setCategoriaModalBusca('');
   }
 
   async function processarAnunciosCriarFila() {
-    const linhasParaProcessar = anuncioCriarLinhas.filter((linha) => linha.selecionado && linha.encontrado);
-    if (!linhasParaProcessar.length) return alert('Nenhum SKU selecionado.');
+    const tarefas: { sku: string; mk: AnuncioMarketplaceId }[] = [];
+    for (const linha of anuncioCriarLinhas) {
+      if (!linha.encontrado) continue;
+      for (const { id: mk } of ANUNCIO_MARKETPLACES) {
+        if (linha.marketplaces[mk].disponivel && linha.marketplaces[mk].selecionado) tarefas.push({ sku: linha.sku, mk });
+      }
+    }
+    if (!tarefas.length) return alert('Nenhum SKU/marketplace selecionado.');
     setAnuncioCriarProcessando(true);
-    setAnuncioCriarProgresso({ atual: 0, total: linhasParaProcessar.length });
+    setAnuncioCriarProgresso({ atual: 0, total: tarefas.length });
 
-    for (let index = 0; index < linhasParaProcessar.length; index += 1) {
-      const linha = linhasParaProcessar[index];
-      setAnuncioCriarSkuAtual(linha.sku);
-      setAnuncioCriarProgresso({ atual: index, total: linhasParaProcessar.length });
-      setAnuncioCriarLinhas((prev) => prev.map((item) => item.sku === linha.sku ? { ...item, status: 'processando' } : item));
+    for (let index = 0; index < tarefas.length; index += 1) {
+      const { sku, mk } = tarefas[index];
+      setAnuncioCriarSkuAtual(sku);
+      setAnuncioCriarMarketplaceAtual(mk);
+      setAnuncioCriarProgresso({ atual: index, total: tarefas.length });
+      setAnuncioCriarLinhas((prev) => prev.map((item) => item.sku === sku ? { ...item, marketplaces: { ...item.marketplaces, [mk]: { ...item.marketplaces[mk], status: 'processando' } } } : item));
       try {
-        const resp = await fetch(`${API}/shopee/anuncio/criar`, {
+        const linhaAtual = anuncioCriarLinhas.find((l) => l.sku === sku);
+        const categoriaId = linhaAtual?.marketplaces[mk].categoriaEscolhidaId;
+        const resp = await fetch(`${API}/${mk}/anuncio/criar`, {
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sku: linha.sku, categoriaId: linha.categoriaEscolhidaId }),
+          body: JSON.stringify({ sku, categoriaId }),
         });
-        const data = await readApiResponse(resp, `Erro ao criar anuncio do SKU ${linha.sku}`);
-        setAnuncioCriarLinhas((prev) => prev.map((item) => item.sku === linha.sku ? { ...item, status: 'ok', resultado: data, selecionado: false, jaTemAnuncio: true, shopeeItemId: data.shopeeItemId } : item));
+        const data = await readApiResponse(resp, `Erro ao criar anuncio ${mk} do SKU ${sku}`);
+        setAnuncioCriarLinhas((prev) => prev.map((item) => item.sku === sku ? {
+          ...item,
+          marketplaces: { ...item.marketplaces, [mk]: { ...item.marketplaces[mk], status: 'ok', resultado: data, selecionado: false, jaTemAnuncio: true, itemId: data.shopeeItemId || data.magaluItemId || null } },
+        } : item));
       } catch (e: any) {
-        setAnuncioCriarLinhas((prev) => prev.map((item) => item.sku === linha.sku ? { ...item, status: 'erro', erroProcessamento: e?.message || String(e) } : item));
+        setAnuncioCriarLinhas((prev) => prev.map((item) => item.sku === sku ? {
+          ...item,
+          marketplaces: { ...item.marketplaces, [mk]: { ...item.marketplaces[mk], status: 'erro', erroProcessamento: e?.message || String(e) } },
+        } : item));
       }
     }
 
-    setAnuncioCriarProgresso({ atual: linhasParaProcessar.length, total: linhasParaProcessar.length });
+    setAnuncioCriarProgresso({ atual: tarefas.length, total: tarefas.length });
     setAnuncioCriarSkuAtual('');
+    setAnuncioCriarMarketplaceAtual('');
     setAnuncioCriarProcessando(false);
-  }
-
-  async function informarAnuncioBling() {
-    const sku = anuncioSku.trim().toUpperCase();
-    const shopeeItemId = anuncioItemId.trim();
-    if (!sku || !shopeeItemId) return;
-    setAnuncioEnviando(true);
-    setAnuncioErro('');
-    setAnuncioResultado(null);
-    try {
-      const resp = await fetch(`${API}/bling/shopee/informar-anuncio`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sku, shopeeItemId }),
-      });
-      const data = await readApiResponse(resp, 'Erro ao avisar o Bling');
-      setAnuncioResultado(data);
-    } catch (e: any) {
-      setAnuncioErro(e?.message || 'Erro ao avisar o Bling.');
-    }
-    setAnuncioEnviando(false);
   }
 
   const categoriaModalLinha = anuncioCriarLinhas.find((l) => l.sku === categoriaModalSku) || null;
@@ -2053,22 +2116,31 @@ export default function CadastroPage() {
     return c.caminho.toLowerCase().includes(termo);
   });
 
-  const renderCategoriaBadge = (cat?: ShopeeCategoriaOpcao | null) => {
+  const renderCategoriaBadge = (cat?: ShopeeCategoriaOpcao | null, categoriaPendente?: boolean) => {
+    if (categoriaPendente) return <span title="Mapeamento automatico de categoria ainda nao existe pra esse marketplace" style={{ fontSize: 11, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 5, padding: '2px 6px', fontWeight: 700 }}>⏳ Categoria pendente</span>;
     if (!cat) return <span style={{ fontSize: 11, color: '#dc2626', fontWeight: 700 }}>Sem categoria</span>;
     if (!cat.permitido) return <span title="Categoria bloqueada na Shopee (permitido=false)" style={{ fontSize: 11, color: '#991b1b', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 5, padding: '2px 6px', fontWeight: 700 }}>🚫 {cat.nivel4}</span>;
     if (cat.generica) return <span title="Categoria genérica — sem correspondência específica pra essa peça" style={{ fontSize: 11, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 5, padding: '2px 6px', fontWeight: 700 }}>⚠ {cat.categoria} &gt; {cat.subcategoria} &gt; Outros</span>;
     return <span style={{ fontSize: 11, color: '#166534', background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 5, padding: '2px 6px', fontWeight: 700 }}>{cat.caminho}</span>;
   };
 
-  const anuncioCriarSelecionadosCount = anuncioCriarLinhas.filter((l) => l.selecionado).length;
+  const anuncioCriarSelecionadosCount = anuncioCriarLinhas.reduce((total, linha) => total + ANUNCIO_MARKETPLACES.filter(({ id }) => linha.marketplaces[id].disponivel && linha.marketplaces[id].selecionado).length, 0);
 
   const renderAnuncioConteudo = () => (
     <>
       <div style={{ ...s.card, padding: isPhone ? '14px' : '18px' }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 4 }}>Criar anúncios na Shopee</div>
-        <div style={{ fontSize: 12, color: 'var(--gray-500)', marginBottom: 14, lineHeight: 1.5 }}>
-          Informe os SKUs (um por linha, vírgula ou espaço). Linhas sem anúncio já criado vêm selecionadas por padrão;
-          linhas que já possuem anúncio vêm desmarcadas e destacadas — não é possível recriar.
+        <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 4 }}>Criar anúncios</div>
+        <div style={{ fontSize: 12, color: 'var(--gray-500)', marginBottom: 10, lineHeight: 1.5 }}>
+          Escolha os marketplaces e informe os SKUs (um por linha, vírgula ou espaço). Linhas sem anúncio já criado vêm
+          selecionadas por padrão; linhas que já possuem anúncio vêm desmarcadas e destacadas — não é possível recriar.
+        </div>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+          {ANUNCIO_MARKETPLACES.map(({ id, label, cor }) => (
+            <label key={id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 700, color: anuncioMarketplacesSelecionados.has(id) ? cor : 'var(--gray-400)', border: `1px solid ${anuncioMarketplacesSelecionados.has(id) ? cor : 'var(--border)'}`, borderRadius: 7, padding: '6px 12px', cursor: 'pointer', background: anuncioMarketplacesSelecionados.has(id) ? `${cor}14` : 'var(--white)' }}>
+              <input type="checkbox" checked={anuncioMarketplacesSelecionados.has(id)} onChange={() => toggleAnuncioMarketplace(id)} />
+              {label}
+            </label>
+          ))}
         </div>
         <textarea
           value={anuncioCriarSkusInput}
@@ -2079,8 +2151,8 @@ export default function CadastroPage() {
         />
         <button
           onClick={buscarLinhasAnuncioCriar}
-          disabled={anuncioCriarBuscando || !anuncioCriarSkusInput.trim()}
-          style={{ ...s.btn, marginTop: 10, background: '#7c3aed', color: '#fff', opacity: anuncioCriarBuscando || !anuncioCriarSkusInput.trim() ? 0.6 : 1 }}
+          disabled={anuncioCriarBuscando || !anuncioCriarSkusInput.trim() || anuncioMarketplacesSelecionados.size === 0}
+          style={{ ...s.btn, marginTop: 10, background: '#7c3aed', color: '#fff', opacity: anuncioCriarBuscando || !anuncioCriarSkusInput.trim() || anuncioMarketplacesSelecionados.size === 0 ? 0.6 : 1 }}
         >
           {anuncioCriarBuscando ? 'Buscando...' : 'Buscar SKUs'}
         </button>
@@ -2090,7 +2162,7 @@ export default function CadastroPage() {
         <div style={{ ...s.card, padding: isPhone ? '14px' : '18px', marginTop: 14 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
             <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-800)' }}>
-              {anuncioCriarLinhas.length} SKU(s) · {anuncioCriarSelecionadosCount} selecionado(s)
+              {anuncioCriarLinhas.length} SKU(s) · {anuncioCriarSelecionadosCount} anúncio(s) selecionado(s)
             </div>
             <button
               onClick={processarAnunciosCriarFila}
@@ -2098,81 +2170,79 @@ export default function CadastroPage() {
               style={{ ...s.btn, background: '#ee4d2d', color: '#fff', opacity: anuncioCriarProcessando || anuncioCriarSelecionadosCount === 0 ? 0.6 : 1 }}
             >
               {anuncioCriarProcessando
-                ? `Criando ${anuncioCriarSkuAtual} (${anuncioCriarProgresso.atual + 1}/${anuncioCriarProgresso.total})...`
+                ? `Criando ${anuncioCriarSkuAtual} (${anuncioCriarMarketplaceAtual ? ANUNCIO_MARKETPLACES.find((m) => m.id === anuncioCriarMarketplaceAtual)?.label : ''}) ${anuncioCriarProgresso.atual + 1}/${anuncioCriarProgresso.total}...`
                 : `Criar ${anuncioCriarSelecionadosCount} anúncio(s) selecionado(s)`}
             </button>
           </div>
 
-          <div style={{ display: 'grid', gap: 8 }}>
+          <div style={{ display: 'grid', gap: 10 }}>
             {anuncioCriarLinhas.map((linha) => {
-              const isAtual = linha.sku === anuncioCriarSkuAtual && anuncioCriarProcessando;
+              const marketplacesDaLinha = ANUNCIO_MARKETPLACES.filter(({ id }) => linha.marketplaces[id].disponivel);
               return (
-                <div key={linha.sku} style={{
-                  border: isAtual ? '2px solid #7c3aed' : '1px solid var(--border)',
-                  borderRadius: 8,
-                  padding: '10px 12px',
-                  background: linha.jaTemAnuncio ? '#fffbeb' : (isAtual ? '#faf5ff' : 'var(--white)'),
-                  display: 'grid',
-                  gap: 6,
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, minWidth: 0 }}>
-                      <input
-                        type="checkbox"
-                        checked={!!linha.selecionado}
-                        disabled={!linha.encontrado || !!linha.jaTemAnuncio}
-                        onChange={() => toggleAnuncioCriarSelecionado(linha.sku)}
-                        style={{ marginTop: 3 }}
-                      />
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--blue-600)', fontWeight: 800 }}>{linha.sku}</div>
-                        {linha.encontrado ? (
-                          <>
-                            <div style={{ fontSize: 12.5, color: 'var(--gray-800)', fontWeight: 600 }}>{linha.descricao}</div>
-                            <div style={{ fontSize: 11, color: 'var(--gray-500)', marginTop: 2 }}>
-                              R$ {Number(linha.preco || 0).toFixed(2)} · estoque {linha.estoque} · {linha.moto?.marca} {linha.moto?.modelo}
-                            </div>
-                          </>
-                        ) : (
-                          <div style={{ fontSize: 12, color: '#dc2626' }}>{linha.erro || 'SKU não encontrado'}</div>
-                        )}
-                      </div>
-                    </div>
-                    {linha.jaTemAnuncio && (
-                      <span style={{ fontSize: 11, color: '#92400e', background: '#fef3c7', border: '1px solid #fde68a', borderRadius: 5, padding: '3px 8px', fontWeight: 700, whiteSpace: 'nowrap' }}>
-                        Já possui anúncio (item {linha.shopeeItemId})
-                      </span>
+                <div key={linha.sku} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', background: 'var(--white)', display: 'grid', gap: 8 }}>
+                  <div>
+                    <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--blue-600)', fontWeight: 800 }}>{linha.sku}</div>
+                    {linha.encontrado ? (
+                      <>
+                        <div style={{ fontSize: 12.5, color: 'var(--gray-800)', fontWeight: 600 }}>{linha.descricao}</div>
+                        <div style={{ fontSize: 11, color: 'var(--gray-500)', marginTop: 2 }}>
+                          R$ {Number(linha.preco || 0).toFixed(2)} · estoque {linha.estoque} · {linha.moto?.marca} {linha.moto?.modelo}
+                        </div>
+                      </>
+                    ) : (
+                      <div style={{ fontSize: 12, color: '#dc2626' }}>{linha.erro || 'SKU não encontrado'}</div>
                     )}
                   </div>
 
-                  {linha.encontrado && !linha.jaTemAnuncio && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginLeft: 28 }}>
-                      {renderCategoriaBadge(
-                        linha.categoriaEscolhidaId != null
-                          ? shopeeCategorias.find((c) => c.id === linha.categoriaEscolhidaId) || linha.categoriaAtual
-                          : linha.categoriaAtual,
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => { carregarShopeeCategorias(); setCategoriaModalSku(linha.sku); setCategoriaModalBusca(''); }}
-                        style={{ fontSize: 11, color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
-                      >
-                        Trocar categoria
-                      </button>
-                    </div>
-                  )}
-
-                  {linha.status === 'ok' && (
-                    <div style={{ marginLeft: 28, fontSize: 12, color: '#16a34a', fontWeight: 700 }}>
-                      ✓ Anúncio criado — item {linha.resultado?.shopeeItemId} ({linha.resultado?.fotosEnviadas} foto(s)){linha.resultado?.blingErro ? ` — ⚠ Bling: ${linha.resultado.blingErro}` : ' — Bling avisado'}
-                    </div>
-                  )}
-                  {linha.status === 'erro' && (
-                    <div style={{ marginLeft: 28, fontSize: 12, color: '#dc2626' }}>✗ {linha.erroProcessamento}</div>
-                  )}
-                  {isAtual && (
-                    <div style={{ marginLeft: 28, fontSize: 12, color: '#7c3aed', fontWeight: 700 }}>⏳ Criando anúncio...</div>
-                  )}
+                  {linha.encontrado && marketplacesDaLinha.map(({ id: mk, label, cor }) => {
+                    const mp = linha.marketplaces[mk];
+                    const isAtual = linha.sku === anuncioCriarSkuAtual && mk === anuncioCriarMarketplaceAtual && anuncioCriarProcessando;
+                    return (
+                      <div key={mk} style={{ marginLeft: 4, paddingLeft: 10, borderLeft: `3px solid ${cor}`, display: 'grid', gap: 4, background: isAtual ? '#faf5ff' : mp.jaTemAnuncio ? '#fffbeb' : 'transparent', borderRadius: 4, padding: '6px 10px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <input
+                            type="checkbox"
+                            checked={mp.selecionado}
+                            disabled={mp.jaTemAnuncio}
+                            onChange={() => toggleAnuncioCriarSelecionado(linha.sku, mk)}
+                          />
+                          <span style={{ fontSize: 11.5, fontWeight: 800, color: cor }}>{label}</span>
+                          {mp.jaTemAnuncio ? (
+                            <span style={{ fontSize: 11, color: '#92400e', background: '#fef3c7', border: '1px solid #fde68a', borderRadius: 5, padding: '2px 8px', fontWeight: 700 }}>
+                              Já possui anúncio (item {mp.itemId})
+                            </span>
+                          ) : (
+                            <>
+                              {renderCategoriaBadge(
+                                mp.categoriaPendente ? null : (mp.categoriaEscolhidaId != null ? shopeeCategorias.find((c) => c.id === mp.categoriaEscolhidaId) || mp.categoriaAtual : mp.categoriaAtual),
+                                mp.categoriaPendente,
+                              )}
+                              {mk === 'shopee' && (
+                                <button
+                                  type="button"
+                                  onClick={() => { carregarShopeeCategorias(); setCategoriaModalMarketplace(mk); setCategoriaModalSku(linha.sku); setCategoriaModalBusca(''); }}
+                                  style={{ fontSize: 11, color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
+                                >
+                                  Trocar categoria
+                                </button>
+                              )}
+                            </>
+                          )}
+                        </div>
+                        {mp.status === 'ok' && (
+                          <div style={{ fontSize: 12, color: '#16a34a', fontWeight: 700 }}>
+                            ✓ Anúncio criado — item {mp.resultado?.shopeeItemId || mp.resultado?.magaluItemId} ({mp.resultado?.fotosEnviadas} foto(s)){mp.resultado?.blingErro ? ` — ⚠ Bling: ${mp.resultado.blingErro}` : ' — Bling avisado'}
+                          </div>
+                        )}
+                        {mp.status === 'erro' && (
+                          <div style={{ fontSize: 12, color: '#dc2626' }}>✗ {mp.erroProcessamento}</div>
+                        )}
+                        {isAtual && (
+                          <div style={{ fontSize: 12, color: '#7c3aed', fontWeight: 700 }}>⏳ Criando anúncio...</div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               );
             })}
@@ -2188,9 +2258,9 @@ export default function CadastroPage() {
                 <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--gray-800)' }}>Categoria Shopee — {categoriaModalSku}</div>
                 <button onClick={() => setCategoriaModalSku(null)} style={{ border: 'none', background: 'none', fontSize: 18, cursor: 'pointer', color: 'var(--gray-400)' }}>✕</button>
               </div>
-              {categoriaModalLinha?.categoriaAtual && (
+              {categoriaModalLinha?.marketplaces[categoriaModalMarketplace]?.categoriaAtual && (
                 <div style={{ marginTop: 6, fontSize: 11.5, color: 'var(--gray-500)' }}>
-                  Atual: {renderCategoriaBadge(categoriaModalLinha.categoriaAtual)}
+                  Atual: {renderCategoriaBadge(categoriaModalLinha.marketplaces[categoriaModalMarketplace].categoriaAtual)}
                 </div>
               )}
               <input
@@ -2209,11 +2279,11 @@ export default function CadastroPage() {
               ) : categoriaModalFiltradas.map((cat) => (
                 <button
                   key={cat.id}
-                  onClick={() => categoriaModalSku && escolherCategoriaParaLinha(categoriaModalSku, cat.id)}
+                  onClick={() => categoriaModalSku && escolherCategoriaParaLinha(categoriaModalSku, categoriaModalMarketplace, cat.id)}
                   style={{
                     display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, width: '100%',
                     textAlign: 'left' as const, padding: '9px 10px', border: 'none', borderBottom: '1px solid var(--gray-100)',
-                    background: categoriaModalLinha?.categoriaEscolhidaId === cat.id ? '#f5f3ff' : 'transparent', cursor: 'pointer',
+                    background: categoriaModalLinha?.marketplaces[categoriaModalMarketplace]?.categoriaEscolhidaId === cat.id ? '#f5f3ff' : 'transparent', cursor: 'pointer',
                   }}
                 >
                   <span style={{ fontSize: 12.5, color: cat.permitido ? 'var(--gray-700)' : '#991b1b' }}>{cat.caminho}</span>
@@ -2226,50 +2296,6 @@ export default function CadastroPage() {
         </div>
       )}
 
-      <div style={{ ...s.card, padding: isPhone ? '14px' : '18px', marginTop: 14 }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 4 }}>Avisar Bling do anúncio Shopee</div>
-        <div style={{ fontSize: 12, color: 'var(--gray-500)', marginBottom: 14, lineHeight: 1.5 }}>
-          A criação do anúncio na Shopee ainda não existe no sistema — por enquanto, informe manualmente o SKU e o ID do
-          anúncio (real ou de teste) e o Bling é avisado que esse produto já está vinculado à Shopee com esse ID.
-        </div>
-
-        <label style={s.label}>SKU</label>
-        <input
-          style={{ ...s.input, marginBottom: 12 }}
-          value={anuncioSku}
-          onChange={(e: any) => setAnuncioSku(e.target.value)}
-          placeholder="BM03_0119"
-        />
-
-        <label style={s.label}>ID do Anúncio na Shopee</label>
-        <input
-          style={{ ...s.input, marginBottom: 14 }}
-          value={anuncioItemId}
-          onChange={(e: any) => setAnuncioItemId(e.target.value)}
-          placeholder="Ex: 123456789"
-        />
-
-        <button
-          onClick={informarAnuncioBling}
-          disabled={anuncioEnviando || !anuncioSku.trim() || !anuncioItemId.trim()}
-          style={{ ...s.btn, background: '#ee4d2d', color: '#fff', opacity: anuncioEnviando || !anuncioSku.trim() || !anuncioItemId.trim() ? 0.6 : 1 }}
-        >
-          {anuncioEnviando ? 'Avisando...' : 'Avisar Bling'}
-        </button>
-
-        {anuncioErro && <div style={{ marginTop: 10, fontSize: 12, color: '#dc2626' }}>⚠ {anuncioErro}</div>}
-      </div>
-
-      {anuncioResultado && (
-        <div style={{ ...s.card, padding: isPhone ? '14px' : '18px', marginTop: 14, background: '#f0fdf4', border: '1px solid #86efac' }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#16a34a', marginBottom: 6 }}>
-            ✓ Bling avisado — produtoLojaId {anuncioResultado.produtoLojaId}, {anuncioResultado.pecasAtualizadas} peça(s) atualizada(s) no ANB
-          </div>
-          <pre style={{ fontSize: 11, whiteSpace: 'pre-wrap', color: 'var(--gray-600)', maxHeight: 300, overflow: 'auto' }}>
-            {JSON.stringify(anuncioResultado, null, 2)}
-          </pre>
-        </div>
-      )}
     </>
   );
 
@@ -2837,12 +2863,12 @@ export default function CadastroPage() {
                           <input type="checkbox" checked={fotosSelecionados.has(linha.sku)} disabled={!linha.temFlag} onChange={() => toggleFotosSelecionado(linha.sku)} style={{ width: 18, height: 18 }} />
                         </div>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8 }}>
-                          {(['anb', 'ml', 'nuvemshop', 'shopee'] as const).map((sistema) => {
+                          {(['anb', 'ml', 'nuvemshop', 'shopee', 'magalu'] as const).map((sistema) => {
                             const info: any = linha[sistema];
                             const isSistemaProcessando = linha.sku === fotosProcessandoSku && sistema === fotosProcessandoSistema;
                             return (
                               <div key={sistema} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, border: isSistemaProcessando ? '2px solid #7c3aed' : '1px solid var(--border)', borderRadius: 8, padding: '9px 10px', background: isSistemaProcessando ? '#f5f3ff' : '#fcfdff' }}>
-                                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--gray-700)' }}>{sistema === 'anb' ? 'ANB' : sistema === 'ml' ? 'ML' : sistema === 'nuvemshop' ? 'Nuvemshop' : 'Shopee'}: {Number(info?.fotos || 0)} foto(s)</span>
+                                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--gray-700)' }}>{FOTOS_SISTEMA_LABEL[sistema]}: {Number(info?.fotos || 0)} foto(s)</span>
                                 <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
                                   <button type="button" disabled={!canEnviarFotos} onClick={(e) => { e.preventDefault(); e.stopPropagation(); abrirModalFotosManual(linha, sistema); }} style={{ border: 'none', background: 'transparent', cursor: canEnviarFotos ? 'pointer' : 'not-allowed', color: Number(info?.fotos || 0) > 0 ? 'var(--green)' : '#dc2626', fontSize: 16, padding: 0, opacity: canEnviarFotos ? 1 : 0.45 }}>📷</button>
                                   <input type="checkbox" checked={!!linha.flags[sistema]} onChange={(e) => atualizarFlagFoto(linha.sku, sistema, e.target.checked)} />
@@ -2860,7 +2886,7 @@ export default function CadastroPage() {
                       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                         <thead style={{ background: 'var(--gray-50)' }}><tr>
                           <th style={{ ...s.th, width: 38 }}><input type="checkbox" checked={fotosPendentes > 0 && fotosSelecionados.size === fotosPendentes} onChange={(e) => e.target.checked ? selecionarFotosPendentes() : setFotosSelecionados(new Set())} /></th>
-                          {['SKU', 'Descricao', 'Drive', 'ANB', 'ML', 'Nuvemshop', 'Shopee', 'Status'].map((h) => <th key={h} style={s.th}>{h}</th>)}
+                          {['SKU', 'Descricao', 'Drive', 'ANB', 'ML', 'Nuvemshop', 'Shopee', 'Magalu', 'Status'].map((h) => <th key={h} style={s.th}>{h}</th>)}
                         </tr></thead>
                         <tbody>
                           {fotosLinhas.map((linha) => (
@@ -2877,7 +2903,7 @@ export default function CadastroPage() {
                                   <span style={{ fontSize: 12, fontWeight: 800, color: '#dc2626' }}>📂 0</span>
                                 )}
                               </td>
-                              {(['anb', 'ml', 'nuvemshop', 'shopee'] as const).map((sistema) => {
+                              {(['anb', 'ml', 'nuvemshop', 'shopee', 'magalu'] as const).map((sistema) => {
                                 const info: any = linha[sistema];
                                 const isSistemaProcessando = linha.sku === fotosProcessandoSku && sistema === fotosProcessandoSistema;
                                 return (

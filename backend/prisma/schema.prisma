@@ -56,7 +56,10 @@ model Peca {
   mercadoLivreLink String?
   shopeeItemId       String?
   shopeeLink         String?
+  magaluItemId       String?
+  magaluLink         String?
   shopeeCategoriaId  String?
+  magaluCategoriaId  String? // UUID da categoria Magalu — mapeamento ainda pendente (ver reference_magalu_api)
   detranBaixada  Boolean  @default(false)
   detranBaixadaAt DateTime?
   detranComprovanteNome String?
@@ -251,6 +254,7 @@ model BlingConfig {
   nuvemshopLojaId  Int     @default(205449158)
   shopeeAtiva      Boolean @default(false)
   shopeeLojaId     Int?
+  magaluLojaId     Int?    @default(206315662)
   exibirBuscarProdutos Boolean @default(true)
   exibirCompararCSV    Boolean @default(true)
   updatedAt                   DateTime @default(now()) @updatedAt

@@ -15,7 +15,14 @@ const PUBLIC_PATHS = new Set([
   '/google/callback',
   '/mercado-livre/callback',
   '/mercado-livre/mercado-pago/callback',
+  '/shopee/callback',
+  '/magalu/callback',
 ]);
+
+// Prefixos publicos (alem dos paths exatos acima). Usado pelo proxy de imagem do Magalu
+// (/magalu/imagem/:id) — a API do Magalu precisa conseguir baixar a foto direto por URL, sem
+// cookie de sessao nosso, ja que quem faz essa requisicao e' o servidor deles, nao o navegador.
+const PUBLIC_PATH_PREFIXES = ['/magalu/imagem/'];
 
 function isSecureRequest(req: Request) {
   const forwardedProto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim();
@@ -30,7 +37,7 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
   if (req.method === 'OPTIONS') return next();
 
   const path = getRequestPath(req);
-  if (PUBLIC_PATHS.has(path)) return next();
+  if (PUBLIC_PATHS.has(path) || PUBLIC_PATH_PREFIXES.some((prefix) => path.startsWith(prefix))) return next();
 
   const cookies = parseCookies(req.headers.cookie);
   const token = cookies.get(AUTH_COOKIE_NAME);

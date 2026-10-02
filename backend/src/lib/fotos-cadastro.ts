@@ -3,6 +3,7 @@ import { compressDataUrlImage, normalizeImageFileName } from './image';
 import { createHash } from 'crypto';
 import { inflateRawSync } from 'zlib';
 import { shopeeGetItemBaseInfo, shopeeUploadImage, shopeeUpdateItemImages } from './shopee-api';
+import { magaluGetSku, magaluUpdateSkuImages } from './magalu-api';
 const GOOGLE_DRIVE_UPLOAD_URL = 'https://www.googleapis.com/upload/drive/v3';
 
 // Leitor de ZIP nativo (sem dependencia externa). Le pela central directory:
@@ -50,6 +51,9 @@ const NUVEMSHOP_USER_AGENT = 'ANB Parts (contato@anbparts.com.br)';
 const MERCADO_LIVRE_API = 'https://api.mercadolibre.com';
 const MERCADO_LIVRE_MAX_FOTOS = 12;
 const SHOPEE_MAX_FOTOS = 9;
+// Nao encontrado limite oficial documentado pro Magalu — adotamos um teto conservador (ver mesma
+// constante em routes/magalu.ts) ate confirmar o real quando testarmos de verdade.
+const MAGALU_MAX_FOTOS = 8;
 
 type DriveFoto = {
   id: string;
@@ -58,7 +62,7 @@ type DriveFoto = {
   size?: string | number | null;
 };
 
-type FotoDestino = 'anb' | 'ml' | 'nuvemshop' | 'shopee';
+type FotoDestino = 'anb' | 'ml' | 'nuvemshop' | 'shopee' | 'magalu';
 type ManualFoto = {
   nome: string;
   dataUrl?: string;
@@ -865,6 +869,20 @@ async function downloadDriveFoto(foto: DriveFoto) {
   };
 }
 
+// Baixa uma foto do Drive so pelo ID (sem precisar do objeto DriveFoto completo) — usado pelo proxy
+// publico de imagem do Magalu (GET /magalu/imagem/:id), que precisa reexpor a foto como URL publica
+// porque a API do Magalu so aceita `images[].reference` (URL), nao upload binario como a Shopee.
+export async function baixarFotoDrivePorId(fotoId: string) {
+  const resp = await driveFetch(buildDrivePath(`/files/${encodeURIComponent(fotoId)}`, { alt: 'media' }));
+  if (!resp.ok) {
+    const data: any = await resp.json().catch(() => ({}));
+    throw new Error(getApiErrorMessage(data, `Erro ao baixar foto ${fotoId}`));
+  }
+  const buffer = Buffer.from(await resp.arrayBuffer());
+  const mimeType = normalizeText(resp.headers.get('content-type')) || 'image/jpeg';
+  return { buffer, mimeType };
+}
+
 async function prepararFotoCapaAnb(foto: DriveFoto, sku: string) {
   const downloaded = await downloadDriveFoto(foto);
   const prepared = await compressDataUrlImage(downloaded.dataUrl, 'a foto capa do ANB');
@@ -1441,6 +1459,7 @@ async function getPecasParaFotos(input: { skus?: any; dataDe?: string; dataAte?:
       mercadoLivreItemId: true,
       mercadoLivreLink: true,
       shopeeItemId: true,
+      magaluItemId: true,
       cadastro: true,
       moto: { select: { marca: true, modelo: true, ano: true } },
     },
@@ -1472,6 +1491,10 @@ async function montarLinhaCadastroFotos(peca: any, verificarExternos: boolean) {
   let shopeeEncontrado = false;
   let shopeeErro = '';
   const shopeeItemId = normalizeText(peca.shopeeItemId);
+  let magaluFotos = 0;
+  let magaluEncontrado = false;
+  let magaluErro = '';
+  const magaluItemId = normalizeText((peca as any).magaluItemId);
 
   if (verificarExternos) {
     try {
@@ -1504,6 +1527,16 @@ async function montarLinhaCadastroFotos(peca: any, verificarExternos: boolean) {
     } catch (e: any) {
       shopeeErro = e?.message || String(e);
     }
+
+    try {
+      if (magaluItemId) {
+        const item = await magaluGetSku(magaluItemId);
+        magaluEncontrado = true;
+        magaluFotos = Array.isArray(item?.images) ? item.images.length : 0;
+      }
+    } catch (e: any) {
+      magaluErro = e?.message || String(e);
+    }
   }
 
   const flags = {
@@ -1511,11 +1544,12 @@ async function montarLinhaCadastroFotos(peca: any, verificarExternos: boolean) {
     nuvemshop: verificarExternos && nuvemshopEncontrado && nuvemshopFotos <= 2,
     ml: verificarExternos && mlEncontrado && mlFotos <= 2,
     shopee: verificarExternos && shopeeEncontrado && shopeeFotos <= 2,
+    magalu: verificarExternos && magaluEncontrado && magaluFotos <= 2,
   };
-  const temFlag = flags.anb || flags.nuvemshop || flags.ml || flags.shopee;
+  const temFlag = flags.anb || flags.nuvemshop || flags.ml || flags.shopee || flags.magalu;
   let driveResumo = { fotos: null as number | null, pasta: '' };
 
-  if (flags.nuvemshop || flags.ml || flags.shopee) {
+  if (flags.nuvemshop || flags.ml || flags.shopee || flags.magalu) {
     try {
       const drive = await buscarFotosDriveSku(peca.motoId, sku);
       driveResumo = { fotos: drive.fotos.length, pasta: drive.pasta };
@@ -1533,6 +1567,7 @@ async function montarLinhaCadastroFotos(peca: any, verificarExternos: boolean) {
     ml: { fotos: mlFotos, encontrado: mlEncontrado, itemId: mlItemId || null, erro: mlErro },
     nuvemshop: { fotos: nuvemshopFotos, encontrado: nuvemshopEncontrado, produtoId: nuvemshopProdutoId, erro: nuvemshopErro },
     shopee: { fotos: shopeeFotos, encontrado: shopeeEncontrado, itemId: shopeeItemId || null, erro: shopeeErro },
+    magalu: { fotos: magaluFotos, encontrado: magaluEncontrado, itemId: magaluItemId || null, erro: magaluErro },
     flags,
     temFlag,
     drive: driveResumo,
@@ -1585,7 +1620,7 @@ export async function processarCadastroFotos(rowsInput: CadastroFotosRowInput[])
   for (const row of rowsInput) {
     const sku = baseSku(row.sku);
     const flags = row.flags || {};
-    const sistemas = (['anb', 'ml', 'nuvemshop', 'shopee'] as FotoDestino[]).filter((sistema) => !!flags[sistema]);
+    const sistemas = (['anb', 'ml', 'nuvemshop', 'shopee', 'magalu'] as FotoDestino[]).filter((sistema) => !!flags[sistema]);
     if (!sku || !sistemas.length) continue;
 
     const peca = await prisma.peca.findFirst({
@@ -1600,6 +1635,7 @@ export async function processarCadastroFotos(rowsInput: CadastroFotosRowInput[])
         mercadoLivreItemId: true,
         mercadoLivreLink: true,
         shopeeItemId: true,
+        magaluItemId: true,
       },
     });
     if (!peca) {
@@ -1686,6 +1722,28 @@ export async function processarCadastroFotos(rowsInput: CadastroFotosRowInput[])
       }
     }
 
+    if (flags.magalu) {
+      try {
+        const magaluItemId = normalizeText((peca as any).magaluItemId);
+        if (!magaluItemId) throw new Error('Item ID do Magalu nao encontrado no SKU.');
+        // A API do Magalu substitui a lista de imagens inteira no PATCH (nao tem como anexar, so
+        // leitura via /skus/:sku pra saber quantas ja tem) — por isso sempre manda ate o limite,
+        // sem merge com o que ja existe (diferente da Shopee, que mergeia os ids atuais + novos).
+        const atual = await magaluGetSku(magaluItemId).catch(() => null);
+        const imagensAtuais = Array.isArray(atual?.images) ? atual.images.length : 0;
+        if (imagensAtuais >= MAGALU_MAX_FOTOS) {
+          detalhes.push({ sistema: 'magalu', ok: true, enviados: 0, limite: MAGALU_MAX_FOTOS, resultados: [{ sistema: 'magalu', ok: true, pulada: true, error: `Magalu ja esta com ${MAGALU_MAX_FOTOS} fotos.` }] });
+        } else {
+          const fotos = drive.fotos.slice(0, MAGALU_MAX_FOTOS);
+          const imageUrls = fotos.map((f) => `${(process.env.BACKEND_URL || 'http://localhost:4000').replace(/\/$/, '')}/magalu/imagem/${encodeURIComponent(f.id)}`);
+          await magaluUpdateSkuImages(magaluItemId, imageUrls);
+          detalhes.push({ sistema: 'magalu', ok: true, enviados: imageUrls.length, resultados: fotos.map((f) => ({ sistema: 'magalu', nome: f.nome, ok: true })) });
+        }
+      } catch (e: any) {
+        detalhes.push({ sistema: 'magalu', ok: false, error: e?.message || String(e) });
+      }
+    }
+
     resultados.push({
       sku,
       ok: detalhes.length > 0 && detalhes.every((item) => item.ok !== false),
@@ -1739,7 +1797,7 @@ export async function enviarCadastroFotosManual(input: {
   const imagensManuais = normalizarManualFotos(input.imagens);
 
   if (!sku) throw new Error('SKU obrigatorio.');
-  if (!(['anb', 'ml', 'nuvemshop', 'shopee'] as FotoDestino[]).includes(sistema)) throw new Error('Sistema invalido.');
+  if (!(['anb', 'ml', 'nuvemshop', 'shopee', 'magalu'] as FotoDestino[]).includes(sistema)) throw new Error('Sistema invalido.');
   if (origem === 'manual' && !imagensManuais.length) throw new Error('Selecione ao menos uma foto do computador.');
   if (origem === 'drive' && !fotosSelecionadas.length) throw new Error('Selecione ao menos uma foto do Drive.');
 
@@ -1754,6 +1812,7 @@ export async function enviarCadastroFotosManual(input: {
       mercadoLivreItemId: true,
       mercadoLivreLink: true,
       shopeeItemId: true,
+      magaluItemId: true,
     },
   });
   if (!peca) throw new Error('SKU nao encontrado no ANB.');
@@ -1832,6 +1891,32 @@ export async function enviarCadastroFotosManual(input: {
     if (!fotosLimitadas.length) return { ok: true, sistema, sku, enviadas: 0, resultados: [{ sistema, ok: true, pulada: true, error: `Shopee ja esta com ${SHOPEE_MAX_FOTOS} fotos.` }] };
     const resultados = await uploadShopeeDrive(itemId, fotosLimitadas, idsAtuais);
     return { ok: true, sistema, sku, enviadas: resultados.filter((item) => item.ok).length, resultados };
+  }
+
+  if (sistema === 'magalu') {
+    const magaluItemId = normalizeText((peca as any).magaluItemId);
+    if (!magaluItemId) throw new Error('Item ID do Magalu nao encontrado no SKU.');
+    if (origem === 'manual') {
+      // A API do Magalu so aceita URL publica (images[].reference) — uma foto solta do computador
+      // do usuario nao tem URL publica nossa (so as do Drive, via /magalu/imagem/:id). Por enquanto
+      // so suportamos origem Drive pro Magalu; bloqueia manual com mensagem clara em vez de falhar
+      // silenciosamente ou tentar algo que nao funciona.
+      throw new Error('Envio manual (do computador) ainda nao suportado pro Magalu — use as fotos do Drive.');
+    }
+    const atual = await magaluGetSku(magaluItemId).catch(() => null);
+    const imagensAtuais = Array.isArray(atual?.images) ? atual.images.length : 0;
+    if (imagensAtuais >= MAGALU_MAX_FOTOS) return { ok: true, sistema, sku, enviadas: 0, resultados: [{ sistema, ok: true, pulada: true, error: `Magalu ja esta com ${MAGALU_MAX_FOTOS} fotos.` }] };
+    const fotosLimitadas = fotosSelecionadas.slice(0, Math.max(0, MAGALU_MAX_FOTOS - imagensAtuais));
+    if (!fotosLimitadas.length) return { ok: true, sistema, sku, enviadas: 0, resultados: [{ sistema, ok: true, pulada: true, error: `Magalu ja esta com ${MAGALU_MAX_FOTOS} fotos.` }] };
+    const imageUrls = fotosLimitadas.map((f) => `${(process.env.BACKEND_URL || 'http://localhost:4000').replace(/\/$/, '')}/magalu/imagem/${encodeURIComponent(f.id)}`);
+    await magaluUpdateSkuImages(magaluItemId, imageUrls);
+    return {
+      ok: true,
+      sistema,
+      sku,
+      enviadas: imageUrls.length,
+      resultados: fotosLimitadas.map((f) => ({ sistema, nome: f.nome, ok: true })),
+    };
   }
 
   const itemId = normalizeText(peca.mercadoLivreItemId) || parseMercadoLivreItemId(peca.mercadoLivreLink);

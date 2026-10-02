@@ -396,6 +396,56 @@ blingRouter.post('/shopee/informar-anuncio', async (req, res, next) => {
   }
 });
 
+// Mesma logica da informarAnuncioShopeeNoBling, so trocando a loja configurada (cfg.magaluLojaId em
+// vez de cfg.shopeeLojaId) e o campo gravado na peca (magaluItemId em vez de shopeeItemId). Chamada
+// automaticamente pelo fluxo de criacao de anuncio direto na API do Magalu (POST /magalu/anuncio/criar).
+export async function informarAnuncioMagaluNoBling(sku: string, magaluItemId: string) {
+  const skuBase = getBaseSku(sku);
+  if (!skuBase) throw new Error('sku obrigatorio');
+  if (!magaluItemId) throw new Error('magaluItemId obrigatorio');
+
+  const cfg = await getConfig();
+  const idLoja = (cfg as any).magaluLojaId;
+  if (!idLoja) throw new Error('Loja do Magalu nao configurada em Configuracao');
+
+  const produtosByCode = await findBlingProductsByCodes([skuBase], { forceRefresh: true });
+  const produto = produtosByCode.get(skuBase);
+  if (!produto?.id) throw new Error('Produto nao encontrado no Bling');
+  const produtoId = Number(produto.id);
+
+  const prodLojas = await blingReq(`/produtos/lojas?idProduto=${produtoId}&idLoja=${idLoja}&limite=10`) as any;
+  const prodLojaExistente = (prodLojas?.data || [])[0];
+
+  const bodyProdutoLoja = {
+    produto: { id: produtoId },
+    loja: { id: Number(idLoja) },
+    codigo: magaluItemId,
+    preco: Number(prodLojaExistente?.preco || produto.preco || 0),
+    categoriasProdutos: Array.isArray(prodLojaExistente?.categoriasProdutos) && prodLojaExistente.categoriasProdutos.length
+      ? prodLojaExistente.categoriasProdutos.map((c: any) => ({ id: Number(c.id) }))
+      : undefined,
+  };
+
+  let produtoLojaId: number;
+  let acao: string;
+  if (prodLojaExistente) {
+    await blingReq(`/produtos/lojas/${prodLojaExistente.id}`, { method: 'PUT', body: JSON.stringify(bodyProdutoLoja) });
+    produtoLojaId = prodLojaExistente.id;
+    acao = 'atualizou vinculo produto-loja existente com o codigo informado';
+  } else {
+    const criado = await blingReq('/produtos/lojas', { method: 'POST', body: JSON.stringify(bodyProdutoLoja) }) as any;
+    produtoLojaId = Number(criado?.data?.id);
+    acao = 'criou vinculo produto-loja com o codigo informado';
+  }
+
+  const r = await prisma.peca.updateMany({
+    where: { OR: [{ idPeca: skuBase }, { idPeca: { startsWith: `${skuBase}-` } }] },
+    data: { magaluItemId },
+  });
+
+  return { ok: true, sku: skuBase, produtoId, magaluItemId, produtoLojaId, acao, pecasAtualizadas: r.count };
+}
+
 const BLING_API = 'https://api.bling.com.br/Api/v3';
 const BLING_OAUTH = 'https://api.bling.com.br/Api/v3/oauth/token';
 const DEFAULT_FRETE_PADRAO = 29.9;
@@ -4815,6 +4865,7 @@ blingRouter.get('/config-produtos', async (_req, res, next) => {
       taxaPadraoPct: cfg.taxaPadraoPct,
       shopeeAtiva: cfg.shopeeAtiva,
       shopeeLojaId: cfg.shopeeLojaId,
+      magaluLojaId: (cfg as any).magaluLojaId,
     });
   } catch (e) {
     next(e);
@@ -4835,6 +4886,9 @@ blingRouter.post('/config-produtos', async (req, res, next) => {
     const shopeeLojaId = req.body?.shopeeLojaId !== undefined
       ? (req.body.shopeeLojaId ? Number(req.body.shopeeLojaId) : null)
       : current.shopeeLojaId;
+    const magaluLojaId = req.body?.magaluLojaId !== undefined
+      ? (req.body.magaluLojaId ? Number(req.body.magaluLojaId) : null)
+      : (current as any).magaluLojaId;
 
     await saveConfig({
       prefixos,
@@ -4842,7 +4896,8 @@ blingRouter.post('/config-produtos', async (req, res, next) => {
       taxaPadraoPct,
       shopeeAtiva,
       shopeeLojaId,
-    });
+      magaluLojaId,
+    } as any);
 
     res.json({ ok: true });
   } catch (e) {
