@@ -207,15 +207,16 @@ export async function magaluCreateSku(input: MagaluCreateSkuInput) {
       condition: 'USED',
       datasheet: [],
       description: input.description.slice(0, 7000),
-      dimensions: [
-        {
-          name: 'package',
-          height: { unit: 'cm', value: Math.max(1, Math.round(input.heightCm)) },
-          length: { unit: 'cm', value: Math.max(1, Math.round(input.lengthCm)) },
-          width: { unit: 'cm', value: Math.max(1, Math.round(input.widthCm)) },
-          weight: { unit: 'g', value: Math.max(1, Math.round(input.weightKg * 1000)) },
-        },
-      ],
+      // A API exige no minimo 2 entradas (422 "List should have at least 2 items"): "package"
+      // (embalagem) e "product" (produto), como no exemplo da doc. So temos 1 conjunto de medidas
+      // por peca, entao enviamos o mesmo pras duas.
+      dimensions: ['package', 'product'].map((name) => ({
+        name,
+        height: { unit: 'cm', value: Math.max(1, Math.round(input.heightCm)) },
+        length: { unit: 'cm', value: Math.max(1, Math.round(input.lengthCm)) },
+        width: { unit: 'cm', value: Math.max(1, Math.round(input.widthCm)) },
+        weight: { unit: 'g', value: Math.max(1, Math.round(input.weightKg * 1000)) },
+      })),
       extra_data: [],
       fulfillment: false,
       group: { id: input.sku.slice(0, 50), main_variation: true },
