@@ -9,6 +9,7 @@ import {
   magaluSetStock,
   magaluUpdateSkuImages,
   magaluGetSku,
+  magaluAguardarSku,
 } from '../lib/magalu-api';
 import { baixarFotoDrivePorId, buscarFotosDriveSku } from '../lib/fotos-cadastro';
 import { informarAnuncioMagaluNoBling } from './bling';
@@ -246,7 +247,7 @@ magaluRouter.post('/anuncio/buscar', async (req, res, next) => {
     if (!skus.length) return res.status(400).json({ error: 'Informe ao menos 1 SKU' });
 
     const categoriasMagalu = await prisma.magaluCategoria.findMany({ select: { id: true, nome: true, path: true } });
-    const categoriaPorId = new Map(categoriasMagalu.map((c) => [c.id, c]));
+    const categoriaPorId = new Map<string, { id: string; nome: string; path: string }>(categoriasMagalu.map((c: any) => [String(c.id), c] as [string, { id: string; nome: string; path: string }]));
     const prefixo = 'Veículos e Peças/';
 
     const linhas = [];
@@ -331,21 +332,31 @@ magaluRouter.post('/anuncio/criar', async (req, res, next) => {
     if (!fotoCapa) return res.status(400).json({ error: 'Nenhuma foto encontrada no Drive pra esse SKU — o SKU precisa de pelo menos 1 imagem.' });
     const imageUrls = [`${getBackendBase()}/magalu/imagem/${encodeURIComponent(fotoCapa.id)}`];
 
-    const criado = await magaluCreateSku({
-      sku,
-      title: peca.descricao.slice(0, 150),
-      description: peca.descricao,
-      brand: peca.moto?.marca || 'Generico',
-      categoryId: categoriaId,
-      weightKg: peso,
-      heightCm: Number(peca.altura),
-      lengthCm: Number(peca.profundidade),
-      widthCm: Number(peca.largura),
-      imageUrls,
-    });
+    // Retomavel: se o SKU ja existe no Magalu (ex: tentativa anterior criou o SKU mas falhou em
+    // preco/estoque, e o ANB nao gravou o ID), nao recria — segue pra preco/estoque.
+    const jaExisteNoMagalu = await magaluGetSku(sku).then(() => true).catch(() => false);
+    const criado = jaExisteNoMagalu
+      ? { sku, traceId: null as string | null }
+      : await magaluCreateSku({
+        sku,
+        title: peca.descricao.slice(0, 150),
+        description: peca.descricao,
+        brand: peca.moto?.marca || 'Generico',
+        categoryId: categoriaId,
+        weightKg: peso,
+        heightCm: Number(peca.altura),
+        lengthCm: Number(peca.profundidade),
+        widthCm: Number(peca.largura),
+        imageUrls,
+      });
 
-    await magaluSetPrice(sku, Number(peca.precoML));
-    await magaluSetStock(sku, qtdDisponivel);
+    try {
+      await magaluAguardarSku(sku);
+      await magaluSetPrice(sku, Number(peca.precoML));
+      await magaluSetStock(sku, qtdDisponivel);
+    } catch (e: any) {
+      throw new Error(`SKU criado no Magalu, mas falhou ao definir preco/estoque: ${e?.message || e}`);
+    }
 
     let blingResultado: any = null;
     let blingErro: string | null = null;

@@ -629,7 +629,7 @@ pecasRouter.get('/export-magalu-categorias', async (_req, res, next) => {
       orderBy: { idPeca: 'asc' },
     });
     const categorias = await prisma.magaluCategoria.findMany({ select: { id: true, path: true } });
-    const caminhoPorId = new Map(categorias.map((c) => [c.id, c.path]));
+    const caminhoPorId = new Map<string, string>(categorias.map((c: any) => [String(c.id), String(c.path)] as [string, string]));
 
     const porSkuBase = new Map<string, any>();
     for (const p of pecas) {

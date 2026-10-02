@@ -236,6 +236,23 @@ export async function magaluCreateSku(input: MagaluCreateSkuInput) {
   return { sku: input.sku, traceId: payload?.trace_id || null };
 }
 
+// A criacao de SKU e' assincrona (202 + trace_id): preco/estoque so funcionam depois que o SKU
+// existe de fato do lado deles (antes disso respondem 404 "Resource Not Found"). Consulta
+// GET /skus/:sku ate aparecer (404 = ainda processando) ou estourar o tempo.
+export async function magaluAguardarSku(sku: string, tentativas = 20, intervaloMs = 3000) {
+  let ultimoErro = '';
+  for (let i = 0; i < tentativas; i += 1) {
+    try {
+      return await magaluGetSku(sku);
+    } catch (e: any) {
+      ultimoErro = e?.message || String(e);
+      if (!/\b404\b/.test(ultimoErro)) throw e;
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervaloMs));
+  }
+  throw new Error(`SKU ${sku} aceito pelo Magalu mas ainda nao disponivel apos ${Math.round((tentativas * intervaloMs) / 1000)}s (processamento assincrono) — ${ultimoErro}`);
+}
+
 // POST /seller/v1/portfolios/prices/:sku — confirmado na doc oficial (Produtos > Precos > Criar).
 // Valores em centavos (normalizer:100), moeda BRL (nao e' o default — a doc usa USD como default).
 export async function magaluSetPrice(sku: string, precoReais: number) {
