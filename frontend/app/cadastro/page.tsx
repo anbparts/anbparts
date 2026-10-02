@@ -433,13 +433,13 @@ export default function CadastroPage() {
     { id: 'shopee', label: 'Shopee', cor: '#ee4d2d' },
     { id: 'magalu', label: 'Magalu', cor: '#0047bb' },
   ];
-  type ShopeeCategoriaOpcao = { id: number; categoria: string; subcategoria: string; nivel3: string; nivel4: string; permitido: boolean; caminho: string; generica: boolean };
+  type ShopeeCategoriaOpcao = { id: number | string; categoria?: string; subcategoria?: string; nivel3?: string; nivel4?: string; permitido: boolean; caminho: string; generica: boolean };
   type AnuncioLinhaMarketplace = {
     disponivel: boolean; // esse marketplace foi incluido nessa busca
     jaTemAnuncio: boolean;
     itemId: string | null;
     categoriaAtual: ShopeeCategoriaOpcao | null;
-    categoriaEscolhidaId: number | null;
+    categoriaEscolhidaId: number | string | null;
     categoriaPendente: boolean; // true = mapeamento automatico de categoria ainda nao existe (Magalu)
     selecionado: boolean;
     status: 'pendente' | 'processando' | 'ok' | 'erro';
@@ -464,6 +464,7 @@ export default function CadastroPage() {
     return { disponivel: false, jaTemAnuncio: false, itemId: null, categoriaAtual: null, categoriaEscolhidaId: null, categoriaPendente: false, selecionado: false, status: 'pendente', resultado: null, erroProcessamento: '' };
   }
   const [shopeeCategorias, setShopeeCategorias] = useState<ShopeeCategoriaOpcao[]>([]);
+  const [magaluCategorias, setMagaluCategorias] = useState<ShopeeCategoriaOpcao[]>([]);
   const [anuncioMarketplacesSelecionados, setAnuncioMarketplacesSelecionados] = useState<Set<AnuncioMarketplaceId>>(new Set<AnuncioMarketplaceId>(['shopee']));
   const [anuncioCriarSkusInput, setAnuncioCriarSkusInput] = useState('');
   const [anuncioCriarBuscando, setAnuncioCriarBuscando] = useState(false);
@@ -1980,6 +1981,17 @@ export default function CadastroPage() {
     });
   }
 
+  async function carregarMagaluCategorias() {
+    if (magaluCategorias.length) return;
+    try {
+      const resp = await fetch(`${API}/magalu/categorias`, { credentials: "include" });
+      const data = await readApiResponse(resp, "Erro ao buscar categorias Magalu");
+      setMagaluCategorias(Array.isArray(data.categorias) ? data.categorias : []);
+    } catch (e: any) {
+      alert(e?.message || "Erro ao buscar categorias Magalu.");
+    }
+  }
+
   async function buscarLinhasAnuncioCriar() {
     const skus = normalizarListaSkus(anuncioCriarSkusInput);
     if (!skus.length) return alert('Informe ao menos 1 SKU.');
@@ -1988,6 +2000,7 @@ export default function CadastroPage() {
     setAnuncioCriarBuscando(true);
     setAnuncioCriarLinhas([]);
     if (marketplaces.includes('shopee')) carregarShopeeCategorias();
+    if (marketplaces.includes('magalu')) carregarMagaluCategorias();
 
     try {
       const respostasPorMarketplace = await Promise.all(marketplaces.map(async (mk) => {
@@ -2053,7 +2066,7 @@ export default function CadastroPage() {
     }));
   }
 
-  function escolherCategoriaParaLinha(sku: string, mk: AnuncioMarketplaceId, categoriaId: number) {
+  function escolherCategoriaParaLinha(sku: string, mk: AnuncioMarketplaceId, categoriaId: number | string) {
     setAnuncioCriarLinhas((prev) => prev.map((linha) => {
       if (linha.sku !== sku) return linha;
       const atual = linha.marketplaces[mk];
@@ -2110,7 +2123,8 @@ export default function CadastroPage() {
   }
 
   const categoriaModalLinha = anuncioCriarLinhas.find((l) => l.sku === categoriaModalSku) || null;
-  const categoriaModalFiltradas = shopeeCategorias.filter((c) => {
+  const categoriaModalLista = categoriaModalMarketplace === 'magalu' ? magaluCategorias : shopeeCategorias;
+  const categoriaModalFiltradas = categoriaModalLista.filter((c) => {
     const termo = categoriaModalBusca.trim().toLowerCase();
     if (!termo) return true;
     return c.caminho.toLowerCase().includes(termo);
@@ -2120,7 +2134,7 @@ export default function CadastroPage() {
     if (categoriaPendente) return <span title="Mapeamento automatico de categoria ainda nao existe pra esse marketplace" style={{ fontSize: 11, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 5, padding: '2px 6px', fontWeight: 700 }}>⏳ Categoria pendente</span>;
     if (!cat) return <span style={{ fontSize: 11, color: '#dc2626', fontWeight: 700 }}>Sem categoria</span>;
     if (!cat.permitido) return <span title="Categoria bloqueada na Shopee (permitido=false)" style={{ fontSize: 11, color: '#991b1b', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 5, padding: '2px 6px', fontWeight: 700 }}>🚫 {cat.nivel4}</span>;
-    if (cat.generica) return <span title="Categoria genérica — sem correspondência específica pra essa peça" style={{ fontSize: 11, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 5, padding: '2px 6px', fontWeight: 700 }}>⚠ {cat.categoria} &gt; {cat.subcategoria} &gt; Outros</span>;
+    if (cat.generica) return <span title="Categoria genérica — sem correspondência específica pra essa peça" style={{ fontSize: 11, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 5, padding: '2px 6px', fontWeight: 700 }}>⚠ {cat.categoria ? `${cat.categoria} > ${cat.subcategoria} > Outros` : cat.caminho}</span>;
     return <span style={{ fontSize: 11, color: '#166534', background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 5, padding: '2px 6px', fontWeight: 700 }}>{cat.caminho}</span>;
   };
 
@@ -2214,13 +2228,13 @@ export default function CadastroPage() {
                           ) : (
                             <>
                               {renderCategoriaBadge(
-                                mp.categoriaPendente ? null : (mp.categoriaEscolhidaId != null ? shopeeCategorias.find((c) => c.id === mp.categoriaEscolhidaId) || mp.categoriaAtual : mp.categoriaAtual),
+                                mp.categoriaPendente ? null : (mp.categoriaEscolhidaId != null ? (mk === 'magalu' ? magaluCategorias : shopeeCategorias).find((c) => c.id === mp.categoriaEscolhidaId) || mp.categoriaAtual : mp.categoriaAtual),
                                 mp.categoriaPendente,
                               )}
-                              {mk === 'shopee' && (
+                              {(
                                 <button
                                   type="button"
-                                  onClick={() => { carregarShopeeCategorias(); setCategoriaModalMarketplace(mk); setCategoriaModalSku(linha.sku); setCategoriaModalBusca(''); }}
+                                  onClick={() => { if (mk === 'magalu') carregarMagaluCategorias(); else carregarShopeeCategorias(); setCategoriaModalMarketplace(mk); setCategoriaModalSku(linha.sku); setCategoriaModalBusca(''); }}
                                   style={{ fontSize: 11, color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
                                 >
                                   Trocar categoria
@@ -2255,7 +2269,7 @@ export default function CadastroPage() {
           <div style={{ background: '#fff', borderRadius: 14, width: '100%', maxWidth: 560, maxHeight: '80vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }} onClick={(e) => e.stopPropagation()}>
             <div style={{ padding: '16px 18px 10px', borderBottom: '1px solid var(--border)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--gray-800)' }}>Categoria Shopee — {categoriaModalSku}</div>
+                <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--gray-800)' }}>Categoria {categoriaModalMarketplace === 'magalu' ? 'Magalu' : 'Shopee'} — {categoriaModalSku}</div>
                 <button onClick={() => setCategoriaModalSku(null)} style={{ border: 'none', background: 'none', fontSize: 18, cursor: 'pointer', color: 'var(--gray-400)' }}>✕</button>
               </div>
               {categoriaModalLinha?.marketplaces[categoriaModalMarketplace]?.categoriaAtual && (
@@ -2272,7 +2286,7 @@ export default function CadastroPage() {
               />
             </div>
             <div style={{ overflowY: 'auto', padding: '6px 10px' }}>
-              {!shopeeCategorias.length ? (
+              {!categoriaModalLista.length ? (
                 <div style={{ padding: 20, textAlign: 'center' as const, fontSize: 12, color: 'var(--gray-400)' }}>Carregando categorias...</div>
               ) : categoriaModalFiltradas.length === 0 ? (
                 <div style={{ padding: 20, textAlign: 'center' as const, fontSize: 12, color: 'var(--gray-400)' }}>Nenhuma categoria encontrada pra "{categoriaModalBusca}".</div>

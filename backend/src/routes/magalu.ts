@@ -106,7 +106,14 @@ magaluRouter.get('/categorias', async (req, res, next) => {
       res.type('text/plain').send(categorias.map((c: any) => (String(c.path).startsWith(prefixo) ? String(c.path).slice(prefixo.length) : c.path)).join('\n'));
       return;
     }
-    res.json({ ok: true, categorias: categorias.map((c: any) => ({ id: c.id, nome: c.nome, path: c.path, folha: c.folha })) });
+    const prefixoCaminho = 'Veículos e Peças/';
+    res.json({
+      ok: true,
+      categorias: categorias.map((c: any) => {
+        const caminho = String(c.path).startsWith(prefixoCaminho) ? String(c.path).slice(prefixoCaminho.length) : String(c.path);
+        return { id: c.id, nome: c.nome, path: c.path, folha: c.folha, caminho, nivel4: c.nome, permitido: true, generica: caminho.endsWith('Kit de Peças para Motocicletas') };
+      }),
+    });
   } catch (e) { next(e); }
 });
 
@@ -238,6 +245,10 @@ magaluRouter.post('/anuncio/buscar', async (req, res, next) => {
     const skus: string[] = Array.from(new Set(skusInput.map((s: any) => getBaseSku(s)).filter(Boolean))) as string[];
     if (!skus.length) return res.status(400).json({ error: 'Informe ao menos 1 SKU' });
 
+    const categoriasMagalu = await prisma.magaluCategoria.findMany({ select: { id: true, nome: true, path: true } });
+    const categoriaPorId = new Map(categoriasMagalu.map((c) => [c.id, c]));
+    const prefixo = 'Veículos e Peças/';
+
     const linhas = [];
     for (const sku of skus) {
       const peca = await prisma.peca.findFirst({
@@ -249,6 +260,8 @@ magaluRouter.post('/anuncio/buscar', async (req, res, next) => {
         linhas.push({ sku, encontrado: false, erro: 'SKU nao encontrado no ANB (ou nao disponivel).' });
         continue;
       }
+      const cat = (peca as any).magaluCategoriaId ? categoriaPorId.get((peca as any).magaluCategoriaId) : null;
+      const caminhoCat = cat ? (String(cat.path).startsWith(prefixo) ? String(cat.path).slice(prefixo.length) : String(cat.path)) : null;
       const qtdDisponivel = await prisma.peca.count({
         where: { OR: [{ idPeca: sku }, { idPeca: { startsWith: `${sku}-` } }], disponivel: true },
       });
@@ -265,8 +278,14 @@ magaluRouter.post('/anuncio/buscar', async (req, res, next) => {
         estoque: qtdDisponivel,
         magaluItemId: (peca as any).magaluItemId || null,
         jaTemAnuncio: !!(peca as any).magaluItemId,
-        categoriaAtual: (peca as any).magaluCategoriaId ? { id: (peca as any).magaluCategoriaId, caminho: (peca as any).magaluCategoriaId } : null,
-        categoriaPendente: true,
+        categoriaAtual: cat ? {
+          id: cat.id,
+          nivel4: cat.nome,
+          caminho: caminhoCat,
+          permitido: true,
+          generica: String(caminhoCat).endsWith('Kit de Peças para Motocicletas'),
+        } : null,
+        categoriaPendente: !cat,
       });
     }
 
