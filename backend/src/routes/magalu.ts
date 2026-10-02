@@ -508,8 +508,13 @@ magaluRouter.post('/anuncio/atualizar', async (req, res) => {
       // pelo body pra testar os campos regulatorios (ANATEL/MAPA/ANVISA) sem novo deploy.
       ...(Array.isArray(req.body?.extraData) ? { extra_data: req.body.extraData } : {}),
     };
-    if (req.body?.somenteExtraData && Array.isArray(req.body?.extraData)) {
+    // `campos`: objeto livre mesclado no PATCH (ex: { metadata: {...} }) pra testar campos do schema
+    // oficial sem novo deploy. `somente: true` envia apenas extraData/campos (sem reenviar o resto).
+    const camposLivres = req.body?.campos && typeof req.body.campos === 'object' ? req.body.campos : null;
+    if (camposLivres) Object.assign(parcial, camposLivres);
+    if ((req.body?.somenteExtraData && Array.isArray(req.body?.extraData)) || (req.body?.somente && camposLivres)) {
       delete parcial.description; delete parcial.datasheet; delete parcial.ncm; delete parcial.origin;
+      if (!(Array.isArray(req.body?.extraData))) delete parcial.extra_data;
     }
     const resposta = await magaluAtualizarConteudoSku(sku, parcial);
     res.json({ ok: true, sku, enviado: { descricaoChars: conteudo.description.length, datasheet: conteudo.datasheet, ncm: conteudo.ncm, origin: conteudo.origin }, resposta });
