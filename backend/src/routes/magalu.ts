@@ -371,7 +371,10 @@ async function montarConteudoMagalu(peca: any, sku: string, categoriaId: string,
     'conteudo da embalagem': `1 ${String(peca.descricao || '').slice(0, 100)}`,
   });
 
-  return { description: description.slice(0, 7000), datasheet, ncm, origin };
+  // O campo de descricao do Magalu aceita HTML (o editor do portal tem negrito/listas): texto puro
+  // com \n perde as quebras (confirmado lendo o SKU de volta), entao converte pra <br>.
+  const descricaoHtml = description.replace(/\r?\n/g, '<br>');
+  return { description: descricaoHtml.slice(0, 7000), datasheet, ncm, origin };
 }
 
 // POST /magalu/anuncio/criar — body: { sku, categoriaId }. Cria o SKU no Magalu (sobe 1 foto do
