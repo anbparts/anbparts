@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { spDayStart, spDayEnd } from '../lib/timezone';
 import { getConfiguracaoGeral, saveConfiguracaoGeral } from '../lib/configuracoes-gerais';
 import { blingReq, findBlingProductsByCodes } from './bling';
+import { sugerirMagaluCategoriaId, invalidarCacheMagaluCategorias } from '../lib/magaluCategoriaResolver';
 
 export const pecasRouter = Router();
 
@@ -605,6 +606,141 @@ pecasRouter.post('/import-shopee-categorias', async (req, res, next) => {
       total: resultado.length,
       atualizados: resultado.filter((r) => r.ok).length,
       falhas: resultado.filter((r) => !r.ok),
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// GET /pecas/export-magalu-categorias — mesmo formato do export da Shopee (1 linha por SKU base
+// disponivel), com a categoria Magalu atual (UUID + caminho legivel quando existir).
+pecasRouter.get('/export-magalu-categorias', async (_req, res, next) => {
+  try {
+    const pecas = await prisma.peca.findMany({
+      where: { disponivel: true },
+      select: {
+        idPeca: true,
+        descricao: true,
+        tipoPecaAvulsa: true,
+        numeroPeca: true,
+        magaluCategoriaId: true,
+        moto: { select: { marca: true, modelo: true } },
+      },
+      orderBy: { idPeca: 'asc' },
+    });
+    const categorias = await prisma.magaluCategoria.findMany({ select: { id: true, path: true } });
+    const caminhoPorId = new Map(categorias.map((c) => [c.id, c.path]));
+
+    const porSkuBase = new Map<string, any>();
+    for (const p of pecas) {
+      const base = getBaseSkuPeca(p.idPeca);
+      if (!base || porSkuBase.has(base)) continue;
+      porSkuBase.set(base, {
+        sku: base,
+        descricao: p.descricao || '',
+        tipoPeca: p.tipoPecaAvulsa || null,
+        numeroPeca: p.numeroPeca || null,
+        marca: p.moto?.marca || null,
+        modelo: p.moto?.modelo || null,
+        magaluCategoriaIdAtual: p.magaluCategoriaId || null,
+        magaluCaminhoAtual: p.magaluCategoriaId ? (caminhoPorId.get(p.magaluCategoriaId) || null) : null,
+      });
+    }
+    res.json({ ok: true, total: porSkuBase.size, skus: Array.from(porSkuBase.values()) });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// POST /pecas/import-magalu-categorias — body: { itens: [{ sku, magaluCategoriaId }] }. Aplica em
+// TODAS as pecas daquele SKU base. Valida que o UUID existe em MagaluCategoria e e' folha.
+pecasRouter.post('/import-magalu-categorias', async (req, res, next) => {
+  try {
+    const itens = Array.isArray(req.body?.itens) ? req.body.itens : [];
+    if (!itens.length) return res.status(400).json({ error: 'Nenhum item informado' });
+
+    const folhas = new Set((await prisma.magaluCategoria.findMany({ where: { folha: true }, select: { id: true } })).map((c) => c.id));
+
+    const resultado: Array<{ sku: string; ok: boolean; pecasAtualizadas?: number; erro?: string }> = [];
+    for (const item of itens) {
+      const sku = getBaseSkuPeca(item?.sku);
+      const categoriaId = String(item?.magaluCategoriaId || '').trim();
+      if (!sku || !categoriaId) {
+        resultado.push({ sku: String(item?.sku || ''), ok: false, erro: 'sku ou magaluCategoriaId invalido' });
+        continue;
+      }
+      if (!folhas.has(categoriaId)) {
+        resultado.push({ sku, ok: false, erro: `categoria ${categoriaId} nao existe (ou nao e folha) em MagaluCategoria` });
+        continue;
+      }
+      const r = await prisma.peca.updateMany({
+        where: { OR: [{ idPeca: sku }, { idPeca: { startsWith: `${sku}-` } }] },
+        data: { magaluCategoriaId: categoriaId },
+      });
+      resultado.push({ sku, ok: true, pecasAtualizadas: r.count });
+    }
+
+    res.json({
+      ok: true,
+      total: resultado.length,
+      atualizados: resultado.filter((r) => r.ok).length,
+      falhas: resultado.filter((r) => !r.ok),
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// GET /pecas/aplicar-sugestao-magalu?dry=1&sobrescrever=1 — roda o classificador por palavra-chave
+// (magaluCategoria.ts) em todos os SKUs base disponiveis. Por padrao so preenche quem ainda nao tem
+// categoria Magalu; sobrescrever=1 refaz todos. dry=1 nao grava, so devolve o resumo por categoria.
+pecasRouter.get('/aplicar-sugestao-magalu', async (req, res, next) => {
+  try {
+    const dry = String(req.query.dry || '') === '1';
+    const sobrescrever = String(req.query.sobrescrever || '') === '1';
+
+    const categorias = await prisma.magaluCategoria.findMany({ where: { folha: true }, select: { id: true, path: true } });
+    if (!categorias.length) return res.status(400).json({ error: 'MagaluCategoria vazia — rode /magalu/categorias/sincronizar antes.' });
+    invalidarCacheMagaluCategorias();
+
+    const pecas = await prisma.peca.findMany({
+      where: { disponivel: true },
+      select: { idPeca: true, descricao: true, tipoPecaAvulsa: true, magaluCategoriaId: true },
+      orderBy: { idPeca: 'asc' },
+    });
+
+    const porSkuBase = new Map<string, any>();
+    for (const p of pecas) {
+      const base = getBaseSkuPeca(p.idPeca);
+      if (base && !porSkuBase.has(base)) porSkuBase.set(base, p);
+    }
+
+    const resumo = new Map<string, number>();
+    let aplicados = 0;
+    let semCategoria = 0;
+    for (const [sku, p] of porSkuBase) {
+      if (p.magaluCategoriaId && !sobrescrever) continue;
+      const id = await sugerirMagaluCategoriaId(p.descricao, p.tipoPecaAvulsa);
+      if (!id) { semCategoria += 1; continue; }
+      const caminho = categorias.find((c) => c.id === id)?.path || id;
+      resumo.set(caminho, (resumo.get(caminho) || 0) + 1);
+      if (!dry) {
+        await prisma.peca.updateMany({
+          where: { OR: [{ idPeca: sku }, { idPeca: { startsWith: `${sku}-` } }] },
+          data: { magaluCategoriaId: id },
+        });
+      }
+      aplicados += 1;
+    }
+
+    res.json({
+      ok: true,
+      dry,
+      sobrescrever,
+      skusBase: porSkuBase.size,
+      aplicados,
+      semCategoria,
+      porCategoria: Array.from(resumo.entries()).sort((a, b) => b[1] - a[1]).map(([categoria, total]) => ({ categoria, total })),
     });
   } catch (e) {
     next(e);

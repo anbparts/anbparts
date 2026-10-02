@@ -101,6 +101,11 @@ magaluRouter.get('/categorias', async (req, res, next) => {
       },
       orderBy: { path: 'asc' },
     });
+    if (String(req.query.formato || '') === 'txt') {
+      const prefixo = 'Veículos e Peças/';
+      res.type('text/plain').send(categorias.map((c: any) => (String(c.path).startsWith(prefixo) ? String(c.path).slice(prefixo.length) : c.path)).join('\n'));
+      return;
+    }
     res.json({ ok: true, categorias: categorias.map((c: any) => ({ id: c.id, nome: c.nome, path: c.path, folha: c.folha })) });
   } catch (e) { next(e); }
 });

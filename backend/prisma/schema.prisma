@@ -154,6 +154,7 @@ model CadastroPeca {
   categoriaMLId    String?
   categoriaMLNome  String?
   shopeeCategoriaId String? // sugerida automaticamente ao digitar a Descrição da Peça (ver shopeeCategoria.ts)
+  magaluCategoriaId String? // idem, UUID da categoria Magalu (ver magaluCategoria.ts / magaluCategoriaResolver.ts)
   fotoCapa         String?  // URL ou base64 após upload
   fotoCapaNome     String?
   status           String   @default("pre_cadastro") // pre_cadastro | cadastrado

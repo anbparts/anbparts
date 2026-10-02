@@ -9,6 +9,7 @@ import { mercadoLivreReq, getMercadoLivreItemPermalink } from '../lib/mercado-li
 import { nuvemReq, buscarProdutoNuvemshopPorSku } from './nuvemshop';
 import { sendDetranAtivacaoEmailIfNeeded } from '../lib/detran-alert';
 import { sugerirShopeeCategoriaId } from '../lib/shopeeCategoria';
+import { sugerirMagaluCategoriaId } from '../lib/magaluCategoriaResolver';
 
 const CAMPOS_COMPLETOS_WHERE = {
   peso: { not: null as null },
@@ -625,6 +626,7 @@ cadastroRouter.post('/', requireCadastroAction('criar_pre_cadastro'), async (req
         categoriaMLId: categoriaMLId || null,
         categoriaMLNome: categoriaMLNome || null,
         shopeeCategoriaId: String(sugerirShopeeCategoriaId(descricao, tipoPecaAvulsa)),
+        magaluCategoriaId: await sugerirMagaluCategoriaId(descricao, tipoPecaAvulsa),
         urlRef: urlRef ? String(urlRef).trim() : null,
         status: 'pre_cadastro',
         pecaRestrita: ehPecaRestrita,
@@ -812,6 +814,7 @@ cadastroRouter.post('/copiar-peca/:pecaId', requireCadastroAction('criar_pre_cad
           mercadoLivreItemId: origem.mercadoLivreItemId || null,
           mercadoLivreLink: origem.mercadoLivreLink || null,
           shopeeCategoriaId: (origem as any).shopeeCategoriaId || null,
+          magaluCategoriaId: (origem as any).magaluCategoriaId || null,
           precoML: Number(origem.precoML || 0),
           valorLiq: Number(origem.valorLiq || 0),
           valorFrete: Number(origem.valorFrete || 0),
@@ -1213,6 +1216,10 @@ cadastroRouter.put('/:id', requireCadastroAction('editar_pre_cadastro'), async (
         descricao !== undefined ? descricao : atual.descricao,
         tipoPecaAvulsaEfetivo,
       ));
+      data.magaluCategoriaId = await sugerirMagaluCategoriaId(
+        descricao !== undefined ? descricao : atual.descricao,
+        tipoPecaAvulsaEfetivo,
+      );
     }
     if (urlRef !== undefined) data.urlRef = urlRef || null;
     if (pecaRestrita !== undefined) data.pecaRestrita = Boolean(pecaRestrita);
@@ -1304,6 +1311,7 @@ cadastroRouter.post('/:id/finalizar', requireCadastroAction('criar_bling'), asyn
             numeroPeca: cadastro.numeroPeca || null,
             numeroMotor: (cadastro as any).numeroMotor || null,
             shopeeCategoriaId: (cadastro as any).shopeeCategoriaId || null,
+            magaluCategoriaId: (cadastro as any).magaluCategoriaId || null,
             cadastro: new Date(),
           },
         });
@@ -1368,6 +1376,7 @@ cadastroRouter.post('/:id/finalizar', requireCadastroAction('criar_bling'), asyn
             numeroPeca: cadastro.numeroPeca || null,
             numeroMotor: (cadastro as any).numeroMotor || null,
             shopeeCategoriaId: (cadastro as any).shopeeCategoriaId || null,
+            magaluCategoriaId: (cadastro as any).magaluCategoriaId || null,
             cadastro: new Date(),
           },
         });
@@ -1476,6 +1485,7 @@ cadastroRouter.post('/:id/finalizar', requireCadastroAction('criar_bling'), asyn
             numeroPeca: cadastro.numeroPeca || null,
             numeroMotor: (cadastro as any).numeroMotor || null,
             shopeeCategoriaId: (cadastro as any).shopeeCategoriaId || null,
+            magaluCategoriaId: (cadastro as any).magaluCategoriaId || null,
             tipoPecaAvulsa: cadastro.tipoPecaAvulsa || null,
             // Cada unidade recebe seu grupo de etiquetas (1 ou mais), juntas por " / ".
             detranEtiqueta: (gruposEtiquetas[i] && gruposEtiquetas[i].length)
