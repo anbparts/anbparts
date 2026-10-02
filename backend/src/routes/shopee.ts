@@ -43,6 +43,18 @@ function getFrontendBase() {
 }
 
 // GET /shopee/status — usado pela tela de Configuracao pra mostrar se a loja esta conectada.
+// GET /shopee/meu-ip — IP publico de SAIDA deste servidor (pra preencher a whitelist de IP do Go Live
+// da Shopee). No Railway sem IP estatico ele pode mudar entre deploys.
+shopeeRouter.get('/meu-ip', async (_req, res) => {
+  try {
+    const r = await fetch('https://api.ipify.org?format=json');
+    const j: any = await r.json();
+    res.json({ ip: j?.ip || null });
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message || 'Erro ao obter IP de saida' });
+  }
+});
+
 shopeeRouter.get('/status', async (_req, res, next) => {
   try {
     const config = await getShopeeConfig();
