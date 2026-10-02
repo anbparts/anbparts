@@ -354,11 +354,16 @@ magaluRouter.post('/anuncio/criar', async (req, res, next) => {
       });
 
     await magaluAguardarSku(sku);
+    // v2: etapas rotuladas pra apontar exatamente onde falhou (preco x estoque).
     try {
       await magaluSetPrice(sku, Number(peca.precoML));
+    } catch (e: any) {
+      throw new Error(`SKU criado no Magalu, mas falhou ao definir PRECO: ${e?.message || e}`);
+    }
+    try {
       await magaluSetStock(sku, qtdDisponivel);
     } catch (e: any) {
-      throw new Error(`SKU criado no Magalu, mas falhou ao definir preco/estoque: ${e?.message || e}`);
+      throw new Error(`SKU criado no Magalu, mas falhou ao definir ESTOQUE: ${e?.message || e}`);
     }
 
     let blingResultado: any = null;
