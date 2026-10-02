@@ -500,7 +500,13 @@ magaluRouter.post('/anuncio/atualizar', async (req, res) => {
       datasheet: conteudo.datasheet,
       ...(conteudo.ncm ? { ncm: conteudo.ncm } : {}),
       ...(conteudo.origin ? { origin: conteudo.origin } : {}),
+      // extra_data (ate 20 pares name/value, <=50 chars cada) — oficial: PATCH /skus. Aceita override
+      // pelo body pra testar os campos regulatorios (ANATEL/MAPA/ANVISA) sem novo deploy.
+      ...(Array.isArray(req.body?.extraData) ? { extra_data: req.body.extraData } : {}),
     };
+    if (req.body?.somenteExtraData && Array.isArray(req.body?.extraData)) {
+      delete parcial.description; delete parcial.datasheet; delete parcial.ncm; delete parcial.origin;
+    }
     const resposta = await magaluAtualizarConteudoSku(sku, parcial);
     res.json({ ok: true, sku, enviado: { descricaoChars: conteudo.description.length, datasheet: conteudo.datasheet, ncm: conteudo.ncm, origin: conteudo.origin }, resposta });
   } catch (e: any) {
