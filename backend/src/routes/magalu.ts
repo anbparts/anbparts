@@ -11,6 +11,7 @@ import {
   magaluGetSku,
   magaluAguardarSku,
   magaluTracesPorCodigo,
+  magaluValidacaoSku,
 } from '../lib/magalu-api';
 import { baixarFotoDrivePorId, buscarFotosDriveSku } from '../lib/fotos-cadastro';
 import { informarAnuncioMagaluNoBling } from './bling';
@@ -426,6 +427,17 @@ magaluRouter.get('/traces', async (req, res) => {
   const traces = await magaluTracesPorCodigo(code);
   if (traces === null) return res.status(400).json({ error: 'Nao foi possivel consultar traces (escopo open:trace:read nao liberado no client?).' });
   res.json({ ok: true, code, traces });
+});
+
+// GET /magalu/anuncio/validacao?sku=X — por que o SKU esta em DRAFT / o que foi reprovado.
+magaluRouter.get('/anuncio/validacao', async (req, res) => {
+  try {
+    const sku = getBaseSku(req.query.sku);
+    if (!sku) return res.status(400).json({ error: 'sku obrigatorio' });
+    res.json(await magaluValidacaoSku(sku));
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message || 'Erro ao consultar validacao' });
+  }
 });
 
 // GET /magalu/anuncio/status?sku=X — consulta o SKU direto na Magalu (usado pra conferir quantas

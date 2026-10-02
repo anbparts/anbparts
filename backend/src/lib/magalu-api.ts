@@ -102,7 +102,7 @@ async function magaluRefreshToken() {
 
 // Chamada generica autenticada nas APIs do Magalu (Produtos, Pedidos, Autopecas, etc). Renova o
 // token sozinho se estiver perto de vencer ou se a resposta vier com erro de autenticacao.
-export async function magaluReq(path: string, init?: { method?: string; body?: any; hostOverride?: string }) {
+export async function magaluReq(path: string, init?: { method?: string; body?: any; hostOverride?: string; headers?: Record<string, string> }) {
   let config = await getMagaluConfig();
   if (!config.accessToken) throw new Error('Magalu nao autorizado. Conecte em Configuracao.');
 
@@ -120,6 +120,7 @@ export async function magaluReq(path: string, init?: { method?: string; body?: a
         'Content-Type': 'application/json',
         Accept: 'application/json',
         Authorization: `Bearer ${accessToken}`,
+        ...(init?.headers || {}),
       },
       body: init?.body !== undefined ? JSON.stringify(init.body) : undefined,
     });
@@ -146,14 +147,14 @@ export async function magaluReq(path: string, init?: { method?: string; body?: a
 // seller). Devolve tenant/channel/seller — e' daqui que pegamos o channel.id real da loja (nao
 // precisa ficar fixo/hardcoded), usado em channels[], prices e stocks. Cacheado em memoria por
 // processo (raramente muda), mesmo padrao do canal de logistica da Shopee.
-let magaluSellerInfoCache: { ts: number; info: { channelId: string } } | null = null;
-export async function getMagaluSellerInfo(): Promise<{ channelId: string }> {
+let magaluSellerInfoCache: { ts: number; info: { channelId: string; tenantId: string } } | null = null;
+export async function getMagaluSellerInfo(): Promise<{ channelId: string; tenantId: string }> {
   const agora = Date.now();
   if (!magaluSellerInfoCache || agora - magaluSellerInfoCache.ts > 10 * 60_000) {
     const payload = await magaluReq('/seller/v1/portfolios/me');
     const channelId = String(payload?.channel?.id || '');
     if (!channelId) throw new Error('Magalu nao retornou channel.id em /seller/v1/portfolios/me.');
-    magaluSellerInfoCache = { ts: agora, info: { channelId } };
+    magaluSellerInfoCache = { ts: agora, info: { channelId, tenantId: String(payload?.tenant?.id || "") } };
   }
   return magaluSellerInfoCache.info;
 }
@@ -277,32 +278,36 @@ export async function magaluAguardarSku(sku: string, tentativas = 5, intervaloMs
 export async function magaluSetPrice(sku: string, precoReais: number) {
   const { channelId } = await getMagaluSellerInfo();
   const centavos = Math.max(0, Math.round(precoReais * 100));
-  return magaluReq(`/seller/v1/portfolios/prices/${encodeURIComponent(sku)}`, {
-    method: 'POST',
-    body: {
-      channel: { id: channelId },
-      currency: 'BRL',
-      list_price: centavos,
-      price: centavos,
-      normalizer: 100,
-    },
-  });
+  const body = { channel: { id: channelId }, currency: 'BRL', list_price: centavos, price: centavos, normalizer: 100 };
+  const path = `/seller/v1/portfolios/prices/${encodeURIComponent(sku)}`;
+  try {
+    return await magaluReq(path, { method: 'POST', body });
+  } catch (e: any) {
+    // POST so cria: se o preco ja existe (409 PRICE_ALREADY_EXISTS) atualiza via PATCH (doc: Precos > Atualizar).
+    if (/409|ALREADY_EXISTS/.test(String(e?.message))) return magaluReq(path, { method: 'PATCH', body });
+    throw e;
+  }
 }
 
 // POST /seller/v1/portfolios/stocks/:sku — confirmado na doc oficial (Produtos > Estoques > Criar).
-// `branch` (CD) e opcional no schema — inclui se a conta tiver algum CD configurado.
+// `branch` (CD) e opcional no schema — inclui se a conta tiver algum CD configurado. Se o estoque
+// ja existe, atualiza via PATCH (mesmo corpo), igual ao preco.
 export async function magaluSetStock(sku: string, quantidade: number) {
   const { channelId } = await getMagaluSellerInfo();
   const warehouseId = await getMagaluWarehouseId();
-  return magaluReq(`/seller/v1/portfolios/stocks/${encodeURIComponent(sku)}`, {
-    method: 'POST',
-    body: {
-      channel: { id: channelId },
-      ...(warehouseId ? { branch: { id: warehouseId } } : {}),
-      quantity: Math.max(0, Math.round(quantidade)),
-      type: 'AVAILABLE',
-    },
-  });
+  const body = {
+    channel: { id: channelId },
+    ...(warehouseId ? { branch: { id: warehouseId } } : {}),
+    quantity: Math.max(0, Math.round(quantidade)),
+    type: 'AVAILABLE',
+  };
+  const path = `/seller/v1/portfolios/stocks/${encodeURIComponent(sku)}`;
+  try {
+    return await magaluReq(path, { method: 'POST', body });
+  } catch (e: any) {
+    if (/409|ALREADY_EXISTS/.test(String(e?.message))) return magaluReq(path, { method: 'PATCH', body });
+    throw e;
+  }
 }
 
 // PATCH /seller/v1/portfolios/skus/:sku — confirmado na doc oficial (Produtos > SKUs > Atualizar
@@ -323,4 +328,12 @@ export async function magaluUpdateSkuImages(sku: string, imageUrls: string[]) {
 // shopeeGetItemBaseInfo).
 export async function magaluGetSku(sku: string) {
   return magaluReq(`/seller/v1/portfolios/skus/${encodeURIComponent(sku)}`);
+}
+
+// GET /seller/v1/portfolios/skus/:sku/validation-info — confirmado na doc (SKUs > Consultar eventos de
+// politicas de SKU). Exige o header X-Tenant-Id (vem de /me). Devolve `errors[]`: o que falta/foi
+// reprovado pra o SKU sair de DRAFT e ser publicado.
+export async function magaluValidacaoSku(sku: string) {
+  const { tenantId } = await getMagaluSellerInfo();
+  return magaluReq(`/seller/v1/portfolios/skus/${encodeURIComponent(sku)}/validation-info`, { headers: { "X-Tenant-Id": tenantId } });
 }
