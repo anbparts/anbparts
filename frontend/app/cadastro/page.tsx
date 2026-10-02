@@ -464,7 +464,7 @@ export default function CadastroPage() {
     return { disponivel: false, jaTemAnuncio: false, itemId: null, categoriaAtual: null, categoriaEscolhidaId: null, categoriaPendente: false, selecionado: false, status: 'pendente', resultado: null, erroProcessamento: '' };
   }
   const [shopeeCategorias, setShopeeCategorias] = useState<ShopeeCategoriaOpcao[]>([]);
-  const [anuncioMarketplacesSelecionados, setAnuncioMarketplacesSelecionados] = useState<Set<AnuncioMarketplaceId>>(new Set(['shopee']));
+  const [anuncioMarketplacesSelecionados, setAnuncioMarketplacesSelecionados] = useState<Set<AnuncioMarketplaceId>>(new Set<AnuncioMarketplaceId>(['shopee']));
   const [anuncioCriarSkusInput, setAnuncioCriarSkusInput] = useState('');
   const [anuncioCriarBuscando, setAnuncioCriarBuscando] = useState(false);
   const [anuncioCriarLinhas, setAnuncioCriarLinhas] = useState<AnuncioCriarLinha[]>([]);
@@ -2080,7 +2080,7 @@ export default function CadastroPage() {
       setAnuncioCriarSkuAtual(sku);
       setAnuncioCriarMarketplaceAtual(mk);
       setAnuncioCriarProgresso({ atual: index, total: tarefas.length });
-      setAnuncioCriarLinhas((prev) => prev.map((item) => item.sku === sku ? { ...item, marketplaces: { ...item.marketplaces, [mk]: { ...item.marketplaces[mk], status: 'processando' } } } : item));
+      setAnuncioCriarLinhas((prev) => prev.map((item) => item.sku === sku ? { ...item, marketplaces: { ...item.marketplaces, [mk]: { ...item.marketplaces[mk], status: 'processando' as const } } } : item));
       try {
         const linhaAtual = anuncioCriarLinhas.find((l) => l.sku === sku);
         const categoriaId = linhaAtual?.marketplaces[mk].categoriaEscolhidaId;
@@ -2093,12 +2093,12 @@ export default function CadastroPage() {
         const data = await readApiResponse(resp, `Erro ao criar anuncio ${mk} do SKU ${sku}`);
         setAnuncioCriarLinhas((prev) => prev.map((item) => item.sku === sku ? {
           ...item,
-          marketplaces: { ...item.marketplaces, [mk]: { ...item.marketplaces[mk], status: 'ok', resultado: data, selecionado: false, jaTemAnuncio: true, itemId: data.shopeeItemId || data.magaluItemId || null } },
+          marketplaces: { ...item.marketplaces, [mk]: { ...item.marketplaces[mk], status: 'ok' as const, resultado: data, selecionado: false, jaTemAnuncio: true, itemId: data.shopeeItemId || data.magaluItemId || null } },
         } : item));
       } catch (e: any) {
         setAnuncioCriarLinhas((prev) => prev.map((item) => item.sku === sku ? {
           ...item,
-          marketplaces: { ...item.marketplaces, [mk]: { ...item.marketplaces[mk], status: 'erro', erroProcessamento: e?.message || String(e) } },
+          marketplaces: { ...item.marketplaces, [mk]: { ...item.marketplaces[mk], status: 'erro' as const, erroProcessamento: e?.message || String(e) } },
         } : item));
       }
     }
