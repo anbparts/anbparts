@@ -180,6 +180,7 @@ export type MagaluCreateSkuInput = {
   description: string;
   brand: string;
   categoryId: string;
+  condition?: 'NEW' | 'USED';
   weightKg: number;
   heightCm: number;
   lengthCm: number;
@@ -210,7 +211,7 @@ export async function magaluCreateSku(input: MagaluCreateSkuInput) {
       brand: input.brand.slice(0, 100),
       category: { id: input.categoryId },
       channels: [{ id: channelId }],
-      condition: 'USED',
+      condition: input.condition || 'USED',
       datasheet: input.datasheet || [],
       ...(input.ncm ? { ncm: input.ncm } : {}),
       ...(input.origin ? { origin: input.origin } : {}),

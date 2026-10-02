@@ -419,6 +419,9 @@ magaluRouter.post('/anuncio/criar', async (req, res, next) => {
     // preco/estoque, e o ANB nao gravou o ID), nao recria — segue pra preco/estoque.
     const jaExisteNoMagalu = await magaluGetSku(sku).then(() => true).catch(() => false);
     const conteudo = await montarConteudoMagalu(peca, sku, categoriaId, peso);
+    // Condicao vem do pre-cadastro (CadastroPeca.condicao: usado | novo). Padrao: usado.
+    const cadastro = await prisma.cadastroPeca.findUnique({ where: { idPeca: sku }, select: { condicao: true } });
+    const condition: 'NEW' | 'USED' = String(cadastro?.condicao || '').toLowerCase() === 'novo' ? 'NEW' : 'USED';
     const criado = jaExisteNoMagalu
       ? { sku, traceId: null as string | null }
       : await magaluCreateSku({
@@ -430,6 +433,7 @@ magaluRouter.post('/anuncio/criar', async (req, res, next) => {
         origin: conteudo.origin,
         brand: peca.moto?.marca || 'Generico',
         categoryId: categoriaId,
+        condition,
         weightKg: peso,
         heightCm: Number(peca.altura),
         lengthCm: Number(peca.profundidade),
