@@ -371,6 +371,19 @@ async function montarConteudoMagalu(peca: any, sku: string, categoriaId: string,
     'conteudo da embalagem': `1 ${String(peca.descricao || '').slice(0, 100)}`,
   });
 
+  // Informacoes regulatorias: o Magalu guarda no proprio `datasheet` do SKU (nomes lidos de um SKU
+  // gravado pelo portal), mas o endpoint de datasheet da categoria NAO lista esses campos. Como o
+  // PATCH/POST substitui o datasheet inteiro, mandamos sempre — senao cada reenvio apaga o
+  // "Nao se aplica" e o SKU volta a ficar pendente (nossas pecas nao sao de telecom/saude/agro).
+  const REGULATORIOS = [
+    'Certificado de homologação da ANATEL',
+    'Registro do produto ANVISA',
+    'Registro do produto Ministério da Agricultura (MAPA)',
+  ];
+  for (const name of REGULATORIOS) {
+    if (!datasheet.some((d: any) => d.name === name)) datasheet.push({ name, value: 'Não se aplica' });
+  }
+
   // O campo de descricao do Magalu aceita HTML (o editor do portal tem negrito/listas): texto puro
   // com \n perde as quebras (confirmado lendo o SKU de volta), entao converte pra <br>.
   const descricaoHtml = description.replace(/\r?\n/g, '<br>');
