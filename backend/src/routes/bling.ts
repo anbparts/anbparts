@@ -396,6 +396,24 @@ blingRouter.post('/shopee/informar-anuncio', async (req, res, next) => {
   }
 });
 
+// POST /bling/magalu/informar-anuncio — reenvia so o aviso ao Bling (ex: quando o Bling estava
+// desconectado na hora da criacao). Body: { sku, magaluItemId? } — sem magaluItemId usa o ja gravado.
+blingRouter.post('/magalu/informar-anuncio', async (req, res) => {
+  try {
+    const sku = getBaseSku(String(req.body?.sku || ''));
+    if (!sku) return res.status(400).json({ error: 'sku obrigatorio' });
+    let magaluItemId = String(req.body?.magaluItemId || '').trim();
+    if (!magaluItemId) {
+      const peca = await prisma.peca.findFirst({ where: { OR: [{ idPeca: sku }, { idPeca: { startsWith: `${sku}-` } }] }, orderBy: { idPeca: 'asc' } });
+      magaluItemId = String((peca as any)?.magaluItemId || '').trim();
+    }
+    if (!magaluItemId) return res.status(400).json({ error: 'SKU sem anuncio Magalu gravado — informe magaluItemId.' });
+    res.json(await informarAnuncioMagaluNoBling(sku, magaluItemId));
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message || 'Erro ao informar anuncio Magalu ao Bling' });
+  }
+});
+
 // Mesma logica da informarAnuncioShopeeNoBling, so trocando a loja configurada (cfg.magaluLojaId em
 // vez de cfg.shopeeLojaId) e o campo gravado na peca (magaluItemId em vez de shopeeItemId). Chamada
 // automaticamente pelo fluxo de criacao de anuncio direto na API do Magalu (POST /magalu/anuncio/criar).
