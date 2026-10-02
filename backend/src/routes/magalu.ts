@@ -92,8 +92,13 @@ magaluRouter.get('/categorias/sincronizar', async (req, res) => {
 magaluRouter.get('/categorias', async (req, res, next) => {
   try {
     const somenteFolhas = String(req.query.folhas ?? '1') !== '0';
+    const tipo = String(req.query.tipo || '');
+    const q = String(req.query.q || '').trim();
     const categorias = await prisma.magaluCategoria.findMany({
-      where: somenteFolhas ? { folha: true } : {},
+      where: {
+        ...(tipo === 'pais' ? { folha: false } : (somenteFolhas ? { folha: true } : {})),
+        ...(q ? { path: { contains: q, mode: 'insensitive' as const } } : {}),
+      },
       orderBy: { path: 'asc' },
     });
     res.json({ ok: true, categorias: categorias.map((c: any) => ({ id: c.id, nome: c.nome, path: c.path, folha: c.folha })) });
