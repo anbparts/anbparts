@@ -286,7 +286,7 @@ export async function magaluSetPrice(sku: string, precoReais: number) {
     // POST so cria: se o preco ja existe (409 PRICE_ALREADY_EXISTS) atualiza via PATCH (doc: Precos > Atualizar).
     if (/409|ALREADY_EXISTS/.test(String(e?.message))) {
       // PATCH com o mesmo valor ja salvo tambem devolve 409 — nesse caso ja esta atualizado.
-      return magaluReq(path, { method: 'PATCH', body }).catch((e2: any) => { if (/409/.test(String(e2?.message))) return { ok: true, semAlteracao: true }; throw e2; });
+      return magaluReq(path, { method: 'PATCH', body }).catch((e2: any) => { if (/409/.test(String(e2?.message))) return { ok: true, semAlteracao: true }; throw e2; });
     }
     throw e;
   }
@@ -310,7 +310,7 @@ export async function magaluSetStock(sku: string, quantidade: number) {
   } catch (e: any) {
     if (/409|ALREADY_EXISTS/.test(String(e?.message))) {
       // PATCH com o mesmo valor ja salvo tambem devolve 409 — nesse caso ja esta atualizado.
-      return magaluReq(path, { method: 'PATCH', body }).catch((e2: any) => { if (/409/.test(String(e2?.message))) return { ok: true, semAlteracao: true }; throw e2; });
+      return magaluReq(path, { method: 'PATCH', body }).catch((e2: any) => { if (/409/.test(String(e2?.message))) return { ok: true, semAlteracao: true }; throw e2; });
     }
     throw e;
   }
