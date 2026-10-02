@@ -133,7 +133,11 @@ export async function magaluReq(path: string, init?: { method?: string; body?: a
 
   const payload: any = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(payload?.error_description || payload?.message || payload?.error || `Magalu ${response.status}`);
+    // Erros de validacao (422) trazem o motivo no corpo (ex: detail/errors por campo) — sem isso so
+    // aparecia "Magalu 422". Inclui o corpo (truncado) pra apontar exatamente qual campo reprovou.
+    const texto = payload?.error_description || payload?.message || payload?.error;
+    const corpo = Object.keys(payload || {}).length ? JSON.stringify(payload).slice(0, 900) : '';
+    throw new Error(`Magalu ${response.status}${texto ? `: ${texto}` : ''}${corpo ? ` | ${corpo}` : ''}`);
   }
   return payload;
 }
