@@ -407,6 +407,20 @@ model ShopeeConfig {
   updatedAt    DateTime @updatedAt
 }
 
+// Espelho da arvore de categorias do Magalu (GET /seller/v1/portfolios/categories/hierarchy),
+// sincronizada via GET /magalu/categorias/sincronizar. "folha" = categoria sem filhos — a doc
+// manda cadastrar produto SEMPRE na categoria mais especifica (so ela tem atributos/ficha tecnica).
+model MagaluCategoria {
+  id           String   @id // UUID da categoria no Magalu
+  nome         String
+  parentId     String?
+  path         String   // ex: "Veículos e Peças/Peças e Acessórios para Motocicletas/Alça para Motocicleta"
+  folha        Boolean  @default(false)
+  atualizadoEm DateTime @updatedAt
+
+  @@index([path])
+}
+
 // Config da integracao direta com a API do Magalu (Open API / Plataforma do Grupo Magalu). Ao
 // contrario da Shopee, o client_id/client_secret NAO sao globais por variavel de ambiente — sao
 // gerados pelo proprio Bruno via CLI "IDM" (ID Magalu) e precisam ficar configuraveis aqui.

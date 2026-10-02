@@ -49,6 +49,57 @@ magaluRouter.get('/debug-raw', async (req, res, next) => {
   } catch (e: any) { res.status(400).json({ error: e?.message }); }
 });
 
+// GET /magalu/categorias/sincronizar?root=<uuid> — puxa a sub-arvore inteira de uma categoria raiz
+// (default: "Veiculos e Pecas") via /categories/hierarchy?category_id=..., paginando de 100 em 100,
+// e regrava a tabela espelho MagaluCategoria. Marca "folha" (sem filhos). So essa raiz e' gravada
+// por vez; chamar de novo com outro root= acrescenta/atualiza (nao apaga as outras raizes).
+const MAGALU_RAIZ_VEICULOS_E_PECAS = 'e038eb01-ec02-4ab5-a057-bf94644ec958';
+magaluRouter.get('/categorias/sincronizar', async (req, res) => {
+  try {
+    const root = String(req.query.root || MAGALU_RAIZ_VEICULOS_E_PECAS).trim();
+    const todas: any[] = [];
+    for (let offset = 0, pagina = 0; pagina < 100; pagina += 1, offset += 100) {
+      const data = await magaluReq(`/seller/v1/portfolios/categories/hierarchy?category_id=${encodeURIComponent(root)}&_limit=100&_offset=${offset}`);
+      const results: any[] = Array.isArray(data?.results) ? data.results : [];
+      todas.push(...results);
+      if (results.length < 100) break;
+    }
+    if (!todas.length) return res.status(404).json({ error: 'Nenhuma categoria retornada pra essa raiz.' });
+
+    const paisComFilhos = new Set(todas.map((c) => c.parent_id).filter(Boolean));
+    const unicas = new Map<string, any>();
+    for (const c of todas) unicas.set(String(c.id), c);
+    const dados = Array.from(unicas.values()).map((c) => ({
+      id: String(c.id),
+      nome: String(c.name || ''),
+      parentId: c.parent_id ? String(c.parent_id) : null,
+      path: String(c.path || c.name || ''),
+      folha: !paisComFilhos.has(c.id),
+    }));
+
+    await prisma.$transaction([
+      prisma.magaluCategoria.deleteMany({ where: { id: { in: dados.map((d) => d.id) } } }),
+      prisma.magaluCategoria.createMany({ data: dados }),
+    ]);
+
+    res.json({ ok: true, root, total: dados.length, folhas: dados.filter((d) => d.folha).length });
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message || 'Erro ao sincronizar categorias Magalu' });
+  }
+});
+
+// GET /magalu/categorias?folhas=1 — lista o espelho (so folhas por padrao), pro seletor da aba Anuncio.
+magaluRouter.get('/categorias', async (req, res, next) => {
+  try {
+    const somenteFolhas = String(req.query.folhas ?? '1') !== '0';
+    const categorias = await prisma.magaluCategoria.findMany({
+      where: somenteFolhas ? { folha: true } : {},
+      orderBy: { path: 'asc' },
+    });
+    res.json({ ok: true, categorias: categorias.map((c: any) => ({ id: c.id, nome: c.nome, path: c.path, folha: c.folha })) });
+  } catch (e) { next(e); }
+});
+
 function getFrontendBase() {
   return (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
 }
