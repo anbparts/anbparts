@@ -12,9 +12,11 @@ import {
   magaluAguardarSku,
   magaluTracesPorCodigo,
   magaluValidacaoSku,
+  magaluMontarDatasheet,
+  magaluAtualizarConteudoSku,
 } from '../lib/magalu-api';
 import { baixarFotoDrivePorId, buscarFotosDriveSku } from '../lib/fotos-cadastro';
-import { informarAnuncioMagaluNoBling } from './bling';
+import { informarAnuncioMagaluNoBling, findBlingProductsByCodes, fetchBlingProductDetailById } from './bling';
 import { prisma } from '../lib/prisma';
 
 export const magaluRouter = Router();
@@ -297,6 +299,81 @@ magaluRouter.post('/anuncio/buscar', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// Converte o HTML da descricao do Bling em texto puro mantendo quebras de linha (mesma ideia do
+// htmlParaTextoComQuebras da Shopee).
+function htmlParaTextoSimples(html: string) {
+  return String(html || '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|li|h[1-6])>/gi, '\n')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n[ \t]+/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+// Origem do Bling (codigo da NF-e, tributacao.origem) -> origin do Magalu (national|imported).
+// 0,3,4,5,8 = nacional (inclui conteudo importado); 1,2,6,7 = estrangeira.
+function origemBlingParaMagalu(origem: any): 'national' | 'imported' | null {
+  const n = Number(origem);
+  if (!Number.isFinite(n)) return null;
+  return [0, 3, 4, 5, 8].includes(n) ? 'national' : [1, 2, 6, 7].includes(n) ? 'imported' : null;
+}
+
+// Monta o conteudo que o Magalu exige pra liberar a publicacao: descricao (50 a 7000 chars), ficha
+// tecnica da categoria, NCM e origem. Descricao/NCM/origem vem do Bling (se estiver conectado);
+// sem Bling, usa texto proprio montado a partir dos dados da peca.
+async function montarConteudoMagalu(peca: any, sku: string, categoriaId: string, peso: number) {
+  let descricaoBling = '';
+  let ncm: string | null = null;
+  let origin: 'national' | 'imported' | null = null;
+  try {
+    const produtos = await findBlingProductsByCodes([sku], { forceRefresh: true });
+    const produtoBling = produtos.get(sku);
+    if (produtoBling?.id) {
+      const detail: any = await fetchBlingProductDetailById(Number(produtoBling.id), { forceRefresh: true });
+      descricaoBling = htmlParaTextoSimples(detail?.descricaoCurta || produtoBling?.descricaoCurta || '');
+      const ncmBruto = String(detail?.tributacao?.ncm || '').replace(/\D/g, '');
+      if (/^\d{8}$/.test(ncmBruto)) ncm = ncmBruto;
+      origin = origemBlingParaMagalu(detail?.tributacao?.origem);
+    }
+  } catch {
+    // Bling fora do ar/desconectado nao pode travar a criacao: segue sem NCM/origem do Bling.
+  }
+
+  const moto = peca.moto || {};
+  const motoTexto = [moto.marca, moto.modelo, moto.ano].filter(Boolean).join(' ');
+  let description = descricaoBling || String(peca.descricao || '');
+  if (description.length < 200) {
+    const extra = [
+      motoTexto ? `Moto/Modelo: ${motoTexto}` : '',
+      peca.numeroPeca ? `Código da peça (PN): ${peca.numeroPeca}` : '',
+      'Peça original usada, em bom estado de conservação. Consulte as fotos antes de comprar.',
+    ].filter(Boolean).join('\n');
+    description = `${description}\n\n${extra}`.trim();
+  }
+
+  const largura = Number(peca.largura);
+  const altura = Number(peca.altura);
+  const profundidade = Number(peca.profundidade);
+  const pesoTxt = `${String(peso).replace('.', ',')}kg`;
+  const datasheet = await magaluMontarDatasheet(categoriaId, {
+    'marca': moto.marca || null,
+    'modelo': peca.numeroPeca || moto.modelo || null,
+    'peso do produto': pesoTxt,
+    'peso do produto com embalagem': pesoTxt,
+    'largura do produto': `${largura}cm`,
+    'altura do produto': `${altura}cm`,
+    'profundidade do produto': `${profundidade}cm`,
+    'dimensoes do produto com embalagem': `${largura}x${altura}x${profundidade}cm`,
+    'conteudo da embalagem': `1 ${String(peca.descricao || '').slice(0, 100)}`,
+  });
+
+  return { description: description.slice(0, 7000), datasheet, ncm, origin };
+}
+
 // POST /magalu/anuncio/criar — body: { sku, categoriaId }. Cria o SKU no Magalu (sobe 1 foto do
 // Drive via proxy publico, cria SKU + preco + estoque, separado porque la sao 3 chamadas distintas
 // — nao e' tudo no mesmo POST como na Shopee), salva o item_id na Peca e avisa o Bling. Mesmo padrao
@@ -312,7 +389,7 @@ magaluRouter.post('/anuncio/criar', async (req, res, next) => {
 
     const peca = await prisma.peca.findFirst({
       where: { OR: [{ idPeca: sku }, { idPeca: { startsWith: `${sku}-` } }] },
-      include: { moto: { select: { marca: true, modelo: true } } },
+      include: { moto: { select: { marca: true, modelo: true, ano: true } } },
       orderBy: { idPeca: 'asc' },
     });
     if (!peca) return res.status(404).json({ error: 'SKU nao encontrado no ANB' });
@@ -338,12 +415,16 @@ magaluRouter.post('/anuncio/criar', async (req, res, next) => {
     // Retomavel: se o SKU ja existe no Magalu (ex: tentativa anterior criou o SKU mas falhou em
     // preco/estoque, e o ANB nao gravou o ID), nao recria — segue pra preco/estoque.
     const jaExisteNoMagalu = await magaluGetSku(sku).then(() => true).catch(() => false);
+    const conteudo = await montarConteudoMagalu(peca, sku, categoriaId, peso);
     const criado = jaExisteNoMagalu
       ? { sku, traceId: null as string | null }
       : await magaluCreateSku({
         sku,
         title: peca.descricao.slice(0, 150),
-        description: peca.descricao,
+        description: conteudo.description,
+        datasheet: conteudo.datasheet,
+        ncm: conteudo.ncm,
+        origin: conteudo.origin,
         brand: peca.moto?.marca || 'Generico',
         categoryId: categoriaId,
         weightKg: peso,
@@ -390,6 +471,37 @@ magaluRouter.post('/anuncio/criar', async (req, res, next) => {
     });
   } catch (e: any) {
     res.status(400).json({ error: e?.message || 'Erro ao criar SKU no Magalu' });
+  }
+});
+
+// POST /magalu/anuncio/atualizar — body: { sku, categoriaId? }. Reenvia (PATCH parcial) o conteudo
+// exigido pela moderacao do Magalu (descricao, ficha tecnica, NCM, origem) pra um SKU JA existente,
+// sem recriar. Usado pra corrigir anuncios bloqueados/em rascunho.
+magaluRouter.post('/anuncio/atualizar', async (req, res) => {
+  try {
+    const sku = getBaseSku(req.body?.sku);
+    if (!sku) return res.status(400).json({ error: 'sku obrigatorio' });
+    const peca = await prisma.peca.findFirst({
+      where: { OR: [{ idPeca: sku }, { idPeca: { startsWith: `${sku}-` } }] },
+      include: { moto: { select: { marca: true, modelo: true, ano: true } } },
+      orderBy: { idPeca: 'asc' },
+    });
+    if (!peca) return res.status(404).json({ error: 'SKU nao encontrado no ANB' });
+    const categoriaId = String(req.body?.categoriaId || (peca as any).magaluCategoriaId || '').trim();
+    if (!categoriaId) return res.status(400).json({ error: 'SKU sem categoria Magalu.' });
+    const peso = peca.pesoLiquido != null ? Number(peca.pesoLiquido) : (peca.pesoBruto != null ? Number(peca.pesoBruto) : 0);
+
+    const conteudo = await montarConteudoMagalu(peca, sku, categoriaId, peso);
+    const parcial: Record<string, any> = {
+      description: conteudo.description,
+      datasheet: conteudo.datasheet,
+      ...(conteudo.ncm ? { ncm: conteudo.ncm } : {}),
+      ...(conteudo.origin ? { origin: conteudo.origin } : {}),
+    };
+    const resposta = await magaluAtualizarConteudoSku(sku, parcial);
+    res.json({ ok: true, sku, enviado: { descricaoChars: conteudo.description.length, datasheet: conteudo.datasheet, ncm: conteudo.ncm, origin: conteudo.origin }, resposta });
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message || 'Erro ao atualizar SKU no Magalu' });
   }
 });
 

@@ -186,6 +186,9 @@ export type MagaluCreateSkuInput = {
   widthCm: number;
   imageUrls: string[];
   ean?: string | null;
+  datasheet?: Array<{ name: string; value: string }>;
+  ncm?: string | null;
+  origin?: 'national' | 'imported' | null;
 };
 
 // POST /seller/v1/portfolios/skus — confirmado na doc oficial (Produtos > SKUs > Criar). So os
@@ -208,7 +211,9 @@ export async function magaluCreateSku(input: MagaluCreateSkuInput) {
       category: { id: input.categoryId },
       channels: [{ id: channelId }],
       condition: 'USED',
-      datasheet: [],
+      datasheet: input.datasheet || [],
+      ...(input.ncm ? { ncm: input.ncm } : {}),
+      ...(input.origin ? { origin: input.origin } : {}),
       description: input.description.slice(0, 7000),
       // A API exige no minimo 2 entradas (422 "List should have at least 2 items"): "package"
       // (embalagem) e "product" (produto), como no exemplo da doc. So temos 1 conjunto de medidas
@@ -344,4 +349,37 @@ export async function magaluGetSku(sku: string) {
 export async function magaluValidacaoSku(sku: string) {
   const { tenantId } = await getMagaluSellerInfo();
   return magaluReq(`/seller/v1/portfolios/skus/${encodeURIComponent(sku)}/validation-info`, { headers: { "X-Tenant-Id": tenantId } });
+}
+
+// GET /seller/v1/portfolios/categories/:id/datasheet — confirmado na doc (Categorias > Consultar
+// atributos de ficha tecnica). Lista os atributos da categoria (nome, obrigatoriedade). Cacheado.
+const datasheetCache = new Map<string, { ts: number; atributos: Array<{ name: string; required: string }> }>();
+export async function magaluDatasheetDaCategoria(categoryId: string) {
+  const c = datasheetCache.get(categoryId);
+  if (c && Date.now() - c.ts < 10 * 60_000) return c.atributos;
+  const data = await magaluReq(`/seller/v1/portfolios/categories/${encodeURIComponent(categoryId)}/datasheet?_limit=100`);
+  const atributos = (Array.isArray(data?.results) ? data.results : []).map((a: any) => ({ name: String(a.name || ''), required: String(a.required || '') }));
+  datasheetCache.set(categoryId, { ts: Date.now(), atributos });
+  return atributos;
+}
+
+function normalizarNomeAtributo(s: string) {
+  return String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+}
+
+// Monta o datasheet do SKU: so inclui atributos que EXISTEM na categoria e pra os quais temos valor
+// (valores indexados pelo nome do atributo sem acento/caixa). Atributo desconhecido nao e inventado.
+export async function magaluMontarDatasheet(categoryId: string, valores: Record<string, string | null | undefined>) {
+  const atributos = await magaluDatasheetDaCategoria(categoryId).catch(() => []);
+  const out: Array<{ name: string; value: string }> = [];
+  for (const a of atributos) {
+    const v = valores[normalizarNomeAtributo(a.name)];
+    if (v != null && String(v).trim() !== "") out.push({ name: a.name, value: String(v).trim() });
+  }
+  return out;
+}
+
+// PATCH parcial do conteudo de um SKU ja existente (descricao, ficha tecnica, NCM, origem...).
+export async function magaluAtualizarConteudoSku(sku: string, parcial: Record<string, any>) {
+  return magaluReq(`/seller/v1/portfolios/skus/${encodeURIComponent(sku)}`, { method: "PATCH", body: parcial });
 }
