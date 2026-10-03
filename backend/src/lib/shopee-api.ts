@@ -91,6 +91,25 @@ function buildShopUrl(environment: string, path: string, accessToken: string, sh
   return `${host}${pathname}?${query ? `${query}&` : ''}${authQuery}`;
 }
 
+// Diagnostico da conexao: chamada "Public API" assinada com partner_id/key do servidor
+// (v2.public.get_shops_by_partner) contra o host do ambiente. Mostra qual partner_id/host estao em
+// uso e se a Shopee aceita a assinatura — sem devolver a chave (so tamanho e prefixo).
+export async function shopeeDiagnostico(environment: string) {
+  const partnerId = getPartnerId();
+  const partnerKey = getPartnerKey();
+  const url = buildPublicUrl(environment, '/api/v2/public/get_shops_by_partner?page_size=10&page_no=1');
+  const response = await fetch(url);
+  const payload: any = await response.json().catch(() => ({}));
+  return {
+    ambiente: environment,
+    host: getApiHost(environment),
+    partnerId,
+    chave: { tamanho: partnerKey.length, prefixo: partnerKey.slice(0, 4) },
+    http: response.status,
+    resposta: payload,
+  };
+}
+
 // POST /api/v2/auth/token/get — troca o `code` (+ shop_id) recebido no callback pelo primeiro par
 // access_token/refresh_token. Chamado uma vez, na autorizacao inicial.
 export async function shopeeExchangeCodeForToken(code: string, shopId: string, environment: string) {

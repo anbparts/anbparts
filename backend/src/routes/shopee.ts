@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getShopeeConfig, saveShopeeConfig, shopeeExchangeCodeForToken, shopeeReq, shopeeAddItem, shopeeGetLogisticChannel } from '../lib/shopee-api';
+import { getShopeeConfig, saveShopeeConfig, shopeeExchangeCodeForToken, shopeeDiagnostico, shopeeReq, shopeeAddItem, shopeeGetLogisticChannel } from '../lib/shopee-api';
 import { prepararImagensShopeeParaNovoItem } from '../lib/fotos-cadastro';
 import { informarAnuncioShopeeNoBling, findBlingProductsByCodes, fetchBlingProductDetailById } from './bling';
 import { prisma } from '../lib/prisma';
@@ -35,6 +35,15 @@ shopeeRouter.get('/debug-raw', async (req, res, next) => {
     if (!path) return res.status(400).json({ error: 'path obrigatorio' });
     const data = await shopeeReq(path);
     res.json(data);
+  } catch (e: any) { res.status(400).json({ error: e?.message }); }
+});
+
+// GET /shopee/diagnostico?ambiente=live|sandbox — testa partner_id/key/host do servidor (nao devolve a chave).
+shopeeRouter.get('/diagnostico', async (req, res) => {
+  try {
+    const config = await getShopeeConfig();
+    const ambiente = req.query.ambiente === 'sandbox' ? 'sandbox' : req.query.ambiente === 'live' ? 'live' : config.environment;
+    res.json(await shopeeDiagnostico(ambiente));
   } catch (e: any) { res.status(400).json({ error: e?.message }); }
 });
 
