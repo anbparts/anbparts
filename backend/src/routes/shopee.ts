@@ -98,28 +98,47 @@ shopeeRouter.post('/desconectar', async (_req, res, next) => {
 // GET /shopee/callback — a Shopee redireciona pra ca depois que o vendedor autoriza (Console >
 // App List > Authorize, com Redirect URL = https://sistema.anbparts.com.br/api/shopee/callback).
 // Recebe ?code=...&shop_id=..., troca pelo primeiro par access_token/refresh_token e salva.
+// O `code` vale uma unica troca: se o navegador/proxy chamar o callback 2x com o mesmo code, a 2a
+// chamada receberia "code expired or used" e mascararia o sucesso da 1a. Por isso a troca por code e'
+// compartilhada (mesma Promise) e o resultado fica guardado alguns minutos.
+const shopeeCallbackPorCode = new Map<string, { promise: Promise<void>; chamadas: number }>();
+
 shopeeRouter.get('/callback', async (req, res, next) => {
   try {
     const code = String(req.query.code || '');
     const shopId = String(req.query.shop_id || '');
-    if (!code || !shopId) {
+    const mainAccountId = String(req.query.main_account_id || '');
+    console.log(`[shopee/callback] query keys=${Object.keys(req.query).join(',')} code_len=${code.length} shop_id=${shopId || '-'} main_account_id=${mainAccountId || '-'}`);
+    if (!code || (!shopId && !mainAccountId)) {
       return res.redirect(`${getFrontendBase()}/config-shopee?erro=${encodeURIComponent('code ou shop_id ausente no retorno da Shopee')}`);
     }
 
-    const config = await getShopeeConfig();
-    const payload = await shopeeExchangeCodeForToken(code, shopId, config.environment);
+    let entrada = shopeeCallbackPorCode.get(code);
+    if (entrada) {
+      entrada.chamadas += 1;
+      console.log(`[shopee/callback] mesmo code recebido de novo (chamada ${entrada.chamadas}) — reaproveitando o resultado da 1a`);
+    } else {
+      const promise = (async () => {
+        const config = await getShopeeConfig();
+        const payload = await shopeeExchangeCodeForToken(code, shopId, config.environment, mainAccountId);
+        const expiresAt = new Date(Date.now() + Number(payload.expire_in || 0) * 1000);
+        await saveShopeeConfig({
+          shopId: shopId || String(payload.shop_id_list?.[0] || ''),
+          accessToken: payload.access_token,
+          refreshToken: payload.refresh_token,
+          expiresAt,
+          connectedAt: new Date(),
+        });
+      })();
+      entrada = { promise, chamadas: 1 };
+      shopeeCallbackPorCode.set(code, entrada);
+      setTimeout(() => shopeeCallbackPorCode.delete(code), 10 * 60 * 1000);
+    }
 
-    const expiresAt = new Date(Date.now() + Number(payload.expire_in || 0) * 1000);
-    await saveShopeeConfig({
-      shopId,
-      accessToken: payload.access_token,
-      refreshToken: payload.refresh_token,
-      expiresAt,
-      connectedAt: new Date(),
-    });
-
+    await entrada.promise;
     res.redirect(`${getFrontendBase()}/config-shopee?conectado=1`);
   } catch (e: any) {
+    console.error(`[shopee/callback] erro: ${e?.message}`);
     res.redirect(`${getFrontendBase()}/config-shopee?erro=${encodeURIComponent(e?.message || 'Erro ao conectar Shopee')}`);
   }
 });

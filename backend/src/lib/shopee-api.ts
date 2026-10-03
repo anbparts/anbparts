@@ -112,17 +112,22 @@ export async function shopeeDiagnostico(environment: string) {
 
 // POST /api/v2/auth/token/get — troca o `code` (+ shop_id) recebido no callback pelo primeiro par
 // access_token/refresh_token. Chamado uma vez, na autorizacao inicial.
-export async function shopeeExchangeCodeForToken(code: string, shopId: string, environment: string) {
+export async function shopeeExchangeCodeForToken(code: string, shopId: string, environment: string, mainAccountId?: string) {
   const partnerId = getPartnerId();
   const url = buildPublicUrl(environment, '/api/v2/auth/token/get');
+  // Doc: envia shop_id (autorizacao de loja) OU main_account_id (autorizacao de conta principal).
+  const body: Record<string, any> = { code, partner_id: partnerId };
+  if (shopId) body.shop_id = Number(shopId);
+  else if (mainAccountId) body.main_account_id = Number(mainAccountId);
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ code, shop_id: Number(shopId), partner_id: partnerId }),
+    body: JSON.stringify(body),
   });
   const payload: any = await response.json().catch(() => ({}));
   if (!response.ok || payload?.error) {
-    throw new Error(payload?.message || payload?.error || `Shopee ${response.status}`);
+    const detalhe = `[${environment} · partner ${partnerId} · ${Object.keys(body).filter((k) => k !== 'code').join('+')}${payload?.request_id ? ` · req ${payload.request_id}` : ''}]`;
+    throw new Error(`${payload?.message || payload?.error || `Shopee ${response.status}`} ${detalhe}`);
   }
   return payload;
 }
