@@ -345,12 +345,19 @@ armazenagemRouter.get('/caixas', async (_req, res, next) => {
 
     const alocacaoByLoc = new Map(alocacoes.map((a) => [a.localizacao, a]));
 
-    const caixas = Array.from(todasLocalizacoes)
+    // Alocacoes cuja caixa nao tem mais peca disponivel/pre-cadastro: continuam contando na arvore
+    // (/estrutura conta todas as alocacoes), entao tambem entram aqui, marcadas `semPecas`, pra
+    // lista do painel bater com o contador e dar pra remover a alocacao manualmente.
+    const todasComAlocacao = new Set<string>(todasLocalizacoes);
+    for (const a of alocacoes) todasComAlocacao.add(a.localizacao);
+
+    const caixas = Array.from(todasComAlocacao)
       .sort()
       .map((loc) => {
         const aloc = alocacaoByLoc.get(loc);
         return {
           localizacao: loc,
+          semPecas: !todasLocalizacoes.has(loc),
           alocada: !!aloc,
           detailId: aloc?.detailId ?? null,
           detailNome: aloc?.detail.nome ?? null,
