@@ -465,7 +465,7 @@ export default function CadastroPage() {
   }
   const [shopeeCategorias, setShopeeCategorias] = useState<ShopeeCategoriaOpcao[]>([]);
   const [magaluCategorias, setMagaluCategorias] = useState<ShopeeCategoriaOpcao[]>([]);
-  const [anuncioMarketplacesSelecionados, setAnuncioMarketplacesSelecionados] = useState<Set<AnuncioMarketplaceId>>(new Set<AnuncioMarketplaceId>(['shopee']));
+  const [anuncioMarketplacesSelecionados, setAnuncioMarketplacesSelecionados] = useState<Set<AnuncioMarketplaceId>>(new Set<AnuncioMarketplaceId>(['shopee', 'magalu']));
   const [anuncioCriarSkusInput, setAnuncioCriarSkusInput] = useState('');
   const [anuncioCriarBuscando, setAnuncioCriarBuscando] = useState(false);
   const [anuncioCriarLinhas, setAnuncioCriarLinhas] = useState<AnuncioCriarLinha[]>([]);
@@ -1973,12 +1973,66 @@ export default function CadastroPage() {
     }
   }
 
-  function toggleAnuncioMarketplace(mk: AnuncioMarketplaceId) {
+  // Converte a linha devolvida por /<marketplace>/anuncio/buscar no estado da linha pra esse marketplace.
+  function montarMarketplaceDaLinha(linha: any): AnuncioLinhaMarketplace {
+    return {
+      disponivel: true,
+      jaTemAnuncio: !!linha.jaTemAnuncio,
+      itemId: linha.shopeeItemId ?? linha.magaluItemId ?? null,
+      categoriaAtual: linha.categoriaAtual || null,
+      categoriaEscolhidaId: linha.categoriaAtual?.id ?? null,
+      categoriaPendente: !!linha.categoriaPendente,
+      selecionado: !!linha.encontrado && !linha.jaTemAnuncio,
+      status: 'pendente',
+      resultado: null,
+      erroProcessamento: '',
+    };
+  }
+
+  // Marcar/desmarcar um marketplace no topo vale pra TODA a listagem ja carregada: desmarcar tira a
+  // selecao desse marketplace de todas as linhas; marcar seleciona todas as elegiveis (SKU encontrado,
+  // sem anuncio nesse marketplace ainda). Se a lista foi buscada sem esse marketplace, busca agora.
+  async function toggleAnuncioMarketplace(mk: AnuncioMarketplaceId) {
+    const ligando = !anuncioMarketplacesSelecionados.has(mk);
     setAnuncioMarketplacesSelecionados((prev) => {
       const next = new Set(prev);
-      if (next.has(mk)) next.delete(mk); else next.add(mk);
+      if (ligando) next.add(mk); else next.delete(mk);
       return next;
     });
+    if (!anuncioCriarLinhas.length) return;
+
+    if (!ligando) {
+      setAnuncioCriarLinhas((prev) => prev.map((linha) => ({
+        ...linha,
+        marketplaces: { ...linha.marketplaces, [mk]: { ...linha.marketplaces[mk], selecionado: false } },
+      })));
+      return;
+    }
+
+    const novos = new Map<string, any>();
+    const faltando = anuncioCriarLinhas.filter((linha) => linha.encontrado && !linha.marketplaces[mk].disponivel).map((linha) => linha.sku);
+    if (faltando.length) {
+      if (mk === 'shopee') carregarShopeeCategorias();
+      if (mk === 'magalu') carregarMagaluCategorias();
+      try {
+        const resp = await fetch(`${API}/${mk}/anuncio/buscar`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ skus: faltando }),
+        });
+        const data = await readApiResponse(resp, `Erro ao buscar SKUs no ${mk}`);
+        for (const l of (Array.isArray(data.linhas) ? data.linhas : [])) novos.set(l.sku, l);
+      } catch (e: any) {
+        alert(e?.message || `Erro ao buscar SKUs no ${mk}.`);
+      }
+    }
+    setAnuncioCriarLinhas((prev) => prev.map((linha) => {
+      const novo = novos.get(linha.sku);
+      const base = !linha.marketplaces[mk].disponivel && novo ? montarMarketplaceDaLinha(novo) : linha.marketplaces[mk];
+      const elegivel = base.disponivel && linha.encontrado && !base.jaTemAnuncio && base.status !== 'ok' && base.status !== 'processando';
+      return { ...linha, marketplaces: { ...linha.marketplaces, [mk]: { ...base, selecionado: elegivel } } };
+    }));
   }
 
   async function carregarMagaluCategorias() {
@@ -2035,19 +2089,7 @@ export default function CadastroPage() {
             };
             porSku.set(linha.sku, acumulado);
           }
-          const itemId = linha.shopeeItemId ?? linha.magaluItemId ?? null;
-          acumulado.marketplaces[mk as AnuncioMarketplaceId] = {
-            disponivel: true,
-            jaTemAnuncio: !!linha.jaTemAnuncio,
-            itemId,
-            categoriaAtual: linha.categoriaAtual || null,
-            categoriaEscolhidaId: linha.categoriaAtual?.id ?? null,
-            categoriaPendente: !!linha.categoriaPendente,
-            selecionado: !!linha.encontrado && !linha.jaTemAnuncio,
-            status: 'pendente',
-            resultado: null,
-            erroProcessamento: '',
-          };
+          acumulado.marketplaces[mk as AnuncioMarketplaceId] = montarMarketplaceDaLinha(linha);
         }
       }
 
@@ -2151,7 +2193,7 @@ export default function CadastroPage() {
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
           {ANUNCIO_MARKETPLACES.map(({ id, label, cor }) => (
             <label key={id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 700, color: anuncioMarketplacesSelecionados.has(id) ? cor : 'var(--gray-400)', border: `1px solid ${anuncioMarketplacesSelecionados.has(id) ? cor : 'var(--border)'}`, borderRadius: 7, padding: '6px 12px', cursor: 'pointer', background: anuncioMarketplacesSelecionados.has(id) ? `${cor}14` : 'var(--white)' }}>
-              <input type="checkbox" checked={anuncioMarketplacesSelecionados.has(id)} onChange={() => toggleAnuncioMarketplace(id)} />
+              <input type="checkbox" checked={anuncioMarketplacesSelecionados.has(id)} disabled={anuncioCriarProcessando} onChange={() => toggleAnuncioMarketplace(id)} />
               {label}
             </label>
           ))}
