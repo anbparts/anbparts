@@ -338,9 +338,12 @@ armazenagemRouter.get('/caixas', async (_req, res, next) => {
     ]);
 
     const todasLocalizacoes = new Set<string>();
+    const qtdPecasPorLoc = new Map<string, number>(); // pecas disponiveis + pre-cadastros por caixa
     for (const p of [...pecas, ...preCadastros]) {
       const loc = String(p.localizacao || '').trim();
-      if (loc) todasLocalizacoes.add(loc);
+      if (!loc) continue;
+      todasLocalizacoes.add(loc);
+      qtdPecasPorLoc.set(loc, (qtdPecasPorLoc.get(loc) || 0) + 1);
     }
 
     const alocacaoByLoc = new Map(alocacoes.map((a) => [a.localizacao, a]));
@@ -358,6 +361,7 @@ armazenagemRouter.get('/caixas', async (_req, res, next) => {
         return {
           localizacao: loc,
           semPecas: !todasLocalizacoes.has(loc),
+          qtdPecas: qtdPecasPorLoc.get(loc) || 0,
           alocada: !!aloc,
           detailId: aloc?.detailId ?? null,
           detailNome: aloc?.detail.nome ?? null,

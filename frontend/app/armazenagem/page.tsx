@@ -22,6 +22,7 @@ type Area = { id: number; nome: string; descricao: string | null; totalCaixas: n
 type Caixa = {
   localizacao: string;
   semPecas?: boolean; // alocada, mas sem nenhuma peca disponivel/pre-cadastro com essa localizacao
+  qtdPecas?: number; // pecas disponiveis + pre-cadastros nessa caixa
   alocada: boolean;
   detailId: number | null;
   detailNome: string | null;
@@ -420,9 +421,14 @@ export default function ArmazenagemPage() {
                       <div key={cx.localizacao} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '12px 16px', background: 'var(--white)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                           <span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 13, fontWeight: 600, color: 'var(--gray-800)' }}>{cx.localizacao}</span>
-                          {cx.semPecas && (
-                            <span title="Nenhuma peça disponível com essa localização no momento" style={{ fontSize: 10.5, fontWeight: 700, background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a', borderRadius: 99, padding: '2px 8px' }}>sem peças</span>
-                          )}
+                          <span
+                            title="Peças disponíveis (e pré-cadastros) com essa localização"
+                            style={{ fontSize: 10.5, fontWeight: 700, borderRadius: 99, padding: '2px 8px', ...((cx.qtdPecas || 0) > 0
+                              ? { background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0' }
+                              : { background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a' }) }}
+                          >
+                            {(cx.qtdPecas || 0) > 0 ? `${cx.qtdPecas} peça${cx.qtdPecas === 1 ? '' : 's'}` : 'sem peças'}
+                          </span>
                         </div>
                         <div style={{ display: 'flex', gap: 6 }}>
                           <button onClick={() => abrirHistorico(cx.localizacao)} style={{ ...s.btn, background: '#f1f5f9', color: 'var(--gray-600)', border: '1px solid var(--border)', fontSize: 11, padding: '5px 10px' }}>Historico</button>
