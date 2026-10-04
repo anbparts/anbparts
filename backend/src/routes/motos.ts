@@ -890,22 +890,46 @@ motosRouter.post('/:id/detran-cartela', requireMotosAction('etiqueta'), async (r
       skusSyncados.add(sku);
 
       const ehRemocao = !etiqueta;
-      // Concatena todas as etiquetas desse SKU nesta cartela
-      const etiquetasConcat = etiquetasPorSku[sku]?.join(' / ') || null;
+      const etiquetasCartelaSku = etiquetasPorSku[sku] || [];
 
-      // Atualiza tabela Peca com as etiquetas concatenadas
+      // NUNCA sobrescrever as etiquetas que nao sao desta cartela (ex: etiqueta AVULSA do mesmo SKU).
+      // Antes isto gravava so as etiquetas da cartela e a avulsa sumia (Peca, pre-cadastro e Bling).
+      // Regra: o campo final = etiquetas desta cartela + tudo que ja existia no SKU e nao pertence a
+      // esta cartela (base do prefixo + posicao 001-034) nem esta sendo regravado agora. Na duvida
+      // (prefixo desconhecido) preserva — o pior caso e' sobrar uma etiqueta antiga, nunca perder uma.
+      const ehDaCartelaAtual = (etq: string) => {
+        const s = String(etq || '').trim();
+        if (!cartelaIdEfetivo || s.length <= 3) return false;
+        const p = Number(s.slice(-3));
+        return p >= 1 && p <= 34 && s.slice(0, -3) === cartelaIdEfetivo;
+      };
+      const mesclarEtiquetas = (existente: string | null | undefined) => {
+        const preservadas = String(existente || '')
+          .split('/')
+          .map((e) => e.trim())
+          .filter(Boolean)
+          .filter((e) => !etiquetasCartelaSku.includes(e) && !ehDaCartelaAtual(e));
+        const finais = [...etiquetasCartelaSku, ...preservadas];
+        return finais.length ? finais.join(' / ') : null;
+      };
+
+      const pecaAtual = await prisma.peca.findFirst({ where: { idPeca: sku }, select: { detranEtiqueta: true } });
+      const novoValorPeca = mesclarEtiquetas(pecaAtual?.detranEtiqueta);
+
+      // Atualiza tabela Peca (cartela + preservadas)
       await prisma.peca.updateMany({
         where: { idPeca: sku },
         data: {
-          detranEtiqueta: ehRemocao ? null : etiquetasConcat,
-          detranStatus: ehRemocao ? null : (status || null),
+          detranEtiqueta: novoValorPeca,
+          detranStatus: novoValorPeca ? (ehRemocao ? undefined : (status || null)) : null,
         },
       });
 
-      // Atualiza CadastroPeca (pré-cadastro) com as mesmas etiquetas
+      // Atualiza CadastroPeca (pré-cadastro) do mesmo jeito
+      const cadastroAtual = await prisma.cadastroPeca.findFirst({ where: { idPeca: sku }, select: { detranEtiqueta: true } });
       await prisma.cadastroPeca.updateMany({
         where: { idPeca: sku },
-        data: { detranEtiqueta: ehRemocao ? null : etiquetasConcat },
+        data: { detranEtiqueta: mesclarEtiquetas(cadastroAtual?.detranEtiqueta) },
       });
 
       // Sync Bling (uma vez por SKU base)
