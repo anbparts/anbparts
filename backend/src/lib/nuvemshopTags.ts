@@ -7,7 +7,12 @@
 import { prisma } from './prisma';
 
 const MODELO_IA = 'claude-sonnet-4-6';
-const MAX_TAGS = 20;
+// Padrao extraido da base real da Nuvemshop (48 SKUs BM03 preenchidos pela IA da aba Categoria):
+// 10 a 12 tags por produto; SEMPRE ano, prefixo do SKU (ex: BM03), marca e o modelo escrito de duas
+// formas ("F800 GS" e "F800GS"); quase sempre "moto <marca>", o nome da peca + sinonimos, a categoria
+// geral (suspensao, eletrica, freio...) e uma tag de condicao (usada/usado). Palavras em portugues
+// em minusculas e SEM acento; marca, modelo e siglas (ABS, TBI) mantem a grafia.
+const MAX_TAGS = 12;
 const MAX_TAMANHO_TAG = 40;
 
 export type TagsInput = {
@@ -15,12 +20,17 @@ export type TagsInput = {
   titulo: string;
   moto?: { marca?: string | null; modelo?: string | null; ano?: number | string | null } | null;
   numeroPeca?: string | null;
+  condicao?: string | null; // usado | novo
 };
 
 const STOPWORDS = new Set(['de', 'da', 'do', 'das', 'dos', 'para', 'com', 'sem', 'em', 'e', 'a', 'o', 'as', 'os', 'par', 'kit', 'peca', 'pecas']);
 
+function semAcento(s: string): string {
+  return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
 function limparTag(tag: string): string {
-  return String(tag || '')
+  return semAcento(String(tag || ''))
     .replace(/[^\p{L}\p{N} -]/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim()
@@ -45,27 +55,43 @@ function normalizarLista(tags: string[]): string[] {
 
 // Plano B sem IA: palavras do titulo + combinacoes com a moto + prefixo do SKU + PN.
 export function tagsPorRegra(input: TagsInput): string[] {
-  const titulo = limparTag(input.titulo);
   const moto = input.moto || {};
   const marca = limparTag(String(moto.marca || ''));
   const modelo = limparTag(String(moto.modelo || ''));
   const ano = moto.ano ? String(moto.ano) : '';
-  const prefixo = String(input.sku || '').toUpperCase().replace(/_.*$/, '').replace(/\d+$/, '');
+  const prefixo = String(input.sku || '').toUpperCase().split('_')[0]; // ex: BM03_0087 -> BM03
+  const novo = String(input.condicao || '').toLowerCase() === 'novo';
 
-  const palavras = titulo.split(' ').filter((p) => p.length >= 3 && !STOPWORDS.has(p.toLowerCase()) && !/^\d{4}$/.test(p));
+  // O modelo aparece no titulo com ou sem espaco ("F800 GS" / "F800GS"): acha a grafia do titulo,
+  // usa as duas formas como tag e remove do titulo pra sobrar so o nome da peca.
+  const modeloSemEspaco = modelo.replace(/ /g, '');
+  const modeloRegex = modeloSemEspaco
+    ? new RegExp(modeloSemEspaco.split('').map((c) => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s*'), 'i')
+    : null;
+  const achado = modeloRegex ? semAcento(input.titulo).match(modeloRegex) : null;
+  const modeloComEspaco = achado ? limparTag(achado[0]) : modelo;
+  const tituloSemModelo = modeloRegex ? semAcento(input.titulo).replace(modeloRegex, ' ') : semAcento(input.titulo);
+
+  // Nome da peca = titulo sem marca/modelo/ano/condicao (o que sobra e' a descricao da peca).
+  const ruido = new Set([marca, ano, 'usd', 'usado', 'usada'].filter(Boolean).map((x) => x.toLowerCase()));
+  const palavras = limparTag(tituloSemModelo)
+    .split(' ')
+    .filter((p) => p.length >= 3 && !STOPWORDS.has(p.toLowerCase()) && !ruido.has(p.toLowerCase()) && !/^\d+$/.test(p));
+  const nomePeca = palavras.slice(0, 3).join(' ').toLowerCase();
+
   const tags: string[] = [];
-  if (titulo) tags.push(titulo);
-  tags.push(...palavras);
-  if (marca && modelo) tags.push(`${marca} ${modelo}`);
-  if (modelo && ano) tags.push(`${modelo} ${ano}`);
-  if (marca) tags.push(marca);
-  if (modelo) tags.push(modelo);
   if (ano) tags.push(ano);
-  if (palavras[0] && modelo) tags.push(`${palavras[0]} ${modelo}`);
-  if (palavras[0] && marca) tags.push(`${palavras[0]} ${marca}`);
-  if (input.numeroPeca) tags.push(String(input.numeroPeca));
   if (prefixo) tags.push(prefixo);
-  tags.push('peça de moto', 'moto usada', 'peça original');
+  if (marca) tags.push(marca);
+  if (modelo) {
+    tags.push(modeloComEspaco);
+    if (modeloSemEspaco !== modeloComEspaco) tags.push(modeloSemEspaco);
+  }
+  if (marca) tags.push(`moto ${marca}`);
+  if (nomePeca) tags.push(nomePeca);
+  tags.push(...palavras.map((p) => p.toLowerCase()));
+  if (palavras[0] && palavras[1]) tags.push(`${palavras[0]} ${palavras[1]}`.toLowerCase());
+  tags.push(novo ? 'nova' : 'usada');
   return normalizarLista(tags);
 }
 
@@ -83,7 +109,14 @@ Titulo: ${titulo}
 Moto: ${motoTexto}
 ${input.numeroPeca ? `Codigo da peca (PN): ${input.numeroPeca}` : ''}
 
-Regras: inclua partes do nome do produto, marca da moto, modelo, ano, prefixo do SKU e termos tecnicos que um cliente digitaria na busca (sinonimos e nomes populares da peca). Use apenas letras, numeros, espacos e hifens. NAO use aspas, virgulas ou caracteres especiais. Entre 8 e ${MAX_TAGS} tags, cada uma com no maximo ${MAX_TAMANHO_TAG} caracteres.`;
+Condicao: ${String(input.condicao || '').toLowerCase() === 'novo' ? 'nova (peca nova)' : 'usada (peca de moto usada)'}
+
+Gere de 10 a ${MAX_TAGS} tags, seguindo este padrao:
+- SEMPRE inclua: o ano da moto, o prefixo do SKU (ex: BM03), a marca, o modelo escrito de duas formas (com e sem espaco, ex: "F800 GS" e "F800GS") e "moto <marca>".
+- Inclua o nome da peca e suas variacoes, sinonimos e termos tecnicos que o cliente digitaria na busca, alem da area geral da peca (ex: suspensao, eletrica, freio, transmissao).
+- Inclua uma tag de condicao: "usada"/"usado" (conforme o genero da peca) ou "nova"/"novo" se a peca for nova.
+- Palavras em portugues em minusculas e SEM acento; marca, modelo e siglas (ABS, TBI, ECU) mantem a grafia.
+- Apenas letras, numeros, espacos e hifens. NAO use aspas, virgulas ou caracteres especiais. Cada tag com no maximo ${MAX_TAMANHO_TAG} caracteres.`;
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 25000);
@@ -129,7 +162,7 @@ export async function gerarTagsNuvemshop(input: TagsInput): Promise<string> {
     console.warn(`[nuvemshopTags] IA indisponivel (${e?.message || e}) — usando regra pro SKU ${input.sku}`);
   }
   // Completa/substitui pela regra se a IA devolveu pouco.
-  if (tags.length < 5) tags = normalizarLista([...tags, ...tagsPorRegra(input)]);
+  if (tags.length < 8) tags = normalizarLista([...tags, ...tagsPorRegra(input)]);
   return tags.join(', ');
 }
 
@@ -141,7 +174,7 @@ export function gerarTagsCadastroEmSegundoPlano(cadastroId: number) {
       include: { moto: { select: { marca: true, modelo: true, ano: true } } },
     });
     if (!c) return;
-    const tags = await gerarTagsNuvemshop({ sku: c.idPeca, titulo: c.descricao, moto: c.moto, numeroPeca: c.numeroPeca });
+    const tags = await gerarTagsNuvemshop({ sku: c.idPeca, titulo: c.descricao, moto: c.moto, numeroPeca: c.numeroPeca, condicao: c.condicao });
     await (prisma as any).cadastroPeca.update({ where: { id: cadastroId }, data: { nuvemshopTags: tags } });
   })().catch((e: any) => console.error(`[nuvemshopTags] falha ao gravar tags do cadastro ${cadastroId}: ${e?.message || e}`));
 }

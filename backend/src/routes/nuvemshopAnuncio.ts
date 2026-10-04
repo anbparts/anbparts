@@ -91,12 +91,21 @@ nuvemshopAnuncioRouter.post('/anuncio/buscar', async (req, res, next) => {
       let produtoId: string | null = peca.nuvemshopProdutoId;
       let erroConsulta = '';
       if (!produtoId) {
-        try {
-          const existente: any = await buscarProdutoNuvemshopPorSku(sku, true);
-          if (existente?.id) produtoId = String(existente.id);
-        } catch (e: any) {
-          erroConsulta = e?.message || 'Falha ao consultar a Nuvemshop';
+        // A Nuvemshop limita as chamadas (429 "Too Many Requests"): consulta 1 SKU por vez, com uma
+        // pausa curta entre elas e 1 nova tentativa se ainda assim estourar o limite.
+        for (let tentativa = 0; tentativa < 2; tentativa++) {
+          try {
+            const existente: any = await buscarProdutoNuvemshopPorSku(sku, true);
+            if (existente?.id) produtoId = String(existente.id);
+            erroConsulta = '';
+            break;
+          } catch (e: any) {
+            erroConsulta = e?.message || 'Falha ao consultar a Nuvemshop';
+            if (!/429/.test(erroConsulta)) break;
+            await new Promise((r) => setTimeout(r, 1500));
+          }
         }
+        await new Promise((r) => setTimeout(r, 400));
       }
 
       let categoriaId: string | null = peca.nuvemshopCategoriaId ? String(peca.nuvemshopCategoriaId) : null;
@@ -194,7 +203,7 @@ nuvemshopAnuncioRouter.post('/anuncio/criar', async (req, res, next) => {
     // Tags: gravadas no pre-cadastro; se faltarem (SKU antigo ou IA ainda em andamento), gera agora.
     let tags = String(peca.nuvemshopTags || '').trim();
     if (!tags) {
-      tags = await gerarTagsNuvemshop({ sku, titulo: peca.descricao, moto: peca.moto, numeroPeca: peca.numeroPeca });
+      tags = await gerarTagsNuvemshop({ sku, titulo: peca.descricao, moto: peca.moto, numeroPeca: peca.numeroPeca, condicao: peca.condicao });
     }
 
     const categorias = await nuvemshopCategoriasDoProduto(categoriaId);

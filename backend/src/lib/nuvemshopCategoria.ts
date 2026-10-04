@@ -78,23 +78,27 @@ export async function listarCategoriasNuvemshopSelecionaveis() {
 // Regras (ordem importa: compostos antes dos genericos). Destino = NOME da categoria filha.
 const REGRAS: Array<[RegExp, string]> = [
   // Cabos
-  [/cabo (de )?embreagem/, 'Embreagem'],
-  [/cabo (de )?acelerador|cabo acelera/, 'Acelerador'],
-  [/cabo (de )?(conta giro|contagiro|tacometro)/, 'Conta-giros'],
-  [/cabo (de )?velocimetro/, 'Velocimetro'],
-  [/cabo (de )?freio/, 'Freio'],
+  [/cabo (da |de |do )?embreagem/, 'Embreagem'],
+  [/cabo (da |de |do )?acelerador|cabo acelera/, 'Acelerador'],
+  [/cabo (da |de |do )?(conta giro|contagiro|tacometro)/, 'Conta-giros'],
+  [/cabo (da |de |do )?velocimetro/, 'Velocimetro'],
+  [/cabo (da |de |do )?freio/, 'Freio'],
   [/\bcabo(s)?\b/, 'Outros Cabos'],
 
   // Freios
+  [/sensor.*(freio|pedal)|(freio|pedal).*sensor/, 'Sensores'],
   [/pastilha/, 'Pastilhas de freio'],
-  [/disco (de )?freio|disco freio/, 'Discos de freio'],
-  [/bomba (de )?freio|cilindro (de )?freio|cilindro freio|cilindro mestre/, 'Bombas de freio'],
+  [/disco (do |de )?(abs|freio)/, 'Discos de freio'],
+  [/reservatorio (de )?(fluido |oleo )?freio|fluido (de )?freio/, 'Bombas de freio'],
+  [/bomba (de )?freio|cilindro (de )?freio|cilindro freio|cilindro mestre|burrinho/, 'Bombas de freio'],
   [/(tubo|flexivel|mangueira) (de )?freio|flexivel/, 'Tubos de freio'],
   [/pinca/, 'Pinças de freio'],
   [/\bfreio(s)?\b/, 'Outras Peças Freio'],
 
   // Transmissao / cambio
   [/kit (de )?(relacao|transmissao)|\bcoroa\b|pinhao/, 'Coroa e Pinhão'],
+  [/manete (de |da )?embreagem/, 'Manoplas e Manetes'],
+  [/capa (da |de )?corrente|protetor (de )?corrente|guarda corrente|\btensor\b/, 'Outras Peças Transmissão'],
   [/\bcorrente\b/, 'Corrente'],
   [/cebolinha|eixo seletor|garfo (de )?(cambio|marcha)/, 'Cebolinha'],
   [/caixa (de )?(cambio|marcha)|cambio completo/, 'Caixa de câmbio Completa'],
@@ -103,20 +107,34 @@ const REGRAS: Array<[RegExp, string]> = [
 
   // Arrefecimento (antes de Motor: "bomba d'agua", "tampa de radiador")
   [/tampa (do )?radiador/, 'Tampa de radiador'],
+  [/mangueira|cano (de )?agua|duto (de )?agua/, 'Mangueiras'],
+  [/suporte (do )?radiador/, 'Outras Peças Arrefecimento'],
   [/radiador/, 'Radiador'],
   [/termostato/, 'Termostato'],
-  [/mangueira|cano (de )?agua|duto (de )?agua/, 'Mangueiras'],
   [/arrefecimento|ventoinha|reservatorio (de )?(agua|expansao)|bomba (de )?agua/, 'Outras Peças Arrefecimento'],
 
   // Escape
   [/coletor|intermediario|tubo (de )?escape/, 'Coletor e Intermediário'],
   [/ponteira|silenciador|silencioso/, 'Ponteira'],
   [/catalisador/, 'Catalisador'],
-  [/\bflange\b/, 'Flange'],
+  [/flange (do |de )?(escape|escapamento|coletor)/, 'Flange'],
   [/escapamento|\bescape\b/, 'Outras Peças Escape'],
 
   // Pecas do banco (antes de Suspensao: "amortecedor do banco" e' do assento, nao da suspensao)
   [/(amortecedor|trava|mola|fechadura|dobradica) (do |de )?banco/, 'Banco'],
+
+  // Itens genericos que citam outra peca no nome (antes de Suspensao/Motor): "parafuso da mesa" e'
+  // parafuso, "acabamento da mesa/logo" e' acabamento, "bomba de combustivel" fica ligada ao tanque.
+  [/parafuso|presilha|grampo/, 'Parafusos / Presilhas e Outros'],
+  [/carenagem.*(logo|emblema)|(logo|emblema).*carenagem/, 'Carenagem (dianteira, lateral, traseira)'],
+  [/emblema|\blogo\b/, 'Outras Peças Carroceria'],
+  [/acabamento plastico/, 'Carenagem (dianteira, lateral, traseira)'],
+  [/^flange (da |de )?bomba/, 'Outras Peças Carroceria'],
+  [/bomba (de )?combustivel/, 'Tanque de combustível'],
+  [/^(?!.*sensor).*(cavalete|descanso)/, 'Outras Peças Acessórios'],
+  [/^(?!.*sensor).*caixa (de |do )?(ar|filtro)/, 'Outras Peças Carroceria'],
+  [/valvula (de )?comutacao|ar secundario/, 'Sensores'],
+  [/atuador|marcha lenta|\bidle\b/, 'Carburador / Corpo de Injeção'],
 
   // Suspensao
   [/bengala|\bgarfo\b|\bmesa\b|guarda (po|pó)/, 'Garfo / Bengala'],
@@ -124,30 +142,31 @@ const REGRAS: Array<[RegExp, string]> = [
   [/balanca|suspensao|mono ?choque|monoshock|rolamento (de )?direcao|caixa (de )?direcao|bieleta|batente/, 'Outras Peças Suspensão'],
 
   // Eletrica
-  [/farol|lente (do )?farol|lanterna/, 'Faróis'],
+  [/farol|lente (do )?farol/, 'Faróis'],
   [/pisca|\bseta\b/, 'Pisca-pisca'],
   [/chicote|fiacao|cabo (de )?(vela|bateria)/, 'Fiação elétrica'],
   [/\brele\b/, 'Relé'],
-  [/alternador|estator|magneto|volante (do )?motor/, 'Alternador / Estator e Magneto'],
+  [/alternador|estator|magneto|volante (do )?motor|(?<!suporte )(retificador|regulador)/, 'Alternador / Estator e Magneto'],
   [/punho|botoeira|interruptor|comando (de )?(luz|partida)|chave (de )?(ignicao|luz)|miolo/, 'Punhos e Botoeiras'],
   [/sensor|sonda|\bmap\b|\btps\b|\bckp\b/, 'Sensores'],
-  [/bobina|\bcdi\b|modulo|\becu\b|\becm\b|regulador|retificador|bateria|\bvela\b|motor (de )?partida|solenoide|alarme|buzina|eletrica/, 'Outras Peças Elétrica'],
+  [/bobina|\bcdi\b|modulo|\becu\b|\becm\b|lanterna|suporte (do )?(retificador|regulador)|bateria|\bvela\b|motor (de )?partida|solenoide|alarme|buzina|eletrica/, 'Outras Peças Elétrica'],
 
   // Carroceria
+  [/carenagem|rabeta|capota|\bbolha\b|\bbico (frontal|dianteiro|traseiro)\b|\blateral\b|spoiler|\bkit (de )?plastico/, 'Carenagem (dianteira, lateral, traseira)'],
   [/tanque|bocal/, 'Tanque de combustível'],
   [/boia|medidor (de )?nivel/, 'Boias e Medidores de Nível'],
   [/\bbanco\b|assento/, 'Banco'],
   [/painel|instrumento|velocimetro|conta giro/, 'Painel de instrumentos'],
-  [/carenagem|rabeta|capota|\bbolha\b|\bbico\b|\blateral\b|para ?lama|paralama|spoiler|\bkit (de )?plastico/, 'Carenagem (dianteira, lateral, traseira)'],
   [/\bpneu(s)?\b/, 'Pneus'],
   [/\broda(s)?\b|\baro\b/, 'Roda'],
 
   // Acessorios
   [/manopla|manete|manoplas/, 'Manoplas e Manetes'],
+  [/\bacelerad(or|o)\b/, 'Punhos e Botoeiras'],
   [/guidao|guidon/, 'Guidão'],
   [/alforje|bagageiro|\bbau\b/, 'Alforjes'],
   [/capa (de |para )?banco/, 'Capas de banco'],
-  [/parabarro/, 'Parabarro'],
+  [/parabarro|para ?lama|paralama|suporte (de )?placa/, 'Parabarro'],
   [/parafuso|presilha|grampo/, 'Parafusos / Presilhas e Outros'],
   [/retrovisor|espelho/, 'Retrovisores'],
   [/alto falante/, 'Alto-falantes'],
