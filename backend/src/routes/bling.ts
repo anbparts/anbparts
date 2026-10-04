@@ -464,8 +464,75 @@ export async function informarAnuncioMagaluNoBling(sku: string, magaluItemId: st
   return { ok: true, sku: skuBase, produtoId, magaluItemId, produtoLojaId, acao, pecasAtualizadas: r.count };
 }
 
+// Mesma logica das duas acima pra Nuvemshop: o vinculo produto-loja do Bling guarda o ID do produto
+// da Nuvemshop em `codigo` (confirmado lendo um vinculo existente). Loja = cfg.nuvemshopLojaId.
+// Chamada automaticamente pelo fluxo de criacao direto na API da Nuvemshop (POST /nuvemshop/anuncio/criar).
+export async function informarAnuncioNuvemshopNoBling(sku: string, nuvemshopProdutoId: string) {
+  const skuBase = getBaseSku(sku);
+  if (!skuBase) throw new Error('sku obrigatorio');
+  if (!nuvemshopProdutoId) throw new Error('nuvemshopProdutoId obrigatorio');
+
+  const cfg = await getConfig();
+  const idLoja = (cfg as any).nuvemshopLojaId;
+  if (!idLoja) throw new Error('Loja da Nuvemshop nao configurada em Configuracao');
+
+  const produtosByCode = await findBlingProductsByCodes([skuBase], { forceRefresh: true });
+  const produto = produtosByCode.get(skuBase);
+  if (!produto?.id) throw new Error('Produto nao encontrado no Bling');
+  const produtoId = Number(produto.id);
+
+  const prodLojas = await blingReq(`/produtos/lojas?idProduto=${produtoId}&idLoja=${idLoja}&limite=10`) as any;
+  const prodLojaExistente = (prodLojas?.data || [])[0];
+
+  const bodyProdutoLoja = {
+    produto: { id: produtoId },
+    loja: { id: Number(idLoja) },
+    codigo: String(nuvemshopProdutoId),
+    preco: Number(prodLojaExistente?.preco || produto.preco || 0),
+    categoriasProdutos: Array.isArray(prodLojaExistente?.categoriasProdutos) && prodLojaExistente.categoriasProdutos.length
+      ? prodLojaExistente.categoriasProdutos.map((c: any) => ({ id: Number(c.id) }))
+      : undefined,
+  };
+
+  let produtoLojaId: number;
+  let acao: string;
+  if (prodLojaExistente) {
+    await blingReq(`/produtos/lojas/${prodLojaExistente.id}`, { method: 'PUT', body: JSON.stringify(bodyProdutoLoja) });
+    produtoLojaId = prodLojaExistente.id;
+    acao = 'atualizou vinculo produto-loja existente com o codigo informado';
+  } else {
+    const criado = await blingReq('/produtos/lojas', { method: 'POST', body: JSON.stringify(bodyProdutoLoja) }) as any;
+    produtoLojaId = Number(criado?.data?.id);
+    acao = 'criou vinculo produto-loja com o codigo informado';
+  }
+
+  const r = await prisma.peca.updateMany({
+    where: { OR: [{ idPeca: skuBase }, { idPeca: { startsWith: `${skuBase}-` } }] },
+    data: { nuvemshopProdutoId: String(nuvemshopProdutoId) } as any,
+  });
+
+  return { ok: true, sku: skuBase, produtoId, nuvemshopProdutoId: String(nuvemshopProdutoId), produtoLojaId, acao, pecasAtualizadas: r.count };
+}
+
+// POST /bling/nuvemshop/informar-anuncio — reenvia so o aviso ao Bling. Body: { sku, nuvemshopProdutoId? }.
+blingRouter.post('/nuvemshop/informar-anuncio', async (req, res) => {
+  try {
+    const sku = getBaseSku(String(req.body?.sku || ''));
+    if (!sku) return res.status(400).json({ error: 'sku obrigatorio' });
+    let produtoId = String(req.body?.nuvemshopProdutoId || '').trim();
+    if (!produtoId) {
+      const peca: any = await prisma.peca.findFirst({ where: { OR: [{ idPeca: sku }, { idPeca: { startsWith: `${sku}-` } }] }, orderBy: { idPeca: 'asc' } });
+      produtoId = String(peca?.nuvemshopProdutoId || '').trim();
+    }
+    if (!produtoId) return res.status(400).json({ error: 'SKU sem produto Nuvemshop gravado — informe nuvemshopProdutoId.' });
+    res.json(await informarAnuncioNuvemshopNoBling(sku, produtoId));
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message || 'Erro ao informar anuncio Nuvemshop ao Bling' });
+  }
+});
+
 const BLING_API = 'https://api.bling.com.br/Api/v3';
-const BLING_OAUTH = 'https://api.bling.com.br/Api/v3/oauth/token';
+const BLING_OAUTH ='https://api.bling.com.br/Api/v3/oauth/token';
 const DEFAULT_FRETE_PADRAO = 29.9;
 const DEFAULT_TAXA_PADRAO_PCT = 17;
 const AUDITORIA_DEFAULT_HORARIO = '03:00';

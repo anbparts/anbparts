@@ -3,6 +3,7 @@ import { getShopeeConfig, saveShopeeConfig, shopeeExchangeCodeForToken, shopeeDi
 import { prepararImagensShopeeParaNovoItem } from '../lib/fotos-cadastro';
 import { informarAnuncioShopeeNoBling, findBlingProductsByCodes, fetchBlingProductDetailById } from './bling';
 import { prisma } from '../lib/prisma';
+import { carregarAnuncioBase, gravarIdsAnuncio } from '../lib/anuncioBase';
 
 export const shopeeRouter = Router();
 
@@ -180,21 +181,17 @@ shopeeRouter.post('/anuncio/buscar', async (req, res, next) => {
 
     const linhas = [];
     for (const sku of skus) {
-      const peca = await prisma.peca.findFirst({
-        where: { OR: [{ idPeca: sku }, { idPeca: { startsWith: `${sku}-` } }] },
-        include: { moto: { select: { marca: true, modelo: true, ano: true } } },
-        orderBy: { idPeca: 'asc' },
-      });
+      // Peca (ja finalizada) OU pre-cadastro — ver lib/anuncioBase.ts.
+      const peca = await carregarAnuncioBase(sku);
       if (!peca) {
-        linhas.push({ sku, encontrado: false, erro: 'SKU nao encontrado no ANB (ou nao disponivel).' });
+        linhas.push({ sku, encontrado: false, erro: 'SKU nao encontrado no ANB (nem em Pecas, nem no pre-cadastro).' });
         continue;
       }
-      const qtdDisponivel = await prisma.peca.count({
-        where: { OR: [{ idPeca: sku }, { idPeca: { startsWith: `${sku}-` } }], disponivel: true },
-      });
+      const qtdDisponivel = peca.estoque;
       const cat = peca.shopeeCategoriaId ? categoriaPorId.get(peca.shopeeCategoriaId) : null;
       linhas.push({
         sku,
+        origem: peca.origem,
         encontrado: true,
         descricao: peca.descricao,
         moto: peca.moto,
@@ -231,12 +228,8 @@ shopeeRouter.post('/anuncio/criar', async (req, res, next) => {
     const categoriaIdOverride = req.body?.categoriaId != null ? Number(req.body.categoriaId) : null;
     if (!sku) return res.status(400).json({ error: 'sku obrigatorio' });
 
-    const peca = await prisma.peca.findFirst({
-      where: { OR: [{ idPeca: sku }, { idPeca: { startsWith: `${sku}-` } }] },
-      include: { moto: { select: { marca: true } } },
-      orderBy: { idPeca: 'asc' },
-    });
-    if (!peca) return res.status(404).json({ error: 'SKU nao encontrado no ANB' });
+    const peca = await carregarAnuncioBase(sku);
+    if (!peca) return res.status(404).json({ error: 'SKU nao encontrado no ANB (nem em Pecas, nem no pre-cadastro)' });
     if (peca.shopeeItemId) return res.status(400).json({ error: `SKU ja possui anuncio Shopee (item ${peca.shopeeItemId}) — apague manualmente antes de recriar.` });
 
     const categoriaId = categoriaIdOverride || Number(peca.shopeeCategoriaId || 0);
@@ -245,9 +238,7 @@ shopeeRouter.post('/anuncio/criar', async (req, res, next) => {
     if (!categoria) return res.status(400).json({ error: `Categoria ${categoriaId} nao existe na nossa tabela ShopeeCategoria` });
     if (!categoria.permitido) return res.status(400).json({ error: `Categoria "${categoria.nivel4}" esta bloqueada na Shopee (permitido=false) — escolha outra antes de criar o anuncio.` });
 
-    const qtdDisponivel = await prisma.peca.count({
-      where: { OR: [{ idPeca: sku }, { idPeca: { startsWith: `${sku}-` } }], disponivel: true },
-    });
+    const qtdDisponivel = peca.estoque;
     if (!qtdDisponivel) return res.status(400).json({ error: 'Nenhuma unidade disponivel em estoque pra esse SKU' });
 
     // So sobe 1 foto pra criacao (minimo exigido pela Shopee) — o resto fica a cargo da aba Fotos
@@ -295,18 +286,16 @@ shopeeRouter.post('/anuncio/criar', async (req, res, next) => {
       marcaMoto: (peca as any).moto?.marca || null,
     });
 
+    // O anuncio ja foi criado na Shopee — grava o item_id (pre-cadastro e pecas) ANTES de avisar o
+    // Bling, pra nao perder a referencia se o aviso falhar.
+    await gravarIdsAnuncio(sku, { shopeeItemId: criado.itemId });
+
     let blingResultado: any = null;
     let blingErro: string | null = null;
     try {
       blingResultado = await informarAnuncioShopeeNoBling(sku, criado.itemId);
     } catch (e: any) {
       blingErro = e?.message || String(e);
-      // Mesmo sem conseguir avisar o Bling, o anuncio ja foi criado na Shopee — grava o item_id
-      // localmente de qualquer forma, pra nao perder a referencia.
-      await prisma.peca.updateMany({
-        where: { OR: [{ idPeca: sku }, { idPeca: { startsWith: `${sku}-` } }] },
-        data: { shopeeItemId: criado.itemId },
-      });
     }
 
     res.json({

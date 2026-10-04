@@ -15,7 +15,8 @@ import {
   magaluMontarDatasheet,
   magaluAtualizarConteudoSku,
 } from '../lib/magalu-api';
-import { baixarFotoDrivePorId, buscarFotosDriveSku } from '../lib/fotos-cadastro';
+import { baixarFotoDrivePorId, buscarFotosDriveSku, buscarFotosAnuncioSku } from '../lib/fotos-cadastro';
+import { carregarAnuncioBase, gravarIdsAnuncio } from '../lib/anuncioBase';
 import { informarAnuncioMagaluNoBling, findBlingProductsByCodes, fetchBlingProductDetailById } from './bling';
 import { prisma } from '../lib/prisma';
 
@@ -257,22 +258,18 @@ magaluRouter.post('/anuncio/buscar', async (req, res, next) => {
 
     const linhas = [];
     for (const sku of skus) {
-      const peca = await prisma.peca.findFirst({
-        where: { OR: [{ idPeca: sku }, { idPeca: { startsWith: `${sku}-` } }] },
-        include: { moto: { select: { marca: true, modelo: true, ano: true } } },
-        orderBy: { idPeca: 'asc' },
-      });
+      // Peca (ja finalizada) OU pre-cadastro — ver lib/anuncioBase.ts.
+      const peca = await carregarAnuncioBase(sku);
       if (!peca) {
-        linhas.push({ sku, encontrado: false, erro: 'SKU nao encontrado no ANB (ou nao disponivel).' });
+        linhas.push({ sku, encontrado: false, erro: 'SKU nao encontrado no ANB (nem em Pecas, nem no pre-cadastro).' });
         continue;
       }
-      const cat = (peca as any).magaluCategoriaId ? categoriaPorId.get((peca as any).magaluCategoriaId) : null;
+      const cat = peca.magaluCategoriaId ? categoriaPorId.get(peca.magaluCategoriaId) : null;
       const caminhoCat = cat ? (String(cat.path).startsWith(prefixo) ? String(cat.path).slice(prefixo.length) : String(cat.path)) : null;
-      const qtdDisponivel = await prisma.peca.count({
-        where: { OR: [{ idPeca: sku }, { idPeca: { startsWith: `${sku}-` } }], disponivel: true },
-      });
+      const qtdDisponivel = peca.estoque;
       linhas.push({
         sku,
+        origem: peca.origem,
         encontrado: true,
         descricao: peca.descricao,
         moto: peca.moto,
@@ -282,8 +279,8 @@ magaluRouter.post('/anuncio/buscar', async (req, res, next) => {
         altura: peca.altura != null ? Number(peca.altura) : null,
         profundidade: peca.profundidade != null ? Number(peca.profundidade) : null,
         estoque: qtdDisponivel,
-        magaluItemId: (peca as any).magaluItemId || null,
-        jaTemAnuncio: !!(peca as any).magaluItemId,
+        magaluItemId: peca.magaluItemId || null,
+        jaTemAnuncio: !!peca.magaluItemId,
         categoriaAtual: cat ? {
           id: cat.id,
           nivel4: cat.nome,
@@ -403,17 +400,12 @@ magaluRouter.post('/anuncio/criar', async (req, res, next) => {
     if (!sku) return res.status(400).json({ error: 'sku obrigatorio' });
     if (!categoriaId) return res.status(400).json({ error: 'categoriaId obrigatorio (UUID da categoria Magalu) — mapeamento automatico ainda pendente.' });
 
-    const peca = await prisma.peca.findFirst({
-      where: { OR: [{ idPeca: sku }, { idPeca: { startsWith: `${sku}-` } }] },
-      include: { moto: { select: { marca: true, modelo: true, ano: true } } },
-      orderBy: { idPeca: 'asc' },
-    });
-    if (!peca) return res.status(404).json({ error: 'SKU nao encontrado no ANB' });
-    if ((peca as any).magaluItemId) return res.status(400).json({ error: `SKU ja possui anuncio Magalu (item ${(peca as any).magaluItemId}) — apague manualmente antes de recriar.` });
+    // Peca (ja finalizada) OU pre-cadastro — ver lib/anuncioBase.ts.
+    const peca = await carregarAnuncioBase(sku);
+    if (!peca) return res.status(404).json({ error: 'SKU nao encontrado no ANB (nem em Pecas, nem no pre-cadastro)' });
+    if (peca.magaluItemId) return res.status(400).json({ error: `SKU ja possui anuncio Magalu (item ${peca.magaluItemId}) — apague manualmente antes de recriar.` });
 
-    const qtdDisponivel = await prisma.peca.count({
-      where: { OR: [{ idPeca: sku }, { idPeca: { startsWith: `${sku}-` } }], disponivel: true },
-    });
+    const qtdDisponivel = peca.estoque;
     if (!qtdDisponivel) return res.status(400).json({ error: 'Nenhuma unidade disponivel em estoque pra esse SKU' });
 
     const peso = peca.pesoLiquido != null ? Number(peca.pesoLiquido) : (peca.pesoBruto != null ? Number(peca.pesoBruto) : 0);
@@ -423,7 +415,7 @@ magaluRouter.post('/anuncio/criar', async (req, res, next) => {
 
     // So 1 foto (capa) pra criacao, mesmo criterio adotado na Shopee — evita pesar essa etapa; o
     // resto das fotos fica por conta da aba Fotos Anuncios.
-    const drive = await buscarFotosDriveSku(peca.motoId, sku);
+    const drive = await buscarFotosAnuncioSku(peca.motoId, sku);
     const fotoCapa = drive.fotos[0];
     if (!fotoCapa) return res.status(400).json({ error: 'Nenhuma foto encontrada no Drive pra esse SKU — o SKU precisa de pelo menos 1 imagem.' });
     const imageUrls = [`${getBackendBase()}/magalu/imagem/${encodeURIComponent(fotoCapa.id)}`];
@@ -433,8 +425,7 @@ magaluRouter.post('/anuncio/criar', async (req, res, next) => {
     const jaExisteNoMagalu = await magaluGetSku(sku).then(() => true).catch(() => false);
     const conteudo = await montarConteudoMagalu(peca, sku, categoriaId, peso);
     // Condicao vem do pre-cadastro (CadastroPeca.condicao: usado | novo). Padrao: usado.
-    const cadastro = await prisma.cadastroPeca.findUnique({ where: { idPeca: sku }, select: { condicao: true } });
-    const condition: 'NEW' | 'USED' = String(cadastro?.condicao || '').toLowerCase() === 'novo' ? 'NEW' : 'USED';
+    const condition: 'NEW' | 'USED' = String(peca.condicao || '').toLowerCase() === 'novo' ? 'NEW' : 'USED';
     const criado = jaExisteNoMagalu
       ? { sku, traceId: null as string | null }
       : await magaluCreateSku({
@@ -467,16 +458,15 @@ magaluRouter.post('/anuncio/criar', async (req, res, next) => {
       throw new Error(`SKU criado no Magalu, mas falhou ao definir ESTOQUE: ${e?.message || e}`);
     }
 
+    // Grava o ID (pre-cadastro e pecas) antes de avisar o Bling, pra nao perder a referencia.
+    await gravarIdsAnuncio(sku, { magaluItemId: criado.sku });
+
     let blingResultado: any = null;
     let blingErro: string | null = null;
     try {
       blingResultado = await informarAnuncioMagaluNoBling(sku, criado.sku);
     } catch (e: any) {
       blingErro = e?.message || String(e);
-      await prisma.peca.updateMany({
-        where: { OR: [{ idPeca: sku }, { idPeca: { startsWith: `${sku}-` } }] },
-        data: { magaluItemId: criado.sku } as any,
-      });
     }
 
     res.json({
@@ -501,13 +491,9 @@ magaluRouter.post('/anuncio/atualizar', async (req, res) => {
   try {
     const sku = getBaseSku(req.body?.sku);
     if (!sku) return res.status(400).json({ error: 'sku obrigatorio' });
-    const peca = await prisma.peca.findFirst({
-      where: { OR: [{ idPeca: sku }, { idPeca: { startsWith: `${sku}-` } }] },
-      include: { moto: { select: { marca: true, modelo: true, ano: true } } },
-      orderBy: { idPeca: 'asc' },
-    });
-    if (!peca) return res.status(404).json({ error: 'SKU nao encontrado no ANB' });
-    const categoriaId = String(req.body?.categoriaId || (peca as any).magaluCategoriaId || '').trim();
+    const peca = await carregarAnuncioBase(sku);
+    if (!peca) return res.status(404).json({ error: 'SKU nao encontrado no ANB (nem em Pecas, nem no pre-cadastro)' });
+    const categoriaId = String(req.body?.categoriaId || peca.magaluCategoriaId || '').trim();
     if (!categoriaId) return res.status(400).json({ error: 'SKU sem categoria Magalu.' });
     const peso = peca.pesoLiquido != null ? Number(peca.pesoLiquido) : (peca.pesoBruto != null ? Number(peca.pesoBruto) : 0);
 

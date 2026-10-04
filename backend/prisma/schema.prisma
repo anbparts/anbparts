@@ -60,6 +60,9 @@ model Peca {
   magaluLink         String?
   shopeeCategoriaId  String?
   magaluCategoriaId  String? // UUID da categoria Magalu — mapeamento ainda pendente (ver reference_magalu_api)
+  nuvemshopProdutoId   String? // ID do produto criado na Nuvemshop pelo sistema (aba Anuncio)
+  nuvemshopCategoriaId String? // ID da categoria (filha) da Nuvemshop; o pai e' resolvido pela arvore
+  nuvemshopTags        String? @db.Text // tags separadas por virgula, geradas no pre-cadastro
   detranBaixada  Boolean  @default(false)
   detranBaixadaAt DateTime?
   detranComprovanteNome String?
@@ -155,6 +158,11 @@ model CadastroPeca {
   categoriaMLNome  String?
   shopeeCategoriaId String? // sugerida automaticamente ao digitar a Descrição da Peça (ver shopeeCategoria.ts)
   magaluCategoriaId String? // idem, UUID da categoria Magalu (ver magaluCategoria.ts / magaluCategoriaResolver.ts)
+  nuvemshopCategoriaId String? // idem, ID da categoria folha da Nuvemshop (ver nuvemshopCategoria.ts)
+  nuvemshopTags        String? @db.Text // tags de busca (IA + regra) geradas no pre-cadastro (ver nuvemshopTags.ts)
+  shopeeItemId         String? // IDs dos anuncios criados pela aba Anuncio enquanto o SKU ainda esta no pre-cadastro
+  magaluItemId         String? // (copiados pra Peca na finalizacao do cadastro — ver anuncioBase.ts)
+  nuvemshopProdutoId   String?
   fotoCapa         String?  // URL ou base64 após upload
   fotoCapaNome     String?
   status           String   @default("pre_cadastro") // pre_cadastro | cadastrado

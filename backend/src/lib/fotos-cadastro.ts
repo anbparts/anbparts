@@ -853,6 +853,36 @@ export async function buscarFotosDriveSku(motoId: number, sku: string) {
   return { fotos, pasta: normalizeText(pasta.name) };
 }
 
+// Fotos pra CRIAR anuncio (aba Anuncio): as tratadas da pasta oficial da moto primeiro; se o SKU
+// ainda esta no pre-cadastro (fotos cruas na pasta de pre-cadastro, ainda sem rodar o Fotos Drive),
+// usa essas. A aba Fotos Anuncios troca por todas as tratadas depois, entao a capa crua e' so
+// "ponte" ate la.
+export async function buscarFotosAnuncioSku(motoId: number, sku: string) {
+  const oficial = await buscarFotosDriveSku(motoId, sku);
+  if (oficial.fotos.length) return { ...oficial, origem: 'oficial' as 'oficial' | 'pre_cadastro' };
+
+  const pre = await getPastaPreCadastroDoSku(baseSku(sku));
+  if (!pre.pastaId) return { fotos: [] as DriveFoto[], pasta: '', origem: 'pre_cadastro' as 'oficial' | 'pre_cadastro' };
+
+  const fotos: DriveFoto[] = (await listDriveFiles(
+    `'${escapeDriveQueryValue(pre.pastaId)}' in parents and mimeType contains 'image/' and trashed = false`,
+    'files(id,name,mimeType,size)',
+    { pageSize: '100', orderBy: 'name' },
+  )).map((f: any) => ({
+    id: normalizeText(f.id),
+    nome: normalizeText(f.name),
+    mimeType: normalizeText(f.mimeType) || 'image/jpeg',
+    size: f.size ?? null,
+  }));
+  fotos.sort((a, b) => {
+    const ac = a.nome.toLowerCase().includes('capa') ? 0 : 1;
+    const bc = b.nome.toLowerCase().includes('capa') ? 0 : 1;
+    if (ac !== bc) return ac - bc;
+    return a.nome.localeCompare(b.nome, 'pt-BR', { numeric: true, sensitivity: 'base' });
+  });
+  return { fotos, pasta: pre.nome, origem: 'pre_cadastro' as 'oficial' | 'pre_cadastro' };
+}
+
 async function downloadDriveFoto(foto: DriveFoto) {
   const resp = await driveFetch(buildDrivePath(`/files/${encodeURIComponent(foto.id)}`, { alt: 'media' }));
   if (!resp.ok) {
@@ -1251,7 +1281,7 @@ function limitarFotosShopee<T>(fotos: T[], imagensAtuais: number) {
 // exigido pela Shopee (>=1 imagem) — o resto das fotos fica por conta da aba Fotos Anuncios, que
 // ja detecta itens com poucas fotos e completa depois, sem pesar a etapa de criacao do anuncio.
 export async function prepararImagensShopeeParaNovoItem(motoId: number, sku: string, maxFotos = 1): Promise<string[]> {
-  const drive = await buscarFotosDriveSku(motoId, sku);
+  const drive = await buscarFotosAnuncioSku(motoId, sku);
   const fotos = drive.fotos.slice(0, Math.max(1, Math.min(maxFotos, SHOPEE_MAX_FOTOS)));
   const imageIds: string[] = [];
   for (const foto of fotos) {

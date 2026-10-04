@@ -10,6 +10,8 @@ import { nuvemReq, buscarProdutoNuvemshopPorSku } from './nuvemshop';
 import { sendDetranAtivacaoEmailIfNeeded } from '../lib/detran-alert';
 import { sugerirShopeeCategoriaId } from '../lib/shopeeCategoria';
 import { sugerirMagaluCategoriaId } from '../lib/magaluCategoriaResolver';
+import { sugerirNuvemshopCategoriaId } from '../lib/nuvemshopCategoria';
+import { gerarTagsCadastroEmSegundoPlano } from '../lib/nuvemshopTags';
 
 const CAMPOS_COMPLETOS_WHERE = {
   peso: { not: null as null },
@@ -627,6 +629,7 @@ cadastroRouter.post('/', requireCadastroAction('criar_pre_cadastro'), async (req
         categoriaMLNome: categoriaMLNome || null,
         shopeeCategoriaId: String(sugerirShopeeCategoriaId(descricao, tipoPecaAvulsa)),
         magaluCategoriaId: await sugerirMagaluCategoriaId(descricao, tipoPecaAvulsa),
+        nuvemshopCategoriaId: await sugerirNuvemshopCategoriaId(descricao, tipoPecaAvulsa).catch(() => null),
         urlRef: urlRef ? String(urlRef).trim() : null,
         status: 'pre_cadastro',
         pecaRestrita: ehPecaRestrita,
@@ -634,6 +637,9 @@ cadastroRouter.post('/', requireCadastroAction('criar_pre_cadastro'), async (req
       },
       include: { moto: { select: { id: true, marca: true, modelo: true, ano: true } } },
     });
+
+    // Tags de busca da Nuvemshop (IA + regra) geradas em segundo plano — nao atrasa o pre-cadastro.
+    if (!ehPecaRestrita && !ehSucata) gerarTagsCadastroEmSegundoPlano(record.id);
 
     // Peca restrita ("Peça Restrita - Sem Revenda") nunca vai ao Bling — fica disponivel
     // somente na tela de pre-cadastro ate ser finalizada (ver POST /:id/finalizar). Tambem nao
@@ -815,6 +821,8 @@ cadastroRouter.post('/copiar-peca/:pecaId', requireCadastroAction('criar_pre_cad
           mercadoLivreLink: origem.mercadoLivreLink || null,
           shopeeCategoriaId: (origem as any).shopeeCategoriaId || null,
           magaluCategoriaId: (origem as any).magaluCategoriaId || null,
+          nuvemshopCategoriaId: (origem as any).nuvemshopCategoriaId || null,
+          nuvemshopTags: (origem as any).nuvemshopTags || null,
           precoML: Number(origem.precoML || 0),
           valorLiq: Number(origem.valorLiq || 0),
           valorFrete: Number(origem.valorFrete || 0),
@@ -1220,6 +1228,10 @@ cadastroRouter.put('/:id', requireCadastroAction('editar_pre_cadastro'), async (
         descricao !== undefined ? descricao : atual.descricao,
         tipoPecaAvulsaEfetivo,
       );
+      data.nuvemshopCategoriaId = await sugerirNuvemshopCategoriaId(
+        descricao !== undefined ? descricao : atual.descricao,
+        tipoPecaAvulsaEfetivo,
+      ).catch(() => null);
     }
     if (urlRef !== undefined) data.urlRef = urlRef || null;
     if (pecaRestrita !== undefined) data.pecaRestrita = Boolean(pecaRestrita);
@@ -1230,6 +1242,11 @@ cadastroRouter.put('/:id', requireCadastroAction('editar_pre_cadastro'), async (
       data,
       include: { moto: { select: { id: true, marca: true, modelo: true, ano: true } } },
     });
+
+    // Descricao/tipo mudou: refaz as tags da Nuvemshop em segundo plano (peca restrita/sucata nao anunciam).
+    if ((descricao !== undefined || tipoPecaAvulsa !== undefined) && !ehPecaRestritaEfetiva && !ehSucataEfetiva) {
+      gerarTagsCadastroEmSegundoPlano(record.id);
+    }
 
     // Renomeia a pasta do Drive quando a descrição muda (replica o nome digitado). Best-effort.
     // Peca restrita nunca teve pasta criada, entao nao tenta renomear.
@@ -1312,6 +1329,12 @@ cadastroRouter.post('/:id/finalizar', requireCadastroAction('criar_bling'), asyn
             numeroMotor: (cadastro as any).numeroMotor || null,
             shopeeCategoriaId: (cadastro as any).shopeeCategoriaId || null,
             magaluCategoriaId: (cadastro as any).magaluCategoriaId || null,
+            nuvemshopCategoriaId: (cadastro as any).nuvemshopCategoriaId || null,
+            nuvemshopTags: (cadastro as any).nuvemshopTags || null,
+            // IDs de anuncios criados enquanto o SKU ainda era pre-cadastro passam pra Peca.
+            shopeeItemId: (cadastro as any).shopeeItemId || null,
+            magaluItemId: (cadastro as any).magaluItemId || null,
+            nuvemshopProdutoId: (cadastro as any).nuvemshopProdutoId || null,
             cadastro: new Date(),
           },
         });
@@ -1377,6 +1400,12 @@ cadastroRouter.post('/:id/finalizar', requireCadastroAction('criar_bling'), asyn
             numeroMotor: (cadastro as any).numeroMotor || null,
             shopeeCategoriaId: (cadastro as any).shopeeCategoriaId || null,
             magaluCategoriaId: (cadastro as any).magaluCategoriaId || null,
+            nuvemshopCategoriaId: (cadastro as any).nuvemshopCategoriaId || null,
+            nuvemshopTags: (cadastro as any).nuvemshopTags || null,
+            // IDs de anuncios criados enquanto o SKU ainda era pre-cadastro passam pra Peca.
+            shopeeItemId: (cadastro as any).shopeeItemId || null,
+            magaluItemId: (cadastro as any).magaluItemId || null,
+            nuvemshopProdutoId: (cadastro as any).nuvemshopProdutoId || null,
             cadastro: new Date(),
           },
         });
@@ -1486,6 +1515,12 @@ cadastroRouter.post('/:id/finalizar', requireCadastroAction('criar_bling'), asyn
             numeroMotor: (cadastro as any).numeroMotor || null,
             shopeeCategoriaId: (cadastro as any).shopeeCategoriaId || null,
             magaluCategoriaId: (cadastro as any).magaluCategoriaId || null,
+            nuvemshopCategoriaId: (cadastro as any).nuvemshopCategoriaId || null,
+            nuvemshopTags: (cadastro as any).nuvemshopTags || null,
+            // IDs de anuncios criados enquanto o SKU ainda era pre-cadastro passam pra Peca.
+            shopeeItemId: (cadastro as any).shopeeItemId || null,
+            magaluItemId: (cadastro as any).magaluItemId || null,
+            nuvemshopProdutoId: (cadastro as any).nuvemshopProdutoId || null,
             tipoPecaAvulsa: cadastro.tipoPecaAvulsa || null,
             // Cada unidade recebe seu grupo de etiquetas (1 ou mais), juntas por " / ".
             detranEtiqueta: (gruposEtiquetas[i] && gruposEtiquetas[i].length)

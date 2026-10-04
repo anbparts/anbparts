@@ -1,0 +1,8 @@
+ALTER TABLE "Peca" ADD COLUMN IF NOT EXISTS "nuvemshopProdutoId" TEXT;
+ALTER TABLE "Peca" ADD COLUMN IF NOT EXISTS "nuvemshopCategoriaId" TEXT;
+ALTER TABLE "Peca" ADD COLUMN IF NOT EXISTS "nuvemshopTags" TEXT;
+ALTER TABLE "CadastroPeca" ADD COLUMN IF NOT EXISTS "nuvemshopCategoriaId" TEXT;
+ALTER TABLE "CadastroPeca" ADD COLUMN IF NOT EXISTS "nuvemshopTags" TEXT;
+ALTER TABLE "CadastroPeca" ADD COLUMN IF NOT EXISTS "shopeeItemId" TEXT;
+ALTER TABLE "CadastroPeca" ADD COLUMN IF NOT EXISTS "magaluItemId" TEXT;
+ALTER TABLE "CadastroPeca" ADD COLUMN IF NOT EXISTS "nuvemshopProdutoId" TEXT;

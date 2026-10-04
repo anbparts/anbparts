@@ -24,6 +24,7 @@ import { mercadoLivreRouter, startMercadoLivreScheduler } from './routes/mercado
 import { motosRouter } from './routes/motos';
 import { notificacoesRouter } from './routes/notificacoes';
 import { nuvemshopRouter } from './routes/nuvemshop';
+import { nuvemshopAnuncioRouter } from './routes/nuvemshopAnuncio';
 import { pecasRouter, startLimpezaFotosPecaScheduler } from './routes/pecas';
 import { sucataRouter } from './routes/sucata';
 import { shopeeRouter } from './routes/shopee';
@@ -85,6 +86,7 @@ app.use('/mercado-livre', mercadoLivreRouter);
 app.use('/motos', motosRouter);
 app.use('/notificacoes', notificacoesRouter);
 app.use('/nuvemshop', nuvemshopRouter);
+app.use('/nuvemshop', nuvemshopAnuncioRouter);
 app.use('/pecas', pecasRouter);
 app.use('/sucata', sucataRouter);
 app.use('/shopee', shopeeRouter);

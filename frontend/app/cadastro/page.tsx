@@ -428,10 +428,11 @@ export default function CadastroPage() {
   // automaticamente em seguida. Hoje: Shopee (categoria mapeada) e Magalu (categoria ainda
   // pendente de mapeamento — ver reference_magalu_api). Cada SKU pode ser criado em 1+ marketplaces
   // no mesmo lote; cada marketplace tem seu proprio status/erro, independente dos outros.
-  type AnuncioMarketplaceId = 'shopee' | 'magalu';
+  type AnuncioMarketplaceId = 'shopee' | 'magalu' | 'nuvemshop';
   const ANUNCIO_MARKETPLACES: { id: AnuncioMarketplaceId; label: string; cor: string }[] = [
     { id: 'shopee', label: 'Shopee', cor: '#ee4d2d' },
     { id: 'magalu', label: 'Magalu', cor: '#0047bb' },
+    { id: 'nuvemshop', label: 'Nuvemshop', cor: '#0f766e' },
   ];
   type ShopeeCategoriaOpcao = { id: number | string; categoria?: string; subcategoria?: string; nivel3?: string; nivel4?: string; permitido: boolean; caminho: string; generica: boolean };
   type AnuncioLinhaMarketplace = {
@@ -465,6 +466,9 @@ export default function CadastroPage() {
   }
   const [shopeeCategorias, setShopeeCategorias] = useState<ShopeeCategoriaOpcao[]>([]);
   const [magaluCategorias, setMagaluCategorias] = useState<ShopeeCategoriaOpcao[]>([]);
+  const [nuvemshopCategorias, setNuvemshopCategorias] = useState<ShopeeCategoriaOpcao[]>([]);
+  const categoriasDoMarketplace = (mk: AnuncioMarketplaceId) => (mk === 'magalu' ? magaluCategorias : mk === 'nuvemshop' ? nuvemshopCategorias : shopeeCategorias);
+  const carregarCategoriasDoMarketplace = (mk: AnuncioMarketplaceId) => { if (mk === 'magalu') carregarMagaluCategorias(); else if (mk === 'nuvemshop') carregarNuvemshopCategorias(); else carregarShopeeCategorias(); };
   const [anuncioMarketplacesSelecionados, setAnuncioMarketplacesSelecionados] = useState<Set<AnuncioMarketplaceId>>(new Set<AnuncioMarketplaceId>(['shopee', 'magalu']));
   const [anuncioCriarSkusInput, setAnuncioCriarSkusInput] = useState('');
   const [anuncioCriarBuscando, setAnuncioCriarBuscando] = useState(false);
@@ -1978,7 +1982,7 @@ export default function CadastroPage() {
     return {
       disponivel: true,
       jaTemAnuncio: !!linha.jaTemAnuncio,
-      itemId: linha.shopeeItemId ?? linha.magaluItemId ?? null,
+      itemId: linha.shopeeItemId ?? linha.magaluItemId ?? linha.nuvemshopItemId ?? null,
       categoriaAtual: linha.categoriaAtual || null,
       categoriaEscolhidaId: linha.categoriaAtual?.id ?? null,
       categoriaPendente: !!linha.categoriaPendente,
@@ -2012,8 +2016,7 @@ export default function CadastroPage() {
     const novos = new Map<string, any>();
     const faltando = anuncioCriarLinhas.filter((linha) => linha.encontrado && !linha.marketplaces[mk].disponivel).map((linha) => linha.sku);
     if (faltando.length) {
-      if (mk === 'shopee') carregarShopeeCategorias();
-      if (mk === 'magalu') carregarMagaluCategorias();
+      carregarCategoriasDoMarketplace(mk);
       try {
         const resp = await fetch(`${API}/${mk}/anuncio/buscar`, {
           method: 'POST',
@@ -2033,6 +2036,17 @@ export default function CadastroPage() {
       const elegivel = base.disponivel && linha.encontrado && !base.jaTemAnuncio && base.status !== 'ok' && base.status !== 'processando';
       return { ...linha, marketplaces: { ...linha.marketplaces, [mk]: { ...base, selecionado: elegivel } } };
     }));
+  }
+
+  async function carregarNuvemshopCategorias() {
+    if (nuvemshopCategorias.length) return;
+    try {
+      const resp = await fetch(`${API}/nuvemshop/anuncio/categorias`, { credentials: "include" });
+      const data = await readApiResponse(resp, "Erro ao buscar categorias Nuvemshop");
+      setNuvemshopCategorias(Array.isArray(data.categorias) ? data.categorias : []);
+    } catch (e: any) {
+      alert(e?.message || "Erro ao buscar categorias Nuvemshop.");
+    }
   }
 
   async function carregarMagaluCategorias() {
@@ -2055,6 +2069,7 @@ export default function CadastroPage() {
     setAnuncioCriarLinhas([]);
     if (marketplaces.includes('shopee')) carregarShopeeCategorias();
     if (marketplaces.includes('magalu')) carregarMagaluCategorias();
+    if (marketplaces.includes('nuvemshop')) carregarNuvemshopCategorias();
 
     try {
       const respostasPorMarketplace = await Promise.all(marketplaces.map(async (mk) => {
@@ -2085,7 +2100,7 @@ export default function CadastroPage() {
               altura: linha.altura,
               profundidade: linha.profundidade,
               estoque: linha.estoque,
-              marketplaces: { shopee: criarMarketplaceVazio(), magalu: criarMarketplaceVazio() },
+              marketplaces: { shopee: criarMarketplaceVazio(), magalu: criarMarketplaceVazio(), nuvemshop: criarMarketplaceVazio() },
             };
             porSku.set(linha.sku, acumulado);
           }
@@ -2148,7 +2163,7 @@ export default function CadastroPage() {
         const data = await readApiResponse(resp, `Erro ao criar anuncio ${mk} do SKU ${sku}`);
         setAnuncioCriarLinhas((prev) => prev.map((item) => item.sku === sku ? {
           ...item,
-          marketplaces: { ...item.marketplaces, [mk]: { ...item.marketplaces[mk], status: 'ok' as const, resultado: data, selecionado: false, jaTemAnuncio: true, itemId: data.shopeeItemId || data.magaluItemId || null } },
+          marketplaces: { ...item.marketplaces, [mk]: { ...item.marketplaces[mk], status: 'ok' as const, resultado: data, selecionado: false, jaTemAnuncio: true, itemId: data.shopeeItemId || data.magaluItemId || data.nuvemshopItemId || null } },
         } : item));
       } catch (e: any) {
         setAnuncioCriarLinhas((prev) => prev.map((item) => item.sku === sku ? {
@@ -2165,7 +2180,7 @@ export default function CadastroPage() {
   }
 
   const categoriaModalLinha = anuncioCriarLinhas.find((l) => l.sku === categoriaModalSku) || null;
-  const categoriaModalLista = categoriaModalMarketplace === 'magalu' ? magaluCategorias : shopeeCategorias;
+  const categoriaModalLista = categoriasDoMarketplace(categoriaModalMarketplace);
   const categoriaModalFiltradas = categoriaModalLista.filter((c) => {
     const termo = categoriaModalBusca.trim().toLowerCase();
     if (!termo) return true;
@@ -2270,13 +2285,13 @@ export default function CadastroPage() {
                           ) : (
                             <>
                               {renderCategoriaBadge(
-                                mp.categoriaPendente ? null : (mp.categoriaEscolhidaId != null ? (mk === 'magalu' ? magaluCategorias : shopeeCategorias).find((c) => c.id === mp.categoriaEscolhidaId) || mp.categoriaAtual : mp.categoriaAtual),
+                                mp.categoriaPendente ? null : (mp.categoriaEscolhidaId != null ? categoriasDoMarketplace(mk).find((c) => c.id === mp.categoriaEscolhidaId) || mp.categoriaAtual : mp.categoriaAtual),
                                 mp.categoriaPendente,
                               )}
                               {(
                                 <button
                                   type="button"
-                                  onClick={() => { if (mk === 'magalu') carregarMagaluCategorias(); else carregarShopeeCategorias(); setCategoriaModalMarketplace(mk); setCategoriaModalSku(linha.sku); setCategoriaModalBusca(''); }}
+                                  onClick={() => { carregarCategoriasDoMarketplace(mk); setCategoriaModalMarketplace(mk); setCategoriaModalSku(linha.sku); setCategoriaModalBusca(''); }}
                                   style={{ fontSize: 11, color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
                                 >
                                   Trocar categoria
@@ -2287,7 +2302,7 @@ export default function CadastroPage() {
                         </div>
                         {mp.status === 'ok' && (
                           <div style={{ fontSize: 12, color: '#16a34a', fontWeight: 700 }}>
-                            ✓ Anúncio criado — item {mp.resultado?.shopeeItemId || mp.resultado?.magaluItemId} ({mp.resultado?.fotosEnviadas} foto(s)){mp.resultado?.blingErro ? ` — ⚠ Bling: ${mp.resultado.blingErro}` : ' — Bling avisado'}
+                            ✓ Anúncio criado — item {mp.resultado?.shopeeItemId || mp.resultado?.magaluItemId || mp.resultado?.nuvemshopItemId} ({mp.resultado?.fotosEnviadas ?? mp.resultado?.imagens} foto(s)){mp.resultado?.publicado === false ? ' — oculto na loja' : ''}{mp.resultado?.blingErro ? ` — ⚠ Bling: ${mp.resultado.blingErro}` : ' — Bling avisado'}
                           </div>
                         )}
                         {mp.status === 'erro' && (
@@ -2311,7 +2326,7 @@ export default function CadastroPage() {
           <div style={{ background: '#fff', borderRadius: 14, width: '100%', maxWidth: 560, maxHeight: '80vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }} onClick={(e) => e.stopPropagation()}>
             <div style={{ padding: '16px 18px 10px', borderBottom: '1px solid var(--border)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--gray-800)' }}>Categoria {categoriaModalMarketplace === 'magalu' ? 'Magalu' : 'Shopee'} — {categoriaModalSku}</div>
+                <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--gray-800)' }}>Categoria {ANUNCIO_MARKETPLACES.find((m) => m.id === categoriaModalMarketplace)?.label} — {categoriaModalSku}</div>
                 <button onClick={() => setCategoriaModalSku(null)} style={{ border: 'none', background: 'none', fontSize: 18, cursor: 'pointer', color: 'var(--gray-400)' }}>✕</button>
               </div>
               {categoriaModalLinha?.marketplaces[categoriaModalMarketplace]?.categoriaAtual && (
