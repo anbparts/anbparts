@@ -115,6 +115,9 @@ const REGRAS: Array<[RegExp, string]> = [
   [/\bflange\b/, 'Flange'],
   [/escapamento|\bescape\b/, 'Outras Peças Escape'],
 
+  // Pecas do banco (antes de Suspensao: "amortecedor do banco" e' do assento, nao da suspensao)
+  [/(amortecedor|trava|mola|fechadura|dobradica) (do |de )?banco/, 'Banco'],
+
   // Suspensao
   [/bengala|\bgarfo\b|\bmesa\b|guarda (po|pó)/, 'Garfo / Bengala'],
   [/amortecedor/, 'Amortecedores'],
@@ -135,7 +138,7 @@ const REGRAS: Array<[RegExp, string]> = [
   [/boia|medidor (de )?nivel/, 'Boias e Medidores de Nível'],
   [/\bbanco\b|assento/, 'Banco'],
   [/painel|instrumento|velocimetro|conta giro/, 'Painel de instrumentos'],
-  [/carenagem|rabeta|capota|\bbico\b|\blateral\b|para ?lama|paralama|spoiler|\bkit (de )?plastico/, 'Carenagem (dianteira, lateral, traseira)'],
+  [/carenagem|rabeta|capota|\bbolha\b|\bbico\b|\blateral\b|para ?lama|paralama|spoiler|\bkit (de )?plastico/, 'Carenagem (dianteira, lateral, traseira)'],
   [/\bpneu(s)?\b/, 'Pneus'],
   [/\broda(s)?\b|\baro\b/, 'Roda'],
 
@@ -148,7 +151,7 @@ const REGRAS: Array<[RegExp, string]> = [
   [/parafuso|presilha|grampo/, 'Parafusos / Presilhas e Outros'],
   [/retrovisor|espelho/, 'Retrovisores'],
   [/alto falante/, 'Alto-falantes'],
-  [/slider|defletor|protetor (de )?mao|bolha|viseira|acessorio/, 'Outras Peças Acessórios'],
+  [/slider|defletor|protetor (de )?mao|viseira|acessorio/, 'Outras Peças Acessórios'],
 
   // Motor
   [/cabecote|tampa (de )?valvula/, 'Cabeçote'],
@@ -161,7 +164,7 @@ const REGRAS: Array<[RegExp, string]> = [
   [/motor|carter|bloco|cilindro|comando|correia|engrenagem|filtro|respiro/, 'Outras Peças Motor'],
 
   // Estrutura / chassi (ultimo recurso dentro de Carroceria)
-  [/protetor|chassi|subchassi|quadro|suporte|pedaleira|descanso|cavalete|guarda/, 'Outras Peças Carroceria'],
+  [/protetor|chassi|subchassi|quadro|suporte|pedaleira|descanso|cavalete|guarda|bagagem/, 'Outras Peças Carroceria'],
 ];
 
 // Devolve o texto das tags de categoria no formato usado na criacao: [pai, filha] como numeros.
