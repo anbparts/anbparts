@@ -2456,6 +2456,8 @@ export default function CadastroPage() {
         const pagina = Math.min(anuncioPagina, totalPaginas - 1);
         const visiveis = filtradas.slice(pagina * ANUNCIO_POR_PAGINA, (pagina + 1) * ANUNCIO_POR_PAGINA);
         const alternarExpandido = (sku: string) => setAnuncioExpandidos((prev) => { const next = new Set(prev); if (next.has(sku)) next.delete(sku); else next.add(sku); return next; });
+        const todosExpandidos = filtradas.length > 0 && filtradas.every((l) => anuncioExpandidos.has(l.sku));
+        const alternarTodos = () => setAnuncioExpandidos(todosExpandidos ? new Set<string>() : new Set<string>(filtradas.map((l) => l.sku)));
         const marcarTodosProntos = () => setAnuncioCriarLinhas((prev) => prev.map((linha) => {
           const mps: any = { ...linha.marketplaces };
           for (const { id } of ANUNCIO_MARKETPLACES) { const c = celula(linha, id).chave; if (c === 'pronto') mps[id] = { ...mps[id], selecionado: true }; }
@@ -2475,6 +2477,7 @@ export default function CadastroPage() {
               <button type="button" style={chip(anuncioFiltro === 'problema')} onClick={() => { setAnuncioFiltro('problema'); setAnuncioPagina(0); }}>{contagem.problema} com problema · {contagem.tem} com anúncio</button>
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <button type="button" onClick={alternarTodos} style={{ ...miniBtn('#475569'), padding: '4px 10px', fontSize: 12 }}>{todosExpandidos ? '▾ Recolher todos' : '▸ Expandir todos'}</button>
               <button type="button" onClick={marcarTodosProntos} disabled={anuncioCriarProcessando} style={{ ...miniBtn('#475569'), padding: '4px 10px', fontSize: 12 }}>Marcar todos prontos</button>
               <button
                 onClick={processarAnunciosCriarFila}
