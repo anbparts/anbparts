@@ -120,6 +120,37 @@ async function idsNoSistema(sku: string, base: Awaited<ReturnType<typeof carrega
   };
 }
 
+// POST /anuncio-vinculos/status — body: { skus }. RAPIDO: so le a situacao (ativo/inativo/...) de Shopee, Magalu e
+// Nuvemshop direto nos marketplaces, em paralelo, usando os IDs que o nosso sistema ja tem (sem tocar no Bling).
+// A tela chama isso primeiro pra pintar os status das celulas; /consultar (mais lento, usa o Bling) vem depois.
+anuncioVinculosRouter.post('/status', async (req, res, next) => {
+  try {
+    const skusInput = Array.isArray(req.body?.skus) ? req.body.skus : [];
+    const skus: string[] = Array.from(new Set(skusInput.map((s: any) => skuBaseAnuncio(s)).filter(Boolean))) as string[];
+    if (!skus.length) return res.status(400).json({ error: 'Informe ao menos 1 SKU' });
+
+    const tarefas: Array<{ sku: string; mk: Mk; id: string }> = [];
+    for (const sku of skus) {
+      const base = await carregarAnuncioBase(sku);
+      if (!base) continue;
+      const ids = await idsNoSistema(sku, base);
+      for (const mk of ['shopee', 'magalu', 'nuvemshop'] as Mk[]) if (ids[mk]) tarefas.push({ sku, mk, id: String(ids[mk]) });
+    }
+
+    const resultado: Record<string, Record<string, { texto: string; ok: boolean } | null>> = {};
+    let proximo = 0;
+    const trabalhador = async () => {
+      while (proximo < tarefas.length) {
+        const t = tarefas[proximo++];
+        const sit = await situacaoNoMarketplace(t.mk, t.sku, t.id);
+        (resultado[t.sku] = resultado[t.sku] || {})[t.mk] = sit;
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(8, tarefas.length) }, () => trabalhador()));
+    res.json({ ok: true, status: resultado });
+  } catch (e) { next(e); }
+});
+
 // POST /anuncio-vinculos/consultar — body: { skus }. 1 chamada ao Bling por SKU (todos os vinculos do produto).
 anuncioVinculosRouter.post('/consultar', async (req, res, next) => {
   try {

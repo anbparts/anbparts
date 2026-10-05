@@ -495,6 +495,8 @@ export default function CadastroPage() {
   const [anuncioExpandidos, setAnuncioExpandidos] = useState<Set<string>>(new Set<string>());
   const [anuncioFiltro, setAnuncioFiltro] = useState<'todos' | 'prontos' | 'problema'>('todos');
   const [anuncioPagina, setAnuncioPagina] = useState(0);
+  const [anuncioStatusRapido, setAnuncioStatusRapido] = useState<Record<string, Record<string, { texto: string; ok: boolean } | null>>>({});
+  const [anuncioVerificando, setAnuncioVerificando] = useState(false);
   const [excluirModal, setExcluirModal] = useState<{ sku: string; mk: AnuncioMarketplaceId } | null>(null);
   const [categoriaModalSku, setCategoriaModalSku] = useState<string | null>(null);
   const [categoriaModalMarketplace, setCategoriaModalMarketplace] = useState<AnuncioMarketplaceId>('shopee');
@@ -2137,6 +2139,23 @@ export default function CadastroPage() {
     }
   }
 
+  // Situacao (ativo/inativo/...) direto nos marketplaces, rapida (sem Bling): pinta as celulas antes de expandir.
+  async function consultarStatusRapido(skus: string[]) {
+    if (!skus.length) return;
+    try {
+      const resp = await fetch(`${API}/anuncio-vinculos/status`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ skus }) });
+      const data = await readApiResponse(resp, 'Erro ao consultar o status dos anúncios');
+      setAnuncioStatusRapido((prev) => ({ ...prev, ...(data.status || {}) }));
+    } catch (e: any) {
+      console.warn('[anuncio] status rapido:', e?.message || e);
+    }
+  }
+  async function verificarSkus(skus: string[]) {
+    if (!skus.length) return;
+    setAnuncioVerificando(true);
+    try { await Promise.all([consultarStatusRapido(skus), consultarVinculos(skus)]); } finally { setAnuncioVerificando(false); }
+  }
+
   // ---- Vinculos: le os IDs do sistema e do Bling; avisa quando ja existe e bloqueia a criacao ----
   async function consultarVinculos(skus: string[]) {
     if (!skus.length) return;
@@ -2190,6 +2209,7 @@ export default function CadastroPage() {
       const resp = await fetch(`${API}/anuncio-vinculos/remover`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sku, marketplace: mk, alvo }) });
       const data = await readApiResponse(resp, 'Erro ao remover o vínculo do anúncio');
       await recarregarMarketplaceDaLinha(sku, mk);
+      setAnuncioStatusRapido((prev) => ({ ...prev, [sku]: { ...(prev[sku] || {}), [mk]: null } }));
       await consultarVinculos([sku]);
       alert(`SKU ${sku} liberado no ${nome}.${Array.isArray(data.removidoNoBling) && data.removidoNoBling.length ? `\nRemovido no Bling: ${data.removidoNoBling.join(', ')}.` : ''}${mk === 'nuvemshop' ? '\n\nSe o produto ainda existir na loja da Nuvemshop, apague-o lá também, senão a criação continua bloqueada.' : ''}`);
     } catch (e: any) {
@@ -2278,7 +2298,7 @@ export default function CadastroPage() {
       }
       setAnuncioCriarLinhas(Array.from(porSku.values()));
       // Em seguida le os IDs do Bling (nao bloqueia a tela): avisa SKUs que ja tem anuncio/ID preenchido.
-      consultarVinculos(Array.from(porSku.values()).filter((l) => l.encontrado).map((l) => l.sku));
+      verificarSkus(Array.from(porSku.values()).filter((l) => l.encontrado).map((l) => l.sku));
     } catch (e: any) {
       alert(e?.message || 'Erro ao buscar SKUs.');
     }
@@ -2434,8 +2454,12 @@ export default function CadastroPage() {
           if (mp.status === 'processando') return { chave: 'proc', texto: '⏳ criando', cor: 'var(--gray-600)', fundo: 'transparent', clicavel: false };
           if (mp.status === 'ok') return { chave: 'ok', texto: '✓ criado', cor: '#166534', fundo: '#dcfce7', clicavel: false };
           if (mp.status === 'erro') return { chave: 'erro', texto: '✗ erro', cor: '#b91c1c', fundo: '#fee2e2', clicavel: false };
-          if (mp.jaTemAnuncio) { const sit = anuncioVinculos[linha.sku]?.mercados?.[mk]?.situacao; if (sit && !sit.ok) return { chave: 'tem', texto: `já tem ID · ${sit.texto.toLowerCase()}`, cor: '#b91c1c', fundo: '#fee2e2', clicavel: false }; }
-          if (mp.jaTemAnuncio) return { chave: 'tem', texto: 'já tem ID', cor: '#92400e', fundo: '#fef3c7', clicavel: false };
+          if (mp.jaTemAnuncio) {
+            const sit = anuncioVinculos[linha.sku]?.mercados?.[mk]?.situacao || anuncioStatusRapido[linha.sku]?.[mk];
+            if (sit && !sit.ok) return { chave: 'tem', texto: `já tem ID · ${sit.texto.toLowerCase()}`, cor: '#b91c1c', fundo: '#fee2e2', clicavel: false };
+            if (sit && sit.ok) return { chave: 'tem', texto: `já tem ID · ${sit.texto.toLowerCase()}`, cor: '#92400e', fundo: '#fef3c7', clicavel: false };
+            return { chave: 'tem', texto: anuncioVerificando ? 'já tem ID · verificando…' : 'já tem ID', cor: '#92400e', fundo: '#fef3c7', clicavel: false };
+          }
           if (mp.restricoes && mp.restricoes.length) return { chave: 'restr', texto: '⚠ restrição', cor: '#b91c1c', fundo: '#fee2e2', clicavel: false };
           if (mp.categoriaPendente || mp.categoriaEscolhidaId == null) return { chave: 'semcat', texto: 'sem categoria', cor: '#92400e', fundo: '#fffbeb', clicavel: false };
           return mp.selecionado
@@ -2476,6 +2500,7 @@ export default function CadastroPage() {
               <button type="button" style={chip(anuncioFiltro === 'todos')} onClick={() => { setAnuncioFiltro('todos'); setAnuncioPagina(0); }}>todos</button>
               <button type="button" style={chip(anuncioFiltro === 'prontos')} onClick={() => { setAnuncioFiltro('prontos'); setAnuncioPagina(0); }}>{contagem.pronto} prontos</button>
               <button type="button" style={chip(anuncioFiltro === 'problema')} onClick={() => { setAnuncioFiltro('problema'); setAnuncioPagina(0); }}>{contagem.problema} com problema · {contagem.tem} com anúncio</button>
+              {anuncioVerificando && <span style={{ fontSize: 11.5, color: 'var(--gray-500)' }}>⏳ verificando status nos marketplaces…</span>}
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               <button type="button" onClick={alternarTodos} style={{ ...miniBtn('#475569'), padding: '4px 10px', fontSize: 12 }}>{todosExpandidos ? '▾ Recolher todos' : '▸ Expandir todos'}</button>
@@ -2521,11 +2546,11 @@ export default function CadastroPage() {
                       if (!linha.marketplaces[id].disponivel) return <span key={id} />;
                       const c = celula(linha, id);
                       return (
-                        <span key={id} style={{ fontSize: 11.5, whiteSpace: 'nowrap', gridColumn: isPhone ? '2' : undefined }}>
-                          <span style={{ color: 'var(--gray-500)', display: 'inline-block', minWidth: 52 }}>{id === 'mercado-livre' ? 'ML' : ANUNCIO_MARKETPLACES.find((m) => m.id === id)?.label}</span>
+                        <span key={id} style={{ fontSize: 11.5, display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'flex-start', minWidth: 0, gridColumn: isPhone ? '2' : undefined }}>
+                          <span style={{ color: 'var(--gray-500)', fontSize: 10.5 }}>{id === 'mercado-livre' ? 'ML' : ANUNCIO_MARKETPLACES.find((m) => m.id === id)?.label}</span>
                           <span
                             onClick={(e) => { if (c.clicavel && !anuncioCriarProcessando) { e.stopPropagation(); toggleAnuncioCriarSelecionado(linha.sku, id); } }}
-                            style={{ color: c.cor, background: c.fundo, borderRadius: 5, padding: '2px 7px', fontWeight: 600, cursor: c.clicavel ? 'pointer' : 'inherit' }}
+                            style={{ color: c.cor, background: c.fundo, borderRadius: 5, padding: '2px 7px', fontWeight: 600, cursor: c.clicavel ? 'pointer' : 'inherit', maxWidth: '100%', lineHeight: 1.3 }}
                           >{c.texto}</span>
                         </span>
                       );
