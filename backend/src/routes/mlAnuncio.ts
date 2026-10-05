@@ -246,7 +246,17 @@ mlAnuncioRouter.post('/anuncio/criar', async (req, res) => {
     try {
       await blingReq(`/anuncios/${anuncioBlingId}/publicar?tipoIntegracao=MercadoLivre&idLoja=${ML_LOJA_BLING_ID}`, { method: 'POST', body: JSON.stringify({}) });
     } catch (e: any) {
-      aviso = `Anuncio criado no Bling, mas a publicacao automatica falhou: ${String(e?.message || e).slice(0, 200)}`;
+      // Mostra os motivos de verdade (fields[].msg do Bling), nao o JSON cortado.
+      const bruto = String(e?.message || e);
+      let motivos = '';
+      try {
+        const j = JSON.parse(bruto.slice(bruto.indexOf('{')));
+        const campos = Array.isArray(j?.error?.fields) ? j.error.fields : [];
+        motivos = campos.map((f: any) => [f?.element, f?.msg || f?.message].filter(Boolean).join(': ')).filter(Boolean).join(' | ');
+        if (!motivos) motivos = j?.error?.description || '';
+      } catch { /* mantem o texto bruto */ }
+      console.warn(`[mlAnuncio] publicar ${base.idPeca} (anuncio Bling ${anuncioBlingId}) falhou: ${bruto}`);
+      aviso = `Anuncio criado no Bling, mas a publicacao automatica falhou: ${(motivos || bruto).slice(0, 1200)}`;
     }
 
     // 6) Espera o ID do ML (MLB...) aparecer no anuncio do Bling (tempo curto: o proxy limita a 30s).
@@ -280,5 +290,21 @@ mlAnuncioRouter.post('/anuncio/criar', async (req, res) => {
     });
   } catch (e: any) {
     res.status(400).json({ error: e?.message || 'Erro ao criar anuncio no Mercado Livre' });
+  }
+});
+
+// GET /mercado-livre/anuncio/diagnostico?anuncio=<id Bling>&categoria=<MLB...> — devolve o JSON CRU do Bling
+// (anuncio e/ou categoria) pra descobrir nomes de campos (ex: metodo de envio) sem chutar.
+mlAnuncioRouter.get('/anuncio/diagnostico', async (req, res) => {
+  try {
+    const q = `tipoIntegracao=MercadoLivre&idLoja=${ML_LOJA_BLING_ID}`;
+    const out: any = {};
+    const anuncio = String(req.query.anuncio || '').trim();
+    const categoria = String(req.query.categoria || '').trim();
+    if (anuncio) out.anuncio = await blingReq(`/anuncios/${encodeURIComponent(anuncio)}?${q}`).catch((e: any) => ({ erro: e?.message }));
+    if (categoria) out.categoria = await blingReq(`/anuncios/categorias/${encodeURIComponent(categoria)}?${q}`).catch((e: any) => ({ erro: e?.message }));
+    res.json(out);
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message || 'Erro no diagnostico' });
   }
 });
