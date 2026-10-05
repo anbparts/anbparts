@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { API_BASE } from '@/lib/api-base';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -491,6 +491,9 @@ export default function CadastroPage() {
   const [anuncioCriarSkuAtual, setAnuncioCriarSkuAtual] = useState('');
   const [anuncioCriarMarketplaceAtual, setAnuncioCriarMarketplaceAtual] = useState<AnuncioMarketplaceId | ''>('');
   const [anuncioCriarProgresso, setAnuncioCriarProgresso] = useState({ atual: 0, total: 0 });
+  const [anuncioExpandidos, setAnuncioExpandidos] = useState<Set<string>>(new Set<string>());
+  const [anuncioFiltro, setAnuncioFiltro] = useState<'todos' | 'prontos' | 'problema'>('todos');
+  const [anuncioPagina, setAnuncioPagina] = useState(0);
   const [categoriaModalSku, setCategoriaModalSku] = useState<string | null>(null);
   const [categoriaModalMarketplace, setCategoriaModalMarketplace] = useState<AnuncioMarketplaceId>('shopee');
   const [categoriaModalBusca, setCategoriaModalBusca] = useState('');
@@ -2211,7 +2214,7 @@ export default function CadastroPage() {
     const marketplaces = Array.from(anuncioMarketplacesSelecionados);
     if (!marketplaces.length) return alert('Selecione ao menos 1 marketplace.');
     setAnuncioCriarBuscando(true);
-    setAnuncioCriarLinhas([]);
+    setAnuncioCriarLinhas([]); setAnuncioPagina(0); setAnuncioFiltro('todos'); setAnuncioExpandidos(new Set<string>());
     if (marketplaces.includes('shopee')) carregarShopeeCategorias();
     if (marketplaces.includes('magalu')) carregarMagaluCategorias();
     if (marketplaces.includes('nuvemshop')) carregarNuvemshopCategorias();
@@ -2412,204 +2415,251 @@ export default function CadastroPage() {
         </button>
       </div>
 
-      {anuncioCriarLinhas.length > 0 && (
+      {anuncioCriarLinhas.length > 0 && (() => {
+        const ANUNCIO_POR_PAGINA = 25;
+        // Estado de cada celula (SKU x marketplace) — resume tudo numa palavra curta.
+        const celula = (linha: AnuncioCriarLinha, mk: AnuncioMarketplaceId): { chave: string; texto: string; cor: string; fundo: string; clicavel: boolean } => {
+          const mp = linha.marketplaces[mk];
+          if (!mp.disponivel) return { chave: 'off', texto: '—', cor: 'var(--gray-300)', fundo: 'transparent', clicavel: false };
+          if (!linha.fotosOk) return { chave: 'bloq', texto: 'sem fotos', cor: '#b91c1c', fundo: '#fef2f2', clicavel: false };
+          if (mp.status === 'processando') return { chave: 'proc', texto: '⏳ criando', cor: '#7c3aed', fundo: '#f5f3ff', clicavel: false };
+          if (mp.status === 'ok') return { chave: 'ok', texto: '✓ criado', cor: '#166534', fundo: '#dcfce7', clicavel: false };
+          if (mp.status === 'erro') return { chave: 'erro', texto: '✗ erro', cor: '#b91c1c', fundo: '#fef2f2', clicavel: false };
+          if (mp.jaTemAnuncio) return { chave: 'tem', texto: 'já tem ID', cor: '#92400e', fundo: '#fef3c7', clicavel: false };
+          if (mp.restricoes && mp.restricoes.length) return { chave: 'restr', texto: '⚠ restrição', cor: '#b91c1c', fundo: '#fef2f2', clicavel: false };
+          if (mp.categoriaPendente || mp.categoriaEscolhidaId == null) return { chave: 'semcat', texto: 'sem categoria', cor: '#92400e', fundo: '#fffbeb', clicavel: false };
+          return mp.selecionado
+            ? { chave: 'sel', texto: '☑ criar', cor: '#166534', fundo: '#dcfce7', clicavel: true }
+            : { chave: 'pronto', texto: '☐ criar', cor: 'var(--gray-600)', fundo: 'var(--gray-100)', clicavel: true };
+        };
+        const statusLinha = (linha: AnuncioCriarLinha): 'pronto' | 'problema' | 'tem' | 'ok' => {
+          if (!linha.encontrado || !linha.fotosOk) return 'problema';
+          const cs = ANUNCIO_MARKETPLACES.filter(({ id }) => linha.marketplaces[id].disponivel).map(({ id }) => celula(linha, id).chave);
+          if (cs.some((c) => c === 'erro' || c === 'restr' || c === 'semcat')) return 'problema';
+          if (cs.some((c) => c === 'pronto' || c === 'sel')) return 'pronto';
+          if (cs.some((c) => c === 'tem')) return 'tem';
+          return 'ok';
+        };
+        const contagem = { pronto: 0, problema: 0, tem: 0 };
+        for (const l of anuncioCriarLinhas) { const st = statusLinha(l); if (st === 'pronto' || st === 'problema' || st === 'tem') contagem[st]++; }
+        const filtradas = anuncioCriarLinhas.filter((l) => anuncioFiltro === 'todos' || (anuncioFiltro === 'problema' ? statusLinha(l) === 'problema' || statusLinha(l) === 'tem' : statusLinha(l) === 'pronto'));
+        const totalPaginas = Math.max(1, Math.ceil(filtradas.length / ANUNCIO_POR_PAGINA));
+        const pagina = Math.min(anuncioPagina, totalPaginas - 1);
+        const visiveis = filtradas.slice(pagina * ANUNCIO_POR_PAGINA, (pagina + 1) * ANUNCIO_POR_PAGINA);
+        const alternarExpandido = (sku: string) => setAnuncioExpandidos((prev) => { const next = new Set(prev); if (next.has(sku)) next.delete(sku); else next.add(sku); return next; });
+        const marcarTodosProntos = () => setAnuncioCriarLinhas((prev) => prev.map((linha) => {
+          const mps: any = { ...linha.marketplaces };
+          for (const { id } of ANUNCIO_MARKETPLACES) { const c = celula(linha, id).chave; if (c === 'pronto') mps[id] = { ...mps[id], selecionado: true }; }
+          return { ...linha, marketplaces: mps };
+        }));
+        const chip = (ativo: boolean): any => ({ fontSize: 11.5, padding: '3px 10px', borderRadius: 14, cursor: 'pointer', border: `1px solid ${ativo ? '#7c3aed' : 'var(--border)'}`, background: ativo ? '#f5f3ff' : 'var(--white)', color: ativo ? '#6d28d9' : 'var(--gray-600)', fontWeight: 700 });
+        const miniBtn = (cor: string, cheio?: boolean): any => ({ fontSize: 11, fontWeight: 600, color: cheio ? '#fff' : cor, background: cheio ? cor : 'var(--white)', border: `1px solid ${cor}`, borderRadius: 5, padding: '1px 7px', cursor: 'pointer', lineHeight: 1.5 });
+        const crumb = (c?: string) => (c || '').split(' > ').join(' › ');
+
+        return (
         <div style={{ ...s.card, padding: isPhone ? '14px' : '18px', marginTop: 14 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-800)' }}>
-              {anuncioCriarLinhas.length} SKU(s) · {anuncioCriarSelecionadosCount} anúncio(s) selecionado(s)
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-800)', marginRight: 4 }}>{anuncioCriarLinhas.length} SKU(s)</span>
+              <button type="button" style={chip(anuncioFiltro === 'todos')} onClick={() => { setAnuncioFiltro('todos'); setAnuncioPagina(0); }}>todos</button>
+              <button type="button" style={chip(anuncioFiltro === 'prontos')} onClick={() => { setAnuncioFiltro('prontos'); setAnuncioPagina(0); }}>{contagem.pronto} prontos</button>
+              <button type="button" style={chip(anuncioFiltro === 'problema')} onClick={() => { setAnuncioFiltro('problema'); setAnuncioPagina(0); }}>{contagem.problema} com problema · {contagem.tem} com anúncio</button>
             </div>
-            <button
-              onClick={processarAnunciosCriarFila}
-              disabled={anuncioCriarProcessando || anuncioCriarSelecionadosCount === 0}
-              style={{ ...s.btn, background: '#ee4d2d', color: '#fff', opacity: anuncioCriarProcessando || anuncioCriarSelecionadosCount === 0 ? 0.6 : 1 }}
-            >
-              {anuncioCriarProcessando
-                ? `Criando ${anuncioCriarSkuAtual} (${anuncioCriarMarketplaceAtual ? ANUNCIO_MARKETPLACES.find((m) => m.id === anuncioCriarMarketplaceAtual)?.label : ''}) ${anuncioCriarProgresso.atual + 1}/${anuncioCriarProgresso.total}...`
-                : `Criar ${anuncioCriarSelecionadosCount} anúncio(s) selecionado(s)`}
-            </button>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <button type="button" onClick={marcarTodosProntos} disabled={anuncioCriarProcessando} style={{ ...miniBtn('#475569'), padding: '4px 10px', fontSize: 12 }}>Marcar todos prontos</button>
+              <button
+                onClick={processarAnunciosCriarFila}
+                disabled={anuncioCriarProcessando || anuncioCriarSelecionadosCount === 0}
+                style={{ ...s.btn, background: '#ee4d2d', color: '#fff', padding: '5px 12px', fontSize: 12.5, opacity: anuncioCriarProcessando || anuncioCriarSelecionadosCount === 0 ? 0.6 : 1 }}
+              >
+                {anuncioCriarProcessando
+                  ? `Criando ${anuncioCriarSkuAtual} (${anuncioCriarMarketplaceAtual ? ANUNCIO_MARKETPLACES.find((m) => m.id === anuncioCriarMarketplaceAtual)?.label : ''}) ${anuncioCriarProgresso.atual + 1}/${anuncioCriarProgresso.total}...`
+                  : `Criar selecionados (${anuncioCriarSelecionadosCount})`}
+              </button>
+            </div>
           </div>
 
-          <div style={{ display: 'grid', gap: 10 }}>
-            {anuncioCriarLinhas.map((linha) => {
-              const marketplacesDaLinha = ANUNCIO_MARKETPLACES.filter(({ id }) => linha.marketplaces[id].disponivel);
-              return (
-                <div key={linha.sku} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', background: 'var(--white)', display: 'grid', gap: 8 }}>
-                  <div>
-                    <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--blue-600)', fontWeight: 800 }}>{linha.sku}</div>
-                    {linha.encontrado ? (
-                      <>
-                        <div style={{ fontSize: 12.5, color: 'var(--gray-800)', fontWeight: 600 }}>{linha.descricao}</div>
-                        <div style={{ fontSize: 11, color: 'var(--gray-500)', marginTop: 2 }}>
-                          R$ {Number(linha.preco || 0).toFixed(2)} · estoque {linha.estoque} · {linha.moto?.marca} {linha.moto?.modelo}
-                          {linha.origem === 'cadastro' ? ' · no pré-cadastro' : ''}
-                        </div>
-                        {/* Ajuste de titulo / condicao / texto (Bling + cadastro) */}
-                        <div style={{ marginTop: 6 }}>
-                          <button
-                            type="button"
-                            onClick={() => alternarAjusteSku(linha.sku)}
-                            style={{ fontSize: 11, color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
-                          >
-                            {anuncioAjustes[linha.sku]?.aberto ? '▾ Fechar ajuste' : '✎ Ajustar título / condição / texto'}
-                          </button>
-                          {anuncioAjustes[linha.sku]?.aberto && (() => {
-                            const aj = anuncioAjustes[linha.sku];
-                            return (
-                              <div style={{ marginTop: 8, display: 'grid', gap: 8, background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: 10 }}>
-                                {aj.carregando ? (
-                                  <div style={{ fontSize: 12, color: 'var(--gray-500)' }}>Lendo o Bling...</div>
-                                ) : (
-                                  <>
-                                    <div>
-                                      <label style={s.label}>Título ({aj.titulo.length}/60)</label>
-                                      <input style={s.input} maxLength={60} value={aj.titulo} onChange={(e: any) => atualizarAjuste(linha.sku, { titulo: e.target.value })} />
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: 'left', padding: '5px 8px', fontSize: 11, color: 'var(--gray-500)', borderBottom: '1px solid var(--border)' }}>SKU / título</th>
+                  {ANUNCIO_MARKETPLACES.map(({ id, label, cor }) => (
+                    <th key={id} style={{ textAlign: 'center', padding: '5px 6px', fontSize: 11, color: cor, borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>{label}</th>
+                  ))}
+                  <th style={{ width: 28, borderBottom: '1px solid var(--border)' }} />
+                </tr>
+              </thead>
+              <tbody>
+                {visiveis.map((linha) => {
+                  const aberto = anuncioExpandidos.has(linha.sku);
+                  const colspan = ANUNCIO_MARKETPLACES.length + 2;
+                  return (
+                    <Fragment key={linha.sku}>
+                      <tr onClick={() => alternarExpandido(linha.sku)} style={{ cursor: 'pointer', background: aberto ? 'var(--gray-50)' : 'transparent' }}>
+                        <td style={{ padding: '6px 8px', borderBottom: aberto ? 'none' : '1px solid var(--gray-100)', maxWidth: 320 }}>
+                          <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--blue-600)', fontWeight: 800 }}>{linha.sku}{linha.origem === 'cadastro' ? <span style={{ fontFamily: 'inherit', fontWeight: 600, fontSize: 10.5, color: 'var(--gray-500)', marginLeft: 6 }}>pré-cadastro</span> : null}</div>
+                          <div style={{ fontSize: 11.5, color: linha.encontrado ? 'var(--gray-600)' : '#dc2626', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{linha.encontrado ? linha.descricao : (linha.erro || 'SKU não encontrado')}</div>
+                        </td>
+                        {linha.encontrado && !linha.fotosOk ? (
+                          <td colSpan={ANUNCIO_MARKETPLACES.length} style={{ padding: '6px 6px', borderBottom: aberto ? 'none' : '1px solid var(--gray-100)' }}>
+                            <span style={{ fontSize: 11.5, color: '#b91c1c', background: '#fef2f2', borderRadius: 5, padding: '2px 8px', fontWeight: 700 }}>✗ Fotos Anúncios ainda não foi processado</span>
+                          </td>
+                        ) : ANUNCIO_MARKETPLACES.map(({ id }) => {
+                          const c = celula(linha, id);
+                          return (
+                            <td key={id} style={{ textAlign: 'center', padding: '6px 4px', borderBottom: aberto ? 'none' : '1px solid var(--gray-100)' }}>
+                              <span
+                                onClick={(e) => { if (c.clicavel && !anuncioCriarProcessando) { e.stopPropagation(); toggleAnuncioCriarSelecionado(linha.sku, id); } }}
+                                style={{ display: 'inline-block', fontSize: 11, fontWeight: 700, color: c.cor, background: c.fundo, borderRadius: 5, padding: '2px 8px', whiteSpace: 'nowrap', cursor: c.clicavel ? 'pointer' : 'inherit' }}
+                              >{c.texto}</span>
+                            </td>
+                          );
+                        })}
+                        <td style={{ textAlign: 'center', color: 'var(--gray-400)', borderBottom: aberto ? 'none' : '1px solid var(--gray-100)' }}>{aberto ? '▾' : '▸'}</td>
+                      </tr>
+                      {aberto && (
+                        <tr>
+                          <td colSpan={colspan} style={{ padding: '0 8px 10px', borderBottom: '1px solid var(--gray-100)', background: 'var(--gray-50)' }}>
+                            {linha.encontrado && (
+                              <div style={{ fontSize: 11, color: 'var(--gray-500)', padding: '2px 0 8px' }}>
+                                R$ {Number(linha.preco || 0).toFixed(2)} · estoque {linha.estoque} · {linha.moto?.marca} {linha.moto?.modelo}
+                              </div>
+                            )}
+                            {linha.encontrado && !linha.fotosOk && (
+                              <div style={{ color: '#b91c1c', fontSize: 12, marginBottom: 6 }}>A pasta de fotos deste SKU não está na pasta oficial da moto. Nenhum marketplace foi habilitado — rode o Fotos Anúncios e busque de novo.</div>
+                            )}
+                            {linha.encontrado && linha.fotosOk && (
+                              <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fit, minmax(300px, 1fr))', gap: 8 }}>
+                                {ANUNCIO_MARKETPLACES.filter(({ id }) => linha.marketplaces[id].disponivel).map(({ id: mk, label, cor }) => {
+                                  const mp = linha.marketplaces[mk];
+                                  const v = anuncioVinculos[linha.sku]?.mercados?.[mk];
+                                  const ocupado = anuncioVinculoOcupado === `${linha.sku}|${mk}`;
+                                  const cat = mp.categoriaPendente ? null : (mp.categoriaEscolhidaId != null ? categoriasDoMarketplace(mk).find((c) => c.id === mp.categoriaEscolhidaId) || mp.categoriaAtual : mp.categoriaAtual);
+                                  const temVinculo = !!v && v.status !== 'livre';
+                                  return (
+                                    <div key={mk} style={{ background: 'var(--white)', border: '1px solid var(--border)', borderLeft: `3px solid ${cor}`, borderRadius: 6, padding: '7px 10px', display: 'grid', gap: 5, alignContent: 'start' }}>
+                                      <div style={{ fontSize: 11.5, fontWeight: 800, color: cor }}>{label}</div>
+                                      {!mp.jaTemAnuncio && (
+                                        <div style={{ fontSize: 12, color: 'var(--gray-700)', lineHeight: 1.4 }}>
+                                          {mp.categoriaPendente ? <span style={{ color: '#92400e' }}>⏳ Categoria pendente</span>
+                                            : !cat ? <span style={{ color: '#dc2626', fontWeight: 700 }}>Sem categoria</span>
+                                            : <span style={{ color: cat.permitido ? (cat.generica ? '#92400e' : '#166534') : '#991b1b', fontWeight: 600 }}>
+                                                {cat.generica ? '⚠ ' : ''}{!cat.permitido ? '🚫 ' : ''}{crumb(cat.caminho || [cat.categoria, cat.subcategoria, cat.nivel3, cat.nivel4].filter(Boolean).join(' > '))}
+                                              </span>}
+                                          {' '}
+                                          <button
+                                            type="button"
+                                            onClick={() => { carregarCategoriasDoMarketplace(mk); setCategoriaModalMarketplace(mk); setCategoriaModalSku(linha.sku); setCategoriaModalBusca(''); }}
+                                            style={{ fontSize: 11, color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
+                                          >trocar</button>
+                                        </div>
+                                      )}
+                                      {mk === 'mercado-livre' && !mp.jaTemAnuncio && mp.categoriaPreCadastro && String(mp.categoriaPreCadastro.id) !== String(mp.categoriaEscolhidaId) && (
+                                        <div style={{ fontSize: 11, color: 'var(--gray-500)' }}>
+                                          Pré-cadastro: {mp.categoriaPreCadastro.nome} ({mp.categoriaPreCadastro.id}){mp.sugestaoOrigem === 'ia' ? ' · sugestão da IA' : mp.sugestaoOrigem === 'palavras' ? ' · por palavras (IA indisponível — confira)' : ''}
+                                        </div>
+                                      )}
+                                      {mp.restricoes && mp.restricoes.length > 0 && (
+                                        <div style={{ fontSize: 11.5, color: '#b91c1c' }}>
+                                          ⚠ Restrição — troque a categoria:
+                                          <ul style={{ margin: '2px 0 0 16px', padding: 0 }}>{mp.restricoes.map((r, i) => <li key={i}>{r}</li>)}</ul>
+                                        </div>
+                                      )}
+                                      {temVinculo && v && (
+                                        <div style={{ fontSize: 11.5, color: v.status === 'ok' ? '#166534' : v.status === 'divergente' ? '#b91c1c' : '#92400e' }}>
+                                          <b>{v.status === 'ok' ? 'ID confere' : v.status === 'divergente' ? 'IDs diferentes' : v.status === 'so_bling' ? 'ID só no Bling' : 'ID só no sistema'}</b>
+                                          <span style={{ fontFamily: 'JetBrains Mono, monospace', marginLeft: 6, color: 'var(--gray-600)' }}>sist {v.sistemaId || '—'} · bling {v.blingCodigo || '—'}</span>
+                                          <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                                            <button type="button" disabled={ocupado || anuncioCriarProcessando || !v.sistemaId} onClick={() => removerVinculoAnuncio(linha.sku, mk, 'sistema')} title="Apaga o ID só no nosso sistema e libera o SKU" style={{ ...miniBtn('#b91c1c'), opacity: (ocupado || !v.sistemaId) ? 0.5 : 1 }}>{ocupado ? '...' : '🗑 sistema'}</button>
+                                            <button type="button" disabled={ocupado || anuncioCriarProcessando} onClick={() => removerVinculoAnuncio(linha.sku, mk, 'sistema_bling')} title="Apaga o ID no sistema e o vínculo no Bling, e libera o SKU" style={{ ...miniBtn('#b91c1c', true), opacity: ocupado ? 0.6 : 1 }}>{ocupado ? '...' : '🗑 sistema + Bling'}</button>
+                                          </div>
+                                        </div>
+                                      )}
+                                      {mp.jaTemAnuncio && !temVinculo && (
+                                        <div style={{ fontSize: 11.5, color: '#92400e' }}>Já possui anúncio (item {mp.itemId})</div>
+                                      )}
+                                      {mp.status === 'ok' && (
+                                        <div style={{ fontSize: 11.5, color: '#16a34a', fontWeight: 700 }}>
+                                          ✓ Criado — item {mp.resultado?.shopeeItemId || mp.resultado?.magaluItemId || mp.resultado?.nuvemshopItemId || mp.resultado?.mercadoLivreItemId || (mp.resultado?.anuncioBlingId ? `Bling ${mp.resultado.anuncioBlingId}` : '')} ({mp.resultado?.fotosEnviadas ?? mp.resultado?.imagens} foto(s)){mp.resultado?.publicado === false ? ' — oculto na loja' : (mp.resultado?.publicado === true ? ' — publicado' : '')}{mk === 'mercado-livre' ? ' — vinculado no Bling' : (mp.resultado?.blingErro ? ` — ⚠ Bling: ${mp.resultado.blingErro}` : ' — Bling avisado')}{mp.resultado?.aviso ? ` — ⚠ ${mp.resultado.aviso}` : ''}
+                                        </div>
+                                      )}
+                                      {mp.status === 'erro' && <div style={{ fontSize: 11.5, color: '#dc2626' }}>✗ {mp.erroProcessamento}</div>}
                                     </div>
-                                    <div>
-                                      <label style={s.label}>Condição</label>
-                                      <select style={s.input} value={aj.condicao} onChange={(e: any) => atualizarAjuste(linha.sku, { condicao: e.target.value === 'novo' ? 'novo' : 'usado' })}>
-                                        <option value="usado">Usado</option>
-                                        <option value="novo">Novo</option>
-                                      </select>
-                                      {aj.original && aj.condicao !== aj.original.condicao && (
-                                        <div style={{ fontSize: 11, color: '#92400e', marginTop: 3 }}>Mudar a condição pode alterar categoria e restrições: depois de salvar, busque o SKU de novo.</div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                            {linha.encontrado && (
+                              <div style={{ marginTop: 8 }}>
+                                <button
+                                  type="button"
+                                  onClick={() => alternarAjusteSku(linha.sku)}
+                                  style={{ fontSize: 11.5, color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
+                                >
+                                  {anuncioAjustes[linha.sku]?.aberto ? '▾ Fechar ajuste' : '✎ Ajustar título / condição / texto'}
+                                </button>
+                                {anuncioAjustes[linha.sku]?.aberto && (() => {
+                                  const aj = anuncioAjustes[linha.sku];
+                                  return (
+                                    <div style={{ marginTop: 8, display: 'grid', gap: 8, background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 8, padding: 10 }}>
+                                      {aj.carregando ? (
+                                        <div style={{ fontSize: 12, color: 'var(--gray-500)' }}>Lendo o Bling...</div>
+                                      ) : (
+                                        <>
+                                          <div>
+                                            <label style={s.label}>Título ({aj.titulo.length}/60)</label>
+                                            <input style={s.input} maxLength={60} value={aj.titulo} onChange={(e: any) => atualizarAjuste(linha.sku, { titulo: e.target.value })} />
+                                          </div>
+                                          <div>
+                                            <label style={s.label}>Condição</label>
+                                            <select style={s.input} value={aj.condicao} onChange={(e: any) => atualizarAjuste(linha.sku, { condicao: e.target.value === 'novo' ? 'novo' : 'usado' })}>
+                                              <option value="usado">Usado</option>
+                                              <option value="novo">Novo</option>
+                                            </select>
+                                            {aj.original && aj.condicao !== aj.original.condicao && (
+                                              <div style={{ fontSize: 11, color: '#92400e', marginTop: 3 }}>Mudar a condição pode alterar categoria e restrições: depois de salvar, busque o SKU de novo.</div>
+                                            )}
+                                          </div>
+                                          <div>
+                                            <label style={s.label}>Texto do anúncio (sem formatação)</label>
+                                            <textarea style={{ ...s.input, minHeight: 120, resize: 'vertical' as const }} value={aj.descricao} onChange={(e: any) => atualizarAjuste(linha.sku, { descricao: e.target.value })} />
+                                            <div style={{ fontSize: 11, color: 'var(--gray-500)', marginTop: 3 }}>Só é gravado se você alterar o texto. Ao salvar, a formatação (negrito etc.) do texto atual é substituída pelo texto simples.</div>
+                                          </div>
+                                          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                                            <button type="button" onClick={() => salvarAjusteSku(linha.sku)} disabled={aj.salvando} style={{ ...s.btn, background: '#1d4ed8', color: '#fff', opacity: aj.salvando ? 0.6 : 1 }}>
+                                              {aj.salvando ? 'Salvando...' : 'Salvar no Bling e no cadastro'}
+                                            </button>
+                                            {aj.msg && <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 700 }}>✓ {aj.msg}</span>}
+                                            {aj.erro && <span style={{ fontSize: 12, color: '#dc2626' }}>{aj.erro}</span>}
+                                          </div>
+                                        </>
                                       )}
                                     </div>
-                                    <div>
-                                      <label style={s.label}>Texto do anúncio (sem formatação)</label>
-                                      <textarea style={{ ...s.input, minHeight: 120, resize: 'vertical' as const }} value={aj.descricao} onChange={(e: any) => atualizarAjuste(linha.sku, { descricao: e.target.value })} />
-                                      <div style={{ fontSize: 11, color: 'var(--gray-500)', marginTop: 3 }}>Só é gravado se você alterar o texto. Ao salvar, a formatação (negrito etc.) do texto atual é substituída pelo texto simples.</div>
-                                    </div>
-                                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                                      <button type="button" onClick={() => salvarAjusteSku(linha.sku)} disabled={aj.salvando} style={{ ...s.btn, background: '#1d4ed8', color: '#fff', opacity: aj.salvando ? 0.6 : 1 }}>
-                                        {aj.salvando ? 'Salvando...' : 'Salvar no Bling e no cadastro'}
-                                      </button>
-                                      {aj.msg && <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 700 }}>✓ {aj.msg}</span>}
-                                      {aj.erro && <span style={{ fontSize: 12, color: '#dc2626' }}>{aj.erro}</span>}
-                                    </div>
-                                  </>
-                                )}
+                                  );
+                                })()}
                               </div>
-                            );
-                          })()}
-                        </div>
-                      </>
-                    ) : (
-                      <div style={{ fontSize: 12, color: '#dc2626' }}>{linha.erro || 'SKU não encontrado'}</div>
-                    )}
-                  </div>
-
-                  {linha.encontrado && !linha.fotosOk && (
-                    <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', borderRadius: 6, padding: '8px 10px', fontSize: 12, fontWeight: 700 }}>
-                      ✗ Fotos Anúncios ainda não foi processado para este SKU: a pasta dele não está na pasta oficial da moto. Nenhum marketplace foi habilitado — rode o Fotos Anúncios e busque de novo.
-                    </div>
-                  )}
-
-                  {linha.encontrado && linha.fotosOk && marketplacesDaLinha.map(({ id: mk, label, cor }) => {
-                    const mp = linha.marketplaces[mk];
-                    const isAtual = linha.sku === anuncioCriarSkuAtual && mk === anuncioCriarMarketplaceAtual && anuncioCriarProcessando;
-                    return (
-                      <div key={mk} style={{ marginLeft: 4, paddingLeft: 10, borderLeft: `3px solid ${cor}`, display: 'grid', gap: 4, background: isAtual ? '#faf5ff' : mp.jaTemAnuncio ? '#fffbeb' : 'transparent', borderRadius: 4, padding: '6px 10px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                          <input
-                            type="checkbox"
-                            checked={mp.selecionado}
-                            disabled={mp.jaTemAnuncio || !!(mp.restricoes && mp.restricoes.length) || mp.categoriaEscolhidaId == null}
-                            onChange={() => toggleAnuncioCriarSelecionado(linha.sku, mk)}
-                          />
-                          <span style={{ fontSize: 11.5, fontWeight: 800, color: cor }}>{label}</span>
-                          {mp.jaTemAnuncio ? (
-                            <span style={{ fontSize: 11, color: '#92400e', background: '#fef3c7', border: '1px solid #fde68a', borderRadius: 5, padding: '2px 8px', fontWeight: 700 }}>
-                              Já possui anúncio (item {mp.itemId})
-                            </span>
-                          ) : (
-                            <>
-                              {renderCategoriaBadge(
-                                mp.categoriaPendente ? null : (mp.categoriaEscolhidaId != null ? categoriasDoMarketplace(mk).find((c) => c.id === mp.categoriaEscolhidaId) || mp.categoriaAtual : mp.categoriaAtual),
-                                mp.categoriaPendente,
-                              )}
-                              {(
-                                <button
-                                  type="button"
-                                  onClick={() => { carregarCategoriasDoMarketplace(mk); setCategoriaModalMarketplace(mk); setCategoriaModalSku(linha.sku); setCategoriaModalBusca(''); }}
-                                  style={{ fontSize: 11, color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
-                                >
-                                  Trocar categoria
-                                </button>
-                              )}
-                            </>
-                          )}
-                        </div>
-                        {(() => {
-                          const v = anuncioVinculos[linha.sku]?.mercados?.[mk];
-                          if (!v || v.status === 'livre') return null;
-                          const ocupado = anuncioVinculoOcupado === `${linha.sku}|${mk}`;
-                          const rotulo = v.status === 'ok' ? 'IDs conferem' : v.status === 'divergente' ? 'IDs DIFERENTES entre sistema e Bling' : v.status === 'so_bling' ? 'ID só no Bling (o sistema não tem)' : 'ID só no sistema (o Bling não tem vínculo)';
-                          const cor = v.status === 'ok' ? '#166534' : v.status === 'divergente' ? '#b91c1c' : '#92400e';
-                          const fundo = v.status === 'ok' ? '#f0fdf4' : v.status === 'divergente' ? '#fef2f2' : '#fffbeb';
-                          return (
-                            <div style={{ fontSize: 11.5, color: cor, background: fundo, border: `1px solid ${cor}33`, borderRadius: 6, padding: '6px 8px', display: 'grid', gap: 6 }}>
-                              <div>
-                                <b>Este SKU já tem ID de anúncio no {label}.</b> {rotulo}.
-                                <div style={{ fontFamily: 'JetBrains Mono, monospace', marginTop: 2 }}>
-                                  Sistema: {v.sistemaId || '—'} · Bling: {v.blingCodigo || '—'}
-                                </div>
-                              </div>
-                              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                                <button
-                                  type="button"
-                                  disabled={ocupado || anuncioCriarProcessando || !v.sistemaId}
-                                  onClick={() => removerVinculoAnuncio(linha.sku, mk, 'sistema')}
-                                  title={v.sistemaId ? 'Apaga o ID só no nosso sistema e libera o SKU' : 'O sistema não tem ID para apagar'}
-                                  style={{ fontSize: 11, fontWeight: 700, color: '#b91c1c', background: '#fff', border: '1px solid #fecaca', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', opacity: (ocupado || !v.sistemaId) ? 0.5 : 1 }}
-                                >
-                                  {ocupado ? 'Removendo...' : 'Remover do sistema'}
-                                </button>
-                                <button
-                                  type="button"
-                                  disabled={ocupado || anuncioCriarProcessando}
-                                  onClick={() => removerVinculoAnuncio(linha.sku, mk, 'sistema_bling')}
-                                  title="Apaga o ID no nosso sistema e o vínculo no Bling, e libera o SKU"
-                                  style={{ fontSize: 11, fontWeight: 700, color: '#fff', background: '#b91c1c', border: '1px solid #b91c1c', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', opacity: ocupado ? 0.6 : 1 }}
-                                >
-                                  {ocupado ? 'Removendo...' : 'Remover do sistema + Bling'}
-                                </button>
-                              </div>
-                            </div>
-                          );
-                        })()}
-                        {mp.restricoes && mp.restricoes.length > 0 && (
-                          <div style={{ fontSize: 11.5, color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, padding: '6px 8px' }}>
-                            <div style={{ fontWeight: 800 }}>⚠ Categoria com restrição — ajuste antes de criar (use "Trocar categoria"):</div>
-                            <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>
-                              {mp.restricoes.map((r, i) => <li key={i}>{r}</li>)}
-                            </ul>
-                          </div>
-                        )}
-                        {mk === 'mercado-livre' && !mp.jaTemAnuncio && mp.categoriaPreCadastro && String(mp.categoriaPreCadastro.id) !== String(mp.categoriaEscolhidaId) && (
-                          <div style={{ fontSize: 11, color: 'var(--gray-500)' }}>
-                            Categoria do pré-cadastro: {mp.categoriaPreCadastro.nome} ({mp.categoriaPreCadastro.id}){mp.sugestaoOrigem === 'ia' ? ' · sugestão da IA entre as categorias de moto' : mp.sugestaoOrigem === 'palavras' ? ' · sugestão por palavras (IA indisponível — confira)' : ''}
-                          </div>
-                        )}
-                        {mp.status === 'ok' && (
-                          <div style={{ fontSize: 12, color: '#16a34a', fontWeight: 700 }}>
-                            ✓ Anúncio criado — item {mp.resultado?.shopeeItemId || mp.resultado?.magaluItemId || mp.resultado?.nuvemshopItemId || mp.resultado?.mercadoLivreItemId || (mp.resultado?.anuncioBlingId ? `Bling ${mp.resultado.anuncioBlingId}` : '')} ({mp.resultado?.fotosEnviadas ?? mp.resultado?.imagens} foto(s)){mp.resultado?.publicado === false ? ' — oculto na loja' : (mp.resultado?.publicado === true ? ' — publicado' : '')}{mk === 'mercado-livre' ? ' — vinculado no Bling' : (mp.resultado?.blingErro ? ` — ⚠ Bling: ${mp.resultado.blingErro}` : ' — Bling avisado')}{mp.resultado?.aviso ? ` — ⚠ ${mp.resultado.aviso}` : ''}
-                          </div>
-                        )}
-                        {mp.status === 'erro' && (
-                          <div style={{ fontSize: 12, color: '#dc2626' }}>✗ {mp.erroProcessamento}</div>
-                        )}
-                        {isAtual && (
-                          <div style={{ fontSize: 12, color: '#7c3aed', fontWeight: 700 }}>⏳ Criando anúncio...</div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            })}
+                            )}
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
+
+          {totalPaginas > 1 && (
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 10, marginTop: 12, fontSize: 12 }}>
+              <button type="button" disabled={pagina === 0} onClick={() => setAnuncioPagina(pagina - 1)} style={{ ...miniBtn('#475569'), padding: '3px 10px', opacity: pagina === 0 ? 0.4 : 1 }}>‹ anterior</button>
+              <span style={{ color: 'var(--gray-600)' }}>página {pagina + 1} de {totalPaginas} · {filtradas.length} SKU(s)</span>
+              <button type="button" disabled={pagina >= totalPaginas - 1} onClick={() => setAnuncioPagina(pagina + 1)} style={{ ...miniBtn('#475569'), padding: '3px 10px', opacity: pagina >= totalPaginas - 1 ? 0.4 : 1 }}>próxima ›</button>
+            </div>
+          )}
         </div>
-      )}
+        );
+      })()}
 
       {categoriaModalSku && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }} onClick={() => setCategoriaModalSku(null)}>
