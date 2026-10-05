@@ -13,6 +13,7 @@ import { carregarFolhasMoto, sugerirCategoriaML, verificarCategoriaML, ML_LOJA_B
 
 export const mlAnuncioRouter = Router();
 
+const FRETE_TIPO_COMPRADOR = 2; // mercadoLivre.frete.tipo aceito pelo Bling: "Envio por conta do comprador"
 const MODALIDADE_ML = 'gold_pro'; // "Premium" — igual aos anuncios que o Bling cria hoje
 const ML_EMPTY_GTIN_REASON_SEM_GTIN = '17055161'; // valor "O produto nao tem GTIN" (igual aos anuncios existentes)
 
@@ -233,7 +234,9 @@ mlAnuncioRouter.post('/anuncio/criar', async (req, res) => {
       categoria: { id: categoriaId },
       atributos,
       imagens: [{ url: imagemUrl, ordem: 1 }],
-      mercadoLivre: { modalidade: MODALIDADE_ML },
+      // Envio por conta do comprador (tipo 2): validado em 06/10 no KY01_0016 — o Bling exige o metodo de envio
+      // pra publicar; o Bruno ajusta o frete no ML conforme o preco que ele calcula (tipo 1 foi recusado).
+      mercadoLivre: { modalidade: MODALIDADE_ML, frete: { gratis: false, tipo: FRETE_TIPO_COMPRADOR } },
       ...(deposito ? { estoques: { itens: [deposito] } } : {}),
     };
 
