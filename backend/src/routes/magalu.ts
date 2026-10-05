@@ -15,8 +15,9 @@ import {
   magaluMontarDatasheet,
   magaluAtualizarConteudoSku,
 } from '../lib/magalu-api';
-import { baixarFotoDrivePorId, buscarFotosDriveSku, buscarFotosAnuncioSku } from '../lib/fotos-cadastro';
+import { baixarFotoDrivePorId, buscarFotosDriveSku } from '../lib/fotos-cadastro';
 import { carregarAnuncioBase, gravarIdsAnuncio } from '../lib/anuncioBase';
+import { exigirFotosOficiais, garantirProdutoAtivoNoBling } from '../lib/anuncioPreparar';
 import { informarAnuncioMagaluNoBling, findBlingProductsByCodes, fetchBlingProductDetailById } from './bling';
 import { prisma } from '../lib/prisma';
 
@@ -270,6 +271,8 @@ magaluRouter.post('/anuncio/buscar', async (req, res, next) => {
       linhas.push({
         sku,
         origem: peca.origem,
+        fotosProcessadas: peca.fotosOficiais > 0,
+        fotosQtd: peca.fotosOficiais,
         encontrado: true,
         descricao: peca.descricao,
         moto: peca.moto,
@@ -403,6 +406,7 @@ magaluRouter.post('/anuncio/criar', async (req, res, next) => {
     // Peca (ja finalizada) OU pre-cadastro — ver lib/anuncioBase.ts.
     const peca = await carregarAnuncioBase(sku);
     if (!peca) return res.status(404).json({ error: 'SKU nao encontrado no ANB (nem em Pecas, nem no pre-cadastro)' });
+    exigirFotosOficiais(peca);
     if (peca.magaluItemId) return res.status(400).json({ error: `SKU ja possui anuncio Magalu (item ${peca.magaluItemId}) — apague manualmente antes de recriar.` });
 
     const qtdDisponivel = peca.estoque;
@@ -415,7 +419,10 @@ magaluRouter.post('/anuncio/criar', async (req, res, next) => {
 
     // So 1 foto (capa) pra criacao, mesmo criterio adotado na Shopee — evita pesar essa etapa; o
     // resto das fotos fica por conta da aba Fotos Anuncios.
-    const drive = await buscarFotosAnuncioSku(peca.motoId, sku);
+    // O produto nasce INATIVO no Bling (pre-cadastro): ativa antes de criar o anuncio.
+    await garantirProdutoAtivoNoBling(peca);
+
+    const drive = await buscarFotosDriveSku(peca.motoId, sku);
     const fotoCapa = drive.fotos[0];
     if (!fotoCapa) return res.status(400).json({ error: 'Nenhuma foto encontrada no Drive pra esse SKU — o SKU precisa de pelo menos 1 imagem.' });
     const imageUrls = [`${getBackendBase()}/magalu/imagem/${encodeURIComponent(fotoCapa.id)}`];

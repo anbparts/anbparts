@@ -4,6 +4,7 @@ import { prepararImagensShopeeParaNovoItem } from '../lib/fotos-cadastro';
 import { informarAnuncioShopeeNoBling, findBlingProductsByCodes, fetchBlingProductDetailById } from './bling';
 import { prisma } from '../lib/prisma';
 import { carregarAnuncioBase, gravarIdsAnuncio } from '../lib/anuncioBase';
+import { exigirFotosOficiais, garantirProdutoAtivoNoBling } from '../lib/anuncioPreparar';
 
 export const shopeeRouter = Router();
 
@@ -192,6 +193,8 @@ shopeeRouter.post('/anuncio/buscar', async (req, res, next) => {
       linhas.push({
         sku,
         origem: peca.origem,
+        fotosProcessadas: peca.fotosOficiais > 0,
+        fotosQtd: peca.fotosOficiais,
         encontrado: true,
         descricao: peca.descricao,
         moto: peca.moto,
@@ -230,6 +233,7 @@ shopeeRouter.post('/anuncio/criar', async (req, res, next) => {
 
     const peca = await carregarAnuncioBase(sku);
     if (!peca) return res.status(404).json({ error: 'SKU nao encontrado no ANB (nem em Pecas, nem no pre-cadastro)' });
+    exigirFotosOficiais(peca);
     if (peca.shopeeItemId) return res.status(400).json({ error: `SKU ja possui anuncio Shopee (item ${peca.shopeeItemId}) — apague manualmente antes de recriar.` });
 
     const categoriaId = categoriaIdOverride || Number(peca.shopeeCategoriaId || 0);
@@ -240,6 +244,10 @@ shopeeRouter.post('/anuncio/criar', async (req, res, next) => {
 
     const qtdDisponivel = peca.estoque;
     if (!qtdDisponivel) return res.status(400).json({ error: 'Nenhuma unidade disponivel em estoque pra esse SKU' });
+
+    // O produto nasce INATIVO no Bling (pre-cadastro): ativa ANTES de ler a descricao do Bling
+    // (produto inativo nao aparece na busca por codigo) e de criar o anuncio.
+    await garantirProdutoAtivoNoBling(peca);
 
     // So sobe 1 foto pra criacao (minimo exigido pela Shopee) — o resto fica a cargo da aba Fotos
     // Anuncios, que ja detecta itens com poucas fotos e completa depois. Isso evita empilhar o

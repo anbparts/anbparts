@@ -428,11 +428,12 @@ export default function CadastroPage() {
   // automaticamente em seguida. Hoje: Shopee (categoria mapeada) e Magalu (categoria ainda
   // pendente de mapeamento — ver reference_magalu_api). Cada SKU pode ser criado em 1+ marketplaces
   // no mesmo lote; cada marketplace tem seu proprio status/erro, independente dos outros.
-  type AnuncioMarketplaceId = 'shopee' | 'magalu' | 'nuvemshop';
+  type AnuncioMarketplaceId = 'shopee' | 'magalu' | 'nuvemshop' | 'mercado-livre';
   const ANUNCIO_MARKETPLACES: { id: AnuncioMarketplaceId; label: string; cor: string }[] = [
     { id: 'shopee', label: 'Shopee', cor: '#ee4d2d' },
     { id: 'magalu', label: 'Magalu', cor: '#0047bb' },
     { id: 'nuvemshop', label: 'Nuvemshop', cor: '#0f766e' },
+    { id: 'mercado-livre', label: 'Mercado Livre', cor: '#b45309' },
   ];
   type ShopeeCategoriaOpcao = { id: number | string; categoria?: string; subcategoria?: string; nivel3?: string; nivel4?: string; permitido: boolean; caminho: string; generica: boolean };
   type AnuncioLinhaMarketplace = {
@@ -446,10 +447,16 @@ export default function CadastroPage() {
     status: 'pendente' | 'processando' | 'ok' | 'erro';
     resultado: any;
     erroProcessamento: string;
+    restricoes?: string[]; // Mercado Livre: restricoes da categoria sugerida/escolhida (bloqueia a criacao ate ajustar)
+    categoriaPreCadastro?: { id: string; nome: string } | null;
+    sugestaoOrigem?: string;
   };
+  type AnuncioAjuste = { aberto: boolean; carregando: boolean; salvando: boolean; titulo: string; descricao: string; condicao: 'usado' | 'novo'; original: { titulo: string; descricao: string; condicao: string } | null; msg: string; erro: string };
   type AnuncioCriarLinha = {
     sku: string;
     encontrado: boolean;
+    fotosOk: boolean; // pasta do SKU ja esta na pasta oficial da moto (Fotos Anuncios processado)
+    origem?: string;
     erro?: string;
     descricao?: string;
     moto?: { marca?: string; modelo?: string; ano?: number } | null;
@@ -467,8 +474,11 @@ export default function CadastroPage() {
   const [shopeeCategorias, setShopeeCategorias] = useState<ShopeeCategoriaOpcao[]>([]);
   const [magaluCategorias, setMagaluCategorias] = useState<ShopeeCategoriaOpcao[]>([]);
   const [nuvemshopCategorias, setNuvemshopCategorias] = useState<ShopeeCategoriaOpcao[]>([]);
-  const categoriasDoMarketplace = (mk: AnuncioMarketplaceId) => (mk === 'magalu' ? magaluCategorias : mk === 'nuvemshop' ? nuvemshopCategorias : shopeeCategorias);
-  const carregarCategoriasDoMarketplace = (mk: AnuncioMarketplaceId) => { if (mk === 'magalu') carregarMagaluCategorias(); else if (mk === 'nuvemshop') carregarNuvemshopCategorias(); else carregarShopeeCategorias(); };
+  const [mlCategorias, setMlCategorias] = useState<ShopeeCategoriaOpcao[]>([]);
+  const categoriasDoMarketplace = (mk: AnuncioMarketplaceId) => (mk === 'magalu' ? magaluCategorias : mk === 'nuvemshop' ? nuvemshopCategorias : mk === 'mercado-livre' ? mlCategorias : shopeeCategorias);
+  const carregarCategoriasDoMarketplace = (mk: AnuncioMarketplaceId) => { if (mk === 'magalu') carregarMagaluCategorias(); else if (mk === 'nuvemshop') carregarNuvemshopCategorias(); else if (mk === 'mercado-livre') carregarMlCategorias(); else carregarShopeeCategorias(); };
+  // Ajuste de titulo/condicao/texto por SKU (Bling + cadastro), pra corrigir falha de cadastro na hora de anunciar.
+  const [anuncioAjustes, setAnuncioAjustes] = useState<Record<string, AnuncioAjuste>>({});
   const [anuncioMarketplacesSelecionados, setAnuncioMarketplacesSelecionados] = useState<Set<AnuncioMarketplaceId>>(new Set<AnuncioMarketplaceId>(['shopee', 'magalu']));
   const [anuncioCriarSkusInput, setAnuncioCriarSkusInput] = useState('');
   const [anuncioCriarBuscando, setAnuncioCriarBuscando] = useState(false);
@@ -1992,14 +2002,18 @@ export default function CadastroPage() {
     return {
       disponivel: true,
       jaTemAnuncio: !!linha.jaTemAnuncio,
-      itemId: linha.shopeeItemId ?? linha.magaluItemId ?? linha.nuvemshopItemId ?? null,
+      itemId: linha.shopeeItemId ?? linha.magaluItemId ?? linha.nuvemshopItemId ?? linha.mercadoLivreItemId ?? null,
       categoriaAtual: linha.categoriaAtual || null,
       categoriaEscolhidaId: linha.categoriaAtual?.id ?? null,
       categoriaPendente: !!linha.categoriaPendente,
-      selecionado: !!linha.encontrado && !linha.jaTemAnuncio,
+      // Sem fotos na pasta oficial, sem categoria ou com restricao: nao vem marcado (precisa ajustar antes).
+      selecionado: !!linha.encontrado && !linha.jaTemAnuncio && linha.fotosProcessadas !== false && !linha.categoriaPendente && !(Array.isArray(linha.restricoes) && linha.restricoes.length),
       status: 'pendente',
       resultado: null,
       erroProcessamento: '',
+      restricoes: Array.isArray(linha.restricoes) ? linha.restricoes : [],
+      categoriaPreCadastro: linha.categoriaPreCadastro || null,
+      sugestaoOrigem: linha.sugestaoOrigem,
     };
   }
 
@@ -2043,7 +2057,7 @@ export default function CadastroPage() {
     setAnuncioCriarLinhas((prev) => prev.map((linha) => {
       const novo = novos.get(linha.sku);
       const base = !linha.marketplaces[mk].disponivel && novo ? montarMarketplaceDaLinha(novo) : linha.marketplaces[mk];
-      const elegivel = base.disponivel && linha.encontrado && !base.jaTemAnuncio && base.status !== 'ok' && base.status !== 'processando';
+      const elegivel = base.disponivel && linha.encontrado && linha.fotosOk && !base.jaTemAnuncio && !base.categoriaPendente && !(base.restricoes && base.restricoes.length) && base.status !== 'ok' && base.status !== 'processando';
       return { ...linha, marketplaces: { ...linha.marketplaces, [mk]: { ...base, selecionado: elegivel } } };
     }));
   }
@@ -2056,6 +2070,61 @@ export default function CadastroPage() {
       setNuvemshopCategorias(Array.isArray(data.categorias) ? data.categorias : []);
     } catch (e: any) {
       alert(e?.message || "Erro ao buscar categorias Nuvemshop.");
+    }
+  }
+
+  async function carregarMlCategorias() {
+    if (mlCategorias.length) return;
+    try {
+      const resp = await fetch(`${API}/mercado-livre/anuncio/categorias`, { credentials: "include" });
+      const data = await readApiResponse(resp, "Erro ao buscar categorias do Mercado Livre");
+      setMlCategorias(Array.isArray(data.categorias) ? data.categorias : []);
+    } catch (e: any) {
+      alert(e?.message || "Erro ao buscar categorias do Mercado Livre.");
+    }
+  }
+
+  // ---- Ajuste do SKU (titulo / condicao / texto) direto na aba Anuncio: grava no Bling + cadastro ----
+  const ajusteVazio = (): AnuncioAjuste => ({ aberto: false, carregando: false, salvando: false, titulo: '', descricao: '', condicao: 'usado', original: null, msg: '', erro: '' });
+  function atualizarAjuste(sku: string, patch: Partial<AnuncioAjuste>) {
+    setAnuncioAjustes((prev) => ({ ...prev, [sku]: { ...(prev[sku] || ajusteVazio()), ...patch } }));
+  }
+  async function alternarAjusteSku(sku: string) {
+    const atual = anuncioAjustes[sku];
+    if (atual?.aberto) { atualizarAjuste(sku, { aberto: false }); return; }
+    atualizarAjuste(sku, { aberto: true, carregando: true, erro: '', msg: '' });
+    try {
+      const resp = await fetch(`${API}/anuncio-ajuste/dados?sku=${encodeURIComponent(sku)}`, { credentials: 'include' });
+      const data = await readApiResponse(resp, 'Erro ao ler os dados do SKU');
+      atualizarAjuste(sku, {
+        carregando: false,
+        titulo: data.titulo || '',
+        descricao: data.descricao || '',
+        condicao: data.condicao === 'novo' ? 'novo' : 'usado',
+        original: { titulo: data.titulo || '', descricao: data.descricao || '', condicao: data.condicao === 'novo' ? 'novo' : 'usado' },
+        erro: data.erroBling ? `Aviso: não consegui ler o Bling (${data.erroBling}). Mostrando os dados do cadastro.` : '',
+      });
+    } catch (e: any) {
+      atualizarAjuste(sku, { carregando: false, erro: e?.message || 'Erro ao ler os dados do SKU.' });
+    }
+  }
+  async function salvarAjusteSku(sku: string) {
+    const aj = anuncioAjustes[sku];
+    if (!aj || !aj.original) return;
+    const corpo: any = { sku };
+    if (aj.titulo !== aj.original.titulo) corpo.titulo = aj.titulo;
+    if (aj.descricao !== aj.original.descricao) corpo.descricao = aj.descricao;
+    if (aj.condicao !== aj.original.condicao) corpo.condicao = aj.condicao;
+    if (Object.keys(corpo).length === 1) { atualizarAjuste(sku, { msg: 'Nada para salvar.', erro: '' }); return; }
+    atualizarAjuste(sku, { salvando: true, msg: '', erro: '' });
+    try {
+      const resp = await fetch(`${API}/anuncio-ajuste/salvar`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) });
+      await readApiResponse(resp, 'Erro ao salvar o ajuste');
+      atualizarAjuste(sku, { salvando: false, msg: 'Salvo no Bling e no cadastro.', original: { titulo: aj.titulo, descricao: aj.descricao, condicao: aj.condicao } });
+      // Titulo na linha e condicao (muda categoria/atributos do ML): atualiza a linha na tela.
+      setAnuncioCriarLinhas((prev) => prev.map((l) => l.sku === sku ? { ...l, descricao: aj.titulo } : l));
+    } catch (e: any) {
+      atualizarAjuste(sku, { salvando: false, erro: e?.message || 'Erro ao salvar.' });
     }
   }
 
@@ -2080,27 +2149,39 @@ export default function CadastroPage() {
     if (marketplaces.includes('shopee')) carregarShopeeCategorias();
     if (marketplaces.includes('magalu')) carregarMagaluCategorias();
     if (marketplaces.includes('nuvemshop')) carregarNuvemshopCategorias();
+    if (marketplaces.includes('mercado-livre')) carregarMlCategorias();
 
     try {
+      // Cada marketplace e' buscado separado e tolerante a falha: se um cair (ex: Mercado Livre), os outros seguem.
+      const falhas: string[] = [];
       const respostasPorMarketplace = await Promise.all(marketplaces.map(async (mk) => {
-        const resp = await fetch(`${API}/${mk}/anuncio/buscar`, {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ skus }),
-        });
-        const data = await readApiResponse(resp, `Erro ao buscar SKUs no ${mk}`);
-        return { mk, linhas: Array.isArray(data.linhas) ? data.linhas : [] };
+        try {
+          const resp = await fetch(`${API}/${mk}/anuncio/buscar`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ skus }),
+          });
+          const data = await readApiResponse(resp, `Erro ao buscar SKUs no ${mk}`);
+          return { mk, linhas: Array.isArray(data.linhas) ? data.linhas : [] };
+        } catch (e: any) {
+          falhas.push(`${ANUNCIO_MARKETPLACES.find((m) => m.id === mk)?.label || mk}: ${e?.message || e}`);
+          return { mk, linhas: [] as any[] };
+        }
       }));
+      if (falhas.length) alert(`Não consegui buscar em:\n${falhas.join('\n')}`);
 
       const porSku = new Map<string, AnuncioCriarLinha>();
       for (const { mk, linhas } of respostasPorMarketplace) {
         for (const linha of linhas) {
           let acumulado = porSku.get(linha.sku);
+          if (acumulado && linha.fotosProcessadas === false) acumulado.fotosOk = false;
           if (!acumulado) {
             acumulado = {
               sku: linha.sku,
               encontrado: !!linha.encontrado,
+              fotosOk: linha.fotosProcessadas !== false,
+              origem: linha.origem,
               erro: linha.erro,
               descricao: linha.descricao,
               moto: linha.moto,
@@ -2110,7 +2191,7 @@ export default function CadastroPage() {
               altura: linha.altura,
               profundidade: linha.profundidade,
               estoque: linha.estoque,
-              marketplaces: { shopee: criarMarketplaceVazio(), magalu: criarMarketplaceVazio(), nuvemshop: criarMarketplaceVazio() },
+              marketplaces: { shopee: criarMarketplaceVazio(), magalu: criarMarketplaceVazio(), nuvemshop: criarMarketplaceVazio(), 'mercado-livre': criarMarketplaceVazio() },
             };
             porSku.set(linha.sku, acumulado);
           }
@@ -2133,12 +2214,33 @@ export default function CadastroPage() {
     }));
   }
 
-  function escolherCategoriaParaLinha(sku: string, mk: AnuncioMarketplaceId, categoriaId: number | string) {
+  async function escolherCategoriaParaLinha(sku: string, mk: AnuncioMarketplaceId, categoriaId: number | string) {
+    const escolhida = categoriasDoMarketplace(mk).find((c) => c.id === categoriaId) || null;
+    // Mercado Livre: confere as restricoes da categoria escolhida (condicao aceita, atributos obrigatorios...).
+    let restricoes: string[] = [];
+    if (mk === 'mercado-livre') {
+      try {
+        const cond = anuncioAjustes[sku]?.condicao || 'usado';
+        const resp = await fetch(`${API}/mercado-livre/anuncio/verificar-categoria?id=${encodeURIComponent(String(categoriaId))}&condicao=${cond}`, { credentials: 'include' });
+        const data = await readApiResponse(resp, 'Erro ao verificar a categoria');
+        restricoes = Array.isArray(data.restricoes) ? data.restricoes : [];
+      } catch (e: any) {
+        restricoes = [`Não consegui verificar as restrições da categoria: ${e?.message || e}`];
+      }
+    }
     setAnuncioCriarLinhas((prev) => prev.map((linha) => {
       if (linha.sku !== sku) return linha;
       const atual = linha.marketplaces[mk];
-      // Escolher uma categoria resolve a pendencia (antes o selo "Categoria pendente" nao saia).
-      return { ...linha, marketplaces: { ...linha.marketplaces, [mk]: { ...atual, categoriaEscolhidaId: categoriaId, categoriaPendente: false } } };
+      // Escolher uma categoria resolve a pendencia; sem restricao e com fotos oficiais, ja deixa marcada.
+      const liberada = linha.fotosOk && !atual.jaTemAnuncio && restricoes.length === 0;
+      return { ...linha, marketplaces: { ...linha.marketplaces, [mk]: {
+        ...atual,
+        categoriaEscolhidaId: categoriaId,
+        categoriaPendente: false,
+        categoriaAtual: escolhida ? { ...escolhida, permitido: restricoes.length === 0 } : atual.categoriaAtual,
+        restricoes,
+        selecionado: liberada,
+      } } };
     }));
     setCategoriaModalSku(null);
     setCategoriaModalBusca('');
@@ -2147,9 +2249,10 @@ export default function CadastroPage() {
   async function processarAnunciosCriarFila() {
     const tarefas: { sku: string; mk: AnuncioMarketplaceId }[] = [];
     for (const linha of anuncioCriarLinhas) {
-      if (!linha.encontrado) continue;
+      if (!linha.encontrado || !linha.fotosOk) continue; // sem fotos na pasta oficial nada e' criado
       for (const { id: mk } of ANUNCIO_MARKETPLACES) {
-        if (linha.marketplaces[mk].disponivel && linha.marketplaces[mk].selecionado) tarefas.push({ sku: linha.sku, mk });
+        const m = linha.marketplaces[mk];
+        if (m.disponivel && m.selecionado && !(m.restricoes && m.restricoes.length)) tarefas.push({ sku: linha.sku, mk });
       }
     }
     if (!tarefas.length) return alert('Nenhum SKU/marketplace selecionado.');
@@ -2175,7 +2278,7 @@ export default function CadastroPage() {
         const data = await readApiResponse(resp, `Erro ao criar anuncio ${mk} do SKU ${sku}`);
         setAnuncioCriarLinhas((prev) => prev.map((item) => item.sku === sku ? {
           ...item,
-          marketplaces: { ...item.marketplaces, [mk]: { ...item.marketplaces[mk], status: 'ok' as const, resultado: data, selecionado: false, jaTemAnuncio: true, itemId: data.shopeeItemId || data.magaluItemId || data.nuvemshopItemId || null } },
+          marketplaces: { ...item.marketplaces, [mk]: { ...item.marketplaces[mk], status: 'ok' as const, resultado: data, selecionado: false, jaTemAnuncio: true, itemId: data.shopeeItemId || data.magaluItemId || data.nuvemshopItemId || data.mercadoLivreItemId || (data.anuncioBlingId ? `Bling ${data.anuncioBlingId}` : null) } },
         } : item));
       } catch (e: any) {
         setAnuncioCriarLinhas((prev) => prev.map((item) => item.sku === sku ? {
@@ -2270,6 +2373,56 @@ export default function CadastroPage() {
                         <div style={{ fontSize: 12.5, color: 'var(--gray-800)', fontWeight: 600 }}>{linha.descricao}</div>
                         <div style={{ fontSize: 11, color: 'var(--gray-500)', marginTop: 2 }}>
                           R$ {Number(linha.preco || 0).toFixed(2)} · estoque {linha.estoque} · {linha.moto?.marca} {linha.moto?.modelo}
+                          {linha.origem === 'cadastro' ? ' · no pré-cadastro' : ''}
+                        </div>
+                        {/* Ajuste de titulo / condicao / texto (Bling + cadastro) */}
+                        <div style={{ marginTop: 6 }}>
+                          <button
+                            type="button"
+                            onClick={() => alternarAjusteSku(linha.sku)}
+                            style={{ fontSize: 11, color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
+                          >
+                            {anuncioAjustes[linha.sku]?.aberto ? '▾ Fechar ajuste' : '✎ Ajustar título / condição / texto'}
+                          </button>
+                          {anuncioAjustes[linha.sku]?.aberto && (() => {
+                            const aj = anuncioAjustes[linha.sku];
+                            return (
+                              <div style={{ marginTop: 8, display: 'grid', gap: 8, background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: 10 }}>
+                                {aj.carregando ? (
+                                  <div style={{ fontSize: 12, color: 'var(--gray-500)' }}>Lendo o Bling...</div>
+                                ) : (
+                                  <>
+                                    <div>
+                                      <label style={s.label}>Título ({aj.titulo.length}/60)</label>
+                                      <input style={s.input} maxLength={60} value={aj.titulo} onChange={(e: any) => atualizarAjuste(linha.sku, { titulo: e.target.value })} />
+                                    </div>
+                                    <div>
+                                      <label style={s.label}>Condição</label>
+                                      <select style={s.input} value={aj.condicao} onChange={(e: any) => atualizarAjuste(linha.sku, { condicao: e.target.value === 'novo' ? 'novo' : 'usado' })}>
+                                        <option value="usado">Usado</option>
+                                        <option value="novo">Novo</option>
+                                      </select>
+                                      {aj.original && aj.condicao !== aj.original.condicao && (
+                                        <div style={{ fontSize: 11, color: '#92400e', marginTop: 3 }}>Mudar a condição pode alterar categoria e restrições: depois de salvar, busque o SKU de novo.</div>
+                                      )}
+                                    </div>
+                                    <div>
+                                      <label style={s.label}>Texto do anúncio (sem formatação)</label>
+                                      <textarea style={{ ...s.input, minHeight: 120, resize: 'vertical' as const }} value={aj.descricao} onChange={(e: any) => atualizarAjuste(linha.sku, { descricao: e.target.value })} />
+                                      <div style={{ fontSize: 11, color: 'var(--gray-500)', marginTop: 3 }}>Só é gravado se você alterar o texto. Ao salvar, a formatação (negrito etc.) do texto atual é substituída pelo texto simples.</div>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                                      <button type="button" onClick={() => salvarAjusteSku(linha.sku)} disabled={aj.salvando} style={{ ...s.btn, background: '#1d4ed8', color: '#fff', opacity: aj.salvando ? 0.6 : 1 }}>
+                                        {aj.salvando ? 'Salvando...' : 'Salvar no Bling e no cadastro'}
+                                      </button>
+                                      {aj.msg && <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 700 }}>✓ {aj.msg}</span>}
+                                      {aj.erro && <span style={{ fontSize: 12, color: '#dc2626' }}>{aj.erro}</span>}
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </div>
                       </>
                     ) : (
@@ -2277,7 +2430,13 @@ export default function CadastroPage() {
                     )}
                   </div>
 
-                  {linha.encontrado && marketplacesDaLinha.map(({ id: mk, label, cor }) => {
+                  {linha.encontrado && !linha.fotosOk && (
+                    <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', borderRadius: 6, padding: '8px 10px', fontSize: 12, fontWeight: 700 }}>
+                      ✗ Fotos Anúncios ainda não foi processado para este SKU: a pasta dele não está na pasta oficial da moto. Nenhum marketplace foi habilitado — rode o Fotos Anúncios e busque de novo.
+                    </div>
+                  )}
+
+                  {linha.encontrado && linha.fotosOk && marketplacesDaLinha.map(({ id: mk, label, cor }) => {
                     const mp = linha.marketplaces[mk];
                     const isAtual = linha.sku === anuncioCriarSkuAtual && mk === anuncioCriarMarketplaceAtual && anuncioCriarProcessando;
                     return (
@@ -2286,7 +2445,7 @@ export default function CadastroPage() {
                           <input
                             type="checkbox"
                             checked={mp.selecionado}
-                            disabled={mp.jaTemAnuncio}
+                            disabled={mp.jaTemAnuncio || !!(mp.restricoes && mp.restricoes.length) || mp.categoriaEscolhidaId == null}
                             onChange={() => toggleAnuncioCriarSelecionado(linha.sku, mk)}
                           />
                           <span style={{ fontSize: 11.5, fontWeight: 800, color: cor }}>{label}</span>
@@ -2312,9 +2471,22 @@ export default function CadastroPage() {
                             </>
                           )}
                         </div>
+                        {mp.restricoes && mp.restricoes.length > 0 && (
+                          <div style={{ fontSize: 11.5, color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, padding: '6px 8px' }}>
+                            <div style={{ fontWeight: 800 }}>⚠ Categoria com restrição — ajuste antes de criar (use "Trocar categoria"):</div>
+                            <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>
+                              {mp.restricoes.map((r, i) => <li key={i}>{r}</li>)}
+                            </ul>
+                          </div>
+                        )}
+                        {mk === 'mercado-livre' && !mp.jaTemAnuncio && mp.categoriaPreCadastro && String(mp.categoriaPreCadastro.id) !== String(mp.categoriaEscolhidaId) && (
+                          <div style={{ fontSize: 11, color: 'var(--gray-500)' }}>
+                            Categoria do pré-cadastro: {mp.categoriaPreCadastro.nome} ({mp.categoriaPreCadastro.id}){mp.sugestaoOrigem === 'ia' ? ' · sugestão da IA entre as categorias de moto' : mp.sugestaoOrigem === 'palavras' ? ' · sugestão por palavras (IA indisponível — confira)' : ''}
+                          </div>
+                        )}
                         {mp.status === 'ok' && (
                           <div style={{ fontSize: 12, color: '#16a34a', fontWeight: 700 }}>
-                            ✓ Anúncio criado — item {mp.resultado?.shopeeItemId || mp.resultado?.magaluItemId || mp.resultado?.nuvemshopItemId} ({mp.resultado?.fotosEnviadas ?? mp.resultado?.imagens} foto(s)){mp.resultado?.publicado === false ? ' — oculto na loja' : (mp.resultado?.publicado === true ? ' — publicado' : '')}{mp.resultado?.blingErro ? ` — ⚠ Bling: ${mp.resultado.blingErro}` : ' — Bling avisado'}
+                            ✓ Anúncio criado — item {mp.resultado?.shopeeItemId || mp.resultado?.magaluItemId || mp.resultado?.nuvemshopItemId || mp.resultado?.mercadoLivreItemId || (mp.resultado?.anuncioBlingId ? `Bling ${mp.resultado.anuncioBlingId}` : '')} ({mp.resultado?.fotosEnviadas ?? mp.resultado?.imagens} foto(s)){mp.resultado?.publicado === false ? ' — oculto na loja' : (mp.resultado?.publicado === true ? ' — publicado' : '')}{mk === 'mercado-livre' ? ' — vinculado no Bling' : (mp.resultado?.blingErro ? ` — ⚠ Bling: ${mp.resultado.blingErro}` : ' — Bling avisado')}{mp.resultado?.aviso ? ` — ⚠ ${mp.resultado.aviso}` : ''}
                           </div>
                         )}
                         {mp.status === 'erro' && (

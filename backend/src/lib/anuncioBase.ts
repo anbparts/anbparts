@@ -6,9 +6,32 @@
 // largura...), entao quase nada muda nelas. Os IDs dos anuncios criados sao gravados nos dois lados
 // (gravarIdsAnuncio) e copiados do pre-cadastro pra Peca quando o cadastro e' finalizado.
 import { prisma } from './prisma';
+import { buscarFotosDriveSku } from './fotos-cadastro';
+
+// Conta as fotos do SKU na PASTA OFICIAL da moto (so la o Fotos Anuncios ja processou). Cache curto
+// porque a mesma busca da aba Anuncio consulta isso 1x por marketplace.
+const cacheFotos = new Map<string, { qtd: number; expira: number }>();
+async function contarFotosOficiais(motoId: number, sku: string): Promise<number> {
+  const chave = `${motoId}|${sku}`;
+  const hit = cacheFotos.get(chave);
+  if (hit && hit.expira > Date.now()) return hit.qtd;
+  let qtd = 0;
+  try {
+    qtd = (await buscarFotosDriveSku(motoId, sku)).fotos.length;
+  } catch {
+    qtd = 0;
+  }
+  cacheFotos.set(chave, { qtd, expira: Date.now() + 45_000 });
+  return qtd;
+}
+export function limparCacheFotosOficiais(motoId: number, sku: string) {
+  cacheFotos.delete(`${motoId}|${sku}`);
+}
 
 export type AnuncioBase = {
   origem: 'peca' | 'cadastro';
+  fotosOficiais: number; // fotos do SKU na pasta oficial da moto (0 = Fotos Anuncios ainda nao processou)
+  blingProdutoId: string | null; // id do produto no Bling (CadastroPeca.blingProdutoId); null se so ha Peca
   idPeca: string;
   descricao: string;
   motoId: number;
@@ -64,6 +87,8 @@ export async function carregarAnuncioBase(skuInput: string): Promise<AnuncioBase
     });
     return {
       origem: 'peca',
+      fotosOficiais: await contarFotosOficiais(peca.motoId, sku),
+      blingProdutoId: txt(cadastro?.blingProdutoId),
       idPeca: peca.idPeca,
       descricao: peca.descricao,
       motoId: peca.motoId,
@@ -92,6 +117,8 @@ export async function carregarAnuncioBase(skuInput: string): Promise<AnuncioBase
   if (cadastro && cadastro.status !== 'cadastrado' && !cadastro.pecaRestrita && !cadastro.sucata) {
     return {
       origem: 'cadastro',
+      fotosOficiais: await contarFotosOficiais(cadastro.motoId, sku),
+      blingProdutoId: txt(cadastro.blingProdutoId),
       idPeca: cadastro.idPeca,
       descricao: cadastro.descricao,
       motoId: cadastro.motoId,

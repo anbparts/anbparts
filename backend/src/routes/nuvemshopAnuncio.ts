@@ -5,8 +5,9 @@
 // misturar com as rotas de Categoria/Tags/Fotos que ja existem em routes/nuvemshop.ts.
 import { Router } from 'express';
 import { nuvemReq, buscarProdutoNuvemshopPorSku } from './nuvemshop';
-import { buscarFotosAnuncioSku } from '../lib/fotos-cadastro';
+import { buscarFotosDriveSku } from '../lib/fotos-cadastro';
 import { carregarAnuncioBase, gravarIdsAnuncio } from '../lib/anuncioBase';
+import { exigirFotosOficiais, garantirProdutoAtivoNoBling } from '../lib/anuncioPreparar';
 import { informarAnuncioNuvemshopNoBling, findBlingProductsByCodes, fetchBlingProductDetailById } from './bling';
 import {
   carregarArvoreNuvemshop,
@@ -88,6 +89,16 @@ nuvemshopAnuncioRouter.post('/anuncio/buscar', async (req, res, next) => {
       }
       const qtdDisponivel = peca.estoque;
 
+      // Sem fotos na pasta oficial a linha fica bloqueada na tela: nao gasta chamadas na Nuvemshop (429).
+      if (!peca.fotosOficiais) {
+        linhas.push({
+          sku, origem: peca.origem, fotosProcessadas: false, fotosQtd: 0, encontrado: true,
+          descricao: peca.descricao, moto: peca.moto, preco: Number(peca.precoML || 0),
+          estoque: qtdDisponivel, nuvemshopItemId: null, jaTemAnuncio: false, categoriaAtual: null, categoriaPendente: false,
+        });
+        continue;
+      }
+
       let produtoId: string | null = peca.nuvemshopProdutoId;
       let erroConsulta = '';
       if (!produtoId) {
@@ -115,6 +126,8 @@ nuvemshopAnuncioRouter.post('/anuncio/buscar', async (req, res, next) => {
       linhas.push({
         sku,
         origem: peca.origem,
+        fotosProcessadas: peca.fotosOficiais > 0,
+        fotosQtd: peca.fotosOficiais,
         encontrado: true,
         descricao: peca.descricao,
         moto: peca.moto,
@@ -183,6 +196,7 @@ nuvemshopAnuncioRouter.post('/anuncio/criar', async (req, res, next) => {
 
     const peca = await carregarAnuncioBase(sku);
     if (!peca) return res.status(404).json({ error: 'SKU nao encontrado no ANB (nem em Pecas, nem no pre-cadastro)' });
+    exigirFotosOficiais(peca);
     if (peca.nuvemshopProdutoId) return res.status(400).json({ error: `SKU ja possui produto na Nuvemshop (ID ${peca.nuvemshopProdutoId}).` });
 
     const qtdDisponivel = peca.estoque;
@@ -197,7 +211,10 @@ nuvemshopAnuncioRouter.post('/anuncio/criar', async (req, res, next) => {
     const existente: any = await buscarProdutoNuvemshopPorSku(sku, true);
     if (existente?.id) return res.status(400).json({ error: `Ja existe produto com esse SKU na Nuvemshop (ID ${existente.id}) — nao e' possivel recriar.` });
 
-    const drive = await buscarFotosAnuncioSku(peca.motoId, sku);
+    // O produto nasce INATIVO no Bling (pre-cadastro): ativa antes de criar o anuncio.
+    await garantirProdutoAtivoNoBling(peca);
+
+    const drive = await buscarFotosDriveSku(peca.motoId, sku);
     const fotoCapa = drive.fotos[0];
     if (!fotoCapa) return res.status(400).json({ error: 'Nenhuma foto encontrada no Drive pra esse SKU — o SKU precisa de pelo menos 1 imagem.' });
     const imagemUrl = `${getBackendBase()}/magalu/imagem/${encodeURIComponent(fotoCapa.id)}`;
