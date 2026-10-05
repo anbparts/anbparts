@@ -2314,7 +2314,7 @@ export default function CadastroPage() {
                         </div>
                         {mp.status === 'ok' && (
                           <div style={{ fontSize: 12, color: '#16a34a', fontWeight: 700 }}>
-                            ✓ Anúncio criado — item {mp.resultado?.shopeeItemId || mp.resultado?.magaluItemId || mp.resultado?.nuvemshopItemId} ({mp.resultado?.fotosEnviadas ?? mp.resultado?.imagens} foto(s)){mp.resultado?.publicado === false ? ' — oculto na loja' : ''}{mp.resultado?.blingErro ? ` — ⚠ Bling: ${mp.resultado.blingErro}` : ' — Bling avisado'}
+                            ✓ Anúncio criado — item {mp.resultado?.shopeeItemId || mp.resultado?.magaluItemId || mp.resultado?.nuvemshopItemId} ({mp.resultado?.fotosEnviadas ?? mp.resultado?.imagens} foto(s)){mp.resultado?.publicado === false ? ' — oculto na loja' : (mp.resultado?.publicado === true ? ' — publicado' : '')}{mp.resultado?.blingErro ? ` — ⚠ Bling: ${mp.resultado.blingErro}` : ' — Bling avisado'}
                           </div>
                         )}
                         {mp.status === 'erro' && (

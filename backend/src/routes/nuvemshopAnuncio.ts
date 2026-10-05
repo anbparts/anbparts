@@ -169,13 +169,15 @@ async function montarDescricaoNuvemshop(peca: any, sku: string) {
   return escaparHtml(texto).replace(/\r?\n/g, '<br>');
 }
 
-// POST /nuvemshop/anuncio/criar — body: { sku, categoriaId }. Cria o produto OCULTO (published:false)
-// com categorias [pai, filha], tags, 1 variante (preco/estoque/peso/dimensoes) e a foto de capa; grava
-// o ID na Peca e avisa o Bling. As demais fotos ficam pra aba Fotos Anuncios; publicar e' /anuncio/ativar.
+// POST /nuvemshop/anuncio/criar — body: { sku, categoriaId, publicar? }. Cria o produto PUBLICADO por
+// padrao (decisao do Bruno em 2026-10-05; `publicar: false` cria oculto) com categorias [pai, filha],
+// tags, 1 variante (preco/estoque/peso/dimensoes) e a foto de capa; grava o ID na Peca e avisa o Bling.
+// As demais fotos ficam pra aba Fotos Anuncios. Mudar a visibilidade depois: /anuncio/ativar.
 nuvemshopAnuncioRouter.post('/anuncio/criar', async (req, res, next) => {
   try {
     const sku = getBaseSku(req.body?.sku);
     const categoriaId = String(req.body?.categoriaId || '').trim();
+    const publicar = req.body?.publicar === false ? false : true;
     if (!sku) return res.status(400).json({ error: 'sku obrigatorio' });
     if (!categoriaId) return res.status(400).json({ error: 'categoriaId obrigatorio (escolha a categoria da Nuvemshop).' });
 
@@ -215,7 +217,7 @@ nuvemshopAnuncioRouter.post('/anuncio/criar', async (req, res, next) => {
       body: JSON.stringify({
         name: { pt: String(peca.descricao || sku).slice(0, 250) },
         description: { pt: description },
-        published: false,
+        published: publicar,
         brand: peca.moto?.marca || undefined,
         tags,
         categories: categorias,
@@ -252,7 +254,7 @@ nuvemshopAnuncioRouter.post('/anuncio/criar', async (req, res, next) => {
       sku,
       nuvemshopItemId: produtoId,
       nuvemshopProdutoId: produtoId,
-      publicado: false,
+      publicado: publicar,
       imagens: 1,
       tags,
       blingAvisado,
