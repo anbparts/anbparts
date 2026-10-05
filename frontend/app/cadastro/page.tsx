@@ -2491,130 +2491,132 @@ export default function CadastroPage() {
             </div>
           </div>
 
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, tableLayout: 'fixed', minWidth: 900 }}>
-              <colgroup><col style={{ width: '24%' }} /><col style={{ width: '19%' }} /><col style={{ width: '19%' }} /><col style={{ width: '19%' }} /><col style={{ width: '19%' }} /><col style={{ width: 28 }} /></colgroup>
-              <thead>
-                <tr>
-                  <th style={{ textAlign: 'left', padding: '5px 8px', fontSize: 11, color: 'var(--gray-500)', borderBottom: '1px solid var(--border)' }}>SKU / título</th>
-                  {ANUNCIO_MARKETPLACES.map(({ id, label }) => (
-                    <th key={id} style={{ textAlign: 'center', padding: '5px 6px', fontSize: 11, fontWeight: 600, color: 'var(--gray-500)', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>{label}</th>
-                  ))}
-                  <th style={{ width: 28, borderBottom: '1px solid var(--border)' }} />
-                </tr>
-              </thead>
-              <tbody>
-                {visiveis.map((linha) => {
-                  const aberto = anuncioExpandidos.has(linha.sku);
-                  const colspan = ANUNCIO_MARKETPLACES.length + 2;
-                  return (
-                    <Fragment key={linha.sku}>
-                      <tr onClick={() => alternarExpandido(linha.sku)} style={{ cursor: 'pointer', background: aberto ? 'var(--gray-50)' : 'transparent' }}>
-                        <td style={{ padding: '8px 8px', borderTop: '1px solid var(--gray-300)', borderBottom: 'none', maxWidth: 320 }}>
-                          <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--gray-900)', fontWeight: 700 }}>{linha.sku}{linha.origem === 'cadastro' ? <span style={{ fontFamily: 'inherit', fontWeight: 600, fontSize: 10.5, color: 'var(--gray-500)', marginLeft: 6 }}>pré-cadastro</span> : null}</div>
-                          <div style={{ fontSize: 11.5, color: linha.encontrado ? 'var(--gray-600)' : '#dc2626', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{linha.encontrado ? linha.descricao : (linha.erro || 'SKU não encontrado')}</div>
-                        </td>
-                        {linha.encontrado && (!linha.fotosOk || linha.semEstoque) ? (
-                          <td colSpan={ANUNCIO_MARKETPLACES.length} style={{ padding: '6px 6px', borderTop: '1px solid var(--gray-300)', borderBottom: 'none' }}>
-                            <span style={{ fontSize: 11.5, color: '#b91c1c', padding: '2px 8px', fontWeight: 500 }}>{!linha.fotosOk ? '✗ Fotos Anúncios ainda não foi processado' : '✗ Sem estoque — não há mais unidade disponível'}</span>
-                          </td>
-                        ) : ANUNCIO_MARKETPLACES.map(({ id }) => {
+          <div>
+            {visiveis.map((linha) => {
+              const aberto = anuncioExpandidos.has(linha.sku);
+              const bloqueada = linha.encontrado && (!linha.fotosOk || linha.semEstoque);
+              const nomeCurto = (id: AnuncioMarketplaceId) => (id === 'mercado-livre' ? 'ML' : ANUNCIO_MARKETPLACES.find((m) => m.id === id)?.label || id);
+              return (
+                <div key={linha.sku} style={{ borderTop: '1px solid var(--gray-300)', padding: '10px 4px' }}>
+                  <div onClick={() => alternarExpandido(linha.sku)} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', flexWrap: 'wrap' }}>
+                    <span style={{ color: 'var(--gray-400)', width: 12, fontSize: 11, paddingTop: 2 }}>{aberto ? '▾' : '▸'}</span>
+                    <div style={{ flex: '1 1 280px', minWidth: 0 }}>
+                      <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--gray-900)', fontWeight: 700 }}>
+                        {linha.sku}{linha.origem === 'cadastro' ? <span style={{ fontFamily: 'inherit', fontWeight: 500, fontSize: 10.5, color: 'var(--gray-500)', marginLeft: 6 }}>pré-cadastro</span> : null}
+                      </div>
+                      <div style={{ fontSize: 12, color: linha.encontrado ? 'var(--gray-700)' : '#dc2626' }}>{linha.encontrado ? linha.descricao : (linha.erro || 'SKU não encontrado')}</div>
+                      {aberto && linha.encontrado && (
+                        <div style={{ fontSize: 11, color: 'var(--gray-500)', marginTop: 2 }}>
+                          R$ {Number(linha.preco || 0).toFixed(2)} · estoque {linha.estoque} · {linha.moto?.marca} {linha.moto?.modelo}
+                          <button type="button" onClick={(e) => { e.stopPropagation(); alternarAjusteSku(linha.sku); }} style={{ marginLeft: 10, fontSize: 11, color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}>
+                            {anuncioAjustes[linha.sku]?.aberto ? 'fechar ajuste' : 'ajustar título / condição / texto'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    {!aberto && (bloqueada ? (
+                      <span style={{ fontSize: 11.5, color: '#b91c1c', paddingTop: 2 }}>{!linha.fotosOk ? '✗ Fotos Anúncios ainda não foi processado' : '✗ Sem estoque — não há mais unidade disponível'}</span>
+                    ) : (
+                      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', paddingTop: 2 }}>
+                        {ANUNCIO_MARKETPLACES.filter(({ id }) => linha.marketplaces[id].disponivel).map(({ id }) => {
                           const c = celula(linha, id);
                           return (
-                            <td key={id} style={{ textAlign: 'center', padding: '6px 4px', borderTop: '1px solid var(--gray-300)', borderBottom: 'none' }}>
+                            <span key={id} style={{ fontSize: 11.5, whiteSpace: 'nowrap' }}>
+                              <span style={{ color: 'var(--gray-500)' }}>{nomeCurto(id)} </span>
                               <span
                                 onClick={(e) => { if (c.clicavel && !anuncioCriarProcessando) { e.stopPropagation(); toggleAnuncioCriarSelecionado(linha.sku, id); } }}
-                                style={{ display: 'inline-block', fontSize: 11.5, fontWeight: 500, color: c.cor, padding: '2px 8px', whiteSpace: 'normal', cursor: c.clicavel ? 'pointer' : 'inherit' }}
+                                style={{ color: c.cor, fontWeight: 500, cursor: c.clicavel ? 'pointer' : 'inherit' }}
                               >{c.texto}</span>
-                            </td>
+                            </span>
                           );
                         })}
-                        <td style={{ textAlign: 'center', color: 'var(--gray-400)', borderTop: '1px solid var(--gray-300)', borderBottom: 'none' }}>{aberto ? '▾' : '▸'}</td>
-                      </tr>
-                      {aberto && (
-<>
-                        <tr>
-                          <td style={{ padding: '6px 8px 14px', background: 'var(--gray-50)', verticalAlign: 'top' }}>
-                            {linha.encontrado && (
-                              <div style={{ fontSize: 11, color: 'var(--gray-500)', paddingBottom: 6 }}>
-                                R$ {Number(linha.preco || 0).toFixed(2)} · estoque {linha.estoque}<br />{linha.moto?.marca} {linha.moto?.modelo}
-                              </div>
-                            )}
-                            {linha.encontrado && (
-                              <button type="button" onClick={() => alternarAjusteSku(linha.sku)} style={{ fontSize: 11.5, color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}>
-                                {anuncioAjustes[linha.sku]?.aberto ? '▾ Fechar ajuste' : '✎ Ajustar título / condição / texto'}
-                              </button>
-                            )}
-                          </td>
-                          {linha.encontrado && linha.fotosOk ? ANUNCIO_MARKETPLACES.map(({ id: mk, label }) => {
-                            if (!linha.marketplaces[mk].disponivel) return <td key={mk} style={{ padding: '6px 8px 14px', background: 'var(--gray-50)', verticalAlign: 'top' }} />;
-                                  const mp = linha.marketplaces[mk];
-                                  const v = anuncioVinculos[linha.sku]?.mercados?.[mk];
-                                  const ocupado = anuncioVinculoOcupado === `${linha.sku}|${mk}`;
-                                  const cat = mp.categoriaPendente ? null : (mp.categoriaEscolhidaId != null ? categoriasDoMarketplace(mk).find((c) => c.id === mp.categoriaEscolhidaId) || mp.categoriaAtual : mp.categoriaAtual);
-                                  const temVinculo = !!v && v.status !== 'livre';
-                                  return (
-                                    <td key={mk} style={{ padding: '6px 8px 14px', background: 'var(--gray-50)', verticalAlign: 'top' }}><div style={{ display: 'grid', gap: 4, alignContent: 'start' }}>
-                                      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: 0.4 }}>{label}</div>
-                                      {!mp.jaTemAnuncio && (
-                                        <div style={{ fontSize: 12, color: 'var(--gray-700)', lineHeight: 1.4 }}>
-                                          {mp.categoriaPendente ? <span style={{ color: '#b45309' }}>⏳ Categoria pendente</span>
-                                            : !cat ? <span style={{ color: '#dc2626', fontWeight: 700 }}>Sem categoria</span>
-                                            : <span style={{ color: cat.permitido ? 'var(--gray-800)' : '#991b1b', fontWeight: 500 }}>
-                                                {cat.generica ? <span style={{ color: '#b45309' }}>⚠ </span> : ''}{!cat.permitido ? '🚫 ' : ''}{crumb(cat.caminho || [cat.categoria, cat.subcategoria, cat.nivel3, cat.nivel4].filter(Boolean).join(' > '))}
-                                              </span>}
-                                          {' '}
-                                          <button
-                                            type="button"
-                                            onClick={() => { carregarCategoriasDoMarketplace(mk); setCategoriaModalMarketplace(mk); setCategoriaModalSku(linha.sku); setCategoriaModalBusca(''); }}
-                                            style={{ fontSize: 11, color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
-                                          >trocar</button>
-                                        </div>
-                                      )}
-                                      {mk === 'mercado-livre' && !mp.jaTemAnuncio && mp.categoriaPreCadastro && String(mp.categoriaPreCadastro.id) !== String(mp.categoriaEscolhidaId) && (
-                                        <div style={{ fontSize: 11, color: 'var(--gray-500)' }}>
-                                          Pré-cadastro: {mp.categoriaPreCadastro.nome} ({mp.categoriaPreCadastro.id}){mp.sugestaoOrigem === 'ia' ? ' · sugestão da IA' : mp.sugestaoOrigem === 'palavras' ? ' · por palavras (IA indisponível — confira)' : ''}
-                                        </div>
-                                      )}
-                                      {mp.restricoes && mp.restricoes.length > 0 && (
-                                        <div style={{ fontSize: 11.5, color: '#b91c1c' }}>
-                                          ⚠ Restrição — troque a categoria:
-                                          <ul style={{ margin: '2px 0 0 16px', padding: 0 }}>{mp.restricoes.map((r, i) => <li key={i}>{r}</li>)}</ul>
-                                        </div>
-                                      )}
-                                      {temVinculo && v && (
-                                        <div style={{ fontSize: 11.5, color: v.status === 'divergente' ? '#b91c1c' : 'var(--gray-700)' }}>
-                                          {v.situacao && <span style={{ fontWeight: 500, marginRight: 6, color: v.situacao.ok ? '#166534' : '#b91c1c' }}>{`● ${v.situacao.texto.toLowerCase()}`}</span>}{v.status !== 'ok' && <b>{v.status === 'divergente' ? 'IDs diferentes' : v.status === 'so_bling' ? 'ID só no Bling' : 'ID só no sistema'}</b>}
-                                          <span style={{ fontFamily: 'JetBrains Mono, monospace', marginLeft: 6, color: 'var(--gray-600)' }}>{v.status === 'ok' ? `ID ${v.sistemaId}` : `sist ${v.sistemaId || '—'} · bling ${v.blingCodigo || '—'}`}</span>
-                                          <div style={{ display: 'flex', gap: 12, marginTop: 3 }}>
-                                            <button type="button" disabled={ocupado || anuncioCriarProcessando || !v.sistemaId} onClick={() => removerVinculoAnuncio(linha.sku, mk, 'sistema')} title="Apaga o ID só no nosso sistema e libera o SKU" style={{ fontSize: 11, color: 'var(--gray-500)', background: 'none', border: 'none', padding: 0, cursor: 'pointer', textDecoration: 'underline', opacity: (ocupado || !v.sistemaId) ? 0.5 : 1 }}>{ocupado ? '...' : 'remover do sistema'}</button>
-                                            <button type="button" disabled={ocupado || anuncioCriarProcessando} onClick={() => removerVinculoAnuncio(linha.sku, mk, 'sistema_bling')} title="Apaga o ID no sistema e o vínculo no Bling, e libera o SKU" style={{ fontSize: 11, color: '#b91c1c', background: 'none', border: 'none', padding: 0, cursor: 'pointer', textDecoration: 'underline', opacity: ocupado ? 0.6 : 1 }}>{ocupado ? '...' : 'remover do sistema + Bling'}</button>
-                                          </div>
-                                        </div>
-                                      )}
-                                      {mp.jaTemAnuncio && !temVinculo && (
-                                        <div style={{ fontSize: 11.5, color: 'var(--gray-600)' }}>Já possui anúncio (item {mp.itemId})</div>
-                                      )}
-                                      {mp.status === 'ok' && (
-                                        <div style={{ fontSize: 11.5, color: '#16a34a', fontWeight: 700 }}>
-                                          ✓ Criado — item {mp.resultado?.shopeeItemId || mp.resultado?.magaluItemId || mp.resultado?.nuvemshopItemId || mp.resultado?.mercadoLivreItemId || (mp.resultado?.anuncioBlingId ? `Bling ${mp.resultado.anuncioBlingId}` : '')} ({mp.resultado?.fotosEnviadas ?? mp.resultado?.imagens} foto(s)){mp.resultado?.publicado === false ? ' — oculto na loja' : (mp.resultado?.publicado === true ? ' — publicado' : '')}{mk === 'mercado-livre' ? ' — vinculado no Bling' : (mp.resultado?.blingErro ? ` — ⚠ Bling: ${mp.resultado.blingErro}` : ' — Bling avisado')}{mp.resultado?.aviso ? ` — ⚠ ${mp.resultado.aviso}` : ''}
-                                        </div>
-                                      )}
-                                      {mp.status === 'erro' && <div style={{ fontSize: 11.5, color: '#dc2626' }}>✗ {mp.erroProcessamento}</div>}
-                                    </div></td>
-                                  );
-                          }) : (
-                            <td colSpan={ANUNCIO_MARKETPLACES.length} style={{ padding: '6px 8px 14px', background: 'var(--gray-50)', verticalAlign: 'top' }}>
-                              {linha.encontrado && !linha.fotosOk && <div style={{ color: '#b91c1c', fontSize: 12 }}>A pasta de fotos deste SKU não está na pasta oficial da moto. Nenhum marketplace foi habilitado — rode o Fotos Anúncios e busque de novo.</div>}
-                              {linha.encontrado && linha.fotosOk && linha.semEstoque && <div style={{ color: '#b91c1c', fontSize: 12 }}>Este SKU está sem estoque (0 unidade). Nenhum marketplace foi habilitado para criar anúncio.</div>}
-                            </td>
-                          )}
-                          <td style={{ background: 'var(--gray-50)' }} />
-                        </tr>
-                        {linha.encontrado && anuncioAjustes[linha.sku]?.aberto && (
-                          <tr>
-                            <td colSpan={colspan} style={{ padding: '0 12px 14px', background: 'var(--gray-50)' }}>
-                              {(() => {
+                      </div>
+                    ))}
+                  </div>
+
+                  {aberto && (
+                    <div style={{ marginLeft: 22, marginTop: 8 }}>
+                      {bloqueada && (
+                        <div style={{ color: '#b91c1c', fontSize: 12, marginBottom: 6 }}>
+                          {!linha.fotosOk ? 'A pasta de fotos deste SKU não está na pasta oficial da moto. Nenhum marketplace foi habilitado — rode o Fotos Anúncios e busque de novo.' : 'Este SKU está sem estoque (0 unidade). Nenhum marketplace foi habilitado para criar anúncio.'}
+                        </div>
+                      )}
+                      {linha.encontrado && linha.fotosOk && ANUNCIO_MARKETPLACES.filter(({ id }) => linha.marketplaces[id].disponivel).map(({ id: mk, label }) => {
+                        const mp = linha.marketplaces[mk];
+                        const c = celula(linha, mk);
+                        const v = anuncioVinculos[linha.sku]?.mercados?.[mk];
+                        const ocupado = anuncioVinculoOcupado === `${linha.sku}|${mk}`;
+                        const cat = mp.categoriaPendente ? null : (mp.categoriaEscolhidaId != null ? categoriasDoMarketplace(mk).find((x) => x.id === mp.categoriaEscolhidaId) || mp.categoriaAtual : mp.categoriaAtual);
+                        const temVinculo = !!v && v.status !== 'livre';
+                        return (
+                          <div key={mk} style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '20px 105px minmax(0, 1fr) 230px 120px', gap: isPhone ? 2 : 10, alignItems: 'start', padding: '5px 0', borderTop: '1px dashed var(--gray-200)', fontSize: 12 }}>
+                            <span>
+                              {c.clicavel && <input type="checkbox" checked={mp.selecionado} disabled={anuncioCriarProcessando} onChange={() => toggleAnuncioCriarSelecionado(linha.sku, mk)} />}
+                            </span>
+                            <span style={{ fontWeight: 600, color: 'var(--gray-700)' }}>{label}</span>
+                            <div style={{ color: 'var(--gray-800)', lineHeight: 1.4 }}>
+                              {mp.jaTemAnuncio ? <span style={{ color: 'var(--gray-400)' }}>—</span> : (
+                                <>
+                                  {mp.categoriaPendente ? <span style={{ color: '#b45309' }}>⏳ Categoria pendente</span>
+                                    : !cat ? <span style={{ color: '#dc2626' }}>Sem categoria</span>
+                                    : <span style={{ color: cat.permitido ? 'var(--gray-800)' : '#991b1b' }}>
+                                        {cat.generica ? <span style={{ color: '#b45309' }}>⚠ </span> : ''}{!cat.permitido ? '🚫 ' : ''}{crumb(cat.caminho || [cat.categoria, cat.subcategoria, cat.nivel3, cat.nivel4].filter(Boolean).join(' > '))}
+                                      </span>}
+                                  {' '}
+                                  <button type="button" onClick={() => { carregarCategoriasDoMarketplace(mk); setCategoriaModalMarketplace(mk); setCategoriaModalSku(linha.sku); setCategoriaModalBusca(''); }} style={{ fontSize: 11, color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}>trocar</button>
+                                  {mk === 'mercado-livre' && mp.categoriaPreCadastro && String(mp.categoriaPreCadastro.id) !== String(mp.categoriaEscolhidaId) && (
+                                    <div style={{ fontSize: 11, color: 'var(--gray-500)' }}>
+                                      Pré-cadastro: {mp.categoriaPreCadastro.nome} ({mp.categoriaPreCadastro.id}){mp.sugestaoOrigem === 'ia' ? ' · sugestão da IA' : mp.sugestaoOrigem === 'palavras' ? ' · por palavras (IA indisponível — confira)' : ''}
+                                    </div>
+                                  )}
+                                  {mp.restricoes && mp.restricoes.length > 0 && (
+                                    <div style={{ fontSize: 11.5, color: '#b91c1c' }}>⚠ Restrição: {mp.restricoes.join(' | ')}</div>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                            <div style={{ color: 'var(--gray-700)', lineHeight: 1.4 }}>
+                              {temVinculo && v ? (
+                                <>
+                                  {v.situacao && <span style={{ fontWeight: 500, marginRight: 6, color: v.situacao.ok ? '#166534' : '#b91c1c' }}>{`● ${v.situacao.texto.toLowerCase()}`}</span>}
+                                  {v.status === 'divergente' && <span style={{ color: '#b91c1c', marginRight: 6 }}>IDs diferentes</span>}
+                                  {v.status === 'so_bling' && <span style={{ marginRight: 6 }}>só no Bling</span>}
+                                  {v.status === 'so_sistema' && <span style={{ marginRight: 6 }}>só no sistema</span>}
+                                  <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: 'var(--gray-600)', wordBreak: 'break-all' }}>
+                                    {v.status === 'ok' || v.status === 'so_sistema' ? v.sistemaId : v.status === 'so_bling' ? v.blingCodigo : `sist ${v.sistemaId || '—'} · bling ${v.blingCodigo || '—'}`}
+                                  </span>
+                                </>
+                              ) : mp.jaTemAnuncio ? (
+                                <span>já possui anúncio (item {mp.itemId})</span>
+                              ) : (c.chave !== 'sel' && c.chave !== 'pronto' ? <span style={{ color: c.cor }}>{c.texto}</span> : null)}
+                              {mp.status === 'ok' && (
+                                <div style={{ fontSize: 11.5, color: '#166534' }}>
+                                  ✓ Criado — item {mp.resultado?.shopeeItemId || mp.resultado?.magaluItemId || mp.resultado?.nuvemshopItemId || mp.resultado?.mercadoLivreItemId || (mp.resultado?.anuncioBlingId ? `Bling ${mp.resultado.anuncioBlingId}` : '')}{mp.resultado?.publicado === false ? ' (oculto na loja)' : ''}{mp.resultado?.aviso ? ` — ⚠ ${mp.resultado.aviso}` : ''}{mp.resultado?.blingErro ? ` — ⚠ Bling: ${mp.resultado.blingErro}` : ''}
+                                </div>
+                              )}
+                              {mp.status === 'erro' && <div style={{ fontSize: 11.5, color: '#dc2626' }}>✗ {mp.erroProcessamento}</div>}
+                            </div>
+                            <div>
+                              {temVinculo && v && (
+                                <select
+                                  value=""
+                                  disabled={ocupado || anuncioCriarProcessando}
+                                  onChange={(e: any) => { const alvo = e.target.value; if (alvo === 'sistema' || alvo === 'sistema_bling') removerVinculoAnuncio(linha.sku, mk, alvo); }}
+                                  title="Libera o SKU para criar este anúncio de novo"
+                                  style={{ fontSize: 11, padding: '2px 4px', border: '1px solid var(--border)', borderRadius: 5, background: 'var(--white)', color: 'var(--gray-600)', maxWidth: 120 }}
+                                >
+                                  <option value="">{ocupado ? 'removendo...' : 'remover…'}</option>
+                                  {v.sistemaId && <option value="sistema">do sistema</option>}
+                                  <option value="sistema_bling">do sistema + Bling</option>
+                                </select>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {linha.encontrado && anuncioAjustes[linha.sku]?.aberto && (
+                        <div style={{ marginTop: 8 }}>
+                          {(() => {
                                   const aj = anuncioAjustes[linha.sku];
                                   return (
                                     <div style={{ marginTop: 8, display: 'grid', gap: 8, background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 8, padding: 10 }}>
@@ -2653,16 +2655,13 @@ export default function CadastroPage() {
                                     </div>
                                   );
                                 })()}
-                            </td>
-                          </tr>
-                        )}
-                      </>
+                        </div>
                       )}
-                    </Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
 
           {totalPaginas > 1 && (
