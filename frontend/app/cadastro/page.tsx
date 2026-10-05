@@ -2269,7 +2269,7 @@ export default function CadastroPage() {
         }
       }
 
-      for (const l of porSku.values()) {
+      for (const l of Array.from(porSku.values())) {
         if (l.encontrado && !(Number(l.estoque) > 0)) {
           l.semEstoque = true;
           for (const id of Object.keys(l.marketplaces) as AnuncioMarketplaceId[]) l.marketplaces[id] = { ...l.marketplaces[id], selecionado: false };
