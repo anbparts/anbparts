@@ -484,7 +484,7 @@ export default function CadastroPage() {
   type AnuncioVinculoMk = { sistemaId: string | null; blingCodigo: string | null; blingVinculoId: string | null; blingAnuncioId: string | null; situacao?: { texto: string; ok: boolean } | null; status: 'livre' | 'ok' | 'divergente' | 'so_bling' | 'so_sistema' };
   const [anuncioVinculos, setAnuncioVinculos] = useState<Record<string, { erroBling?: string; mercados: Record<string, AnuncioVinculoMk> }>>({});
   const [anuncioVinculoOcupado, setAnuncioVinculoOcupado] = useState<string>('');
-  const [anuncioMarketplacesSelecionados, setAnuncioMarketplacesSelecionados] = useState<Set<AnuncioMarketplaceId>>(new Set<AnuncioMarketplaceId>(['shopee', 'magalu']));
+  const [anuncioMarketplacesSelecionados, setAnuncioMarketplacesSelecionados] = useState<Set<AnuncioMarketplaceId>>(new Set<AnuncioMarketplaceId>(['shopee', 'magalu', 'nuvemshop', 'mercado-livre']));
   const [anuncioCriarSkusInput, setAnuncioCriarSkusInput] = useState('');
   const [anuncioCriarBuscando, setAnuncioCriarBuscando] = useState(false);
   const [anuncioCriarLinhas, setAnuncioCriarLinhas] = useState<AnuncioCriarLinha[]>([]);
@@ -2428,18 +2428,18 @@ export default function CadastroPage() {
         const celula = (linha: AnuncioCriarLinha, mk: AnuncioMarketplaceId): { chave: string; texto: string; cor: string; fundo: string; clicavel: boolean } => {
           const mp = linha.marketplaces[mk];
           if (!mp.disponivel) return { chave: 'off', texto: '—', cor: 'var(--gray-300)', fundo: 'transparent', clicavel: false };
-          if (linha.semEstoque) return { chave: 'bloq', texto: 'sem estoque', cor: '#b91c1c', fundo: '#fef2f2', clicavel: false };
-          if (!linha.fotosOk) return { chave: 'bloq', texto: 'sem fotos', cor: '#b91c1c', fundo: '#fef2f2', clicavel: false };
-          if (mp.status === 'processando') return { chave: 'proc', texto: '⏳ criando', cor: '#7c3aed', fundo: '#f5f3ff', clicavel: false };
-          if (mp.status === 'ok') return { chave: 'ok', texto: '✓ criado', cor: '#166534', fundo: '#dcfce7', clicavel: false };
-          if (mp.status === 'erro') return { chave: 'erro', texto: '✗ erro', cor: '#b91c1c', fundo: '#fef2f2', clicavel: false };
-          if (mp.jaTemAnuncio) { const sit = anuncioVinculos[linha.sku]?.mercados?.[mk]?.situacao; if (sit && !sit.ok) return { chave: 'tem', texto: `já tem ID · ${sit.texto.toLowerCase()}`, cor: '#b91c1c', fundo: '#fee2e2', clicavel: false }; }
-          if (mp.jaTemAnuncio) return { chave: 'tem', texto: 'já tem ID', cor: '#92400e', fundo: '#fef3c7', clicavel: false };
-          if (mp.restricoes && mp.restricoes.length) return { chave: 'restr', texto: '⚠ restrição', cor: '#b91c1c', fundo: '#fef2f2', clicavel: false };
-          if (mp.categoriaPendente || mp.categoriaEscolhidaId == null) return { chave: 'semcat', texto: 'sem categoria', cor: '#92400e', fundo: '#fffbeb', clicavel: false };
+          if (linha.semEstoque) return { chave: 'bloq', texto: 'sem estoque', cor: '#b91c1c', fundo: 'transparent', clicavel: false };
+          if (!linha.fotosOk) return { chave: 'bloq', texto: 'sem fotos', cor: '#b91c1c', fundo: 'transparent', clicavel: false };
+          if (mp.status === 'processando') return { chave: 'proc', texto: '⏳ criando', cor: 'var(--gray-600)', fundo: 'transparent', clicavel: false };
+          if (mp.status === 'ok') return { chave: 'ok', texto: '✓ criado', cor: '#166534', fundo: 'transparent', clicavel: false };
+          if (mp.status === 'erro') return { chave: 'erro', texto: '✗ erro', cor: '#b91c1c', fundo: 'transparent', clicavel: false };
+          if (mp.jaTemAnuncio) { const sit = anuncioVinculos[linha.sku]?.mercados?.[mk]?.situacao; if (sit && !sit.ok) return { chave: 'tem', texto: `já tem ID · ${sit.texto.toLowerCase()}`, cor: '#b91c1c', fundo: 'transparent', clicavel: false }; }
+          if (mp.jaTemAnuncio) return { chave: 'tem', texto: 'já tem ID', cor: 'var(--gray-500)', fundo: 'transparent', clicavel: false };
+          if (mp.restricoes && mp.restricoes.length) return { chave: 'restr', texto: '⚠ restrição', cor: '#b91c1c', fundo: 'transparent', clicavel: false };
+          if (mp.categoriaPendente || mp.categoriaEscolhidaId == null) return { chave: 'semcat', texto: 'sem categoria', cor: '#b45309', fundo: 'transparent', clicavel: false };
           return mp.selecionado
-            ? { chave: 'sel', texto: '☑ criar', cor: '#166534', fundo: '#dcfce7', clicavel: true }
-            : { chave: 'pronto', texto: '☐ criar', cor: 'var(--gray-600)', fundo: 'var(--gray-100)', clicavel: true };
+            ? { chave: 'sel', texto: '☑ criar', cor: 'var(--gray-900)', fundo: 'transparent', clicavel: true }
+            : { chave: 'pronto', texto: '☐ criar', cor: 'var(--gray-500)', fundo: 'transparent', clicavel: true };
         };
         const statusLinha = (linha: AnuncioCriarLinha): 'pronto' | 'problema' | 'tem' | 'ok' => {
           if (!linha.encontrado || !linha.fotosOk || linha.semEstoque) return 'problema';
@@ -2496,8 +2496,8 @@ export default function CadastroPage() {
               <thead>
                 <tr>
                   <th style={{ textAlign: 'left', padding: '5px 8px', fontSize: 11, color: 'var(--gray-500)', borderBottom: '1px solid var(--border)' }}>SKU / título</th>
-                  {ANUNCIO_MARKETPLACES.map(({ id, label, cor }) => (
-                    <th key={id} style={{ textAlign: 'center', padding: '5px 6px', fontSize: 11, color: cor, borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>{label}</th>
+                  {ANUNCIO_MARKETPLACES.map(({ id, label }) => (
+                    <th key={id} style={{ textAlign: 'center', padding: '5px 6px', fontSize: 11, fontWeight: 600, color: 'var(--gray-500)', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>{label}</th>
                   ))}
                   <th style={{ width: 28, borderBottom: '1px solid var(--border)' }} />
                 </tr>
@@ -2508,31 +2508,31 @@ export default function CadastroPage() {
                   const colspan = ANUNCIO_MARKETPLACES.length + 2;
                   return (
                     <Fragment key={linha.sku}>
-                      <tr onClick={() => alternarExpandido(linha.sku)} style={{ cursor: 'pointer', background: aberto ? '#eef2ff' : 'transparent' }}>
-                        <td style={{ borderLeft: aberto ? '4px solid #6366f1' : '4px solid transparent', padding: '6px 8px', borderTop: aberto ? '2px solid #6366f1' : '1px solid var(--gray-200)', borderBottom: 'none', maxWidth: 320 }}>
-                          <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--blue-600)', fontWeight: 800 }}>{linha.sku}{linha.origem === 'cadastro' ? <span style={{ fontFamily: 'inherit', fontWeight: 600, fontSize: 10.5, color: 'var(--gray-500)', marginLeft: 6 }}>pré-cadastro</span> : null}</div>
+                      <tr onClick={() => alternarExpandido(linha.sku)} style={{ cursor: 'pointer', background: aberto ? 'var(--gray-50)' : 'transparent' }}>
+                        <td style={{ padding: '8px 8px', borderTop: '1px solid var(--gray-300)', borderBottom: 'none', maxWidth: 320 }}>
+                          <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--gray-900)', fontWeight: 700 }}>{linha.sku}{linha.origem === 'cadastro' ? <span style={{ fontFamily: 'inherit', fontWeight: 600, fontSize: 10.5, color: 'var(--gray-500)', marginLeft: 6 }}>pré-cadastro</span> : null}</div>
                           <div style={{ fontSize: 11.5, color: linha.encontrado ? 'var(--gray-600)' : '#dc2626', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{linha.encontrado ? linha.descricao : (linha.erro || 'SKU não encontrado')}</div>
                         </td>
                         {linha.encontrado && (!linha.fotosOk || linha.semEstoque) ? (
-                          <td colSpan={ANUNCIO_MARKETPLACES.length} style={{ padding: '6px 6px', borderTop: aberto ? '2px solid #6366f1' : '1px solid var(--gray-200)', borderBottom: 'none' }}>
-                            <span style={{ fontSize: 11.5, color: '#b91c1c', background: '#fef2f2', borderRadius: 5, padding: '2px 8px', fontWeight: 700 }}>{!linha.fotosOk ? '✗ Fotos Anúncios ainda não foi processado' : '✗ Sem estoque — não há mais unidade disponível'}</span>
+                          <td colSpan={ANUNCIO_MARKETPLACES.length} style={{ padding: '6px 6px', borderTop: '1px solid var(--gray-300)', borderBottom: 'none' }}>
+                            <span style={{ fontSize: 11.5, color: '#b91c1c', padding: '2px 8px', fontWeight: 500 }}>{!linha.fotosOk ? '✗ Fotos Anúncios ainda não foi processado' : '✗ Sem estoque — não há mais unidade disponível'}</span>
                           </td>
                         ) : ANUNCIO_MARKETPLACES.map(({ id }) => {
                           const c = celula(linha, id);
                           return (
-                            <td key={id} style={{ textAlign: 'center', padding: '6px 4px', borderTop: aberto ? '2px solid #6366f1' : '1px solid var(--gray-200)', borderBottom: 'none' }}>
+                            <td key={id} style={{ textAlign: 'center', padding: '6px 4px', borderTop: '1px solid var(--gray-300)', borderBottom: 'none' }}>
                               <span
                                 onClick={(e) => { if (c.clicavel && !anuncioCriarProcessando) { e.stopPropagation(); toggleAnuncioCriarSelecionado(linha.sku, id); } }}
-                                style={{ display: 'inline-block', fontSize: 11, fontWeight: 700, color: c.cor, background: c.fundo, borderRadius: 5, padding: '2px 8px', whiteSpace: 'nowrap', cursor: c.clicavel ? 'pointer' : 'inherit' }}
+                                style={{ display: 'inline-block', fontSize: 11.5, fontWeight: 500, color: c.cor, padding: '2px 8px', whiteSpace: 'nowrap', cursor: c.clicavel ? 'pointer' : 'inherit' }}
                               >{c.texto}</span>
                             </td>
                           );
                         })}
-                        <td style={{ textAlign: 'center', color: 'var(--gray-400)', borderTop: aberto ? '2px solid #6366f1' : '1px solid var(--gray-200)', borderBottom: 'none' }}>{aberto ? '▾' : '▸'}</td>
+                        <td style={{ textAlign: 'center', color: 'var(--gray-400)', borderTop: '1px solid var(--gray-300)', borderBottom: 'none' }}>{aberto ? '▾' : '▸'}</td>
                       </tr>
                       {aberto && (
                         <tr>
-                          <td colSpan={colspan} style={{ padding: '4px 12px 12px', borderLeft: '4px solid #6366f1', borderBottom: '2px solid #6366f1', background: '#f8faff' }}>
+                          <td colSpan={colspan} style={{ padding: '2px 12px 14px', background: 'var(--gray-50)' }}>
                             {linha.encontrado && (
                               <div style={{ fontSize: 11, color: 'var(--gray-500)', padding: '2px 0 8px' }}>
                                 R$ {Number(linha.preco || 0).toFixed(2)} · estoque {linha.estoque} · {linha.moto?.marca} {linha.moto?.modelo}
@@ -2545,22 +2545,22 @@ export default function CadastroPage() {
                               <div style={{ color: '#b91c1c', fontSize: 12, marginBottom: 6 }}>Este SKU está sem estoque (0 unidade). Nenhum marketplace foi habilitado para criar anúncio.</div>
                             )}
                             {linha.encontrado && linha.fotosOk && (
-                              <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fit, minmax(300px, 1fr))', gap: 8 }}>
-                                {ANUNCIO_MARKETPLACES.filter(({ id }) => linha.marketplaces[id].disponivel).map(({ id: mk, label, cor }) => {
+                              <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fit, minmax(260px, 1fr))', gap: 18 }}>
+                                {ANUNCIO_MARKETPLACES.filter(({ id }) => linha.marketplaces[id].disponivel).map(({ id: mk, label }) => {
                                   const mp = linha.marketplaces[mk];
                                   const v = anuncioVinculos[linha.sku]?.mercados?.[mk];
                                   const ocupado = anuncioVinculoOcupado === `${linha.sku}|${mk}`;
                                   const cat = mp.categoriaPendente ? null : (mp.categoriaEscolhidaId != null ? categoriasDoMarketplace(mk).find((c) => c.id === mp.categoriaEscolhidaId) || mp.categoriaAtual : mp.categoriaAtual);
                                   const temVinculo = !!v && v.status !== 'livre';
                                   return (
-                                    <div key={mk} style={{ background: 'var(--white)', border: '1px solid var(--border)', borderLeft: `3px solid ${cor}`, borderRadius: 6, padding: '7px 10px', display: 'grid', gap: 5, alignContent: 'start' }}>
-                                      <div style={{ fontSize: 11.5, fontWeight: 800, color: cor }}>{label}</div>
+                                    <div key={mk} style={{ display: 'grid', gap: 4, alignContent: 'start' }}>
+                                      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: 0.4 }}>{label}</div>
                                       {!mp.jaTemAnuncio && (
                                         <div style={{ fontSize: 12, color: 'var(--gray-700)', lineHeight: 1.4 }}>
-                                          {mp.categoriaPendente ? <span style={{ color: '#92400e' }}>⏳ Categoria pendente</span>
+                                          {mp.categoriaPendente ? <span style={{ color: '#b45309' }}>⏳ Categoria pendente</span>
                                             : !cat ? <span style={{ color: '#dc2626', fontWeight: 700 }}>Sem categoria</span>
-                                            : <span style={{ color: cat.permitido ? (cat.generica ? '#92400e' : '#166534') : '#991b1b', fontWeight: 600 }}>
-                                                {cat.generica ? '⚠ ' : ''}{!cat.permitido ? '🚫 ' : ''}{crumb(cat.caminho || [cat.categoria, cat.subcategoria, cat.nivel3, cat.nivel4].filter(Boolean).join(' > '))}
+                                            : <span style={{ color: cat.permitido ? 'var(--gray-800)' : '#991b1b', fontWeight: 500 }}>
+                                                {cat.generica ? <span style={{ color: '#b45309' }}>⚠ </span> : ''}{!cat.permitido ? '🚫 ' : ''}{crumb(cat.caminho || [cat.categoria, cat.subcategoria, cat.nivel3, cat.nivel4].filter(Boolean).join(' > '))}
                                               </span>}
                                           {' '}
                                           <button
@@ -2582,17 +2582,17 @@ export default function CadastroPage() {
                                         </div>
                                       )}
                                       {temVinculo && v && (
-                                        <div style={{ fontSize: 11.5, color: v.status === 'ok' ? '#166534' : v.status === 'divergente' ? '#b91c1c' : '#92400e' }}>
-                                          {v.situacao && <span style={{ fontWeight: 700, marginRight: 6, padding: '1px 6px', borderRadius: 4, color: v.situacao.ok ? '#166534' : '#b91c1c', background: v.situacao.ok ? '#dcfce7' : '#fee2e2' }}>{`● ${v.situacao.texto.toLowerCase()}`}</span>}{v.status !== 'ok' && <b>{v.status === 'divergente' ? 'IDs diferentes' : v.status === 'so_bling' ? 'ID só no Bling' : 'ID só no sistema'}</b>}
+                                        <div style={{ fontSize: 11.5, color: v.status === 'divergente' ? '#b91c1c' : 'var(--gray-700)' }}>
+                                          {v.situacao && <span style={{ fontWeight: 500, marginRight: 6, color: v.situacao.ok ? '#166534' : '#b91c1c' }}>{`● ${v.situacao.texto.toLowerCase()}`}</span>}{v.status !== 'ok' && <b>{v.status === 'divergente' ? 'IDs diferentes' : v.status === 'so_bling' ? 'ID só no Bling' : 'ID só no sistema'}</b>}
                                           <span style={{ fontFamily: 'JetBrains Mono, monospace', marginLeft: 6, color: 'var(--gray-600)' }}>{v.status === 'ok' ? `ID ${v.sistemaId}` : `sist ${v.sistemaId || '—'} · bling ${v.blingCodigo || '—'}`}</span>
-                                          <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-                                            <button type="button" disabled={ocupado || anuncioCriarProcessando || !v.sistemaId} onClick={() => removerVinculoAnuncio(linha.sku, mk, 'sistema')} title="Apaga o ID só no nosso sistema e libera o SKU" style={{ ...miniBtn('#b91c1c'), opacity: (ocupado || !v.sistemaId) ? 0.5 : 1 }}>{ocupado ? '...' : '🗑 sistema'}</button>
-                                            <button type="button" disabled={ocupado || anuncioCriarProcessando} onClick={() => removerVinculoAnuncio(linha.sku, mk, 'sistema_bling')} title="Apaga o ID no sistema e o vínculo no Bling, e libera o SKU" style={{ ...miniBtn('#b91c1c', true), opacity: ocupado ? 0.6 : 1 }}>{ocupado ? '...' : '🗑 sistema + Bling'}</button>
+                                          <div style={{ display: 'flex', gap: 12, marginTop: 3 }}>
+                                            <button type="button" disabled={ocupado || anuncioCriarProcessando || !v.sistemaId} onClick={() => removerVinculoAnuncio(linha.sku, mk, 'sistema')} title="Apaga o ID só no nosso sistema e libera o SKU" style={{ fontSize: 11, color: 'var(--gray-500)', background: 'none', border: 'none', padding: 0, cursor: 'pointer', textDecoration: 'underline', opacity: (ocupado || !v.sistemaId) ? 0.5 : 1 }}>{ocupado ? '...' : 'remover do sistema'}</button>
+                                            <button type="button" disabled={ocupado || anuncioCriarProcessando} onClick={() => removerVinculoAnuncio(linha.sku, mk, 'sistema_bling')} title="Apaga o ID no sistema e o vínculo no Bling, e libera o SKU" style={{ fontSize: 11, color: '#b91c1c', background: 'none', border: 'none', padding: 0, cursor: 'pointer', textDecoration: 'underline', opacity: ocupado ? 0.6 : 1 }}>{ocupado ? '...' : 'remover do sistema + Bling'}</button>
                                           </div>
                                         </div>
                                       )}
                                       {mp.jaTemAnuncio && !temVinculo && (
-                                        <div style={{ fontSize: 11.5, color: '#92400e' }}>Já possui anúncio (item {mp.itemId})</div>
+                                        <div style={{ fontSize: 11.5, color: 'var(--gray-600)' }}>Já possui anúncio (item {mp.itemId})</div>
                                       )}
                                       {mp.status === 'ok' && (
                                         <div style={{ fontSize: 11.5, color: '#16a34a', fontWeight: 700 }}>
