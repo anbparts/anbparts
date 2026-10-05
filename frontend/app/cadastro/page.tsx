@@ -2168,7 +2168,14 @@ export default function CadastroPage() {
   async function verificarSkus(skus: string[]) {
     if (!skus.length) return;
     setAnuncioVerificando(true);
-    try { await Promise.all([consultarStatusRapido(skus), consultarVinculos(skus)]); } finally { setAnuncioVerificando(false); }
+    try {
+      const lotes: string[][] = [];
+      for (let i = 0; i < skus.length; i += 3) lotes.push(skus.slice(i, i + 3));
+      await Promise.all([
+        consultarStatusRapido(skus),
+        (async () => { for (const lote of lotes) await consultarVinculos(lote); })(),
+      ]);
+    } finally { setAnuncioVerificando(false); }
   }
 
   // ---- Vinculos: le os IDs do sistema e do Bling; avisa quando ja existe e bloqueia a criacao ----
@@ -2586,6 +2593,7 @@ export default function CadastroPage() {
                         const ocupado = anuncioVinculoOcupado === `${linha.sku}|${mk}`;
                         const cat = mp.categoriaPendente ? null : (mp.categoriaEscolhidaId != null ? categoriasDoMarketplace(mk).find((x) => x.id === mp.categoriaEscolhidaId) || mp.categoriaAtual : mp.categoriaAtual);
                         const temVinculo = !!v && v.status !== 'livre';
+                        const sitDet = v?.situacao || anuncioStatusRapido[linha.sku]?.[mk] || null;
                         return (
                           <div key={mk} style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '20px 105px minmax(0, 1fr) 230px 120px', gap: isPhone ? 2 : 10, alignItems: 'start', padding: '5px 0', borderTop: '1px dashed var(--gray-200)', fontSize: 12 }}>
                             <span>
@@ -2616,7 +2624,7 @@ export default function CadastroPage() {
                             <div style={{ color: 'var(--gray-700)', lineHeight: 1.4 }}>
                               {temVinculo && v ? (
                                 <>
-                                  {v.situacao && <span style={{ fontWeight: 500, marginRight: 6, color: v.situacao.ok ? '#166534' : '#b91c1c' }}>{`● ${v.situacao.texto.toLowerCase()}`}</span>}
+                                  {sitDet && <span style={{ fontWeight: 500, marginRight: 6, color: sitDet.ok ? '#166534' : '#b91c1c' }}>{`● ${sitDet.texto.toLowerCase()}`}</span>}
                                   {v.status === 'divergente' && <span style={{ color: '#b91c1c', marginRight: 6 }}>IDs diferentes</span>}
                                   {v.status === 'so_bling' && <span style={{ marginRight: 6 }}>só no Bling</span>}
                                   {v.status === 'so_sistema' && <span style={{ marginRight: 6 }}>só no sistema</span>}
@@ -2625,7 +2633,7 @@ export default function CadastroPage() {
                                   </span>
                                 </>
                               ) : mp.jaTemAnuncio ? (
-                                <span>já possui anúncio (item {mp.itemId})</span>
+                                <span>{sitDet && <span style={{ fontWeight: 500, marginRight: 6, color: sitDet.ok ? '#166534' : '#b91c1c' }}>{`● ${sitDet.texto.toLowerCase()}`}</span>}já possui anúncio (item {mp.itemId})</span>
                               ) : (c.chave !== 'sel' && c.chave !== 'pronto' ? <span style={{ color: c.cor }}>{c.texto}</span> : null)}
                               {mp.status === 'ok' && (
                                 <div style={{ fontSize: 11.5, color: '#166534' }}>
@@ -2635,7 +2643,7 @@ export default function CadastroPage() {
                               {mp.status === 'erro' && <div style={{ fontSize: 11.5, color: '#dc2626' }}>✗ {mp.erroProcessamento}</div>}
                             </div>
                             <div>
-                              {temVinculo && v && (
+                              {(temVinculo || mp.jaTemAnuncio) && (
                                 <button type="button" disabled={ocupado || anuncioCriarProcessando} onClick={() => setExcluirModal({ sku: linha.sku, mk })} style={{ fontSize: 11, color: '#b91c1c', background: 'var(--white)', border: '1px solid #fecaca', borderRadius: 5, padding: '2px 10px', cursor: 'pointer' }}>{ocupado ? 'Excluindo...' : 'Excluir'}</button>
                               )}
                             </div>
@@ -2719,7 +2727,7 @@ export default function CadastroPage() {
               <div style={{ fontSize: 12, color: 'var(--gray-600)' }}>
                 ID atual: <span style={{ fontFamily: 'JetBrains Mono, monospace' }}>sistema {vm?.sistemaId || '—'} · Bling {vm?.blingCodigo || '—'}</span>{vm?.situacao ? ` · ${vm.situacao.texto.toLowerCase()}` : ''}
               </div>
-              <button type="button" disabled={!vm?.sistemaId} onClick={() => executar('sistema')} style={{ ...opcao, opacity: vm?.sistemaId ? 1 : 0.5 }}>
+              <button type="button" disabled={!!vm && !vm.sistemaId} onClick={() => executar('sistema')} style={{ ...opcao, opacity: vm && !vm.sistemaId ? 0.5 : 1 }}>
                 <span style={{ fontWeight: 700, fontSize: 12.5, color: 'var(--gray-800)' }}>Excluir só do sistema</span>
                 <span style={{ fontSize: 11.5, color: 'var(--gray-600)' }}>Apaga o ID do anúncio apenas no nosso sistema e libera o SKU para criar de novo. O vínculo no Bling continua como está — a auditoria do Bling pode preencher o ID de volta.</span>
               </button>

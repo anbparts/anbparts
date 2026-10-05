@@ -160,7 +160,6 @@ anuncioVinculosRouter.post('/consultar', async (req, res, next) => {
 
     const lojas = await lojasBling();
     const resultado: any[] = [];
-    const pendentesStatus: Array<{ sku: string; mk: Mk; id: string | null; alvo: Vinculo }> = [];
 
     for (const sku of skus) {
       const base = await carregarAnuncioBase(sku);
@@ -208,23 +207,9 @@ anuncioVinculosRouter.post('/consultar', async (req, res, next) => {
           status: classificar(sistema[mk], blingCodigo),
         };
       }
-      for (const mk of MARKETPLACES) {
-        if (mk !== 'mercado-livre') pendentesStatus.push({ sku, mk, id: sistema[mk] || mercados[mk].blingCodigo, alvo: mercados[mk] });
-      }
       resultado.push({ sku, encontrado: true, blingProdutoId, erroBling: erroBling || undefined, mercados });
       await dormir(250); // o Bling limita as chamadas por segundo
     }
-
-    // Fase 2: situacao nos proprios marketplaces, em paralelo (o gargalo era fazer 1 a 1 depois de cada SKU).
-    // O Bling (rate limit) ja foi consultado em serie acima; aqui sao APIs diferentes (Shopee/Magalu/Nuvemshop).
-    let proximo = 0;
-    const trabalhador = async () => {
-      while (proximo < pendentesStatus.length) {
-        const t = pendentesStatus[proximo++];
-        t.alvo.situacao = await situacaoNoMarketplace(t.mk, t.sku, t.id);
-      }
-    };
-    await Promise.all(Array.from({ length: Math.min(8, pendentesStatus.length) }, () => trabalhador()));
 
     res.json({ ok: true, skus: resultado });
   } catch (e) { next(e); }
