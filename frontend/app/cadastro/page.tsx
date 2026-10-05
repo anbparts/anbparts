@@ -497,6 +497,7 @@ export default function CadastroPage() {
   const [anuncioPagina, setAnuncioPagina] = useState(0);
   const [anuncioStatusRapido, setAnuncioStatusRapido] = useState<Record<string, Record<string, { texto: string; ok: boolean } | null>>>({});
   const [anuncioVerificando, setAnuncioVerificando] = useState(false);
+  const [skuCopiado, setSkuCopiado] = useState('');
   const [excluirModal, setExcluirModal] = useState<{ sku: string; mk: AnuncioMarketplaceId } | null>(null);
   const [categoriaModalSku, setCategoriaModalSku] = useState<string | null>(null);
   const [categoriaModalMarketplace, setCategoriaModalMarketplace] = useState<AnuncioMarketplaceId>('shopee');
@@ -2139,6 +2140,20 @@ export default function CadastroPage() {
     }
   }
 
+  // Ctrl/Cmd + clique no SKU: copia o codigo pra area de transferencia (nao expande a linha).
+  async function copiarSku(sku: string) {
+    try {
+      await navigator.clipboard.writeText(sku);
+    } catch {
+      const el = document.createElement('textarea');
+      el.value = sku; el.style.position = 'fixed'; el.style.opacity = '0';
+      document.body.appendChild(el); el.select();
+      try { document.execCommand('copy'); } finally { document.body.removeChild(el); }
+    }
+    setSkuCopiado(sku);
+    setTimeout(() => setSkuCopiado((atual) => (atual === sku ? '' : atual)), 1500);
+  }
+
   // Situacao (ativo/inativo/...) direto nos marketplaces, rapida (sem Bling): pinta as celulas antes de expandir.
   async function consultarStatusRapido(skus: string[]) {
     if (!skus.length) return;
@@ -2524,11 +2539,11 @@ export default function CadastroPage() {
               const nomeCurto = (id: AnuncioMarketplaceId) => (id === 'mercado-livre' ? 'ML' : ANUNCIO_MARKETPLACES.find((m) => m.id === id)?.label || id);
               return (
                 <div key={linha.sku} style={{ borderTop: '1px solid var(--gray-300)', padding: '10px 4px' }}>
-                  <div onClick={() => alternarExpandido(linha.sku)} style={{ display: 'grid', gridTemplateColumns: isPhone || aberto ? '14px minmax(0, 1fr)' : '14px minmax(0, 1fr) repeat(4, 150px)', columnGap: 10, rowGap: 6, alignItems: 'start', cursor: 'pointer' }}>
+                  <div onClick={(e) => { if (e.ctrlKey || e.metaKey) { copiarSku(linha.sku); return; } alternarExpandido(linha.sku); }} style={{ display: 'grid', gridTemplateColumns: isPhone || aberto ? '14px minmax(0, 1fr)' : '14px minmax(0, 1fr) repeat(4, 150px)', columnGap: 10, rowGap: 6, alignItems: 'start', cursor: 'pointer' }}>
                     <span style={{ color: 'var(--gray-400)', width: 12, fontSize: 11, paddingTop: 2 }}>{aberto ? '▾' : '▸'}</span>
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--gray-900)', fontWeight: 700 }}>
-                        {linha.sku}{linha.origem === 'cadastro' ? <span style={{ fontFamily: 'inherit', fontWeight: 500, fontSize: 10.5, color: 'var(--gray-500)', marginLeft: 6 }}>pré-cadastro</span> : null}
+                      <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--gray-900)', fontWeight: 700 }} title="Ctrl + clique copia o SKU">
+                        {linha.sku}{skuCopiado === linha.sku ? <span style={{ fontFamily: 'inherit', fontWeight: 600, fontSize: 10.5, color: '#166534', marginLeft: 8 }}>✓ copiado</span> : null}{linha.origem === 'cadastro' ? <span style={{ fontFamily: 'inherit', fontWeight: 500, fontSize: 10.5, color: 'var(--gray-500)', marginLeft: 6 }}>pré-cadastro</span> : null}
                       </div>
                       <div style={{ fontSize: 12, color: linha.encontrado ? 'var(--gray-700)' : '#dc2626' }}>{linha.encontrado ? linha.descricao : (linha.erro || 'SKU não encontrado')}</div>
                       {aberto && linha.encontrado && (
