@@ -170,7 +170,7 @@ const REGRAS: Array<[RegExp, string]> = [
   [/parafuso|presilha|grampo/, 'Parafusos / Presilhas e Outros'],
   [/retrovisor|espelho/, 'Retrovisores'],
   [/alto falante/, 'Alto-falantes'],
-  [/slider|defletor|protetor (de )?mao|viseira|acessorio/, 'Outras Peças Acessórios'],
+  [/slider|defletor|protetor (de )?mao|viseira|acessorio|ferramenta/, 'Outras Peças Acessórios'],
 
   // Motor
   [/cabecote|tampa (de )?valvula/, 'Cabeçote'],

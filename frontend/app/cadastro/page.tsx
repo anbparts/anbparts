@@ -2127,7 +2127,8 @@ export default function CadastroPage() {
     setAnuncioCriarLinhas((prev) => prev.map((linha) => {
       if (linha.sku !== sku) return linha;
       const atual = linha.marketplaces[mk];
-      return { ...linha, marketplaces: { ...linha.marketplaces, [mk]: { ...atual, categoriaEscolhidaId: categoriaId } } };
+      // Escolher uma categoria resolve a pendencia (antes o selo "Categoria pendente" nao saia).
+      return { ...linha, marketplaces: { ...linha.marketplaces, [mk]: { ...atual, categoriaEscolhidaId: categoriaId, categoriaPendente: false } } };
     }));
     setCategoriaModalSku(null);
     setCategoriaModalBusca('');
@@ -2154,6 +2155,7 @@ export default function CadastroPage() {
       try {
         const linhaAtual = anuncioCriarLinhas.find((l) => l.sku === sku);
         const categoriaId = linhaAtual?.marketplaces[mk].categoriaEscolhidaId;
+        if (categoriaId == null || categoriaId === '') throw new Error('Escolha a categoria (Trocar categoria) antes de criar este anúncio.');
         const resp = await fetch(`${API}/${mk}/anuncio/criar`, {
           method: 'POST',
           credentials: 'include',
