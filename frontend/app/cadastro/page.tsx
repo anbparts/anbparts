@@ -480,7 +480,7 @@ export default function CadastroPage() {
   // Ajuste de titulo/condicao/texto por SKU (Bling + cadastro), pra corrigir falha de cadastro na hora de anunciar.
   const [anuncioAjustes, setAnuncioAjustes] = useState<Record<string, AnuncioAjuste>>({});
   // IDs de anuncio por SKU/marketplace: no nosso sistema x no Bling (vinculo produto-loja).
-  type AnuncioVinculoMk = { sistemaId: string | null; blingCodigo: string | null; blingVinculoId: string | null; blingAnuncioId: string | null; status: 'livre' | 'ok' | 'divergente' | 'so_bling' | 'so_sistema' };
+  type AnuncioVinculoMk = { sistemaId: string | null; blingCodigo: string | null; blingVinculoId: string | null; blingAnuncioId: string | null; situacao?: { texto: string; ok: boolean } | null; status: 'livre' | 'ok' | 'divergente' | 'so_bling' | 'so_sistema' };
   const [anuncioVinculos, setAnuncioVinculos] = useState<Record<string, { erroBling?: string; mercados: Record<string, AnuncioVinculoMk> }>>({});
   const [anuncioVinculoOcupado, setAnuncioVinculoOcupado] = useState<string>('');
   const [anuncioMarketplacesSelecionados, setAnuncioMarketplacesSelecionados] = useState<Set<AnuncioMarketplaceId>>(new Set<AnuncioMarketplaceId>(['shopee', 'magalu']));
@@ -2425,6 +2425,7 @@ export default function CadastroPage() {
           if (mp.status === 'processando') return { chave: 'proc', texto: '⏳ criando', cor: '#7c3aed', fundo: '#f5f3ff', clicavel: false };
           if (mp.status === 'ok') return { chave: 'ok', texto: '✓ criado', cor: '#166534', fundo: '#dcfce7', clicavel: false };
           if (mp.status === 'erro') return { chave: 'erro', texto: '✗ erro', cor: '#b91c1c', fundo: '#fef2f2', clicavel: false };
+          if (mp.jaTemAnuncio) { const sit = anuncioVinculos[linha.sku]?.mercados?.[mk]?.situacao; if (sit && !sit.ok) return { chave: 'tem', texto: `já tem ID · ${sit.texto.toLowerCase()}`, cor: '#b91c1c', fundo: '#fee2e2', clicavel: false }; }
           if (mp.jaTemAnuncio) return { chave: 'tem', texto: 'já tem ID', cor: '#92400e', fundo: '#fef3c7', clicavel: false };
           if (mp.restricoes && mp.restricoes.length) return { chave: 'restr', texto: '⚠ restrição', cor: '#b91c1c', fundo: '#fef2f2', clicavel: false };
           if (mp.categoriaPendente || mp.categoriaEscolhidaId == null) return { chave: 'semcat', texto: 'sem categoria', cor: '#92400e', fundo: '#fffbeb', clicavel: false };
@@ -2568,7 +2569,7 @@ export default function CadastroPage() {
                                       )}
                                       {temVinculo && v && (
                                         <div style={{ fontSize: 11.5, color: v.status === 'ok' ? '#166534' : v.status === 'divergente' ? '#b91c1c' : '#92400e' }}>
-                                          <b>{v.status === 'ok' ? 'ID confere' : v.status === 'divergente' ? 'IDs diferentes' : v.status === 'so_bling' ? 'ID só no Bling' : 'ID só no sistema'}</b>
+                                          {v.situacao && <span style={{ fontWeight: 700, marginRight: 6, padding: '1px 6px', borderRadius: 4, color: v.situacao.ok ? '#166534' : '#b91c1c', background: v.situacao.ok ? '#dcfce7' : '#fee2e2' }}>{`● ${v.situacao.texto.toLowerCase()}`}</span>}<b>{v.status === 'ok' ? 'ID confere' : v.status === 'divergente' ? 'IDs diferentes' : v.status === 'so_bling' ? 'ID só no Bling' : 'ID só no sistema'}</b>
                                           <span style={{ fontFamily: 'JetBrains Mono, monospace', marginLeft: 6, color: 'var(--gray-600)' }}>sist {v.sistemaId || '—'} · bling {v.blingCodigo || '—'}</span>
                                           <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
                                             <button type="button" disabled={ocupado || anuncioCriarProcessando || !v.sistemaId} onClick={() => removerVinculoAnuncio(linha.sku, mk, 'sistema')} title="Apaga o ID só no nosso sistema e libera o SKU" style={{ ...miniBtn('#b91c1c'), opacity: (ocupado || !v.sistemaId) ? 0.5 : 1 }}>{ocupado ? '...' : '🗑 sistema'}</button>

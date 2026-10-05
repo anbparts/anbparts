@@ -12,11 +12,57 @@ import { blingReq } from './bling';
 import { carregarAnuncioBase, skuBaseAnuncio } from '../lib/anuncioBase';
 import { resolverBlingProdutoId } from '../lib/anuncioPreparar';
 import { ML_LOJA_BLING_ID } from '../lib/mlCategorias';
+import { shopeeGetItemBaseInfo } from '../lib/shopee-api';
+import { magaluGetSku } from '../lib/magalu-api';
+import { nuvemReq } from './nuvemshop';
 
 export const anuncioVinculosRouter = Router();
 
 type Mk = 'shopee' | 'magalu' | 'nuvemshop' | 'mercado-livre';
 const MARKETPLACES: Mk[] = ['shopee', 'magalu', 'nuvemshop', 'mercado-livre'];
+
+const SITUACAO_ANUNCIO: Record<number, string> = { 1: 'Publicado', 2: 'Rascunho', 3: 'Com problema', 4: 'Pausado' };
+const SHOPEE_STATUS: Record<string, { texto: string; ok: boolean }> = {
+  NORMAL: { texto: 'Ativo', ok: true },
+  UNLIST: { texto: 'Inativo (oculto)', ok: false },
+  BANNED: { texto: 'Banido pela Shopee', ok: false },
+  REVIEWING: { texto: 'Em análise', ok: false },
+  SELLER_DELETE: { texto: 'Excluído', ok: false },
+  SHOPEE_DELETE: { texto: 'Excluído pela Shopee', ok: false },
+};
+const NAO_EXISTE = { texto: 'Não existe mais', ok: false };
+const naoEncontrado = (e: any) => /nao encontrad|not found|404|not_found|does not exist/i.test(String(e?.message || e));
+
+// Le a situacao REAL do anuncio no proprio marketplace (ML vem do Bling, que repete o que o ML informa).
+async function situacaoNoMarketplace(mk: Mk, sku: string, id: string | null): Promise<{ texto: string; ok: boolean } | null> {
+  if (!id) return null;
+  try {
+    if (mk === 'shopee') {
+      const item = await shopeeGetItemBaseInfo(id);
+      const st = String(item?.item_status || '').toUpperCase();
+      return SHOPEE_STATUS[st] || { texto: st ? st.toLowerCase() : 'status desconhecido', ok: false };
+    }
+    if (mk === 'magalu') {
+      const d: any = await magaluGetSku(sku);
+      const st = String(d?.status || '').toLowerCase();
+      if (!st) return null;
+      const mapa: Record<string, { texto: string; ok: boolean }> = {
+        published: { texto: 'Publicado', ok: true }, active: { texto: 'Ativo', ok: true },
+        draft: { texto: 'Rascunho / em análise', ok: false }, inactive: { texto: 'Inativo', ok: false },
+        blocked: { texto: 'Bloqueado', ok: false }, rejected: { texto: 'Reprovado', ok: false },
+      };
+      return mapa[st] || { texto: st, ok: false };
+    }
+    if (mk === 'nuvemshop') {
+      const p: any = await nuvemReq(`/products/${encodeURIComponent(id)}`);
+      if (!p?.id) return NAO_EXISTE;
+      return p.published === true ? { texto: 'Publicado', ok: true } : { texto: 'Oculto na loja', ok: false };
+    }
+  } catch (e) {
+    if (naoEncontrado(e)) return NAO_EXISTE;
+  }
+  return null;
+}
 
 const dormir = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -48,6 +94,7 @@ type Vinculo = {
   blingCodigo: string | null;
   blingVinculoId: string | null;
   blingAnuncioId: string | null; // so Mercado Livre
+  situacao?: { texto: string; ok: boolean } | null; // situacao do anuncio no proprio marketplace (ok = ativo/publicado)
   status: 'livre' | 'ok' | 'divergente' | 'so_bling' | 'so_sistema';
 };
 
@@ -108,22 +155,26 @@ anuncioVinculosRouter.post('/consultar', async (req, res, next) => {
         const b = lojaId ? linhaBling[String(lojaId)] : undefined;
         let blingCodigo = b?.codigo || null;
         let blingAnuncioId: string | null = null;
+        let situacao: Vinculo['situacao'] = null;
 
         // Mercado Livre: o anuncio vive em /anuncios (criado pelo Bling) — o MLB... esta em anuncioLoja.id.
         if (mk === 'mercado-livre' && blingProdutoId) {
           try {
             const r = await blingReq(`/anuncios?idProduto=${blingProdutoId}&limite=5&tipoIntegracao=MercadoLivre&idLoja=${ML_LOJA_BLING_ID}`) as any;
             const a = (Array.isArray(r?.data) ? r.data : [])[0];
-            if (a?.id) { blingAnuncioId = String(a.id); blingCodigo = blingCodigo || (a.anuncioLoja?.id ? String(a.anuncioLoja.id) : `anuncio Bling ${a.id}`); }
+            if (a?.id) { blingAnuncioId = String(a.id); const cod = Number(a.situacao); if (cod) situacao = { texto: SITUACAO_ANUNCIO[cod] || `situacao ${cod}`, ok: cod === 1 }; blingCodigo = blingCodigo || (a.anuncioLoja?.id ? String(a.anuncioLoja.id) : `anuncio Bling ${a.id}`); }
           } catch { /* sem anuncio ML no Bling */ }
           await dormir(250);
         }
+
+        if (mk !== 'mercado-livre') { situacao = await situacaoNoMarketplace(mk, sku, sistema[mk] || blingCodigo); await dormir(150); }
 
         mercados[mk] = {
           sistemaId: sistema[mk],
           blingCodigo,
           blingVinculoId: b?.vinculoId || null,
           blingAnuncioId,
+          situacao,
           status: classificar(sistema[mk], blingCodigo),
         };
       }
