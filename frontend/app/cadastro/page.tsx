@@ -495,6 +495,7 @@ export default function CadastroPage() {
   const [anuncioExpandidos, setAnuncioExpandidos] = useState<Set<string>>(new Set<string>());
   const [anuncioFiltro, setAnuncioFiltro] = useState<'todos' | 'prontos' | 'problema'>('todos');
   const [anuncioPagina, setAnuncioPagina] = useState(0);
+  const [excluirModal, setExcluirModal] = useState<{ sku: string; mk: AnuncioMarketplaceId } | null>(null);
   const [categoriaModalSku, setCategoriaModalSku] = useState<string | null>(null);
   const [categoriaModalMarketplace, setCategoriaModalMarketplace] = useState<AnuncioMarketplaceId>('shopee');
   const [categoriaModalBusca, setCategoriaModalBusca] = useState('');
@@ -2177,12 +2178,12 @@ export default function CadastroPage() {
     }
   }
 
-  async function removerVinculoAnuncio(sku: string, mk: AnuncioMarketplaceId, alvo: 'sistema' | 'sistema_bling') {
+  async function removerVinculoAnuncio(sku: string, mk: AnuncioMarketplaceId, alvo: 'sistema' | 'sistema_bling', semConfirmar?: boolean) {
     const nome = ANUNCIO_MARKETPLACES.find((m) => m.id === mk)?.label || mk;
     const aviso = alvo === 'sistema'
       ? `Remover o ID do anúncio do ${nome} do SKU ${sku} SÓ do nosso sistema?\n\nO SKU fica liberado para criar de novo.\nIsso NÃO apaga o anúncio dentro do ${nome} nem o vínculo no Bling.${mk === 'mercado-livre' ? '\n\nAtenção: no Mercado Livre a auditoria automática do Bling pode preencher o ID de volta; para liberar de verdade use "sistema + Bling".' : ''}`
       : `Remover o anúncio do ${nome} do SKU ${sku} do nosso sistema E do Bling?\n\nO vínculo do produto com a loja no Bling será apagado${mk === 'mercado-livre' ? ' e o anúncio do Bling (anúncios do ML) também, senão ele volta a bloquear' : ''}, e o SKU fica liberado para criar de novo.\nIsso NÃO apaga o produto/anúncio dentro do ${nome}.`;
-    if (!confirm(aviso)) return;
+    if (!semConfirmar && !confirm(aviso)) return;
     const chave = `${sku}|${mk}`;
     setAnuncioVinculoOcupado(chave);
     try {
@@ -2428,18 +2429,18 @@ export default function CadastroPage() {
         const celula = (linha: AnuncioCriarLinha, mk: AnuncioMarketplaceId): { chave: string; texto: string; cor: string; fundo: string; clicavel: boolean } => {
           const mp = linha.marketplaces[mk];
           if (!mp.disponivel) return { chave: 'off', texto: '—', cor: 'var(--gray-300)', fundo: 'transparent', clicavel: false };
-          if (linha.semEstoque) return { chave: 'bloq', texto: 'sem estoque', cor: '#b91c1c', fundo: 'transparent', clicavel: false };
-          if (!linha.fotosOk) return { chave: 'bloq', texto: 'sem fotos', cor: '#b91c1c', fundo: 'transparent', clicavel: false };
+          if (linha.semEstoque) return { chave: 'bloq', texto: 'sem estoque', cor: '#b91c1c', fundo: '#fee2e2', clicavel: false };
+          if (!linha.fotosOk) return { chave: 'bloq', texto: 'sem fotos', cor: '#b91c1c', fundo: '#fee2e2', clicavel: false };
           if (mp.status === 'processando') return { chave: 'proc', texto: '⏳ criando', cor: 'var(--gray-600)', fundo: 'transparent', clicavel: false };
-          if (mp.status === 'ok') return { chave: 'ok', texto: '✓ criado', cor: '#166534', fundo: 'transparent', clicavel: false };
-          if (mp.status === 'erro') return { chave: 'erro', texto: '✗ erro', cor: '#b91c1c', fundo: 'transparent', clicavel: false };
-          if (mp.jaTemAnuncio) { const sit = anuncioVinculos[linha.sku]?.mercados?.[mk]?.situacao; if (sit && !sit.ok) return { chave: 'tem', texto: `já tem ID · ${sit.texto.toLowerCase()}`, cor: '#b91c1c', fundo: 'transparent', clicavel: false }; }
-          if (mp.jaTemAnuncio) return { chave: 'tem', texto: 'já tem ID', cor: 'var(--gray-500)', fundo: 'transparent', clicavel: false };
-          if (mp.restricoes && mp.restricoes.length) return { chave: 'restr', texto: '⚠ restrição', cor: '#b91c1c', fundo: 'transparent', clicavel: false };
-          if (mp.categoriaPendente || mp.categoriaEscolhidaId == null) return { chave: 'semcat', texto: 'sem categoria', cor: '#b45309', fundo: 'transparent', clicavel: false };
+          if (mp.status === 'ok') return { chave: 'ok', texto: '✓ criado', cor: '#166534', fundo: '#dcfce7', clicavel: false };
+          if (mp.status === 'erro') return { chave: 'erro', texto: '✗ erro', cor: '#b91c1c', fundo: '#fee2e2', clicavel: false };
+          if (mp.jaTemAnuncio) { const sit = anuncioVinculos[linha.sku]?.mercados?.[mk]?.situacao; if (sit && !sit.ok) return { chave: 'tem', texto: `já tem ID · ${sit.texto.toLowerCase()}`, cor: '#b91c1c', fundo: '#fee2e2', clicavel: false }; }
+          if (mp.jaTemAnuncio) return { chave: 'tem', texto: 'já tem ID', cor: '#92400e', fundo: '#fef3c7', clicavel: false };
+          if (mp.restricoes && mp.restricoes.length) return { chave: 'restr', texto: '⚠ restrição', cor: '#b91c1c', fundo: '#fee2e2', clicavel: false };
+          if (mp.categoriaPendente || mp.categoriaEscolhidaId == null) return { chave: 'semcat', texto: 'sem categoria', cor: '#92400e', fundo: '#fffbeb', clicavel: false };
           return mp.selecionado
-            ? { chave: 'sel', texto: '☑ criar', cor: 'var(--gray-900)', fundo: 'transparent', clicavel: true }
-            : { chave: 'pronto', texto: '☐ criar', cor: 'var(--gray-500)', fundo: 'transparent', clicavel: true };
+            ? { chave: 'sel', texto: '☑ criar', cor: '#166534', fundo: '#dcfce7', clicavel: true }
+            : { chave: 'pronto', texto: '☐ criar', cor: 'var(--gray-600)', fundo: 'var(--gray-100)', clicavel: true };
         };
         const statusLinha = (linha: AnuncioCriarLinha): 'pronto' | 'problema' | 'tem' | 'ok' => {
           if (!linha.encontrado || !linha.fotosOk || linha.semEstoque) return 'problema';
@@ -2498,9 +2499,9 @@ export default function CadastroPage() {
               const nomeCurto = (id: AnuncioMarketplaceId) => (id === 'mercado-livre' ? 'ML' : ANUNCIO_MARKETPLACES.find((m) => m.id === id)?.label || id);
               return (
                 <div key={linha.sku} style={{ borderTop: '1px solid var(--gray-300)', padding: '10px 4px' }}>
-                  <div onClick={() => alternarExpandido(linha.sku)} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', flexWrap: 'wrap' }}>
+                  <div onClick={() => alternarExpandido(linha.sku)} style={{ display: 'grid', gridTemplateColumns: isPhone || aberto ? '14px minmax(0, 1fr)' : '14px minmax(0, 1fr) repeat(4, 150px)', columnGap: 10, rowGap: 6, alignItems: 'start', cursor: 'pointer' }}>
                     <span style={{ color: 'var(--gray-400)', width: 12, fontSize: 11, paddingTop: 2 }}>{aberto ? '▾' : '▸'}</span>
-                    <div style={{ flex: '1 1 280px', minWidth: 0 }}>
+                    <div style={{ minWidth: 0 }}>
                       <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--gray-900)', fontWeight: 700 }}>
                         {linha.sku}{linha.origem === 'cadastro' ? <span style={{ fontFamily: 'inherit', fontWeight: 500, fontSize: 10.5, color: 'var(--gray-500)', marginLeft: 6 }}>pré-cadastro</span> : null}
                       </div>
@@ -2514,24 +2515,21 @@ export default function CadastroPage() {
                         </div>
                       )}
                     </div>
-                    {!aberto && (bloqueada ? (
-                      <span style={{ fontSize: 11.5, color: '#b91c1c', paddingTop: 2 }}>{!linha.fotosOk ? '✗ Fotos Anúncios ainda não foi processado' : '✗ Sem estoque — não há mais unidade disponível'}</span>
-                    ) : (
-                      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', paddingTop: 2 }}>
-                        {ANUNCIO_MARKETPLACES.filter(({ id }) => linha.marketplaces[id].disponivel).map(({ id }) => {
-                          const c = celula(linha, id);
-                          return (
-                            <span key={id} style={{ fontSize: 11.5, whiteSpace: 'nowrap' }}>
-                              <span style={{ color: 'var(--gray-500)' }}>{nomeCurto(id)} </span>
-                              <span
-                                onClick={(e) => { if (c.clicavel && !anuncioCriarProcessando) { e.stopPropagation(); toggleAnuncioCriarSelecionado(linha.sku, id); } }}
-                                style={{ color: c.cor, fontWeight: 500, cursor: c.clicavel ? 'pointer' : 'inherit' }}
-                              >{c.texto}</span>
-                            </span>
-                          );
-                        })}
-                      </div>
-                    ))}
+                                        {!aberto && (bloqueada ? (
+                      <span style={{ gridColumn: isPhone ? '2' : '3 / span 4', fontSize: 11.5, color: '#b91c1c', paddingTop: 2 }}>{!linha.fotosOk ? '✗ Fotos Anúncios ainda não foi processado' : '✗ Sem estoque — não há mais unidade disponível'}</span>
+                    ) : ANUNCIO_MARKETPLACES.map(({ id }) => {
+                      if (!linha.marketplaces[id].disponivel) return <span key={id} />;
+                      const c = celula(linha, id);
+                      return (
+                        <span key={id} style={{ fontSize: 11.5, whiteSpace: 'nowrap', gridColumn: isPhone ? '2' : undefined }}>
+                          <span style={{ color: 'var(--gray-500)', display: 'inline-block', minWidth: 52 }}>{id === 'mercado-livre' ? 'ML' : ANUNCIO_MARKETPLACES.find((m) => m.id === id)?.label}</span>
+                          <span
+                            onClick={(e) => { if (c.clicavel && !anuncioCriarProcessando) { e.stopPropagation(); toggleAnuncioCriarSelecionado(linha.sku, id); } }}
+                            style={{ color: c.cor, background: c.fundo, borderRadius: 5, padding: '2px 7px', fontWeight: 600, cursor: c.clicavel ? 'pointer' : 'inherit' }}
+                          >{c.texto}</span>
+                        </span>
+                      );
+                    }))}
                   </div>
 
                   {aberto && (
@@ -2598,17 +2596,7 @@ export default function CadastroPage() {
                             </div>
                             <div>
                               {temVinculo && v && (
-                                <select
-                                  value=""
-                                  disabled={ocupado || anuncioCriarProcessando}
-                                  onChange={(e: any) => { const alvo = e.target.value; if (alvo === 'sistema' || alvo === 'sistema_bling') removerVinculoAnuncio(linha.sku, mk, alvo); }}
-                                  title="Libera o SKU para criar este anúncio de novo"
-                                  style={{ fontSize: 11, padding: '2px 4px', border: '1px solid var(--border)', borderRadius: 5, background: 'var(--white)', color: 'var(--gray-600)', maxWidth: 120 }}
-                                >
-                                  <option value="">{ocupado ? 'removendo...' : 'remover…'}</option>
-                                  {v.sistemaId && <option value="sistema">do sistema</option>}
-                                  <option value="sistema_bling">do sistema + Bling</option>
-                                </select>
+                                <button type="button" disabled={ocupado || anuncioCriarProcessando} onClick={() => setExcluirModal({ sku: linha.sku, mk })} style={{ fontSize: 11, color: '#b91c1c', background: 'var(--white)', border: '1px solid #fecaca', borderRadius: 5, padding: '2px 10px', cursor: 'pointer' }}>{ocupado ? 'Excluindo...' : 'Excluir'}</button>
                               )}
                             </div>
                           </div>
@@ -2672,6 +2660,39 @@ export default function CadastroPage() {
             </div>
           )}
         </div>
+        );
+      })()}
+
+      {excluirModal && (() => {
+        const mkNome = ANUNCIO_MARKETPLACES.find((m) => m.id === excluirModal.mk)?.label || excluirModal.mk;
+        const vm = anuncioVinculos[excluirModal.sku]?.mercados?.[excluirModal.mk];
+        const fechar = () => setExcluirModal(null);
+        const executar = (alvo: 'sistema' | 'sistema_bling') => { const { sku, mk } = excluirModal; fechar(); removerVinculoAnuncio(sku, mk, alvo, true); };
+        const opcao: any = { textAlign: 'left', width: '100%', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', background: 'var(--white)', cursor: 'pointer', display: 'grid', gap: 3 };
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100, padding: 16 }} onClick={fechar}>
+            <div style={{ background: '#fff', borderRadius: 14, width: '100%', maxWidth: 520, padding: 18, boxShadow: '0 20px 60px rgba(0,0,0,0.3)', display: 'grid', gap: 12 }} onClick={(e) => e.stopPropagation()}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--gray-800)' }}>Excluir anúncio — {mkNome} · {excluirModal.sku}</div>
+                <button type="button" onClick={fechar} aria-label="Fechar" style={{ border: 'none', background: 'none', fontSize: 18, cursor: 'pointer', color: 'var(--gray-400)' }}>✕</button>
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--gray-600)' }}>
+                ID atual: <span style={{ fontFamily: 'JetBrains Mono, monospace' }}>sistema {vm?.sistemaId || '—'} · Bling {vm?.blingCodigo || '—'}</span>{vm?.situacao ? ` · ${vm.situacao.texto.toLowerCase()}` : ''}
+              </div>
+              <button type="button" disabled={!vm?.sistemaId} onClick={() => executar('sistema')} style={{ ...opcao, opacity: vm?.sistemaId ? 1 : 0.5 }}>
+                <span style={{ fontWeight: 700, fontSize: 12.5, color: 'var(--gray-800)' }}>Excluir só do sistema</span>
+                <span style={{ fontSize: 11.5, color: 'var(--gray-600)' }}>Apaga o ID do anúncio apenas no nosso sistema e libera o SKU para criar de novo. O vínculo no Bling continua como está — a auditoria do Bling pode preencher o ID de volta.</span>
+              </button>
+              <button type="button" onClick={() => executar('sistema_bling')} style={opcao}>
+                <span style={{ fontWeight: 700, fontSize: 12.5, color: '#b91c1c' }}>Excluir do sistema + Bling</span>
+                <span style={{ fontSize: 11.5, color: 'var(--gray-600)' }}>Apaga o ID no nosso sistema e o vínculo do produto com a loja no Bling{excluirModal.mk === 'mercado-livre' ? ' (e o anúncio do Mercado Livre dentro do Bling)' : ''}. Libera totalmente o SKU para criar de novo.</span>
+              </button>
+              <div style={{ fontSize: 11, color: 'var(--gray-500)' }}>Nenhuma das opções apaga o produto dentro do {mkNome}: se ele ainda existir lá, exclua pelo painel do marketplace.</div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                <button type="button" onClick={fechar} style={{ fontSize: 12, padding: '5px 14px', border: '1px solid var(--border)', borderRadius: 6, background: 'var(--white)', cursor: 'pointer', color: 'var(--gray-700)' }}>Cancelar</button>
+              </div>
+            </div>
+          </div>
         );
       })()}
 
