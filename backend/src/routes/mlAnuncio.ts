@@ -241,22 +241,41 @@ mlAnuncioRouter.post('/anuncio/criar', async (req, res) => {
     const anuncioBlingId = criado?.data?.id != null ? String(criado.data.id) : '';
     if (!anuncioBlingId) return res.status(502).json({ error: 'O Bling nao devolveu o ID do anuncio criado.', resposta: criado });
 
-    // 5) Publica (se o Bling ja nao publicou sozinho, o erro aqui nao derruba a criacao).
+    // 5) Publica. Se falhar, o anuncio NAO pode ficar no Bling como rascunho (trava o SKU sem estar a venda):
+    //    apaga o anuncio criado (e vinculos ML do produto) e devolve ERRO com o motivo.
     let aviso = '';
     try {
       await blingReq(`/anuncios/${anuncioBlingId}/publicar?tipoIntegracao=MercadoLivre&idLoja=${ML_LOJA_BLING_ID}`, { method: 'POST', body: JSON.stringify({}) });
     } catch (e: any) {
-      // Mostra os motivos de verdade (fields[].msg do Bling), nao o JSON cortado.
       const bruto = String(e?.message || e);
       let motivos = '';
       try {
         const j = JSON.parse(bruto.slice(bruto.indexOf('{')));
         const campos = Array.isArray(j?.error?.fields) ? j.error.fields : [];
-        motivos = campos.map((f: any) => [f?.element, f?.msg || f?.message].filter(Boolean).join(': ')).filter(Boolean).join(' | ');
+        motivos = campos.map((f: any) => [f?.element, f?.msg || f?.message].filter(Boolean).join(': ')).filter((m: string) => m && m !== 'Dados inválidos').join(' | ');
         if (!motivos) motivos = j?.error?.description || '';
       } catch { /* mantem o texto bruto */ }
       console.warn(`[mlAnuncio] publicar ${base.idPeca} (anuncio Bling ${anuncioBlingId}) falhou: ${bruto}`);
-      aviso = `Anuncio criado no Bling, mas a publicacao automatica falhou: ${(motivos || bruto).slice(0, 1200)}`;
+
+      // Talvez o Bling ja tenha publicado sozinho: confere antes de apagar.
+      let jaPublicado = false;
+      try {
+        const a = await blingReq(`/anuncios/${anuncioBlingId}?tipoIntegracao=MercadoLivre&idLoja=${ML_LOJA_BLING_ID}`) as any;
+        jaPublicado = !!a?.data?.anuncioLoja?.id;
+      } catch { /* segue */ }
+
+      if (!jaPublicado) {
+        let limpeza = 'rascunho apagado do Bling';
+        try {
+          await blingReq(`/anuncios/${anuncioBlingId}?tipoIntegracao=MercadoLivre&idLoja=${ML_LOJA_BLING_ID}`, { method: 'DELETE' });
+          const vs = await blingReq(`/produtos/lojas?idProduto=${blingProdutoId}&idLoja=${ML_LOJA_BLING_ID}&limite=20`) as any;
+          for (const v of (Array.isArray(vs?.data) ? vs.data : [])) await blingReq(`/produtos/lojas/${v.id}`, { method: 'DELETE' }).catch(() => null);
+        } catch (e2: any) {
+          limpeza = `ATENCAO: nao consegui apagar o rascunho ${anuncioBlingId} do Bling (${String(e2?.message || e2).slice(0, 150)}) — apague la ou use Remover do sistema + Bling`;
+        }
+        return res.status(400).json({ error: `Nao foi possivel publicar no Mercado Livre: ${(motivos || bruto).slice(0, 1000)} (${limpeza})` });
+      }
+      aviso = 'O Bling informou erro na publicacao, mas o anuncio ja esta no Mercado Livre — confira.';
     }
 
     // 6) Espera o ID do ML (MLB...) aparecer no anuncio do Bling (tempo curto: o proxy limita a 30s).
