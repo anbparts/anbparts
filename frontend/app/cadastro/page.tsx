@@ -2492,7 +2492,8 @@ export default function CadastroPage() {
           </div>
 
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, tableLayout: 'fixed', minWidth: 900 }}>
+              <colgroup><col style={{ width: '24%' }} /><col style={{ width: '19%' }} /><col style={{ width: '19%' }} /><col style={{ width: '19%' }} /><col style={{ width: '19%' }} /><col style={{ width: 28 }} /></colgroup>
               <thead>
                 <tr>
                   <th style={{ textAlign: 'left', padding: '5px 8px', fontSize: 11, color: 'var(--gray-500)', borderBottom: '1px solid var(--border)' }}>SKU / título</th>
@@ -2523,7 +2524,7 @@ export default function CadastroPage() {
                             <td key={id} style={{ textAlign: 'center', padding: '6px 4px', borderTop: '1px solid var(--gray-300)', borderBottom: 'none' }}>
                               <span
                                 onClick={(e) => { if (c.clicavel && !anuncioCriarProcessando) { e.stopPropagation(); toggleAnuncioCriarSelecionado(linha.sku, id); } }}
-                                style={{ display: 'inline-block', fontSize: 11.5, fontWeight: 500, color: c.cor, padding: '2px 8px', whiteSpace: 'nowrap', cursor: c.clicavel ? 'pointer' : 'inherit' }}
+                                style={{ display: 'inline-block', fontSize: 11.5, fontWeight: 500, color: c.cor, padding: '2px 8px', whiteSpace: 'normal', cursor: c.clicavel ? 'pointer' : 'inherit' }}
                               >{c.texto}</span>
                             </td>
                           );
@@ -2531,29 +2532,29 @@ export default function CadastroPage() {
                         <td style={{ textAlign: 'center', color: 'var(--gray-400)', borderTop: '1px solid var(--gray-300)', borderBottom: 'none' }}>{aberto ? '▾' : '▸'}</td>
                       </tr>
                       {aberto && (
+<>
                         <tr>
-                          <td colSpan={colspan} style={{ padding: '2px 12px 14px', background: 'var(--gray-50)' }}>
+                          <td style={{ padding: '6px 8px 14px', background: 'var(--gray-50)', verticalAlign: 'top' }}>
                             {linha.encontrado && (
-                              <div style={{ fontSize: 11, color: 'var(--gray-500)', padding: '2px 0 8px' }}>
-                                R$ {Number(linha.preco || 0).toFixed(2)} · estoque {linha.estoque} · {linha.moto?.marca} {linha.moto?.modelo}
+                              <div style={{ fontSize: 11, color: 'var(--gray-500)', paddingBottom: 6 }}>
+                                R$ {Number(linha.preco || 0).toFixed(2)} · estoque {linha.estoque}<br />{linha.moto?.marca} {linha.moto?.modelo}
                               </div>
                             )}
-                            {linha.encontrado && !linha.fotosOk && (
-                              <div style={{ color: '#b91c1c', fontSize: 12, marginBottom: 6 }}>A pasta de fotos deste SKU não está na pasta oficial da moto. Nenhum marketplace foi habilitado — rode o Fotos Anúncios e busque de novo.</div>
+                            {linha.encontrado && (
+                              <button type="button" onClick={() => alternarAjusteSku(linha.sku)} style={{ fontSize: 11.5, color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}>
+                                {anuncioAjustes[linha.sku]?.aberto ? '▾ Fechar ajuste' : '✎ Ajustar título / condição / texto'}
+                              </button>
                             )}
-                            {linha.encontrado && linha.fotosOk && linha.semEstoque && (
-                              <div style={{ color: '#b91c1c', fontSize: 12, marginBottom: 6 }}>Este SKU está sem estoque (0 unidade). Nenhum marketplace foi habilitado para criar anúncio.</div>
-                            )}
-                            {linha.encontrado && linha.fotosOk && (
-                              <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fit, minmax(260px, 1fr))', gap: 18 }}>
-                                {ANUNCIO_MARKETPLACES.filter(({ id }) => linha.marketplaces[id].disponivel).map(({ id: mk, label }) => {
+                          </td>
+                          {linha.encontrado && linha.fotosOk ? ANUNCIO_MARKETPLACES.map(({ id: mk, label }) => {
+                            if (!linha.marketplaces[mk].disponivel) return <td key={mk} style={{ padding: '6px 8px 14px', background: 'var(--gray-50)', verticalAlign: 'top' }} />;
                                   const mp = linha.marketplaces[mk];
                                   const v = anuncioVinculos[linha.sku]?.mercados?.[mk];
                                   const ocupado = anuncioVinculoOcupado === `${linha.sku}|${mk}`;
                                   const cat = mp.categoriaPendente ? null : (mp.categoriaEscolhidaId != null ? categoriasDoMarketplace(mk).find((c) => c.id === mp.categoriaEscolhidaId) || mp.categoriaAtual : mp.categoriaAtual);
                                   const temVinculo = !!v && v.status !== 'livre';
                                   return (
-                                    <div key={mk} style={{ display: 'grid', gap: 4, alignContent: 'start' }}>
+                                    <td key={mk} style={{ padding: '6px 8px 14px', background: 'var(--gray-50)', verticalAlign: 'top' }}><div style={{ display: 'grid', gap: 4, alignContent: 'start' }}>
                                       <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: 0.4 }}>{label}</div>
                                       {!mp.jaTemAnuncio && (
                                         <div style={{ fontSize: 12, color: 'var(--gray-700)', lineHeight: 1.4 }}>
@@ -2600,21 +2601,20 @@ export default function CadastroPage() {
                                         </div>
                                       )}
                                       {mp.status === 'erro' && <div style={{ fontSize: 11.5, color: '#dc2626' }}>✗ {mp.erroProcessamento}</div>}
-                                    </div>
+                                    </div></td>
                                   );
-                                })}
-                              </div>
-                            )}
-                            {linha.encontrado && (
-                              <div style={{ marginTop: 8 }}>
-                                <button
-                                  type="button"
-                                  onClick={() => alternarAjusteSku(linha.sku)}
-                                  style={{ fontSize: 11.5, color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
-                                >
-                                  {anuncioAjustes[linha.sku]?.aberto ? '▾ Fechar ajuste' : '✎ Ajustar título / condição / texto'}
-                                </button>
-                                {anuncioAjustes[linha.sku]?.aberto && (() => {
+                          }) : (
+                            <td colSpan={ANUNCIO_MARKETPLACES.length} style={{ padding: '6px 8px 14px', background: 'var(--gray-50)', verticalAlign: 'top' }}>
+                              {linha.encontrado && !linha.fotosOk && <div style={{ color: '#b91c1c', fontSize: 12 }}>A pasta de fotos deste SKU não está na pasta oficial da moto. Nenhum marketplace foi habilitado — rode o Fotos Anúncios e busque de novo.</div>}
+                              {linha.encontrado && linha.fotosOk && linha.semEstoque && <div style={{ color: '#b91c1c', fontSize: 12 }}>Este SKU está sem estoque (0 unidade). Nenhum marketplace foi habilitado para criar anúncio.</div>}
+                            </td>
+                          )}
+                          <td style={{ background: 'var(--gray-50)' }} />
+                        </tr>
+                        {linha.encontrado && anuncioAjustes[linha.sku]?.aberto && (
+                          <tr>
+                            <td colSpan={colspan} style={{ padding: '0 12px 14px', background: 'var(--gray-50)' }}>
+                              {(() => {
                                   const aj = anuncioAjustes[linha.sku];
                                   return (
                                     <div style={{ marginTop: 8, display: 'grid', gap: 8, background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 8, padding: 10 }}>
@@ -2653,10 +2653,10 @@ export default function CadastroPage() {
                                     </div>
                                   );
                                 })()}
-                              </div>
-                            )}
-                          </td>
-                        </tr>
+                            </td>
+                          </tr>
+                        )}
+                      </>
                       )}
                     </Fragment>
                   );
