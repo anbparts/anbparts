@@ -1367,9 +1367,11 @@ function PecaDetalheModal({ open, peca, onClose, onSaved, canEditarPeca = false,
   const inp: any = { width: '100%', background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px', fontSize: 13, outline: 'none', boxSizing: 'border-box' as const };
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 235, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)' }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 16, width: '100%', maxWidth: 520, boxShadow: '0 12px 32px rgba(0,0,0,.10)' }}>
-        <div style={{ padding: '20px 22px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 235, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 12, backdropFilter: 'blur(2px)' }} onClick={onClose}>
+      {/* Altura limitada a tela: o cabecalho fica fixo, o miolo rola e os botoes ficam sempre visiveis
+          no rodape (antes o modal passava da tela em monitores baixos e o conteudo ficava cortado). */}
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 16, width: '100%', maxWidth: 520, boxShadow: '0 12px 32px rgba(0,0,0,.10)', maxHeight: 'calc(100dvh - 24px)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ padding: '16px 22px 12px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
           <div>
             <div style={{ fontFamily: 'Fraunces, serif', fontSize: 18, fontWeight: 600 }}>Detalhes da Peça</div>
             <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 4 }}>{peca.idPeca} — {peca.descricao}</div>
@@ -1377,9 +1379,10 @@ function PecaDetalheModal({ open, peca, onClose, onSaved, canEditarPeca = false,
           <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer' }}>X</button>
         </div>
 
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
         {!editando ? (
           <>
-            <div style={{ padding: '20px 22px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <div style={{ padding: '14px 22px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               <Field label="Peso Líquido (kg)" value={form.pesoLiquido !== '' ? Number(form.pesoLiquido) : null} />
               <Field label="Peso Bruto (kg)"   value={form.pesoLiquido !== '' ? Number(form.pesoLiquido) : null} />
               <Field label="Largura (cm)"      value={form.largura      !== '' ? Number(form.largura)      : null} />
@@ -1472,7 +1475,7 @@ function PecaDetalheModal({ open, peca, onClose, onSaved, canEditarPeca = false,
                 </div>
               </div>
             </div>
-            <div style={{ padding: '0 22px 20px', display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+            <div style={{ position: 'sticky', bottom: 0, marginTop: 'auto', background: 'var(--white)', borderTop: '1px solid var(--border)', padding: '12px 22px 14px', display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <button onClick={copiarInfSku} style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink-soft)', borderColor: 'var(--border-strong)' }}>
                 {infSkuCopiado ? '✅ Copiado!' : '📋 Inf. SKU'}
@@ -1501,7 +1504,7 @@ function PecaDetalheModal({ open, peca, onClose, onSaved, canEditarPeca = false,
           </>
         ) : (
           <>
-            <div style={{ padding: '20px 22px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div style={{ padding: '14px 22px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               {[
                 { key: 'pesoLiquido', label: 'Peso (kg)' },
                 { key: 'largura', label: 'Largura (cm)' },
@@ -1533,7 +1536,7 @@ function PecaDetalheModal({ open, peca, onClose, onSaved, canEditarPeca = false,
                 💡 Ao salvar, os dados serão atualizados no ANB e enviados ao Bling automaticamente.
               </div>
             </div>
-            <div style={{ padding: '0 22px 20px', display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+            <div style={{ position: 'sticky', bottom: 0, marginTop: 'auto', background: 'var(--white)', borderTop: '1px solid var(--border)', padding: '12px 22px 14px', display: 'flex', justifyContent: 'space-between', gap: 10 }}>
               <button onClick={() => setEditando(false)} style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink-soft)', borderColor: 'var(--border-strong)' }}>Cancelar</button>
               <button onClick={salvarDimensoes} disabled={saving} style={{ ...cs.btn, background: 'var(--gray-800)', color: '#fff', opacity: saving ? 0.7 : 1 }}>
                 {saving ? 'Salvando...' : '💾 Salvar e Sincronizar Bling'}
@@ -1541,6 +1544,7 @@ function PecaDetalheModal({ open, peca, onClose, onSaved, canEditarPeca = false,
             </div>
           </>
         )}
+        </div>
       </div>
 
       {fotoPreviewOpen && fotoCapaArquivo ? (

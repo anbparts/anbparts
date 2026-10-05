@@ -695,6 +695,16 @@ export default function CadastroPage() {
     }
   }, []);
 
+  // Tela baixa (monitor pequeno/resolucao menor): os modais passam a ter UMA rolagem so (no corpo
+  // inteiro) em vez de uma por coluna — assim nada fica escondido atras de uma barra interna.
+  const [telaBaixa, setTelaBaixa] = useState(false);
+  useEffect(() => {
+    const sync = () => setTelaBaixa(window.innerHeight < 900);
+    sync();
+    window.addEventListener('resize', sync);
+    return () => window.removeEventListener('resize', sync);
+  }, []);
+
   const isPhone = viewportMode === 'phone';
   const isTabletPortrait = viewportMode === 'tablet-portrait';
   const isTabletLandscape = viewportMode === 'tablet-landscape';
@@ -3362,10 +3372,10 @@ export default function CadastroPage() {
             </div>
 
             {/* Corpo */}
-            <div style={{ flex: 1, minHeight: 0, overflowY: isPhone ? 'auto' : 'hidden', display: isPhone ? 'block' : 'grid', gridTemplateColumns: isPhone ? undefined : isMobile ? '1fr' : 'minmax(0, 1fr) minmax(0, 1fr)', alignItems: 'stretch', gap: 0 }}>
+            <div style={{ flex: 1, minHeight: 0, overflowY: (isPhone || telaBaixa) ? 'auto' : 'hidden', display: isPhone ? 'block' : 'grid', gridTemplateColumns: isPhone ? undefined : isMobile ? '1fr' : 'minmax(0, 1fr) minmax(0, 1fr)', alignItems: 'stretch', gap: 0 }}>
 
               {/* COLUNA ESQUERDA — campos do produto */}
-              <div style={{ padding: isPhone ? '12px 14px' : '10px 14px', display: 'grid', alignContent: 'start', gap: isPhone ? 8 : 5, borderRight: (!isPhone && !isMobile) ? '1px solid var(--border)' : 'none', borderBottom: isPhone ? '1px solid var(--border)' : isMobile ? '1px solid var(--border)' : 'none', overflowY: isPhone ? 'visible' : 'auto', minHeight: isPhone ? undefined : 0 }}>
+              <div style={{ padding: isPhone ? '12px 14px' : '10px 14px', display: 'grid', alignContent: 'start', gap: isPhone ? 8 : 5, borderRight: (!isPhone && !isMobile) ? '1px solid var(--border)' : 'none', borderBottom: isPhone ? '1px solid var(--border)' : isMobile ? '1px solid var(--border)' : 'none', overflowY: (isPhone || telaBaixa) ? 'visible' : 'auto', minHeight: (isPhone || telaBaixa) ? undefined : 0 }}>
 
                 <div>
                   <label style={s.label}>Moto *</label>
@@ -3614,7 +3624,7 @@ export default function CadastroPage() {
               </div>
 
               {/* COLUNA DIREITA — checklist + descrição */}
-              <div style={{ padding: isPhone ? '12px 14px 16px' : '10px 14px', display: 'flex', flexDirection: 'column' as const, gap: isPhone ? 8 : 5, overflowY: isPhone ? 'visible' : 'auto', minHeight: isPhone ? undefined : 0 }}>
+              <div style={{ padding: isPhone ? '12px 14px 16px' : '10px 14px', display: 'flex', flexDirection: 'column' as const, gap: isPhone ? 8 : 5, overflowY: (isPhone || telaBaixa) ? 'visible' : 'auto', minHeight: (isPhone || telaBaixa) ? undefined : 0 }}>
 
                 <ChecklistValidacao form={form} />
 
@@ -3634,7 +3644,7 @@ export default function CadastroPage() {
                       ref={descricaoPecaEditorRef}
                       contentEditable
                       suppressContentEditableWarning
-                      style={{ ...s.input, flex: '1 1 auto', minHeight: isPhone ? 200 : 220, maxHeight: isPhone ? 320 : isTabletLandscape ? 'calc(100dvh - 210px)' : 'calc(100dvh - 260px)', borderRadius: 0, border: 'none', overflowY: 'auto', whiteSpace: 'pre-wrap', outline: 'none' }}
+                      style={{ ...s.input, flex: '1 1 auto', minHeight: isPhone ? 200 : 220, maxHeight: isPhone ? 320 : telaBaixa ? 420 : isTabletLandscape ? 'calc(100dvh - 210px)' : 'calc(100dvh - 260px)', borderRadius: 0, border: 'none', overflowY: 'auto', whiteSpace: 'pre-wrap', outline: 'none' }}
                       onInput={(e) => setForm((p: any) => ({ ...p, descricaoPeca: (e.target as HTMLDivElement).innerHTML }))}
                     />
                   </div>
