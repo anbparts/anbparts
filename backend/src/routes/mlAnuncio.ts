@@ -301,6 +301,12 @@ mlAnuncioRouter.get('/anuncio/diagnostico', async (req, res) => {
     const out: any = {};
     const anuncio = String(req.query.anuncio || '').trim();
     const categoria = String(req.query.categoria || '').trim();
+    // Leitura livre (so GET) de qualquer caminho /anuncios... do Bling, pra inspecionar anuncios ja publicados.
+    const caminho = String(req.query.caminho || '').trim();
+    if (caminho) {
+      if (!caminho.startsWith('/anuncios')) return res.status(400).json({ error: 'caminho deve comecar com /anuncios' });
+      out.caminho = await blingReq(caminho).catch((e: any) => ({ erro: e?.message }));
+    }
     if (anuncio) out.anuncio = await blingReq(`/anuncios/${encodeURIComponent(anuncio)}?${q}`).catch((e: any) => ({ erro: e?.message }));
     if (categoria) out.categoria = await blingReq(`/anuncios/categorias/${encodeURIComponent(categoria)}?${q}`).catch((e: any) => ({ erro: e?.message }));
     res.json(out);
