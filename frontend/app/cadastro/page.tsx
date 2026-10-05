@@ -455,6 +455,7 @@ export default function CadastroPage() {
   type AnuncioCriarLinha = {
     sku: string;
     encontrado: boolean;
+    semEstoque?: boolean; // sem unidade disponivel: nada e' criado
     fotosOk: boolean; // pasta do SKU ja esta na pasta oficial da moto (Fotos Anuncios processado)
     origem?: string;
     erro?: string;
@@ -2064,7 +2065,7 @@ export default function CadastroPage() {
     setAnuncioCriarLinhas((prev) => prev.map((linha) => {
       const novo = novos.get(linha.sku);
       const base = !linha.marketplaces[mk].disponivel && novo ? montarMarketplaceDaLinha(novo) : linha.marketplaces[mk];
-      const elegivel = base.disponivel && linha.encontrado && linha.fotosOk && !base.jaTemAnuncio && !base.categoriaPendente && !(base.restricoes && base.restricoes.length) && base.status !== 'ok' && base.status !== 'processando';
+      const elegivel = base.disponivel && linha.encontrado && linha.fotosOk && !linha.semEstoque && !base.jaTemAnuncio && !base.categoriaPendente && !(base.restricoes && base.restricoes.length) && base.status !== 'ok' && base.status !== 'processando';
       return { ...linha, marketplaces: { ...linha.marketplaces, [mk]: { ...base, selecionado: elegivel } } };
     }));
   }
@@ -2268,6 +2269,12 @@ export default function CadastroPage() {
         }
       }
 
+      for (const l of porSku.values()) {
+        if (l.encontrado && !(Number(l.estoque) > 0)) {
+          l.semEstoque = true;
+          for (const id of Object.keys(l.marketplaces) as AnuncioMarketplaceId[]) l.marketplaces[id] = { ...l.marketplaces[id], selecionado: false };
+        }
+      }
       setAnuncioCriarLinhas(Array.from(porSku.values()));
       // Em seguida le os IDs do Bling (nao bloqueia a tela): avisa SKUs que ja tem anuncio/ID preenchido.
       consultarVinculos(Array.from(porSku.values()).filter((l) => l.encontrado).map((l) => l.sku));
@@ -2303,7 +2310,7 @@ export default function CadastroPage() {
       if (linha.sku !== sku) return linha;
       const atual = linha.marketplaces[mk];
       // Escolher uma categoria resolve a pendencia; sem restricao e com fotos oficiais, ja deixa marcada.
-      const liberada = linha.fotosOk && !atual.jaTemAnuncio && restricoes.length === 0;
+      const liberada = linha.fotosOk && !linha.semEstoque && !atual.jaTemAnuncio && restricoes.length === 0;
       return { ...linha, marketplaces: { ...linha.marketplaces, [mk]: {
         ...atual,
         categoriaEscolhidaId: categoriaId,
@@ -2320,7 +2327,7 @@ export default function CadastroPage() {
   async function processarAnunciosCriarFila() {
     const tarefas: { sku: string; mk: AnuncioMarketplaceId }[] = [];
     for (const linha of anuncioCriarLinhas) {
-      if (!linha.encontrado || !linha.fotosOk) continue; // sem fotos na pasta oficial nada e' criado
+      if (!linha.encontrado || !linha.fotosOk || linha.semEstoque) continue; // sem fotos na pasta oficial nada e' criado
       for (const { id: mk } of ANUNCIO_MARKETPLACES) {
         const m = linha.marketplaces[mk];
         if (m.disponivel && m.selecionado && !(m.restricoes && m.restricoes.length)) tarefas.push({ sku: linha.sku, mk });
@@ -2421,6 +2428,7 @@ export default function CadastroPage() {
         const celula = (linha: AnuncioCriarLinha, mk: AnuncioMarketplaceId): { chave: string; texto: string; cor: string; fundo: string; clicavel: boolean } => {
           const mp = linha.marketplaces[mk];
           if (!mp.disponivel) return { chave: 'off', texto: '—', cor: 'var(--gray-300)', fundo: 'transparent', clicavel: false };
+          if (linha.semEstoque) return { chave: 'bloq', texto: 'sem estoque', cor: '#b91c1c', fundo: '#fef2f2', clicavel: false };
           if (!linha.fotosOk) return { chave: 'bloq', texto: 'sem fotos', cor: '#b91c1c', fundo: '#fef2f2', clicavel: false };
           if (mp.status === 'processando') return { chave: 'proc', texto: '⏳ criando', cor: '#7c3aed', fundo: '#f5f3ff', clicavel: false };
           if (mp.status === 'ok') return { chave: 'ok', texto: '✓ criado', cor: '#166534', fundo: '#dcfce7', clicavel: false };
@@ -2434,7 +2442,7 @@ export default function CadastroPage() {
             : { chave: 'pronto', texto: '☐ criar', cor: 'var(--gray-600)', fundo: 'var(--gray-100)', clicavel: true };
         };
         const statusLinha = (linha: AnuncioCriarLinha): 'pronto' | 'problema' | 'tem' | 'ok' => {
-          if (!linha.encontrado || !linha.fotosOk) return 'problema';
+          if (!linha.encontrado || !linha.fotosOk || linha.semEstoque) return 'problema';
           const cs = ANUNCIO_MARKETPLACES.filter(({ id }) => linha.marketplaces[id].disponivel).map(({ id }) => celula(linha, id).chave);
           if (cs.some((c) => c === 'erro' || c === 'restr' || c === 'semcat')) return 'problema';
           if (cs.some((c) => c === 'pronto' || c === 'sel')) return 'pronto';
@@ -2502,9 +2510,9 @@ export default function CadastroPage() {
                           <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--blue-600)', fontWeight: 800 }}>{linha.sku}{linha.origem === 'cadastro' ? <span style={{ fontFamily: 'inherit', fontWeight: 600, fontSize: 10.5, color: 'var(--gray-500)', marginLeft: 6 }}>pré-cadastro</span> : null}</div>
                           <div style={{ fontSize: 11.5, color: linha.encontrado ? 'var(--gray-600)' : '#dc2626', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{linha.encontrado ? linha.descricao : (linha.erro || 'SKU não encontrado')}</div>
                         </td>
-                        {linha.encontrado && !linha.fotosOk ? (
+                        {linha.encontrado && (!linha.fotosOk || linha.semEstoque) ? (
                           <td colSpan={ANUNCIO_MARKETPLACES.length} style={{ padding: '6px 6px', borderBottom: aberto ? 'none' : '1px solid var(--gray-100)' }}>
-                            <span style={{ fontSize: 11.5, color: '#b91c1c', background: '#fef2f2', borderRadius: 5, padding: '2px 8px', fontWeight: 700 }}>✗ Fotos Anúncios ainda não foi processado</span>
+                            <span style={{ fontSize: 11.5, color: '#b91c1c', background: '#fef2f2', borderRadius: 5, padding: '2px 8px', fontWeight: 700 }}>{!linha.fotosOk ? '✗ Fotos Anúncios ainda não foi processado' : '✗ Sem estoque — não há mais unidade disponível'}</span>
                           </td>
                         ) : ANUNCIO_MARKETPLACES.map(({ id }) => {
                           const c = celula(linha, id);
@@ -2529,6 +2537,9 @@ export default function CadastroPage() {
                             )}
                             {linha.encontrado && !linha.fotosOk && (
                               <div style={{ color: '#b91c1c', fontSize: 12, marginBottom: 6 }}>A pasta de fotos deste SKU não está na pasta oficial da moto. Nenhum marketplace foi habilitado — rode o Fotos Anúncios e busque de novo.</div>
+                            )}
+                            {linha.encontrado && linha.fotosOk && linha.semEstoque && (
+                              <div style={{ color: '#b91c1c', fontSize: 12, marginBottom: 6 }}>Este SKU está sem estoque (0 unidade). Nenhum marketplace foi habilitado para criar anúncio.</div>
                             )}
                             {linha.encontrado && linha.fotosOk && (
                               <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fit, minmax(300px, 1fr))', gap: 8 }}>
