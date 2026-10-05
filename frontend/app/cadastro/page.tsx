@@ -2508,19 +2508,19 @@ export default function CadastroPage() {
                   const colspan = ANUNCIO_MARKETPLACES.length + 2;
                   return (
                     <Fragment key={linha.sku}>
-                      <tr onClick={() => alternarExpandido(linha.sku)} style={{ cursor: 'pointer', background: aberto ? 'var(--gray-50)' : 'transparent' }}>
-                        <td style={{ padding: '6px 8px', borderBottom: aberto ? 'none' : '1px solid var(--gray-100)', maxWidth: 320 }}>
+                      <tr onClick={() => alternarExpandido(linha.sku)} style={{ cursor: 'pointer', background: aberto ? '#eef2ff' : 'transparent' }}>
+                        <td style={{ borderLeft: aberto ? '4px solid #6366f1' : '4px solid transparent', padding: '6px 8px', borderTop: aberto ? '2px solid #6366f1' : '1px solid var(--gray-200)', borderBottom: 'none', maxWidth: 320 }}>
                           <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--blue-600)', fontWeight: 800 }}>{linha.sku}{linha.origem === 'cadastro' ? <span style={{ fontFamily: 'inherit', fontWeight: 600, fontSize: 10.5, color: 'var(--gray-500)', marginLeft: 6 }}>pré-cadastro</span> : null}</div>
                           <div style={{ fontSize: 11.5, color: linha.encontrado ? 'var(--gray-600)' : '#dc2626', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{linha.encontrado ? linha.descricao : (linha.erro || 'SKU não encontrado')}</div>
                         </td>
                         {linha.encontrado && (!linha.fotosOk || linha.semEstoque) ? (
-                          <td colSpan={ANUNCIO_MARKETPLACES.length} style={{ padding: '6px 6px', borderBottom: aberto ? 'none' : '1px solid var(--gray-100)' }}>
+                          <td colSpan={ANUNCIO_MARKETPLACES.length} style={{ padding: '6px 6px', borderTop: aberto ? '2px solid #6366f1' : '1px solid var(--gray-200)', borderBottom: 'none' }}>
                             <span style={{ fontSize: 11.5, color: '#b91c1c', background: '#fef2f2', borderRadius: 5, padding: '2px 8px', fontWeight: 700 }}>{!linha.fotosOk ? '✗ Fotos Anúncios ainda não foi processado' : '✗ Sem estoque — não há mais unidade disponível'}</span>
                           </td>
                         ) : ANUNCIO_MARKETPLACES.map(({ id }) => {
                           const c = celula(linha, id);
                           return (
-                            <td key={id} style={{ textAlign: 'center', padding: '6px 4px', borderBottom: aberto ? 'none' : '1px solid var(--gray-100)' }}>
+                            <td key={id} style={{ textAlign: 'center', padding: '6px 4px', borderTop: aberto ? '2px solid #6366f1' : '1px solid var(--gray-200)', borderBottom: 'none' }}>
                               <span
                                 onClick={(e) => { if (c.clicavel && !anuncioCriarProcessando) { e.stopPropagation(); toggleAnuncioCriarSelecionado(linha.sku, id); } }}
                                 style={{ display: 'inline-block', fontSize: 11, fontWeight: 700, color: c.cor, background: c.fundo, borderRadius: 5, padding: '2px 8px', whiteSpace: 'nowrap', cursor: c.clicavel ? 'pointer' : 'inherit' }}
@@ -2528,11 +2528,11 @@ export default function CadastroPage() {
                             </td>
                           );
                         })}
-                        <td style={{ textAlign: 'center', color: 'var(--gray-400)', borderBottom: aberto ? 'none' : '1px solid var(--gray-100)' }}>{aberto ? '▾' : '▸'}</td>
+                        <td style={{ textAlign: 'center', color: 'var(--gray-400)', borderTop: aberto ? '2px solid #6366f1' : '1px solid var(--gray-200)', borderBottom: 'none' }}>{aberto ? '▾' : '▸'}</td>
                       </tr>
                       {aberto && (
                         <tr>
-                          <td colSpan={colspan} style={{ padding: '0 8px 10px', borderBottom: '1px solid var(--gray-100)', background: 'var(--gray-50)' }}>
+                          <td colSpan={colspan} style={{ padding: '4px 12px 12px', borderLeft: '4px solid #6366f1', borderBottom: '2px solid #6366f1', background: '#f8faff' }}>
                             {linha.encontrado && (
                               <div style={{ fontSize: 11, color: 'var(--gray-500)', padding: '2px 0 8px' }}>
                                 R$ {Number(linha.preco || 0).toFixed(2)} · estoque {linha.estoque} · {linha.moto?.marca} {linha.moto?.modelo}
@@ -2583,8 +2583,8 @@ export default function CadastroPage() {
                                       )}
                                       {temVinculo && v && (
                                         <div style={{ fontSize: 11.5, color: v.status === 'ok' ? '#166534' : v.status === 'divergente' ? '#b91c1c' : '#92400e' }}>
-                                          {v.situacao && <span style={{ fontWeight: 700, marginRight: 6, padding: '1px 6px', borderRadius: 4, color: v.situacao.ok ? '#166534' : '#b91c1c', background: v.situacao.ok ? '#dcfce7' : '#fee2e2' }}>{`● ${v.situacao.texto.toLowerCase()}`}</span>}<b>{v.status === 'ok' ? 'ID confere' : v.status === 'divergente' ? 'IDs diferentes' : v.status === 'so_bling' ? 'ID só no Bling' : 'ID só no sistema'}</b>
-                                          <span style={{ fontFamily: 'JetBrains Mono, monospace', marginLeft: 6, color: 'var(--gray-600)' }}>sist {v.sistemaId || '—'} · bling {v.blingCodigo || '—'}</span>
+                                          {v.situacao && <span style={{ fontWeight: 700, marginRight: 6, padding: '1px 6px', borderRadius: 4, color: v.situacao.ok ? '#166534' : '#b91c1c', background: v.situacao.ok ? '#dcfce7' : '#fee2e2' }}>{`● ${v.situacao.texto.toLowerCase()}`}</span>}{v.status !== 'ok' && <b>{v.status === 'divergente' ? 'IDs diferentes' : v.status === 'so_bling' ? 'ID só no Bling' : 'ID só no sistema'}</b>}
+                                          <span style={{ fontFamily: 'JetBrains Mono, monospace', marginLeft: 6, color: 'var(--gray-600)' }}>{v.status === 'ok' ? `ID ${v.sistemaId}` : `sist ${v.sistemaId || '—'} · bling ${v.blingCodigo || '—'}`}</span>
                                           <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
                                             <button type="button" disabled={ocupado || anuncioCriarProcessando || !v.sistemaId} onClick={() => removerVinculoAnuncio(linha.sku, mk, 'sistema')} title="Apaga o ID só no nosso sistema e libera o SKU" style={{ ...miniBtn('#b91c1c'), opacity: (ocupado || !v.sistemaId) ? 0.5 : 1 }}>{ocupado ? '...' : '🗑 sistema'}</button>
                                             <button type="button" disabled={ocupado || anuncioCriarProcessando} onClick={() => removerVinculoAnuncio(linha.sku, mk, 'sistema_bling')} title="Apaga o ID no sistema e o vínculo no Bling, e libera o SKU" style={{ ...miniBtn('#b91c1c', true), opacity: ocupado ? 0.6 : 1 }}>{ocupado ? '...' : '🗑 sistema + Bling'}</button>
