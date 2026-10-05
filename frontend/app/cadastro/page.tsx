@@ -479,6 +479,10 @@ export default function CadastroPage() {
   const carregarCategoriasDoMarketplace = (mk: AnuncioMarketplaceId) => { if (mk === 'magalu') carregarMagaluCategorias(); else if (mk === 'nuvemshop') carregarNuvemshopCategorias(); else if (mk === 'mercado-livre') carregarMlCategorias(); else carregarShopeeCategorias(); };
   // Ajuste de titulo/condicao/texto por SKU (Bling + cadastro), pra corrigir falha de cadastro na hora de anunciar.
   const [anuncioAjustes, setAnuncioAjustes] = useState<Record<string, AnuncioAjuste>>({});
+  // IDs de anuncio por SKU/marketplace: no nosso sistema x no Bling (vinculo produto-loja).
+  type AnuncioVinculoMk = { sistemaId: string | null; blingCodigo: string | null; blingVinculoId: string | null; blingAnuncioId: string | null; status: 'livre' | 'ok' | 'divergente' | 'so_bling' | 'so_sistema' };
+  const [anuncioVinculos, setAnuncioVinculos] = useState<Record<string, { erroBling?: string; mercados: Record<string, AnuncioVinculoMk> }>>({});
+  const [anuncioVinculoOcupado, setAnuncioVinculoOcupado] = useState<string>('');
   const [anuncioMarketplacesSelecionados, setAnuncioMarketplacesSelecionados] = useState<Set<AnuncioMarketplaceId>>(new Set<AnuncioMarketplaceId>(['shopee', 'magalu']));
   const [anuncioCriarSkusInput, setAnuncioCriarSkusInput] = useState('');
   const [anuncioCriarBuscando, setAnuncioCriarBuscando] = useState(false);
@@ -2128,6 +2132,68 @@ export default function CadastroPage() {
     }
   }
 
+  // ---- Vinculos: le os IDs do sistema e do Bling; avisa quando ja existe e bloqueia a criacao ----
+  async function consultarVinculos(skus: string[]) {
+    if (!skus.length) return;
+    try {
+      const resp = await fetch(`${API}/anuncio-vinculos/consultar`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ skus }) });
+      const data = await readApiResponse(resp, 'Erro ao consultar os vínculos dos anúncios');
+      const lista: any[] = Array.isArray(data.skus) ? data.skus : [];
+      setAnuncioVinculos((prev) => {
+        const next = { ...prev };
+        for (const s of lista) if (s?.mercados) next[s.sku] = { erroBling: s.erroBling, mercados: s.mercados };
+        return next;
+      });
+      // Se ja ha ID (no sistema OU no Bling), o marketplace fica "ja possui anuncio" e nao vem marcado.
+      setAnuncioCriarLinhas((prev) => prev.map((linha) => {
+        const info = lista.find((s) => s?.sku === linha.sku)?.mercados;
+        if (!info) return linha;
+        const marketplaces = { ...linha.marketplaces };
+        for (const mk of Object.keys(info)) {
+          const v: AnuncioVinculoMk = info[mk];
+          const atual = marketplaces[mk as AnuncioMarketplaceId];
+          if (!atual || v.status === 'livre') continue;
+          marketplaces[mk as AnuncioMarketplaceId] = { ...atual, jaTemAnuncio: true, itemId: atual.itemId || v.sistemaId || v.blingCodigo, selecionado: false };
+        }
+        return { ...linha, marketplaces };
+      }));
+    } catch (e: any) {
+      console.warn('[anuncio] vinculos:', e?.message || e);
+    }
+  }
+
+  async function recarregarMarketplaceDaLinha(sku: string, mk: AnuncioMarketplaceId) {
+    try {
+      const resp = await fetch(`${API}/${mk}/anuncio/buscar`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ skus: [sku] }) });
+      const data = await readApiResponse(resp, `Erro ao recarregar ${mk}`);
+      const nova = (Array.isArray(data.linhas) ? data.linhas : [])[0];
+      if (nova) setAnuncioCriarLinhas((prev) => prev.map((l) => l.sku === sku ? { ...l, marketplaces: { ...l.marketplaces, [mk]: montarMarketplaceDaLinha(nova) } } : l));
+    } catch (e: any) {
+      console.warn('[anuncio] recarregar:', e?.message || e);
+    }
+  }
+
+  async function removerVinculoAnuncio(sku: string, mk: AnuncioMarketplaceId, alvo: 'sistema' | 'sistema_bling') {
+    const nome = ANUNCIO_MARKETPLACES.find((m) => m.id === mk)?.label || mk;
+    const aviso = alvo === 'sistema'
+      ? `Remover o ID do anúncio do ${nome} do SKU ${sku} SÓ do nosso sistema?\n\nO SKU fica liberado para criar de novo.\nIsso NÃO apaga o anúncio dentro do ${nome} nem o vínculo no Bling.${mk === 'mercado-livre' ? '\n\nAtenção: no Mercado Livre a auditoria automática do Bling pode preencher o ID de volta; para liberar de verdade use "sistema + Bling".' : ''}`
+      : `Remover o anúncio do ${nome} do SKU ${sku} do nosso sistema E do Bling?\n\nO vínculo do produto com a loja no Bling será apagado${mk === 'mercado-livre' ? ' e o anúncio do Bling (anúncios do ML) também, senão ele volta a bloquear' : ''}, e o SKU fica liberado para criar de novo.\nIsso NÃO apaga o produto/anúncio dentro do ${nome}.`;
+    if (!confirm(aviso)) return;
+    const chave = `${sku}|${mk}`;
+    setAnuncioVinculoOcupado(chave);
+    try {
+      const resp = await fetch(`${API}/anuncio-vinculos/remover`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sku, marketplace: mk, alvo }) });
+      const data = await readApiResponse(resp, 'Erro ao remover o vínculo do anúncio');
+      await recarregarMarketplaceDaLinha(sku, mk);
+      await consultarVinculos([sku]);
+      alert(`SKU ${sku} liberado no ${nome}.${Array.isArray(data.removidoNoBling) && data.removidoNoBling.length ? `\nRemovido no Bling: ${data.removidoNoBling.join(', ')}.` : ''}${mk === 'nuvemshop' ? '\n\nSe o produto ainda existir na loja da Nuvemshop, apague-o lá também, senão a criação continua bloqueada.' : ''}`);
+    } catch (e: any) {
+      alert(e?.message || 'Erro ao remover o vínculo.');
+    } finally {
+      setAnuncioVinculoOcupado('');
+    }
+  }
+
   async function carregarMagaluCategorias() {
     if (magaluCategorias.length) return;
     try {
@@ -2200,6 +2266,8 @@ export default function CadastroPage() {
       }
 
       setAnuncioCriarLinhas(Array.from(porSku.values()));
+      // Em seguida le os IDs do Bling (nao bloqueia a tela): avisa SKUs que ja tem anuncio/ID preenchido.
+      consultarVinculos(Array.from(porSku.values()).filter((l) => l.encontrado).map((l) => l.sku));
     } catch (e: any) {
       alert(e?.message || 'Erro ao buscar SKUs.');
     }
@@ -2471,6 +2539,44 @@ export default function CadastroPage() {
                             </>
                           )}
                         </div>
+                        {(() => {
+                          const v = anuncioVinculos[linha.sku]?.mercados?.[mk];
+                          if (!v || v.status === 'livre') return null;
+                          const ocupado = anuncioVinculoOcupado === `${linha.sku}|${mk}`;
+                          const rotulo = v.status === 'ok' ? 'IDs conferem' : v.status === 'divergente' ? 'IDs DIFERENTES entre sistema e Bling' : v.status === 'so_bling' ? 'ID só no Bling (o sistema não tem)' : 'ID só no sistema (o Bling não tem vínculo)';
+                          const cor = v.status === 'ok' ? '#166534' : v.status === 'divergente' ? '#b91c1c' : '#92400e';
+                          const fundo = v.status === 'ok' ? '#f0fdf4' : v.status === 'divergente' ? '#fef2f2' : '#fffbeb';
+                          return (
+                            <div style={{ fontSize: 11.5, color: cor, background: fundo, border: `1px solid ${cor}33`, borderRadius: 6, padding: '6px 8px', display: 'grid', gap: 6 }}>
+                              <div>
+                                <b>Este SKU já tem ID de anúncio no {label}.</b> {rotulo}.
+                                <div style={{ fontFamily: 'JetBrains Mono, monospace', marginTop: 2 }}>
+                                  Sistema: {v.sistemaId || '—'} · Bling: {v.blingCodigo || '—'}
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                <button
+                                  type="button"
+                                  disabled={ocupado || anuncioCriarProcessando || !v.sistemaId}
+                                  onClick={() => removerVinculoAnuncio(linha.sku, mk, 'sistema')}
+                                  title={v.sistemaId ? 'Apaga o ID só no nosso sistema e libera o SKU' : 'O sistema não tem ID para apagar'}
+                                  style={{ fontSize: 11, fontWeight: 700, color: '#b91c1c', background: '#fff', border: '1px solid #fecaca', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', opacity: (ocupado || !v.sistemaId) ? 0.5 : 1 }}
+                                >
+                                  {ocupado ? 'Removendo...' : 'Remover do sistema'}
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={ocupado || anuncioCriarProcessando}
+                                  onClick={() => removerVinculoAnuncio(linha.sku, mk, 'sistema_bling')}
+                                  title="Apaga o ID no nosso sistema e o vínculo no Bling, e libera o SKU"
+                                  style={{ fontSize: 11, fontWeight: 700, color: '#fff', background: '#b91c1c', border: '1px solid #b91c1c', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', opacity: ocupado ? 0.6 : 1 }}
+                                >
+                                  {ocupado ? 'Removendo...' : 'Remover do sistema + Bling'}
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })()}
                         {mp.restricoes && mp.restricoes.length > 0 && (
                           <div style={{ fontSize: 11.5, color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, padding: '6px 8px' }}>
                             <div style={{ fontWeight: 800 }}>⚠ Categoria com restrição — ajuste antes de criar (use "Trocar categoria"):</div>
