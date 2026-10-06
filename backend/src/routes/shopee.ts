@@ -71,7 +71,8 @@ shopeeRouter.get('/status', async (_req, res, next) => {
     const config = await getShopeeConfig();
     res.json({
       ok: true,
-      environment: config.environment,
+      environment: String(config.environment).startsWith('live') ? 'live' : config.environment,
+      host: config.environment === 'live-global' ? 'global (partner.shopeemobile.com)' : config.environment === 'live' ? 'brasil (openplatform.shopee.com.br)' : 'sandbox',
       connected: !!config.accessToken,
       shopId: config.shopId || null,
       connectedAt: config.connectedAt,
@@ -146,6 +147,7 @@ shopeeRouter.get('/callback', async (req, res, next) => {
         const expiresAt = new Date(Date.now() + Number(payload.expire_in || 0) * 1000);
         await saveShopeeConfig({
           shopId: shopId || String(payload.shop_id_list?.[0] || ''),
+          environment: payload.ambienteUsado || config.environment,
           accessToken: payload.access_token,
           refreshToken: payload.refresh_token,
           expiresAt,

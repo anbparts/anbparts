@@ -6,6 +6,10 @@ import { prisma } from './prisma';
 // autorizacao (GetAccessToken) via SHOPEE_API_HOST_SANDBOX ja funcionou de ponta a ponta com a
 // loja de teste sandbox (shopId 227946191). Brasil usa host regional proprio em producao.
 const SHOPEE_API_HOST_LIVE = process.env.SHOPEE_API_HOST_LIVE || 'https://openplatform.shopee.com.br';
+// Host GLOBAL de producao (doc v2.public.get_access_token: Live > Global). O console de dev (open.shopee.com) e' global; se o
+// code de autorizacao foi emitido por la, a troca no host do Brasil responde "code is expired or used or invalid".
+// O ambiente 'live-global' guarda que a loja foi conectada por esse host (tokens e refresh passam a usa-lo).
+const SHOPEE_API_HOST_LIVE_GLOBAL = process.env.SHOPEE_API_HOST_LIVE_GLOBAL || 'https://partner.shopeemobile.com';
 const SHOPEE_API_HOST_SANDBOX = process.env.SHOPEE_API_HOST_SANDBOX || 'https://openplatform.sandbox.test-stable.shopee.sg';
 
 function getPartnerId() {
@@ -48,6 +52,7 @@ export async function saveShopeeConfig(data: Record<string, any>) {
 }
 
 function getApiHost(environment: string) {
+  if (environment === 'live-global') return SHOPEE_API_HOST_LIVE_GLOBAL;
   return environment === 'live' ? SHOPEE_API_HOST_LIVE : SHOPEE_API_HOST_SANDBOX;
 }
 
@@ -112,7 +117,7 @@ export async function shopeeDiagnostico(environment: string) {
 
 // POST /api/v2/auth/token/get — troca o `code` (+ shop_id) recebido no callback pelo primeiro par
 // access_token/refresh_token. Chamado uma vez, na autorizacao inicial.
-export async function shopeeExchangeCodeForToken(code: string, shopId: string, environment: string, mainAccountId?: string) {
+async function trocarCodeNoHost(code: string, shopId: string, environment: string, mainAccountId?: string) {
   const partnerId = getPartnerId();
   const url = buildPublicUrl(environment, '/api/v2/auth/token/get');
   // Doc: envia shop_id (autorizacao de loja) OU main_account_id (autorizacao de conta principal).
@@ -126,10 +131,31 @@ export async function shopeeExchangeCodeForToken(code: string, shopId: string, e
   });
   const payload: any = await response.json().catch(() => ({}));
   if (!response.ok || payload?.error) {
-    const detalhe = `[${environment} · partner ${partnerId} · ${Object.keys(body).filter((k) => k !== 'code').join('+')}${payload?.request_id ? ` · req ${payload.request_id}` : ''}]`;
-    throw new Error(`${payload?.message || payload?.error || `Shopee ${response.status}`} ${detalhe}`);
+    const detalhe = `[${environment} · ${getApiHost(environment)} · partner ${partnerId} · ${Object.keys(body).filter((k) => k !== 'code').join('+')}${payload?.request_id ? ` · req ${payload.request_id}` : ''}]`;
+    const err: any = new Error(`${payload?.message || payload?.error || `Shopee ${response.status}`} ${detalhe}`);
+    err.codigoInvalido = /code.*(expired|used|invalid)|invalid code/i.test(String(payload?.message || ''));
+    throw err;
   }
   return payload;
+}
+
+// POST /api/v2/auth/token/get — troca o `code` (+ shop_id) recebido no callback pelo primeiro par
+// access_token/refresh_token. Em producao tenta o host do Brasil e, se a Shopee disser que o code e' invalido/expirado,
+// tenta o host global (o code pode ter sido emitido pelo console global). Devolve o ambiente que funcionou.
+export async function shopeeExchangeCodeForToken(code: string, shopId: string, environment: string, mainAccountId?: string) {
+  try {
+    const payload = await trocarCodeNoHost(code, shopId, environment, mainAccountId);
+    return { ...payload, ambienteUsado: environment };
+  } catch (e: any) {
+    if (environment !== 'live' || !e?.codigoInvalido) throw e;
+    try {
+      const payload = await trocarCodeNoHost(code, shopId, 'live-global', mainAccountId);
+      console.log('[shopee] code aceito pelo host GLOBAL (nao pelo do Brasil) — loja conectada como live-global');
+      return { ...payload, ambienteUsado: 'live-global' };
+    } catch (e2: any) {
+      throw new Error(`${e.message} | tentativa no host global: ${e2?.message || e2}`);
+    }
+  }
 }
 
 // Link de GERENCIAMENTO de autorizacao (v2 auth_partner + is_developer=1): o desenvolvedor loga na conta de dev, escolhe o
