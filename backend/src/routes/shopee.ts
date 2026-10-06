@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getShopeeConfig, saveShopeeConfig, shopeeExchangeCodeForToken, shopeeDiagnostico, shopeeReq, shopeeAddItem, shopeeGetLogisticChannel } from '../lib/shopee-api';
+import { getShopeeConfig, saveShopeeConfig, shopeeExchangeCodeForToken, shopeeExchangeResendCode, shopeeLinkReenviarCodigo, shopeeDiagnostico, shopeeReq, shopeeAddItem, shopeeGetLogisticChannel } from '../lib/shopee-api';
 import { prepararImagensShopeeParaNovoItem } from '../lib/fotos-cadastro';
 import { informarAnuncioShopeeNoBling, findBlingProductsByCodes, fetchBlingProductDetailById } from './bling';
 import { prisma } from '../lib/prisma';
@@ -105,13 +105,31 @@ shopeeRouter.post('/desconectar', async (_req, res, next) => {
 // compartilhada (mesma Promise) e o resultado fica guardado alguns minutos.
 const shopeeCallbackPorCode = new Map<string, { promise: Promise<void>; chamadas: number }>();
 
+// Registro do ULTIMO callback (sem guardar o code inteiro): permite ver pelo navegador o que a Shopee respondeu de verdade
+// (mensagem + request_id) e o IP de saida do servidor naquele momento — pra comparar com a whitelist de IP do app.
+let ultimoCallback: any = null;
+// GET /shopee/link-reenviar — gera o link (valido 5 min) pra reenviar o code de autorizacao pelo painel de dev.
+shopeeRouter.get('/link-reenviar', async (_req, res) => {
+  try {
+    const config = await getShopeeConfig();
+    // Mesma Redirect URL cadastrada no console (dominio precisa bater com "Live Redirect URL Domain").
+    const redirect = 'https://sistema.anbparts.com.br/api/shopee/callback';
+    res.json({ ok: true, ambiente: config.environment, redirect, link: shopeeLinkReenviarCodigo(config.environment, redirect) });
+  } catch (e: any) { res.status(400).json({ error: e?.message }); }
+});
+
+shopeeRouter.get('/ultimo-callback', (_req, res) => { res.json({ ultimoCallback }); });
+
 shopeeRouter.get('/callback', async (req, res, next) => {
   try {
     const code = String(req.query.code || '');
     const shopId = String(req.query.shop_id || '');
     const mainAccountId = String(req.query.main_account_id || '');
     console.log(`[shopee/callback] query keys=${Object.keys(req.query).join(',')} code_len=${code.length} shop_id=${shopId || '-'} main_account_id=${mainAccountId || '-'}`);
-    if (!code || (!shopId && !mainAccountId)) {
+    const ehResend = code.startsWith('resend');
+    ultimoCallback = { quando: new Date().toISOString(), chavesQuery: Object.keys(req.query), codePrefixo: code.slice(0, 8), codeTamanho: code.length, shopId: shopId || null, mainAccountId: mainAccountId || null, ehResend, resultado: 'processando' };
+    fetch('https://api.ipify.org?format=json').then((r2) => r2.json()).then((j: any) => { if (ultimoCallback) ultimoCallback.ipSaida = j?.ip || null; }).catch(() => null);
+    if (!code || (!shopId && !mainAccountId && !ehResend)) {
       return res.redirect(`${getFrontendBase()}/config-shopee?erro=${encodeURIComponent('code ou shop_id ausente no retorno da Shopee')}`);
     }
 
@@ -122,7 +140,9 @@ shopeeRouter.get('/callback', async (req, res, next) => {
     } else {
       const promise = (async () => {
         const config = await getShopeeConfig();
-        const payload = await shopeeExchangeCodeForToken(code, shopId, config.environment, mainAccountId);
+        const payload = ehResend
+          ? await shopeeExchangeResendCode(code, config.environment)
+          : await shopeeExchangeCodeForToken(code, shopId, config.environment, mainAccountId);
         const expiresAt = new Date(Date.now() + Number(payload.expire_in || 0) * 1000);
         await saveShopeeConfig({
           shopId: shopId || String(payload.shop_id_list?.[0] || ''),
@@ -138,9 +158,11 @@ shopeeRouter.get('/callback', async (req, res, next) => {
     }
 
     await entrada.promise;
+    if (ultimoCallback) ultimoCallback.resultado = 'ok';
     res.redirect(`${getFrontendBase()}/config-shopee?conectado=1`);
   } catch (e: any) {
     console.error(`[shopee/callback] erro: ${e?.message}`);
+    if (ultimoCallback) { ultimoCallback.resultado = 'erro'; ultimoCallback.erro = String(e?.message || e); }
     res.redirect(`${getFrontendBase()}/config-shopee?erro=${encodeURIComponent(e?.message || 'Erro ao conectar Shopee')}`);
   }
 });

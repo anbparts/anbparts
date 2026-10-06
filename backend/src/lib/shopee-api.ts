@@ -132,6 +132,38 @@ export async function shopeeExchangeCodeForToken(code: string, shopId: string, e
   return payload;
 }
 
+// Link de GERENCIAMENTO de autorizacao (v2 auth_partner + is_developer=1): o desenvolvedor loga na conta de dev, escolhe o
+// shop_id e clica "resend authorized code" — a Shopee redireciona pro nosso callback com ?code=resend... (valido 10 min).
+// A assinatura vale 5 min. So existe em producao. (FAQ "Live Authorization Issue" > "What can I do if I don't save...")
+export function shopeeLinkReenviarCodigo(environment: string, redirect: string) {
+  const partnerId = getPartnerId();
+  const partnerKey = getPartnerKey();
+  const path = '/api/v2/shop/auth_partner';
+  const timestamp = Math.floor(Date.now() / 1000);
+  const signature = sign(partnerKey, [partnerId, path, timestamp]);
+  return `${getApiHost(environment)}${path}?partner_id=${partnerId}&timestamp=${timestamp}&sign=${signature}&redirect=${encodeURIComponent(redirect)}&is_developer=1`;
+}
+
+// POST /api/v2/public/get_token_by_resend_code — recupera access_token/refresh_token de uma loja JA autorizada quando
+// a troca do code falhou (ou os tokens se perderam). O "resend_code" vem do botao de reenvio da pagina de gerenciamento
+// de autorizacao (link de autorizacao + is_developer=1) e tambem vale uma vez / 10 min. So existe em producao.
+// (Doc: v2.public.get_token_by_resend_code — Brasil: openplatform.shopee.com.br)
+export async function shopeeExchangeResendCode(resendCode: string, environment: string) {
+  const partnerId = getPartnerId();
+  const url = buildPublicUrl(environment, '/api/v2/public/get_token_by_resend_code');
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ resend_code: resendCode }),
+  });
+  const payload: any = await response.json().catch(() => ({}));
+  if (!response.ok || payload?.error) {
+    const detalhe = `[${environment} · partner ${partnerId} · resend_code${payload?.request_id ? ` · req ${payload.request_id}` : ''}]`;
+    throw new Error(`${payload?.message || payload?.error || `Shopee ${response.status}`} ${detalhe}`);
+  }
+  return payload;
+}
+
 // POST /api/v2/auth/access_token/get — renova o access_token usando o refresh_token (valido 30
 // dias). O access_token expira em 4h; chamamos isso sob demanda quando uma chamada falha com 401
 // ou preventivamente quando `expiresAt` ja passou.
