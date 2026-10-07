@@ -279,7 +279,7 @@ shopeeRouter.post('/anuncio/criar', async (req, res, next) => {
     const imageIdList = await prepararImagensShopeeParaNovoItem(peca.motoId, sku, 1);
     if (!imageIdList.length) return res.status(400).json({ error: 'Nenhuma foto encontrada no Drive pra esse SKU — o anuncio precisa de pelo menos 1 imagem.' });
 
-    const canal = await shopeeGetLogisticChannel();
+    const canal = await shopeeGetLogisticChannel({ pesoKg: peca.pesoLiquido != null ? Number(peca.pesoLiquido) : Number(peca.pesoBruto || 0), larguraCm: Number(peca.largura), alturaCm: Number(peca.altura), profundidadeCm: Number(peca.profundidade) });
 
     const peso = peca.pesoLiquido != null ? Number(peca.pesoLiquido) : (peca.pesoBruto != null ? Number(peca.pesoBruto) : 0);
     if (!peso) return res.status(400).json({ error: 'SKU sem peso cadastrado (obrigatorio pra criar anuncio na Shopee).' });

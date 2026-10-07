@@ -369,6 +369,15 @@ function montarValoresFicha(peca: any, peso: number, description: string, fichaE
     'profundidade do produto': `${profundidade}cm`,
     'dimensoes do produto com embalagem': `${largura}x${altura}x${profundidade}cm`,
     'conteudo da embalagem': `1 ${String(peca.descricao || '').slice(0, 100)}`,
+    // Dados do veiculo (cadastro da moto do SKU) — pedidos como obrigatorios em varias categorias (lanterna, carenagem...).
+    'modelo do veiculo': moto.modelo || null,
+    'ano do veiculo': moto.ano ? String(moto.ano) : null,
+    'montadora': moto.marca || null,
+    'tipo de veiculo indicado': 'Moto',
+    // Derivados do TITULO (so quando a palavra esta la): posicao, lado e escapamento original (so vendemos originais).
+    'posicao': /traseir/i.test(String(peca.descricao || '')) ? 'Traseiro' : /dianteir/i.test(String(peca.descricao || '')) ? 'Dianteiro' : null,
+    'lado': /direit|\bld\b/i.test(String(peca.descricao || '')) ? 'Direito' : /esquerd|\ble\b/i.test(String(peca.descricao || '')) ? 'Esquerdo' : null,
+    'tipo de escapamento': /escap|ponteira|silencioso/i.test(String(peca.descricao || '')) ? 'Original' : null,
     ...(pneu ? {
       'largura do pneu': pneu.largura,
       'altura do pneu': pneu.altura,

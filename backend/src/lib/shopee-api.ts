@@ -319,15 +319,33 @@ export async function shopeeUpdateItemImages(itemId: string, imageIdList: string
 // pelo menos 1 logistic_id valido pra criar qualquer anuncio (campo obrigatorio do add_item).
 // Cacheado em memoria por processo (raramente muda) pra nao chamar isso a cada SKU da fila.
 let canaisLogisticaCache: { ts: number; canais: any[] } | null = null;
-export async function shopeeGetLogisticChannel(): Promise<{ logistic_id: number; nome: string }> {
+export async function shopeeGetLogisticChannel(pacote?: { pesoKg: number; larguraCm: number; alturaCm: number; profundidadeCm: number }): Promise<{ logistic_id: number; nome: string }> {
   const agora = Date.now();
   if (!canaisLogisticaCache || agora - canaisLogisticaCache.ts > 10 * 60_000) {
     const payload = await shopeeReq('/api/v2/logistics/get_channel_list');
     const canais = payload?.response?.logistics_channel_list || payload?.response?.logistic_channel_list || [];
     canaisLogisticaCache = { ts: agora, canais };
   }
-  const habilitado = canaisLogisticaCache.canais.find((c: any) => c.enabled && (c.logistics_channel_id || c.logistic_id));
-  if (!habilitado) throw new Error('Nenhum canal de logistica habilitado encontrado na loja Shopee (get_channel_list).');
+  const habilitados = canaisLogisticaCache.canais.filter((c: any) => c.enabled && (c.logistics_channel_id || c.logistic_id));
+  if (!habilitados.length) throw new Error('Nenhum canal de logistica habilitado encontrado na loja Shopee (get_channel_list).');
+  // Limites do canal (peso, cada lado, soma dos lados): escolhe o primeiro habilitado em que o pacote cabe; se nenhum comporta,
+  // explica o motivo em vez de deixar a Shopee devolver "weight or dimension out of channel required range".
+  const cabe = (c: any) => {
+    if (!pacote) return true;
+    const maxPeso = Number(c?.weight_limit?.item_max_weight || 0);
+    const d = c?.item_max_dimension || {};
+    const lados = [pacote.larguraCm, pacote.alturaCm, pacote.profundidadeCm];
+    if (maxPeso && pacote.pesoKg > maxPeso) return false;
+    if (Number(d.length) && lados.some((v) => v > Number(d.length))) return false;
+    if (Number(d.dimension_sum) && lados.reduce((s, v) => s + v, 0) > Number(d.dimension_sum)) return false;
+    return true;
+  };
+  const habilitado = habilitados.find(cabe);
+  if (!habilitado) {
+    const c0 = habilitados[0];
+    const d = c0?.item_max_dimension || {};
+    throw new Error(`O pacote (${pacote?.larguraCm}x${pacote?.alturaCm}x${pacote?.profundidadeCm} cm, ${pacote?.pesoKg} kg) excede o limite do canal "${c0?.logistics_channel_name}" da Shopee (máx. ${d.length || '?'} cm por lado, soma ${d.dimension_sum || '?'} cm, ${c0?.weight_limit?.item_max_weight || '?'} kg). Reduza as medidas no cadastro (se estiverem erradas) ou habilite outro canal de envio na Shopee (ex.: Entrega Direta).`);
+  }
   const logisticId = Number(habilitado.logistics_channel_id || habilitado.logistic_id);
   return { logistic_id: logisticId, nome: String(habilitado.logistics_channel_name || habilitado.channel_name || logisticId) };
 }

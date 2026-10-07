@@ -261,7 +261,8 @@ export async function magaluTracesPorCodigo(code: string): Promise<Array<{ sever
   }
 }
 
-export async function magaluAguardarSku(sku: string, tentativas = 5, intervaloMs = 3000) {
+// O Magalu processa a criacao do SKU de forma assincrona e as vezes demora: espera ate ~60s (o proxy do Next aceita 120s).
+export async function magaluAguardarSku(sku: string, tentativas = 20, intervaloMs = 3000) {
   let ultimoErro = '';
   for (let i = 0; i < tentativas; i += 1) {
     try {
@@ -283,7 +284,24 @@ export async function magaluAguardarSku(sku: string, tentativas = 5, intervaloMs
 
 // POST /seller/v1/portfolios/prices/:sku — confirmado na doc oficial (Produtos > Precos > Criar).
 // Valores em centavos (normalizer:100), moeda BRL (nao e' o default — a doc usa USD como default).
-export async function magaluSetPrice(sku: string, precoReais: number) {
+// Erros 502/503/504 do gateway do Magalu sao transitorios (visto: "504 Gateway Timeout" no preco): repete ate 3x.
+async function tentar5xx<T>(fn: () => Promise<T>, tentativas = 3): Promise<T> {
+  let ultimo: any;
+  for (let i = 0; i < tentativas; i += 1) {
+    try { return await fn(); } catch (e: any) {
+      ultimo = e;
+      if (!/\b50[234]\b|gateway.?timeout/i.test(String(e?.message || e))) throw e;
+      await new Promise((r) => setTimeout(r, 2000 * (i + 1)));
+    }
+  }
+  throw ultimo;
+}
+
+export function magaluSetPrice(sku: string, precoReais: number) {
+  return tentar5xx(() => magaluSetPriceUma(sku, precoReais));
+}
+
+async function magaluSetPriceUma(sku: string, precoReais: number) {
   const { channelId } = await getMagaluSellerInfo();
   const centavos = Math.max(0, Math.round(precoReais * 100));
   const body = { channel: { id: channelId }, currency: 'BRL', list_price: centavos, price: centavos, normalizer: 100 };
@@ -303,7 +321,11 @@ export async function magaluSetPrice(sku: string, precoReais: number) {
 // POST /seller/v1/portfolios/stocks/:sku — confirmado na doc oficial (Produtos > Estoques > Criar).
 // `branch` (CD) e opcional no schema — inclui se a conta tiver algum CD configurado. Se o estoque
 // ja existe, atualiza via PATCH (mesmo corpo), igual ao preco.
-export async function magaluSetStock(sku: string, quantidade: number) {
+export function magaluSetStock(sku: string, quantidade: number) {
+  return tentar5xx(() => magaluSetStockUma(sku, quantidade));
+}
+
+async function magaluSetStockUma(sku: string, quantidade: number) {
   const { channelId } = await getMagaluSellerInfo();
   const warehouseId = await getMagaluWarehouseId();
   const body = {
