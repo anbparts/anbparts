@@ -213,6 +213,8 @@ anuncioVinculosRouter.post('/consultar', async (req, res, next) => {
               await gravarIdsAnuncio(sku, { nuvemshopProdutoId: String(p.id) } as any);
               sistema[mk] = String(p.id);
               adotadoAuto = true;
+              // Ja mostra a situacao real (a consulta rapida de status rodou ANTES, quando o sistema ainda nao tinha o ID).
+              situacao = { texto: p.published === true ? 'Publicado' : 'Oculto na loja', ok: p.published === true };
               console.log(`[anuncio-vinculos] ${sku} / nuvemshop: ID do sistema preenchido automaticamente (${p.id}) — o Bling ja tinha o vinculo`);
             }
           } catch (e: any) {
