@@ -354,12 +354,12 @@ export async function magaluValidacaoSku(sku: string) {
 
 // GET /seller/v1/portfolios/categories/:id/datasheet — confirmado na doc (Categorias > Consultar
 // atributos de ficha tecnica). Lista os atributos da categoria (nome, obrigatoriedade). Cacheado.
-const datasheetCache = new Map<string, { ts: number; atributos: Array<{ name: string; required: string }> }>();
+const datasheetCache = new Map<string, { ts: number; atributos: Array<{ name: string; required: string; example?: string; choices?: string[] | null }> }>();
 export async function magaluDatasheetDaCategoria(categoryId: string) {
   const c = datasheetCache.get(categoryId);
   if (c && Date.now() - c.ts < 10 * 60_000) return c.atributos;
   const data = await magaluReq(`/seller/v1/portfolios/categories/${encodeURIComponent(categoryId)}/datasheet?_limit=100`);
-  const atributos = (Array.isArray(data?.results) ? data.results : []).map((a: any) => ({ name: String(a.name || ''), required: String(a.required || '') }));
+  const atributos = (Array.isArray(data?.results) ? data.results : []).map((a: any) => ({ name: String(a.name || ''), required: String(a.required || ''), example: a.example ? String(a.example) : '', choices: Array.isArray(a.choices) ? a.choices.map(String) : null }));
   datasheetCache.set(categoryId, { ts: Date.now(), atributos });
   return atributos;
 }

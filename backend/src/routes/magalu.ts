@@ -12,7 +12,7 @@ import {
   magaluAguardarSku,
   magaluTracesPorCodigo,
   magaluValidacaoSku,
-  magaluMontarDatasheet,
+  magaluMontarDatasheet, magaluDatasheetDaCategoria,
   magaluAtualizarConteudoSku,
 } from '../lib/magalu-api';
 import { baixarFotoDrivePorId, buscarFotosDriveSku } from '../lib/fotos-cadastro';
@@ -292,6 +292,8 @@ magaluRouter.post('/anuncio/buscar', async (req, res, next) => {
           generica: String(caminhoCat).endsWith('Kit de Peças para Motocicletas'),
         } : null,
         categoriaPendente: !cat,
+        // Campos OBRIGATORIOS da ficha tecnica da categoria que o sistema nao sabe preencher: a tela pede o preenchimento.
+        fichaFaltando: cat ? await magaluCamposFichaFaltando(peca, String(cat.id)).catch(() => []) : [],
       });
     }
 
@@ -325,7 +327,80 @@ function origemBlingParaMagalu(origem: any): 'national' | 'imported' | null {
 // Monta o conteudo que o Magalu exige pra liberar a publicacao: descricao (50 a 7000 chars), ficha
 // tecnica da categoria, NCM e origem. Descricao/NCM/origem vem do Bling (se estiver conectado);
 // sem Bling, usa texto proprio montado a partir dos dados da peca.
-async function montarConteudoMagalu(peca: any, sku: string, categoriaId: string, peso: number) {
+// Ficha tecnica do Magalu NAO aceita "/" (retorna "Caracteres invalidos nao sao permitidos"): troca por "-" e "N/A" por
+// "Nao se aplica". Excecao: "Medida do Pneu", cujo formato oficial e' 175/70R13 82T.
+function limparValorFicha(chave: string, valor: any) {
+  const s = String(valor ?? '');
+  if (chave === 'medida do pneu') return s;
+  return s.replace(/\bN\s*\/\s*A\b/gi, 'Não se aplica').replace(/\s*\/\s*/g, '-');
+}
+
+// Pneu: a categoria exige Largura, Altura (perfil), Indice de Carga e de Velocidade. Largura/perfil/aro saem da medida no
+// titulo (ex: "90/90 ARO 21"); indice de carga/velocidade so se estiverem escritos (ex: "54S") — nunca inventados.
+function extrairDadosPneu(texto: string) {
+  const m = texto.match(/(\d{2,3})\s*\/\s*(\d{2,3})\s*(?:-|R|ZR)?\s*(?:ARO\s*)?(\d{2})\b/i);
+  if (!m) return null;
+  const depois = texto.slice((m.index || 0) + m[0].length);
+  const idx = depois.match(/\b(\d{2,3})\s*(ZR|[JKLMNPQRSTUHVWYZ])\b/);
+  const instalacao = /dianteir/i.test(texto) ? 'Dianteiro' : /traseir/i.test(texto) ? 'Traseiro' : null;
+  return {
+    largura: m[1], altura: m[2], aro: m[3],
+    carga: idx ? idx[1] : null, velocidade: idx ? idx[2] : null,
+    instalacao,
+  };
+}
+
+// Valores automaticos da ficha tecnica (chave = nome do atributo sem acento/caixa), ja limpos. `fichaExtra` (digitado na tela)
+// sobrepoe os automaticos.
+function montarValoresFicha(peca: any, peso: number, description: string, fichaExtra?: Record<string, string>) {
+  const moto = peca.moto || {};
+  const largura = Number(peca.largura);
+  const altura = Number(peca.altura);
+  const profundidade = Number(peca.profundidade);
+  const pesoTxt = `${String(peso).replace('.', ',')}kg`;
+  const numeroValido = peca.numeroPeca && !/^n\s*\/?\s*a$/i.test(String(peca.numeroPeca).trim()) ? peca.numeroPeca : null;
+  const pneu = /\bpneus?\b/i.test(String(peca.descricao || '')) ? extrairDadosPneu(`${peca.descricao || ''} ${description}`) : null;
+  const valoresBrutos: Record<string, string | null> = {
+    'marca': moto.marca || null,
+    'modelo': numeroValido || moto.modelo || null,
+    'peso do produto': pesoTxt,
+    'peso do produto com embalagem': pesoTxt,
+    'largura do produto': `${largura}cm`,
+    'altura do produto': `${altura}cm`,
+    'profundidade do produto': `${profundidade}cm`,
+    'dimensoes do produto com embalagem': `${largura}x${altura}x${profundidade}cm`,
+    'conteudo da embalagem': `1 ${String(peca.descricao || '').slice(0, 100)}`,
+    ...(pneu ? {
+      'largura do pneu': pneu.largura,
+      'altura do pneu': pneu.altura,
+      'medida do pneu': `${pneu.largura}/${pneu.altura}R${pneu.aro}${pneu.carga && pneu.velocidade ? ` ${pneu.carga}${pneu.velocidade}` : ''}`,
+      'indice de carga': pneu.carga,
+      'indice de velocidade': pneu.velocidade,
+      'tipo de veiculo indicado': 'Moto',
+      'instalacao do pneu': pneu.instalacao,
+      'quantidade': '1',
+      'numero da peca': numeroValido,
+    } : {}),
+  };
+  // Valores informados na mao (body `ficha`) sobrepoem os automaticos. Chave = nome do atributo sem acento/caixa.
+  for (const [nome, valor] of Object.entries(fichaExtra || {})) valoresBrutos[String(nome).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()] = String(valor);
+  const valores: Record<string, string | null> = {};
+  for (const [k, v] of Object.entries(valoresBrutos)) valores[k] = v == null ? null : limparValorFicha(k, v);
+  return valores;
+}
+
+// Atributos OBRIGATORIOS da categoria que o sistema nao sabe preencher (nem automatico nem digitado na tela).
+export async function magaluCamposFichaFaltando(peca: any, categoriaId: string, fichaExtra?: Record<string, string>) {
+  const atributos = await magaluDatasheetDaCategoria(categoriaId).catch(() => [] as Array<{ name: string; required: string }>);
+  const peso = peca.pesoLiquido != null ? Number(peca.pesoLiquido) : (peca.pesoBruto != null ? Number(peca.pesoBruto) : 0);
+  const valores = montarValoresFicha(peca, peso, '', fichaExtra);
+  const norm = (s: string) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+  return atributos
+    .filter((a: any) => a.required === 'required' && !(valores[norm(a.name)] != null && String(valores[norm(a.name)]).trim() !== ''))
+    .map((a: any) => ({ nome: a.name, exemplo: a.example || '', escolhas: Array.isArray(a.choices) ? a.choices : null }));
+}
+
+async function montarConteudoMagalu(peca: any, sku: string, categoriaId: string, peso: number, fichaExtra?: Record<string, string>) {
   let descricaoBling = '';
   let ncm: string | null = null;
   let origin: 'national' | 'imported' | null = null;
@@ -355,21 +430,8 @@ async function montarConteudoMagalu(peca: any, sku: string, categoriaId: string,
     description = `${description}\n\n${extra}`.trim();
   }
 
-  const largura = Number(peca.largura);
-  const altura = Number(peca.altura);
-  const profundidade = Number(peca.profundidade);
-  const pesoTxt = `${String(peso).replace('.', ',')}kg`;
-  const datasheet = await magaluMontarDatasheet(categoriaId, {
-    'marca': moto.marca || null,
-    'modelo': peca.numeroPeca || moto.modelo || null,
-    'peso do produto': pesoTxt,
-    'peso do produto com embalagem': pesoTxt,
-    'largura do produto': `${largura}cm`,
-    'altura do produto': `${altura}cm`,
-    'profundidade do produto': `${profundidade}cm`,
-    'dimensoes do produto com embalagem': `${largura}x${altura}x${profundidade}cm`,
-    'conteudo da embalagem': `1 ${String(peca.descricao || '').slice(0, 100)}`,
-  });
+  const valores = montarValoresFicha(peca, peso, description, fichaExtra);
+  const datasheet = await magaluMontarDatasheet(categoriaId, valores);
 
   // Informacoes regulatorias: o Magalu guarda no proprio `datasheet` do SKU (nomes lidos de um SKU
   // gravado pelo portal), mas o endpoint de datasheet da categoria NAO lista esses campos. Como o
@@ -417,6 +479,11 @@ magaluRouter.post('/anuncio/criar', async (req, res, next) => {
     if (!peca.largura || !peca.altura || !peca.profundidade) return res.status(400).json({ error: 'SKU sem dimensoes completas (largura/altura/profundidade) cadastradas.' });
     if (!Number(peca.precoML)) return res.status(400).json({ error: 'SKU sem preco cadastrado.' });
 
+    // Campos obrigatorios da ficha da categoria que o sistema nao preenche sozinho: a tela precisa enviar em `ficha`.
+    const fichaDigitada = req.body?.ficha && typeof req.body.ficha === 'object' ? req.body.ficha : undefined;
+    const fichaFaltando = await magaluCamposFichaFaltando(peca, categoriaId, fichaDigitada).catch(() => []);
+    if (fichaFaltando.length) return res.status(400).json({ error: `Preencha os campos obrigatórios da categoria no Magalu: ${fichaFaltando.map((c: any) => c.nome).join(', ')}.` });
+
     // So 1 foto (capa) pra criacao, mesmo criterio adotado na Shopee — evita pesar essa etapa; o
     // resto das fotos fica por conta da aba Fotos Anuncios.
     // O produto nasce INATIVO no Bling (pre-cadastro): ativa antes de criar o anuncio.
@@ -430,7 +497,7 @@ magaluRouter.post('/anuncio/criar', async (req, res, next) => {
     // Retomavel: se o SKU ja existe no Magalu (ex: tentativa anterior criou o SKU mas falhou em
     // preco/estoque, e o ANB nao gravou o ID), nao recria — segue pra preco/estoque.
     const jaExisteNoMagalu = await magaluGetSku(sku).then(() => true).catch(() => false);
-    const conteudo = await montarConteudoMagalu(peca, sku, categoriaId, peso);
+    const conteudo = await montarConteudoMagalu(peca, sku, categoriaId, peso, req.body?.ficha && typeof req.body.ficha === 'object' ? req.body.ficha : undefined);
     // Condicao vem do pre-cadastro (CadastroPeca.condicao: usado | novo). Padrao: usado.
     const condition: 'NEW' | 'USED' = String(peca.condicao || '').toLowerCase() === 'novo' ? 'NEW' : 'USED';
     const criado = jaExisteNoMagalu
@@ -491,6 +558,23 @@ magaluRouter.post('/anuncio/criar', async (req, res, next) => {
   }
 });
 
+// GET /magalu/anuncio/ficha?sku=&categoriaId= — campos obrigatorios da ficha da categoria sem valor (usado ao trocar a categoria
+// na tela). Opcional: ficha={"Nome":"valor"} em JSON pra recalcular com o que ja foi digitado.
+magaluRouter.get('/anuncio/ficha', async (req, res) => {
+  try {
+    const sku = getBaseSku(req.query.sku);
+    const categoriaId = String(req.query.categoriaId || '').trim();
+    if (!sku || !categoriaId) return res.status(400).json({ error: 'sku e categoriaId obrigatorios' });
+    const peca = await carregarAnuncioBase(sku);
+    if (!peca) return res.status(404).json({ error: 'SKU nao encontrado no ANB' });
+    let ficha: Record<string, string> | undefined;
+    try { ficha = req.query.ficha ? JSON.parse(String(req.query.ficha)) : undefined; } catch { /* ignora */ }
+    res.json({ ok: true, fichaFaltando: await magaluCamposFichaFaltando(peca, categoriaId, ficha) });
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message || 'Erro ao consultar a ficha da categoria' });
+  }
+});
+
 // POST /magalu/anuncio/atualizar — body: { sku, categoriaId? }. Reenvia (PATCH parcial) o conteudo
 // exigido pela moderacao do Magalu (descricao, ficha tecnica, NCM, origem) pra um SKU JA existente,
 // sem recriar. Usado pra corrigir anuncios bloqueados/em rascunho.
@@ -504,7 +588,7 @@ magaluRouter.post('/anuncio/atualizar', async (req, res) => {
     if (!categoriaId) return res.status(400).json({ error: 'SKU sem categoria Magalu.' });
     const peso = peca.pesoLiquido != null ? Number(peca.pesoLiquido) : (peca.pesoBruto != null ? Number(peca.pesoBruto) : 0);
 
-    const conteudo = await montarConteudoMagalu(peca, sku, categoriaId, peso);
+    const conteudo = await montarConteudoMagalu(peca, sku, categoriaId, peso, req.body?.ficha && typeof req.body.ficha === 'object' ? req.body.ficha : undefined);
     const parcial: Record<string, any> = {
       description: conteudo.description,
       datasheet: conteudo.datasheet,

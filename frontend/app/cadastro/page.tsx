@@ -450,6 +450,9 @@ export default function CadastroPage() {
     restricoes?: string[]; // Mercado Livre: restricoes da categoria sugerida/escolhida (bloqueia a criacao ate ajustar)
     categoriaPreCadastro?: { id: string; nome: string } | null;
     sugestaoOrigem?: string;
+    // Campos obrigatorios da categoria que o sistema nao sabe preencher (ex: Magalu/Pneu): a tela pede o valor.
+    fichaFaltando?: { nome: string; exemplo: string; escolhas: string[] | null }[];
+    fichaValores?: Record<string, string>;
   };
   type AnuncioAjuste = { aberto: boolean; carregando: boolean; salvando: boolean; titulo: string; descricao: string; condicao: 'usado' | 'novo'; original: { titulo: string; descricao: string; condicao: string } | null; msg: string; erro: string };
   type AnuncioCriarLinha = {
@@ -2020,13 +2023,15 @@ export default function CadastroPage() {
       categoriaEscolhidaId: linha.categoriaAtual?.id ?? null,
       categoriaPendente: !!linha.categoriaPendente,
       // Sem fotos na pasta oficial, sem categoria ou com restricao: nao vem marcado (precisa ajustar antes).
-      selecionado: !!linha.encontrado && !linha.jaTemAnuncio && linha.fotosProcessadas !== false && !linha.categoriaPendente && !(Array.isArray(linha.restricoes) && linha.restricoes.length),
+      selecionado: !!linha.encontrado && !linha.jaTemAnuncio && linha.fotosProcessadas !== false && !linha.categoriaPendente && !(Array.isArray(linha.restricoes) && linha.restricoes.length) && !(Array.isArray(linha.fichaFaltando) && linha.fichaFaltando.length),
       status: 'pendente',
       resultado: null,
       erroProcessamento: '',
       restricoes: Array.isArray(linha.restricoes) ? linha.restricoes : [],
       categoriaPreCadastro: linha.categoriaPreCadastro || null,
       sugestaoOrigem: linha.sugestaoOrigem,
+      fichaFaltando: Array.isArray(linha.fichaFaltando) ? linha.fichaFaltando : [],
+      fichaValores: {},
     };
   }
 
@@ -2337,6 +2342,18 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
     }));
   }
 
+  // Preenchimento dos campos obrigatorios da categoria (ex: pneu no Magalu). Ao completar todos, o marketplace fica marcado.
+  function atualizarFichaCampo(sku: string, mk: AnuncioMarketplaceId, nome: string, valor: string) {
+    setAnuncioCriarLinhas((prev) => prev.map((linha) => {
+      if (linha.sku !== sku) return linha;
+      const atual = linha.marketplaces[mk];
+      const valores = { ...(atual.fichaValores || {}), [nome]: valor };
+      const completo = (atual.fichaFaltando || []).every((c) => String(valores[c.nome] || '').trim());
+      const liberada = completo && linha.fotosOk && !linha.semEstoque && !atual.jaTemAnuncio && !atual.categoriaPendente && !(atual.restricoes && atual.restricoes.length);
+      return { ...linha, marketplaces: { ...linha.marketplaces, [mk]: { ...atual, fichaValores: valores, selecionado: completo ? (liberada ? true : atual.selecionado) : false } } };
+    }));
+  }
+
   async function escolherCategoriaParaLinha(sku: string, mk: AnuncioMarketplaceId, categoriaId: number | string) {
     const escolhida = categoriasDoMarketplace(mk).find((c) => c.id === categoriaId) || null;
     // Mercado Livre: confere as restricoes da categoria escolhida (condicao aceita, atributos obrigatorios...).
@@ -2351,17 +2368,30 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
         restricoes = [`Não consegui verificar as restrições da categoria: ${e?.message || e}`];
       }
     }
+    // Magalu: a nova categoria pode exigir campos que o sistema nao preenche — busca a lista pra pedir na tela.
+    let fichaFaltando: { nome: string; exemplo: string; escolhas: string[] | null }[] = [];
+    if (mk === 'magalu') {
+      try {
+        const resp = await fetch(`${API}/magalu/anuncio/ficha?sku=${encodeURIComponent(sku)}&categoriaId=${encodeURIComponent(String(categoriaId))}`, { credentials: 'include' });
+        const data = await readApiResponse(resp, 'Erro ao consultar a ficha da categoria');
+        fichaFaltando = Array.isArray(data.fichaFaltando) ? data.fichaFaltando : [];
+      } catch (e: any) {
+        console.warn('[anuncio] ficha da categoria:', e?.message || e);
+      }
+    }
     setAnuncioCriarLinhas((prev) => prev.map((linha) => {
       if (linha.sku !== sku) return linha;
       const atual = linha.marketplaces[mk];
       // Escolher uma categoria resolve a pendencia; sem restricao e com fotos oficiais, ja deixa marcada.
-      const liberada = linha.fotosOk && !linha.semEstoque && !atual.jaTemAnuncio && restricoes.length === 0;
+      const liberada = linha.fotosOk && !linha.semEstoque && !atual.jaTemAnuncio && restricoes.length === 0 && fichaFaltando.length === 0;
       return { ...linha, marketplaces: { ...linha.marketplaces, [mk]: {
         ...atual,
         categoriaEscolhidaId: categoriaId,
         categoriaPendente: false,
         categoriaAtual: escolhida ? { ...escolhida, permitido: restricoes.length === 0 } : atual.categoriaAtual,
         restricoes,
+        fichaFaltando,
+        fichaValores: {},
         selecionado: liberada,
       } } };
     }));
@@ -2396,7 +2426,7 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sku, categoriaId }),
+          body: JSON.stringify({ sku, categoriaId, ...(mk === 'magalu' && linhaAtual?.marketplaces[mk].fichaValores && Object.keys(linhaAtual.marketplaces[mk].fichaValores || {}).length ? { ficha: linhaAtual.marketplaces[mk].fichaValores } : {}) }),
         });
         const data = await readApiResponse(resp, `Erro ao criar anuncio ${mk} do SKU ${sku}`);
         setAnuncioCriarLinhas((prev) => prev.map((item) => item.sku === sku ? {
@@ -2485,6 +2515,8 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
             return { chave: 'tem', texto: anuncioVerificando ? 'já tem ID · verificando…' : 'já tem ID', cor: '#92400e', fundo: '#fef3c7', clicavel: false };
           }
           if (mp.restricoes && mp.restricoes.length) return { chave: 'restr', texto: '⚠ restrição', cor: '#b91c1c', fundo: '#fee2e2', clicavel: false };
+          const fichaPend = (mp.fichaFaltando || []).filter((c) => !String((mp.fichaValores || {})[c.nome] || '').trim());
+          if (fichaPend.length) return { chave: 'ficha', texto: `⚠ preencher ficha (${fichaPend.length})`, cor: '#92400e', fundo: '#fffbeb', clicavel: false };
           if (mp.categoriaPendente || mp.categoriaEscolhidaId == null) return { chave: 'semcat', texto: 'sem categoria', cor: '#92400e', fundo: '#fffbeb', clicavel: false };
           return mp.selecionado
             ? { chave: 'sel', texto: '☑ criar', cor: '#166534', fundo: '#dcfce7', clicavel: true }
@@ -2493,7 +2525,7 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
         const statusLinha = (linha: AnuncioCriarLinha): 'pronto' | 'problema' | 'tem' | 'ok' => {
           if (!linha.encontrado || !linha.fotosOk || linha.semEstoque) return 'problema';
           const cs = ANUNCIO_MARKETPLACES.filter(({ id }) => linha.marketplaces[id].disponivel).map(({ id }) => celula(linha, id).chave);
-          if (cs.some((c) => c === 'erro' || c === 'restr' || c === 'semcat')) return 'problema';
+          if (cs.some((c) => c === 'erro' || c === 'restr' || c === 'semcat' || c === 'ficha')) return 'problema';
           if (cs.some((c) => c === 'pronto' || c === 'sel')) return 'pronto';
           if (cs.some((c) => c === 'tem')) return 'tem';
           return 'ok';
@@ -2619,6 +2651,24 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
                                   )}
                                   {mp.restricoes && mp.restricoes.length > 0 && (
                                     <div style={{ fontSize: 11.5, color: '#b91c1c' }}>⚠ Restrição: {mp.restricoes.join(' | ')}</div>
+                                  )}
+                                  {(mp.fichaFaltando || []).length > 0 && (
+                                    <div style={{ marginTop: 6, display: 'grid', gap: 6, background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, padding: 8 }}>
+                                      <div style={{ fontSize: 11.5, color: '#92400e', fontWeight: 600 }}>Campos obrigatórios desta categoria — preencha para liberar:</div>
+                                      {(mp.fichaFaltando || []).map((campo) => (
+                                        <label key={campo.nome} style={{ display: 'grid', gap: 2, fontSize: 11.5, color: 'var(--gray-700)' }}>
+                                          <span>{campo.nome}</span>
+                                          {campo.escolhas && campo.escolhas.length ? (
+                                            <select value={(mp.fichaValores || {})[campo.nome] || ''} onChange={(e: any) => atualizarFichaCampo(linha.sku, mk, campo.nome, e.target.value)} style={{ ...s.input, padding: '4px 6px', fontSize: 12 }}>
+                                              <option value="">Selecione…</option>
+                                              {campo.escolhas.map((o) => <option key={o} value={o}>{o}</option>)}
+                                            </select>
+                                          ) : (
+                                            <input value={(mp.fichaValores || {})[campo.nome] || ''} onChange={(e: any) => atualizarFichaCampo(linha.sku, mk, campo.nome, e.target.value)} placeholder={String(campo.exemplo || '').slice(0, 70)} style={{ ...s.input, padding: '4px 6px', fontSize: 12 }} />
+                                          )}
+                                        </label>
+                                      ))}
+                                    </div>
                                   )}
                                 </>
                               )}
