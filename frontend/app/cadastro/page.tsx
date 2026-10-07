@@ -504,6 +504,7 @@ export default function CadastroPage() {
   const [skuCopiado, setSkuCopiado] = useState('');
   const [anuncioAtualizando, setAnuncioAtualizando] = useState('');
   const [anuncioAdotando, setAnuncioAdotando] = useState('');
+  const [massaMagalu, setMassaMagalu] = useState('');
   // Filtros da aba Anuncio (alternativa a colar SKUs): moto, estoque, quem ainda nao tem anuncio, limite...
   const [fAberto, setFAberto] = useState(false);
   const [fMotoId, setFMotoId] = useState('');
@@ -2433,6 +2434,37 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
     }
   }
 
+  // Atualiza EM MASSA os anuncios que ja existem no Magalu (titulo sem USADO, texto do titulo na 1a linha da descricao, condicao,
+  // ficha). Um por vez; pula os que ainda tem campo obrigatorio da ficha sem preencher.
+  async function atualizarMagaluEmMassa() {
+    const alvos = anuncioCriarLinhas.filter((l) => l.encontrado && l.marketplaces.magalu.disponivel && l.marketplaces.magalu.jaTemAnuncio);
+    if (!alvos.length) return alert('Nenhum SKU desta lista tem anúncio no Magalu.');
+    const pulados = alvos.filter((l) => (l.marketplaces.magalu.fichaFaltando || []).some((c) => !String((l.marketplaces.magalu.fichaValores || {})[c.nome] || '').trim()));
+    const lista = alvos.filter((l) => !pulados.includes(l));
+    if (!lista.length) return alert('Todos os SKUs com anúncio no Magalu têm campos obrigatórios da ficha sem preencher. Preencha antes (linha do Magalu, ao expandir).');
+    if (!confirm(`Atualizar ${lista.length} anúncio(s) no Magalu?\n\nReenvia título (sem a palavra USADO), descrição (com o título na 1ª linha), condição e ficha técnica.${pulados.length ? `\n\n${pulados.length} SKU(s) serão pulados por falta de campos obrigatórios: ${pulados.map((l) => l.sku).join(', ')}.` : ''}`)) return;
+    let ok = 0;
+    const falhas: string[] = [];
+    for (let i = 0; i < lista.length; i += 1) {
+      const l = lista[i];
+      setMassaMagalu(`Atualizando ${l.sku} (${i + 1}/${lista.length})...`);
+      try {
+        const fv = l.marketplaces.magalu.fichaValores;
+        const resp = await fetch(`${API}/magalu/anuncio/atualizar`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sku: l.sku, ...(fv && Object.keys(fv).length ? { ficha: fv } : {}) }) });
+        await readApiResponse(resp, `Erro ao atualizar ${l.sku}`);
+        ok += 1;
+      } catch (e: any) {
+        const msg = String(e?.message || e);
+        // 409 = o Magalu esta analisando o SKU; a alteracao costuma ser aplicada mesmo assim.
+        if (/409|processando\/analisando/i.test(msg)) ok += 1; else falhas.push(`${l.sku}: ${msg.slice(0, 160)}`);
+      }
+      await new Promise((r2) => setTimeout(r2, 800));
+    }
+    setMassaMagalu('');
+    alert(`Magalu: ${ok} de ${lista.length} atualizado(s) (o Magalu processa de forma assíncrona; pode levar alguns minutos para aparecer).${falhas.length ? `\n\nFalharam:\n${falhas.join('\n')}` : ''}`);
+    consultarStatusRapido(lista.map((l) => l.sku));
+  }
+
   // Preenchimento dos campos obrigatorios da categoria (ex: pneu no Magalu). Ao completar todos, o marketplace fica marcado.
   function atualizarFichaCampo(sku: string, mk: AnuncioMarketplaceId, nome: string, valor: string) {
     setAnuncioCriarLinhas((prev) => prev.map((linha) => {
@@ -2490,6 +2522,9 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
     setCategoriaModalBusca('');
   }
 
+  // Erros que indicam "a requisicao caiu/demorou" (o anuncio PODE ter sido criado do outro lado mesmo assim).
+  const ehErroDeTimeout = (msg: string) => /ainda nao confirmado|timeout|timed out|\b50[234]\b|gateway|internal server error|failed to fetch|networkerror|network error|aborted|econnreset|socket hang up/i.test(String(msg || ''));
+
   async function processarAnunciosCriarFila() {
     const tarefas: { sku: string; mk: AnuncioMarketplaceId }[] = [];
     for (const linha of anuncioCriarLinhas) {
@@ -2503,32 +2538,71 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
     setAnuncioCriarProcessando(true);
     setAnuncioCriarProgresso({ atual: 0, total: tarefas.length });
 
+    const marcar = (sku: string, mk: AnuncioMarketplaceId, patch: Partial<AnuncioLinhaMarketplace>) =>
+      setAnuncioCriarLinhas((prev) => prev.map((item) => item.sku === sku ? { ...item, marketplaces: { ...item.marketplaces, [mk]: { ...item.marketplaces[mk], ...patch } } } : item));
+    const itemIdDe = (d: any) => d?.shopeeItemId || d?.magaluItemId || d?.nuvemshopProdutoId || d?.nuvemshopItemId || d?.mercadoLivreItemId || d?.mercadoLivreItemId || (d?.anuncioBlingId ? `Bling ${d.anuncioBlingId}` : null);
+
+    // Chamada de criacao (a mesma da 1a tentativa e da repeticao).
+    const criarDeFato = async (sku: string, mk: AnuncioMarketplaceId) => {
+      const linhaAtual = anuncioCriarLinhas.find((l) => l.sku === sku);
+      const categoriaId = linhaAtual?.marketplaces[mk].categoriaEscolhidaId;
+      if (categoriaId == null || categoriaId === '') throw new Error('Escolha a categoria (Trocar categoria) antes de criar este anúncio.');
+      const resp = await fetch(`${API}/${mk}/anuncio/criar`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sku, categoriaId, ...(mk === 'magalu' && linhaAtual?.marketplaces[mk].fichaValores && Object.keys(linhaAtual.marketplaces[mk].fichaValores || {}).length ? { ficha: linhaAtual.marketplaces[mk].fichaValores } : {}) }),
+      });
+      return readApiResponse(resp, `Erro ao criar anuncio ${mk} do SKU ${sku}`);
+    };
+
+    const falhasTimeout: { sku: string; mk: AnuncioMarketplaceId }[] = [];
     for (let index = 0; index < tarefas.length; index += 1) {
       const { sku, mk } = tarefas[index];
       setAnuncioCriarSkuAtual(sku);
       setAnuncioCriarMarketplaceAtual(mk);
       setAnuncioCriarProgresso({ atual: index, total: tarefas.length });
-      setAnuncioCriarLinhas((prev) => prev.map((item) => item.sku === sku ? { ...item, marketplaces: { ...item.marketplaces, [mk]: { ...item.marketplaces[mk], status: 'processando' as const } } } : item));
+      marcar(sku, mk, { status: 'processando' as const });
       try {
-        const linhaAtual = anuncioCriarLinhas.find((l) => l.sku === sku);
-        const categoriaId = linhaAtual?.marketplaces[mk].categoriaEscolhidaId;
-        if (categoriaId == null || categoriaId === '') throw new Error('Escolha a categoria (Trocar categoria) antes de criar este anúncio.');
-        const resp = await fetch(`${API}/${mk}/anuncio/criar`, {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sku, categoriaId, ...(mk === 'magalu' && linhaAtual?.marketplaces[mk].fichaValores && Object.keys(linhaAtual.marketplaces[mk].fichaValores || {}).length ? { ficha: linhaAtual.marketplaces[mk].fichaValores } : {}) }),
-        });
-        const data = await readApiResponse(resp, `Erro ao criar anuncio ${mk} do SKU ${sku}`);
-        setAnuncioCriarLinhas((prev) => prev.map((item) => item.sku === sku ? {
-          ...item,
-          marketplaces: { ...item.marketplaces, [mk]: { ...item.marketplaces[mk], status: 'ok' as const, resultado: data, selecionado: false, jaTemAnuncio: true, itemId: data.shopeeItemId || data.magaluItemId || data.nuvemshopItemId || data.mercadoLivreItemId || (data.anuncioBlingId ? `Bling ${data.anuncioBlingId}` : null) } },
-        } : item));
+        const data = await criarDeFato(sku, mk);
+        marcar(sku, mk, { status: 'ok' as const, resultado: data, selecionado: false, jaTemAnuncio: true, itemId: itemIdDe(data) });
       } catch (e: any) {
-        setAnuncioCriarLinhas((prev) => prev.map((item) => item.sku === sku ? {
-          ...item,
-          marketplaces: { ...item.marketplaces, [mk]: { ...item.marketplaces[mk], status: 'erro' as const, erroProcessamento: e?.message || String(e) } },
-        } : item));
+        const msg = e?.message || String(e);
+        marcar(sku, mk, { status: 'erro' as const, erroProcessamento: msg });
+        if (ehErroDeTimeout(msg)) falhasTimeout.push({ sku, mk });
+      }
+    }
+
+    // Repeticao (1x) dos que deram timeout, na ordem: ANTES de recriar, confere no marketplace se o anuncio nao foi criado mesmo assim.
+    if (falhasTimeout.length) {
+      setAnuncioCriarSkuAtual(`reverificando ${falhasTimeout.length} com timeout`);
+      setAnuncioCriarMarketplaceAtual('');
+      await new Promise((r) => setTimeout(r, 25000)); // deixa terminar o que ainda possa estar rodando no servidor
+      for (let i = 0; i < falhasTimeout.length; i += 1) {
+        const { sku, mk } = falhasTimeout[i];
+        setAnuncioCriarSkuAtual(sku);
+        setAnuncioCriarMarketplaceAtual(mk);
+        setAnuncioCriarProgresso({ atual: i, total: falhasTimeout.length });
+        marcar(sku, mk, { status: 'processando' as const });
+        try {
+          // 1) o anuncio ja existe? (consulta o nosso cadastro + o marketplace via /buscar)
+          let existente: any = null;
+          try {
+            const rb = await fetch(`${API}/${mk}/anuncio/buscar`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ skus: [sku] }) });
+            const db = await readApiResponse(rb, 'Erro ao reverificar o anúncio');
+            const l = (Array.isArray(db.linhas) ? db.linhas : [])[0];
+            if (l?.jaTemAnuncio) existente = l;
+          } catch { /* sem confirmacao: segue pra repeticao */ }
+          if (existente) {
+            marcar(sku, mk, { status: 'ok' as const, resultado: { aviso: 'Confirmado na reverificação: a criação concluiu mesmo com o timeout.' }, selecionado: false, jaTemAnuncio: true, itemId: itemIdDe(existente) || existente.itemId || null, erroProcessamento: '' });
+            continue;
+          }
+          // 2) nao existe: repete a criacao 1x (as rotas sao retomaveis / recusam duplicado)
+          const data = await criarDeFato(sku, mk);
+          marcar(sku, mk, { status: 'ok' as const, resultado: { ...data, aviso: 'Criado na 2ª tentativa (a 1ª deu timeout).' }, selecionado: false, jaTemAnuncio: true, itemId: itemIdDe(data), erroProcessamento: '' });
+        } catch (e: any) {
+          marcar(sku, mk, { status: 'erro' as const, erroProcessamento: `Falhou também na 2ª tentativa: ${e?.message || e}` });
+        }
       }
     }
 
@@ -2703,6 +2777,9 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               <button type="button" onClick={alternarTodos} style={{ ...miniBtn('#475569'), padding: '4px 10px', fontSize: 12 }}>{todosExpandidos ? '▾ Recolher todos' : '▸ Expandir todos'}</button>
+              {anuncioCriarLinhas.some((l) => l.encontrado && l.marketplaces.magalu.disponivel && l.marketplaces.magalu.jaTemAnuncio) && (
+                <button type="button" onClick={atualizarMagaluEmMassa} disabled={!!massaMagalu || anuncioCriarProcessando} title="Reenvia título (sem USADO), descrição, condição e ficha dos anúncios que já existem no Magalu" style={{ ...miniBtn('#1d4ed8'), padding: '4px 10px', fontSize: 12, opacity: massaMagalu ? 0.7 : 1 }}>{massaMagalu || `Atualizar Magalu em massa (${anuncioCriarLinhas.filter((l) => l.encontrado && l.marketplaces.magalu.disponivel && l.marketplaces.magalu.jaTemAnuncio).length})`}</button>
+              )}
               <button type="button" onClick={marcarTodosProntos} disabled={anuncioCriarProcessando} style={{ ...miniBtn('#475569'), padding: '4px 10px', fontSize: 12 }}>Marcar todos prontos</button>
               <button
                 onClick={processarAnunciosCriarFila}

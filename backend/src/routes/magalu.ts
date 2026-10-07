@@ -329,6 +329,18 @@ function origemBlingParaMagalu(origem: any): 'national' | 'imported' | null {
 // sem Bling, usa texto proprio montado a partir dos dados da peca.
 // Ficha tecnica do Magalu NAO aceita "/" (retorna "Caracteres invalidos nao sao permitidos"): troca por "-" e "N/A" por
 // "Nao se aplica". Vale pra TODOS os campos, inclusive "Medida do Pneu" (o portal rejeita "/" ate nesse, apesar do exemplo da doc).
+// Titulo com a palavra USADO (ex: "Kit Parafuso Chassi e Motor HARLEY XL1200 2013 USADO"): no Magalu o titulo vai SEM a palavra
+// (USADO/USADA/Usd) e o titulo original passa a ser a 1a linha da descricao (ver montarConteudoMagalu).
+function prepararTituloMagalu(descricao: any) {
+  const original = String(descricao || '').trim();
+  const reUsado = /\b(usad[oa]s?|usd)\b/i;
+  const temUsado = reUsado.test(original);
+  const titulo = temUsado
+    ? original.replace(/\b(usad[oa]s?|usd)\b/gi, '').replace(/\s{2,}/g, ' ').replace(/\s+([,;:)\]])/g, '$1').trim()
+    : original;
+  return { original, titulo, temUsado };
+}
+
 function limparValorFicha(chave: string, valor: any) {
   const s = String(valor ?? '');
   return s.replace(/\bN\s*\/\s*A\b/gi, 'Não se aplica').replace(/\s*\/\s*/g, '-');
@@ -368,7 +380,7 @@ function montarValoresFicha(peca: any, peso: number, description: string, fichaE
     'altura do produto': `${altura}cm`,
     'profundidade do produto': `${profundidade}cm`,
     'dimensoes do produto com embalagem': `${largura}x${altura}x${profundidade}cm`,
-    'conteudo da embalagem': `1 ${String(peca.descricao || '').slice(0, 100)}`,
+    'conteudo da embalagem': `1 ${prepararTituloMagalu(peca.descricao).titulo.slice(0, 100)}`,
     // Dados do veiculo (cadastro da moto do SKU) — pedidos como obrigatorios em varias categorias (lanterna, carenagem...).
     'modelo do veiculo': moto.modelo || null,
     'ano do veiculo': moto.ano ? String(moto.ano) : null,
@@ -440,6 +452,18 @@ async function montarConteudoMagalu(peca: any, sku: string, categoriaId: string,
       'Peça original usada, em bom estado de conservação. Consulte as fotos antes de comprar.',
     ].filter(Boolean).join('\n');
     description = `${description}\n\n${extra}`.trim();
+  }
+
+  // Titulo com USADO: o titulo original vira a 1a linha da descricao e o resto do texto vem na linha de baixo (1 Enter).
+  // Se o texto do Bling ja traz esse titulo em alguma linha, tira essa linha pra nao repetir.
+  const tit = prepararTituloMagalu(peca.descricao);
+  if (tit.temUsado) {
+    const resto = description
+      .split(/\r?\n/)
+      .filter((linha) => linha.trim().toLowerCase() !== tit.original.toLowerCase())
+      .join('\n')
+      .replace(/^\s+/, '');
+    description = `${tit.original}\n${resto}`;
   }
 
   const valores = montarValoresFicha(peca, peso, description, fichaExtra);
@@ -516,7 +540,7 @@ magaluRouter.post('/anuncio/criar', async (req, res, next) => {
       ? { sku, traceId: null as string | null }
       : await magaluCreateSku({
         sku,
-        title: peca.descricao.slice(0, 150),
+        title: prepararTituloMagalu(peca.descricao).titulo.slice(0, 150),
         description: conteudo.description,
         datasheet: conteudo.datasheet,
         ncm: conteudo.ncm,
@@ -610,7 +634,7 @@ magaluRouter.post('/anuncio/atualizar', async (req, res) => {
       description: conteudo.description,
       datasheet: conteudo.datasheet,
       // Titulo e condicao atuais (depois do "Ajustar titulo / condicao" na tela) tambem vao no PATCH.
-      title: String(peca.descricao || '').slice(0, 150),
+      title: prepararTituloMagalu(peca.descricao).titulo.slice(0, 150),
       ...(conteudo.condicaoBling ? { condition: conteudo.condicaoBling } : {}),
       ...(conteudo.ncm ? { ncm: conteudo.ncm } : {}),
       ...(conteudo.origin ? { origin: conteudo.origin } : {}),
