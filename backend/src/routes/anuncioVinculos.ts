@@ -202,13 +202,31 @@ anuncioVinculosRouter.post('/consultar', async (req, res, next) => {
           await dormir(250);
         }
 
+        // Nuvemshop: o Bling tem o vinculo e o sistema esta vazio => o produto ja existe la. Confere na propria loja (busca pelo SKU)
+        // e grava o ID certo do PRODUTO no sistema na hora, pra nao precisar clicar "Usar ID do Bling" um a um.
+        // (O codigo do Bling pode ser o ID da VARIANTE, por isso o ID vem da busca na loja, nunca do codigo.)
+        let adotadoAuto = false;
+        if (mk === 'nuvemshop' && !sistema[mk] && blingCodigo) {
+          try {
+            const p: any = await buscarProdutoNuvemshopPorSku(sku, true);
+            if (p?.id) {
+              await gravarIdsAnuncio(sku, { nuvemshopProdutoId: String(p.id) } as any);
+              sistema[mk] = String(p.id);
+              adotadoAuto = true;
+              console.log(`[anuncio-vinculos] ${sku} / nuvemshop: ID do sistema preenchido automaticamente (${p.id}) — o Bling ja tinha o vinculo`);
+            }
+          } catch (e: any) {
+            console.warn(`[anuncio-vinculos] ${sku} / nuvemshop: nao consegui confirmar na loja para preencher o ID: ${e?.message || e}`);
+          }
+        }
+
         mercados[mk] = {
           sistemaId: sistema[mk],
           blingCodigo,
           blingVinculoId: b?.vinculoId || null,
           blingAnuncioId,
           situacao,
-          status: classificar(sistema[mk], blingCodigo),
+          status: adotadoAuto ? 'ok' : classificar(sistema[mk], blingCodigo),
         };
       }
       resultado.push({ sku, encontrado: true, blingProdutoId, erroBling: erroBling || undefined, mercados });
