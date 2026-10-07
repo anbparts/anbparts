@@ -505,6 +505,7 @@ export default function CadastroPage() {
   const [anuncioAtualizando, setAnuncioAtualizando] = useState('');
   const [anuncioAdotando, setAnuncioAdotando] = useState('');
   const [massaMagalu, setMassaMagalu] = useState('');
+  const [magaluDesmarcados, setMagaluDesmarcados] = useState<Set<string>>(new Set<string>());
   // Filtros da aba Anuncio (alternativa a colar SKUs): moto, estoque, quem ainda nao tem anuncio, limite...
   const [fAberto, setFAberto] = useState(false);
   const [fMotoId, setFMotoId] = useState('');
@@ -2434,15 +2435,26 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
     }
   }
 
-  // Atualiza EM MASSA os anuncios que ja existem no Magalu (titulo sem USADO, texto do titulo na 1a linha da descricao, condicao,
-  // ficha). Um por vez; pula os que ainda tem campo obrigatorio da ficha sem preencher.
+  // Atualizar Magalu em massa: so entram os SKUs que JA existem no Magalu e NAO estao publicados (rascunho/analise/bloqueado/problema)
+  // e que estao MARCADOS (todos vem marcados; desmarque pelo "☑ atualizar" na linha). Publicados sao ignorados.
+  const situacaoMagalu = (l: AnuncioCriarLinha) => anuncioVinculos[l.sku]?.mercados?.magalu?.situacao || anuncioStatusRapido[l.sku]?.magalu || null;
+  const elegivelAtualizarMagalu = (l: AnuncioCriarLinha) => {
+    const sit = situacaoMagalu(l);
+    return !!(l.encontrado && l.marketplaces.magalu.disponivel && l.marketplaces.magalu.jaTemAnuncio && sit && !sit.ok);
+  };
+  const marcadoAtualizarMagalu = (l: AnuncioCriarLinha) => elegivelAtualizarMagalu(l) && !magaluDesmarcados.has(l.sku);
+  function alternarAtualizarMagalu(sku: string) {
+    setMagaluDesmarcados((prev) => { const next = new Set(prev); if (next.has(sku)) next.delete(sku); else next.add(sku); return next; });
+  }
+
   async function atualizarMagaluEmMassa() {
-    const alvos = anuncioCriarLinhas.filter((l) => l.encontrado && l.marketplaces.magalu.disponivel && l.marketplaces.magalu.jaTemAnuncio);
-    if (!alvos.length) return alert('Nenhum SKU desta lista tem anúncio no Magalu.');
-    const pulados = alvos.filter((l) => (l.marketplaces.magalu.fichaFaltando || []).some((c) => !String((l.marketplaces.magalu.fichaValores || {})[c.nome] || '').trim()));
-    const lista = alvos.filter((l) => !pulados.includes(l));
-    if (!lista.length) return alert('Todos os SKUs com anúncio no Magalu têm campos obrigatórios da ficha sem preencher. Preencha antes (linha do Magalu, ao expandir).');
-    if (!confirm(`Atualizar ${lista.length} anúncio(s) no Magalu?\n\nReenvia título (sem a palavra USADO), descrição (com o título na 1ª linha), condição e ficha técnica.${pulados.length ? `\n\n${pulados.length} SKU(s) serão pulados por falta de campos obrigatórios: ${pulados.map((l) => l.sku).join(', ')}.` : ''}`)) return;
+    const marcados = anuncioCriarLinhas.filter(marcadoAtualizarMagalu);
+    const publicados = anuncioCriarLinhas.filter((l) => l.encontrado && l.marketplaces.magalu.disponivel && l.marketplaces.magalu.jaTemAnuncio && situacaoMagalu(l)?.ok).length;
+    if (!marcados.length) return alert(`Nenhum SKU marcado para atualizar. Só entram os que já existem no Magalu e ainda NÃO estão publicados (${publicados} publicado(s) ignorado(s) nesta lista).`);
+    const pulados = marcados.filter((l) => (l.marketplaces.magalu.fichaFaltando || []).some((c) => !String((l.marketplaces.magalu.fichaValores || {})[c.nome] || '').trim()));
+    const lista = marcados.filter((l) => !pulados.includes(l));
+    if (!lista.length) return alert('Os SKUs marcados têm campos obrigatórios da ficha sem preencher. Preencha antes (linha do Magalu, ao expandir).');
+    if (!confirm(`Atualizar ${lista.length} anúncio(s) NÃO publicados no Magalu?\n\nReenvia título (sem a palavra USADO), descrição (com o título na 1ª linha), condição e ficha técnica.${publicados ? `\n\n${publicados} anúncio(s) já PUBLICADOS serão ignorados.` : ''}${pulados.length ? `\n\n${pulados.length} SKU(s) pulados por falta de campos obrigatórios: ${pulados.map((l) => l.sku).join(', ')}.` : ''}`)) return;
     let ok = 0;
     const falhas: string[] = [];
     for (let i = 0; i < lista.length; i += 1) {
@@ -2727,6 +2739,7 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
           if (mp.status === 'erro') return { chave: 'erro', texto: '✗ erro', cor: '#b91c1c', fundo: '#fee2e2', clicavel: false };
           if (mp.jaTemAnuncio) {
             const sit = anuncioVinculos[linha.sku]?.mercados?.[mk]?.situacao || anuncioStatusRapido[linha.sku]?.[mk];
+            if (mk === 'magalu' && sit && !sit.ok) return { chave: 'atualizar', texto: `${magaluDesmarcados.has(linha.sku) ? '☐' : '☑'} atualizar · ${sit.texto.toLowerCase()}`, cor: '#b91c1c', fundo: '#fee2e2', clicavel: true };
             if (sit && !sit.ok) return { chave: 'tem', texto: `já tem ID · ${sit.texto.toLowerCase()}`, cor: '#b91c1c', fundo: '#fee2e2', clicavel: false };
             if (sit && sit.ok) return { chave: 'tem', texto: `já tem ID · ${sit.texto.toLowerCase()}`, cor: '#92400e', fundo: '#fef3c7', clicavel: false };
             return { chave: 'tem', texto: anuncioVerificando ? 'já tem ID · verificando…' : 'já tem ID', cor: '#92400e', fundo: '#fef3c7', clicavel: false };
@@ -2744,7 +2757,7 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
           const cs = ANUNCIO_MARKETPLACES.filter(({ id }) => linha.marketplaces[id].disponivel).map(({ id }) => celula(linha, id).chave);
           if (cs.some((c) => c === 'erro' || c === 'restr' || c === 'semcat' || c === 'ficha')) return 'problema';
           if (cs.some((c) => c === 'pronto' || c === 'sel')) return 'pronto';
-          if (cs.some((c) => c === 'tem')) return 'tem';
+          if (cs.some((c) => c === 'tem' || c === 'atualizar')) return 'tem';
           return 'ok';
         };
         const contagem = { pronto: 0, problema: 0, tem: 0 };
@@ -2777,8 +2790,8 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               <button type="button" onClick={alternarTodos} style={{ ...miniBtn('#475569'), padding: '4px 10px', fontSize: 12 }}>{todosExpandidos ? '▾ Recolher todos' : '▸ Expandir todos'}</button>
-              {anuncioCriarLinhas.some((l) => l.encontrado && l.marketplaces.magalu.disponivel && l.marketplaces.magalu.jaTemAnuncio) && (
-                <button type="button" onClick={atualizarMagaluEmMassa} disabled={!!massaMagalu || anuncioCriarProcessando} title="Reenvia título (sem USADO), descrição, condição e ficha dos anúncios que já existem no Magalu" style={{ ...miniBtn('#1d4ed8'), padding: '4px 10px', fontSize: 12, opacity: massaMagalu ? 0.7 : 1 }}>{massaMagalu || `Atualizar Magalu em massa (${anuncioCriarLinhas.filter((l) => l.encontrado && l.marketplaces.magalu.disponivel && l.marketplaces.magalu.jaTemAnuncio).length})`}</button>
+              {anuncioCriarLinhas.some(elegivelAtualizarMagalu) && (
+                <button type="button" onClick={atualizarMagaluEmMassa} disabled={!!massaMagalu || anuncioCriarProcessando || !anuncioCriarLinhas.some(marcadoAtualizarMagalu)} title="Reenvia título (sem USADO), descrição, condição e ficha dos anúncios que já existem no Magalu e NÃO estão publicados (marcados). Os publicados são ignorados." style={{ ...miniBtn('#1d4ed8'), padding: '4px 10px', fontSize: 12, opacity: massaMagalu ? 0.7 : 1 }}>{massaMagalu || `Atualizar Magalu (${anuncioCriarLinhas.filter(marcadoAtualizarMagalu).length} marcado${anuncioCriarLinhas.filter(marcadoAtualizarMagalu).length === 1 ? '' : 's'})`}</button>
               )}
               <button type="button" onClick={marcarTodosProntos} disabled={anuncioCriarProcessando} style={{ ...miniBtn('#475569'), padding: '4px 10px', fontSize: 12 }}>Marcar todos prontos</button>
               <button
@@ -2825,7 +2838,7 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
                         <span key={id} style={{ fontSize: 11.5, display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'flex-start', minWidth: 0, gridColumn: isPhone ? '2' : undefined }}>
                           <span style={{ color: 'var(--gray-500)', fontSize: 10.5 }}>{id === 'mercado-livre' ? 'ML' : ANUNCIO_MARKETPLACES.find((m) => m.id === id)?.label}</span>
                           <span
-                            onClick={(e) => { if (c.clicavel && !anuncioCriarProcessando) { e.stopPropagation(); toggleAnuncioCriarSelecionado(linha.sku, id); } }}
+                            onClick={(e) => { if (c.clicavel && !anuncioCriarProcessando) { e.stopPropagation(); if (c.chave === 'atualizar') alternarAtualizarMagalu(linha.sku); else toggleAnuncioCriarSelecionado(linha.sku, id); } }}
                             style={{ color: c.cor, background: c.fundo, borderRadius: 5, padding: '2px 7px', fontWeight: 600, cursor: c.clicavel ? 'pointer' : 'inherit', maxWidth: '100%', lineHeight: 1.3 }}
                           >{c.texto}</span>
                         </span>
