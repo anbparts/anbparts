@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getShopeeConfig, saveShopeeConfig, shopeeExchangeCodeForToken, shopeeExchangeResendCode, shopeeLinkReenviarCodigo, shopeeDiagnostico, shopeeReq, shopeeAddItem, shopeeGetLogisticChannel } from '../lib/shopee-api';
+import { getShopeeConfig, saveShopeeConfig, shopeeExchangeCodeForToken, shopeeExchangeResendCode, shopeeLinkReenviarCodigo, shopeeDiagnostico, shopeeReq, shopeeAddItem, shopeeGetLogisticChannel, shopeePacoteExcedeCanal } from '../lib/shopee-api';
 import { prepararImagensShopeeParaNovoItem } from '../lib/fotos-cadastro';
 import { informarAnuncioShopeeNoBling, findBlingProductsByCodes, fetchBlingProductDetailById } from './bling';
 import { prisma } from '../lib/prisma';
@@ -213,6 +213,11 @@ shopeeRouter.post('/anuncio/buscar', async (req, res, next) => {
         continue;
       }
       const qtdDisponivel = peca.estoque;
+      // Pacote maior que o limite do canal de envio (ex: Correios 70 cm por lado): bloqueia ja na busca, como restricao.
+      const pesoPacote = peca.pesoLiquido != null ? Number(peca.pesoLiquido) : Number(peca.pesoBruto || 0);
+      const excede = !peca.shopeeItemId && peca.largura && peca.altura && peca.profundidade
+        ? await shopeePacoteExcedeCanal({ pesoKg: pesoPacote, larguraCm: Number(peca.largura), alturaCm: Number(peca.altura), profundidadeCm: Number(peca.profundidade) })
+        : null;
       const cat = peca.shopeeCategoriaId ? categoriaPorId.get(peca.shopeeCategoriaId) : null;
       linhas.push({
         sku,
@@ -230,6 +235,7 @@ shopeeRouter.post('/anuncio/buscar', async (req, res, next) => {
         estoque: qtdDisponivel,
         shopeeItemId: peca.shopeeItemId || null,
         jaTemAnuncio: !!peca.shopeeItemId,
+        restricoes: excede ? [excede] : [],
         categoriaAtual: cat ? {
           id: cat.id,
           caminho: [cat.categoria, cat.subcategoria, cat.nivel3, cat.nivel4].filter(Boolean).join(' > '),
