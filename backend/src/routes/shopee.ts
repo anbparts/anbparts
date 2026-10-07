@@ -4,7 +4,7 @@ import { prepararImagensShopeeParaNovoItem } from '../lib/fotos-cadastro';
 import { informarAnuncioShopeeNoBling, findBlingProductsByCodes, fetchBlingProductDetailById } from './bling';
 import { prisma } from '../lib/prisma';
 import { carregarAnuncioBase, gravarIdsAnuncio } from '../lib/anuncioBase';
-import { exigirFotosOficiais, garantirProdutoAtivoNoBling } from '../lib/anuncioPreparar';
+import { exigirNaoPneuUsado, exigirFotosOficiais, garantirProdutoAtivoNoBling } from '../lib/anuncioPreparar';
 
 export const shopeeRouter = Router();
 
@@ -258,6 +258,7 @@ shopeeRouter.post('/anuncio/criar', async (req, res, next) => {
     const peca = await carregarAnuncioBase(sku);
     if (!peca) return res.status(404).json({ error: 'SKU nao encontrado no ANB (nem em Pecas, nem no pre-cadastro)' });
     exigirFotosOficiais(peca);
+    exigirNaoPneuUsado(peca);
     if (peca.shopeeItemId) return res.status(400).json({ error: `SKU ja possui anuncio Shopee (item ${peca.shopeeItemId}) — apague manualmente antes de recriar.` });
 
     const categoriaId = categoriaIdOverride || Number(peca.shopeeCategoriaId || 0);

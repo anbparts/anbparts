@@ -17,7 +17,7 @@ import {
 } from '../lib/magalu-api';
 import { baixarFotoDrivePorId, buscarFotosDriveSku } from '../lib/fotos-cadastro';
 import { carregarAnuncioBase, gravarIdsAnuncio } from '../lib/anuncioBase';
-import { exigirFotosOficiais, garantirProdutoAtivoNoBling } from '../lib/anuncioPreparar';
+import { exigirNaoPneuUsado, exigirFotosOficiais, garantirProdutoAtivoNoBling } from '../lib/anuncioPreparar';
 import { informarAnuncioMagaluNoBling, findBlingProductsByCodes, fetchBlingProductDetailById } from './bling';
 import { prisma } from '../lib/prisma';
 
@@ -407,6 +407,7 @@ magaluRouter.post('/anuncio/criar', async (req, res, next) => {
     const peca = await carregarAnuncioBase(sku);
     if (!peca) return res.status(404).json({ error: 'SKU nao encontrado no ANB (nem em Pecas, nem no pre-cadastro)' });
     exigirFotosOficiais(peca);
+    exigirNaoPneuUsado(peca);
     if (peca.magaluItemId) return res.status(400).json({ error: `SKU ja possui anuncio Magalu (item ${peca.magaluItemId}) — apague manualmente antes de recriar.` });
 
     const qtdDisponivel = peca.estoque;

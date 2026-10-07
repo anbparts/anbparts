@@ -7,7 +7,7 @@ import { Router } from 'express';
 import { nuvemReq, buscarProdutoNuvemshopPorSku } from './nuvemshop';
 import { buscarFotosDriveSku } from '../lib/fotos-cadastro';
 import { carregarAnuncioBase, gravarIdsAnuncio } from '../lib/anuncioBase';
-import { exigirFotosOficiais, garantirProdutoAtivoNoBling } from '../lib/anuncioPreparar';
+import { exigirNaoPneuUsado, exigirFotosOficiais, garantirProdutoAtivoNoBling } from '../lib/anuncioPreparar';
 import { informarAnuncioNuvemshopNoBling, findBlingProductsByCodes, fetchBlingProductDetailById } from './bling';
 import {
   carregarArvoreNuvemshop,
@@ -197,6 +197,7 @@ nuvemshopAnuncioRouter.post('/anuncio/criar', async (req, res, next) => {
     const peca = await carregarAnuncioBase(sku);
     if (!peca) return res.status(404).json({ error: 'SKU nao encontrado no ANB (nem em Pecas, nem no pre-cadastro)' });
     exigirFotosOficiais(peca);
+    exigirNaoPneuUsado(peca);
     if (peca.nuvemshopProdutoId) return res.status(400).json({ error: `SKU ja possui produto na Nuvemshop (ID ${peca.nuvemshopProdutoId}).` });
 
     const qtdDisponivel = peca.estoque;

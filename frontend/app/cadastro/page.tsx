@@ -455,6 +455,7 @@ export default function CadastroPage() {
   type AnuncioCriarLinha = {
     sku: string;
     encontrado: boolean;
+    bloqueioTexto?: string; // motivo especifico do bloqueio (ex: pneu usado)
     semEstoque?: boolean; // sem unidade disponivel: nada e' criado
     fotosOk: boolean; // pasta do SKU ja esta na pasta oficial da moto (Fotos Anuncios processado)
     origem?: string;
@@ -2219,7 +2220,7 @@ export default function CadastroPage() {
     }
   }
 
-  async function removerVinculoAnuncio(sku: string, mk: AnuncioMarketplaceId, alvo: 'sistema' | 'sistema_bling', semConfirmar?: boolean) {
+  async function removerVinculoAnuncio(sku: string, mk: AnuncioMarketplaceId, alvo: 'sistema' | 'sistema_bling' | 'sistema_bling_marketplace', semConfirmar?: boolean) {
     const nome = ANUNCIO_MARKETPLACES.find((m) => m.id === mk)?.label || mk;
     const aviso = alvo === 'sistema'
       ? `Remover o ID do anúncio do ${nome} do SKU ${sku} SÓ do nosso sistema?\n\nO SKU fica liberado para criar de novo.\nIsso NÃO apaga o anúncio dentro do ${nome} nem o vínculo no Bling.${mk === 'mercado-livre' ? '\n\nAtenção: no Mercado Livre a auditoria automática do Bling pode preencher o ID de volta; para liberar de verdade use "sistema + Bling".' : ''}`
@@ -2233,7 +2234,8 @@ export default function CadastroPage() {
       await recarregarMarketplaceDaLinha(sku, mk);
       setAnuncioStatusRapido((prev) => ({ ...prev, [sku]: { ...(prev[sku] || {}), [mk]: null } }));
       await consultarVinculos([sku]);
-      alert(`SKU ${sku} liberado no ${nome}.${Array.isArray(data.removidoNoBling) && data.removidoNoBling.length ? `\nRemovido no Bling: ${data.removidoNoBling.join(', ')}.` : ''}${mk === 'nuvemshop' ? '\n\nSe o produto ainda existir na loja da Nuvemshop, apague-o lá também, senão a criação continua bloqueada.' : ''}`);
+      alert(`SKU ${sku} liberado no ${nome}.${data.marketplace_acao ? `
+No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoBling) && data.removidoNoBling.length ? `\nRemovido no Bling: ${data.removidoNoBling.join(', ')}.` : ''}${mk === 'nuvemshop' ? '\n\nSe o produto ainda existir na loja da Nuvemshop, apague-o lá também, senão a criação continua bloqueada.' : ''}`);
     } catch (e: any) {
       alert(e?.message || 'Erro ao remover o vínculo.');
     } finally {
@@ -2313,8 +2315,10 @@ export default function CadastroPage() {
       }
 
       for (const l of Array.from(porSku.values())) {
-        if (l.encontrado && !(Number(l.estoque) > 0)) {
+        const pneuUsado = l.encontrado && /\bpneus?\b/i.test(String(l.descricao || '')) && !/\bnov[oa]s?\b/i.test(String(l.descricao || ''));
+        if (l.encontrado && (pneuUsado || !(Number(l.estoque) > 0))) {
           l.semEstoque = true;
+          if (pneuUsado) l.bloqueioTexto = 'Pneu usado: venda proibida nos marketplaces (política de produtos)';
           for (const id of Object.keys(l.marketplaces) as AnuncioMarketplaceId[]) l.marketplaces[id] = { ...l.marketplaces[id], selecionado: false };
         }
       }
@@ -2471,7 +2475,7 @@ export default function CadastroPage() {
         const celula = (linha: AnuncioCriarLinha, mk: AnuncioMarketplaceId): { chave: string; texto: string; cor: string; fundo: string; clicavel: boolean } => {
           const mp = linha.marketplaces[mk];
           if (!mp.disponivel) return { chave: 'off', texto: '—', cor: 'var(--gray-300)', fundo: 'transparent', clicavel: false };
-          if (linha.semEstoque) return { chave: 'bloq', texto: 'sem estoque', cor: '#b91c1c', fundo: '#fee2e2', clicavel: false };
+          if (linha.semEstoque) return { chave: 'bloq', texto: linha.bloqueioTexto ? 'pneu usado' : 'sem estoque', cor: '#b91c1c', fundo: '#fee2e2', clicavel: false };
           if (!linha.fotosOk) return { chave: 'bloq', texto: 'sem fotos', cor: '#b91c1c', fundo: '#fee2e2', clicavel: false };
           if (mp.status === 'processando') return { chave: 'proc', texto: '⏳ criando', cor: 'var(--gray-600)', fundo: 'transparent', clicavel: false };
           if (mp.status === 'ok') return { chave: 'ok', texto: '✓ criado', cor: '#166534', fundo: '#dcfce7', clicavel: false };
@@ -2563,7 +2567,7 @@ export default function CadastroPage() {
                       )}
                     </div>
                                         {!aberto && (bloqueada ? (
-                      <span style={{ gridColumn: isPhone ? '2' : '3 / span 4', fontSize: 11.5, color: '#b91c1c', paddingTop: 2 }}>{!linha.fotosOk ? '✗ Fotos Anúncios ainda não foi processado' : '✗ Sem estoque — não há mais unidade disponível'}</span>
+                      <span style={{ gridColumn: isPhone ? '2' : '3 / span 4', fontSize: 11.5, color: '#b91c1c', paddingTop: 2 }}>{!linha.fotosOk ? '✗ Fotos Anúncios ainda não foi processado' : (linha.bloqueioTexto ? `✗ ${linha.bloqueioTexto}` : '✗ Sem estoque — não há mais unidade disponível')}</span>
                     ) : ANUNCIO_MARKETPLACES.map(({ id }) => {
                       if (!linha.marketplaces[id].disponivel) return <span key={id} />;
                       const c = celula(linha, id);
@@ -2583,7 +2587,7 @@ export default function CadastroPage() {
                     <div style={{ marginLeft: 22, marginTop: 8 }}>
                       {bloqueada && (
                         <div style={{ color: '#b91c1c', fontSize: 12, marginBottom: 6 }}>
-                          {!linha.fotosOk ? 'A pasta de fotos deste SKU não está na pasta oficial da moto. Nenhum marketplace foi habilitado — rode o Fotos Anúncios e busque de novo.' : 'Este SKU está sem estoque (0 unidade). Nenhum marketplace foi habilitado para criar anúncio.'}
+                          {!linha.fotosOk ? 'A pasta de fotos deste SKU não está na pasta oficial da moto. Nenhum marketplace foi habilitado — rode o Fotos Anúncios e busque de novo.' : (linha.bloqueioTexto ? `${linha.bloqueioTexto}. Nenhum marketplace foi habilitado.` : 'Este SKU está sem estoque (0 unidade). Nenhum marketplace foi habilitado para criar anúncio.')}
                         </div>
                       )}
                       {linha.encontrado && linha.fotosOk && ANUNCIO_MARKETPLACES.filter(({ id }) => linha.marketplaces[id].disponivel).map(({ id: mk, label }) => {
@@ -2715,7 +2719,7 @@ export default function CadastroPage() {
         const mkNome = ANUNCIO_MARKETPLACES.find((m) => m.id === excluirModal.mk)?.label || excluirModal.mk;
         const vm = anuncioVinculos[excluirModal.sku]?.mercados?.[excluirModal.mk];
         const fechar = () => setExcluirModal(null);
-        const executar = (alvo: 'sistema' | 'sistema_bling') => { const { sku, mk } = excluirModal; fechar(); removerVinculoAnuncio(sku, mk, alvo, true); };
+        const executar = (alvo: 'sistema' | 'sistema_bling' | 'sistema_bling_marketplace') => { const { sku, mk } = excluirModal; fechar(); removerVinculoAnuncio(sku, mk, alvo, true); };
         const opcao: any = { textAlign: 'left', width: '100%', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', background: 'var(--white)', cursor: 'pointer', display: 'grid', gap: 3 };
         return (
           <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100, padding: 16 }} onClick={fechar}>
@@ -2735,7 +2739,26 @@ export default function CadastroPage() {
                 <span style={{ fontWeight: 700, fontSize: 12.5, color: '#b91c1c' }}>Excluir do sistema + Bling</span>
                 <span style={{ fontSize: 11.5, color: 'var(--gray-600)' }}>Apaga o ID no nosso sistema e o vínculo do produto com a loja no Bling{excluirModal.mk === 'mercado-livre' ? ' (e o anúncio do Mercado Livre dentro do Bling)' : ''}. Libera totalmente o SKU para criar de novo.</span>
               </button>
-              <div style={{ fontSize: 11, color: 'var(--gray-500)' }}>Nenhuma das opções apaga o produto dentro do {mkNome}: se ele ainda existir lá, exclua pelo painel do marketplace.</div>
+              {/* DESATIVADO por enquanto (Bruno ainda nao vai subir): opcao 'Excluir do sistema + Bling + Marketplace' (so Magalu, desativa o SKU).
+                  Para ativar: remover este comentario e a trava EXCLUIR_NO_MARKETPLACE_ATIVO em backend/src/routes/anuncioVinculos.ts.
+              {(() => {
+                const ehMagalu = excluirModal.mk === 'magalu';
+                const sitMk = vm?.situacao || anuncioStatusRapido[excluirModal.sku]?.[excluirModal.mk] || null;
+                const publicado = !!sitMk && sitMk.ok;
+                const habilitada = ehMagalu && !publicado;
+                return (
+                  <button type="button" disabled={!habilitada} onClick={() => executar('sistema_bling_marketplace')} style={{ ...opcao, opacity: habilitada ? 1 : 0.5, borderColor: habilitada ? '#fecaca' : 'var(--border)' }}>
+                    <span style={{ fontWeight: 700, fontSize: 12.5, color: '#b91c1c' }}>Excluir do sistema + Bling + {mkNome}</span>
+                    <span style={{ fontSize: 11.5, color: 'var(--gray-600)' }}>
+                      {!ehMagalu ? `Ainda não disponível para o ${mkNome} (por enquanto só o Magalu).`
+                        : publicado ? 'Indisponível: o anúncio está PUBLICADO no Magalu. Despublique no painel do Magalu primeiro.'
+                        : 'Primeiro desativa o SKU no Magalu (a API do Magalu não permite excluir o SKU de vez), depois faz o mesmo que a opção acima. Só roda se o anúncio NÃO estiver publicado.'}
+                    </span>
+                  </button>
+                );
+              })()}
+              */}
+              <div style={{ fontSize: 11, color: 'var(--gray-500)' }}>As duas primeiras opções não mexem no produto dentro do {mkNome}: se ele ainda existir lá, exclua pelo painel do marketplace.</div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
                 <button type="button" onClick={fechar} style={{ fontSize: 12, padding: '5px 14px', border: '1px solid var(--border)', borderRadius: 6, background: 'var(--white)', cursor: 'pointer', color: 'var(--gray-700)' }}>Cancelar</button>
               </div>
