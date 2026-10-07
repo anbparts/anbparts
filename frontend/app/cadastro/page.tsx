@@ -502,6 +502,7 @@ export default function CadastroPage() {
   const [anuncioStatusRapido, setAnuncioStatusRapido] = useState<Record<string, Record<string, { texto: string; ok: boolean } | null>>>({});
   const [anuncioVerificando, setAnuncioVerificando] = useState(false);
   const [skuCopiado, setSkuCopiado] = useState('');
+  const [anuncioAtualizando, setAnuncioAtualizando] = useState('');
   const [excluirModal, setExcluirModal] = useState<{ sku: string; mk: AnuncioMarketplaceId } | null>(null);
   const [categoriaModalSku, setCategoriaModalSku] = useState<string | null>(null);
   const [categoriaModalMarketplace, setCategoriaModalMarketplace] = useState<AnuncioMarketplaceId>('shopee');
@@ -2342,6 +2343,28 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
     }));
   }
 
+  // Reenvia titulo, condicao, descricao e ficha tecnica de um anuncio JA existente (hoje: Magalu — unico com PATCH de conteudo).
+  async function atualizarAnuncioExistente(sku: string, mk: AnuncioMarketplaceId) {
+    if (mk !== 'magalu') return alert('Atualizar o conteúdo de um anúncio existente só está disponível para o Magalu por enquanto.');
+    const linha = anuncioCriarLinhas.find((l) => l.sku === sku);
+    const mp = linha?.marketplaces[mk];
+    if (!linha || !mp) return;
+    const pend = (mp.fichaFaltando || []).filter((c) => !String((mp.fichaValores || {})[c.nome] || '').trim());
+    if (pend.length) return alert(`Preencha os campos obrigatórios antes: ${pend.map((c) => c.nome).join(', ')}.`);
+    if (!confirm(`Reenviar título, condição, descrição e ficha técnica atuais do SKU ${sku} para o Magalu?\n\nO anúncio já existe: isso altera o conteúdo dele lá.`)) return;
+    setAnuncioAtualizando(`${sku}|${mk}`);
+    try {
+      const resp = await fetch(`${API}/magalu/anuncio/atualizar`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sku, ...(mp.fichaValores && Object.keys(mp.fichaValores).length ? { ficha: mp.fichaValores } : {}) }) });
+      await readApiResponse(resp, 'Erro ao atualizar o anúncio no Magalu');
+      alert('Enviado ao Magalu. A atualização é processada de forma assíncrona (pode levar alguns minutos para aparecer no painel).');
+      consultarStatusRapido([sku]);
+    } catch (e: any) {
+      alert(e?.message || 'Erro ao atualizar o anúncio no Magalu.');
+    } finally {
+      setAnuncioAtualizando('');
+    }
+  }
+
   // Preenchimento dos campos obrigatorios da categoria (ex: pneu no Magalu). Ao completar todos, o marketplace fica marcado.
   function atualizarFichaCampo(sku: string, mk: AnuncioMarketplaceId, nome: string, valor: string) {
     setAnuncioCriarLinhas((prev) => prev.map((linha) => {
@@ -2635,7 +2658,26 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
                             </span>
                             <span style={{ fontWeight: 600, color: 'var(--gray-700)' }}>{label}</span>
                             <div style={{ color: 'var(--gray-800)', lineHeight: 1.4 }}>
-                              {mp.jaTemAnuncio ? <span style={{ color: 'var(--gray-400)' }}>—</span> : (
+                              {mp.jaTemAnuncio ? (<><span style={{ color: 'var(--gray-400)' }}>—</span>
+                                  {(mp.fichaFaltando || []).length > 0 && (
+                                    <div style={{ marginTop: 6, display: 'grid', gap: 6, background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, padding: 8 }}>
+                                      <div style={{ fontSize: 11.5, color: '#92400e', fontWeight: 600 }}>Campos obrigatórios desta categoria — preencha para liberar:</div>
+                                      {(mp.fichaFaltando || []).map((campo) => (
+                                        <label key={campo.nome} style={{ display: 'grid', gap: 2, fontSize: 11.5, color: 'var(--gray-700)' }}>
+                                          <span>{campo.nome}</span>
+                                          {campo.escolhas && campo.escolhas.length ? (
+                                            <select value={(mp.fichaValores || {})[campo.nome] || ''} onChange={(e: any) => atualizarFichaCampo(linha.sku, mk, campo.nome, e.target.value)} style={{ ...s.input, padding: '4px 6px', fontSize: 12 }}>
+                                              <option value="">Selecione…</option>
+                                              {campo.escolhas.map((o) => <option key={o} value={o}>{o}</option>)}
+                                            </select>
+                                          ) : (
+                                            <input value={(mp.fichaValores || {})[campo.nome] || ''} onChange={(e: any) => atualizarFichaCampo(linha.sku, mk, campo.nome, e.target.value)} placeholder={String(campo.exemplo || '').slice(0, 70)} style={{ ...s.input, padding: '4px 6px', fontSize: 12 }} />
+                                          )}
+                                        </label>
+                                      ))}
+                                    </div>
+                                  )}
+</>) : (
                                 <>
                                   {mp.categoriaPendente ? <span style={{ color: '#b45309' }}>⏳ Categoria pendente</span>
                                     : !cat ? <span style={{ color: '#dc2626' }}>Sem categoria</span>
@@ -2695,6 +2737,9 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
                               {mp.status === 'erro' && <div style={{ fontSize: 11.5, color: '#dc2626' }}>✗ {mp.erroProcessamento}</div>}
                             </div>
                             <div>
+                              {mk === 'magalu' && mp.jaTemAnuncio && (
+                                <button type="button" disabled={anuncioAtualizando === `${linha.sku}|${mk}` || anuncioCriarProcessando} onClick={() => atualizarAnuncioExistente(linha.sku, mk)} title="Reenvia título, condição, descrição e ficha técnica atuais para o anúncio que já existe no Magalu" style={{ fontSize: 11, color: '#1d4ed8', background: 'var(--white)', border: '1px solid #bfdbfe', borderRadius: 5, padding: '2px 10px', cursor: 'pointer', marginBottom: 4, display: 'block' }}>{anuncioAtualizando === `${linha.sku}|${mk}` ? 'Atualizando...' : 'Atualizar'}</button>
+                              )}
                               {(temVinculo || mp.jaTemAnuncio) && (
                                 <button type="button" disabled={ocupado || anuncioCriarProcessando} onClick={() => setExcluirModal({ sku: linha.sku, mk })} style={{ fontSize: 11, color: '#b91c1c', background: 'var(--white)', border: '1px solid #fecaca', borderRadius: 5, padding: '2px 10px', cursor: 'pointer' }}>{ocupado ? 'Excluindo...' : 'Excluir'}</button>
                               )}

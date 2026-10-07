@@ -592,7 +592,12 @@ magaluRouter.post('/anuncio/atualizar', async (req, res) => {
     if (!categoriaId) return res.status(400).json({ error: 'SKU sem categoria Magalu.' });
     const peso = peca.pesoLiquido != null ? Number(peca.pesoLiquido) : (peca.pesoBruto != null ? Number(peca.pesoBruto) : 0);
 
-    const conteudo = await montarConteudoMagalu(peca, sku, categoriaId, peso, req.body?.ficha && typeof req.body.ficha === 'object' ? req.body.ficha : undefined);
+    const fichaDigitada = req.body?.ficha && typeof req.body.ficha === 'object' ? req.body.ficha : undefined;
+    const faltando = await magaluCamposFichaFaltando(peca, categoriaId, fichaDigitada).catch(() => []);
+    if (faltando.length && !req.body?.somente && !req.body?.somenteExtraData) {
+      return res.status(400).json({ error: `Preencha os campos obrigatórios da categoria no Magalu: ${faltando.map((c: any) => c.nome).join(', ')}.` });
+    }
+    const conteudo = await montarConteudoMagalu(peca, sku, categoriaId, peso, fichaDigitada);
     const parcial: Record<string, any> = {
       description: conteudo.description,
       datasheet: conteudo.datasheet,
@@ -613,7 +618,14 @@ magaluRouter.post('/anuncio/atualizar', async (req, res) => {
       delete parcial.description; delete parcial.datasheet; delete parcial.ncm; delete parcial.origin;
       if (!(Array.isArray(req.body?.extraData))) delete parcial.extra_data;
     }
-    const resposta = await magaluAtualizarConteudoSku(sku, parcial);
+    let resposta: any;
+    try {
+      resposta = await magaluAtualizarConteudoSku(sku, parcial);
+    } catch (e: any) {
+      // 409: o Magalu esta processando/analisando o SKU — a alteracao pode ter sido aplicada mesmo assim.
+      if (/409/.test(String(e?.message))) return res.status(409).json({ error: 'O Magalu esta processando/analisando este SKU agora (409). A alteracao pode ja ter sido aplicada — confira no painel em alguns minutos e tente de novo se nao mudou.' });
+      throw e;
+    }
     res.json({ ok: true, sku, enviado: { descricaoChars: conteudo.description.length, datasheet: conteudo.datasheet, ncm: conteudo.ncm, origin: conteudo.origin }, resposta });
   } catch (e: any) {
     res.status(400).json({ error: e?.message || 'Erro ao atualizar SKU no Magalu' });
