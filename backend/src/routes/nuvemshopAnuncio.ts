@@ -7,7 +7,7 @@ import { Router } from 'express';
 import { nuvemReq, buscarProdutoNuvemshopPorSku } from './nuvemshop';
 import { buscarFotosDriveSku } from '../lib/fotos-cadastro';
 import { carregarAnuncioBase, gravarIdsAnuncio } from '../lib/anuncioBase';
-import { exigirFotosOficiais, garantirProdutoAtivoNoBling } from '../lib/anuncioPreparar';
+import { exigirFotosOficiais, garantirProdutoAtivoNoBling, lerDadosBlingSku } from '../lib/anuncioPreparar';
 import { informarAnuncioNuvemshopNoBling, findBlingProductsByCodes, fetchBlingProductDetailById } from './bling';
 import {
   carregarArvoreNuvemshop,
@@ -222,7 +222,9 @@ nuvemshopAnuncioRouter.post('/anuncio/criar', async (req, res, next) => {
     // Tags: gravadas no pre-cadastro; se faltarem (SKU antigo ou IA ainda em andamento), gera agora.
     let tags = String(peca.nuvemshopTags || '').trim();
     if (!tags) {
-      tags = await gerarTagsNuvemshop({ sku, titulo: peca.descricao, moto: peca.moto, numeroPeca: peca.numeroPeca, condicao: peca.condicao });
+      // Condicao do Bling (e' ela que o "Ajustar titulo / condicao" da tela altera); cai pra do cadastro se o Bling falhar.
+      const condicaoBling = await lerDadosBlingSku(peca).then((d) => d.condicao).catch(() => null);
+      tags = await gerarTagsNuvemshop({ sku, titulo: peca.descricao, moto: peca.moto, numeroPeca: peca.numeroPeca, condicao: condicaoBling || peca.condicao });
     }
 
     const categorias = await nuvemshopCategoriasDoProduto(categoriaId);

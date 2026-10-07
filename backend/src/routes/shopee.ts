@@ -290,12 +290,15 @@ shopeeRouter.post('/anuncio/criar', async (req, res, next) => {
     // integracao do Bling: descricaoCurta, com html removido) — o texto local (peca.descricao) e'
     // curto demais (usado so como titulo). Se o Bling nao tiver nada, cai pro texto local mesmo.
     let descricaoBling = '';
+    let condicaoBling: 'NEW' | 'USED' | null = null;
     try {
       const produtosByCode = await findBlingProductsByCodes([sku], { forceRefresh: true });
       const produtoBling = produtosByCode.get(sku);
       if (produtoBling?.id) {
         const detail = await fetchBlingProductDetailById(Number(produtoBling.id), { forceRefresh: true });
         descricaoBling = htmlParaTextoComQuebras((detail as any)?.descricaoCurta || (produtoBling as any)?.descricaoCurta || '');
+        const cb = Number((detail as any)?.condicao);
+        condicaoBling = cb === 1 ? 'NEW' : cb === 2 ? 'USED' : null;
       }
     } catch (e) {
       // Bling fora do ar/produto nao encontrado nao pode travar a criacao do anuncio — cai pro
@@ -314,6 +317,7 @@ shopeeRouter.post('/anuncio/criar', async (req, res, next) => {
       imageIdList,
       itemSku: sku,
       stock: qtdDisponivel,
+      condition: condicaoBling || 'USED',
       logisticId: canal.logistic_id,
       marcaMoto: (peca as any).moto?.marca || null,
     });

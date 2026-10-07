@@ -66,13 +66,15 @@ anuncioAjusteRouter.post('/salvar', async (req, res) => {
     if (titulo !== undefined) dadosCadastro.descricao = titulo;
     if (descricao !== undefined) dadosCadastro.descricaoPeca = descricao.replace(/\n/g, '<br>');
     if (condicao !== undefined) dadosCadastro.condicao = condicao;
+    // Tags da Nuvemshop foram geradas com titulo/condicao antigos: limpa pra gerar de novo na criacao do anuncio.
+    if (titulo !== undefined || condicao !== undefined) dadosCadastro.nuvemshopTags = null;
     if (Object.keys(dadosCadastro).length) {
       await (prisma as any).cadastroPeca.updateMany({ where: { idPeca: sku }, data: dadosCadastro });
     }
-    if (titulo !== undefined) {
+    if (titulo !== undefined || condicao !== undefined) {
       await prisma.peca.updateMany({
         where: { OR: [{ idPeca: sku }, { idPeca: { startsWith: `${sku}-` } }] },
-        data: { descricao: titulo },
+        data: { ...(titulo !== undefined ? { descricao: titulo } : {}), nuvemshopTags: null } as any,
       });
     }
 

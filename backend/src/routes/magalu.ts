@@ -404,6 +404,8 @@ async function montarConteudoMagalu(peca: any, sku: string, categoriaId: string,
   let descricaoBling = '';
   let ncm: string | null = null;
   let origin: 'national' | 'imported' | null = null;
+  // Condicao do Bling (fonte da verdade: e' ela que o "Ajustar titulo / condicao" da tela altera).
+  let condicaoBling: 'NEW' | 'USED' | null = null;
   try {
     const produtos = await findBlingProductsByCodes([sku], { forceRefresh: true });
     const produtoBling = produtos.get(sku);
@@ -413,6 +415,8 @@ async function montarConteudoMagalu(peca: any, sku: string, categoriaId: string,
       const ncmBruto = String(detail?.tributacao?.ncm || '').replace(/\D/g, '');
       if (/^\d{8}$/.test(ncmBruto)) ncm = ncmBruto;
       origin = origemBlingParaMagalu(detail?.tributacao?.origem);
+      const cb = Number(detail?.condicao);
+      condicaoBling = cb === 1 ? 'NEW' : cb === 2 ? 'USED' : null;
     }
   } catch {
     // Bling fora do ar/desconectado nao pode travar a criacao: segue sem NCM/origem do Bling.
@@ -449,7 +453,7 @@ async function montarConteudoMagalu(peca: any, sku: string, categoriaId: string,
   // O campo de descricao do Magalu aceita HTML (o editor do portal tem negrito/listas): texto puro
   // com \n perde as quebras (confirmado lendo o SKU de volta), entao converte pra <br>.
   const descricaoHtml = description.replace(/\r?\n/g, '<br>');
-  return { description: descricaoHtml.slice(0, 7000), datasheet, ncm, origin };
+  return { description: descricaoHtml.slice(0, 7000), datasheet, ncm, origin, condicaoBling };
 }
 
 // POST /magalu/anuncio/criar — body: { sku, categoriaId }. Cria o SKU no Magalu (sobe 1 foto do
@@ -499,7 +503,7 @@ magaluRouter.post('/anuncio/criar', async (req, res, next) => {
     const jaExisteNoMagalu = await magaluGetSku(sku).then(() => true).catch(() => false);
     const conteudo = await montarConteudoMagalu(peca, sku, categoriaId, peso, req.body?.ficha && typeof req.body.ficha === 'object' ? req.body.ficha : undefined);
     // Condicao vem do pre-cadastro (CadastroPeca.condicao: usado | novo). Padrao: usado.
-    const condition: 'NEW' | 'USED' = String(peca.condicao || '').toLowerCase() === 'novo' ? 'NEW' : 'USED';
+    const condition: 'NEW' | 'USED' = conteudo.condicaoBling || (String(peca.condicao || '').toLowerCase() === 'novo' ? 'NEW' : 'USED');
     const criado = jaExisteNoMagalu
       ? { sku, traceId: null as string | null }
       : await magaluCreateSku({
@@ -592,6 +596,9 @@ magaluRouter.post('/anuncio/atualizar', async (req, res) => {
     const parcial: Record<string, any> = {
       description: conteudo.description,
       datasheet: conteudo.datasheet,
+      // Titulo e condicao atuais (depois do "Ajustar titulo / condicao" na tela) tambem vao no PATCH.
+      title: String(peca.descricao || '').slice(0, 150),
+      ...(conteudo.condicaoBling ? { condition: conteudo.condicaoBling } : {}),
       ...(conteudo.ncm ? { ncm: conteudo.ncm } : {}),
       ...(conteudo.origin ? { origin: conteudo.origin } : {}),
       // extra_data (ate 20 pares name/value, <=50 chars cada) — oficial: PATCH /skus. Aceita override

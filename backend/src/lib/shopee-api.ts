@@ -387,6 +387,7 @@ export type ShopeeAddItemInput = {
   stock: number;
   logisticId: number;
   marcaMoto?: string | null;
+  condition?: 'NEW' | 'USED';
 };
 
 // POST /api/v2/product/add_item — cria o anuncio. So os campos que a doc oficial confirma como
@@ -413,7 +414,7 @@ export async function shopeeAddItem(input: ShopeeAddItemInput) {
       category_id: input.categoryId,
       image: { image_id_list: input.imageIdList },
       item_sku: input.itemSku,
-      condition: 'USED',
+      condition: input.condition || 'USED',
       seller_stock: [{ stock: Math.max(1, Math.round(input.stock)) }],
       ...(brand ? { brand: { brand_id: brand.brand_id, original_brand_name: brand.original_brand_name } } : {}),
     },
