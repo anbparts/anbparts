@@ -508,6 +508,7 @@ export default function CadastroPage() {
   const [fAberto, setFAberto] = useState(false);
   const [fMotoId, setFMotoId] = useState('');
   const [fComEstoque, setFComEstoque] = useState(true);
+  const [fComFotos, setFComFotos] = useState(true);
   const [fAnuncios, setFAnuncios] = useState<'todos' | 'faltando' | 'nenhum'>('faltando');
   const [fOrigem, setFOrigem] = useState<'ambos' | 'pecas' | 'precadastro'>('ambos');
   const [fBusca, setFBusca] = useState('');
@@ -2291,14 +2292,15 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
       const resp = await fetch(`${API}/anuncio-lista/skus`, {
         method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          motoId: fMotoId ? Number(fMotoId) : undefined, comEstoque: fComEstoque, anuncios: fAnuncios, origem: fOrigem,
+          motoId: fMotoId ? Number(fMotoId) : undefined, comEstoque: fComEstoque, comFotos: fComFotos, anuncios: fAnuncios, origem: fOrigem,
           busca: fBusca.trim() || undefined, ordem: fOrdem, limite: Number(fLimite) || 25, marketplaces: Array.from(anuncioMarketplacesSelecionados),
         }),
       });
       const data = await readApiResponse(resp, 'Erro ao aplicar os filtros');
       const skus: string[] = Array.isArray(data.skus) ? data.skus : [];
       setAnuncioCriarSkusInput(skus.join('\n'));
-      setFInfo(skus.length ? `${skus.length} de ${data.total} SKU(s) que atendem aos filtros` : 'Nenhum SKU atende aos filtros.');
+      const ignorados = Number(data.semFotos || 0);
+      setFInfo(skus.length ? `${skus.length} de ${data.total} SKU(s) que atendem aos filtros${ignorados ? ` · ${ignorados} ignorado(s) por falta de fotos oficiais` : ''}` : (ignorados ? `Nenhum SKU pronto: ${ignorados} ignorado(s) por falta de fotos oficiais (rode o Fotos Anúncios).` : 'Nenhum SKU atende aos filtros.'));
       if (skus.length) await buscarLinhasAnuncioCriar(skus);
     } catch (e: any) {
       alert(e?.message || 'Erro ao aplicar os filtros.');
@@ -2610,6 +2612,9 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
               </label>
               <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--gray-700)' }}>
                 <input type="checkbox" checked={fComEstoque} onChange={() => setFComEstoque((v) => !v)} /> Somente com estoque
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--gray-700)' }}>
+                <input type="checkbox" checked={fComFotos} onChange={() => setFComFotos((v) => !v)} /> Somente com fotos já processadas
               </label>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                 <button type="button" onClick={aplicarFiltrosSkus} disabled={fBuscando || anuncioCriarBuscando} style={{ ...s.btn, background: '#7c3aed', color: '#fff', padding: '6px 14px', fontSize: 12.5, opacity: fBuscando || anuncioCriarBuscando ? 0.6 : 1 }}>{fBuscando ? 'Filtrando...' : 'Filtrar e buscar'}</button>

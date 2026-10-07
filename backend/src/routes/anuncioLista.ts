@@ -4,7 +4,7 @@
 // pre-cadastro nao guarda ML) e vinculos que existem so no Bling nao entram — a tela mostra isso depois da busca.
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
-import { skuBaseAnuncio } from '../lib/anuncioBase';
+import { skuBaseAnuncio, contarFotosOficiais } from '../lib/anuncioBase';
 
 export const anuncioListaRouter = Router();
 
@@ -40,7 +40,8 @@ anuncioListaRouter.post('/skus', async (req, res, next) => {
     const mks: Mk[] = (Array.isArray(b.marketplaces) ? b.marketplaces : TODOS).filter((m: any) => TODOS.includes(m));
     const avaliados: Mk[] = mks.length ? mks : TODOS;
 
-    type Item = { sku: string; data: Date; estoque: number; ids: Record<Mk, boolean> };
+    const comFotos = b.comFotos !== false; // so SKUs cuja pasta ja esta na pasta oficial da moto (Fotos Anuncios processado)
+    type Item = { sku: string; motoId: number; data: Date; estoque: number; ids: Record<Mk, boolean> };
     const porSku = new Map<string, Item>();
 
     if (origem !== 'precadastro') {
@@ -51,11 +52,11 @@ anuncioListaRouter.post('/skus', async (req, res, next) => {
           ...(comEstoque ? { disponivel: true } : {}),
           ...(busca ? { OR: [{ idPeca: { contains: busca, mode: 'insensitive' } }, { descricao: { contains: busca, mode: 'insensitive' } }] } : {}),
         },
-        select: { idPeca: true, cadastro: true, disponivel: true, shopeeItemId: true, magaluItemId: true, nuvemshopProdutoId: true, mercadoLivreItemId: true },
+        select: { idPeca: true, motoId: true, cadastro: true, disponivel: true, shopeeItemId: true, magaluItemId: true, nuvemshopProdutoId: true, mercadoLivreItemId: true },
       } as any);
       for (const p of pecas) {
         const sku = skuBaseAnuncio(p.idPeca);
-        const it = porSku.get(sku) || { sku, data: new Date(p.cadastro), estoque: 0, ids: { shopee: false, magalu: false, nuvemshop: false, 'mercado-livre': false } as Record<Mk, boolean> };
+        const it = porSku.get(sku) || { sku, motoId: Number(p.motoId), data: new Date(p.cadastro), estoque: 0, ids: { shopee: false, magalu: false, nuvemshop: false, 'mercado-livre': false } as Record<Mk, boolean> };
         if (p.disponivel) it.estoque += 1;
         if (p.shopeeItemId) it.ids.shopee = true;
         if (p.magaluItemId) it.ids.magalu = true;
@@ -73,14 +74,14 @@ anuncioListaRouter.post('/skus', async (req, res, next) => {
           ...(motoId ? { motoId } : {}),
           ...(busca ? { OR: [{ idPeca: { contains: busca, mode: 'insensitive' } }, { descricao: { contains: busca, mode: 'insensitive' } }] } : {}),
         },
-        select: { idPeca: true, createdAt: true, estoque: true, shopeeItemId: true, magaluItemId: true, nuvemshopProdutoId: true },
+        select: { idPeca: true, motoId: true, createdAt: true, estoque: true, shopeeItemId: true, magaluItemId: true, nuvemshopProdutoId: true },
       });
       for (const c of cads) {
         const sku = skuBaseAnuncio(c.idPeca);
         if (porSku.has(sku)) continue; // a Peca finalizada tem precedencia
         if (comEstoque && !(Number(c.estoque) >= 1)) continue;
         porSku.set(sku, {
-          sku, data: new Date(c.createdAt), estoque: Math.max(1, Number(c.estoque) || 1),
+          sku, motoId: Number(c.motoId), data: new Date(c.createdAt), estoque: Math.max(1, Number(c.estoque) || 1),
           ids: { shopee: !!c.shopeeItemId, magalu: !!c.magaluItemId, nuvemshop: !!c.nuvemshopProdutoId, 'mercado-livre': false },
         });
       }
@@ -92,6 +93,20 @@ anuncioListaRouter.post('/skus', async (req, res, next) => {
     if (anuncios === 'faltando') itens = itens.filter((i) => avaliados.some((m) => !i.ids[m]));
     itens.sort((a, c) => (ordem === 'antigos' ? a.data.getTime() - c.data.getTime() : c.data.getTime() - a.data.getTime()) || a.sku.localeCompare(c.sku));
 
-    res.json({ ok: true, total: itens.length, skus: itens.slice(0, limite).map((i) => i.sku) });
+    // Fotos oficiais: so entra SKU que passaria pelo bloqueio "Fotos Anuncios ainda nao foi processado". Confere na ordem ate juntar
+    // `limite` SKUs validos (varre no maximo 4x o limite / 200, 5 em paralelo — cada conferencia consulta o Drive, com cache).
+    let selecionados = itens;
+    let semFotos = 0;
+    if (comFotos) {
+      selecionados = [];
+      const alvo = itens.slice(0, Math.min(itens.length, Math.min(200, limite * 4)));
+      for (let i = 0; i < alvo.length && selecionados.length < limite; i += 5) {
+        const lote = alvo.slice(i, i + 5);
+        const qtds = await Promise.all(lote.map((it) => contarFotosOficiais(it.motoId, it.sku).catch(() => 0)));
+        lote.forEach((it, k) => { if (qtds[k] > 0) selecionados.push(it); else semFotos += 1; });
+      }
+    }
+
+    res.json({ ok: true, total: itens.length, semFotos, skus: selecionados.slice(0, limite).map((i) => i.sku) });
   } catch (e) { next(e); }
 });

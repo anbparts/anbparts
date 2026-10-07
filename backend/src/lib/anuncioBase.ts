@@ -11,7 +11,7 @@ import { buscarFotosDriveSku } from './fotos-cadastro';
 // Conta as fotos do SKU na PASTA OFICIAL da moto (so la o Fotos Anuncios ja processou). Cache curto
 // porque a mesma busca da aba Anuncio consulta isso 1x por marketplace.
 const cacheFotos = new Map<string, { qtd: number; expira: number }>();
-async function contarFotosOficiais(motoId: number, sku: string): Promise<number> {
+export async function contarFotosOficiais(motoId: number, sku: string): Promise<number> {
   const chave = `${motoId}|${sku}`;
   const hit = cacheFotos.get(chave);
   if (hit && hit.expira > Date.now()) return hit.qtd;
