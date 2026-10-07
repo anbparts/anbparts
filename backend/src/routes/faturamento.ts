@@ -145,7 +145,11 @@ faturamentoRouter.get('/tempo-giro', async (req, res, next) => {
       .map((p) => {
         const cad = new Date(p.cadastro);
         const venda = new Date(p.dataVenda as Date);
-        const diasGiro = Math.max(0, Math.round((venda.getTime() - cad.getTime()) / 86400000));
+        // `dataVenda` e' so DATA (00:00 UTC) e `cadastro` tem HORA: comparar os instantes derrubava venda no MESMO dia do cadastro
+        // (venda 00:00 < cadastro 13:07). Compara por DIA de calendario (cadastro no horario de Brasilia, UTC-3).
+        const diaCad = new Date(cad.getTime() - 3 * 3600000).toISOString().slice(0, 10);
+        const diaVenda = venda.toISOString().slice(0, 10);
+        const diasGiro = Math.max(0, Math.round((Date.parse(diaVenda) - Date.parse(diaCad)) / 86400000));
         return {
           idPeca: p.idPeca,
           descricao: p.descricao || '',
@@ -159,11 +163,13 @@ faturamentoRouter.get('/tempo-giro', async (req, res, next) => {
           anoVenda: venda.getFullYear(),
           mesVenda: venda.getMonth() + 1,
           diasGiro,
+          diaCad,
+          diaVenda,
           valor: Number(p.precoML),
         };
       })
-      // cadastro > dataVenda seria dado inconsistente (ex.: migracao antiga) — nao entra na analise.
-      .filter((l) => new Date(l.dataVenda as Date) >= new Date(l.cadastro));
+      // venda ANTES do dia do cadastro seria dado inconsistente (ex.: migracao antiga) — nao entra na analise.
+      .filter((l) => l.diaVenda >= l.diaCad);
 
     res.json({ ok: true, linhas });
   } catch (e) { next(e); }
