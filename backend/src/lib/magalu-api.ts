@@ -261,8 +261,9 @@ export async function magaluTracesPorCodigo(code: string): Promise<Array<{ sever
   }
 }
 
-// O Magalu processa a criacao do SKU de forma assincrona e as vezes demora: espera ate ~60s (o proxy do Next aceita 120s).
-export async function magaluAguardarSku(sku: string, tentativas = 20, intervaloMs = 3000) {
+// O Magalu processa a criacao do SKU de forma assincrona e as vezes demora (visto: >60s em 2 de 14 SKUs): espera ate ~90s
+// (o proxy do Next aceita 180s — ver frontend/next.config.js).
+export async function magaluAguardarSku(sku: string, tentativas = 30, intervaloMs = 3000) {
   let ultimoErro = '';
   for (let i = 0; i < tentativas; i += 1) {
     try {
