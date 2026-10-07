@@ -313,7 +313,13 @@ shopeeRouter.post('/anuncio/criar', async (req, res, next) => {
 
     const criado = await shopeeAddItem({
       itemName: peca.descricao.slice(0, 120),
-      description: descricaoBling || peca.descricao,
+      // A Shopee exige 10 a 5000 caracteres na descricao: corta em 5000 (de preferencia numa quebra de linha, pra nao partir frase).
+      description: ((texto: string) => {
+        if (texto.length <= 5000) return texto;
+        const corte = texto.slice(0, 5000);
+        const quebra = corte.lastIndexOf('\n');
+        return (quebra > 4000 ? corte.slice(0, quebra) : corte).trim();
+      })(String(descricaoBling || peca.descricao || '')),
       price: Number(peca.precoML),
       weightKg: peso,
       packageHeightCm: Number(peca.altura),
