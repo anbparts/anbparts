@@ -328,10 +328,9 @@ function origemBlingParaMagalu(origem: any): 'national' | 'imported' | null {
 // tecnica da categoria, NCM e origem. Descricao/NCM/origem vem do Bling (se estiver conectado);
 // sem Bling, usa texto proprio montado a partir dos dados da peca.
 // Ficha tecnica do Magalu NAO aceita "/" (retorna "Caracteres invalidos nao sao permitidos"): troca por "-" e "N/A" por
-// "Nao se aplica". Excecao: "Medida do Pneu", cujo formato oficial e' 175/70R13 82T.
+// "Nao se aplica". Vale pra TODOS os campos, inclusive "Medida do Pneu" (o portal rejeita "/" ate nesse, apesar do exemplo da doc).
 function limparValorFicha(chave: string, valor: any) {
   const s = String(valor ?? '');
-  if (chave === 'medida do pneu') return s;
   return s.replace(/\bN\s*\/\s*A\b/gi, 'Não se aplica').replace(/\s*\/\s*/g, '-');
 }
 
