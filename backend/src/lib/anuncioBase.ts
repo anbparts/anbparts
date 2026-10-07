@@ -83,7 +83,8 @@ export async function carregarAnuncioBase(skuInput: string): Promise<AnuncioBase
 
   if (peca) {
     const estoque = await prisma.peca.count({
-      where: { OR: [{ idPeca: sku }, { idPeca: { startsWith: `${sku}-` } }], disponivel: true },
+      // Peca devolvida com etiqueta Detran pendente ainda nao foi efetivada no estoque: nao conta pra anunciar.
+      where: { OR: [{ idPeca: sku }, { idPeca: { startsWith: `${sku}-` } }], disponivel: true, etiquetaPendente: false },
     });
     return {
       origem: 'peca',

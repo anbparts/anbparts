@@ -49,15 +49,16 @@ anuncioListaRouter.post('/skus', async (req, res, next) => {
         where: {
           emPrejuizo: false, sucata: false,
           ...(motoId ? { motoId } : {}),
-          ...(comEstoque ? { disponivel: true } : {}),
+          // Peca devolvida com etiqueta Detran PENDENTE ainda nao foi efetivada no estoque (disponivel=true so no sistema): fora.
+          ...(comEstoque ? { disponivel: true, etiquetaPendente: false } : {}),
           ...(busca ? { OR: [{ idPeca: { contains: busca, mode: 'insensitive' } }, { descricao: { contains: busca, mode: 'insensitive' } }] } : {}),
         },
-        select: { idPeca: true, motoId: true, cadastro: true, disponivel: true, shopeeItemId: true, magaluItemId: true, nuvemshopProdutoId: true, mercadoLivreItemId: true },
+        select: { idPeca: true, motoId: true, cadastro: true, disponivel: true, etiquetaPendente: true, shopeeItemId: true, magaluItemId: true, nuvemshopProdutoId: true, mercadoLivreItemId: true },
       } as any);
       for (const p of pecas) {
         const sku = skuBaseAnuncio(p.idPeca);
         const it = porSku.get(sku) || { sku, motoId: Number(p.motoId), data: new Date(p.cadastro), estoque: 0, ids: { shopee: false, magalu: false, nuvemshop: false, 'mercado-livre': false } as Record<Mk, boolean> };
-        if (p.disponivel) it.estoque += 1;
+        if (p.disponivel && !p.etiquetaPendente) it.estoque += 1;
         if (p.shopeeItemId) it.ids.shopee = true;
         if (p.magaluItemId) it.ids.magalu = true;
         if (p.nuvemshopProdutoId) it.ids.nuvemshop = true;
