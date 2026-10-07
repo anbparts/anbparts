@@ -9,12 +9,12 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { blingReq } from './bling';
-import { carregarAnuncioBase, skuBaseAnuncio } from '../lib/anuncioBase';
+import { carregarAnuncioBase, skuBaseAnuncio, gravarIdsAnuncio } from '../lib/anuncioBase';
 import { resolverBlingProdutoId } from '../lib/anuncioPreparar';
 import { ML_LOJA_BLING_ID } from '../lib/mlCategorias';
 import { shopeeGetItemBaseInfo } from '../lib/shopee-api';
-import { magaluGetSku } from '../lib/magalu-api';
-import { nuvemReq } from './nuvemshop';
+import { magaluGetSku, magaluAtualizarConteudoSku } from '../lib/magalu-api';
+import { nuvemReq, buscarProdutoNuvemshopPorSku } from './nuvemshop';
 
 export const anuncioVinculosRouter = Router();
 
@@ -64,6 +64,10 @@ async function situacaoNoMarketplace(mk: Mk, sku: string, id: string | null): Pr
   return null;
 }
 
+// SKUs do chamado aberto no Magalu (#151916890): NAO mexer ate eles responderem.
+// Trava: exclusao no marketplace (Magalu = desativar o SKU) deixada DESLIGADA ate o Bruno liberar. Mudar para true pra ativar.
+const EXCLUIR_NO_MARKETPLACE_ATIVO = false;
+const MAGALU_SKUS_INTOCAVEIS = new Set(['BM03_0107', 'BM03_0119', 'BM03_0084']);
 const dormir = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 async function lojasBling(): Promise<Record<Mk, number | null>> {
@@ -215,6 +219,65 @@ anuncioVinculosRouter.post('/consultar', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// POST /anuncio-vinculos/adotar — body: { sku, marketplace }. Quando o ID do NOSSO sistema esta errado/vazio mas o BLING tem o
+// vinculo certo (ex: ID antigo de teste/sandbox), grava no sistema o ID que o Bling tem — depois de CONFERIR no proprio
+// marketplace que o anuncio existe e e' desse SKU. Nao altera nada no Bling nem no marketplace (so leitura la).
+anuncioVinculosRouter.post('/adotar', async (req, res) => {
+  try {
+    const sku = skuBaseAnuncio(req.body?.sku);
+    const mk = String(req.body?.marketplace || '') as Mk;
+    if (!sku) return res.status(400).json({ error: 'sku obrigatorio' });
+    if (!MARKETPLACES.includes(mk)) return res.status(400).json({ error: 'marketplace invalido' });
+    const base = await carregarAnuncioBase(sku);
+    if (!base) return res.status(404).json({ error: 'SKU nao encontrado no ANB.' });
+
+    const lojas = await lojasBling();
+    const blingProdutoId = await resolverBlingProdutoId(base);
+    let codigoBling = '';
+    if (mk === 'mercado-livre') {
+      const r = await blingReq(`/anuncios?idProduto=${blingProdutoId}&limite=5&tipoIntegracao=MercadoLivre&idLoja=${ML_LOJA_BLING_ID}`) as any;
+      const a = (Array.isArray(r?.data) ? r.data : [])[0];
+      codigoBling = String(a?.anuncioLoja?.id || '');
+    } else {
+      const lojaId = lojas[mk];
+      if (!lojaId) return res.status(400).json({ error: 'Loja do Bling desse marketplace nao configurada.' });
+      const r = await blingReq(`/produtos/lojas?idProduto=${blingProdutoId}&idLoja=${lojaId}&limite=5`) as any;
+      codigoBling = String((Array.isArray(r?.data) ? r.data : [])[0]?.codigo || '');
+    }
+    if (!codigoBling) return res.status(400).json({ error: 'O Bling nao tem vinculo desse marketplace para este SKU.' });
+
+    // Confere no proprio marketplace antes de gravar.
+    let idFinal = '';
+    if (mk === 'shopee') {
+      const id = codigoBling.replace(/\D/g, '');
+      const item: any = await shopeeGetItemBaseInfo(id).catch(() => null);
+      if (!item) return res.status(400).json({ error: `O item ${id} (do Bling) nao existe na Shopee — nao adotei.` });
+      if (String(item.item_sku || '') && String(item.item_sku) !== sku) return res.status(400).json({ error: `O item ${id} da Shopee e' do SKU "${item.item_sku}", nao deste (${sku}) — nao adotei.` });
+      idFinal = id;
+      await gravarIdsAnuncio(sku, { shopeeItemId: idFinal } as any);
+    } else if (mk === 'magalu') {
+      const id = codigoBling.split('/')[0];
+      const d: any = await magaluGetSku(id).catch(() => null);
+      if (!d) return res.status(400).json({ error: `O SKU ${id} nao existe no Magalu — nao adotei.` });
+      idFinal = id;
+      await gravarIdsAnuncio(sku, { magaluItemId: idFinal } as any);
+    } else if (mk === 'nuvemshop') {
+      // O codigo do Bling pode ser o ID da VARIANTE: o ID certo do produto vem da busca por SKU na loja.
+      const p: any = await buscarProdutoNuvemshopPorSku(sku, true);
+      if (!p?.id) return res.status(400).json({ error: 'Produto nao encontrado na Nuvemshop pelo SKU — nao adotei.' });
+      idFinal = String(p.id);
+      await gravarIdsAnuncio(sku, { nuvemshopProdutoId: idFinal } as any);
+    } else {
+      idFinal = codigoBling;
+      await prisma.peca.updateMany({ where: { OR: [{ idPeca: sku }, { idPeca: { startsWith: `${sku}-` } }] }, data: { mercadoLivreItemId: idFinal } as any });
+    }
+    console.log(`[anuncio-vinculos] ${sku} / ${mk}: ID do sistema ajustado para ${idFinal} (conforme Bling, conferido no marketplace)`);
+    res.json({ ok: true, sku, marketplace: mk, idAdotado: idFinal });
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message || 'Erro ao adotar o ID do Bling' });
+  }
+});
+
 // POST /anuncio-vinculos/remover — body: { sku, marketplace, alvo: 'sistema' | 'sistema_bling' }.
 anuncioVinculosRouter.post('/remover', async (req, res) => {
   try {
@@ -223,14 +286,39 @@ anuncioVinculosRouter.post('/remover', async (req, res) => {
     const alvo = String(req.body?.alvo || '');
     if (!sku) return res.status(400).json({ error: 'sku obrigatorio' });
     if (!MARKETPLACES.includes(mk)) return res.status(400).json({ error: 'marketplace invalido' });
-    if (alvo !== 'sistema' && alvo !== 'sistema_bling') return res.status(400).json({ error: 'alvo deve ser "sistema" ou "sistema_bling"' });
+    if (alvo !== 'sistema' && alvo !== 'sistema_bling' && alvo !== 'sistema_bling_marketplace') return res.status(400).json({ error: 'alvo invalido' });
+    if (alvo === 'sistema_bling_marketplace' && !EXCLUIR_NO_MARKETPLACE_ATIVO) return res.status(400).json({ error: 'Exclusao no marketplace ainda nao esta ativada.' });
+    if (alvo === 'sistema_bling_marketplace' && mk !== 'magalu') return res.status(400).json({ error: 'A exclusao no marketplace so esta disponivel para o Magalu por enquanto.' });
 
     const base = await carregarAnuncioBase(sku);
     if (!base) return res.status(404).json({ error: 'SKU nao encontrado no ANB (nem em Pecas, nem no pre-cadastro).' });
 
     const removidoNoBling: string[] = [];
+    let marketplaceFeito = '';
+
+    // Marketplace PRIMEIRO (se falhar, nada e' apagado no Bling nem no sistema). A API do Magalu NAO tem exclusao
+    // de SKU: o maximo possivel e' DESATIVAR (PATCH active:false). So permite se o anuncio NAO estiver publicado.
+    if (alvo === 'sistema_bling_marketplace') {
+      if (MAGALU_SKUS_INTOCAVEIS.has(sku)) return res.status(400).json({ error: `${sku} esta no chamado aberto no Magalu (#151916890): nao mexer ate responderem.` });
+      let st = '';
+      try {
+        const d: any = await magaluGetSku(sku);
+        st = String(d?.status || '').toLowerCase();
+      } catch (e: any) {
+        if (!/nao encontrad|not found|404/i.test(String(e?.message || e))) throw e;
+        st = 'inexistente';
+      }
+      if (st === 'published' || st === 'active') return res.status(400).json({ error: `O anuncio ${sku} esta PUBLICADO no Magalu — por seguranca nao desativo anuncio publicado por aqui. Despublique no painel do Magalu e tente de novo.` });
+      if (st !== 'inexistente') {
+        await magaluAtualizarConteudoSku(sku, { active: false });
+        marketplaceFeito = `SKU ${sku} desativado no Magalu (status ${st || 'desconhecido'}); a API do Magalu nao permite excluir`;
+      } else {
+        marketplaceFeito = `SKU ${sku} nao existe mais no Magalu`;
+      }
+    }
+
     // Bling PRIMEIRO: se falhar, nada e' apagado aqui (o Bruno pode tentar de novo sem ficar inconsistente).
-    if (alvo === 'sistema_bling') {
+    if (alvo === 'sistema_bling' || alvo === 'sistema_bling_marketplace') {
       const lojas = await lojasBling();
       const lojaId = lojas[mk];
       const blingProdutoId = await resolverBlingProdutoId(base);
@@ -262,7 +350,7 @@ anuncioVinculosRouter.post('/remover', async (req, res) => {
     if (camposCadastro) await (prisma as any).cadastroPeca.updateMany({ where: { idPeca: sku }, data: camposCadastro }).catch(() => null);
 
     console.log(`[anuncio-vinculos] ${sku} / ${mk}: removido (${alvo})${removidoNoBling.length ? ` — Bling: ${removidoNoBling.join(', ')}` : ''}`);
-    res.json({ ok: true, sku, marketplace: mk, alvo, removidoNoBling });
+    res.json({ ok: true, sku, marketplace: mk, alvo, removidoNoBling, marketplace_acao: marketplaceFeito || undefined });
   } catch (e: any) {
     res.status(400).json({ error: e?.message || 'Erro ao remover o vinculo do anuncio' });
   }

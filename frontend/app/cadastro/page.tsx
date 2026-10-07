@@ -503,6 +503,7 @@ export default function CadastroPage() {
   const [anuncioVerificando, setAnuncioVerificando] = useState(false);
   const [skuCopiado, setSkuCopiado] = useState('');
   const [anuncioAtualizando, setAnuncioAtualizando] = useState('');
+  const [anuncioAdotando, setAnuncioAdotando] = useState('');
   const [excluirModal, setExcluirModal] = useState<{ sku: string; mk: AnuncioMarketplaceId } | null>(null);
   const [categoriaModalSku, setCategoriaModalSku] = useState<string | null>(null);
   const [categoriaModalMarketplace, setCategoriaModalMarketplace] = useState<AnuncioMarketplaceId>('shopee');
@@ -2343,6 +2344,25 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
     }));
   }
 
+  // ID do sistema errado/vazio mas o Bling tem o vinculo certo: grava no sistema o ID do Bling (conferido no marketplace).
+  async function adotarIdDoBling(sku: string, mk: AnuncioMarketplaceId) {
+    const nome = ANUNCIO_MARKETPLACES.find((m) => m.id === mk)?.label || mk;
+    if (!confirm(`Usar o ID que o Bling tem para o SKU ${sku} no ${nome} como ID do sistema?\n\nO sistema confere antes no próprio ${nome} se o anúncio existe e é deste SKU. Não altera nada no Bling nem no ${nome}.`)) return;
+    setAnuncioAdotando(`${sku}|${mk}`);
+    try {
+      const resp = await fetch(`${API}/anuncio-vinculos/adotar`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sku, marketplace: mk }) });
+      const data = await readApiResponse(resp, 'Erro ao ajustar o ID do sistema');
+      alert(`ID do sistema no ${nome} ajustado para ${data.idAdotado}.`);
+      setAnuncioStatusRapido((prev) => ({ ...prev, [sku]: { ...(prev[sku] || {}), [mk]: null } }));
+      await recarregarMarketplaceDaLinha(sku, mk);
+      await Promise.all([consultarStatusRapido([sku]), consultarVinculos([sku])]);
+    } catch (e: any) {
+      alert(e?.message || 'Erro ao ajustar o ID do sistema.');
+    } finally {
+      setAnuncioAdotando('');
+    }
+  }
+
   // Reenvia titulo, condicao, descricao e ficha tecnica de um anuncio JA existente (hoje: Magalu — unico com PATCH de conteudo).
   async function atualizarAnuncioExistente(sku: string, mk: AnuncioMarketplaceId) {
     if (mk !== 'magalu') return alert('Atualizar o conteúdo de um anúncio existente só está disponível para o Magalu por enquanto.');
@@ -2737,6 +2757,9 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
                               {mp.status === 'erro' && <div style={{ fontSize: 11.5, color: '#dc2626' }}>✗ {mp.erroProcessamento}</div>}
                             </div>
                             <div>
+                              {v && (v.status === 'divergente' || v.status === 'so_bling') && v.blingCodigo && (
+                                <button type="button" disabled={anuncioAdotando === `${linha.sku}|${mk}` || anuncioCriarProcessando} onClick={() => adotarIdDoBling(linha.sku, mk)} title="Grava no sistema o ID que o Bling tem (depois de conferir no marketplace)" style={{ fontSize: 11, color: '#166534', background: 'var(--white)', border: '1px solid #bbf7d0', borderRadius: 5, padding: '2px 10px', cursor: 'pointer', marginBottom: 4, display: 'block' }}>{anuncioAdotando === `${linha.sku}|${mk}` ? 'Ajustando...' : 'Usar ID do Bling'}</button>
+                              )}
                               {mk === 'magalu' && mp.jaTemAnuncio && (
                                 <button type="button" disabled={anuncioAtualizando === `${linha.sku}|${mk}` || anuncioCriarProcessando} onClick={() => atualizarAnuncioExistente(linha.sku, mk)} title="Reenvia título, condição, descrição e ficha técnica atuais para o anúncio que já existe no Magalu" style={{ fontSize: 11, color: '#1d4ed8', background: 'var(--white)', border: '1px solid #bfdbfe', borderRadius: 5, padding: '2px 10px', cursor: 'pointer', marginBottom: 4, display: 'block' }}>{anuncioAtualizando === `${linha.sku}|${mk}` ? 'Atualizando...' : 'Atualizar'}</button>
                               )}
