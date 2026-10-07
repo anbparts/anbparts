@@ -504,6 +504,18 @@ export default function CadastroPage() {
   const [skuCopiado, setSkuCopiado] = useState('');
   const [anuncioAtualizando, setAnuncioAtualizando] = useState('');
   const [anuncioAdotando, setAnuncioAdotando] = useState('');
+  // Filtros da aba Anuncio (alternativa a colar SKUs): moto, estoque, quem ainda nao tem anuncio, limite...
+  const [fAberto, setFAberto] = useState(false);
+  const [fMotoId, setFMotoId] = useState('');
+  const [fComEstoque, setFComEstoque] = useState(true);
+  const [fAnuncios, setFAnuncios] = useState<'todos' | 'faltando' | 'nenhum'>('faltando');
+  const [fOrigem, setFOrigem] = useState<'ambos' | 'pecas' | 'precadastro'>('ambos');
+  const [fBusca, setFBusca] = useState('');
+  const [fOrdem, setFOrdem] = useState<'recentes' | 'antigos'>('recentes');
+  const [fLimite, setFLimite] = useState('25');
+  const [fMotos, setFMotos] = useState<{ id: number; rotulo: string }[]>([]);
+  const [fBuscando, setFBuscando] = useState(false);
+  const [fInfo, setFInfo] = useState('');
   const [excluirModal, setExcluirModal] = useState<{ sku: string; mk: AnuncioMarketplaceId } | null>(null);
   const [categoriaModalSku, setCategoriaModalSku] = useState<string | null>(null);
   const [categoriaModalMarketplace, setCategoriaModalMarketplace] = useState<AnuncioMarketplaceId>('shopee');
@@ -2261,8 +2273,42 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
     }
   }
 
-  async function buscarLinhasAnuncioCriar() {
-    const skus = normalizarListaSkus(anuncioCriarSkusInput);
+  async function carregarMotosFiltro() {
+    if (fMotos.length) return;
+    try {
+      const resp = await fetch(`${API}/anuncio-lista/motos`, { credentials: 'include' });
+      const data = await readApiResponse(resp, 'Erro ao carregar as motos');
+      setFMotos(Array.isArray(data.motos) ? data.motos : []);
+    } catch (e: any) {
+      console.warn('[anuncio] motos:', e?.message || e);
+    }
+  }
+  async function aplicarFiltrosSkus() {
+    if (!anuncioMarketplacesSelecionados.size) return alert('Selecione ao menos 1 marketplace.');
+    setFBuscando(true);
+    setFInfo('');
+    try {
+      const resp = await fetch(`${API}/anuncio-lista/skus`, {
+        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          motoId: fMotoId ? Number(fMotoId) : undefined, comEstoque: fComEstoque, anuncios: fAnuncios, origem: fOrigem,
+          busca: fBusca.trim() || undefined, ordem: fOrdem, limite: Number(fLimite) || 25, marketplaces: Array.from(anuncioMarketplacesSelecionados),
+        }),
+      });
+      const data = await readApiResponse(resp, 'Erro ao aplicar os filtros');
+      const skus: string[] = Array.isArray(data.skus) ? data.skus : [];
+      setAnuncioCriarSkusInput(skus.join('\n'));
+      setFInfo(skus.length ? `${skus.length} de ${data.total} SKU(s) que atendem aos filtros` : 'Nenhum SKU atende aos filtros.');
+      if (skus.length) await buscarLinhasAnuncioCriar(skus);
+    } catch (e: any) {
+      alert(e?.message || 'Erro ao aplicar os filtros.');
+    } finally {
+      setFBuscando(false);
+    }
+  }
+
+  async function buscarLinhasAnuncioCriar(skusProntos?: string[]) {
+    const skus = Array.isArray(skusProntos) ? skusProntos : normalizarListaSkus(anuncioCriarSkusInput);
     if (!skus.length) return alert('Informe ao menos 1 SKU.');
     const marketplaces = Array.from(anuncioMarketplacesSelecionados);
     if (!marketplaces.length) return alert('Selecione ao menos 1 marketplace.');
@@ -2524,6 +2570,55 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
             </label>
           ))}
         </div>
+        <div style={{ marginBottom: 10 }}>
+          <button type="button" onClick={() => { setFAberto((v) => !v); carregarMotosFiltro(); }} style={{ fontSize: 12, color: '#6d28d9', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 700 }}>
+            {fAberto ? '▾ Filtros' : '▸ Filtros (moto, estoque, sem anúncio, limite…)'}
+          </button>
+          {fAberto && (
+            <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fit, minmax(190px, 1fr))', gap: 10, background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: 12 }}>
+              <label style={{ display: 'grid', gap: 3, fontSize: 11.5, color: 'var(--gray-600)' }}>Moto
+                <select value={fMotoId} onChange={(e: any) => setFMotoId(e.target.value)} style={{ ...s.input, padding: '5px 6px', fontSize: 12.5 }}>
+                  <option value="">Todas as motos</option>
+                  {fMotos.map((m) => <option key={m.id} value={String(m.id)}>{m.rotulo}</option>)}
+                </select>
+              </label>
+              <label style={{ display: 'grid', gap: 3, fontSize: 11.5, color: 'var(--gray-600)' }}>Anúncios (nos marketplaces marcados acima)
+                <select value={fAnuncios} onChange={(e: any) => setFAnuncios(e.target.value)} style={{ ...s.input, padding: '5px 6px', fontSize: 12.5 }}>
+                  <option value="faltando">Falta anúncio em algum</option>
+                  <option value="nenhum">Sem nenhum anúncio</option>
+                  <option value="todos">Todos (com ou sem anúncio)</option>
+                </select>
+              </label>
+              <label style={{ display: 'grid', gap: 3, fontSize: 11.5, color: 'var(--gray-600)' }}>Origem
+                <select value={fOrigem} onChange={(e: any) => setFOrigem(e.target.value)} style={{ ...s.input, padding: '5px 6px', fontSize: 12.5 }}>
+                  <option value="ambos">Peças e pré-cadastro</option>
+                  <option value="pecas">Só peças já cadastradas</option>
+                  <option value="precadastro">Só pré-cadastro</option>
+                </select>
+              </label>
+              <label style={{ display: 'grid', gap: 3, fontSize: 11.5, color: 'var(--gray-600)' }}>Contém no código/título
+                <input value={fBusca} onChange={(e: any) => setFBusca(e.target.value)} placeholder="ex: bengala, BM03_01" style={{ ...s.input, padding: '5px 6px', fontSize: 12.5 }} />
+              </label>
+              <label style={{ display: 'grid', gap: 3, fontSize: 11.5, color: 'var(--gray-600)' }}>Ordem
+                <select value={fOrdem} onChange={(e: any) => setFOrdem(e.target.value)} style={{ ...s.input, padding: '5px 6px', fontSize: 12.5 }}>
+                  <option value="recentes">Mais recentes primeiro</option>
+                  <option value="antigos">Mais antigos primeiro</option>
+                </select>
+              </label>
+              <label style={{ display: 'grid', gap: 3, fontSize: 11.5, color: 'var(--gray-600)' }}>Limite de SKUs
+                <input type="number" min={1} max={300} value={fLimite} onChange={(e: any) => setFLimite(e.target.value)} style={{ ...s.input, padding: '5px 6px', fontSize: 12.5 }} />
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--gray-700)' }}>
+                <input type="checkbox" checked={fComEstoque} onChange={() => setFComEstoque((v) => !v)} /> Somente com estoque
+              </label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <button type="button" onClick={aplicarFiltrosSkus} disabled={fBuscando || anuncioCriarBuscando} style={{ ...s.btn, background: '#7c3aed', color: '#fff', padding: '6px 14px', fontSize: 12.5, opacity: fBuscando || anuncioCriarBuscando ? 0.6 : 1 }}>{fBuscando ? 'Filtrando...' : 'Filtrar e buscar'}</button>
+                {fInfo && <span style={{ fontSize: 11.5, color: 'var(--gray-600)' }}>{fInfo}</span>}
+              </div>
+              <div style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--gray-500)' }}>"Tem anúncio" considera o ID gravado no nosso sistema; vínculos que existem só no Bling aparecem depois da busca, na própria linha.</div>
+            </div>
+          )}
+        </div>
         <textarea
           value={anuncioCriarSkusInput}
           onChange={(e: any) => setAnuncioCriarSkusInput(e.target.value)}
@@ -2532,7 +2627,7 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
           style={{ ...s.input, width: '100%', resize: 'vertical' as const, fontFamily: 'JetBrains Mono, monospace', fontSize: 12.5 }}
         />
         <button
-          onClick={buscarLinhasAnuncioCriar}
+          onClick={() => buscarLinhasAnuncioCriar()}
           disabled={anuncioCriarBuscando || !anuncioCriarSkusInput.trim() || anuncioMarketplacesSelecionados.size === 0}
           style={{ ...s.btn, marginTop: 10, background: '#7c3aed', color: '#fff', opacity: anuncioCriarBuscando || !anuncioCriarSkusInput.trim() || anuncioMarketplacesSelecionados.size === 0 ? 0.6 : 1 }}
         >
