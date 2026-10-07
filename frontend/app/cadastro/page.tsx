@@ -2315,10 +2315,8 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
       }
 
       for (const l of Array.from(porSku.values())) {
-        const pneuUsado = l.encontrado && /\bpneus?\b/i.test(String(l.descricao || '')) && !/\bnov[oa]s?\b/i.test(String(l.descricao || ''));
-        if (l.encontrado && (pneuUsado || !(Number(l.estoque) > 0))) {
+        if (l.encontrado && !(Number(l.estoque) > 0)) {
           l.semEstoque = true;
-          if (pneuUsado) l.bloqueioTexto = 'Pneu usado: venda proibida nos marketplaces (política de produtos)';
           for (const id of Object.keys(l.marketplaces) as AnuncioMarketplaceId[]) l.marketplaces[id] = { ...l.marketplaces[id], selecionado: false };
         }
       }

@@ -15,19 +15,6 @@ export function exigirFotosOficiais(base: Pick<AnuncioBase, 'fotosOficiais'>) {
   if (!base.fotosOficiais) throw new Error(MSG_FOTOS_NAO_PROCESSADAS);
 }
 
-// Pneu USADO nao pode ser anunciado nos marketplaces (a Shopee ja removeu um; Magalu/ML/Nuvemshop seguem a mesma politica e a
-// venda de pneu usado e' vedada). Identificado pela descricao ("pneu") e pela condicao (usado = padrao do cadastro).
-export const MSG_PNEU_USADO = 'Pneu usado: venda proibida nos marketplaces (politica de produtos). Anúncio bloqueado.';
-export function ehPneuUsado(base: { descricao?: string | null; condicao?: string | null }) {
-  const desc = String(base.descricao || '');
-  if (!/\bpneus?\b/i.test(desc)) return false;
-  if (String(base.condicao || '').toLowerCase() === 'novo') return false;
-  return true;
-}
-export function exigirNaoPneuUsado(base: { descricao?: string | null; condicao?: string | null }) {
-  if (ehPneuUsado(base)) throw new Error(MSG_PNEU_USADO);
-}
-
 const BLING_CONDICAO_NOVO = 1;
 const BLING_CONDICAO_USADO = 2;
 

@@ -8,7 +8,7 @@ import { prisma } from '../lib/prisma';
 import { blingReq } from './bling';
 import { buscarFotosDriveSku } from '../lib/fotos-cadastro';
 import { carregarAnuncioBase, skuBaseAnuncio, type AnuncioBase } from '../lib/anuncioBase';
-import { exigirNaoPneuUsado, exigirFotosOficiais, garantirProdutoAtivoNoBling, lerDadosBlingSku, resolverBlingProdutoId } from '../lib/anuncioPreparar';
+import { exigirFotosOficiais, garantirProdutoAtivoNoBling, lerDadosBlingSku, resolverBlingProdutoId } from '../lib/anuncioPreparar';
 import { carregarFolhasMoto, sugerirCategoriaML, verificarCategoriaML, ML_LOJA_BLING_ID } from '../lib/mlCategorias';
 
 export const mlAnuncioRouter = Router();
@@ -185,7 +185,6 @@ mlAnuncioRouter.post('/anuncio/criar', async (req, res) => {
     const base = await carregarAnuncioBase(sku);
     if (!base) return res.status(404).json({ error: 'SKU nao encontrado no ANB (nem em Pecas, nem no pre-cadastro).' });
     exigirFotosOficiais(base);
-    exigirNaoPneuUsado(base);
 
     if (!base.estoque) return res.status(400).json({ error: 'Nenhuma unidade disponivel em estoque pra esse SKU.' });
     const peso = base.pesoLiquido ?? base.pesoBruto ?? 0;
