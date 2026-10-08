@@ -147,6 +147,32 @@ type SeparacaoManualPedido = {
 
 const SEPARACAO_STATUS_KEY = 'anb:bling:vendas:separacao-pdfs';
 
+// Envio posterior: o rotulo muda sozinho conforme a data (a data de envio so some quando voce remove pelo botao "Envio posterior").
+function estadoEnvioPosterior(envioPrevisto?: string | null): 'posterior' | 'hoje' | 'atrasado' | null {
+  if (!envioPrevisto) return null;
+  const agora = new Date();
+  const hoje = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, '0')}-${String(agora.getDate()).padStart(2, '0')}`;
+  if (envioPrevisto > hoje) return 'posterior';
+  return envioPrevisto === hoje ? 'hoje' : 'atrasado';
+}
+
+function rotuloSeparacao(envioPrevisto: string | null | undefined, separadoEm: string) {
+  const base = separadoEm ? 'Separado' : 'Pendente';
+  const estado = estadoEnvioPosterior(envioPrevisto);
+  if (estado === 'posterior') return `${base} - Envio posterior`;
+  if (estado === 'hoje') return `${base} - Enviar hoje`;
+  if (estado === 'atrasado') return `${base} - Envio atrasado`;
+  return base;
+}
+
+function paletaSeparacao(envioPrevisto: string | null | undefined, separado: boolean) {
+  const estado = estadoEnvioPosterior(envioPrevisto);
+  if (estado === 'atrasado') return { borda: '#fecaca', bg: '#fef2f2', cor: '#b91c1c' };
+  if (estado === 'hoje') return { borda: '#bfdbfe', bg: '#eff6ff', cor: '#1d4ed8' };
+  if (estado === 'posterior') return { borda: '#fde68a', bg: '#fffbeb', cor: '#92400e' };
+  return separado ? { borda: '#bbf7d0', bg: '#f0fdf4', cor: '#15803d' } : { borda: '#fed7aa', bg: '#fff7ed', cor: '#c2410c' };
+}
+
 function calcularLiq(precoML: number, frete: number, taxaPct: number) {
   const taxaValor = parseFloat((precoML * taxaPct / 100).toFixed(2));
   const valorLiq = parseFloat((precoML - frete - taxaValor).toFixed(2));
@@ -1217,8 +1243,8 @@ export default function VendasBlingPage() {
                         <div style={{ minWidth: 0 }}>
                           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                             <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--blue-500)' }}>#{pedido.pedidoNum}</div>
-                            <span style={{ border: `1px solid ${separadoEm ? '#bbf7d0' : '#fed7aa'}`, background: separadoEm ? '#f0fdf4' : '#fff7ed', color: separadoEm ? '#15803d' : '#c2410c', borderRadius: 999, padding: '2px 8px', fontSize: 10.5, fontWeight: 800 }}>
-                              {pedido.envioPrevisto ? (separadoEm ? 'Separado - Envio posterior' : 'Pendente - Envio posterior') : (separadoEm ? 'Separado' : 'Pendente')}
+                            <span style={{ border: `1px solid ${paletaSeparacao(pedido.envioPrevisto, !!separadoEm).borda}`, background: paletaSeparacao(pedido.envioPrevisto, !!separadoEm).bg, color: paletaSeparacao(pedido.envioPrevisto, !!separadoEm).cor, borderRadius: 999, padding: '2px 8px', fontSize: 10.5, fontWeight: 800 }}>
+                              {rotuloSeparacao(pedido.envioPrevisto, separadoEm)}
                             </span>
                           </div>
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 10 }}>
@@ -1279,11 +1305,11 @@ export default function VendasBlingPage() {
                             <td style={{ padding: '8px 10px', fontWeight: 700, color: 'var(--blue-500)' }}>#{pedido.pedidoNum}</td>
                             <td style={{ padding: '8px 10px', color: 'var(--gray-800)' }}>{pedido.nomeCliente || <span style={{ color: 'var(--gray-400)' }}>—</span>}</td>
                             <td style={{ padding: '8px 10px', color: 'var(--gray-700)' }}>{fmtDate(pedido.dataVenda)}</td>
-                            <td style={{ padding: '8px 10px', color: pedido.envioPrevisto ? '#92400e' : 'var(--gray-400)', fontWeight: pedido.envioPrevisto ? 700 : 400 }}>{pedido.envioPrevisto ? fmtDate(pedido.envioPrevisto) : '—'}</td>
+                            <td style={{ padding: '8px 10px', color: pedido.envioPrevisto ? paletaSeparacao(pedido.envioPrevisto, !!separadoEm).cor : 'var(--gray-400)', fontWeight: pedido.envioPrevisto ? 700 : 400 }}>{pedido.envioPrevisto ? fmtDate(pedido.envioPrevisto) : '—'}</td>
                             <td style={{ padding: '8px 10px' }}>
-                              <span title={separadoEm ? `PDF gerado em ${fmtIsoDate(separadoEm)}${pedido.envioPrevisto ? ` · envio previsto ${fmtDate(pedido.envioPrevisto)}` : ''}` : 'Ainda sem PDF de separacao gerado'} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: `1px solid ${pedido.envioPrevisto ? '#fde68a' : separadoEm ? '#bbf7d0' : '#fed7aa'}`, background: pedido.envioPrevisto ? '#fffbeb' : separadoEm ? '#f0fdf4' : '#fff7ed', color: pedido.envioPrevisto ? '#92400e' : separadoEm ? '#15803d' : '#c2410c', borderRadius: 999, padding: '3px 8px', fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap' }}>
+                              <span title={separadoEm ? `PDF gerado em ${fmtIsoDate(separadoEm)}${pedido.envioPrevisto ? ` · envio previsto ${fmtDate(pedido.envioPrevisto)}` : ''}` : 'Ainda sem PDF de separacao gerado'} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: `1px solid ${paletaSeparacao(pedido.envioPrevisto, !!separadoEm).borda}`, background: paletaSeparacao(pedido.envioPrevisto, !!separadoEm).bg, color: paletaSeparacao(pedido.envioPrevisto, !!separadoEm).cor, borderRadius: 999, padding: '3px 8px', fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap' }}>
                                 <span>{separadoEm ? '✓' : '○'}</span>
-                                {pedido.envioPrevisto ? (separadoEm ? 'Separado - Envio posterior' : 'Pendente - Envio posterior') : (separadoEm ? 'Separado' : 'Pendente')}
+                                {rotuloSeparacao(pedido.envioPrevisto, separadoEm)}
                               </span>
                             </td>
                             <td style={{ padding: '8px 10px', color: 'var(--gray-800)' }}>{pedido.quantidadeItens}</td>
