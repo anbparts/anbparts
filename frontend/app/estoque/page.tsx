@@ -3293,7 +3293,7 @@ export default function EstoquePage() {
         const API = API_BASE;
         const baseSku = String(editPeca.idPeca || '').replace(/-\d+$/, '');
 
-        // Sincroniza preço e/ou título (descrição) com Bling + Mercado Livre + Nuvemshop
+        // Sincroniza preço e/ou título (descrição) com Bling + Mercado Livre + Nuvemshop + Shopee + Magalu
         try {
           const syncResp = await fetch(`${API}/cadastro/sync-preco-plataformas`, {
             method: 'POST', credentials: 'include',
@@ -3306,8 +3306,8 @@ export default function EstoquePage() {
           });
           const syncData = await syncResp.json();
           const r = syncData.resultados || {};
-          const nomes: Record<string, string> = { bling: 'Bling', ml: 'Mercado Livre', nuvemshop: 'Nuvemshop' };
-          const oks = Object.keys(nomes).filter((k) => r[k]?.ok).map((k) => nomes[k]);
+          const nomes: Record<string, string> = { bling: 'Bling', ml: 'Mercado Livre', nuvemshop: 'Nuvemshop', shopee: 'Shopee', magalu: 'Magalu' };
+          const oks = Object.keys(nomes).filter((k) => r[k]?.ok && !r[k]?.semAnuncio).map((k) => nomes[k]);
           const falhas = Object.keys(nomes).filter((k) => r[k] && !r[k].ok).map((k) => `${nomes[k]}: ${r[k].error || 'falha'}`);
           if (falhas.length) {
             alert(`Salvo no ANB.${oks.length ? ` Atualizado em: ${oks.join(', ')}.` : ''}\n\nFalhou em:\n${falhas.join('\n')}`);

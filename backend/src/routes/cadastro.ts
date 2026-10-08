@@ -12,6 +12,9 @@ import { sugerirShopeeCategoriaId } from '../lib/shopeeCategoria';
 import { sugerirMagaluCategoriaId } from '../lib/magaluCategoriaResolver';
 import { sugerirNuvemshopCategoriaId } from '../lib/nuvemshopCategoria';
 import { gerarTagsCadastroEmSegundoPlano } from '../lib/nuvemshopTags';
+import { shopeeReq } from '../lib/shopee-api';
+import { magaluSetPrice, magaluAtualizarConteudoSku, prepararTituloMagalu } from '../lib/magalu-api';
+import { carregarAnuncioBase } from '../lib/anuncioBase';
 
 const CAMPOS_COMPLETOS_WHERE = {
   peso: { not: null as null },
@@ -1734,7 +1737,7 @@ export async function syncPrecoPlataformas(skuInput: string, opts: { precoML?: n
   const baseSku = getBaseSku(sku);
   const BLING_READONLY = ['id', 'dataCriacao', 'dataAlteracao', 'imagemURL', 'imagens', 'depositos', 'variacoes', 'estrutura', 'categorias', 'anexos'];
 
-  type PlataformaResultado = { ok: boolean; error?: string };
+  type PlataformaResultado = { ok: boolean; error?: string; semAnuncio?: boolean };
   const resultados: Record<string, PlataformaResultado> = {};
 
     // ── 1. Bling ──────────────────────────────────────────────────────────────
@@ -1892,6 +1895,49 @@ export async function syncPrecoPlataformas(skuInput: string, opts: { precoML?: n
       }
     } catch (e: any) {
       resultados.nuvemshop = { ok: false, error: e?.message || 'Erro desconhecido' };
+    }
+
+    // ── 4. Shopee ─────────────────────────────────────────────────────────────
+    // update_price (preco) e update_item (titulo, max 120). Sem anuncio Shopee no SKU = nada a fazer (nao conta como falha).
+    try {
+      const baseAnuncio: any = await carregarAnuncioBase(baseSku);
+      const shopeeItemId = baseAnuncio?.shopeeItemId;
+      if (!shopeeItemId) {
+        resultados.shopee = { ok: true, semAnuncio: true } as any;
+      } else {
+        if (temPreco) {
+          const pr: any = await shopeeReq('/api/v2/product/update_price', { method: 'POST', body: { item_id: Number(shopeeItemId), price_list: [{ model_id: 0, original_price: Number(precoML.toFixed(2)) }] } });
+          const falha = pr?.response?.failure_list?.[0];
+          if (falha) throw new Error(`preco recusado pela Shopee: ${falha.failed_reason || 'falha'}`);
+        }
+        if (descricao) await shopeeReq('/api/v2/product/update_item', { method: 'POST', body: { item_id: Number(shopeeItemId), item_name: descricao.slice(0, 120) } });
+        resultados.shopee = { ok: true };
+      }
+    } catch (e: any) {
+      resultados.shopee = { ok: false, error: e?.message || 'Erro desconhecido' };
+    }
+
+    // ── 5. Magalu ─────────────────────────────────────────────────────────────
+    // Preco: POST/PATCH em /prices (idempotente). Titulo: PATCH do SKU, sem a palavra USADO (regra do Magalu). Sem SKU no Magalu = ignora.
+    try {
+      const baseAnuncio: any = await carregarAnuncioBase(baseSku);
+      if (!baseAnuncio?.magaluItemId) {
+        resultados.magalu = { ok: true, semAnuncio: true } as any;
+      } else {
+        if (temPreco) await magaluSetPrice(baseSku, precoML);
+        if (descricao) {
+          try {
+            await magaluAtualizarConteudoSku(baseSku, { title: prepararTituloMagalu(descricao).titulo.slice(0, 150) });
+          } catch (tErr: any) {
+            const msg = String(tErr?.message || tErr);
+            // 409: o Magalu esta analisando o SKU; o titulo pode ja ter sido aplicado.
+            resultados.magalu = { ok: false, error: `${temPreco ? 'Preco atualizado, mas o ' : 'O '}titulo nao foi confirmado${/409/.test(msg) ? ' (Magalu esta analisando o SKU agora; confira em alguns minutos)' : `: ${msg.slice(0, 140)}`}` };
+          }
+        }
+        if (!resultados.magalu) resultados.magalu = { ok: true };
+      }
+    } catch (e: any) {
+      resultados.magalu = { ok: false, error: e?.message || 'Erro desconhecido' };
     }
 
   const todosOk = Object.values(resultados).every(r => r.ok);

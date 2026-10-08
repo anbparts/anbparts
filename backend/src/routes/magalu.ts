@@ -6,6 +6,7 @@ import {
   magaluReq,
   magaluCreateSku,
   magaluSetPrice,
+  prepararTituloMagalu,
   magaluSetStock,
   magaluUpdateSkuImages,
   magaluGetSku,
@@ -329,18 +330,6 @@ function origemBlingParaMagalu(origem: any): 'national' | 'imported' | null {
 // sem Bling, usa texto proprio montado a partir dos dados da peca.
 // Ficha tecnica do Magalu NAO aceita "/" (retorna "Caracteres invalidos nao sao permitidos"): troca por "-" e "N/A" por
 // "Nao se aplica". Vale pra TODOS os campos, inclusive "Medida do Pneu" (o portal rejeita "/" ate nesse, apesar do exemplo da doc).
-// Titulo com a palavra USADO (ex: "Kit Parafuso Chassi e Motor HARLEY XL1200 2013 USADO"): no Magalu o titulo vai SEM a palavra
-// (USADO/USADA/Usd) e o titulo original passa a ser a 1a linha da descricao (ver montarConteudoMagalu).
-function prepararTituloMagalu(descricao: any) {
-  const original = String(descricao || '').trim();
-  const reUsado = /\b(usad[oa]s?|usd)\b/i;
-  const temUsado = reUsado.test(original);
-  const titulo = temUsado
-    ? original.replace(/\b(usad[oa]s?|usd)\b/gi, '').replace(/\s{2,}/g, ' ').replace(/\s+([,;:)\]])/g, '$1').trim()
-    : original;
-  return { original, titulo, temUsado };
-}
-
 function limparValorFicha(chave: string, valor: any) {
   const s = String(valor ?? '');
   return s.replace(/\bN\s*\/\s*A\b/gi, 'Não se aplica').replace(/\s*\/\s*/g, '-');

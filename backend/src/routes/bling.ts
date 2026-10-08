@@ -6771,6 +6771,9 @@ async function enriquecerSeparacaoComTextoNfe(pedidos: any[]) {
   }
 }
 
+// Cache (por processo) do nome do cliente de cada pedido — evita reconsultar o Bling a cada atualizacao da lista.
+const nomeClientePedidoCache = new Map<string, string>();
+
 blingRouter.get('/relatorio-separacao-manual/pedidos', async (req, res, next) => {
   try {
     const dataInicio = String(req.query?.dataInicio || '').trim();
@@ -6837,11 +6840,58 @@ blingRouter.get('/relatorio-separacao-manual/pedidos', async (req, res, next) =>
       return String(b.pedidoNum || '').localeCompare(String(a.pedidoNum || ''), 'pt-BR', { numeric: true, sensitivity: 'base' });
     });
 
+    // Nome do cliente (cache em memoria: o nome do pedido nao muda) e data de envio posterior, se houver.
+    // Pedidos ainda sem nome em cache sao buscados no Bling um a um (limite de chamadas/s), no maximo 60 por requisicao.
+    let consultasNovas = 0;
+    for (const p of pedidos as any[]) {
+      const chave = String(p.pedidoId);
+      if (!nomeClientePedidoCache.has(chave) && consultasNovas < 60) {
+        consultasNovas += 1;
+        try {
+          const detalhe = await blingReq(`/pedidos/vendas/${chave}`) as any;
+          const nome = String(detalhe?.data?.contato?.nome || '').trim();
+          if (nome) nomeClientePedidoCache.set(chave, nome);
+        } catch { /* sem nome: aparece vazio e tenta de novo na proxima atualizacao */ }
+        await new Promise((r) => setTimeout(r, 330));
+      }
+      p.nomeCliente = nomeClientePedidoCache.get(chave) || null;
+    }
+    const envios: any[] = await (prisma as any).blingPedidoEnvioPosterior.findMany({
+      where: { pedidoId: { in: (pedidos as any[]).map((p) => BigInt(p.pedidoId)) } },
+    }).catch(() => []);
+    const envioPorPedido = new Map<string, string>(envios.map((e: any) => [String(e.pedidoId), new Date(e.envioPrevisto).toISOString().split('T')[0]]));
+    for (const p of pedidos as any[]) p.envioPrevisto = envioPorPedido.get(String(p.pedidoId)) || null;
+
     res.json({
       ok: true,
       total: pedidos.length,
       pedidos,
     });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// POST /bling/pedido-envio-posterior — body: { pedidoId, envioPrevisto: 'YYYY-MM-DD' | null }. Define (ou remove, com null) a data em que
+// um pedido ja separado/a separar sera efetivamente ENVIADO. Aparece como coluna e como "Separado - Envio posterior" no relatorio.
+blingRouter.post('/pedido-envio-posterior', async (req, res, next) => {
+  try {
+    const pedidoId = Number(req.body?.pedidoId || 0);
+    if (!pedidoId) return res.status(400).json({ ok: false, error: 'pedidoId obrigatorio' });
+    const data = req.body?.envioPrevisto == null || req.body?.envioPrevisto === '' ? null : String(req.body.envioPrevisto).trim();
+    if (data !== null && !/^\d{4}-\d{2}-\d{2}$/.test(data)) return res.status(400).json({ ok: false, error: 'envioPrevisto deve ser YYYY-MM-DD' });
+
+    if (data === null) {
+      await (prisma as any).blingPedidoEnvioPosterior.deleteMany({ where: { pedidoId: BigInt(pedidoId) } });
+      return res.json({ ok: true, envioPrevisto: null });
+    }
+    const envioPrevisto = new Date(`${data}T00:00:00.000Z`);
+    await (prisma as any).blingPedidoEnvioPosterior.upsert({
+      where: { pedidoId: BigInt(pedidoId) },
+      create: { pedidoId: BigInt(pedidoId), envioPrevisto },
+      update: { envioPrevisto, atualizadoEm: new Date() },
+    });
+    res.json({ ok: true, envioPrevisto: data });
   } catch (e) {
     next(e);
   }

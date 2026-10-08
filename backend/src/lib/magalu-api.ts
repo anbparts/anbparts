@@ -407,3 +407,16 @@ export async function magaluMontarDatasheet(categoryId: string, valores: Record<
 export async function magaluAtualizarConteudoSku(sku: string, parcial: Record<string, any>) {
   return magaluReq(`/seller/v1/portfolios/skus/${encodeURIComponent(sku)}`, { method: "PATCH", body: parcial });
 }
+
+// Titulo com a palavra USADO (ex: "Kit Parafuso Chassi e Motor HARLEY XL1200 2013 USADO"): no Magalu o titulo vai SEM a palavra
+// (USADO/USADA/Usd) e o titulo original passa a ser a 1a linha da descricao (ver montarConteudoMagalu).
+export function prepararTituloMagalu(descricao: any) {
+  const original = String(descricao || '').trim();
+  const reUsado = /\b(usad[oa]s?|usd)\b/i;
+  const temUsado = reUsado.test(original);
+  const titulo = temUsado
+    ? original.replace(/\b(usad[oa]s?|usd)\b/gi, '').replace(/\s{2,}/g, ' ').replace(/\s+([,;:)\]])/g, '$1').trim()
+    : original;
+  return { original, titulo, temUsado };
+}
+

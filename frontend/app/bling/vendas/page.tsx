@@ -141,6 +141,8 @@ type SeparacaoManualPedido = {
   pedidoNum: string;
   dataVenda: string;
   quantidadeItens: number;
+  nomeCliente?: string | null;
+  envioPrevisto?: string | null; // YYYY-MM-DD: separado agora, enviado so nessa data
 };
 
 const SEPARACAO_STATUS_KEY = 'anb:bling:vendas:separacao-pdfs';
@@ -356,7 +358,7 @@ async function baixarSeparacaoPdf(relatorio: SeparacaoRelatorio) {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7.7);
     doc.setTextColor(71, 85, 105);
-    doc.text(`Data da venda: ${fmtDate(pedido.dataVenda)}`, marginX, metaRowY);
+    doc.text(`Data da venda: ${fmtDate(pedido.dataVenda)}${(pedido as any).envioPrevisto ? `   |   ENVIO PREVISTO: ${fmtDate((pedido as any).envioPrevisto)}` : ''}`, marginX, metaRowY);
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8.3);
@@ -488,6 +490,8 @@ export default function VendasBlingPage() {
   const [dataFim, setDataFim] = useState(() => defaultDateRange().dataFim);
   const [buscando, setBuscando] = useState(false);
   const [carregandoSeparacao, setCarregandoSeparacao] = useState(false);
+  const [envioModal, setEnvioModal] = useState<{ pedidoId: number; pedidoNum: string; data: string } | null>(null);
+  const [salvandoEnvio, setSalvandoEnvio] = useState(false);
   const [carregandoPedidosManuais, setCarregandoPedidosManuais] = useState(false);
   const [gerandoPdf, setGerandoPdf] = useState(false);
   const [textoNfeModal, setTextoNfeModal] = useState<{ pedidoNum: string; itens: any[] } | null>(null);
@@ -762,6 +766,27 @@ export default function VendasBlingPage() {
     }
   }
 
+  // Define (ou remove) a data de envio posterior do pedido selecionado.
+  async function salvarEnvioPosterior(remover = false) {
+    if (!envioModal) return;
+    if (!remover && !/^\d{4}-\d{2}-\d{2}$/.test(envioModal.data)) { alert('Informe a data em que o pedido será enviado.'); return; }
+    setSalvandoEnvio(true);
+    try {
+      const response = await fetch(`${API}/bling/pedido-envio-posterior`, {
+        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pedidoId: envioModal.pedidoId, envioPrevisto: remover ? null : envioModal.data }),
+      });
+      const data = await parseJsonResponse(response);
+      if (!response.ok || !data.ok) { alert(data.error || 'Erro ao salvar a data de envio.'); return; }
+      setPedidosManuais((prev) => prev.map((p) => p.pedidoId === envioModal.pedidoId ? { ...p, envioPrevisto: remover ? null : envioModal.data } : p));
+      setEnvioModal(null);
+    } catch (e: any) {
+      alert(`Erro: ${e?.message || e}`);
+    } finally {
+      setSalvandoEnvio(false);
+    }
+  }
+
   function togglePedidoManual(pedidoId: number) {
     setPedidosManuaisSelecionados((prev) =>
       prev.includes(pedidoId)
@@ -799,6 +824,10 @@ export default function VendasBlingPage() {
         return;
       }
 
+      // Leva a data de envio posterior de cada pedido pro relatorio/PDF.
+      if (Array.isArray(data.pedidos)) {
+        data.pedidos = data.pedidos.map((p: any) => ({ ...p, envioPrevisto: pedidosManuais.find((x) => x.pedidoId === p.pedidoId)?.envioPrevisto || null }));
+      }
       setRelatorioSeparacao(data);
       setRelatorioSeparacaoModo('manual');
       setBuscouSeparacao(true);
@@ -994,7 +1023,9 @@ export default function VendasBlingPage() {
     return [
       String(pedido.pedidoNum || ''),
       String(pedido.pedidoId || ''),
+      String(pedido.nomeCliente || ''),
       fmtDate(pedido.dataVenda || ''),
+      pedido.envioPrevisto ? fmtDate(pedido.envioPrevisto) : '',
     ].some((value) => value.toLowerCase().includes(filtroPedidoManualNormalizado));
   });
   const pedidosManuaisSeparados = pedidosManuaisFiltrados.filter((pedido) => pedidoSeparadoEm(pedido.pedidoId)).length;
@@ -1107,6 +1138,18 @@ export default function VendasBlingPage() {
                 </button>
                 <button
                   type="button"
+                  onClick={() => {
+                    const p = pedidosManuais.find((x) => x.pedidoId === pedidosManuaisSelecionados[0]);
+                    if (p) setEnvioModal({ pedidoId: p.pedidoId, pedidoNum: p.pedidoNum, data: p.envioPrevisto || '' });
+                  }}
+                  disabled={pedidosManuaisSelecionados.length !== 1}
+                  title={pedidosManuaisSelecionados.length === 1 ? 'Define a data em que este pedido será enviado' : 'Selecione exatamente 1 pedido'}
+                  style={{ ...s.btn, ...phoneButtonStyle, background: 'var(--white)', color: 'var(--gray-800)', border: '1px solid #cbd5e1', opacity: pedidosManuaisSelecionados.length !== 1 ? 0.5 : 1 }}
+                >
+                  Envio posterior
+                </button>
+                <button
+                  type="button"
                   onClick={() => setPedidosManuaisSelecionados([])}
                   disabled={!pedidosManuaisSelecionados.length}
                   style={{ ...s.btn, ...phoneButtonStyle, background: 'var(--white)', color: 'var(--gray-800)', border: '1px solid #cbd5e1', opacity: !pedidosManuaisSelecionados.length ? 0.5 : 1 }}
@@ -1129,7 +1172,7 @@ export default function VendasBlingPage() {
                 style={{ ...s.input, maxWidth: isPhone ? undefined : 320, minHeight: isPhone ? 42 : undefined }}
                 value={filtroPedidoManual}
                 onChange={(e) => setFiltroPedidoManual(e.target.value)}
-                placeholder="Buscar por pedido, ID ou data..."
+                placeholder="Buscar por pedido, cliente ou data..."
               />
               <div style={{ fontSize: 12, color: 'var(--gray-500)' }}>
                 Exibindo {pedidosManuaisFiltrados.length} de {pedidosManuais.length} pedidos · {pedidosManuaisSelecionados.length} selecionado(s) · {pedidosManuaisNaoSeparados} nao separado(s) · {pedidosManuaisSeparados} separado(s)
@@ -1175,17 +1218,21 @@ export default function VendasBlingPage() {
                           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                             <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--blue-500)' }}>#{pedido.pedidoNum}</div>
                             <span style={{ border: `1px solid ${separadoEm ? '#bbf7d0' : '#fed7aa'}`, background: separadoEm ? '#f0fdf4' : '#fff7ed', color: separadoEm ? '#15803d' : '#c2410c', borderRadius: 999, padding: '2px 8px', fontSize: 10.5, fontWeight: 800 }}>
-                              {separadoEm ? 'Separado' : 'Pendente'}
+                              {pedido.envioPrevisto ? (separadoEm ? 'Separado - Envio posterior' : 'Pendente - Envio posterior') : (separadoEm ? 'Separado' : 'Pendente')}
                             </span>
                           </div>
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 10 }}>
                             <div>
-                              <div style={{ fontSize: 10.5, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '.6px' }}>ID Bling</div>
-                              <div style={{ fontSize: 12, color: 'var(--gray-700)', fontFamily: 'JetBrains Mono, monospace' }}>{pedido.pedidoId}</div>
+                              <div style={{ fontSize: 10.5, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '.6px' }}>Cliente</div>
+                              <div style={{ fontSize: 12, color: 'var(--gray-700)' }}>{pedido.nomeCliente || '—'}</div>
                             </div>
                             <div>
                               <div style={{ fontSize: 10.5, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '.6px' }}>Data</div>
                               <div style={{ fontSize: 12, color: 'var(--gray-700)' }}>{fmtDate(pedido.dataVenda)}</div>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 10.5, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '.6px' }}>Envio previsto</div>
+                              <div style={{ fontSize: 12, color: pedido.envioPrevisto ? '#92400e' : 'var(--gray-500)', fontWeight: pedido.envioPrevisto ? 700 : 400 }}>{pedido.envioPrevisto ? fmtDate(pedido.envioPrevisto) : '—'}</div>
                             </div>
                             <div>
                               <div style={{ fontSize: 10.5, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '.6px' }}>Itens ANB</div>
@@ -1204,11 +1251,12 @@ export default function VendasBlingPage() {
                       <tr>
                         {[
                           { label: '', width: 48 },
-                          { label: 'Pedido', width: '22%' },
-                          { label: 'ID Bling', width: '18%' },
-                          { label: 'Data da venda', width: '18%' },
-                          { label: 'Status', width: '14%' },
-                          { label: 'Itens salvos no ANB', width: '20%' },
+                          { label: 'Pedido', width: '10%' },
+                          { label: 'Cliente', width: '28%' },
+                          { label: 'Data da venda', width: '13%' },
+                          { label: 'Envio previsto', width: '14%' },
+                          { label: 'Status', width: '22%' },
+                          { label: 'Itens no ANB', width: '10%' },
                         ].map((header, index) => (
                           <th
                             key={`${header.label}-${index}`}
@@ -1229,12 +1277,13 @@ export default function VendasBlingPage() {
                               <input type="checkbox" checked={checked} onChange={() => togglePedidoManual(pedido.pedidoId)} />
                             </td>
                             <td style={{ padding: '8px 10px', fontWeight: 700, color: 'var(--blue-500)' }}>#{pedido.pedidoNum}</td>
-                            <td style={{ padding: '8px 10px', fontFamily: 'JetBrains Mono, monospace', color: 'var(--gray-700)' }}>{pedido.pedidoId}</td>
+                            <td style={{ padding: '8px 10px', color: 'var(--gray-800)' }}>{pedido.nomeCliente || <span style={{ color: 'var(--gray-400)' }}>—</span>}</td>
                             <td style={{ padding: '8px 10px', color: 'var(--gray-700)' }}>{fmtDate(pedido.dataVenda)}</td>
+                            <td style={{ padding: '8px 10px', color: pedido.envioPrevisto ? '#92400e' : 'var(--gray-400)', fontWeight: pedido.envioPrevisto ? 700 : 400 }}>{pedido.envioPrevisto ? fmtDate(pedido.envioPrevisto) : '—'}</td>
                             <td style={{ padding: '8px 10px' }}>
-                              <span title={separadoEm ? `PDF gerado em ${fmtIsoDate(separadoEm)}` : 'Ainda sem PDF de separacao gerado'} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: `1px solid ${separadoEm ? '#bbf7d0' : '#fed7aa'}`, background: separadoEm ? '#f0fdf4' : '#fff7ed', color: separadoEm ? '#15803d' : '#c2410c', borderRadius: 999, padding: '3px 8px', fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap' }}>
+                              <span title={separadoEm ? `PDF gerado em ${fmtIsoDate(separadoEm)}${pedido.envioPrevisto ? ` · envio previsto ${fmtDate(pedido.envioPrevisto)}` : ''}` : 'Ainda sem PDF de separacao gerado'} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: `1px solid ${pedido.envioPrevisto ? '#fde68a' : separadoEm ? '#bbf7d0' : '#fed7aa'}`, background: pedido.envioPrevisto ? '#fffbeb' : separadoEm ? '#f0fdf4' : '#fff7ed', color: pedido.envioPrevisto ? '#92400e' : separadoEm ? '#15803d' : '#c2410c', borderRadius: 999, padding: '3px 8px', fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap' }}>
                                 <span>{separadoEm ? '✓' : '○'}</span>
-                                {separadoEm ? 'Separado' : 'Pendente'}
+                                {pedido.envioPrevisto ? (separadoEm ? 'Separado - Envio posterior' : 'Pendente - Envio posterior') : (separadoEm ? 'Separado' : 'Pendente')}
                               </span>
                             </td>
                             <td style={{ padding: '8px 10px', color: 'var(--gray-800)' }}>{pedido.quantidadeItens}</td>
@@ -1245,6 +1294,25 @@ export default function VendasBlingPage() {
                   </table>
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {envioModal && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100, padding: 16 }} onClick={() => setEnvioModal(null)}>
+            <div style={{ background: '#fff', borderRadius: 14, width: '100%', maxWidth: 420, padding: 18, boxShadow: '0 20px 60px rgba(0,0,0,0.3)', display: 'grid', gap: 12 }} onClick={(e) => e.stopPropagation()}>
+              <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--gray-800)' }}>Envio posterior — Pedido #{envioModal.pedidoNum}</div>
+              <div style={{ fontSize: 12.5, color: 'var(--gray-600)' }}>A peça pode ser separada agora, mas só será enviada na data abaixo. O pedido passa a aparecer como "Separado - Envio posterior" e a data entra no relatório e no PDF.</div>
+              <label style={{ display: 'grid', gap: 4, fontSize: 12, color: 'var(--gray-600)' }}>Data de envio
+                <input type="date" style={{ ...s.input, minHeight: 40 }} value={envioModal.data} onChange={(e) => setEnvioModal({ ...envioModal, data: e.target.value })} />
+              </label>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                {pedidosManuais.find((p) => p.pedidoId === envioModal.pedidoId)?.envioPrevisto && (
+                  <button type="button" disabled={salvandoEnvio} onClick={() => salvarEnvioPosterior(true)} style={{ ...s.btn, background: 'var(--white)', color: '#b91c1c', border: '1px solid #fecaca' }}>Remover data</button>
+                )}
+                <button type="button" disabled={salvandoEnvio} onClick={() => setEnvioModal(null)} style={{ ...s.btn, background: 'var(--white)', color: 'var(--gray-700)', border: '1px solid #cbd5e1' }}>Cancelar</button>
+                <button type="button" disabled={salvandoEnvio || !envioModal.data} onClick={() => salvarEnvioPosterior(false)} style={{ ...s.btn, background: '#0f172a', color: '#fff', opacity: salvandoEnvio || !envioModal.data ? 0.6 : 1 }}>{salvandoEnvio ? 'Salvando...' : 'Salvar'}</button>
+              </div>
             </div>
           </div>
         )}
