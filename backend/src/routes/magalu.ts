@@ -7,6 +7,7 @@ import {
   magaluCreateSku,
   magaluSetPrice,
   prepararTituloMagalu,
+  trocarTermosSensiveisMagalu,
   magaluSetStock,
   magaluUpdateSkuImages,
   magaluGetSku,
@@ -454,6 +455,8 @@ async function montarConteudoMagalu(peca: any, sku: string, categoriaId: string,
       .replace(/^\s+/, '');
     description = `${tit.original}\n${resto}`;
   }
+
+  description = trocarTermosSensiveisMagalu(description);
 
   const valores = montarValoresFicha(peca, peso, description, fichaExtra);
   const datasheet = await magaluMontarDatasheet(categoriaId, valores);

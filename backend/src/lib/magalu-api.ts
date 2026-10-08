@@ -410,6 +410,23 @@ export async function magaluAtualizarConteudoSku(sku: string, parcial: Record<st
 
 // Titulo com a palavra USADO (ex: "Kit Parafuso Chassi e Motor HARLEY XL1200 2013 USADO"): no Magalu o titulo vai SEM a palavra
 // (USADO/USADA/Usd) e o titulo original passa a ser a 1a linha da descricao (ver montarConteudoMagalu).
+// Palavras que o filtro automatico do Magalu confunde com produto adulto ("bem-estar sexual") e BLOQUEIA o SKU: trocadas so no Magalu
+// (titulo, ficha e descricao); no Bling e nos outros marketplaces o texto original fica. Ex: "Algema" (presilha do tucho Harley).
+const TERMOS_TROCA_MAGALU: Array<[RegExp, string]> = [
+  [/algema(s?)/gi, 'presilha$1'],
+];
+export function trocarTermosSensiveisMagalu(texto: any) {
+  let out = String(texto ?? '');
+  for (const [re, nova] of TERMOS_TROCA_MAGALU) {
+    out = out.replace(re, (m: string, plural: string) => {
+      const base = nova.replace('$1', plural || '');
+      if (m === m.toUpperCase()) return base.toUpperCase();
+      return m[0] === m[0].toUpperCase() ? base[0].toUpperCase() + base.slice(1) : base;
+    });
+  }
+  return out;
+}
+
 export function prepararTituloMagalu(descricao: any) {
   const original = String(descricao || '').trim();
   const reUsado = /\b(usad[oa]s?|usd)\b/i;
@@ -417,6 +434,6 @@ export function prepararTituloMagalu(descricao: any) {
   const titulo = temUsado
     ? original.replace(/\b(usad[oa]s?|usd)\b/gi, '').replace(/\s{2,}/g, ' ').replace(/\s+([,;:)\]])/g, '$1').trim()
     : original;
-  return { original, titulo, temUsado };
+  return { original, titulo: trocarTermosSensiveisMagalu(titulo), temUsado };
 }
 
