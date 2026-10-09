@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState, type FormEvent } from 'react';
 import { API_BASE } from '@/lib/api-base';
+import { gerarTermoRetiradaPdf, cpfValido, formatarCpf } from '@/lib/termo-retirada-pdf';
 
 const API = API_BASE;
 
@@ -321,6 +322,115 @@ function AdicionarBrindeModal({ pedido, onClose, onSaved }: { pedido: PedidoGrou
   );
 }
 
+function TermoRetiradaModal({ pedido, onClose }: { pedido: PedidoGroup; onClose: () => void }) {
+  const [modo, setModo] = useState<'comprador' | 'terceiro'>('comprador');
+  const [plataforma, setPlataforma] = useState('Mercado Livre');
+  const [terceiroNome, setTerceiroNome] = useState('');
+  const [terceiroCpf, setTerceiroCpf] = useState('');
+  const [autorizacaoData, setAutorizacaoData] = useState(spKey());
+  const [print, setPrint] = useState('');
+  const [printNome, setPrintNome] = useState('');
+  const [gerando, setGerando] = useState(false);
+  const [err, setErr] = useState('');
+
+  function escolherPrint(file?: File | null) {
+    if (!file) { setPrint(''); setPrintNome(''); return; }
+    if (!/^image\/(png|jpe?g)$/i.test(file.type)) { setErr('O print da autorização precisa ser uma imagem PNG ou JPG.'); return; }
+    const fr = new FileReader();
+    fr.onload = () => { setPrint(String(fr.result)); setPrintNome(file.name); setErr(''); };
+    fr.readAsDataURL(file);
+  }
+
+  async function gerar() {
+    setErr('');
+    if (!pedido.pedidoId) { setErr('Este pedido não tem o ID do Bling no sistema.'); return; }
+    if (modo === 'terceiro') {
+      if (terceiroNome.trim().split(/\s+/).length < 2) { setErr('Informe o nome completo da pessoa autorizada a retirar.'); return; }
+      if (!cpfValido(terceiroCpf)) { setErr('O CPF da pessoa autorizada é inválido. Confira os 11 dígitos.'); return; }
+    }
+    setGerando(true);
+    try {
+      const [rd, re] = await Promise.all([
+        fetch(`${API}/termo-retirada/dados?pedidoId=${encodeURIComponent(pedido.pedidoId)}`, { credentials: 'include' }),
+        fetch(`${API}/empresa`, { credentials: 'include' }),
+      ]);
+      const dados = await rd.json();
+      if (!rd.ok || !dados.ok) throw new Error(dados.error || 'Erro ao carregar os dados do pedido');
+      const empresa = await re.json().catch(() => ({}));
+      await gerarTermoRetiradaPdf(dados, empresa, {
+        modo, plataforma,
+        terceiroNome: terceiroNome.trim(), terceiroCpf,
+        autorizacaoData, autorizacaoPrint: modo === 'terceiro' ? print : '',
+      });
+      onClose();
+    } catch (e: any) {
+      setErr(e.message || 'Erro ao gerar o termo');
+    }
+    setGerando(false);
+  }
+
+  const opcao = (valor: 'comprador' | 'terceiro', titulo: string, texto: string) => (
+    <div onClick={() => setModo(valor)} style={{ border: `2px solid ${modo === valor ? 'var(--blue-500)' : 'var(--border)'}`, background: modo === valor ? '#eff6ff' : 'var(--white)', borderRadius: 10, padding: '10px 14px', cursor: 'pointer' }}>
+      <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--gray-800)' }}>{modo === valor ? '● ' : '○ '}{titulo}</div>
+      <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 2 }}>{texto}</div>
+    </div>
+  );
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={onClose}>
+      <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 16, width: '100%', maxWidth: 560, maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--gray-800)' }}>Termo de Retirada — Pedido #{pedido.pedidoNum}</div>
+            <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 2 }}>O PDF é salvo na pasta Downloads.</div>
+          </div>
+          <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', fontSize: 16 }}>×</button>
+        </div>
+        <div style={{ padding: '14px 20px', display: 'grid', gap: 12, overflowY: 'auto' }}>
+          {opcao('comprador', 'Retirada pelo comprador', `${pedido.nomeCliente || 'O próprio comprador'} retira pessoalmente.`)}
+          {opcao('terceiro', 'Retirada por terceiro', 'Outra pessoa, autorizada pelo comprador, retira.')}
+
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--gray-500)', textTransform: 'uppercase', marginBottom: 5 }}>Plataforma da venda</div>
+            <select style={{ ...s.input, cursor: 'pointer' }} value={plataforma} onChange={(e) => setPlataforma(e.target.value)}>
+              {['Mercado Livre', 'Shopee', 'Magalu', 'Nuvemshop'].map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </div>
+
+          {modo === 'terceiro' && (
+            <div style={{ display: 'grid', gap: 10, padding: 12, border: '1px solid var(--border)', borderRadius: 10, background: 'var(--gray-50)' }}>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--gray-500)', textTransform: 'uppercase', marginBottom: 5 }}>Nome completo de quem vai retirar</div>
+                <input style={s.input} value={terceiroNome} onChange={(e) => setTerceiroNome(e.target.value)} placeholder="Ex.: Diego Costa das Neves" />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--gray-500)', textTransform: 'uppercase', marginBottom: 5 }}>CPF</div>
+                  <input style={s.input} value={terceiroCpf} onChange={(e) => setTerceiroCpf(formatarCpf(e.target.value.replace(/\D/g, '').slice(0, 11)))} placeholder="000.000.000-00" inputMode="numeric" />
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--gray-500)', textTransform: 'uppercase', marginBottom: 5 }}>Autorização recebida em</div>
+                  <input style={s.input} type="date" value={autorizacaoData} onChange={(e) => setAutorizacaoData(e.target.value)} />
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--gray-500)', textTransform: 'uppercase', marginBottom: 5 }}>Print da conversa com a autorização (opcional)</div>
+                <input type="file" accept="image/png,image/jpeg" onChange={(e) => escolherPrint(e.target.files?.[0])} style={{ fontSize: 12 }} />
+                <div style={{ fontSize: 11.5, color: 'var(--gray-500)', marginTop: 4 }}>{printNome ? `Será anexado ao termo: ${printNome}` : 'Se anexar, o print vai como Anexo I do PDF.'}</div>
+              </div>
+            </div>
+          )}
+          {err && <div style={{ fontSize: 12, color: 'var(--red)' }}>! {err}</div>}
+        </div>
+        <div style={{ padding: '12px 20px 18px', borderTop: '1px solid var(--border)', display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button onClick={onClose} style={{ ...s.btn, background: 'var(--white)', color: 'var(--gray-600)', borderColor: 'var(--border)' }}>Cancelar</button>
+          <button onClick={gerar} disabled={gerando} style={{ ...s.btn, background: 'var(--ink)', color: '#fff', opacity: gerando ? 0.6 : 1 }}>{gerando ? 'Gerando...' : 'Gerar PDF'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function RelatorioVendasPage() {
   const [viewportMode, setViewportMode] = useState<RelatorioViewportMode>('desktop');
   const [dataDe, setDataDe] = useState(today());
@@ -333,6 +443,7 @@ export default function RelatorioVendasPage() {
   const [relatorio, setRelatorio] = useState<RelatorioResponse | null>(null);
   const [ajustarFretePedido, setAjustarFretePedido] = useState<PedidoGroup | null>(null);
   const [brindePedido, setBrindePedido] = useState<PedidoGroup | null>(null);
+  const [termoPedido, setTermoPedido] = useState<PedidoGroup | null>(null);
 
   const anosDisponiveis = Array.from({ length: 11 }, (_, index) => String(currentYear() - index));
 
@@ -519,6 +630,14 @@ export default function RelatorioVendasPage() {
                   >
                     Adicionar Brinde
                   </button>
+                  <button
+                    onClick={() => setTermoPedido(pedidoGroup)}
+                    disabled={!pedidoGroup.pedidoId}
+                    title="Gera o PDF do termo de retirada e entrega (pelo comprador ou por terceiro autorizado)"
+                    style={{ ...s.btn, padding: '4px 12px', fontSize: 12, background: '#ecfdf5', color: '#047857', borderColor: '#a7f3d0', opacity: pedidoGroup.pedidoId ? 1 : 0.5 }}
+                  >
+                    Termo de Retirada
+                  </button>
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 4 }}>
                   {pedidoGroup.quantidadeItens} item(ns) - Data da venda: {fmtDate(pedidoGroup.dataVenda)}
@@ -621,6 +740,10 @@ export default function RelatorioVendasPage() {
           </div>
         )}
       </div>
+
+      {termoPedido && (
+        <TermoRetiradaModal pedido={termoPedido} onClose={() => setTermoPedido(null)} />
+      )}
 
       {brindePedido && (
         <AdicionarBrindeModal
