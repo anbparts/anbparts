@@ -48,7 +48,7 @@ const s: any = {
   btn: { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', border: '1px solid transparent', fontFamily: 'Inter, sans-serif' },
 };
 
-type ReportItem = { id: number; idPeca: string; descricao: string; dataVenda: string; pedidoId: string | null; pedidoNum: string; motoId: number | null; moto: string | null; precoML: number; valorTaxas: number; valorFrete: number; valorLiq: number; };
+type ReportItem = { id: number; idPeca: string; descricao: string; dataVenda: string; pedidoId: string | null; pedidoNum: string; motoId: number | null; moto: string | null; precoML: number; valorTaxas: number; valorFrete: number; valorLiq: number; brinde?: boolean; };
 type PedidoGroup = { pedidoNum: string; pedidoId: string | null; nomeCliente: string | null; dataVenda: string; quantidadeItens: number; subtotalPrecoML: number; subtotalTaxas: number; subtotalFrete: number; subtotalValorLiq: number; itens: ReportItem[]; };
 type TotaisGerais = { totalPedidos: number; totalItens: number; precoML: number; valorTaxas: number; valorFrete: number; valorLiq: number; };
 type RelatorioResponse = { ok: boolean; filtros: any; totaisGerais: TotaisGerais; pedidos: PedidoGroup[]; };
@@ -170,7 +170,7 @@ function AjustarFreteModal({ pedido, onClose, onSaved }: { pedido: PedidoGroup; 
                 <tbody>
                   {pedido.itens.map((item) => (
                     <tr key={item.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                      <td style={{ padding: '7px 10px', color: 'var(--blue-500)', fontWeight: 600, whiteSpace: 'nowrap' }}>{item.idPeca}</td>
+                      <td style={{ padding: '7px 10px', color: 'var(--blue-500)', fontWeight: 600, whiteSpace: 'nowrap' }}>{item.idPeca}{item.brinde && <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 800, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 999, padding: '1px 7px' }}>BRINDE</span>}</td>
                       <td style={{ padding: '7px 10px', color: 'var(--gray-700)' }}>{item.descricao}</td>
                       <td style={{ padding: '7px 10px', whiteSpace: 'nowrap' }}>{fmtMoney(item.precoML)}</td>
                       <td style={{ padding: '7px 10px', whiteSpace: 'nowrap', color: 'var(--gray-700)' }}>{fmtMoney(item.valorFrete)}</td>
@@ -234,6 +234,93 @@ function AjustarFreteModal({ pedido, onClose, onSaved }: { pedido: PedidoGroup; 
   );
 }
 
+type PecaBrindeOpcao = { id: number; idPeca: string; descricao: string; localizacao: string | null; moto: string | null };
+
+function AdicionarBrindeModal({ pedido, onClose, onSaved }: { pedido: PedidoGroup; onClose: () => void; onSaved: () => void }) {
+  const [busca, setBusca] = useState('');
+  const [opcoes, setOpcoes] = useState<PecaBrindeOpcao[]>([]);
+  const [carregando, setCarregando] = useState(false);
+  const [selecionada, setSelecionada] = useState<PecaBrindeOpcao | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
+
+  // Busca no estoque (so pecas realmente disponiveis), com pequena espera enquanto digita.
+  useEffect(() => {
+    let cancelado = false;
+    setCarregando(true);
+    const timer = setTimeout(async () => {
+      try {
+        const resp = await fetch(`${API}/brinde/pecas?busca=${encodeURIComponent(busca.trim())}&limite=15`, { credentials: 'include' });
+        const data = await resp.json();
+        if (!cancelado) setOpcoes(Array.isArray(data.pecas) ? data.pecas : []);
+      } catch { if (!cancelado) setOpcoes([]); }
+      if (!cancelado) setCarregando(false);
+    }, 300);
+    return () => { cancelado = true; clearTimeout(timer); };
+  }, [busca]);
+
+  async function confirmar() {
+    if (!selecionada) { setErr('Escolha a peça que será enviada de brinde.'); return; }
+    if (!pedido.pedidoId) { setErr('Este pedido não tem o ID do Bling no sistema.'); return; }
+    if (!confirm(`Adicionar ${selecionada.idPeca} como brinde no pedido #${pedido.pedidoNum}?\n\n• Dá baixa de 1 unidade no estoque do Bling.\n• A peça vira VENDIDA no sistema, com valores zerados (não entra nos relatórios de venda).\n• Ela aparece no relatório de separação deste pedido.\n\nEssa ação não é desfeita automaticamente.`)) return;
+    setSaving(true);
+    setErr('');
+    try {
+      const resp = await fetch(`${API}/brinde/adicionar`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pedidoId: pedido.pedidoId, pecaId: selecionada.id }) });
+      const data = await resp.json();
+      if (!resp.ok || !data.ok) throw new Error(data.error || 'Erro ao adicionar o brinde');
+      onSaved();
+      onClose();
+    } catch (e: any) {
+      setErr(e.message || 'Erro ao salvar');
+    }
+    setSaving(false);
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={onClose}>
+      <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 16, width: '100%', maxWidth: 560, maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--gray-800)' }}>Adicionar Brinde — Pedido #{pedido.pedidoNum}</div>
+            <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 2 }}>Escolha a peça do estoque que vai junto, sem cobrança.</div>
+          </div>
+          <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', fontSize: 16 }}>×</button>
+        </div>
+        <div style={{ padding: '14px 20px', display: 'grid', gap: 10, overflowY: 'auto' }}>
+          <input style={s.input} autoFocus placeholder="Digite o código ou parte do nome (ex: BM03_0044, parafuso)" value={busca} onChange={(e) => { setBusca(e.target.value); setSelecionada(null); }} />
+          <div style={{ border: '1px solid var(--border)', borderRadius: 10, maxHeight: 280, overflowY: 'auto' }}>
+            {carregando ? (
+              <div style={{ padding: 14, fontSize: 12.5, color: 'var(--gray-500)' }}>Buscando no estoque...</div>
+            ) : !opcoes.length ? (
+              <div style={{ padding: 14, fontSize: 12.5, color: 'var(--gray-500)' }}>Nenhuma peça disponível encontrada.</div>
+            ) : opcoes.map((p) => {
+              const ativa = selecionada?.id === p.id;
+              return (
+                <div key={p.id} onClick={() => setSelecionada(p)} style={{ padding: '9px 12px', cursor: 'pointer', borderBottom: '1px solid var(--gray-100)', background: ativa ? '#eff6ff' : 'var(--white)', display: 'grid', gap: 2 }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--blue-500)' }}>{ativa ? '● ' : '○ '}{p.idPeca}</div>
+                  <div style={{ fontSize: 12.5, color: 'var(--gray-800)' }}>{p.descricao}</div>
+                  <div style={{ fontSize: 11, color: 'var(--gray-500)' }}>{p.moto || '—'}{p.localizacao ? ` · ${p.localizacao}` : ''}</div>
+                </div>
+              );
+            })}
+          </div>
+          {selecionada && (
+            <div style={{ padding: '9px 12px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, fontSize: 12.5, color: '#92400e' }}>
+              Será enviada de brinde: <strong>{selecionada.idPeca}</strong> — {selecionada.descricao}
+            </div>
+          )}
+          {err && <div style={{ fontSize: 12, color: 'var(--red)' }}>! {err}</div>}
+        </div>
+        <div style={{ padding: '12px 20px 18px', borderTop: '1px solid var(--border)', display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button onClick={onClose} style={{ ...s.btn, background: 'var(--white)', color: 'var(--gray-600)', borderColor: 'var(--border)' }}>Cancelar</button>
+          <button onClick={confirmar} disabled={saving || !selecionada} style={{ ...s.btn, background: 'var(--ink)', color: '#fff', opacity: saving || !selecionada ? 0.6 : 1 }}>{saving ? 'Adicionando...' : 'Adicionar brinde'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function RelatorioVendasPage() {
   const [viewportMode, setViewportMode] = useState<RelatorioViewportMode>('desktop');
   const [dataDe, setDataDe] = useState(today());
@@ -245,6 +332,7 @@ export default function RelatorioVendasPage() {
   const [buscou, setBuscou] = useState(false);
   const [relatorio, setRelatorio] = useState<RelatorioResponse | null>(null);
   const [ajustarFretePedido, setAjustarFretePedido] = useState<PedidoGroup | null>(null);
+  const [brindePedido, setBrindePedido] = useState<PedidoGroup | null>(null);
 
   const anosDisponiveis = Array.from({ length: 11 }, (_, index) => String(currentYear() - index));
 
@@ -423,6 +511,14 @@ export default function RelatorioVendasPage() {
                   >
                     Ajustar Frete
                   </button>
+                  <button
+                    onClick={() => setBrindePedido(pedidoGroup)}
+                    disabled={!pedidoGroup.pedidoId}
+                    title="Inclui uma peça do estoque neste pedido como brinde (valores zerados, baixa no Bling)"
+                    style={{ ...s.btn, padding: '4px 12px', fontSize: 12, background: '#fffbeb', color: '#92400e', borderColor: '#fde68a', opacity: pedidoGroup.pedidoId ? 1 : 0.5 }}
+                  >
+                    Adicionar Brinde
+                  </button>
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 4 }}>
                   {pedidoGroup.quantidadeItens} item(ns) - Data da venda: {fmtDate(pedidoGroup.dataVenda)}
@@ -440,7 +536,7 @@ export default function RelatorioVendasPage() {
                   <div key={item.id} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: isPhone ? 14 : 16, background: 'var(--white)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 10 }}>
                       <div>
-                        <div style={{ fontSize: 13, color: 'var(--blue-500)', fontWeight: 700 }}>{item.idPeca}</div>
+                        <div style={{ fontSize: 13, color: 'var(--blue-500)', fontWeight: 700 }}>{item.idPeca}{item.brinde && <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 800, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 999, padding: '1px 7px' }}>BRINDE</span>}</div>
                         <div style={{ marginTop: 4, fontSize: 13, color: 'var(--gray-800)', lineHeight: 1.45 }}>{item.descricao}</div>
                       </div>
                       <div style={{ fontSize: 12, color: 'var(--gray-500)', whiteSpace: 'nowrap' }}>{fmtDate(item.dataVenda)}</div>
@@ -482,7 +578,7 @@ export default function RelatorioVendasPage() {
                   <tbody>
                     {pedidoGroup.itens.map((item) => (
                       <tr key={item.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                        <td style={{ padding: '10px 12px', fontSize: 13, color: 'var(--blue-500)', fontWeight: 600, whiteSpace: 'nowrap' }}>{item.idPeca}</td>
+                        <td style={{ padding: '10px 12px', fontSize: 13, color: 'var(--blue-500)', fontWeight: 600, whiteSpace: 'nowrap' }}>{item.idPeca}{item.brinde && <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 800, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 999, padding: '1px 7px' }}>BRINDE</span>}</td>
                         <td style={{ padding: '10px 12px', fontSize: 13, color: 'var(--gray-700)', whiteSpace: 'nowrap' }}>{item.moto || '-'}</td>
                         <td style={{ padding: '10px 12px', fontSize: 13, color: 'var(--gray-800)' }}>{item.descricao}</td>
                         <td style={{ padding: '10px 12px', fontSize: 13, color: 'var(--gray-700)', whiteSpace: 'nowrap' }}>{fmtDate(item.dataVenda)}</td>
@@ -525,6 +621,14 @@ export default function RelatorioVendasPage() {
           </div>
         )}
       </div>
+
+      {brindePedido && (
+        <AdicionarBrindeModal
+          pedido={brindePedido}
+          onClose={() => setBrindePedido(null)}
+          onSaved={() => { buscarRelatorio(); }}
+        />
+      )}
 
       {ajustarFretePedido && (
         <AjustarFreteModal

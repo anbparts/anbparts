@@ -43,7 +43,7 @@ async function loadDashboardMercadoPagoSaldo() {
 faturamentoRouter.get('/geral', async (req, res, next) => {
   try {
     const pecas: any[] = await (prisma as any).peca.findMany({
-      where: { disponivel: false, emPrejuizo: false, dataVenda: { not: null } },
+      where: { disponivel: false, emPrejuizo: false, dataVenda: { not: null }, precoML: { gt: 0 } }, // brinde (valor 0) nao conta como venda
       select: { valorLiq: true, precoML: true, dataVenda: true, sucata: true, blingPedidoNum: true }
     });
 
@@ -78,7 +78,7 @@ faturamentoRouter.get('/geral', async (req, res, next) => {
 faturamentoRouter.get('/por-moto', async (req, res, next) => {
   try {
     const pecas: any[] = await (prisma as any).peca.findMany({
-      where: { disponivel: false, emPrejuizo: false, dataVenda: { not: null } },
+      where: { disponivel: false, emPrejuizo: false, dataVenda: { not: null }, precoML: { gt: 0 } }, // brinde (valor 0) nao conta como venda
       select: { valorLiq: true, precoML: true, dataVenda: true, sucata: true, blingPedidoNum: true, moto: { select: { id: true, marca: true, modelo: true } } }
     });
     const blingCfg = await prisma.blingConfig.findFirst({ select: { prefixos: true } });
@@ -129,7 +129,7 @@ faturamentoRouter.get('/por-moto', async (req, res, next) => {
 faturamentoRouter.get('/tempo-giro', async (req, res, next) => {
   try {
     const pecas = await prisma.peca.findMany({
-      where: { disponivel: false, emPrejuizo: false, dataVenda: { not: null } },
+      where: { disponivel: false, emPrejuizo: false, dataVenda: { not: null }, precoML: { gt: 0 } }, // brinde (valor 0) nao conta como venda
       select: {
         idPeca: true, descricao: true, cadastro: true, dataVenda: true, precoML: true,
         moto: { select: { id: true, marca: true, modelo: true, ano: true } },

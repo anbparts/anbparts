@@ -6295,6 +6295,8 @@ blingRouter.get('/relatorio-vendas', async (req, res, next) => {
         valorTaxas: roundMoney(toNumber(peca.valorTaxas)),
         valorFrete: roundMoney(toNumber(peca.valorFrete)),
         valorLiq: roundMoney(toNumber(peca.valorLiq)),
+        // Brinde = peca vendida com tudo zerado dentro do pedido: aparece na lista, mas nao conta como item vendido.
+        brinde: roundMoney(toNumber(peca.precoML)) === 0 && !(peca as any).sucata,
       };
 
       if (!pedidosMap.has(pedidoNum)) {
@@ -6333,8 +6335,10 @@ blingRouter.get('/relatorio-vendas', async (req, res, next) => {
         }
       } else {
         pedidoGroup.itens.push(item);
-        pedidoGroup.quantidadeItens += 1;
-        totaisGerais.totalItens += 1;
+        if (!item.brinde) {
+          pedidoGroup.quantidadeItens += 1;
+          totaisGerais.totalItens += 1;
+        }
       }
 
       pedidoGroup.subtotalPrecoML = roundMoney(pedidoGroup.subtotalPrecoML + item.precoML);
@@ -6389,6 +6393,7 @@ blingRouter.post('/ajustar-frete-pedido', async (req, res, next) => {
         blingPedidoNum: { equals: String(pedidoNum), mode: 'insensitive' },
         disponivel: false,
         emPrejuizo: false,
+        precoML: { gt: 0 }, // brinde (valores zerados) nao recebe frete
       },
       select: { id: true, precoML: true, valorTaxas: true, valorFrete: true, valorLiq: true },
     });
@@ -6537,6 +6542,26 @@ async function buildRelatorioSeparacaoFromPedidoIds(
         };
       })
       .filter((item: any) => item.baseSku || item.skuBling || item.idBling);
+
+    // Brindes adicionados ao pedido pelo relatorio de vendas (nao existem no pedido do Bling): entram na separacao.
+    const brindes: any[] = await prisma.peca.findMany({
+      where: { blingPedidoId: String(pedidoId), precoML: 0, disponivel: false, sucata: false } as any,
+      select: { idPeca: true, descricao: true },
+    } as any);
+    for (const brinde of brindes) {
+      const baseSkuBrinde = getBaseSku(brinde.idPeca);
+      if (!baseSkuBrinde) continue;
+      codigosSeparacao.add(baseSkuBrinde);
+      itens.push({
+        lineKey: `${pedidoId}-brinde-${brinde.idPeca}`,
+        produtoId: null,
+        skuBling: baseSkuBrinde,
+        idBling: '',
+        baseSku: baseSkuBrinde,
+        descricao: `BRINDE - ${String(brinde.descricao || '').trim()}`,
+        quantidade: 1,
+      });
+    }
 
     if (!itens.length) continue;
 
