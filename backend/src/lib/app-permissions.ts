@@ -86,6 +86,7 @@ export const APP_PERMISSION_CATALOG: AppPagePermission[] = [
   { key: 'conf_gerais', label: 'Conf. Gerais', href: '/conf-gerais', actions: [{ key: 'editar', label: 'Editar configuracao' }] },
   { key: 'conf_ml', label: 'Conf. ML', href: '/config-ml', actions: [{ key: 'editar', label: 'Editar configuracao' }] },
   { key: 'conf_nuvemshop', label: 'Conf. Nuvemshop', href: '/conf-nuvemshop', actions: [{ key: 'editar', label: 'Editar configuracao' }] },
+  { key: 'conf_monitor_conexoes', label: 'Monitor de Conexoes', href: '/conf-monitor-conexoes', actions: [] },
   { key: 'conf_gmail', label: 'Conf. Google', href: '/conf-gmail', actions: [{ key: 'editar', label: 'Editar configuracao' }] },
   { key: 'conf_google_drive', label: 'Config. Google Drive', href: '/conf-google-drive', actions: [{ key: 'editar', label: 'Editar configuracao' }] },
 ];

@@ -540,3 +540,9 @@ googleDriveRouter.post('/desconectar', async (_req, res, next) => {
     res.json({ ok: true });
   } catch (e) { next(e); }
 });
+
+// Usado pelo Monitor de Conexoes (lib/monitor-conexoes.ts).
+export async function monitorGoogleDriveChecar() {
+  const cfg = await getConfig();
+  await driveGet(cfg, '/about?fields=user');
+}

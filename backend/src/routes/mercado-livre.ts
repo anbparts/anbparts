@@ -2973,3 +2973,7 @@ mercadoLivreRouter.delete('/perguntas/:questionId', async (req, res, next) => {
 //     res.status(400).json({ ok: false, error: e?.message || 'Erro ao buscar visitas do ML' });
 //   }
 // });
+
+// Usados pelo Monitor de Conexoes (lib/monitor-conexoes.ts): chamadas reais as APIs, sem depender de requisicao HTTP.
+export async function monitorMercadoLivreMe() { return getMercadoLivreMe(); }
+export async function monitorMercadoPagoMe() { return getMercadoPagoMe(); }

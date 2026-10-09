@@ -40,6 +40,7 @@ export const PAGE_KEY_BY_HREF: Record<string, string> = {
   '/config-magalu': 'conf_magalu',
   '/conf-auditoria': 'conf_auditoria',
   '/conf-gmail': 'conf_gmail',
+  '/conf-monitor-conexoes': 'conf_monitor_conexoes',
   '/conf-google-drive': 'conf_google_drive',
 };
 
