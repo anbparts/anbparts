@@ -70,7 +70,7 @@ const CHECAGENS: Checagem[] = [
     rodar: async () => {
       const cfg: any = await prisma.blingConfig.findFirst();
       if (!cfg?.accessToken) return { configurado: false };
-      await blingReq('/situacoes/modulos');
+      await blingReq('/produtos?pagina=1&limite=1');
       return { configurado: true, detalhe: 'Conectado' };
     },
   },
