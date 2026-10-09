@@ -152,6 +152,15 @@ export default function ConfigMlPage() {
     await load();
   }
 
+  async function conectarMercadoPago() {
+    try {
+      const data = await api.mercadoLivre.authUrlMercadoPago();
+      if (data?.url && typeof window !== 'undefined') window.location.href = data.url;
+    } catch (error: any) {
+      alert(error.message || 'Erro ao gerar URL de autorizacao do Mercado Pago');
+    }
+  }
+
   async function testarMercadoPago() {
     setMercadoPagoStatus({ loading: true });
     try {
@@ -399,6 +408,11 @@ export default function ConfigMlPage() {
             <button style={{ ...s.btn, background: 'var(--blue-500)', color: '#fff' }} onClick={salvarMercadoPago} disabled={savingMercadoPago}>
               {savingMercadoPago ? 'Salvando...' : 'Salvar credenciais Mercado Pago'}
             </button>
+            {mercadoLivreConfig?.mercadoPagoClientId ? (
+              <button style={{ ...s.btn, background: '#ffe8cc', color: '#9a3412', borderColor: '#fdba74' }} onClick={conectarMercadoPago}>
+                {mercadoLivreConfig?.mercadoPagoHasTokens ? 'Reconectar com Mercado Pago' : 'Conectar com Mercado Pago'}
+              </button>
+            ) : null}
             {mercadoLivreConfig?.mercadoPagoHasTokens ? (
               <>
                 <button style={{ ...s.btn, background: 'var(--green-light)', color: 'var(--green)', borderColor: '#86efac' }} onClick={testarMercadoPago}>
