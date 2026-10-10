@@ -1,3 +1,4 @@
+import { tituloShopeePadrao } from '../lib/shopeeTitulo';
 import { Router } from 'express';
 import { getShopeeConfig, saveShopeeConfig, shopeeExchangeCodeForToken, shopeeExchangeResendCode, shopeeLinkReenviarCodigo, shopeeDiagnostico, shopeeReq, shopeeAddItem, shopeeGetLogisticChannel, shopeePacoteExcedeCanal } from '../lib/shopee-api';
 import { prepararImagensShopeeParaNovoItem } from '../lib/fotos-cadastro';
@@ -311,8 +312,13 @@ shopeeRouter.post('/anuncio/criar', async (req, res, next) => {
       // texto local como fallback.
     }
 
+    // Titulo: por padrao a descricao do SKU. Com padronizarTitulo=true usa a regra de teste (so "Harley" + USADO no fim);
+    // com titulo explicito no corpo, usa exatamente ele.
+    const tituloManual = String(req.body?.titulo || '').trim();
+    const tituloAnuncio = tituloManual || (req.body?.padronizarTitulo === true ? tituloShopeePadrao(peca.descricao) : peca.descricao);
+
     const criado = await shopeeAddItem({
-      itemName: peca.descricao.slice(0, 120),
+      itemName: tituloAnuncio.slice(0, 120),
       // A Shopee exige 10 a 5000 caracteres na descricao: corta em 5000 (de preferencia numa quebra de linha, pra nao partir frase).
       description: ((texto: string) => {
         if (texto.length <= 5000) return texto;
@@ -350,6 +356,7 @@ shopeeRouter.post('/anuncio/criar', async (req, res, next) => {
       ok: true,
       sku,
       shopeeItemId: criado.itemId,
+      titulo: tituloAnuncio.slice(0, 120),
       categoriaId,
       fotosEnviadas: imageIdList.length,
       canalLogistica: canal.nome,
