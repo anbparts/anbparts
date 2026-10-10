@@ -185,10 +185,12 @@ devolucoesRouter.get('/', requireEstoqueAction('devolucoes'), async (req, res, n
 devolucoesRouter.get('/pendentes-etiqueta', async (_req, res, next) => {
   try {
     const pecas = await prisma.peca.findMany({
-      where: { etiquetaPendente: true, disponivel: true },
+      // Inclui peca ja vendida com a pendencia aberta (venda lancada antes de resolver a etiqueta): ela precisa
+      // aparecer aqui pra ser regularizada, sem voltar pro estoque (ver nova-etiqueta).
+      where: { etiquetaPendente: true },
       select: {
         id: true, idPeca: true, descricao: true, motoId: true,
-        localizacao: true, cadastro: true,
+        localizacao: true, cadastro: true, disponivel: true,
         moto: { select: { marca: true, modelo: true, ano: true, renavam: true, placa: true } },
         devolucoes: {
           orderBy: { dataDevolucao: 'desc' },
@@ -225,6 +227,8 @@ devolucoesRouter.post('/pendentes-etiqueta/:pecaId/nova-etiqueta', requirePenden
         motoId: true,
         etiquetaPendente: true,
         disponivel: true,
+        dataVenda: true,
+        blingPedidoId: true,
         detranEtiqueta: true,
         tipoPecaAvulsa: true,
       },
@@ -280,7 +284,8 @@ devolucoesRouter.post('/pendentes-etiqueta/:pecaId/nova-etiqueta', requirePenden
     const atualizada = await prisma.peca.update({
       where: { id: peca.id },
       data: {
-        disponivel: true,
+        // Peca ja vendida (venda lancada antes da pendencia ser resolvida) continua vendida: so regulariza a etiqueta.
+        disponivel: (peca as any).dataVenda || (peca as any).blingPedidoId ? peca.disponivel : true,
         detranEtiqueta: novaEtiqueta,
         detranStatus: null,
         detranBaixada: false,

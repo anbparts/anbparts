@@ -124,6 +124,40 @@ async function loadAtivacoesPorEtiqueta(pecaIds: number[]) {
   return map;
 }
 
+// Tipo de peca POR ETIQUETA (so faz diferenca nas avulsas: a cartela ja tem o tipo pela posicao). Antes o tipo
+// ficava so na peca (tipoPecaAvulsa), entao trocar o tipo de uma etiqueta trocava o das outras do mesmo SKU.
+// Tabela criada sob demanda (sem migration); sem linha para a etiqueta, vale o tipo da peca como antes.
+let tabelaTipoEtiquetaPronta = false;
+async function garantirTabelaTipoEtiqueta() {
+  if (tabelaTipoEtiquetaPronta) return;
+  await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "DetranEtiquetaTipo" (
+    "pecaId" INTEGER NOT NULL, "preCadastro" BOOLEAN NOT NULL DEFAULT false, "etiqueta" TEXT NOT NULL,
+    "tipoPeca" TEXT NOT NULL, "atualizadoEm" TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY ("pecaId", "preCadastro", "etiqueta"))`);
+  tabelaTipoEtiquetaPronta = true;
+}
+
+// Retorna Map "p|<pecaId>|<ETIQUETA>" (ou "c|..." para pre-cadastro) -> tipo.
+async function loadTiposPorEtiqueta(pecaIds: number[], preCadastro = false) {
+  const map = new Map<string, string>();
+  const ids = Array.from(new Set(pecaIds.map((n) => Number(n)).filter((n) => Number.isInteger(n) && n > 0)));
+  if (!ids.length) return map;
+  try {
+    await garantirTabelaTipoEtiqueta();
+    const rows = await prisma.$queryRawUnsafe<{ pecaId: number; etiqueta: string; tipoPeca: string }[]>(
+      `SELECT "pecaId", "etiqueta", "tipoPeca" FROM "DetranEtiquetaTipo" WHERE "preCadastro" = ${preCadastro ? 'true' : 'false'} AND "pecaId" IN (${ids.join(',')})`,
+    );
+    for (const r of rows) map.set(`${preCadastro ? 'c' : 'p'}|${Number(r.pecaId)}|${String(r.etiqueta).trim().toUpperCase()}`, r.tipoPeca);
+  } catch {
+    // sem a tabela / sem permissao: segue com o tipo da peca
+  }
+  return map;
+}
+
+function tipoDaEtiqueta(map: Map<string, string>, preCadastro: boolean, pecaId: number, etq: string, fallback?: string | null) {
+  return map.get(`${preCadastro ? 'c' : 'p'}|${pecaId}|${String(etq).trim().toUpperCase()}`) || fallback || null;
+}
+
 function parseDetranStatusFilter(value: unknown) {
   const normalized = String(value || '').trim().toLowerCase();
   if (!normalized) return null;
@@ -402,6 +436,8 @@ etiquetasDetranRouter.get('/', async (req, res, next) => {
 
     const baixasMap = await loadBaixasPorEtiqueta(pecas.map((p) => p.id));
     const ativacoesMap = await loadAtivacoesPorEtiqueta(pecas.map((p) => p.id));
+    const tiposEtqMap = await loadTiposPorEtiqueta(pecas.map((p) => p.id));
+    const tiposEtqPreMap = await loadTiposPorEtiqueta(preCadastros.map((p: any) => p.id), true);
     const cartelasInativasPorMoto = await carregarCartelasInativasPorMoto(allMotoIds);
     const cutoffAtivacao = ativacaoCutoff();
 
@@ -426,9 +462,10 @@ etiquetasDetranRouter.get('/', async (req, res, next) => {
         const posicaoCartela = matchCartela ? Number(matchCartela[2]) : 0;
         const isCartelaEtq = posicaoCartela >= 1 && posicaoCartela <= 34;
         const tipoEtq = (cartelaTipo || isCartelaEtq) ? 'Cartela' : 'Avulsa';
+        const tipoAvulsaEtq = tipoDaEtiqueta(tiposEtqMap, false, peca.id, etq, (peca as any).tipoPecaAvulsa);
         const tipoPecaVal = cartelaTipo
           || (isCartelaEtq ? DETRAN_TIPOS[posicaoCartela - 1] : null)
-          || (peca as any).tipoPecaAvulsa
+          || tipoAvulsaEtq
           || 'Avulsa';
 
         if (!textIncludes(tipoEtq, tipoEtiqueta)) continue;
@@ -443,7 +480,7 @@ etiquetasDetranRouter.get('/', async (req, res, next) => {
         const ehAvulsaPendente = !etqBaixada
           && !cartelaTipo
           && !ehEtiquetaCartelaDaMoto(etq, cartelaBaseByMoto.get(peca.motoId))
-          && !!(peca as any).tipoPecaAvulsa
+          && !!tipoAvulsaEtq
           && !ativacoesMap.has(`${peca.id}|${etq}`)
           && (cadastroRecente || atribuidaRecente);
         const statusLabel = etqBaixada
@@ -522,7 +559,7 @@ etiquetasDetranRouter.get('/', async (req, res, next) => {
         const cartelaTipo = isCartela ? cartelaMap.get(`${pc.motoId}|${pc.idPeca}|${etq}`) : undefined;
         const tipoPecaVal = cartelaTipo
           || (isCartela ? DETRAN_TIPOS[posicao - 1] : null)
-          || pc.tipoPecaAvulsa
+          || tipoDaEtiqueta(tiposEtqPreMap, true, pc.id, etq, pc.tipoPecaAvulsa)
           || 'Avulsa';
         const tipoEtq = isCartela ? 'Cartela' : 'Avulsa';
 
@@ -682,11 +719,13 @@ etiquetasDetranRouter.post('/validar', async (req, res, next) => {
     const anbMap = new Map<string, AnbEntry>();
 
     const baixasMap = await loadBaixasPorEtiqueta(pecas.map((p) => p.id));
+    const tiposEtqMap = await loadTiposPorEtiqueta(pecas.map((p) => p.id));
+    const tiposEtqPreMap = await loadTiposPorEtiqueta(preCadastros.map((p) => p.id), true);
     for (const p of pecas) {
       for (const etq of splitEtiquetas(p.detranEtiqueta)) {
         // Baixa por etiqueta: usa a tabela; cai na flag da peça se não houver registro.
         const baixada = baixasMap.has(`${p.id}|${etq}`) || p.detranBaixada;
-        anbMap.set(etq.toUpperCase(), { sku: p.idPeca, descricao: p.descricao, baixada, fonte: 'peca', motoId: p.motoId, tipoPecaAvulsa: p.tipoPecaAvulsa });
+        anbMap.set(etq.toUpperCase(), { sku: p.idPeca, descricao: p.descricao, baixada, fonte: 'peca', motoId: p.motoId, tipoPecaAvulsa: tipoDaEtiqueta(tiposEtqMap, false, p.id, etq, p.tipoPecaAvulsa) });
       }
     }
     for (const h of historico) {
@@ -698,7 +737,7 @@ etiquetasDetranRouter.post('/validar', async (req, res, next) => {
     for (const pc of preCadastros) {
       for (const etq of splitEtiquetas(pc.detranEtiqueta)) {
         const key = etq.toUpperCase();
-        if (!anbMap.has(key)) anbMap.set(key, { sku: pc.idPeca, descricao: pc.descricao, baixada: false, fonte: 'pre_cadastro', motoId: pc.motoId, tipoPecaAvulsa: pc.tipoPecaAvulsa });
+        if (!anbMap.has(key)) anbMap.set(key, { sku: pc.idPeca, descricao: pc.descricao, baixada: false, fonte: 'pre_cadastro', motoId: pc.motoId, tipoPecaAvulsa: tipoDaEtiqueta(tiposEtqPreMap, true, pc.id, etq, pc.tipoPecaAvulsa) });
       }
     }
 
@@ -821,6 +860,7 @@ etiquetasDetranRouter.post('/validar-baixa', async (req, res, next) => {
     const anbBaixadasMap = new Map<string, AnbBaixaEntry>();
 
     const baixasMap = await loadBaixasPorEtiqueta(pecas.map((p) => p.id));
+    const tiposEtqMap = await loadTiposPorEtiqueta(pecas.map((p) => p.id));
     for (const p of pecas) {
       for (const etq of splitEtiquetas(p.detranEtiqueta)) {
         const baixaEtq = baixasMap.get(`${p.id}|${etq}`);
@@ -828,7 +868,7 @@ etiquetasDetranRouter.post('/validar-baixa', async (req, res, next) => {
         if (!baixada) continue;
         anbBaixadasMap.set(etq.toUpperCase(), {
           sku: p.idPeca, descricao: p.descricao, motoId: p.motoId,
-          baixadaEm: baixaEtq?.baixadaEm ?? null, fonte: 'peca', tipoPecaAvulsa: p.tipoPecaAvulsa,
+          baixadaEm: baixaEtq?.baixadaEm ?? null, fonte: 'peca', tipoPecaAvulsa: tipoDaEtiqueta(tiposEtqMap, false, p.id, etq, p.tipoPecaAvulsa),
         });
       }
     }
@@ -993,6 +1033,7 @@ etiquetasDetranRouter.get('/pendencias-ativacao', async (req, res, next) => {
       }),
       loadAtivacoesPorEtiqueta(pecas.map((p) => p.id)),
     ]);
+    const tiposEtqMap = await loadTiposPorEtiqueta(pecas.map((p) => p.id));
 
     const motoById = new Map((motos as any[]).map((m: any) => [m.id, m]));
     const cartelaSet = new Set<string>();
@@ -1015,7 +1056,7 @@ etiquetasDetranRouter.get('/pendencias-ativacao', async (req, res, next) => {
           sku: peca.idPeca,
           descricao: peca.descricao,
           etiqueta: etq,                          // Número da Peça Avulsa
-          tipoPeca: peca.tipoPecaAvulsa,          // Tipo de Peça
+          tipoPeca: tipoDaEtiqueta(tiposEtqMap, false, peca.id, etq, peca.tipoPecaAvulsa), // Tipo de Peça (por etiqueta)
           renavam: moto.renavam || null,
           placa: moto.placa || null,
           chassi: moto.chassi || null,
@@ -1107,6 +1148,7 @@ etiquetasDetranRouter.get('/pendencias-resumo', async (_req, res, next) => {
         prisma.motoDetranPosicao.findMany({ where: { motoId: { in: motoIds }, idPeca: { not: null } }, select: { motoId: true, idPeca: true, etiqueta: true } }),
         loadAtivacoesPorEtiqueta(pecasAtiv.map((p) => p.id)),
       ]);
+      const tiposEtqMapAtiv = await loadTiposPorEtiqueta(pecasAtiv.map((p) => p.id));
       const cartelaBaseByMoto = new Map<number, string>((motos as any[]).map((m: any) => [m.id, String(m.detranCartelaId || '')]));
       const cartelaSet = new Set<string>();
       for (const pos of posicoes) if (pos.idPeca && pos.etiqueta) cartelaSet.add(`${pos.motoId}|${pos.idPeca}|${pos.etiqueta}`);
@@ -1115,7 +1157,7 @@ etiquetasDetranRouter.get('/pendencias-resumo', async (_req, res, next) => {
           if (cartelaSet.has(`${p.motoId}|${p.idPeca}|${etq}`)) continue;
           if (ehEtiquetaCartelaDaMoto(etq, cartelaBaseByMoto.get(p.motoId))) continue;
           if (ativMap.has(`${p.id}|${etq}`)) continue;
-          itens.push({ tipo: 'ativacao', pecaId: p.id, sku: p.idPeca, descricao: p.descricao, etiqueta: etq, info: p.tipoPecaAvulsa || '' });
+          itens.push({ tipo: 'ativacao', pecaId: p.id, sku: p.idPeca, descricao: p.descricao, etiqueta: etq, info: tipoDaEtiqueta(tiposEtqMapAtiv, false, p.id, etq, p.tipoPecaAvulsa) || '' });
         }
       }
     }
@@ -1205,14 +1247,34 @@ etiquetasDetranRouter.get('/comprovante', async (req, res, next) => {
 etiquetasDetranRouter.patch('/:pecaId/tipo-peca', async (req, res, next) => {
   try {
     const pecaId = Number(req.params.pecaId);
-    const { tipoPeca, isPreCadastro } = req.body as { tipoPeca: string; isPreCadastro?: boolean };
+    const { tipoPeca, isPreCadastro, etiqueta } = req.body as { tipoPeca: string; isPreCadastro?: boolean; etiqueta?: string };
     if (!tipoPeca || !DETRAN_TIPOS.includes(tipoPeca)) {
       return res.status(400).json({ error: 'Tipo de peça inválido' });
     }
-    if (isPreCadastro) {
-      await prisma.cadastroPeca.update({ where: { id: pecaId }, data: { tipoPecaAvulsa: tipoPeca } });
-    } else {
-      await prisma.peca.update({ where: { id: pecaId }, data: { tipoPecaAvulsa: tipoPeca } });
+    const etq = String(etiqueta || '').trim().toUpperCase();
+    // Sem etiqueta (chamada antiga): comportamento anterior, tipo unico da peca.
+    // Com etiqueta: o tipo vale so pra ela. O tipo da peca (usado como padrao das demais) so e' preenchido
+    // quando ainda nao existe ou quando a peca tem uma unica etiqueta.
+    const atual: any = etq
+      ? (isPreCadastro
+        ? await prisma.cadastroPeca.findUnique({ where: { id: pecaId }, select: { tipoPecaAvulsa: true, detranEtiqueta: true } })
+        : await prisma.peca.findUnique({ where: { id: pecaId }, select: { tipoPecaAvulsa: true, detranEtiqueta: true } }))
+      : null;
+    if (etq) {
+      await garantirTabelaTipoEtiqueta();
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO "DetranEtiquetaTipo" ("pecaId","preCadastro","etiqueta","tipoPeca") VALUES ($1,$2,$3,$4)
+         ON CONFLICT ("pecaId","preCadastro","etiqueta") DO UPDATE SET "tipoPeca" = $4, "atualizadoEm" = now()`,
+        pecaId, !!isPreCadastro, etq, tipoPeca,
+      );
+    }
+    const unicaEtiqueta = atual ? splitEtiquetas(atual.detranEtiqueta).length <= 1 : true;
+    if (!etq || unicaEtiqueta || !atual?.tipoPecaAvulsa) {
+      if (isPreCadastro) {
+        await prisma.cadastroPeca.update({ where: { id: pecaId }, data: { tipoPecaAvulsa: tipoPeca } });
+      } else {
+        await prisma.peca.update({ where: { id: pecaId }, data: { tipoPecaAvulsa: tipoPeca } });
+      }
     }
     res.json({ ok: true });
   } catch (e) { next(e); }

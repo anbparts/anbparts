@@ -297,7 +297,7 @@ export default function EtiquetasDetranPage() {
       const resp = await fetch(`${API}/etiquetas-detran/${editTipoPeca.pecaId}/tipo-peca`, {
         method: 'PATCH', credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tipoPeca: editTipoSelecionado, isPreCadastro: editTipoPeca.isPreCadastro }),
+        body: JSON.stringify({ tipoPeca: editTipoSelecionado, isPreCadastro: editTipoPeca.isPreCadastro, etiqueta: editTipoPeca.etiqueta }),
       });
       if (!resp.ok) throw new Error('Erro ao salvar');
       setLinhas((prev) => prev.map((l) =>
