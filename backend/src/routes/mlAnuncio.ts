@@ -9,7 +9,7 @@ import { blingReq } from './bling';
 import { buscarFotosDriveSku } from '../lib/fotos-cadastro';
 import { carregarAnuncioBase, skuBaseAnuncio, type AnuncioBase } from '../lib/anuncioBase';
 import { exigirFotosOficiais, garantirProdutoAtivoNoBling, lerDadosBlingSku, resolverBlingProdutoId } from '../lib/anuncioPreparar';
-import { carregarFolhasMoto, sugerirCategoriaML, verificarCategoriaML, ML_LOJA_BLING_ID } from '../lib/mlCategorias';
+import { atributosExtrasML, carregarFolhasMoto, sugerirCategoriaML, verificarCategoriaML, ML_LOJA_BLING_ID } from '../lib/mlCategorias';
 
 export const mlAnuncioRouter = Router();
 
@@ -90,7 +90,9 @@ mlAnuncioRouter.get('/anuncio/verificar-categoria', async (req, res) => {
     const id = String(req.query.id || '').trim();
     if (!id) return res.status(400).json({ error: 'id obrigatorio' });
     const condicao = String(req.query.condicao || '').toLowerCase() === 'novo' ? 'novo' : 'usado';
-    const ver = await verificarCategoriaML(id, condicao);
+    const skuQ = skuBaseAnuncio(req.query.sku);
+    const baseQ = skuQ ? await carregarAnuncioBase(skuQ).catch(() => null) : null;
+    const ver = await verificarCategoriaML(id, condicao, { modelo: baseQ?.moto?.modelo || null });
     res.json({ consulta: 'ok', ...ver });
   } catch (e: any) {
     res.status(400).json({ error: e?.message || 'Erro ao verificar a categoria' });
@@ -147,7 +149,8 @@ mlAnuncioRouter.post('/anuncio/buscar', async (req, res, next) => {
         try {
           const sug = await sugerirCategoriaML({ titulo: base.descricao, marca: base.moto?.marca, modelo: base.moto?.modelo, condicao });
           if (sug) {
-            const ver = await verificarCategoriaML(sug.id, condicao);
+            const ver = await verificarCategoriaML(sug.id, condicao, { modelo: base.moto?.modelo || null });
+            linha.fichaFaltando = ver.fichaFaltando;
             linha.categoriaAtual = { id: sug.id, nivel4: sug.nome, caminho: sug.caminho, permitido: ver.ok, generica: /^outros$/i.test(sug.nome) };
             linha.restricoes = ver.restricoes;
             linha.avisos = ver.avisos;
@@ -203,8 +206,12 @@ mlAnuncioRouter.post('/anuncio/criar', async (req, res) => {
     const dados = await lerDadosBlingSku({ idPeca: base.idPeca, blingProdutoId });
 
     // 3) Restricoes da categoria escolhida (bloqueia aqui tambem, nao so na tela).
-    const ver = await verificarCategoriaML(categoriaId, dados.condicao);
+    const ver = await verificarCategoriaML(categoriaId, dados.condicao, { modelo: base.moto?.modelo || null });
     if (!ver.ok) return res.status(400).json({ error: `Categoria com restricao: ${ver.restricoes.join(' | ')}` });
+    // Atributos obrigatorios alem dos fixos: automaticos (tipo de veiculo, modelo) + os digitados na tela (body.ficha).
+    const fichaDigitada = req.body?.ficha && typeof req.body.ficha === 'object' ? req.body.ficha : {};
+    const extras = await atributosExtrasML(categoriaId, { modelo: base.moto?.modelo || null }, fichaDigitada);
+    if (extras.faltam.length) return res.status(400).json({ error: `Preencha os campos obrigatórios da categoria no Mercado Livre: ${extras.faltam.join(', ')}.` });
 
     // 4) 1 foto de capa da pasta oficial (as demais ficam pro Fotos Anuncios).
     const drive = await buscarFotosDriveSku(base.motoId, base.idPeca);
@@ -222,6 +229,7 @@ mlAnuncioRouter.post('/anuncio/criar', async (req, res) => {
       { id: 'SELLER_PACKAGE_LENGTH', valor: `${Math.round(Number(base.profundidade))} cm` },
       { id: 'SELLER_PACKAGE_HEIGHT', valor: `${Math.round(Number(base.altura))} cm` },
       { id: 'SELLER_PACKAGE_WEIGHT', valor: `${Math.round(Number(peso) * 1000)} g` },
+      ...extras.atributos,
     ];
 
     const payload: any = {

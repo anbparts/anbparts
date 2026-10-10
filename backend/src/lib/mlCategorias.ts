@@ -117,11 +117,71 @@ export async function atributosCategoriaML(id: string): Promise<any[]> {
   return itens;
 }
 
-export type VerificacaoCategoria = { ok: boolean; caminho: string; nome: string; restricoes: string[]; avisos: string[] };
+// Atributos de uma categoria na API PUBLICA do ML (traz os valores permitidos das listas; o Bling so diz se e' obrigatorio).
+const cacheAttrsPublicos = new Map<string, { itens: any[]; expira: number }>();
+async function atributosPublicosML(id: string): Promise<any[]> {
+  const hit = cacheAttrsPublicos.get(id);
+  if (hit && hit.expira > Date.now()) return hit.itens;
+  const itens = await mlGet(`/categories/${encodeURIComponent(id)}/attributes`);
+  const lista = Array.isArray(itens) ? itens : [];
+  cacheAttrsPublicos.set(id, { itens: lista, expira: Date.now() + TTL_FOLHAS });
+  return lista;
+}
 
-export async function verificarCategoriaML(id: string, condicao: 'usado' | 'novo'): Promise<VerificacaoCategoria> {
+export type CampoFichaML = { nome: string; exemplo: string; escolhas: string[] | null };
+type PlanoAtributosML = {
+  automaticos: Array<{ id: string; valor: string }>;
+  faltando: Array<CampoFichaML & { id: string; valores: Array<{ id: string; name: string }> }>;
+};
+
+// Atributos obrigatorios da categoria alem dos que o sistema ja manda sempre: preenche sozinho os que da pra deduzir
+// (Tipo de veiculo = moto; Modelo = modelo da moto do SKU) e devolve os que precisam ser digitados/escolhidos na tela.
+async function planejarAtributosML(categoriaId: string, ctx: { modelo?: string | null }): Promise<PlanoAtributosML> {
+  const bling = await atributosCategoriaML(categoriaId);
+  let publicos: any[] = [];
+  try { publicos = await atributosPublicosML(categoriaId); } catch { /* sem lista de valores: pede como texto */ }
+  const pub = new Map(publicos.map((a: any) => [String(a.id), a]));
+  const plano: PlanoAtributosML = { automaticos: [], faltando: [] };
+  for (const a of bling) {
+    if (!a?.obrigatorio) continue;
+    const id = String(a.id);
+    if (ATRIBUTOS_SUPORTADOS.has(id)) continue;
+    const p: any = pub.get(id);
+    const valores: Array<{ id: string; name: string }> = (Array.isArray(p?.values) ? p.values : [])
+      .map((v: any) => ({ id: String(v.id), name: String(v.name) })).filter((v: any) => v.id && v.name);
+    if (id === 'VEHICLE_TYPE') {
+      const moto = valores.find((v) => /moto/i.test(v.name)) || (valores.length === 1 ? valores[0] : null);
+      if (moto) { plano.automaticos.push({ id, valor: moto.id }); continue; }
+    }
+    if (id === 'MODEL' && ctx.modelo) { plano.automaticos.push({ id, valor: String(ctx.modelo) }); continue; }
+    plano.faltando.push({
+      id, nome: String(a.nome || id), exemplo: String(p?.hint || p?.tooltip || ''),
+      escolhas: valores.length ? valores.slice(0, 80).map((v) => v.name) : null, valores,
+    });
+  }
+  return plano;
+}
+
+// Atributos extras pra criacao: os automaticos + os digitados na tela (ficha: nome do campo -> valor ou nome da opcao).
+export async function atributosExtrasML(categoriaId: string, ctx: { modelo?: string | null }, ficha: Record<string, string> = {}) {
+  const plano = await planejarAtributosML(categoriaId, ctx);
+  const atributos = [...plano.automaticos];
+  const faltam: string[] = [];
+  for (const f of plano.faltando) {
+    const digitado = String(ficha?.[f.nome] ?? '').trim();
+    if (!digitado) { faltam.push(f.nome); continue; }
+    const opcao = f.valores.find((v) => norm(v.name) === norm(digitado));
+    atributos.push({ id: f.id, valor: opcao ? opcao.id : digitado });
+  }
+  return { atributos, faltam };
+}
+
+export type VerificacaoCategoria = { ok: boolean; caminho: string; nome: string; restricoes: string[]; avisos: string[]; fichaFaltando: CampoFichaML[] };
+
+export async function verificarCategoriaML(id: string, condicao: 'usado' | 'novo', ctx: { modelo?: string | null } = {}): Promise<VerificacaoCategoria> {
   const restricoes: string[] = [];
   const avisos: string[] = [];
+  let fichaFaltando: CampoFichaML[] = [];
   let caminho = '';
   let nome = '';
   try {
@@ -143,14 +203,14 @@ export async function verificarCategoriaML(id: string, condicao: 'usado' | 'novo
   }
 
   try {
-    const attrs = await atributosCategoriaML(id);
-    const faltam = attrs.filter((a: any) => a?.obrigatorio && !ATRIBUTOS_SUPORTADOS.has(String(a.id))).map((a: any) => `${a.nome || a.id}`);
-    if (faltam.length) restricoes.push(`Exige atributo(s) que o sistema ainda não preenche: ${faltam.join(', ')}.`);
+    // Atributos obrigatorios: o que da pra deduzir (tipo de veiculo, modelo) e' preenchido sozinho; o resto vira campo na tela.
+    const plano = await planejarAtributosML(id, ctx);
+    fichaFaltando = plano.faltando.map((f) => ({ nome: f.nome, exemplo: f.exemplo, escolhas: f.escolhas }));
   } catch (e: any) {
     avisos.push('Não foi possível ler os atributos obrigatórios da categoria no Bling.');
   }
 
-  return { ok: restricoes.length === 0, caminho, nome, restricoes, avisos };
+  return { ok: restricoes.length === 0, caminho, nome, restricoes, avisos, fichaFaltando };
 }
 
 // ---------- sugestao inteligente ----------

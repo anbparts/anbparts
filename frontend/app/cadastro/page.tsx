@@ -2493,18 +2493,20 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
     const escolhida = categoriasDoMarketplace(mk).find((c) => c.id === categoriaId) || null;
     // Mercado Livre: confere as restricoes da categoria escolhida (condicao aceita, atributos obrigatorios...).
     let restricoes: string[] = [];
+    let fichaML: { nome: string; exemplo: string; escolhas: string[] | null }[] = [];
     if (mk === 'mercado-livre') {
       try {
         const cond = anuncioAjustes[sku]?.condicao || 'usado';
-        const resp = await fetch(`${API}/mercado-livre/anuncio/verificar-categoria?id=${encodeURIComponent(String(categoriaId))}&condicao=${cond}`, { credentials: 'include' });
+        const resp = await fetch(`${API}/mercado-livre/anuncio/verificar-categoria?id=${encodeURIComponent(String(categoriaId))}&condicao=${cond}&sku=${encodeURIComponent(sku)}`, { credentials: 'include' });
         const data = await readApiResponse(resp, 'Erro ao verificar a categoria');
         restricoes = Array.isArray(data.restricoes) ? data.restricoes : [];
+        fichaML = Array.isArray(data.fichaFaltando) ? data.fichaFaltando : [];
       } catch (e: any) {
         restricoes = [`Não consegui verificar as restrições da categoria: ${e?.message || e}`];
       }
     }
     // Magalu: a nova categoria pode exigir campos que o sistema nao preenche — busca a lista pra pedir na tela.
-    let fichaFaltando: { nome: string; exemplo: string; escolhas: string[] | null }[] = [];
+    let fichaFaltando: { nome: string; exemplo: string; escolhas: string[] | null }[] = fichaML;
     if (mk === 'magalu') {
       try {
         const resp = await fetch(`${API}/magalu/anuncio/ficha?sku=${encodeURIComponent(sku)}&categoriaId=${encodeURIComponent(String(categoriaId))}`, { credentials: 'include' });
@@ -2563,7 +2565,7 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sku, categoriaId, ...(mk === 'magalu' && linhaAtual?.marketplaces[mk].fichaValores && Object.keys(linhaAtual.marketplaces[mk].fichaValores || {}).length ? { ficha: linhaAtual.marketplaces[mk].fichaValores } : {}) }),
+        body: JSON.stringify({ sku, categoriaId, ...((mk === 'magalu' || mk === 'mercado-livre') && linhaAtual?.marketplaces[mk].fichaValores && Object.keys(linhaAtual.marketplaces[mk].fichaValores || {}).length ? { ficha: linhaAtual.marketplaces[mk].fichaValores } : {}) }),
       });
       return readApiResponse(resp, `Erro ao criar anuncio ${mk} do SKU ${sku}`);
     };

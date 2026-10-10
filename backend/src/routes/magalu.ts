@@ -193,6 +193,8 @@ magaluRouter.get('/status', async (_req, res, next) => {
       connected: !!config.accessToken,
       connectedAt: config.connectedAt,
       redirectUri: getRedirectUri(),
+      // Marcador pra conferir qual versao da ficha esta no ar (numero da peca preenchido automaticamente do cadastro).
+      versaoFicha: 'numero-da-peca-auto-2026-10-10',
       scopes: MAGALU_SCOPES,
     });
   } catch (e) { next(e); }
@@ -375,6 +377,8 @@ function montarValoresFicha(peca: any, peso: number, description: string, fichaE
     'modelo do veiculo': moto.modelo || null,
     'ano do veiculo': moto.ano ? String(moto.ano) : null,
     'montadora': moto.marca || null,
+    // Numero da peca do cadastro (so se for um valor real: "N/A" fica de fora) — varias categorias (bobina, pneu...) o exigem.
+    'numero da peca': numeroValido,
     'tipo de veiculo indicado': 'Moto',
     // Derivados do TITULO (so quando a palavra esta la): posicao, lado e escapamento original (so vendemos originais).
     'posicao': /traseir/i.test(String(peca.descricao || '')) ? 'Traseiro' : /dianteir/i.test(String(peca.descricao || '')) ? 'Dianteiro' : null,
