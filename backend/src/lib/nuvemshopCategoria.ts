@@ -184,7 +184,27 @@ const REGRAS: Array<[RegExp, string]> = [
 
   // Estrutura / chassi (ultimo recurso dentro de Carroceria)
   [/protetor|chassi|subchassi|quadro|suporte|pedaleira|descanso|cavalete|guarda|bagagem/, 'Outras Peças Carroceria'],
+
+  // ---- Complemento (so vale pra descricao que NENHUMA regra acima pegou): evita "categoria pendente".
+  // Ordem: o mais especifico antes do mais generico.
+  [/tubo.*agua|conexao agua/, 'Mangueiras'],
+  [/\bsetas?\b|olho de gato|refletor|catadioptrico/, 'Pisca-pisca'],
+  [/auto falante|alto falante|\bfalante\b|grade.*falante/, 'Alto-falantes'],
+  [/alforg[ej]|malas? laterais|top case|tour ?pack/, 'Alforjes'],
+  [/\bporca\b|castelo/, 'Parafusos / Presilhas e Outros'],
+  [/volante magnetico|rotor magnetico|volante rotor|pulsador|placa de partida/, 'Alternador / Estator e Magneto'],
+  [/shifter|eixo de mudanca|alavanca impulsora|haste (impulsora|conectora)|\bcardan\b|diferencial|coifa|posicionador/, 'Outras Peças Transmissão'],
+  [/pedal troca marcha|troca marcha|pedal de marcha/, 'Pedal de câmbio'],
+  [/pro ?link|braco (de )?direcao|protecao contra torcao|\bbraco\b/, 'Outras Peças Suspensão'],
+  [/porta objeto|porta luvas|compartimento|moldura|morcegao|duto (de )?ar|entrada (de )?ar|bacalhau|plataforma|\bduto\b/, 'Outras Peças Carroceria'],
+  [/tomada|\busb\b|fusivel|\bfob\b|antena|central abs|\babs\b|chave|ignicao|luz de placa|multimidia|\bgps\b|\bradio\b|\bhiss\b|\btela\b/, 'Outras Peças Elétrica'],
+  [/juncao (da )?admissao|tubo multiplo|admissao/, 'Carburador / Corpo de Injeção'],
+  [/pescador|resfriador|reservatorio|vareta oleo|\bvareta\b|tampa (interna )?primaria|\bprimaria\b|mancal|balanceiro|balacin|tucho|compensador|piao|algema|\btubo\b|conexao|linha de (oleo|refrigeracao)|carcaca|tampa (esquerda|direita)|manometro/, 'Outras Peças Motor'],
+  [/manual (do )?proprietario|apoio (de )?garupa|\balca\b|fixador|aranha|galhada/, 'Outras Peças Acessórios'],
 ];
+
+// Destino quando nenhuma regra casa: o balde generico da Carroceria (melhor que deixar o SKU sem categoria).
+const CATEGORIA_PADRAO = 'Outras Peças Carroceria';
 
 // Devolve o texto das tags de categoria no formato usado na criacao: [pai, filha] como numeros.
 export async function nuvemshopCategoriasDoProduto(categoriaFilhaId: string | number): Promise<number[]> {
@@ -204,5 +224,7 @@ export async function sugerirNuvemshopCategoriaId(descricao?: string | null, _ti
     const no = porNome.get(normalizar(destino));
     return no ? String(no.id) : null;
   }
-  return null;
+  // Nenhuma regra casou: usa o balde generico (a tela de Anuncios deixa trocar se nao for o ideal).
+  const padrao = porNome.get(normalizar(CATEGORIA_PADRAO));
+  return padrao ? String(padrao.id) : null;
 }

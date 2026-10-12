@@ -433,26 +433,47 @@ export default function EtiquetasDetranPage() {
     setComprovanteNome('');
   }
 
-  async function handleComprovanteChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
-
+  // Recebe o comprovante (arquivo escolhido OU imagem colada da area de transferencia).
+  async function aplicarArquivoComprovante(file: File, nome?: string) {
     if (file.type.startsWith('image/')) {
       // Imagem — comprime com as mesmas regras do sistema
       const image = await compressFotoCapaFile(file);
       setComprovanteDataUrl(image.dataUrl);
-      setComprovanteNome(file.name);
+      setComprovanteNome(nome || file.name);
     } else {
       // PDF — lê direto sem compressão
       const reader = new FileReader();
       reader.onload = () => {
         setComprovanteDataUrl(reader.result as string);
-        setComprovanteNome(file.name);
+        setComprovanteNome(nome || file.name);
       };
       reader.readAsDataURL(file);
     }
   }
+
+  async function handleComprovanteChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    await aplicarArquivoComprovante(file);
+  }
+
+  // Ctrl+V com a janela de baixa/ativacao aberta: pega a captura que esta na memoria (Ferramenta de Captura etc.),
+  // mostra a previa no quadro do comprovante e o usuario confirma a baixa/ativacao normalmente.
+  useEffect(() => {
+    if (!modalBaixa && !modalAtivar) return;
+    const aoColar = (ev: ClipboardEvent) => {
+      const itens = ev.clipboardData ? Array.from(ev.clipboardData.items) : [];
+      const item = itens.find((it) => it.kind === 'file' && /^image\//i.test(it.type));
+      const arquivo = item ? item.getAsFile() : null;
+      if (!arquivo) return; // texto colado em outro campo segue normal
+      ev.preventDefault();
+      const hora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }).replace(':', 'h');
+      void aplicarArquivoComprovante(arquivo, `Captura colada ${hora}.png`);
+    };
+    document.addEventListener('paste', aoColar);
+    return () => document.removeEventListener('paste', aoColar);
+  }, [modalBaixa, modalAtivar]);
 
   async function confirmarBaixaComComprovante() {
     if (!modalBaixa || !canProcessarBaixa) return;
@@ -1127,6 +1148,9 @@ export default function EtiquetasDetranPage() {
               {/* Upload comprovante */}
               <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px', background: 'var(--gray-50)' }}>
                 <div style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--ink-soft)', marginBottom: 8 }}>COMPROVANTE (opcional)</div>
+                {comprovanteDataUrl && comprovanteDataUrl.startsWith('data:image') && (
+                  <img src={comprovanteDataUrl} alt="Comprovante recebido" style={{ display: 'block', maxWidth: '100%', maxHeight: 240, objectFit: 'contain', border: '1px solid var(--border)', borderRadius: 8, marginBottom: 10, background: '#fff' }} />
+                )}
                 {comprovanteDataUrl ? (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <span style={{ fontSize: 12, color: 'var(--ink)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>
@@ -1139,7 +1163,7 @@ export default function EtiquetasDetranPage() {
                   </div>
                 ) : (
                   <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, color: 'var(--ink-soft)', padding: '6px 12px', border: '1px dashed var(--border)', borderRadius: 8 }}>
-                    📎 Anexar comprovante
+                    📎 Anexar comprovante ou cole a captura (Ctrl+V)
                     <input type="file" accept="image/*,application/pdf" style={{ display: 'none' }} onChange={handleComprovanteChange} />
                   </label>
                 )}
@@ -1344,6 +1368,9 @@ export default function EtiquetasDetranPage() {
               </div>
               <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px', background: 'var(--gray-50)' }}>
                 <div style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--ink-soft)', marginBottom: 8 }}>COMPROVANTE (opcional)</div>
+                {comprovanteDataUrl && comprovanteDataUrl.startsWith('data:image') && (
+                  <img src={comprovanteDataUrl} alt="Comprovante recebido" style={{ display: 'block', maxWidth: '100%', maxHeight: 240, objectFit: 'contain', border: '1px solid var(--border)', borderRadius: 8, marginBottom: 10, background: '#fff' }} />
+                )}
                 {comprovanteDataUrl ? (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <span style={{ fontSize: 12, color: 'var(--ink)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>✓ {comprovanteNome}</span>
@@ -1352,7 +1379,7 @@ export default function EtiquetasDetranPage() {
                   </div>
                 ) : (
                   <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, color: 'var(--ink-soft)', padding: '6px 12px', border: '1px dashed var(--border)', borderRadius: 8 }}>
-                    📎 Anexar comprovante
+                    📎 Anexar comprovante ou cole a captura (Ctrl+V)
                     <input type="file" accept="image/*,application/pdf" style={{ display: 'none' }} onChange={handleComprovanteChange} />
                   </label>
                 )}
