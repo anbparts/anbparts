@@ -6509,6 +6509,62 @@ type SeparacaoPedidoRaw = {
   }>;
 };
 
+// Detalhe do pedido (GET /pedidos/vendas/:id) guardado em memoria: a LISTAGEM de pedidos (que ja precisa do nome do cliente)
+// o grava, e o RELATORIO de separacao o reaproveita em vez de chamar o Bling de novo. So volta ao Bling o pedido que
+// nao estiver no cache (ou venceu). Limite de entradas pra nao crescer sem fim.
+const PEDIDO_DETALHE_CACHE_TTL_MS = 30 * 60 * 1000;
+const PEDIDO_DETALHE_CACHE_MAX = 600;
+const pedidoDetalheCache = new Map<string, { expiraEm: number; detalhe: any }>();
+
+async function obterDetalhePedidoCache(pedidoId: string | number, opts: { forceRefresh?: boolean } = {}): Promise<any> {
+  const chave = String(pedidoId);
+  const hit = pedidoDetalheCache.get(chave);
+  if (!opts.forceRefresh && hit && hit.expiraEm > Date.now()) return hit.detalhe;
+  const detalhe = await blingReq(`/pedidos/vendas/${chave}`) as any;
+  if (detalhe?.data) {
+    if (pedidoDetalheCache.size >= PEDIDO_DETALHE_CACHE_MAX) {
+      const maisAntiga = pedidoDetalheCache.keys().next().value;
+      if (maisAntiga !== undefined) pedidoDetalheCache.delete(maisAntiga);
+    }
+    pedidoDetalheCache.set(chave, { expiraEm: Date.now() + PEDIDO_DETALHE_CACHE_TTL_MS, detalhe });
+  }
+  return detalhe;
+}
+
+// Aquece os caches de PRODUTO (busca por codigo + detalhe) dos itens dos pedidos listados, com validade maior que a padrao
+// (2 min), pra o relatorio nao precisar varrer o catalogo do Bling na hora. Tem orcamento de tempo: o que nao der, o relatorio
+// busca na hora.
+const PRODUTO_PREAQUECIDO_TTL_MS = 30 * 60 * 1000;
+async function preaquecerProdutosDoRelatorio(pedidoIds: Array<string | number>, orcamentoMs = 60_000) {
+  const limite = Date.now() + orcamentoMs;
+  const codigos = new Set<string>();
+  const idsProduto = new Set<number>();
+  for (const pid of pedidoIds) {
+    const det = pedidoDetalheCache.get(String(pid));
+    for (const item of (det?.detalhe?.data?.itens || [])) {
+      const cod = getBaseSku(String(item?.produto?.codigo || item?.codigo || item?.sku || '').trim().toUpperCase());
+      if (cod) codigos.add(cod);
+      if (item?.produto?.id) idsProduto.add(Number(item.produto.id));
+    }
+  }
+  try {
+    if (codigos.size && Date.now() < limite) {
+      const achados = await findBlingProductsByCodes(Array.from(codigos));
+      achados.forEach((produto: any, codigo: string) => {
+        const c = blingProductByCodeCache.get(codigo);
+        if (c) c.expiresAt = Date.now() + PRODUTO_PREAQUECIDO_TTL_MS;
+        if (produto?.id) idsProduto.add(Number(produto.id));
+      });
+    }
+    for (const id of Array.from(idsProduto)) {
+      if (Date.now() >= limite) break;
+      await fetchBlingProductDetailById(id);
+      const c = blingProductDetailCache.get(id);
+      if (c) c.expiresAt = Date.now() + PRODUTO_PREAQUECIDO_TTL_MS;
+    }
+  } catch { /* pre-aquecimento e' so otimizacao: se falhar, o relatorio busca na hora */ }
+}
+
 async function buildRelatorioSeparacaoFromPedidoIds(
   pedidoIds: number[],
   options: {
@@ -6531,9 +6587,7 @@ async function buildRelatorioSeparacaoFromPedidoIds(
   const codigosSeparacao = new Set<string>();
 
   for (const pedidoId of pedidoIdsUnicos) {
-    await sleep(120);
-
-    const detalhe = await blingReq(`/pedidos/vendas/${pedidoId}`) as any;
+    const detalhe = await obterDetalhePedidoCache(pedidoId) as any;
     const pedido = detalhe?.data || {};
     const pedidoMeta = options.pedidosMetaById?.get(pedidoId) || null;
     const situacaoDetalhe = classifyOrderSituation(pedido);
@@ -6898,17 +6952,20 @@ blingRouter.get('/relatorio-separacao-manual/pedidos', async (req, res, next) =>
     let consultasNovas = 0;
     for (const p of pedidos as any[]) {
       const chave = String(p.pedidoId);
-      if (!nomeClientePedidoCache.has(chave) && consultasNovas < 60) {
+      const detalheEmCache = (pedidoDetalheCache.get(chave)?.expiraEm || 0) > Date.now();
+      if ((!nomeClientePedidoCache.has(chave) || !detalheEmCache) && consultasNovas < 60) {
         consultasNovas += 1;
         try {
-          const detalhe = await blingReq(`/pedidos/vendas/${chave}`) as any;
+          // Guarda o detalhe INTEIRO do pedido: o relatorio de separacao reaproveita (nao chama o Bling de novo).
+          const detalhe = await obterDetalhePedidoCache(chave) as any;
           const nome = String(detalhe?.data?.contato?.nome || '').trim();
           if (nome) nomeClientePedidoCache.set(chave, nome);
-        } catch { /* sem nome: aparece vazio e tenta de novo na proxima atualizacao */ }
-        await new Promise((r) => setTimeout(r, 330));
+        } catch { /* sem detalhe: aparece vazio e o relatorio tenta de novo so pra esse pedido */ }
       }
       p.nomeCliente = nomeClientePedidoCache.get(chave) || null;
     }
+    // Aquece os produtos dos itens (busca por codigo + detalhe) pra o relatorio sair rapido.
+    await preaquecerProdutosDoRelatorio((pedidos as any[]).map((p) => p.pedidoId));
     const envios: any[] = await (prisma as any).blingPedidoEnvioPosterior.findMany({
       where: { pedidoId: { in: (pedidos as any[]).map((p) => BigInt(p.pedidoId)) } },
     }).catch(() => []);
