@@ -3341,8 +3341,8 @@ function PecaDetalheNovaModal({ open, peca, onClose, onSaved, canEditarPeca = fa
     setSaving(false);
   }
 
-  const colunaEsq: any = { flex: isPhone ? undefined : '1.15 1 0', minWidth: 0, display: 'grid', gap: 12, alignContent: 'start' };
-  const colunaDir: any = { flex: isPhone ? undefined : '0.85 1 0', minWidth: 0, display: 'grid', gap: 12, alignContent: 'start' };
+  const colunaEsq: any = { flex: isPhone ? '1 1 100%' : '1.15 1 520px', minWidth: 0, display: 'grid', gap: 12, alignContent: 'start' };
+  const colunaDir: any = { flex: isPhone ? '1 1 100%' : '0.85 1 340px', minWidth: 0, display: 'grid', gap: 12, alignContent: 'start' };
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 235, display: 'flex', alignItems: isPhone ? 'stretch' : 'center', justifyContent: 'center', padding: isPhone ? 0 : 14, backdropFilter: 'blur(2px)' }} onClick={onClose}>
@@ -3359,7 +3359,7 @@ function PecaDetalheNovaModal({ open, peca, onClose, onSaved, canEditarPeca = fa
           <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', flexShrink: 0 }}>X</button>
         </div>
 
-        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: isPhone ? 14 : '16px 22px', display: 'flex', flexDirection: isPhone ? 'column' : 'row', gap: 16, alignItems: 'flex-start' }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: isPhone ? 14 : '16px 22px', display: 'flex', flexDirection: isPhone ? 'column' : 'row', flexWrap: isPhone ? 'nowrap' : 'wrap', gap: 16, alignItems: 'flex-start' }}>
           {/* ---------- coluna esquerda: formulario ---------- */}
           <div style={colunaEsq}>
             {emPrejuizo && <div style={{ padding: 12, borderRadius: 10, background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', fontSize: 12.5 }}>Peça marcada como <strong>Prejuízo</strong>: bloqueada para edição pela tela de estoque.</div>}
@@ -3423,7 +3423,7 @@ function PecaDetalheNovaModal({ open, peca, onClose, onSaved, canEditarPeca = fa
                   const k = etq.trim().toUpperCase();
                   const info = k ? infoEtq[k] : undefined;
                   return (
-                    <div key={i} style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'minmax(0, 1.1fr) minmax(0, 1fr) auto', gap: 8, alignItems: 'center' }}>
+                    <div key={i} style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8, alignItems: 'center' }}>
                       <input style={{ ...inp, fontFamily: 'Geist Mono, monospace' }} disabled={!editando} value={etq} onChange={(e) => setEtiquetas((p) => p.map((x, j) => (j === i ? e.target.value : x)))} placeholder="Ex: SP83838383" />
                       {info ? (
                         info.editavel ? (
