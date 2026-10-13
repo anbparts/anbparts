@@ -2968,7 +2968,7 @@ function PecaDetalheNovaModal({ open, peca, onClose, onSaved, canEditarPeca = fa
   const [etiquetas, setEtiquetas] = useState<string[]>([]);
   const [tipos, setTipos] = useState<Record<string, string>>({});
   const [tiposOrig, setTiposOrig] = useState<Record<string, string>>({});
-  const [infoEtq, setInfoEtq] = useState<Record<string, { tipoEtiqueta: string; editavel: boolean }>>({});
+  const [infoEtq, setInfoEtq] = useState<Record<string, { tipoEtiqueta: string; editavel: boolean; tipoPeca: string }>>({});
   const [tiposDisponiveis, setTiposDisponiveis] = useState<string[]>([]);
   const [armazenagem, setArmazenagem] = useState<{ loading: boolean; endereco: string | null }>({ loading: false, endereco: null });
   const [texto, setTexto] = useState<{ aberto: boolean; loading: boolean; html: string | null; erro: string | null; editado: string | null }>({ aberto: false, loading: false, html: null, erro: null, editado: null });
@@ -3026,10 +3026,10 @@ function PecaDetalheNovaModal({ open, peca, onClose, onSaved, canEditarPeca = fa
         .then((r) => r.json())
         .then((d) => {
           if (cancelado || !d?.ok) return;
-          const info: Record<string, { tipoEtiqueta: string; editavel: boolean }> = {};
+          const info: Record<string, { tipoEtiqueta: string; editavel: boolean; tipoPeca: string }> = {};
           const doServidor: Record<string, string> = {};
           (d.etiquetas || []).forEach((l: any) => {
-            info[l.etiqueta] = { tipoEtiqueta: l.tipoEtiqueta, editavel: !!l.editavel };
+            info[l.etiqueta] = { tipoEtiqueta: l.tipoEtiqueta, editavel: !!l.editavel, tipoPeca: l.tipoPeca || '' };
             if (l.editavel) doServidor[l.etiqueta] = l.tipoPeca || '';
           });
           setInfoEtq(info);
