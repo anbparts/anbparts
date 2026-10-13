@@ -783,6 +783,7 @@ export default function CadastroPage() {
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [confirmando, setConfirmando] = useState(false);
   const [etiquetas, setEtiquetas] = useState<string[]>(['']); // array de etiquetas detran
+  const [tiposEtiqueta, setTiposEtiqueta] = useState<Record<string, string>>({}); // tipo de peca de CADA etiqueta avulsa
   const [imprimindoItemId, setImprimindoItemId] = useState<number | null>(null);
   const [eliminandoLinhaId, setEliminandoLinhaId] = useState<number | null>(null);
   const [uploadingFotoCapa, setUploadingFotoCapa] = useState(false);
@@ -1603,7 +1604,7 @@ export default function CadastroPage() {
       : (() => { const s = [...motos].sort((a, b) => b.id - a.id); return s[0]?.id ? String(s[0].id) : ''; })();
     const motoId = motoConfigurada;
     const form0 = { ...EMPTY_FORM, motoId };
-    setForm(form0); setEditItem(null); setCategorias([]); setEtiquetas(['']); setFotoPreviewOpen(false);
+    setForm(form0); setEditItem(null); setCategorias([]); setEtiquetas(['']); setTiposEtiqueta({}); setFotoPreviewOpen(false);
     if (motoId) await carregarProximoId(motoId, form0);
     setModal(true);
   }
@@ -1649,6 +1650,18 @@ export default function CadastroPage() {
       ? item.detranEtiqueta.split('/').map((e: string) => e.trim()).filter(Boolean)
       : [''];
     setEtiquetas(etiquetasCarregadas.length > 0 ? etiquetasCarregadas : ['']);
+    setTiposEtiqueta({});
+    if (item.detranEtiqueta) {
+      fetch(`${API}/etiquetas-detran/${item.id}/tipos-etiqueta?isPreCadastro=1`, { credentials: 'include' })
+        .then((resp) => resp.json())
+        .then((d) => {
+          if (!d?.ok) return;
+          const mapa: Record<string, string> = {};
+          (d.etiquetas || []).forEach((l: any) => { if (l.editavel && l.tipoPeca) mapa[String(l.etiqueta).toUpperCase()] = l.tipoPeca; });
+          setTiposEtiqueta(mapa);
+        })
+        .catch(() => {});
+    }
     setCategorias([]); setFotoPreviewOpen(false); setModal(true);
   }
 
@@ -1780,8 +1793,11 @@ export default function CadastroPage() {
     // Validar Tipo de Peça para etiquetas avulsas
     const etiquetasValidas = etiquetas.filter(e => e.trim());
     const possuiAvulsa = etiquetasValidas.some(e => !parseEtiquetaCartela(e));
-    if (possuiAvulsa && !form.tipoPecaAvulsa) return alert('Selecione o Tipo de Peça para a etiqueta avulsa');
-    const ehBlocoMotor = etiquetasValidas.some(e => /005$/.test(e.trim())) || form.tipoPecaAvulsa === 'Bloco do motor';
+    const avulsasLista = etiquetasValidas.filter(e => !parseEtiquetaCartela(e)).map(e => e.trim());
+    const avulsasSemTipo = avulsasLista.filter(e => !String(tiposEtiqueta[e.toUpperCase()] || '').trim());
+    if (possuiAvulsa && avulsasSemTipo.length) return alert(`Selecione o Tipo de Peça de cada etiqueta avulsa (faltando: ${avulsasSemTipo.join(', ')})`);
+    const tiposAvulsas = avulsasLista.map(e => String(tiposEtiqueta[e.toUpperCase()] || '').trim());
+    const ehBlocoMotor = etiquetasValidas.some(e => /005$/.test(e.trim())) || tiposAvulsas.includes('Bloco do motor');
     if (ehBlocoMotor && !String(form.numeroMotor || '').trim()) return alert('Informe o Número do Motor (obrigatório para Bloco do motor: etiqueta final 005 ou tipo avulso Bloco do motor).');
     // Peso: o campo e' em QUILOS. Alerta SO para valor alto (100 kg ou mais = 3 digitos na parte inteira), que quase sempre
     // e' grama digitada como quilo (250 em vez de 0,250). Peso normal/baixo salva direto, sem pergunta.
@@ -1808,7 +1824,8 @@ export default function CadastroPage() {
         localizacao: form.localizacao || null, estoque: Number(form.estoque) || 1,
         categoriaMLId: form.categoriaMLId || null, categoriaMLNome: form.categoriaMLNome || null,
         urlRef: form.urlRef || null,
-        tipoPecaAvulsa: form.tipoPecaAvulsa || null,
+        tipoPecaAvulsa: (tiposAvulsas.length ? tiposAvulsas[0] : (form.tipoPecaAvulsa || '')) || null,
+        tiposEtiqueta: avulsasLista.reduce((acc: Record<string, string>, e) => { acc[e.toUpperCase()] = String(tiposEtiqueta[e.toUpperCase()] || '').trim(); return acc; }, {}),
         pecaRestrita: Boolean(form.pecaRestrita),
         sucata: Boolean(form.sucata),
       };
@@ -4256,28 +4273,35 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
                       )}
                     </div>
                   ))}
-                  {/* Tipo de Peça para etiquetas avulsas */}
+                  {/* Tipo de Peça de CADA etiqueta avulsa (individual) */}
                   {etiquetas.some(e => e.trim() && !parseEtiquetaCartela(e)) && (
-                    <div style={{ marginTop: 8 }}>
-                      <label style={{ ...s.label, marginBottom: 4 }}>
-                        Tipo de Peça <span style={{ color: '#dc2626' }}>*</span>
-                        <span style={{ fontSize: 11, color: 'var(--gray-500)', marginLeft: 6, fontWeight: 400 }}>(etiqueta avulsa)</span>
-                      </label>
-                      <select
-                        style={{ ...s.input }}
-                        value={form.tipoPecaAvulsa || ''}
-                        onChange={(e) => setForm((p: any) => ({ ...p, tipoPecaAvulsa: e.target.value }))}
-                      >
-                        <option value="">Selecione o tipo de peça...</option>
-                        {DETRAN_TIPOS.map((tipo) => (
-                          <option key={tipo} value={tipo}>{tipo}</option>
-                        ))}
-                      </select>
+                    <div style={{ marginTop: 8, display: 'grid', gap: 8 }}>
+                      {etiquetas.filter(e => e.trim() && !parseEtiquetaCartela(e)).map((e) => {
+                        const chave = e.trim().toUpperCase();
+                        return (
+                          <div key={chave}>
+                            <label style={{ ...s.label, marginBottom: 4 }}>
+                              Tipo de Peça — <span style={{ fontFamily: 'JetBrains Mono, monospace' }}>{e.trim()}</span> <span style={{ color: '#dc2626' }}>*</span>
+                              <span style={{ fontSize: 11, color: 'var(--gray-500)', marginLeft: 6, fontWeight: 400 }}>(etiqueta avulsa)</span>
+                            </label>
+                            <select
+                              style={{ ...s.input }}
+                              value={tiposEtiqueta[chave] || ''}
+                              onChange={(ev) => setTiposEtiqueta((p: Record<string, string>) => ({ ...p, [chave]: ev.target.value }))}
+                            >
+                              <option value="">Selecione o tipo de peça...</option>
+                              {DETRAN_TIPOS.map((tipo) => (
+                                <option key={tipo} value={tipo}>{tipo}</option>
+                              ))}
+                            </select>
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
 
-                {(etiquetas.some((e: string) => /005$/.test(String(e || '').trim())) || form.tipoPecaAvulsa === 'Bloco do motor') && (
+                {(etiquetas.some((e: string) => /005$/.test(String(e || '').trim())) || etiquetas.some((e: string) => e.trim() && !parseEtiquetaCartela(e) && tiposEtiqueta[e.trim().toUpperCase()] === 'Bloco do motor')) && (
                   <div>
                     <label style={s.label}>
                       Número do Motor <span style={{ color: '#dc2626' }}>*</span>

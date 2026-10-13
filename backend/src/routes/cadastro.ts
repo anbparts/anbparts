@@ -11,9 +11,10 @@ import { sendDetranAtivacaoEmailIfNeeded } from '../lib/detran-alert';
 import { sugerirShopeeCategoriaId } from '../lib/shopeeCategoria';
 import { sugerirMagaluCategoriaId } from '../lib/magaluCategoriaResolver';
 import { sugerirNuvemshopCategoriaId } from '../lib/nuvemshopCategoria';
+import { salvarTiposEtiqueta, lerTiposEtiqueta, copiarTiposCadastroParaPeca } from '../lib/detranEtiquetaTipo';
 import { gerarTagsCadastroEmSegundoPlano } from '../lib/nuvemshopTags';
 import { shopeeReq } from '../lib/shopee-api';
-import { magaluSetPrice, magaluAtualizarConteudoSku, prepararTituloMagalu } from '../lib/magalu-api';
+import { magaluSetPrice, magaluAtualizarConteudoSku, prepararTituloMagalu, trocarTermosSensiveisMagalu } from '../lib/magalu-api';
 import { carregarAnuncioBase } from '../lib/anuncioBase';
 
 const CAMPOS_COMPLETOS_WHERE = {
@@ -598,7 +599,7 @@ cadastroRouter.get('/bling-referencia/:sku', async (req, res, next) => {
 // POST /cadastro - criar pré-cadastro e enviar ao Bling
 cadastroRouter.post('/', requireCadastroAction('criar_pre_cadastro'), async (req, res, next) => {
   try {
-    const { motoId, idPeca, descricao, descricaoPecaTitulo, descricaoPeca, precoVenda, condicao, peso, largura, altura, profundidade, numeroPeca, numeroMotor, detranEtiqueta, tipoPecaAvulsa, localizacao, estoque, categoriaMLId, categoriaMLNome, urlRef, pecaRestrita, sucata } = req.body;
+    const { motoId, idPeca, descricao, descricaoPecaTitulo, descricaoPeca, precoVenda, condicao, peso, largura, altura, profundidade, numeroPeca, numeroMotor, detranEtiqueta, tipoPecaAvulsa, tiposEtiqueta, localizacao, estoque, categoriaMLId, categoriaMLNome, urlRef, pecaRestrita, sucata } = req.body;
     const ehPecaRestrita = Boolean(pecaRestrita);
     const ehSucata = Boolean(sucata);
 
@@ -640,6 +641,9 @@ cadastroRouter.post('/', requireCadastroAction('criar_pre_cadastro'), async (req
       },
       include: { moto: { select: { id: true, marca: true, modelo: true, ano: true } } },
     });
+
+    // Tipo de peca de CADA etiqueta avulsa (individual) — copiado para as pecas na finalizacao.
+    if (tiposEtiqueta) await salvarTiposEtiqueta(record.id, true, tiposEtiqueta).catch(() => null);
 
     // Tags de busca da Nuvemshop (IA + regra) geradas em segundo plano — nao atrasa o pre-cadastro.
     if (!ehPecaRestrita && !ehSucata) gerarTagsCadastroEmSegundoPlano(record.id);
@@ -1196,7 +1200,7 @@ cadastroRouter.put('/:id', requireCadastroAction('editar_pre_cadastro'), async (
     if (!atual) return res.status(404).json({ error: 'Não encontrado' });
     if (atual.status === 'cadastrado') return res.status(400).json({ error: 'Cadastro já finalizado — não é possível editar' });
 
-    const { descricao, descricaoPeca, precoVenda, condicao, peso, largura, altura, profundidade, numeroPeca, numeroMotor, detranEtiqueta, tipoPecaAvulsa, localizacao, estoque, categoriaMLId, categoriaMLNome, urlRef, pecaRestrita, sucata } = req.body;
+    const { descricao, descricaoPeca, precoVenda, condicao, peso, largura, altura, profundidade, numeroPeca, numeroMotor, detranEtiqueta, tipoPecaAvulsa, tiposEtiqueta, localizacao, estoque, categoriaMLId, categoriaMLNome, urlRef, pecaRestrita, sucata } = req.body;
     const ehPecaRestritaEfetiva = pecaRestrita !== undefined ? Boolean(pecaRestrita) : (atual as any).pecaRestrita;
     const ehSucataEfetiva = sucata !== undefined ? Boolean(sucata) : (atual as any).sucata;
     const detranEtiquetaEfetiva = detranEtiqueta !== undefined ? detranEtiqueta : atual.detranEtiqueta;
@@ -1245,6 +1249,8 @@ cadastroRouter.put('/:id', requireCadastroAction('editar_pre_cadastro'), async (
       data,
       include: { moto: { select: { id: true, marca: true, modelo: true, ano: true } } },
     });
+
+    if (tiposEtiqueta) await salvarTiposEtiqueta(record.id, true, tiposEtiqueta).catch(() => null);
 
     // Descricao/tipo mudou: refaz as tags da Nuvemshop em segundo plano (peca restrita/sucata nao anunciam).
     if ((descricao !== undefined || tipoPecaAvulsa !== undefined) && !ehPecaRestritaEfetiva && !ehSucataEfetiva) {
@@ -1352,6 +1358,8 @@ cadastroRouter.post('/:id/finalizar', requireCadastroAction('criar_bling'), asyn
           },
         });
         pecasCriadas.push(peca);
+        // Cada etiqueta avulsa leva o proprio tipo de peca para a peca criada.
+        await copiarTiposCadastroParaPeca(id, peca.id, peca.detranEtiqueta);
       }
 
       await prisma.cadastroPeca.update({ where: { id }, data: { status: 'cadastrado' } });
@@ -1547,7 +1555,8 @@ cadastroRouter.post('/:id/finalizar', requireCadastroAction('criar_bling'), asyn
       await prisma.cadastroPeca.update({ where: { id }, data: { status: 'cadastrado' } });
 
       // Etiqueta avulsa recém-criada precisa de ativação no DETRAN → dispara o e-mail (best-effort).
-      if (cadastro.tipoPecaAvulsa) {
+      const tiposCadastroEtq = await lerTiposEtiqueta(id, true);
+      if (cadastro.tipoPecaAvulsa || Object.keys(tiposCadastroEtq).length) {
         try {
           const motoAtivacao = await prisma.moto.findUnique({
             where: { id: cadastro.motoId },
@@ -1571,7 +1580,7 @@ cadastroRouter.post('/:id/finalizar', requireCadastroAction('criar_bling'), asyn
                 idPeca: p.idPeca,
                 descricao: p.descricao,
                 etiqueta: etq,
-                tipoPeca: cadastro.tipoPecaAvulsa,
+                tipoPeca: tiposCadastroEtq[String(etq).trim().toUpperCase()] || cadastro.tipoPecaAvulsa,
                 motoLabel: motoAtivacao ? [motoAtivacao.marca, motoAtivacao.modelo].filter(Boolean).join(' ') : null,
                 renavam: motoAtivacao?.renavam || null,
                 placa: motoAtivacao?.placa || null,
@@ -2087,6 +2096,56 @@ export async function syncDescricaoLongaPlataformas(skuInput: string, descricaoH
     }
   } catch (e: any) {
     resultados.nuvemshop = { ok: false, error: e?.message || 'Erro desconhecido' };
+  }
+
+  // ── 4. Shopee ─────────────────────────────────────────────────────────────
+  // Descricao em texto puro (10 a 5000 caracteres; corta numa quebra de linha). Sem anuncio na Shopee = nada a fazer.
+  try {
+    const baseAnuncio: any = await carregarAnuncioBase(baseSku);
+    if (!baseAnuncio?.shopeeItemId) {
+      resultados.shopee = { ok: true, semAnuncio: true } as any;
+    } else {
+      let texto = htmlParaTextoPlanoML(descricaoHtml);
+      if (texto.length > 5000) {
+        const corte = texto.slice(0, 5000);
+        const quebra = corte.lastIndexOf('\n');
+        texto = (quebra > 4000 ? corte.slice(0, quebra) : corte).trim();
+      }
+      if (texto.length < 10) throw new Error('descricao muito curta para a Shopee (minimo 10 caracteres)');
+      await shopeeReq('/api/v2/product/update_item', { method: 'POST', body: { item_id: Number(baseAnuncio.shopeeItemId), description: texto } });
+      resultados.shopee = { ok: true };
+    }
+  } catch (e: any) {
+    resultados.shopee = { ok: false, error: e?.message || 'Erro desconhecido' };
+  }
+
+  // ── 5. Magalu ─────────────────────────────────────────────────────────────
+  // Descricao aceita HTML (50 a 7000). Aplica a troca de termos sensiveis do Magalu e, quando o titulo tem USADO, o titulo
+  // original vai como 1a linha (mesma regra da criacao). Sem SKU no Magalu = nada a fazer.
+  try {
+    const baseAnuncio: any = await carregarAnuncioBase(baseSku);
+    if (!baseAnuncio?.magaluItemId) {
+      resultados.magalu = { ok: true, semAnuncio: true } as any;
+    } else {
+      let html = trocarTermosSensiveisMagalu(descricaoHtml);
+      const tit = prepararTituloMagalu(baseAnuncio.descricao);
+      if (tit.temUsado && tit.original && !html.toLowerCase().startsWith(String(tit.original).toLowerCase())) {
+        html = `${tit.original}<br>${html}`;
+      }
+      html = html.slice(0, 7000);
+      try {
+        await magaluAtualizarConteudoSku(baseSku, { description: html });
+        resultados.magalu = { ok: true };
+      } catch (mErr: any) {
+        const msg = String(mErr?.message || mErr);
+        // 409: o Magalu esta analisando o SKU; a alteracao costuma ser aplicada mesmo assim.
+        resultados.magalu = /409/.test(msg)
+          ? { ok: true, error: 'Magalu esta analisando o SKU agora; a descricao deve ser aplicada em alguns minutos' }
+          : { ok: false, error: msg.slice(0, 200) };
+      }
+    }
+  } catch (e: any) {
+    resultados.magalu = { ok: false, error: e?.message || 'Erro desconhecido' };
   }
 
   const todosOk = Object.values(resultados).every((r) => r.ok);

@@ -1243,6 +1243,42 @@ etiquetasDetranRouter.get('/comprovante', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// GET /etiquetas-detran/:pecaId/tipos-etiqueta?isPreCadastro=1&etiquetas=A,B
+// Classifica cada etiqueta da peca (ou das informadas em ?etiquetas=, ainda nao salvas): Cartela (tipo vem da posicao)
+// ou Avulsa (tipo proprio da etiqueta; cai no tipo da peca quando nao ha um individual). Alimenta a tela de detalhes do Estoque.
+etiquetasDetranRouter.get('/:pecaId/tipos-etiqueta', async (req, res, next) => {
+  try {
+    const pecaId = Number(req.params.pecaId);
+    const isPre = ['1', 'true'].includes(String(req.query.isPreCadastro || '').toLowerCase());
+    const sel = { id: true, idPeca: true, motoId: true, detranEtiqueta: true, tipoPecaAvulsa: true } as any;
+    const registro: any = isPre
+      ? await prisma.cadastroPeca.findUnique({ where: { id: pecaId }, select: sel })
+      : await prisma.peca.findUnique({ where: { id: pecaId }, select: sel });
+    if (!registro) return res.status(404).json({ ok: false, error: 'Registro nao encontrado' });
+
+    const pedidas = String(req.query.etiquetas || '').split(',').map((s) => s.trim()).filter(Boolean);
+    const etiquetas = pedidas.length ? pedidas : splitEtiquetas(registro.detranEtiqueta);
+    const cartelaMap = await carregarCartelaMap([registro.motoId]);
+    const tiposMap = await loadTiposPorEtiqueta([pecaId], isPre);
+
+    const linhas = etiquetas.map((etq) => {
+      const chave = String(etq).trim().toUpperCase();
+      const cartelaTipo = cartelaMap.get(`${registro.motoId}|${chave}`);
+      const m = chave.match(/^(.*?)(\d{3})$/);
+      const posicao = m ? Number(m[2]) : 0;
+      const ehCartela = !!cartelaTipo || (posicao >= 1 && posicao <= 34);
+      if (ehCartela) {
+        return { etiqueta: chave, tipoEtiqueta: 'Cartela', tipoPeca: cartelaTipo || DETRAN_TIPOS[posicao - 1] || '', editavel: false };
+      }
+      return {
+        etiqueta: chave, tipoEtiqueta: 'Avulsa', editavel: true,
+        tipoPeca: tipoDaEtiqueta(tiposMap, isPre, pecaId, chave, registro.tipoPecaAvulsa) || '',
+      };
+    });
+    res.json({ ok: true, etiquetas: linhas, tiposDisponiveis: DETRAN_TIPOS });
+  } catch (e) { next(e); }
+});
+
 // PATCH /etiquetas-detran/:pecaId/tipo-peca
 etiquetasDetranRouter.patch('/:pecaId/tipo-peca', async (req, res, next) => {
   try {
