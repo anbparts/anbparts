@@ -4,6 +4,7 @@ import { useEffect, useState, type ChangeEvent } from 'react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { canProcessAction } from '@/lib/permissions';
+import FornecedoresTab from './FornecedoresTab';
 
 const EMPRESA_ANEXO_FIELDS = [
   { key: 'cartaoCnpj', label: 'Cartao CNPJ' },
@@ -166,6 +167,8 @@ export default function EmpresaPage() {
   const [feedback, setFeedback] = useState('');
   const [localError, setLocalError] = useState('');
   const [isPhone, setIsPhone] = useState(false);
+  const [aba, setAba] = useState<'dados' | 'anexos' | 'acessos' | 'fornecedores'>('dados');
+  const [snapshotDados, setSnapshotDados] = useState('');
   const [extras, setExtras] = useState<Array<{ id: string; name: string; dataUrl?: string } | null>>([]);
   const [contasBancarias, setContasBancarias] = useState<ContaBancaria[]>([]);
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
@@ -310,6 +313,13 @@ export default function EmpresaPage() {
             ? data.contasBancarias
             : DEFAULT_CONTAS;
           setContasBancarias(savedContas);
+          setSnapshotDados(JSON.stringify({
+            f: {
+              razaoSocial: data.razaoSocial || '', cnpj: data.cnpj || '', inscricaoEstadual: data.inscricaoEstadual || '',
+              inscricaoMunicipal: data.inscricaoMunicipal || '', enderecoCompleto: data.enderecoCompleto || '', telefoneWhats: data.telefoneWhats || '',
+            },
+            c: savedContas,
+          }));
         }
       } catch (error: any) {
         if (!active) return;
@@ -357,18 +367,20 @@ export default function EmpresaPage() {
     setFeedback('');
   }
 
-  async function handleSave() {
+  // Salva por aba: "dados" (cabecalho, contas e documentos fixos) ou "anexos" (anexos adicionais). Cada aba manda so os arquivos dela;
+  // o cadastro e as contas vao sempre (o endpoint grava o conjunto).
+  async function handleSave(escopo: 'dados' | 'anexos' = 'dados') {
     setSaving(true);
     setFeedback('');
     try {
       const anexosAlterados = Object.fromEntries(
         changedKeys
-          .filter((key) => anexos[key])
+          .filter((key) => anexos[key] && escopo === 'dados' && !/^extra_/.test(key))
           .map((key) => [key, anexos[key]])
       );
       // Incluir extras dinâmicos
       const extrasPayload = Object.fromEntries(
-        extras
+        (escopo === 'anexos' ? extras : [])
           .filter((e): e is { id: string; name: string; dataUrl: string } => e != null && Boolean(e.dataUrl))
           .map((e) => [e.id, { name: e.name, dataUrl: e.dataUrl }])
       );
@@ -376,7 +388,7 @@ export default function EmpresaPage() {
       const extrasRemovidos = extras
         .filter((e) => e === null)
         .map((_, i) => `extra_${i}`);
-      const response = await api.empresa.save({ ...form, contasBancarias, anexos: { ...anexosAlterados, ...extrasPayload }, removidos: [...removedKeys, ...extrasRemovidos] });
+      const response = await api.empresa.save({ ...form, contasBancarias, anexos: { ...anexosAlterados, ...extrasPayload }, removidos: removedKeys.filter((k) => (escopo === 'anexos' ? /^extra_/.test(k) : !/^extra_/.test(k))) });
       setForm({
         razaoSocial: response.razaoSocial || '',
         cnpj: response.cnpj || '',
@@ -387,8 +399,15 @@ export default function EmpresaPage() {
       });
       setAnexos(response.anexos || {});
       if (Array.isArray(response.contasBancarias)) setContasBancarias(response.contasBancarias);
-      setChangedKeys([]);
-      setRemovedKeys([]);
+      setSnapshotDados(JSON.stringify({
+        f: {
+          razaoSocial: response.razaoSocial || '', cnpj: response.cnpj || '', inscricaoEstadual: response.inscricaoEstadual || '',
+          inscricaoMunicipal: response.inscricaoMunicipal || '', enderecoCompleto: response.enderecoCompleto || '', telefoneWhats: response.telefoneWhats || '',
+        },
+        c: Array.isArray(response.contasBancarias) ? response.contasBancarias : contasBancarias,
+      }));
+      if (escopo === 'dados') setChangedKeys([]);
+      setRemovedKeys((cur) => cur.filter((k) => (escopo === 'anexos' ? !/^extra_/.test(k) : /^extra_/.test(k))));
       setLocalError('');
       setFeedback('Cadastro da empresa salvo com sucesso.');
     } catch (error: any) {
@@ -428,6 +447,10 @@ export default function EmpresaPage() {
   }
 
   const totalAnexos = Object.keys(anexos || {}).length;
+  const dirtyDados = (snapshotDados !== '' && JSON.stringify({ f: form, c: contasBancarias }) !== snapshotDados)
+    || changedKeys.length > 0
+    || removedKeys.some((k) => !/^extra_/.test(k));
+  const dirtyAnexos = extras.some((e) => e && e.dataUrl) || removedKeys.some((k) => /^extra_/.test(k));
 
   return (
     <>
@@ -437,16 +460,34 @@ export default function EmpresaPage() {
           <div style={cs.sub}>Cadastro da empresa e central de documentos</div>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          <button onClick={copiarDadosEmpresa} disabled={loading} style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink)', border: '1px solid var(--border)', opacity: loading ? 0.7 : 1, padding: isPhone ? '8px 12px' : '8px 16px', fontSize: isPhone ? 12 : 13 }}>
+          {aba === 'dados' ? <button onClick={copiarDadosEmpresa} disabled={loading} style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink)', border: '1px solid var(--border)', opacity: loading ? 0.7 : 1, padding: isPhone ? '8px 12px' : '8px 16px', fontSize: isPhone ? 12 : 13 }}>
             Copiar Dados Empresa
-          </button>
-          {canEdit ? <button onClick={handleSave} disabled={loading || saving || Boolean(localError)} style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)', opacity: loading ? 0.7 : 1, padding: isPhone ? '8px 12px' : '8px 16px', fontSize: isPhone ? 12 : 13 }}>
-            {saving ? 'Salvando...' : 'Salvar empresa'}
           </button> : null}
         </div>
       </div>
 
+      {/* Abas da pagina */}
+      <div style={{ padding: isPhone ? '10px 14px 0' : '14px 28px 0', display: 'flex', gap: 6, flexWrap: 'wrap', borderBottom: '1px solid var(--border)', background: 'var(--white)' }}>
+        {([
+          { id: 'dados', label: 'Dados Empresa', sujo: dirtyDados },
+          { id: 'anexos', label: 'Anexos Adicionais', sujo: dirtyAnexos },
+          { id: 'acessos', label: 'Acessos e Senhas', sujo: false },
+          { id: 'fornecedores', label: 'Fornecedores', sujo: false },
+        ] as Array<{ id: 'dados' | 'anexos' | 'acessos' | 'fornecedores'; label: string; sujo: boolean }>).map((tab) => {
+          const ativa = aba === tab.id;
+          return (
+            <button key={tab.id} type="button" onClick={() => setAba(tab.id)}
+              style={{ border: 'none', background: 'transparent', cursor: 'pointer', padding: isPhone ? '8px 10px' : '10px 16px', fontSize: isPhone ? 12.5 : 13.5, fontWeight: ativa ? 700 : 500, color: ativa ? 'var(--ink)' : 'var(--ink-muted)', borderBottom: ativa ? '2px solid var(--ink)' : '2px solid transparent', marginBottom: -1, fontFamily: 'Geist, sans-serif' }}>
+              {tab.label}{tab.sujo ? <span title="Alterações não salvas" style={{ color: '#d97706', marginLeft: 6 }}>●</span> : null}
+            </button>
+          );
+        })}
+      </div>
+
       <div style={{ padding: isPhone ? 14 : 28, display: 'grid', gap: 18 }}>
+        {aba === 'fornecedores' && <FornecedoresTab canEdit isPhone={isPhone} />}
+
+        {aba === 'dados' && (<>
         <div style={cs.card}>
           <div style={{ padding: isPhone ? '14px' : '16px 18px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: isPhone ? 'stretch' : 'center', flexDirection: isPhone ? 'column' : 'row', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
             <div>
@@ -527,16 +568,6 @@ export default function EmpresaPage() {
                     />
                   </div>
                 </div>
-                {feedback ? (
-                  <div style={{ marginTop: 14, fontSize: 12, color: feedback.toLowerCase().includes('erro') ? 'var(--red)' : 'var(--green)' }}>
-                    {feedback}
-                  </div>
-                ) : null}
-                {localError ? (
-                  <div style={{ marginTop: 10, fontSize: 12, color: 'var(--red)' }}>
-                    ! {localError}
-                  </div>
-                ) : null}
               </>
             )}
           </div>
@@ -724,7 +755,10 @@ export default function EmpresaPage() {
           </div>
         </div>
 
+        </>)}
+
         {/* ── Acessos e Senhas ── */}
+        {aba === 'acessos' && (
         <div style={cs.card}>
           <div style={{ padding: isPhone ? '14px' : '16px 18px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
             <div>
@@ -806,6 +840,7 @@ export default function EmpresaPage() {
             </div>
           )}
         </div>
+        )}
 
         {senhaModalAberto && (
           <div onClick={() => setSenhaModalAberto(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,.55)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
@@ -841,6 +876,7 @@ export default function EmpresaPage() {
           </div>
         )}
 
+        {aba === 'dados' && (<>
         <div style={cs.card}>
           <div style={{ padding: '16px 18px', borderBottom: '1px solid var(--border)' }}>
             <div style={{ fontFamily: 'Fraunces, serif', fontSize: 16, fontWeight: 600 }}>Documentos da empresa</div>
@@ -947,8 +983,18 @@ export default function EmpresaPage() {
           )}
         </div>
 
+        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 14, flexWrap: 'wrap', borderTop: '1px solid var(--border)', paddingTop: 14 }}>
+          {feedback ? <span style={{ fontSize: 12, color: feedback.toLowerCase().includes('erro') ? 'var(--red)' : 'var(--green)' }}>{feedback}</span> : null}
+          {localError ? <span style={{ fontSize: 12, color: 'var(--red)' }}>! {localError}</span> : null}
+          {canEdit ? <button onClick={() => handleSave('dados')} disabled={loading || saving || Boolean(localError)} style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)', opacity: loading || saving ? 0.7 : 1 }}>
+            {saving ? 'Salvando...' : 'Salvar dados da empresa'}
+          </button> : null}
+        </div>
+        </>)}
+
         {/* Bloco de Anexos Adicionais */}
-        <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, padding: isPhone ? 16 : 24, marginTop: 20 }}>
+        {aba === 'anexos' && (<>
+        <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, padding: isPhone ? 16 : 24 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
             <div>
               <div style={{ fontFamily: 'Fraunces, serif', fontSize: 16, fontWeight: 600 }}>Anexos Adicionais</div>
@@ -1014,7 +1060,7 @@ export default function EmpresaPage() {
                       )}
                       {canEdit ? <button
                         type="button"
-                        onClick={() => setExtras((prev) => prev.filter((_, i) => i !== idx))}
+                        onClick={() => { setRemovedKeys((cur) => Array.from(new Set([...cur, extra.id]))); setExtras((prev) => prev.filter((_, i) => i !== idx)); }}
                         style={{ ...cs.btn, padding: '6px 10px', fontSize: 11, border: '1px solid #fecaca', background: '#fef2f2', color: 'var(--red)' }}
                       >
                         Remover
@@ -1026,6 +1072,15 @@ export default function EmpresaPage() {
             </div>
           )}
         </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 14, flexWrap: 'wrap', borderTop: '1px solid var(--border)', paddingTop: 14 }}>
+          {feedback ? <span style={{ fontSize: 12, color: feedback.toLowerCase().includes('erro') ? 'var(--red)' : 'var(--green)' }}>{feedback}</span> : null}
+          {localError ? <span style={{ fontSize: 12, color: 'var(--red)' }}>! {localError}</span> : null}
+          {canEdit ? <button onClick={() => handleSave('anexos')} disabled={loading || saving} style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)', opacity: loading || saving ? 0.7 : 1 }}>
+            {saving ? 'Salvando...' : 'Salvar anexos'}
+          </button> : null}
+        </div>
+        </>)}
       </div>
     </>
   );

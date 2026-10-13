@@ -2979,6 +2979,7 @@ function PecaDetalheNovaModal({ open, peca, onClose, onSaved, canEditarPeca = fa
   const [motivoPendente, setMotivoPendente] = useState<any>(null);
   const [infSkuCopiado, setInfSkuCopiado] = useState(false);
   const [refBlingLoading, setRefBlingLoading] = useState(false);
+  const [caixas, setCaixas] = useState<string[]>([]);
   const fotoInputRef = useRef<HTMLInputElement | null>(null);
   const editorRef = useRef<HTMLDivElement | null>(null);
 
@@ -3045,6 +3046,17 @@ function PecaDetalheNovaModal({ open, peca, onClose, onSaved, canEditarPeca = fa
     }, editando ? 400 : 0);
     return () => { cancelado = true; clearTimeout(t); };
   }, [open, peca?.id, chaveEtiquetas, editando]);
+
+  // Lista de caixas do sistema (mesma do pre-cadastro) pra escolher na Localizacao; so busca ao entrar em edicao, 1 vez.
+  useEffect(() => {
+    if (!open || !editando || caixas.length) return;
+    let cancelado = false;
+    fetch(`${API}/cadastro/opcoes`, { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => { if (!cancelado) setCaixas(Array.isArray(d?.caixas) ? d.caixas.map((c: any) => String(c)) : []); })
+      .catch(() => {});
+    return () => { cancelado = true; };
+  }, [open, editando]);
 
   // Armazenagem acompanha a Localizacao (inclusive enquanto digita a nova caixa).
   const caixaAtual = String(editando ? form.localizacao : (peca?.localizacao || '')).trim();
@@ -3397,7 +3409,8 @@ function PecaDetalheNovaModal({ open, peca, onClose, onSaved, canEditarPeca = fa
             <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '1fr 1fr', gap: 10 }}>
               <div>
                 <div style={lab}>Localização (caixa)</div>
-                <input style={inp} disabled={!editando} value={form.localizacao ?? ''} onChange={(e) => setCampo('localizacao', e.target.value)} placeholder="Nome da caixa" />
+                <input style={inp} list="caixas-detalhe-list" disabled={!editando} value={form.localizacao ?? ''} onChange={(e) => setCampo('localizacao', e.target.value)} placeholder="Nome da caixa" />
+                <datalist id="caixas-detalhe-list">{caixas.map((c) => <option key={c} value={c} />)}</datalist>
               </div>
               <div>
                 <div style={lab}>Armazenagem</div>
