@@ -194,7 +194,7 @@ magaluRouter.get('/status', async (_req, res, next) => {
       connectedAt: config.connectedAt,
       redirectUri: getRedirectUri(),
       // Marcador pra conferir qual versao da ficha esta no ar (numero da peca preenchido automaticamente do cadastro).
-      versaoFicha: 'numero-da-peca-auto-2026-10-10',
+      versaoFicha: 'ficha-lado-cor-auto-2026-10-12',
       scopes: MAGALU_SCOPES,
     });
   } catch (e) { next(e); }
@@ -355,7 +355,27 @@ function extrairDadosPneu(texto: string) {
 
 // Valores automaticos da ficha tecnica (chave = nome do atributo sem acento/caixa), ja limpos. `fichaExtra` (digitado na tela)
 // sobrepoe os automaticos.
-function montarValoresFicha(peca: any, peso: number, description: string, fichaExtra?: Record<string, string>) {
+type MetaCampoFicha = { exemplo?: string; escolhas?: string[] | null };
+const normNomeFicha = (s: string) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+
+// "Lado": conforme o que a categoria aceita no campo (exemplo/opcoes) le do TITULO o lado (Direito/Esquerdo) ou a posicao
+// (Dianteiro/Traseiro). Sem informacao no titulo devolve null (a tela pede). Sem metadados, mantem o lado.
+function valorLadoFicha(descricao: any, meta?: MetaCampoFicha) {
+  const d = String(descricao || '');
+  const lado = /direit|\bld\b/i.test(d) ? 'Direito' : /esquerd|\ble\b/i.test(d) ? 'Esquerdo' : null;
+  const pos = /traseir/i.test(d) ? 'Traseiro' : /dianteir|frontal/i.test(d) ? 'Dianteiro' : null;
+  const aceita = `${meta?.exemplo || ''} ${(meta?.escolhas || []).join(' ')}`.toLowerCase();
+  const querPos = /dianteir|traseir|frontal/.test(aceita);
+  const querLado = /direit|esquerd/.test(aceita);
+  if (querPos && !querLado) return pos;
+  if (querLado && !querPos) return lado;
+  return lado || pos;
+}
+
+// Pecas de iluminacao (farol, seta, lanterna...): so vendemos originais, entao a cor e' "Original".
+const ILUMINACAO_RE = /farol|lanterna|\bseta(s)?\b|pisca|\bluz\b|lente|refletor|olho de gato/i;
+
+function montarValoresFicha(peca: any, peso: number, description: string, fichaExtra?: Record<string, string>, meta?: Record<string, MetaCampoFicha>) {
   const moto = peca.moto || {};
   const largura = Number(peca.largura);
   const altura = Number(peca.altura);
@@ -382,7 +402,8 @@ function montarValoresFicha(peca: any, peso: number, description: string, fichaE
     'tipo de veiculo indicado': 'Moto',
     // Derivados do TITULO (so quando a palavra esta la): posicao, lado e escapamento original (so vendemos originais).
     'posicao': /traseir/i.test(String(peca.descricao || '')) ? 'Traseiro' : /dianteir/i.test(String(peca.descricao || '')) ? 'Dianteiro' : null,
-    'lado': /direit|\bld\b/i.test(String(peca.descricao || '')) ? 'Direito' : /esquerd|\ble\b/i.test(String(peca.descricao || '')) ? 'Esquerdo' : null,
+    'lado': valorLadoFicha(peca.descricao, meta?.['lado']),
+    'cor': ILUMINACAO_RE.test(String(peca.descricao || '')) ? 'Original' : null,
     'tipo de escapamento': /escap|ponteira|silencioso/i.test(String(peca.descricao || '')) ? 'Original' : null,
     ...(pneu ? {
       'largura do pneu': pneu.largura,
@@ -407,11 +428,18 @@ function montarValoresFicha(peca: any, peso: number, description: string, fichaE
 export async function magaluCamposFichaFaltando(peca: any, categoriaId: string, fichaExtra?: Record<string, string>) {
   const atributos = await magaluDatasheetDaCategoria(categoriaId).catch(() => [] as Array<{ name: string; required: string }>);
   const peso = peca.pesoLiquido != null ? Number(peca.pesoLiquido) : (peca.pesoBruto != null ? Number(peca.pesoBruto) : 0);
-  const valores = montarValoresFicha(peca, peso, '', fichaExtra);
+  const meta: Record<string, MetaCampoFicha> = {};
+  for (const a of atributos as any[]) meta[normNomeFicha(a.name)] = { exemplo: a.example || '', escolhas: Array.isArray(a.choices) ? a.choices : null };
+  const valores = montarValoresFicha(peca, peso, '', fichaExtra, meta);
   const norm = (s: string) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
   return atributos
     .filter((a: any) => a.required === 'required' && !(valores[norm(a.name)] != null && String(valores[norm(a.name)]).trim() !== ''))
-    .map((a: any) => ({ nome: a.name, exemplo: a.example || '', escolhas: Array.isArray(a.choices) ? a.choices : null }));
+    .map((a: any) => {
+      let escolhas: string[] | null = Array.isArray(a.choices) && a.choices.length ? a.choices : null;
+      // Exemplo so com lado ("Direito, Esquerdo"): vira lista na tela, pra escolher em vez de digitar.
+      if (!escolhas && /^\s*direito\s*,\s*esquerdo\s*$/i.test(String(a.example || ''))) escolhas = ['Direito', 'Esquerdo'];
+      return { nome: a.name, exemplo: a.example || '', escolhas };
+    });
 }
 
 async function montarConteudoMagalu(peca: any, sku: string, categoriaId: string, peso: number, fichaExtra?: Record<string, string>) {
@@ -462,7 +490,10 @@ async function montarConteudoMagalu(peca: any, sku: string, categoriaId: string,
 
   description = trocarTermosSensiveisMagalu(description);
 
-  const valores = montarValoresFicha(peca, peso, description, fichaExtra);
+  const atributosCat = await magaluDatasheetDaCategoria(categoriaId).catch(() => [] as any[]);
+  const metaCat: Record<string, MetaCampoFicha> = {};
+  for (const a of atributosCat as any[]) metaCat[normNomeFicha(a.name)] = { exemplo: a.example || '', escolhas: Array.isArray(a.choices) ? a.choices : null };
+  const valores = montarValoresFicha(peca, peso, description, fichaExtra, metaCat);
   const datasheet = await magaluMontarDatasheet(categoriaId, valores);
 
   // Informacoes regulatorias: o Magalu guarda no proprio `datasheet` do SKU (nomes lidos de um SKU

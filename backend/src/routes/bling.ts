@@ -1117,11 +1117,25 @@ function resumirErroBling(corpo: string) {
   return texto.slice(0, 300);
 }
 
-export async function blingReq(pathUrl: string, options: any = {}, retries = 3): Promise<any> {
+// Controle de ritmo GLOBAL das chamadas ao Bling: o limite deles (3 por segundo) vale pro sistema todo, e antes cada
+// tela/rotina/sessao disparava no proprio ritmo (relatorio de separacao + fila de anuncios + auditoria => 429).
+// Cada chamada pega uma "vaga" espaçada em ~2,7/s; ao receber 429 o sistema inteiro esfria um instante.
+const BLING_INTERVALO_VAGA_MS = 370;
+let blingProximaVagaEm = 0;
+async function blingAguardarVaga() {
+  const agora = Date.now();
+  const vaga = Math.max(agora, blingProximaVagaEm);
+  blingProximaVagaEm = vaga + BLING_INTERVALO_VAGA_MS;
+  if (vaga > agora) await sleep(vaga - agora);
+}
+
+export async function blingReq(pathUrl: string, options: any = {}, retries = 6): Promise<any> {
   const cfg = await getConfig();
   let token = cfg.accessToken;
 
-  const doReq = (currentToken: string) => fetch(`${BLING_API}${pathUrl}`, {
+  const doReq = async (currentToken: string) => {
+    await blingAguardarVaga();
+    return fetch(`${BLING_API}${pathUrl}`, {
     ...options,
     headers: {
       Authorization: `Bearer ${currentToken}`,
@@ -1131,7 +1145,8 @@ export async function blingReq(pathUrl: string, options: any = {}, retries = 3):
       'enable-jwt': '1',
       ...(options.headers || {}),
     },
-  });
+    });
+  };
 
   let resp = await doReq(token);
 
@@ -1146,7 +1161,10 @@ export async function blingReq(pathUrl: string, options: any = {}, retries = 3):
       throw new Error(`Bling API 429: ${resumirErroBling(err)}`);
     }
     if (retries > 0) {
-      await sleep(2000);
+      // Limite POR SEGUNDO: o sistema inteiro para um instante (nao so esta chamada) e a espera cresce a cada tentativa.
+      const espera = 1500 + (6 - retries) * 700;
+      blingProximaVagaEm = Math.max(blingProximaVagaEm, Date.now() + espera);
+      await sleep(espera);
       return blingReq(pathUrl, options, retries - 1);
     }
     throw new Error(`Bling API 429: ${resumirErroBling(err)}`);
@@ -1178,7 +1196,17 @@ export async function blingReq(pathUrl: string, options: any = {}, retries = 3):
   }
 }
 
-async function refreshAccessToken() {
+// Refresh token do Bling e' de uso unico: duas renovacoes simultaneas invalidam uma a outra. Quem chega durante uma
+// renovacao em andamento espera e reaproveita o mesmo resultado.
+let refreshEmAndamento: Promise<string> | null = null;
+function refreshAccessToken(): Promise<string> {
+  if (!refreshEmAndamento) {
+    refreshEmAndamento = refreshAccessTokenReal().finally(() => { refreshEmAndamento = null; });
+  }
+  return refreshEmAndamento;
+}
+
+async function refreshAccessTokenReal(): Promise<string> {
   const cfg = await getConfig();
   if (!cfg.refreshToken) throw new Error('Sem refresh token. Reconecte o Bling.');
 

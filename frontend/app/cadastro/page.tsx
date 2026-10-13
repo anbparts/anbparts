@@ -1783,6 +1783,14 @@ export default function CadastroPage() {
     if (possuiAvulsa && !form.tipoPecaAvulsa) return alert('Selecione o Tipo de Peça para a etiqueta avulsa');
     const ehBlocoMotor = etiquetasValidas.some(e => /005$/.test(e.trim())) || form.tipoPecaAvulsa === 'Bloco do motor';
     if (ehBlocoMotor && !String(form.numeroMotor || '').trim()) return alert('Informe o Número do Motor (obrigatório para Bloco do motor: etiqueta final 005 ou tipo avulso Bloco do motor).');
+    // Peso: o campo e' em QUILOS. Alerta SO para valor alto (100 kg ou mais = 3 digitos na parte inteira), que quase sempre
+    // e' grama digitada como quilo (250 em vez de 0,250). Peso normal/baixo salva direto, sem pergunta.
+    // Cadastro novo: sempre que alto; edicao: so se o peso foi alterado.
+    const pesoKg = form.peso ? Number(String(form.peso).replace(',', '.')) : 0;
+    if (pesoKg >= 100 && (!editItem || Number(editItem.peso || 0) !== pesoKg)) {
+      const pesoTxt = `${pesoKg.toLocaleString('pt-BR', { maximumFractionDigits: 3 })} kg`;
+      if (!confirm(`⚠ ATENÇÃO: o produto ${form.idPeca} será cadastrado com ${pesoTxt}.\n\nO campo é em QUILOS (kg). Se o peso foi pesado em gramas, digite em kg (250 g = 0,250).\n\nO peso de ${pesoTxt} está correto?`)) return;
+    }
     setSaving(true);
     try {
       const body = {
