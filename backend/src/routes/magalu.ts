@@ -434,12 +434,7 @@ export async function magaluCamposFichaFaltando(peca: any, categoriaId: string, 
   const norm = (s: string) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
   return atributos
     .filter((a: any) => a.required === 'required' && !(valores[norm(a.name)] != null && String(valores[norm(a.name)]).trim() !== ''))
-    .map((a: any) => {
-      let escolhas: string[] | null = Array.isArray(a.choices) && a.choices.length ? a.choices : null;
-      // Exemplo so com lado ("Direito, Esquerdo"): vira lista na tela, pra escolher em vez de digitar.
-      if (!escolhas && /^\s*direito\s*,\s*esquerdo\s*$/i.test(String(a.example || ''))) escolhas = ['Direito', 'Esquerdo'];
-      return { nome: a.name, exemplo: a.example || '', escolhas };
-    });
+    .map((a: any) => ({ nome: a.name, exemplo: a.example || '', escolhas: Array.isArray(a.choices) && a.choices.length ? a.choices : null }));
 }
 
 async function montarConteudoMagalu(peca: any, sku: string, categoriaId: string, peso: number, fichaExtra?: Record<string, string>) {
