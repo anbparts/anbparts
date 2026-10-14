@@ -261,6 +261,36 @@ olxRouter.post('/anuncios', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// GET /olx/anuncios/:sku/consulta — diagnostico: devolve CRU o que a OLX responde sobre o anuncio vinculado ao SKU
+// (status pelo list_id e pelo ad_id, e a listagem de publicados filtrada), pra ver quais dados a API entrega.
+olxRouter.get('/anuncios/:sku/consulta', async (req, res, next) => {
+  try {
+    await garantirTabela();
+    const sku = txt(req.params.sku).toUpperCase();
+    const rows = await prisma.$queryRawUnsafe<any[]>(`SELECT * FROM "OlxAnuncio" WHERE "sku" = $1`, sku);
+    if (!rows.length) return res.status(404).json({ ok: false, error: `SKU ${sku} sem anuncio vinculado.` });
+    const c = await getOlxConfig();
+    if (!c.accessToken) return res.status(400).json({ ok: false, error: 'Conecte a OLX antes.' });
+    const listId = String(rows[0].listId);
+    const adId = rows[0].adId ? String(rows[0].adId) : '';
+    const get = async (url: string) => {
+      try {
+        const resp = await fetch(url, { headers: { Authorization: `Bearer ${c.accessToken}` } });
+        const texto = await resp.text();
+        let corpo: any = texto;
+        try { corpo = JSON.parse(texto); } catch { /* resposta nao-JSON: devolve o texto */ }
+        return { url, status: resp.status, corpo };
+      } catch (e: any) { return { url, erro: e?.message || String(e) }; }
+    };
+    const resultado: any = { sku, listId, adId: adId || null };
+    resultado.statusPorListId = await get(`https://apps.olx.com.br/autoupload/ads/${encodeURIComponent(listId)}`);
+    if (adId) resultado.statusPorAdId = await get(`https://apps.olx.com.br/autoupload/ads/${encodeURIComponent(adId)}`);
+    resultado.publicados = await get('https://apps.olx.com.br/autoupload/v1/published?fetch_size=50');
+    resultado.usuario = await olxUsuarioBasico(c.accessToken);
+    res.json({ ok: true, ...resultado });
+  } catch (e) { next(e); }
+});
+
 olxRouter.delete('/anuncios/:sku', async (req, res, next) => {
   try {
     await garantirTabela();
