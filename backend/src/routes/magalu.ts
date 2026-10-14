@@ -405,6 +405,8 @@ function montarValoresFicha(peca: any, peso: number, description: string, fichaE
     'lado': valorLadoFicha(peca.descricao, meta?.['lado']),
     'cor': ILUMINACAO_RE.test(String(peca.descricao || '')) ? 'Original' : null,
     'tipo de escapamento': /escap|ponteira|silencioso/i.test(String(peca.descricao || '')) ? 'Original' : null,
+    // "Bobina Ignição ..." / "Bobina de Ignição ...": o tipo e' o que vem depois de "Bobina" no titulo (hoje so Ignição).
+    'tipo de bobina': /\bbobina\b[^,-]{0,12}\bigni[cç][aã]o\b/i.test(String(peca.descricao || '')) ? 'Ignição' : null,
     ...(pneu ? {
       'largura do pneu': pneu.largura,
       'altura do pneu': pneu.altura,
