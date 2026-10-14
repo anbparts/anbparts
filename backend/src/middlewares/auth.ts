@@ -18,6 +18,7 @@ const PUBLIC_PATHS = new Set([
   '/shopee/callback',
   '/magalu/callback',
   '/olx/callback',
+  '/olx/webhook',
 ]);
 
 // Prefixos publicos (alem dos paths exatos acima). Usado pelo proxy de imagem do Magalu
