@@ -17,6 +17,7 @@ const PUBLIC_PATHS = new Set([
   '/mercado-livre/mercado-pago/callback',
   '/shopee/callback',
   '/magalu/callback',
+  '/olx/callback',
 ]);
 
 // Prefixos publicos (alem dos paths exatos acima). Usado pelo proxy de imagem do Magalu

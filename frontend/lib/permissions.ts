@@ -38,6 +38,7 @@ export const PAGE_KEY_BY_HREF: Record<string, string> = {
   '/conf-nuvemshop': 'conf_nuvemshop',
   '/config-shopee': 'conf_shopee',
   '/config-magalu': 'conf_magalu',
+  '/config-olx': 'conf_olx',
   '/conf-auditoria': 'conf_auditoria',
   '/conf-gmail': 'conf_gmail',
   '/conf-monitor-conexoes': 'conf_monitor_conexoes',

@@ -37,6 +37,7 @@ import { mlAnuncioRouter } from './routes/mlAnuncio';import { aquecerFolhasMoto 
 import { pecasRouter, startLimpezaFotosPecaScheduler } from './routes/pecas';
 import { sucataRouter } from './routes/sucata';
 import { shopeeRouter } from './routes/shopee';
+import { olxRouter } from './routes/olx';
 import { magaluRouter } from './routes/magalu';
 import { authMiddleware } from './middlewares/auth';
 import { errorMiddleware } from './middlewares/error';
@@ -106,6 +107,7 @@ app.use('/monitor-conexoes', monitorConexoesRouter);
 app.use('/pecas', pecasRouter);
 app.use('/sucata', sucataRouter);
 app.use('/shopee', shopeeRouter);
+app.use('/olx', olxRouter);
 app.use('/magalu', magaluRouter);
 
 app.use(errorMiddleware);

@@ -86,6 +86,7 @@ export const NAV: NavGroup[] = [
       { href: '/conf-nuvemshop', icon: 'cloud', label: 'Conf. Nuvemshop' },
       { href: '/config-shopee', icon: 'store', label: 'Conf. Shopee' },
       { href: '/config-magalu', icon: 'store', label: 'Conf. Magalu' },
+      { href: '/config-olx', icon: 'store', label: 'Conf. OLX' },
       { href: '/conf-gmail', icon: 'mail', label: 'Conf. Google' },
       { href: '/conf-monitor-conexoes', icon: 'radar', label: 'Monitor de Conexoes' },
       { href: '/conf-auditoria', icon: 'radar', label: 'Conf. Auditoria Automatica' },
