@@ -2854,7 +2854,7 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
               const nomeCurto = (id: AnuncioMarketplaceId) => (id === 'mercado-livre' ? 'ML' : ANUNCIO_MARKETPLACES.find((m) => m.id === id)?.label || id);
               return (
                 <div key={linha.sku} style={{ borderTop: '1px solid var(--gray-300)', padding: '10px 4px' }}>
-                  <div onClick={(e) => { if (e.ctrlKey || e.metaKey) { copiarSku(linha.sku); return; } alternarExpandido(linha.sku); }} style={{ display: 'grid', gridTemplateColumns: isPhone || aberto ? '14px minmax(0, 1fr)' : '14px minmax(0, 1fr) repeat(4, 150px)', columnGap: 10, rowGap: 6, alignItems: 'start', cursor: 'pointer' }}>
+                  <div onClick={(e) => { if (e.ctrlKey || e.metaKey) { copiarSku(linha.sku); return; } alternarExpandido(linha.sku); }} style={{ display: 'grid', gridTemplateColumns: isPhone || aberto ? '14px minmax(0, 1fr)' : `14px minmax(0, 1fr) repeat(${ANUNCIO_MARKETPLACES.length}, 128px)`, columnGap: 10, rowGap: 6, alignItems: 'start', cursor: 'pointer' }}>
                     <span style={{ color: 'var(--gray-400)', width: 12, fontSize: 11, paddingTop: 2 }}>{aberto ? '▾' : '▸'}</span>
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--gray-900)', fontWeight: 700 }} title="Ctrl + clique copia o SKU">
@@ -2871,7 +2871,7 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
                       )}
                     </div>
                                         {!aberto && (bloqueada ? (
-                      <span style={{ gridColumn: isPhone ? '2' : '3 / span 4', fontSize: 11.5, color: '#b91c1c', paddingTop: 2 }}>{!linha.fotosOk ? '✗ Fotos Anúncios ainda não foi processado' : (linha.bloqueioTexto ? `✗ ${linha.bloqueioTexto}` : '✗ Sem estoque — não há mais unidade disponível')}</span>
+                      <span style={{ gridColumn: isPhone ? '2' : `3 / span ${ANUNCIO_MARKETPLACES.length}`, fontSize: 11.5, color: '#b91c1c', paddingTop: 2 }}>{!linha.fotosOk ? '✗ Fotos Anúncios ainda não foi processado' : (linha.bloqueioTexto ? `✗ ${linha.bloqueioTexto}` : '✗ Sem estoque — não há mais unidade disponível')}</span>
                     ) : ANUNCIO_MARKETPLACES.map(({ id }) => {
                       if (!linha.marketplaces[id].disponivel) return <span key={id} />;
                       const c = celula(linha, id);
