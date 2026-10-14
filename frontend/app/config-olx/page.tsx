@@ -40,6 +40,25 @@ export default function ConfigOlxPage() {
   const [resposta, setResposta] = useState('');
   const [enviando, setEnviando] = useState(false);
   const [ativandoChat, setAtivandoChat] = useState(false);
+  const [telefone, setTelefone] = useState('');
+  const [cep, setCep] = useState('');
+  const [telefoneOculto, setTelefoneOculto] = useState(false);
+  const [salvandoContato, setSalvandoContato] = useState(false);
+
+  async function salvarContato() {
+    setSalvandoContato(true);
+    try {
+      await chamar('/olx/config', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ telefone, cep, telefoneOculto }),
+      });
+      await load();
+      alert('Dados de contato dos anuncios salvos.');
+    } catch (e: any) {
+      alert(e.message || 'Erro ao salvar');
+    }
+    setSalvandoContato(false);
+  }
 
   async function carregarAnuncios() {
     const d = await chamar('/olx/anuncios');
@@ -98,6 +117,9 @@ export default function ConfigOlxPage() {
   async function load() {
     const data = await chamar('/olx/status');
     setStatus(data);
+    setTelefone(data.telefone || '');
+    setCep(data.cep || '');
+    setTelefoneOculto(!!data.telefoneOculto);
   }
 
   useEffect(() => {
@@ -207,7 +229,8 @@ export default function ConfigOlxPage() {
                   <div key={a.sku} style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '10px 0', borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
                     <strong style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 13 }}>{a.sku}</strong>
                     <span style={{ flex: '1 1 240px', fontSize: 13, color: 'var(--gray-500)' }}>{a.titulo || '—'}</span>
-                    <span style={{ fontSize: 12.5, color: 'var(--gray-500)', fontFamily: 'JetBrains Mono, monospace' }}>{a.listId}</span>
+                    <span style={{ fontSize: 12.5, color: 'var(--gray-500)', fontFamily: 'JetBrains Mono, monospace' }}>{a.listId || 'aguardando'}</span>
+                    {a.status ? <span title={a.mensagem || ''} style={{ fontSize: 11.5, fontWeight: 600, padding: '2px 8px', borderRadius: 6, background: a.status === 'published' || a.status === 'accepted' ? '#f0fdf4' : a.status === 'pending' || a.status === 'queued' ? '#fffbeb' : '#fef2f2', color: a.status === 'published' || a.status === 'accepted' ? '#16a34a' : a.status === 'pending' || a.status === 'queued' ? '#92400e' : '#dc2626' }}>{a.status === 'published' || a.status === 'accepted' ? 'No ar' : a.status === 'pending' || a.status === 'queued' ? 'Em analise' : a.status === 'deleted' ? 'Removido' : a.status === 'refused' ? 'Recusado' : a.status}</span> : null}
                     <button style={{ ...s.btn, padding: '5px 12px', fontSize: 12, background: 'var(--white)', color: 'var(--red)', borderColor: '#fca5a5' }} onClick={() => removerVinculo(a.sku)}>Remover</button>
                   </div>
                 ))}
@@ -295,6 +318,31 @@ export default function ConfigOlxPage() {
           </div>
           <button style={{ ...s.btn, background: 'var(--blue-500)', color: '#fff', opacity: salvando || (!clientId.trim() && !clientSecret.trim()) ? 0.6 : 1 }} onClick={salvar} disabled={salvando || (!clientId.trim() && !clientSecret.trim())}>
             {salvando ? 'Salvando...' : 'Salvar credenciais'}
+          </button>
+        </div>
+
+        <div style={s.card}>
+          <div style={s.h3}>Contato dos anuncios criados pelo sistema</div>
+          <p style={s.p}>
+            Telefone e CEP enviados nos anuncios novos. Deixe em branco para usar os da Empresa
+            {status?.contatoEfetivo ? ` (hoje: telefone ${status.contatoEfetivo.telefone || 'nao configurado'}, CEP ${status.contatoEfetivo.cep || 'nao configurado'})` : ''}.
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginBottom: 12 }}>
+            <div>
+              <label style={s.label}>Telefone (DDD + numero)</label>
+              <input style={s.input} value={telefone} onChange={(e) => setTelefone(e.target.value)} placeholder="11999999999" />
+            </div>
+            <div>
+              <label style={s.label}>CEP</label>
+              <input style={s.input} value={cep} onChange={(e) => setCep(e.target.value)} placeholder="13200000" />
+            </div>
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--gray-600)', marginBottom: 14 }}>
+            <input type="checkbox" checked={telefoneOculto} onChange={(e) => setTelefoneOculto(e.target.checked)} />
+            Ocultar o telefone no anuncio (so o chat da OLX)
+          </label>
+          <button style={{ ...s.btn, background: 'var(--blue-500)', color: '#fff', opacity: salvandoContato ? 0.7 : 1 }} onClick={salvarContato} disabled={salvandoContato}>
+            {salvandoContato ? 'Salvando...' : 'Salvar contato'}
           </button>
         </div>
 

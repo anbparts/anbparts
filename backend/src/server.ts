@@ -37,7 +37,7 @@ import { mlAnuncioRouter } from './routes/mlAnuncio';import { aquecerFolhasMoto 
 import { pecasRouter, startLimpezaFotosPecaScheduler } from './routes/pecas';
 import { sucataRouter } from './routes/sucata';
 import { shopeeRouter } from './routes/shopee';
-import { olxRouter } from './routes/olx';
+import { olxRouter, startOlxScheduler } from './routes/olx';
 import { magaluRouter } from './routes/magalu';
 import { authMiddleware } from './middlewares/auth';
 import { errorMiddleware } from './middlewares/error';
@@ -124,5 +124,6 @@ app.listen(port, () => {
   startDetranBaixaDigestScheduler();
   startReversaoPrecoDescontoScheduler();
   startMonitorConexoesScheduler();
+  startOlxScheduler();
   console.log(`ANB Backend rodando na porta ${port}`);
 });

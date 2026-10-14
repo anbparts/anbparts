@@ -6,6 +6,10 @@
 import { Router } from 'express';
 import { randomBytes, randomUUID } from 'crypto';
 import { prisma } from '../lib/prisma';
+import { carregarAnuncioBase } from '../lib/anuncioBase';
+import { exigirFotosOficiais, lerDadosBlingSku } from '../lib/anuncioPreparar';
+import { buscarFotosDriveSku } from '../lib/fotos-cadastro';
+import { getConfiguracaoGeral } from '../lib/configuracoes-gerais';
 
 export const olxRouter = Router();
 
@@ -43,12 +47,19 @@ function garantirTabela(): Promise<void> {
       await prisma.$executeRawUnsafe(`INSERT INTO "OlxConfig" ("id") VALUES (1) ON CONFLICT DO NOTHING`);
       await prisma.$executeRawUnsafe(`ALTER TABLE "OlxConfig" ADD COLUMN IF NOT EXISTS "webhookKey" TEXT NOT NULL DEFAULT ''`);
       await prisma.$executeRawUnsafe(`ALTER TABLE "OlxConfig" ADD COLUMN IF NOT EXISTS "webhookAtivoEm" TIMESTAMPTZ`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "OlxConfig" ADD COLUMN IF NOT EXISTS "telefone" TEXT NOT NULL DEFAULT ''`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "OlxConfig" ADD COLUMN IF NOT EXISTS "cep" TEXT NOT NULL DEFAULT ''`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "OlxConfig" ADD COLUMN IF NOT EXISTS "telefoneOculto" BOOLEAN NOT NULL DEFAULT false`);
+
       // SKU <-> ID do anuncio na OLX ("listId", o numero que aparece no fim do link do anuncio).
       await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "OlxAnuncio" (
         "sku" TEXT PRIMARY KEY,
         "listId" TEXT NOT NULL,
         "criadoEm" TIMESTAMPTZ NOT NULL DEFAULT now())`);
       await prisma.$executeRawUnsafe(`ALTER TABLE "OlxAnuncio" ADD COLUMN IF NOT EXISTS "adId" TEXT`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "OlxAnuncio" ADD COLUMN IF NOT EXISTS "importToken" TEXT`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "OlxAnuncio" ADD COLUMN IF NOT EXISTS "status" TEXT`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "OlxAnuncio" ADD COLUMN IF NOT EXISTS "mensagem" TEXT`);
       await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "OlxAnuncio_listId_idx" ON "OlxAnuncio" ("listId")`);
       await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "OlxMensagem" (
         "messageId" TEXT PRIMARY KEY,
@@ -81,6 +92,9 @@ export async function getOlxConfig() {
     usuarioNome: txt(r.usuarioNome),
     usuarioEmail: txt(r.usuarioEmail),
     connectedAt: r.connectedAt || null,
+    telefone: txt(r.telefone),
+    cep: txt(r.cep),
+    telefoneOculto: r.telefoneOculto === true,
   };
 }
 
@@ -126,6 +140,10 @@ olxRouter.get('/status', async (_req, res, next) => {
       usuarioEmail: c.usuarioEmail,
       connectedAt: c.connectedAt,
       redirectUri: getRedirectUri(),
+      telefone: c.telefone,
+      cep: c.cep,
+      telefoneOculto: c.telefoneOculto,
+      contatoEfetivo: await contatoOlx().catch(() => ({ telefone: '', cep: '' })),
     });
   } catch (e) { next(e); }
 });
@@ -138,8 +156,24 @@ olxRouter.post('/config', async (req, res, next) => {
     const d: any = {};
     if (clientId) d.clientId = clientId;
     if (clientSecret) d.clientSecret = clientSecret;
-    if (!Object.keys(d).length) return res.status(400).json({ ok: false, error: 'Informe o Client ID e/ou o Client Secret.' });
-    await salvarOlxConfig(d);
+    // Dados de contato do anuncio (vazio = usa os da Empresa).
+    if (req.body?.telefone !== undefined || req.body?.cep !== undefined || req.body?.telefoneOculto !== undefined) {
+      await garantirTabela();
+      const tel = String(req.body?.telefone ?? '').replace(/\D/g, '');
+      const cep = String(req.body?.cep ?? '').replace(/\D/g, '');
+      if (tel && !/^\d{10,11}$/.test(tel)) return res.status(400).json({ ok: false, error: 'Telefone invalido: use DDD + numero (10 ou 11 digitos).' });
+      if (cep && !/^\d{8}$/.test(cep)) return res.status(400).json({ ok: false, error: 'CEP invalido: use 8 digitos.' });
+      await prisma.$executeRawUnsafe(
+        `UPDATE "OlxConfig" SET "telefone"=$1,"cep"=$2,"telefoneOculto"=$3,"atualizadoEm"=now() WHERE "id"=1`,
+        tel, cep, req.body?.telefoneOculto === true,
+      );
+      d.__contato = true;
+    }
+    delete d.__contato;
+    if (Object.keys(d).length) await salvarOlxConfig(d);
+    else if (req.body?.telefone === undefined && req.body?.cep === undefined && req.body?.telefoneOculto === undefined) {
+      return res.status(400).json({ ok: false, error: 'Informe o Client ID e/ou o Client Secret.' });
+    }
     res.json({ ok: true });
   } catch (e) { next(e); }
 });
@@ -232,7 +266,7 @@ olxRouter.get('/anuncios', async (_req, res, next) => {
     const skus = rows.map((r) => String(r.sku));
     const pecas: any[] = skus.length ? await prisma.peca.findMany({ where: { idPeca: { in: skus } }, select: { idPeca: true, descricao: true } }) : [];
     const desc = new Map(pecas.map((p: any) => [String(p.idPeca), String(p.descricao || '')]));
-    res.json({ ok: true, itens: rows.map((r) => ({ sku: String(r.sku), listId: String(r.listId), titulo: desc.get(String(r.sku)) || '', criadoEm: r.criadoEm })) });
+    res.json({ ok: true, itens: rows.map((r) => ({ sku: String(r.sku), listId: String(r.listId), titulo: desc.get(String(r.sku)) || '', status: txt(r.status), mensagem: txt(r.mensagem), criadoEm: r.criadoEm })) });
   } catch (e) { next(e); }
 });
 
@@ -428,6 +462,293 @@ olxRouter.post('/conversas/:chatId/responder', async (req, res, next) => {
     res.json({ ok: true });
   } catch (e) { next(e); }
 });
+
+// ───────────── Criacao de anuncio (aba Anuncio do Cadastro) ─────────────
+// Mesmo contrato das outras rotas (/shopee, /magalu, /nuvemshop): /anuncio/categorias, /buscar, /criar.
+// OLX nao tem arvore de categorias propria pra pecas: moto = categoria 2103 ("Autos e pecas > Pecas e acessorios > Motos").
+const OLX_CATEGORIA_PECAS_MOTO = 2103;
+const OLX_IMPORT = 'https://apps.olx.com.br/autoupload/import';
+const OLX_PUBLISHED = 'https://apps.olx.com.br/autoupload/v1/published';
+
+function skuBase(v: any) { return txt(v).toUpperCase().replace(/-\d+$/, ''); }
+function backendBase() { return (process.env.BACKEND_URL || 'http://localhost:4000').replace(/\/$/, ''); }
+
+// Telefone/CEP do anuncio: os de Conf. OLX; se vazios, os da Empresa (telefone com Whats e CEP do endereco completo).
+async function contatoOlx(): Promise<{ telefone: string; cep: string }> {
+  const c = await getOlxConfig();
+  let telefone = c.telefone;
+  let cep = c.cep;
+  if (!telefone || !cep) {
+    const g: any = await getConfiguracaoGeral().catch(() => null);
+    if (!telefone) {
+      let d = String(g?.empresaTelefoneWhats || '').replace(/\D/g, '');
+      if (d.length > 11 && d.startsWith('55')) d = d.slice(2);
+      if (/^\d{10,11}$/.test(d)) telefone = d;
+    }
+    if (!cep) {
+      const m = String(g?.empresaEnderecoCompleto || '').match(/(\d{5})-?(\d{3})/);
+      if (m) cep = m[1] + m[2];
+    }
+  }
+  return { telefone, cep };
+}
+
+olxRouter.get('/anuncio/categorias', (_req, res) => {
+  res.json({
+    ok: true,
+    categorias: [{
+      id: OLX_CATEGORIA_PECAS_MOTO, categoria: 'Autos e peças', subcategoria: 'Peças e acessórios', nivel3: '', nivel4: 'Motos',
+      permitido: true, caminho: 'Autos e peças > Peças e acessórios > Motos', generica: false,
+    }],
+  });
+});
+
+// Atualiza o vinculo (list_id/status) dos anuncios criados pelo sistema: consulta o status da importacao pelo token.
+async function sincronizarImportacoes(skus?: string[]) {
+  await garantirTabela();
+  const c = await getOlxConfig();
+  if (!c.accessToken) return;
+  const rows = await prisma.$queryRawUnsafe<any[]>(
+    `SELECT "sku","importToken" FROM "OlxAnuncio" WHERE "importToken" IS NOT NULL AND ("listId" = '' OR "status" IS NULL OR "status" = 'pending')`,
+  );
+  for (const r of rows) {
+    if (skus && !skus.includes(String(r.sku))) continue;
+    try {
+      const resp = await fetch(`${OLX_IMPORT}/${encodeURIComponent(String(r.importToken))}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ access_token: c.accessToken }),
+      });
+      if (!resp.ok) continue;
+      const j: any = await resp.json().catch(() => null);
+      const ads = j?.ads || {};
+      const ad: any = ads[String(r.sku)] || (Array.isArray(ads) ? ads[0] : Object.values(ads)[0]);
+      if (!ad) continue;
+      const msgs = Array.isArray(ad.message) ? ad.message.map((m: any) => txt(m?.error || m)).filter(Boolean).join(', ') : '';
+      await prisma.$executeRawUnsafe(
+        `UPDATE "OlxAnuncio" SET "status"=$2, "mensagem"=$3, "listId"=CASE WHEN $4 <> '' THEN $4 ELSE "listId" END WHERE "sku"=$1`,
+        String(r.sku), txt(ad.status) || null, msgs || null, txt(ad.list_id),
+      );
+    } catch { /* tenta de novo na proxima consulta */ }
+  }
+
+  // 2a via (token vencido ou sem resposta): a listagem de publicados traz o "id" que mandamos (= SKU) ao lado do list_id.
+  try {
+    const pend = await prisma.$queryRawUnsafe<any[]>(`SELECT "sku" FROM "OlxAnuncio" WHERE "importToken" IS NOT NULL AND "listId" = ''`);
+    const alvo = pend.map((p) => String(p.sku)).filter((s) => !skus || skus.includes(s));
+    if (!alvo.length) return;
+    let pageToken = '';
+    for (let pagina = 0; pagina < 5; pagina++) {
+      const url = `${OLX_PUBLISHED}?fetch_size=200${pageToken ? `&page_token=${encodeURIComponent(pageToken)}` : ''}`;
+      const resp = await fetch(url, { headers: { Authorization: `Bearer ${c.accessToken}` } });
+      if (!resp.ok) break;
+      const j: any = await resp.json().catch(() => null);
+      for (const a of Array.isArray(j?.data) ? j.data : []) {
+        const id = txt(a?.id);
+        if (id && txt(a?.list_id) && alvo.includes(id)) {
+          await prisma.$executeRawUnsafe(`UPDATE "OlxAnuncio" SET "listId"=$2, "status"=$3 WHERE "sku"=$1`, id, txt(a.list_id), txt(a.status) || 'published');
+        }
+      }
+      pageToken = txt(j?.next_token);
+      if (!pageToken) break;
+    }
+  } catch { /* melhor esforco */ }
+}
+
+olxRouter.post('/anuncio/buscar', async (req, res, next) => {
+  try {
+    await garantirTabela();
+    const skusInput = Array.isArray(req.body?.skus) ? req.body.skus : [];
+    const skus: string[] = Array.from(new Set(skusInput.map((s: any) => skuBase(s)).filter(Boolean))) as string[];
+    if (!skus.length) return res.status(400).json({ error: 'Informe ao menos 1 SKU' });
+    await sincronizarImportacoes(skus).catch(() => null);
+    const contato = await contatoOlx();
+    const c = await getOlxConfig();
+    const restricoesGerais: string[] = [];
+    if (!c.accessToken) restricoesGerais.push('OLX nao conectada (Conf. OLX).');
+    if (!contato.telefone) restricoesGerais.push('Telefone do anuncio nao configurado (Conf. OLX ou Empresa).');
+    if (!contato.cep) restricoesGerais.push('CEP do anuncio nao configurado (Conf. OLX ou Empresa).');
+
+    const linhas: any[] = [];
+    for (const sku of skus) {
+      const peca = await carregarAnuncioBase(sku);
+      if (!peca) { linhas.push({ sku, encontrado: false, erro: 'SKU nao encontrado no ANB (nem em Pecas, nem no pre-cadastro).' }); continue; }
+      const reg = await prisma.$queryRawUnsafe<any[]>(`SELECT "listId","status","mensagem" FROM "OlxAnuncio" WHERE "sku" = $1`, sku);
+      const jaTem = reg.length > 0;
+      const listId = jaTem ? txt(reg[0].listId) : '';
+      const recusado = jaTem && txt(reg[0].status) === 'refused';
+      linhas.push({
+        sku,
+        origem: peca.origem,
+        fotosProcessadas: peca.fotosOficiais > 0,
+        fotosQtd: peca.fotosOficiais,
+        encontrado: true,
+        descricao: peca.descricao,
+        moto: peca.moto,
+        preco: Number(peca.precoML || 0),
+        peso: peca.pesoLiquido != null ? Number(peca.pesoLiquido) : (peca.pesoBruto != null ? Number(peca.pesoBruto) : null),
+        largura: peca.largura != null ? Number(peca.largura) : null,
+        altura: peca.altura != null ? Number(peca.altura) : null,
+        profundidade: peca.profundidade != null ? Number(peca.profundidade) : null,
+        estoque: peca.estoque,
+        olxItemId: jaTem ? (listId || 'aguardando aprovacao') : null,
+        jaTemAnuncio: jaTem && !recusado,
+        restricoes: restricoesGerais,
+        erroConsulta: recusado ? `Recusado pela OLX: ${txt(reg[0].mensagem) || 'sem detalhe'}` : undefined,
+        categoriaAtual: { id: OLX_CATEGORIA_PECAS_MOTO, nivel4: 'Motos', caminho: 'Autos e peças > Peças e acessórios > Motos', permitido: true, generica: false },
+        categoriaPendente: false,
+      });
+    }
+    res.json({ ok: true, linhas });
+  } catch (e) { next(e); }
+});
+
+// POST /olx/anuncio/criar { sku, categoriaId? } — envia o anuncio pela importacao (PUT /autoupload/import).
+// Titulo/condicao/descricao vem do Bling (fonte do "Ajustar titulo"), com o SKU na 1a linha da descricao; TODAS as fotos
+// do Drive (ate 20) vao como URL publica. A OLX processa de forma assincrona: o list_id chega depois (aba Anuncios / status).
+olxRouter.post('/anuncio/criar', async (req, res) => {
+  try {
+    await garantirTabela();
+    const sku = skuBase(req.body?.sku);
+    if (!sku) return res.status(400).json({ error: 'sku obrigatorio' });
+    const c = await getOlxConfig();
+    if (!c.accessToken) return res.status(400).json({ error: 'OLX nao conectada (Conf. OLX).' });
+    const contato = await contatoOlx();
+    if (!contato.telefone || !contato.cep) return res.status(400).json({ error: 'Configure o telefone e o CEP do anuncio em Conf. OLX (ou na Empresa).' });
+
+    const peca = await carregarAnuncioBase(sku);
+    if (!peca) return res.status(404).json({ error: 'SKU nao encontrado no ANB (nem em Pecas, nem no pre-cadastro)' });
+    exigirFotosOficiais(peca);
+    if (!peca.estoque) return res.status(400).json({ error: 'Nenhuma unidade disponivel em estoque pra esse SKU' });
+    const preco = Math.round(Number(peca.precoML || 0));
+    if (!(preco > 0)) return res.status(400).json({ error: 'SKU sem preco cadastrado.' });
+
+    const reg = await prisma.$queryRawUnsafe<any[]>(`SELECT "listId","status" FROM "OlxAnuncio" WHERE "sku" = $1`, sku);
+    if (reg.length && txt(reg[0].status) !== 'refused') {
+      return res.status(400).json({ error: `SKU ja possui anuncio na OLX (${txt(reg[0].listId) || 'aguardando aprovacao'}).` });
+    }
+
+    const dados = await lerDadosBlingSku(peca).catch(() => null);
+    const titulo = (txt(dados?.titulo) || txt(peca.descricao) || sku).slice(0, 90);
+    const condicao = (dados?.condicao || peca.condicao || 'usado') === 'novo' ? '1' : '2';
+    let texto = txt(dados?.descricao);
+    if (!texto) {
+      const moto = peca.moto || ({} as any);
+      texto = [
+        titulo,
+        [moto.marca, moto.modelo, moto.ano].filter(Boolean).length ? `Moto/Modelo: ${[moto.marca, moto.modelo, moto.ano].filter(Boolean).join(' ')}` : '',
+        peca.numeroPeca ? `Código da peça (PN): ${peca.numeroPeca}` : '',
+        'Peça original, em bom estado de conservação. Consulte as fotos antes de comprar.',
+      ].filter(Boolean).join('\n');
+    }
+    const corpo = (texto.toUpperCase().startsWith(sku) ? texto : `${sku}\n${texto}`).slice(0, 6000);
+
+    const drive = await buscarFotosDriveSku(peca.motoId, sku);
+    const imagens = drive.fotos.slice(0, 20).map((f: any) => `${backendBase()}/magalu/imagem/${encodeURIComponent(f.id)}`);
+    if (!imagens.length) return res.status(400).json({ error: 'Nenhuma foto encontrada no Drive pra esse SKU — o SKU precisa de pelo menos 1 imagem.' });
+
+    const anuncio: any = {
+      id: sku.slice(0, 19),
+      operation: 'insert',
+      category: OLX_CATEGORIA_PECAS_MOTO,
+      subject: titulo,
+      body: corpo,
+      type: 's',
+      price: preco,
+      zipcode: contato.cep,
+      Phone: Number(contato.telefone),
+      images: imagens,
+      params: { condition: condicao, parts_name_motos: '10' },
+    };
+    if (c.telefoneOculto) anuncio.phone_hidden = true;
+
+    const resp = await fetch(OLX_IMPORT, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ access_token: c.accessToken, ad_list: [anuncio] }),
+    });
+    const j: any = await resp.json().catch(() => ({}));
+    if (!resp.ok || Number(j?.statusCode) !== 0) {
+      const detalhe = Array.isArray(j?.errors) ? JSON.stringify(j.errors).slice(0, 400) : '';
+      return res.status(400).json({ error: `A OLX recusou a importacao (${j?.statusCode ?? resp.status}): ${txt(j?.statusMessage)} ${detalhe}`.trim() });
+    }
+
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "OlxAnuncio" ("sku","listId","importToken","status") VALUES ($1,'',$2,'pending')
+       ON CONFLICT ("sku") DO UPDATE SET "listId"='', "importToken"=EXCLUDED."importToken", "status"='pending', "mensagem"=NULL`,
+      sku, txt(j?.token) || null,
+    );
+    res.json({ ok: true, sku, olxItemId: 'aguardando aprovacao', imagens: imagens.length, token: txt(j?.token) || null, aviso: 'Enviado. A OLX analisa o anuncio e o ID aparece em alguns minutos (consulte de novo a SKU).' });
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message || 'Erro ao criar anuncio na OLX' });
+  }
+});
+
+// GET /olx/anuncio/status?sku= — situacao do anuncio criado pelo sistema (status/list_id/mensagens da OLX).
+olxRouter.get('/anuncio/status', async (req, res) => {
+  try {
+    await garantirTabela();
+    const sku = skuBase(req.query.sku);
+    if (!sku) return res.status(400).json({ error: 'sku obrigatorio' });
+    await sincronizarImportacoes([sku]);
+    const reg = await prisma.$queryRawUnsafe<any[]>(`SELECT * FROM "OlxAnuncio" WHERE "sku" = $1`, sku);
+    if (!reg.length) return res.status(404).json({ error: 'SKU sem anuncio vinculado na OLX.' });
+    const listId = txt(reg[0].listId);
+    const info = listId ? await consultarAnuncioOlx(listId) : null;
+    res.json({ ok: true, sku, listId: listId || null, statusImportacao: txt(reg[0].status) || null, mensagem: txt(reg[0].mensagem) || null, statusOlx: info?.status || null, url: info?.url || null });
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message || 'Erro ao consultar o anuncio' });
+  }
+});
+
+// ───────────── Rotina automatica ─────────────
+// A cada 5 min: resolve os anuncios criados pelo sistema que ainda aguardam aprovacao (grava o list_id / motivo da recusa).
+// A cada 30 min: varre a listagem de publicados e atualiza o status dos anuncios vinculados (publicado, removido, recusado...).
+let olxSchedulerRodando = false;
+let olxUltimaVarredura = 0;
+
+async function varrerStatusPublicados() {
+  const c = await getOlxConfig();
+  if (!c.accessToken) return;
+  const rows = await prisma.$queryRawUnsafe<any[]>(`SELECT "sku","listId","status" FROM "OlxAnuncio" WHERE "listId" <> ''`);
+  if (!rows.length) return;
+  const porListId = new Map<string, string>();
+  let pageToken = '';
+  for (let pagina = 0; pagina < 10; pagina++) {
+    const url = `${OLX_PUBLISHED}?fetch_size=200${pageToken ? `&page_token=${encodeURIComponent(pageToken)}` : ''}`;
+    const resp = await fetch(url, { headers: { Authorization: `Bearer ${c.accessToken}` } });
+    if (!resp.ok) return; // nao altera nada se a listagem falhou
+    const j: any = await resp.json().catch(() => null);
+    for (const a of Array.isArray(j?.data) ? j.data : []) if (txt(a?.list_id)) porListId.set(txt(a.list_id), txt(a.status));
+    pageToken = txt(j?.next_token);
+    if (!pageToken) break;
+  }
+  for (const r of rows) {
+    const atual = porListId.get(String(r.listId));
+    const novo = atual || 'deleted'; // sumiu da listagem = nao esta mais no ar
+    if (novo !== txt(r.status)) {
+      await prisma.$executeRawUnsafe(`UPDATE "OlxAnuncio" SET "status"=$2 WHERE "sku"=$1`, String(r.sku), novo);
+      console.log(`[olx] anuncio ${r.sku} (${r.listId}): ${txt(r.status) || '-'} -> ${novo}`);
+    }
+  }
+}
+
+export function startOlxScheduler() {
+  const tick = async () => {
+    if (olxSchedulerRodando) return;
+    olxSchedulerRodando = true;
+    try {
+      await garantirTabela();
+      await sincronizarImportacoes();
+      if (Date.now() - olxUltimaVarredura > 30 * 60 * 1000) {
+        olxUltimaVarredura = Date.now();
+        await varrerStatusPublicados();
+      }
+    } catch (e: any) {
+      console.error('[olx] rotina falhou:', e?.message || e);
+    } finally { olxSchedulerRodando = false; }
+  };
+  setTimeout(() => { void tick(); }, 2 * 60 * 1000);
+  setInterval(() => { void tick(); }, 5 * 60 * 1000);
+}
 
 // POST /olx/desconectar — apaga so o token (credenciais do integrador ficam).
 olxRouter.post('/desconectar', async (_req, res, next) => {

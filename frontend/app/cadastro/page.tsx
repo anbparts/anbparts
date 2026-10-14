@@ -428,12 +428,13 @@ export default function CadastroPage() {
   // automaticamente em seguida. Hoje: Shopee (categoria mapeada) e Magalu (categoria ainda
   // pendente de mapeamento — ver reference_magalu_api). Cada SKU pode ser criado em 1+ marketplaces
   // no mesmo lote; cada marketplace tem seu proprio status/erro, independente dos outros.
-  type AnuncioMarketplaceId = 'shopee' | 'magalu' | 'nuvemshop' | 'mercado-livre';
+  type AnuncioMarketplaceId = 'shopee' | 'magalu' | 'nuvemshop' | 'mercado-livre' | 'olx';
   const ANUNCIO_MARKETPLACES: { id: AnuncioMarketplaceId; label: string; cor: string }[] = [
     { id: 'shopee', label: 'Shopee', cor: '#ee4d2d' },
     { id: 'magalu', label: 'Magalu', cor: '#0047bb' },
     { id: 'nuvemshop', label: 'Nuvemshop', cor: '#0f766e' },
     { id: 'mercado-livre', label: 'Mercado Livre', cor: '#b45309' },
+    { id: 'olx', label: 'OLX', cor: '#6e0ad6' },
   ];
   type ShopeeCategoriaOpcao = { id: number | string; categoria?: string; subcategoria?: string; nivel3?: string; nivel4?: string; permitido: boolean; caminho: string; generica: boolean };
   type AnuncioLinhaMarketplace = {
@@ -480,8 +481,9 @@ export default function CadastroPage() {
   const [magaluCategorias, setMagaluCategorias] = useState<ShopeeCategoriaOpcao[]>([]);
   const [nuvemshopCategorias, setNuvemshopCategorias] = useState<ShopeeCategoriaOpcao[]>([]);
   const [mlCategorias, setMlCategorias] = useState<ShopeeCategoriaOpcao[]>([]);
-  const categoriasDoMarketplace = (mk: AnuncioMarketplaceId) => (mk === 'magalu' ? magaluCategorias : mk === 'nuvemshop' ? nuvemshopCategorias : mk === 'mercado-livre' ? mlCategorias : shopeeCategorias);
-  const carregarCategoriasDoMarketplace = (mk: AnuncioMarketplaceId) => { if (mk === 'magalu') carregarMagaluCategorias(); else if (mk === 'nuvemshop') carregarNuvemshopCategorias(); else if (mk === 'mercado-livre') carregarMlCategorias(); else carregarShopeeCategorias(); };
+  const [olxCategorias, setOlxCategorias] = useState<ShopeeCategoriaOpcao[]>([]);
+  const categoriasDoMarketplace = (mk: AnuncioMarketplaceId) => (mk === 'magalu' ? magaluCategorias : mk === 'nuvemshop' ? nuvemshopCategorias : mk === 'mercado-livre' ? mlCategorias : mk === 'olx' ? olxCategorias : shopeeCategorias);
+  const carregarCategoriasDoMarketplace = (mk: AnuncioMarketplaceId) => { if (mk === 'magalu') carregarMagaluCategorias(); else if (mk === 'nuvemshop') carregarNuvemshopCategorias(); else if (mk === 'mercado-livre') carregarMlCategorias(); else if (mk === 'olx') carregarOlxCategorias(); else carregarShopeeCategorias(); };
   // Ajuste de titulo/condicao/texto por SKU (Bling + cadastro), pra corrigir falha de cadastro na hora de anunciar.
   const [anuncioAjustes, setAnuncioAjustes] = useState<Record<string, AnuncioAjuste>>({});
   // IDs de anuncio por SKU/marketplace: no nosso sistema x no Bling (vinculo produto-loja).
@@ -2060,7 +2062,7 @@ export default function CadastroPage() {
     return {
       disponivel: true,
       jaTemAnuncio: !!linha.jaTemAnuncio,
-      itemId: linha.shopeeItemId ?? linha.magaluItemId ?? linha.nuvemshopItemId ?? linha.mercadoLivreItemId ?? null,
+      itemId: linha.shopeeItemId ?? linha.magaluItemId ?? linha.nuvemshopItemId ?? linha.mercadoLivreItemId ?? linha.olxItemId ?? null,
       categoriaAtual: linha.categoriaAtual || null,
       categoriaEscolhidaId: linha.categoriaAtual?.id ?? null,
       categoriaPendente: !!linha.categoriaPendente,
@@ -2130,6 +2132,17 @@ export default function CadastroPage() {
       setNuvemshopCategorias(Array.isArray(data.categorias) ? data.categorias : []);
     } catch (e: any) {
       alert(e?.message || "Erro ao buscar categorias Nuvemshop.");
+    }
+  }
+
+  async function carregarOlxCategorias() {
+    if (olxCategorias.length) return;
+    try {
+      const resp = await fetch(`${API}/olx/anuncio/categorias`, { credentials: "include" });
+      const data = await readApiResponse(resp, "Erro ao buscar categorias da OLX");
+      setOlxCategorias(Array.isArray(data.categorias) ? data.categorias : []);
+    } catch (e: any) {
+      alert(e?.message || "Erro ao buscar categorias da OLX.");
     }
   }
 
@@ -2347,6 +2360,7 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
     if (marketplaces.includes('magalu')) carregarMagaluCategorias();
     if (marketplaces.includes('nuvemshop')) carregarNuvemshopCategorias();
     if (marketplaces.includes('mercado-livre')) carregarMlCategorias();
+    if (marketplaces.includes('olx')) carregarOlxCategorias();
 
     try {
       // Cada marketplace e' buscado separado e tolerante a falha: se um cair (ex: Mercado Livre), os outros seguem.
@@ -2388,7 +2402,7 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
               altura: linha.altura,
               profundidade: linha.profundidade,
               estoque: linha.estoque,
-              marketplaces: { shopee: criarMarketplaceVazio(), magalu: criarMarketplaceVazio(), nuvemshop: criarMarketplaceVazio(), 'mercado-livre': criarMarketplaceVazio() },
+              marketplaces: { shopee: criarMarketplaceVazio(), magalu: criarMarketplaceVazio(), nuvemshop: criarMarketplaceVazio(), 'mercado-livre': criarMarketplaceVazio(), olx: criarMarketplaceVazio() },
             };
             porSku.set(linha.sku, acumulado);
           }
@@ -2579,7 +2593,7 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
 
     const marcar = (sku: string, mk: AnuncioMarketplaceId, patch: Partial<AnuncioLinhaMarketplace>) =>
       setAnuncioCriarLinhas((prev) => prev.map((item) => item.sku === sku ? { ...item, marketplaces: { ...item.marketplaces, [mk]: { ...item.marketplaces[mk], ...patch } } } : item));
-    const itemIdDe = (d: any) => d?.shopeeItemId || d?.magaluItemId || d?.nuvemshopProdutoId || d?.nuvemshopItemId || d?.mercadoLivreItemId || d?.mercadoLivreItemId || (d?.anuncioBlingId ? `Bling ${d.anuncioBlingId}` : null);
+    const itemIdDe = (d: any) => d?.shopeeItemId || d?.magaluItemId || d?.nuvemshopProdutoId || d?.nuvemshopItemId || d?.mercadoLivreItemId || d?.olxItemId || (d?.anuncioBlingId ? `Bling ${d.anuncioBlingId}` : null);
 
     // Chamada de criacao (a mesma da 1a tentativa e da repeticao).
     const criarDeFato = async (sku: string, mk: AnuncioMarketplaceId) => {
@@ -2968,7 +2982,7 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
                               ) : (c.chave !== 'sel' && c.chave !== 'pronto' ? <span style={{ color: c.cor }}>{c.texto}</span> : null)}
                               {mp.status === 'ok' && (
                                 <div style={{ fontSize: 11.5, color: '#166534' }}>
-                                  ✓ Criado — item {mp.resultado?.shopeeItemId || mp.resultado?.magaluItemId || mp.resultado?.nuvemshopItemId || mp.resultado?.mercadoLivreItemId || (mp.resultado?.anuncioBlingId ? `Bling ${mp.resultado.anuncioBlingId}` : '')}{mp.resultado?.publicado === false ? ' (oculto na loja)' : ''}{mp.resultado?.aviso ? ` — ⚠ ${mp.resultado.aviso}` : ''}{mp.resultado?.blingErro ? ` — ⚠ Bling: ${mp.resultado.blingErro}` : ''}
+                                  ✓ Criado — item {mp.resultado?.shopeeItemId || mp.resultado?.magaluItemId || mp.resultado?.nuvemshopItemId || mp.resultado?.mercadoLivreItemId || mp.resultado?.olxItemId || (mp.resultado?.anuncioBlingId ? `Bling ${mp.resultado.anuncioBlingId}` : '')}{mp.resultado?.publicado === false ? ' (oculto na loja)' : ''}{mp.resultado?.aviso ? ` — ⚠ ${mp.resultado.aviso}` : ''}{mp.resultado?.blingErro ? ` — ⚠ Bling: ${mp.resultado.blingErro}` : ''}
                                 </div>
                               )}
                               {mp.status === 'erro' && <div style={{ fontSize: 11.5, color: '#dc2626' }}>✗ {mp.erroProcessamento}</div>}
