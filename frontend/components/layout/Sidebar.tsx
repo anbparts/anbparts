@@ -59,12 +59,13 @@ export const NAV: NavGroup[] = [
       { href: '/mercado-livre/perguntas', icon: 'message-circle', label: 'Perguntas' },
     ],
   },
-  {
-    section: 'Nuvemshop',
-    items: [
-      { href: '/nuvemshop/produtos', icon: 'sparkles', label: 'Produtos' },
-    ],
-  },
+  // Menu da Nuvemshop (Produtos) fora do ar: a pagina /nuvemshop/produtos segue existindo, so nao aparece no menu lateral.
+  // {
+  //   section: 'Nuvemshop',
+  //   items: [
+  //     { href: '/nuvemshop/produtos', icon: 'sparkles', label: 'Produtos' },
+  //   ],
+  // },
   {
     section: 'Operacoes',
     items: [
@@ -75,6 +76,7 @@ export const NAV: NavGroup[] = [
   {
     section: 'Configuracoes',
     items: [
+      { href: '/conf-monitor-conexoes', icon: 'radar', label: 'Monitor de Conexoes' },
       { href: '/configuracoes', icon: 'key-round', label: 'Conf. Perfil' },
       { href: '/conf-meta', icon: 'message-circle', label: 'Conf. Meta' },
       { href: '/bling', icon: 'plug', label: 'Conf. Conexao Bling' },
@@ -88,7 +90,6 @@ export const NAV: NavGroup[] = [
       { href: '/config-magalu', icon: 'store', label: 'Conf. Magalu' },
       { href: '/config-olx', icon: 'store', label: 'Conf. OLX' },
       { href: '/conf-gmail', icon: 'mail', label: 'Conf. Google' },
-      { href: '/conf-monitor-conexoes', icon: 'radar', label: 'Monitor de Conexoes' },
       { href: '/conf-auditoria', icon: 'radar', label: 'Conf. Auditoria Automatica' },
     ],
   },
