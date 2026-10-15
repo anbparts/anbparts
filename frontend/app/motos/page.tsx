@@ -316,6 +316,7 @@ const MOTO_ANEXO_FIELDS = [
   { key: 'baixaDetran', label: 'Baixa Detran' },
   { key: 'registroDetran', label: 'Registro Detran' },
   { key: 'laudoTecnicoEtiquetas', label: 'Laudo Tecnico Etiquetas' },
+  { key: 'laudoTecnicoEtiquetasComplementar', label: 'Laudo Tecnico Etiquetas Complementar' },
   { key: 'nfeEntrada', label: 'NF-e Entrada' },
   { key: 'certBaixa', label: 'Certificado de Baixa' },
   { key: 'recibo', label: 'Recibo' },

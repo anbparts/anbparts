@@ -162,6 +162,7 @@ const MOTO_ANEXO_KEYS = [
   'baixaDetran',
   'registroDetran',
   'laudoTecnicoEtiquetas',
+  'laudoTecnicoEtiquetasComplementar',
   'nfeEntrada',
   'certBaixa',
   'recibo',
