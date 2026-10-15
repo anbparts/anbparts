@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ChartPanel, ColumnChart, DonutChart, HorizontalBarChart, ViewModeSwitch, type ViewMode } from '@/components/finance/Charts';
 import { api } from '@/lib/api';
 import { useFinancialViewportMode } from '@/lib/company-values';
+import { compressFotoCapaFile } from '@/lib/image-compression';
 
 const CATEGORIAS = ['Insumo', 'Servicos', 'Taxas', 'Aluguel', 'Sistemas', 'Imposto', 'Moto', 'Outros'];
 const RECORRENCIAS = [
@@ -260,12 +261,42 @@ function PaymentModal({
   const [dataPagamento, setDataPagamento] = useState(despesa.dataPagamento ? String(despesa.dataPagamento).split('T')[0] : today());
   const [comprovante, setComprovante] = useState<{ name: string; dataUrl: string } | null>(null);
 
+  // Recebe o comprovante (arquivo escolhido OU imagem colada com Ctrl+V). Imagem e' comprimida com as regras do sistema.
+  async function aplicarArquivoComprovante(file: File, nome?: string) {
+    try {
+      if (file.type.startsWith('image/')) {
+        const image = await compressFotoCapaFile(file);
+        setComprovante({ name: nome || file.name, dataUrl: image.dataUrl });
+      } else {
+        const dataUrl = await fileToDataUrl(file);
+        setComprovante({ name: nome || file.name, dataUrl });
+      }
+    } catch {
+      alert('Nao foi possivel ler o arquivo do comprovante.');
+    }
+  }
+
   async function handleComprovanteChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
+    event.target.value = '';
     if (!file) return;
-    const dataUrl = await fileToDataUrl(file);
-    setComprovante({ name: file.name, dataUrl });
+    await aplicarArquivoComprovante(file);
   }
+
+  // Ctrl+V com a janela aberta: pega a captura que esta na memoria (Ferramenta de Captura etc.) e mostra a previa.
+  useEffect(() => {
+    const aoColar = (ev: ClipboardEvent) => {
+      const itens = ev.clipboardData ? Array.from(ev.clipboardData.items) : [];
+      const item = itens.find((it) => it.kind === 'file' && /^image\//i.test(it.type));
+      const arquivo = item ? item.getAsFile() : null;
+      if (!arquivo) return; // texto colado em outro campo segue normal
+      ev.preventDefault();
+      const hora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }).replace(':', 'h');
+      void aplicarArquivoComprovante(arquivo, `Captura colada ${hora}.png`);
+    };
+    document.addEventListener('paste', aoColar);
+    return () => document.removeEventListener('paste', aoColar);
+  }, []);
 
   async function confirmarPago() {
     setSaving(true);
@@ -327,6 +358,10 @@ function PaymentModal({
             <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 6 }}>
               {comprovante?.name || despesa.comprovanteNome || 'Nenhum comprovante anexado'}
             </div>
+            <div style={{ fontSize: 11.5, color: 'var(--gray-400)', marginTop: 4 }}>Ou tire um print e cole aqui com Ctrl+V.</div>
+            {comprovante?.dataUrl && /^data:image\//i.test(comprovante.dataUrl) ? (
+              <img src={comprovante.dataUrl} alt="Previa do comprovante" style={{ marginTop: 10, maxWidth: '100%', maxHeight: 220, borderRadius: 8, border: '1px solid var(--border)', objectFit: 'contain' }} />
+            ) : null}
           </div>
         </div>
 
