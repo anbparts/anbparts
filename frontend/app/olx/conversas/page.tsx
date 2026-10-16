@@ -35,6 +35,13 @@ function iniciais(nome: string) {
 
 export default function OlxConversasPage() {
   const [conversas, setConversas] = useState<any[]>([]);
+  const [isPhone, setIsPhone] = useState(false);
+  useEffect(() => {
+    const ajustar = () => setIsPhone(typeof window !== 'undefined' && window.innerWidth <= 768);
+    ajustar();
+    window.addEventListener('resize', ajustar);
+    return () => window.removeEventListener('resize', ajustar);
+  }, []);
   const [carregando, setCarregando] = useState(true);
   const [busca, setBusca] = useState('');
   const [somenteNaoLidas, setSomenteNaoLidas] = useState(false);
@@ -118,8 +125,8 @@ export default function OlxConversasPage() {
         {totalNaoLidas > 0 ? <span style={{ fontSize: 12.5, fontWeight: 600, padding: '4px 12px', borderRadius: 999, background: '#fffbeb', color: '#92400e', border: '1px solid #fde68a' }}>{totalNaoLidas} nao lida(s)</span> : null}
       </div>
 
-      <div style={{ padding: 20, display: 'grid', gridTemplateColumns: 'minmax(280px, 360px) minmax(0, 1fr)', gap: 16, alignItems: 'start' }}>
-        <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 14, overflow: 'hidden' }}>
+      <div style={{ padding: isPhone ? 10 : 20, display: 'grid', gridTemplateColumns: isPhone ? 'minmax(0, 1fr)' : 'minmax(280px, 360px) minmax(0, 1fr)', gap: 16, alignItems: 'start' }}>
+        <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 14, overflow: 'hidden', display: isPhone && aberta ? 'none' : 'block' }}>
           <div style={{ padding: 14, display: 'grid', gap: 10, borderBottom: '1px solid var(--border)' }}>
             <input style={{ ...s.input, borderRadius: 999, padding: '9px 16px', background: 'var(--gray-50)', border: '1px solid transparent' }} placeholder="Buscar nome, SKU ou mensagem" value={busca} onChange={(e) => setBusca(e.target.value)} />
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--gray-500)' }}>
@@ -154,12 +161,13 @@ export default function OlxConversasPage() {
           </div>
         </div>
 
-        <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 14, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 420 }}>
+        <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 14, overflow: 'hidden', display: isPhone && !aberta ? 'none' : 'flex', flexDirection: 'column', minHeight: isPhone ? 0 : 420 }}>
           {!aberta ? (
             <div style={{ padding: 40, fontSize: 13.5, color: 'var(--gray-400)', textAlign: 'center', margin: 'auto' }}>Selecione uma conversa para ver o historico e responder.</div>
           ) : (
             <>
               <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
+                {isPhone ? <button type="button" onClick={() => setAberta(null)} style={{ background: 'none', border: 'none', color: 'var(--blue-500)', fontSize: 13.5, cursor: 'pointer', padding: '0 0 8px', fontFamily: 'Inter, sans-serif' }}>← Conversas</button> : null}
                 <div style={{ fontSize: 15, fontWeight: 600 }}>{aberta.nome || 'Comprador'}</div>
                 {aberta.sku ? (
                   <div style={{ fontSize: 13, color: 'var(--gray-600)', marginTop: 2 }}>
@@ -172,7 +180,7 @@ export default function OlxConversasPage() {
                   {aberta.listId ? <a href={'https://www.olx.com.br/vi/' + aberta.listId + '.htm'} target="_blank" rel="noreferrer" style={{ color: 'var(--blue-500)' }}>Abrir anuncio na OLX</a> : null}
                 </div>
               </div>
-              <div style={{ padding: 18, display: 'grid', gap: 8, alignContent: 'start', maxHeight: 'calc(100vh - 360px)', minHeight: 240, overflowY: 'auto', flex: 1 }}>
+              <div style={{ padding: 18, display: 'grid', gap: 8, alignContent: 'start', maxHeight: isPhone ? 'calc(100vh - 330px)' : 'calc(100vh - 360px)', minHeight: isPhone ? 160 : 240, overflowY: 'auto', flex: 1 }}>
                 {mensagens.map((m) => (
                   <div key={m.messageId} style={{ justifySelf: m.origem === 'seller' ? 'end' : 'start', maxWidth: '78%', background: m.origem === 'seller' ? '#e0f2fe' : 'var(--gray-100)', borderRadius: 12, padding: '8px 12px', fontSize: 13.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                     {m.mensagem}
@@ -181,7 +189,7 @@ export default function OlxConversasPage() {
                 ))}
                 <div ref={fimRef} />
               </div>
-              <div style={{ padding: 14, borderTop: '1px solid var(--border)', display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+              <div style={{ padding: 14, borderTop: '1px solid var(--border)', display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: isPhone ? 'wrap' : 'nowrap' }}>
                 <textarea style={{ ...s.input, minHeight: 56, resize: 'vertical' as const, flex: 1 }} placeholder="Responder ao comprador" value={resposta}
                   onChange={(e) => setResposta(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); enviar(); } }} />

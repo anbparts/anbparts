@@ -41,6 +41,13 @@ export default function OlxAnunciosPage() {
   const [itens, setItens] = useState<any[]>([]);
   const [historico, setHistorico] = useState<any[]>([]);
   const [semSku, setSemSku] = useState<any[]>([]);
+  const [isPhone, setIsPhone] = useState(false);
+  useEffect(() => {
+    const ajustar = () => setIsPhone(typeof window !== 'undefined' && window.innerWidth <= 768);
+    ajustar();
+    window.addEventListener('resize', ajustar);
+    return () => window.removeEventListener('resize', ajustar);
+  }, []);
   const [carregando, setCarregando] = useState(true);
   const [aba, setAba] = useState<'ativos' | 'encerrados' | 'semvinculo'>('ativos');
   const [busca, setBusca] = useState('');
@@ -129,7 +136,7 @@ export default function OlxAnunciosPage() {
         </button>
       </div>
 
-      <div style={{ padding: 24, maxWidth: 1100 }}>
+      <div style={{ padding: isPhone ? 12 : 24, maxWidth: 1100 }}>
         {aExcluir.length > 0 && (
           <div style={{ ...s.card, background: '#fffbeb', borderColor: '#fde68a' }}>
             <div style={{ fontSize: 14, fontWeight: 600, color: '#92400e', marginBottom: 6 }}>{aExcluir.length} anuncio(s) para excluir na OLX</div>
@@ -170,7 +177,29 @@ export default function OlxAnunciosPage() {
 
           {carregando ? <div style={{ fontSize: 13, color: 'var(--gray-400)', padding: 12 }}>Carregando...</div> : null}
           {!carregando && !lista.length ? <div style={{ fontSize: 13, color: 'var(--gray-400)', padding: 24, textAlign: 'center' }}>Nenhum anuncio nesta lista.</div> : null}
-          {!carregando && lista.length > 0 ? (
+          {!carregando && isPhone && lista.length > 0 ? (
+            <div style={{ display: 'grid', gap: 10 }}>
+              {lista.map((i, idx) => {
+                const r = rotuloStatus(i.status, i.listId);
+                return (
+                  <div key={`m-${i.sku}-${i.listId}-${idx}`} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 12, display: 'grid', gap: 6 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
+                      <strong style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 13 }}>{i.sku || 'sem SKU'}</strong>
+                      {i.listId ? (
+                        <button type="button" onClick={() => window.open(String(i.url), '_blank', 'noopener,noreferrer')} style={{ fontSize: 11.5, fontWeight: 600, padding: '3px 12px', borderRadius: 99, border: '1px solid ' + r.cor, background: r.fundo, color: r.cor, cursor: 'pointer' }}>{r.texto}</button>
+                      ) : <span style={{ fontSize: 11.5, fontWeight: 600, padding: '3px 12px', borderRadius: 99, border: '1px solid ' + r.cor, background: r.fundo, color: r.cor }}>{r.texto}</span>}
+                    </div>
+                    <div style={{ fontSize: 13, color: 'var(--gray-600)' }}>{i.titulo || '—'}</div>
+                    <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>ID {i.listId || 'aguardando'} · {aba === 'ativos' ? `Estoque ${i.estoque == null ? '—' : i.estoque}` : `Encerrado ${dataBr(i.encerradoEm)}`}{i.precisaExcluir ? ' · excluir' : ''}</div>
+                    {i.semSku
+                      ? <button style={{ ...s.btn, justifyContent: 'center', padding: '8px 12px', fontSize: 12.5, background: 'var(--white)', color: 'var(--gray-600)', borderColor: 'var(--border)' }} onClick={() => { setNovoLink(String(i.url)); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>Vincular a um SKU</button>
+                      : !i.historico ? <button style={{ ...s.btn, justifyContent: 'center', padding: '8px 12px', fontSize: 12.5, background: 'var(--white)', color: 'var(--gray-500)', borderColor: 'var(--border)' }} onClick={() => remover(i.sku)}>Remover vinculo</button> : null}
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
+          {!carregando && !isPhone && lista.length > 0 ? (
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>

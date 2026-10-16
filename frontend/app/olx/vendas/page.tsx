@@ -41,6 +41,13 @@ function rotuloVenda(status: string) {
 
 export default function OlxVendasPage() {
   const [itens, setItens] = useState<any[]>([]);
+  const [isPhone, setIsPhone] = useState(false);
+  useEffect(() => {
+    const ajustar = () => setIsPhone(typeof window !== 'undefined' && window.innerWidth <= 768);
+    ajustar();
+    window.addEventListener('resize', ajustar);
+    return () => window.removeEventListener('resize', ajustar);
+  }, []);
   const [carregando, setCarregando] = useState(true);
   const [filtro, setFiltro] = useState<'pendente' | 'todas'>('pendente');
   const [busca, setBusca] = useState('');
@@ -113,7 +120,7 @@ export default function OlxVendasPage() {
         </button>
       </div>
 
-      <div style={{ padding: 24, maxWidth: 1150 }}>
+      <div style={{ padding: isPhone ? 12 : 24, maxWidth: 1150 }}>
         {pendentes.length > 0 && (
           <div style={{ ...s.card, background: '#fffbeb', borderColor: '#fde68a' }}>
             <div style={{ fontSize: 14, fontWeight: 600, color: '#92400e', marginBottom: 4 }}>{pendentes.length} venda(s) da OLX aguardando o pedido no Bling</div>
@@ -135,7 +142,41 @@ export default function OlxVendasPage() {
 
           {carregando ? <div style={{ fontSize: 13, color: 'var(--gray-400)', padding: 12 }}>Carregando...</div> : null}
           {!carregando && !lista.length ? <div style={{ fontSize: 13, color: 'var(--gray-400)', padding: 24, textAlign: 'center' }}>{filtro === 'pendente' ? 'Nenhuma venda aguardando pedido no Bling.' : 'Nenhuma venda da OLX registrada.'}</div> : null}
-          {!carregando && lista.length > 0 ? (
+          {!carregando && isPhone && lista.length > 0 ? (
+            <div style={{ display: 'grid', gap: 10 }}>
+              {lista.map((i) => {
+                const r = rotuloVenda(i.status);
+                return (
+                  <div key={`m-${i.id}`} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 12, display: 'grid', gap: 6 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <strong style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 13 }}>{i.sku || 'sem SKU'}</strong>
+                      <button type="button" onClick={() => window.open(String(i.url), '_blank', 'noopener,noreferrer')} style={{ fontSize: 11.5, fontWeight: 600, padding: '3px 12px', borderRadius: 99, border: '1px solid ' + r.cor, background: r.fundo, color: r.cor, cursor: 'pointer' }}>{r.texto}</button>
+                    </div>
+                    <div style={{ fontSize: 13, color: 'var(--gray-600)' }}>{i.titulo || `anuncio ${i.listId}`}</div>
+                    <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>{dataHoraBr(i.vendaEm)} · {brl(i.preco)}{i.blingPedidoNum ? ` · pedido #${i.blingPedidoNum}` : ''}</div>
+                    {i.status === 'pendente' ? (
+                      i.estoqueBling === 'baixado' ? <div style={{ fontSize: 12, color: '#16a34a' }}>Estoque Bling: baixado ✓</div>
+                      : i.estoqueBling === 'erro' ? <div style={{ fontSize: 12, color: '#dc2626' }}>Estoque Bling: erro — {i.estoqueBlingErro} <button type="button" onClick={() => tentarEstoque(i.id)} style={{ background: 'none', border: 'none', color: 'var(--blue-500)', textDecoration: 'underline', padding: 0 }}>tentar de novo</button></div>
+                      : i.estoqueBling === 'sem_sku' ? <div style={{ fontSize: 12, color: '#b45309' }}>Sem SKU: informe o SKU para baixar o estoque no Bling</div>
+                      : <div style={{ fontSize: 12, color: '#b45309' }}>Estoque Bling: baixando...</div>
+                    ) : null}
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      {!i.sku && i.status === 'pendente' ? <button style={{ ...s.btn, padding: '7px 12px', fontSize: 12.5, background: 'var(--white)', color: 'var(--gray-600)', borderColor: 'var(--border)' }} onClick={() => informarSku(i.id)}>Informar SKU</button> : null}
+                      {i.status === 'pendente' ? (
+                        <>
+                          <button style={{ ...s.btn, padding: '7px 12px', fontSize: 12.5, background: 'var(--white)', color: 'var(--gray-500)', borderColor: 'var(--border)' }} onClick={() => mudarStatus(i.id, 'baixada', 'Marcar esta venda como baixada? Use so se o pedido ja foi tratado fora do fluxo normal.')}>Marcar baixada</button>
+                          <button style={{ ...s.btn, padding: '7px 12px', fontSize: 12.5, background: 'var(--white)', color: 'var(--gray-500)', borderColor: 'var(--border)' }} onClick={() => mudarStatus(i.id, 'ignorada', 'Ignorar esta venda (por exemplo, compra cancelada)? Ela sai do alerta e a unidade volta ao estoque do Bling.')}>Ignorar</button>
+                        </>
+                      ) : (
+                        <button style={{ ...s.btn, padding: '7px 12px', fontSize: 12.5, background: 'var(--white)', color: 'var(--gray-500)', borderColor: 'var(--border)' }} onClick={() => mudarStatus(i.id, 'pendente', 'Voltar esta venda para "aguardando pedido no Bling"?')}>Reabrir</button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
+          {!carregando && !isPhone && lista.length > 0 ? (
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
