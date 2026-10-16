@@ -9,6 +9,7 @@ import { blingReq } from '../routes/bling';
 import { monitorMercadoLivreMe, monitorMercadoPagoMe } from '../routes/mercado-livre';
 import { monitorGoogleDriveChecar } from '../routes/google-drive';
 import { nuvemReq } from '../routes/nuvemshop';
+import { getOlxConfig } from '../routes/olx';
 
 export type StatusConexao = 'ok' | 'erro' | 'nao_configurado';
 export type ResultadoConexao = {
@@ -100,6 +101,17 @@ const CHECAGENS: Checagem[] = [
       if (!cfg.accessToken) return { configurado: false };
       await getMagaluSellerInfo();
       return { configurado: true, detalhe: 'Conectado' };
+    },
+  },
+  {
+    chave: 'olx', nome: 'OLX', telaConfig: '/config-olx',
+    rodar: async () => {
+      const cfg = await getOlxConfig();
+      if (!cfg.accessToken) return { configurado: false };
+      const r = await fetch('https://apps.olx.com.br/autoupload/v1/published?fetch_size=1', { headers: { Authorization: `Bearer ${cfg.accessToken}` } });
+      if (r.status === 401 || r.status === 403) throw new Error('A OLX recusou o token (vencido ou revogado). Reconecte em Conf. OLX: sem isso o chat, o status dos anuncios e as vendas deixam de chegar.');
+      if (!r.ok) throw new Error(`OLX respondeu ${r.status}`);
+      return { configurado: true, detalhe: 'Conectado', aviso: 'A OLX nao documenta renovacao do token: se ele vencer, e preciso reconectar.' };
     },
   },
   {

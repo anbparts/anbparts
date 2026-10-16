@@ -32,7 +32,7 @@ brindeRouter.get('/pecas', async (req, res, next) => {
 });
 
 // Deposito de onde sai a unidade: o que tem saldo fisico; senao o primeiro ativo.
-async function depositoParaBaixa(produtoId: number): Promise<number | null> {
+export async function depositoParaBaixa(produtoId: number): Promise<number | null> {
   try {
     const s = await blingReq(`/estoques/saldos?idsProdutos[]=${produtoId}`) as any;
     const deps: any[] = s?.data?.[0]?.depositos || [];

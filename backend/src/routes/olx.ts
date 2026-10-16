@@ -10,8 +10,8 @@ import { carregarAnuncioBase } from '../lib/anuncioBase';
 import { exigirFotosOficiais, lerDadosBlingSku } from '../lib/anuncioPreparar';
 import { buscarFotosDriveSku } from '../lib/fotos-cadastro';
 import { getConfiguracaoGeral } from '../lib/configuracoes-gerais';
-import { blingReq } from './bling';
-import { resolverBlingProdutoId } from '../lib/anuncioPreparar';
+import { blingReq, findBlingProductsByCodes } from './bling';
+import { depositoParaBaixa } from './brinde';
 
 export const olxRouter = Router();
 
@@ -931,26 +931,17 @@ async function registrarVendaOlx(listId: string) {
 }
 
 // ───────────── Baixa do estoque no Bling (venda OLX) ─────────────
-let depositoBlingCache: number | null = null;
-async function depositoPadraoBling(): Promise<number> {
-  if (depositoBlingCache) return depositoBlingCache;
-  const r: any = await blingReq('/depositos?limite=100');
-  const lista: any[] = Array.isArray(r?.data) ? r.data : [];
-  const dep = lista.find((d) => d?.padrao === true) || lista.find((d) => String(d?.situacao || '').toUpperCase() === 'A' || d?.situacao === 1) || lista[0];
-  if (!dep?.id) throw new Error('Nenhum deposito encontrado no Bling.');
-  depositoBlingCache = Number(dep.id);
-  return depositoBlingCache;
-}
-
+// Mesma rotina da baixa de brinde/prejuizo (routes/brinde.ts e routes/pecas.ts): acha o produto pelo codigo (SKU base) e usa o deposito
+// que tem saldo fisico (senao o primeiro ativo). Saida (S) = venda; entrada (E) = estorno.
 async function movimentarEstoqueBling(sku: string, operacao: 'S' | 'E', observacao: string) {
-  const base = await carregarAnuncioBase(sku);
-  if (!base) throw new Error(`SKU ${sku} nao encontrado no sistema.`);
-  const produtoId = await resolverBlingProdutoId(base);
-  const deposito = await depositoPadraoBling();
-  await blingReq('/estoques', {
-    method: 'POST',
-    body: JSON.stringify({ deposito: { id: deposito }, operacao, produto: { id: Number(produtoId) }, quantidade: 1, preco: 0, custo: 0, observacoes: observacao.slice(0, 250) }),
-  });
+  const baseSku = skuBase(sku);
+  const produtos = await findBlingProductsByCodes([baseSku]);
+  const produto: any = produtos.get(baseSku);
+  if (!produto?.id) throw new Error(`Produto ${baseSku} nao encontrado no Bling.`);
+  const depositoId = await depositoParaBaixa(Number(produto.id));
+  const payload: any = { produto: { id: Number(produto.id) }, operacao, quantidade: 1, observacoes: observacao.slice(0, 250) };
+  if (depositoId) payload.deposito = { id: depositoId };
+  await blingReq('/estoques', { method: 'POST', body: JSON.stringify(payload) });
 }
 
 // Para cada venda pendente com SKU e sem baixa ainda: reserva a venda (UPDATE condicional = so uma instancia/execucao passa) e lanca a
