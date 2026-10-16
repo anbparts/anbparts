@@ -87,6 +87,7 @@ export const APP_PERMISSION_CATALOG: AppPagePermission[] = [
   { key: 'conf_ml', label: 'Conf. ML', href: '/config-ml', actions: [{ key: 'editar', label: 'Editar configuracao' }] },
   { key: 'conf_nuvemshop', label: 'Conf. Nuvemshop', href: '/conf-nuvemshop', actions: [{ key: 'editar', label: 'Editar configuracao' }] },
   { key: 'olx_conversas', label: 'OLX - Conversas', href: '/olx/conversas', actions: [{ key: 'responder', label: 'Responder mensagem' }] },
+  { key: 'olx_vendas', label: 'OLX - Vendas', href: '/olx/vendas', actions: [{ key: 'editar', label: 'Acertar vendas da OLX' }] },
   { key: 'olx_anuncios', label: 'OLX - Anuncios', href: '/olx/anuncios', actions: [{ key: 'editar', label: 'Vincular e gerenciar anuncios' }] },
   { key: 'conf_olx', label: 'Conf. OLX', href: '/config-olx', actions: [{ key: 'editar', label: 'Editar configuracao' }] },
   { key: 'conf_monitor_conexoes', label: 'Monitor de Conexoes', href: '/conf-monitor-conexoes', actions: [] },

@@ -7204,11 +7204,10 @@ blingRouter.post('/importar-produto', async (req, res, next) => {
   }
 });
 
-blingRouter.post('/sync/vendas', async (req, res, next) => {
-  try {
+// Monta a lista de vendas/cancelamentos do periodo (usada pelo botao "Buscar vendas" e pela importacao automatica).
+export async function montarItensSyncVendas(dataInicio: string, dataFim: string) {
     const cfg = await getConfig();
     const defaults = getProdutoDefaults(cfg);
-    const { dataInicio, dataFim } = req.body;
 
     const todasPecas = await (prisma as any).peca.findMany({
       select: {
@@ -7485,86 +7484,137 @@ blingRouter.post('/sync/vendas', async (req, res, next) => {
       }
     }
 
-    res.json({
-      ok: true,
-      total: itens.length,
-      defaults,
-      itens,
-    });
+    return { ok: true, total: itens.length, defaults, itens };
+}
+
+blingRouter.post('/sync/vendas', async (req, res, next) => {
+  try {
+    const { dataInicio, dataFim } = req.body;
+    res.json(await montarItensSyncVendas(dataInicio, dataFim));
   } catch (e) {
     next(e);
   }
 });
 
+// Da baixa (venda efetiva) nas pecas: usada pelo botao da tela de Vendas e pela importacao automatica.
+// somenteDisponiveis: na importacao automatica so mexe em peca ainda disponivel (nunca reaplica uma venda ja baixada).
+export async function baixarPecasVenda(p: { ids: number[]; dataVenda: any; pedidoId?: any; pedidoNum?: any; precoVenda: any; frete: any; taxaValor: any; valorLiq?: any; somenteDisponiveis?: boolean }) {
+  const precoML = toNumber(p.precoVenda);
+  const freteN = toNumber(p.frete);
+  const taxas = toNumber(p.taxaValor);
+  const vliq = p.valorLiq !== undefined
+    ? toNumber(p.valorLiq)
+    : roundMoney(precoML - freteN - taxas);
+  const where: any = { id: { in: p.ids } };
+  if (p.somenteDisponiveis) where.disponivel = true;
+
+  const atualizadas = await prisma.peca.updateMany({
+    where,
+    data: {
+      disponivel: false,
+      emPrejuizo: false,
+      dataVenda: new Date(p.dataVenda),
+      blingPedidoId: p.pedidoId ? String(p.pedidoId) : null,
+      blingPedidoNum: p.pedidoNum ? String(p.pedidoNum) : null,
+      precoML,
+      valorFrete: freteN,
+      valorTaxas: taxas,
+      valorLiq: vliq,
+    },
+  });
+
+  // Alerta de baixa DETRAN agora e' consolidado no digest periodico (Conf. E-mails -> Processo: Baixa Etiqueta DETRAN).
+  let alertaNfeTextoEmailEnviado = false;
+  let alertaNfeTextoEmailErro: string | null = null;
+  if (atualizadas.count > 0) {
+    try {
+      const resultadoEmailNfeTexto = await sendNfeTextoEmailIfNeeded(p.ids);
+      alertaNfeTextoEmailEnviado = !!resultadoEmailNfeTexto?.sent;
+    } catch (error: any) {
+      alertaNfeTextoEmailErro = error?.message || String(error);
+    }
+  }
+  return {
+    count: atualizadas.count,
+    alertaDetranEmailEnviado: false,
+    alertaDetranEmailErro: null as string | null,
+    alertaNfeTextoEmailEnviado,
+    alertaNfeTextoEmailErro,
+  };
+}
+
 blingRouter.post('/baixar', async (req, res, next) => {
   try {
     const { pecaId, pecaIds, pedidoId, pedidoNum, dataVenda, precoVenda, frete, taxaValor, valorLiq } = req.body;
     const ids = Array.isArray(pecaIds) && pecaIds.length
-      ? pecaIds.map((id) => Number(id)).filter(Boolean)
+      ? pecaIds.map((id: any) => Number(id)).filter(Boolean)
       : (pecaId ? [Number(pecaId)] : []);
 
     if (!ids.length || !dataVenda) {
       return res.status(400).json({ error: 'pecaId/pecaIds e dataVenda sao obrigatorios' });
     }
 
-    const precoML = toNumber(precoVenda);
-    const freteN = toNumber(frete);
-    const taxas = toNumber(taxaValor);
-    const vliq = valorLiq !== undefined
-      ? toNumber(valorLiq)
-      : roundMoney(precoML - freteN - taxas);
-    const pecasParaAlerta = await prisma.peca.findMany({
-      where: { id: { in: ids } },
-      select: {
-        idPeca: true,
-        descricao: true,
-        detranEtiqueta: true,
-        motoId: true,
-        moto: { select: { marca: true, modelo: true } },
-      },
-    });
-
-    await prisma.peca.updateMany({
-      where: { id: { in: ids } },
-      data: {
-        disponivel: false,
-        emPrejuizo: false,
-        dataVenda: new Date(dataVenda),
-        blingPedidoId: pedidoId ? String(pedidoId) : null,
-        blingPedidoNum: pedidoNum ? String(pedidoNum) : null,
-        precoML,
-        valorFrete: freteN,
-        valorTaxas: taxas,
-        valorLiq: vliq,
-      },
-    });
-
-    // Alerta de baixa DETRAN agora é consolidado no digest periódico (Conf. E-mails →
-    // Processo: Baixa Etiqueta DETRAN), que agrupa todas as pendentes em 1 e-mail. Não envia mais na venda.
-    const alertaDetranEmailEnviado = false;
-    const alertaDetranEmailErro: string | null = null;
-    void pecasParaAlerta;
-
-    let alertaNfeTextoEmailEnviado = false;
-    let alertaNfeTextoEmailErro: string | null = null;
-    try {
-      const resultadoEmailNfeTexto = await sendNfeTextoEmailIfNeeded(ids);
-      alertaNfeTextoEmailEnviado = !!resultadoEmailNfeTexto?.sent;
-    } catch (error: any) {
-      alertaNfeTextoEmailErro = error?.message || String(error);
-    }
-
+    const resultado = await baixarPecasVenda({ ids, dataVenda, pedidoId, pedidoNum, precoVenda, frete, taxaValor, valorLiq });
     res.json({
       ok: true,
-      alertaDetranEmailEnviado,
-      alertaDetranEmailErro,
-      alertaNfeTextoEmailEnviado,
-      alertaNfeTextoEmailErro,
+      alertaDetranEmailEnviado: resultado.alertaDetranEmailEnviado,
+      alertaDetranEmailErro: resultado.alertaDetranEmailErro,
+      alertaNfeTextoEmailEnviado: resultado.alertaNfeTextoEmailEnviado,
+      alertaNfeTextoEmailErro: resultado.alertaNfeTextoEmailErro,
     });
   } catch (e) {
     next(e);
   }
 });
+
+// ───────────── Importacao automatica das vendas (a cada 5 min, so hoje e ontem) ─────────────
+// Faz o que o botao "Buscar vendas" + "Baixar" faz, mas so para VENDAS ja casadas com uma peca disponivel (valores padrao do
+// Bling: preco, frete e taxa do pedido). Cancelamentos, sucata e itens nao encontrados continuam manuais pelo botao Vendas.
+const importacaoVendasAutoStatus: any = { ultimaExecucao: null, periodo: null, vendasBaixadas: 0, ignoradas: 0, erro: null, rodando: false };
+function dataSaoPaulo(offsetDias: number) {
+  const d = new Date(Date.now() + offsetDias * 24 * 60 * 60 * 1000);
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+}
+
+export async function importarVendasAutomatico() {
+  if (importacaoVendasAutoStatus.rodando) return;
+  importacaoVendasAutoStatus.rodando = true;
+  try {
+    const dataFim = dataSaoPaulo(0);
+    const dataInicio = dataSaoPaulo(-1);
+    const resultado = await montarItensSyncVendas(dataInicio, dataFim);
+    const candidatos = (resultado.itens as any[]).filter((i) => i.tipo === 'VENDA' && i.encontrada && !i.jaVendida && (i.pecaId || (i.pecaIds || []).length));
+    let baixadas = 0;
+    for (const item of candidatos) {
+      const ids = (item.pecaIds && item.pecaIds.length ? item.pecaIds : [item.pecaId]).map((x: any) => Number(x)).filter(Boolean);
+      const r = await baixarPecasVenda({
+        ids, dataVenda: item.dataVenda, pedidoId: item.pedidoId, pedidoNum: item.pedidoNum,
+        precoVenda: item.precoVenda, frete: item.frete, taxaValor: item.taxaValor, valorLiq: item.valorLiq,
+        somenteDisponiveis: true,
+      });
+      if (r.count > 0) {
+        baixadas += 1;
+        console.log(`[bling/auto-vendas] baixa automatica: ${item.idPeca} · pedido ${item.pedidoNum}`);
+      }
+    }
+    Object.assign(importacaoVendasAutoStatus, {
+      ultimaExecucao: new Date().toISOString(), periodo: `${dataInicio} a ${dataFim}`,
+      vendasBaixadas: baixadas, ignoradas: (resultado.itens as any[]).length - candidatos.length, erro: null,
+    });
+  } catch (e: any) {
+    Object.assign(importacaoVendasAutoStatus, { ultimaExecucao: new Date().toISOString(), erro: e?.message || String(e) });
+    console.error('[bling/auto-vendas] falhou:', e?.message || e);
+  } finally {
+    importacaoVendasAutoStatus.rodando = false;
+  }
+}
+
+export function startImportacaoVendasAutomatica() {
+  setTimeout(() => { void importarVendasAutomatico(); }, 3 * 60 * 1000);
+  setInterval(() => { void importarVendasAutomatico(); }, 5 * 60 * 1000);
+}
+
+blingRouter.get('/importacao-automatica/status', (_req, res) => { res.json({ ok: true, ...importacaoVendasAutoStatus }); });
 
 blingRouter.post('/aprovar-cancelamento', async (req, res, next) => {
   try {

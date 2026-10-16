@@ -41,6 +41,7 @@ export const PAGE_KEY_BY_HREF: Record<string, string> = {
   '/config-olx': 'conf_olx',
   '/olx/conversas': 'olx_conversas',
   '/olx/anuncios': 'olx_anuncios',
+  '/olx/vendas': 'olx_vendas',
   '/conf-auditoria': 'conf_auditoria',
   '/conf-gmail': 'conf_gmail',
   '/conf-monitor-conexoes': 'conf_monitor_conexoes',

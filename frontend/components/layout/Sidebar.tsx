@@ -71,6 +71,7 @@ export const NAV: NavGroup[] = [
     items: [
       { href: '/olx/conversas', icon: 'message-circle', label: 'Conversas' },
       { href: '/olx/anuncios', icon: 'store', label: 'Anuncios' },
+      { href: '/olx/vendas', icon: 'shopping-cart', label: 'Vendas' },
     ],
   },
   {

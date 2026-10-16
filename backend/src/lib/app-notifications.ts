@@ -28,6 +28,13 @@ export const APP_NOTIFICATION_CATALOG: NotificationType[] = [
     href: '/olx/conversas',
   },
   {
+    key: 'olx_vendas',
+    label: 'Venda nova na OLX',
+    description: 'Avisa quando um anuncio da OLX foi vendido e o pedido ainda nao foi gerado no Bling.',
+    pageKey: 'olx_vendas',
+    href: '/olx/vendas',
+  },
+  {
     key: 'olx_excluir',
     label: 'Excluir anuncio na OLX',
     description: 'Avisa quando uma peca foi vendida (estoque zerado) e o anuncio ainda esta no ar na OLX.',
@@ -145,11 +152,26 @@ async function collectOlxMensagens(limit: number) {
   } catch { return []; } // tabelas da OLX ainda nao criadas
 }
 
+async function collectOlxVendas(limit: number) {
+  try {
+    const rows = await prisma.$queryRawUnsafe<any[]>(`SELECT "id","listId","sku","titulo","preco","vendaEm" FROM "OlxVenda" WHERE "status" = 'pendente' ORDER BY "vendaEm" DESC LIMIT ${Number(limit) || 20}`);
+    return rows.map((r) => ({
+      type: 'olx_vendas',
+      itemKey: `olxvenda-${r.id}`,
+      title: `Venda nova na OLX${r.sku ? ` - ${r.sku}` : ''}`,
+      description: shortText(r.titulo || `Anuncio ${r.listId}`) + ' — gere o pedido no Bling.',
+      href: '/olx/vendas',
+      createdAt: r.vendaEm,
+      meta: r.preco != null ? Number(r.preco).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '',
+    }));
+  } catch { return []; }
+}
+
 // Peca vendida (nenhuma unidade disponivel) com anuncio ainda no ar na OLX: precisa ser excluido la.
 async function collectOlxExcluir(limit: number) {
   try {
     const rows = await prisma.$queryRawUnsafe<any[]>(
-      `SELECT "sku","listId" FROM "OlxAnuncio" WHERE "listId" <> '' AND COALESCE("status", '') NOT IN ('deleted','refused')`,
+      `SELECT "sku","listId" FROM "OlxAnuncio" WHERE "listId" <> '' AND COALESCE("status", '') NOT IN ('deleted','refused','sold')`,
     );
     const out: any[] = [];
     for (const r of rows) {
@@ -316,6 +338,7 @@ export async function collectNotificationsForTypes(types: string[], limitPerType
   const groups = await Promise.all([
     enabled.has('ml_questions') ? collectMlQuestions(limitPerType) : [],
     enabled.has('olx_messages') ? collectOlxMensagens(limitPerType) : [],
+    enabled.has('olx_vendas') ? collectOlxVendas(limitPerType) : [],
     enabled.has('olx_excluir') ? collectOlxExcluir(limitPerType) : [],
     enabled.has('cadastro_pre_cadastro') ? collectPreCadastros(limitPerType) : [],
     enabled.has('pagamentos_dia') ? collectPagamentosDia(limitPerType) : [],

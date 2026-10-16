@@ -10,6 +10,8 @@ import { carregarAnuncioBase } from '../lib/anuncioBase';
 import { exigirFotosOficiais, lerDadosBlingSku } from '../lib/anuncioPreparar';
 import { buscarFotosDriveSku } from '../lib/fotos-cadastro';
 import { getConfiguracaoGeral } from '../lib/configuracoes-gerais';
+import { blingReq } from './bling';
+import { resolverBlingProdutoId } from '../lib/anuncioPreparar';
 
 export const olxRouter = Router();
 
@@ -67,6 +69,16 @@ function garantirTabela(): Promise<void> {
         "id" SERIAL PRIMARY KEY, "sku" TEXT NOT NULL, "listId" TEXT NOT NULL, "status" TEXT, "url" TEXT,
         "criadoEm" TIMESTAMPTZ, "encerradoEm" TIMESTAMPTZ NOT NULL DEFAULT now())`);
       await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "OlxAnuncioHistorico_sku_idx" ON "OlxAnuncioHistorico" ("sku")`);
+      // Vendas detectadas na OLX (status sold). Uma por anuncio (listId unico = nunca duplica). "pendente" ate o pedido ser gerado no
+      // Bling e importado (a peca ser baixada no sistema); depois "baixada".
+      await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "OlxVenda" (
+        "id" SERIAL PRIMARY KEY, "listId" TEXT NOT NULL UNIQUE, "sku" TEXT NOT NULL DEFAULT '', "titulo" TEXT, "preco" NUMERIC(12,2),
+        "status" TEXT NOT NULL DEFAULT 'pendente', "vendaEm" TIMESTAMPTZ, "detectadoEm" TIMESTAMPTZ NOT NULL DEFAULT now(),
+        "blingPedidoNum" TEXT, "baixadoEm" TIMESTAMPTZ, "observacao" TEXT)`);
+      // Baixa de estoque no Bling na hora da venda (saida de 1 un.). "blingEstoqueBaixado" e' reservado ANTES de chamar o Bling (nunca baixa 2x).
+      await prisma.$executeRawUnsafe(`ALTER TABLE "OlxVenda" ADD COLUMN IF NOT EXISTS "blingEstoqueBaixado" BOOLEAN NOT NULL DEFAULT false`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "OlxVenda" ADD COLUMN IF NOT EXISTS "blingEstoqueEm" TIMESTAMPTZ`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "OlxVenda" ADD COLUMN IF NOT EXISTS "blingEstoqueErro" TEXT`);
       // Todos os anuncios que a OLX lista na conta (com ou sem SKU vinculado) e o historico de mudancas de status de cada um.
       await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "OlxPublicado" (
         "listId" TEXT PRIMARY KEY, "status" TEXT, "raw" TEXT, "detalhe" TEXT,
@@ -274,7 +286,7 @@ async function consultarAnuncioOlx(listId: string): Promise<{ status: string; ur
 }
 
 const urlPublicaOlx = (listId: string) => (listId ? `https://www.olx.com.br/vi/${listId}.htm` : '');
-const statusEncerrado = (s: string) => s === 'deleted' || s === 'refused';
+const statusEncerrado = (s: string) => s === 'deleted' || s === 'refused' || s === 'sold';
 
 async function estoqueDoSku(sku: string): Promise<number | null> {
   const where = { OR: [{ idPeca: sku }, { idPeca: { startsWith: `${sku}-` } }] } as any;
@@ -365,6 +377,9 @@ olxRouter.post('/anuncios', async (req, res, next) => {
          "encerradoEm" = NULL, "criadoEm" = now()`,
       sku, listId, adId || null, confirmado?.status || null, confirmado?.url || urlPublicaOlx(listId),
     );
+    // Venda ja detectada desse anuncio que estava sem SKU: passa a apontar pra ele.
+    await prisma.$executeRawUnsafe(`UPDATE "OlxVenda" SET "sku"=$1 WHERE ("listId"=$2 OR "listId"=$3) AND "sku"=''`, sku, listId, adId || listId).catch(() => null);
+    await baixarEstoqueBlingDasVendasPendentes().catch(() => null);
     res.json({ ok: true, sku, listId, confirmado: !!confirmado, statusOlx: confirmado?.status || null, url: confirmado?.url || urlPublicaOlx(listId) });
   } catch (e) { next(e); }
 });
@@ -871,17 +886,195 @@ async function varrerStatusPublicados() {
     }
   }
 
+  // 2b) venda nova (status sold): cria o registro em OLX > Vendas, uma unica vez por anuncio (listId unico).
+  for (const a of lista) {
+    if (a.status !== 'sold' && a.status !== 'deleted_sold') continue;
+    try { await registrarVendaOlx(a.listId); } catch (e: any) { console.error('[olx] venda nao registrada', a.listId, e?.message || e); }
+  }
+
   // 3) atualiza o status dos anuncios vinculados a SKU
   const rows = await prisma.$queryRawUnsafe<any[]>(`SELECT "sku","listId","status" FROM "OlxAnuncio" WHERE "listId" <> ''`);
   for (const r of rows) {
     const atual = porListId.get(String(r.listId));
     const novo = atual || 'deleted'; // sumiu da listagem = nao esta mais no ar
     if (novo !== txt(r.status)) {
-      await prisma.$executeRawUnsafe(`UPDATE "OlxAnuncio" SET "status"=$2, "encerradoEm"=CASE WHEN $2 IN ('deleted','refused') THEN COALESCE("encerradoEm", now()) ELSE NULL END, "url"=COALESCE("url", $3) WHERE "sku"=$1`, String(r.sku), novo, urlPublicaOlx(String(r.listId)));
+      await prisma.$executeRawUnsafe(`UPDATE "OlxAnuncio" SET "status"=$2, "encerradoEm"=CASE WHEN $2 IN ('deleted','refused','sold') THEN COALESCE("encerradoEm", now()) ELSE NULL END, "url"=COALESCE("url", $3) WHERE "sku"=$1`, String(r.sku), novo, urlPublicaOlx(String(r.listId)));
       console.log(`[olx] anuncio ${r.sku} (${r.listId}): ${txt(r.status) || '-'} -> ${novo}`);
     }
   }
 }
+
+// Cria (se ainda nao existe) a venda do anuncio vendido na OLX. SKU/titulo/preco vem do vinculo e do cadastro; a data vem do detalhe da OLX.
+async function registrarVendaOlx(listId: string) {
+  const ja = await prisma.$queryRawUnsafe<any[]>(`SELECT "id" FROM "OlxVenda" WHERE "listId" = $1`, listId);
+  if (ja.length) return;
+  const vinc = await prisma.$queryRawUnsafe<any[]>(`SELECT "sku" FROM "OlxAnuncio" WHERE "listId" = $1 OR "adId" = $1 LIMIT 1`, listId);
+  const hist = vinc.length ? [] : await prisma.$queryRawUnsafe<any[]>(`SELECT "sku" FROM "OlxAnuncioHistorico" WHERE "listId" = $1 LIMIT 1`, listId);
+  const sku = txt((vinc[0] || hist[0])?.sku);
+  let titulo = '';
+  let preco: number | null = null;
+  if (sku) {
+    const peca: any = await prisma.peca.findFirst({ where: { OR: [{ idPeca: sku }, { idPeca: { startsWith: `${sku}-` } }] } as any, select: { descricao: true, precoML: true } });
+    titulo = txt(peca?.descricao);
+    preco = peca?.precoML != null ? Number(peca.precoML) : null;
+  }
+  const pub = await prisma.$queryRawUnsafe<any[]>(`SELECT "detalhe" FROM "OlxPublicado" WHERE "listId" = $1`, listId);
+  const m = txt(pub[0]?.detalhe).match(/"last_update":"([^"]+)"/);
+  // last_update da OLX vem no horario de Brasilia, sem fuso
+  const vendaEm = m ? new Date(`${m[1].replace(/\.\d+$/, '')}-03:00`) : new Date();
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "OlxVenda" ("listId","sku","titulo","preco","vendaEm") VALUES ($1,$2,$3,$4,$5) ON CONFLICT ("listId") DO NOTHING`,
+    listId, sku, titulo || null, preco, isNaN(vendaEm.getTime()) ? new Date() : vendaEm,
+  );
+  console.log(`[olx] venda registrada: anuncio ${listId}${sku ? ` (SKU ${sku})` : ' (sem SKU)'}`);
+  await baixarEstoqueBlingDasVendasPendentes().catch(() => null);
+}
+
+// ───────────── Baixa do estoque no Bling (venda OLX) ─────────────
+let depositoBlingCache: number | null = null;
+async function depositoPadraoBling(): Promise<number> {
+  if (depositoBlingCache) return depositoBlingCache;
+  const r: any = await blingReq('/depositos?limite=100');
+  const lista: any[] = Array.isArray(r?.data) ? r.data : [];
+  const dep = lista.find((d) => d?.padrao === true) || lista.find((d) => String(d?.situacao || '').toUpperCase() === 'A' || d?.situacao === 1) || lista[0];
+  if (!dep?.id) throw new Error('Nenhum deposito encontrado no Bling.');
+  depositoBlingCache = Number(dep.id);
+  return depositoBlingCache;
+}
+
+async function movimentarEstoqueBling(sku: string, operacao: 'S' | 'E', observacao: string) {
+  const base = await carregarAnuncioBase(sku);
+  if (!base) throw new Error(`SKU ${sku} nao encontrado no sistema.`);
+  const produtoId = await resolverBlingProdutoId(base);
+  const deposito = await depositoPadraoBling();
+  await blingReq('/estoques', {
+    method: 'POST',
+    body: JSON.stringify({ deposito: { id: deposito }, operacao, produto: { id: Number(produtoId) }, quantidade: 1, preco: 0, custo: 0, observacoes: observacao.slice(0, 250) }),
+  });
+}
+
+// Para cada venda pendente com SKU e sem baixa ainda: reserva a venda (UPDATE condicional = so uma instancia/execucao passa) e lanca a
+// saida de 1 unidade no Bling. Se o Bling falhar, desfaz a reserva e guarda o erro (tenta de novo no proximo ciclo).
+async function baixarEstoqueBlingDasVendasPendentes() {
+  const pend = await prisma.$queryRawUnsafe<any[]>(
+    `SELECT "id","sku","listId" FROM "OlxVenda" WHERE "status" = 'pendente' AND "sku" <> '' AND "blingEstoqueBaixado" = false`,
+  );
+  for (const v of pend) {
+    const reservado = await prisma.$executeRawUnsafe(
+      `UPDATE "OlxVenda" SET "blingEstoqueBaixado" = true WHERE "id" = $1 AND "blingEstoqueBaixado" = false AND "status" = 'pendente'`, Number(v.id),
+    );
+    if (!reservado) continue;
+    try {
+      await movimentarEstoqueBling(String(v.sku), 'S', `Venda OLX - anuncio ${v.listId}`);
+      await prisma.$executeRawUnsafe(`UPDATE "OlxVenda" SET "blingEstoqueEm" = now(), "blingEstoqueErro" = NULL WHERE "id" = $1`, Number(v.id));
+      console.log(`[olx] estoque baixado no Bling: SKU ${v.sku} (anuncio ${v.listId})`);
+    } catch (e: any) {
+      await prisma.$executeRawUnsafe(`UPDATE "OlxVenda" SET "blingEstoqueBaixado" = false, "blingEstoqueErro" = $2 WHERE "id" = $1`, Number(v.id), String(e?.message || e).slice(0, 300));
+      console.error(`[olx] falha ao baixar estoque no Bling (SKU ${v.sku}):`, e?.message || e);
+    }
+  }
+}
+
+// Venda ignorada/cancelada depois da baixa: devolve a unidade ao estoque do Bling (entrada de 1).
+async function devolverEstoqueBlingDaVenda(id: number) {
+  const rows = await prisma.$queryRawUnsafe<any[]>(`SELECT "sku","listId","blingEstoqueBaixado" FROM "OlxVenda" WHERE "id" = $1`, id);
+  const v = rows[0];
+  if (!v || !v.blingEstoqueBaixado || !txt(v.sku)) return;
+  const liberou = await prisma.$executeRawUnsafe(`UPDATE "OlxVenda" SET "blingEstoqueBaixado" = false WHERE "id" = $1 AND "blingEstoqueBaixado" = true`, id);
+  if (!liberou) return;
+  try {
+    await movimentarEstoqueBling(String(v.sku), 'E', `Estorno venda OLX - anuncio ${v.listId}`);
+    await prisma.$executeRawUnsafe(`UPDATE "OlxVenda" SET "blingEstoqueEm" = NULL, "blingEstoqueErro" = NULL WHERE "id" = $1`, id);
+  } catch (e: any) {
+    await prisma.$executeRawUnsafe(`UPDATE "OlxVenda" SET "blingEstoqueBaixado" = true, "blingEstoqueErro" = $2 WHERE "id" = $1`, id, 'Falha ao devolver o estoque: ' + String(e?.message || e).slice(0, 250));
+    throw e;
+  }
+}
+
+// Venda pendente vira "baixada" quando o pedido do Bling entra no sistema: peca do SKU baixada (blingPedidoId) com data da venda
+// igual ou posterior ao dia da venda na OLX.
+async function resolverVendasOlx() {
+  const pend = await prisma.$queryRawUnsafe<any[]>(`SELECT "id","sku","vendaEm" FROM "OlxVenda" WHERE "status" = 'pendente' AND "sku" <> ''`);
+  for (const v of pend) {
+    const sku = String(v.sku);
+    const diaVenda = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(v.vendaEm));
+    const peca: any = await prisma.peca.findFirst({
+      where: {
+        OR: [{ idPeca: sku }, { idPeca: { startsWith: `${sku}-` } }],
+        disponivel: false, blingPedidoId: { not: null }, dataVenda: { gte: new Date(`${diaVenda}T00:00:00.000Z`) },
+      } as any,
+      select: { blingPedidoNum: true },
+      orderBy: { dataVenda: 'desc' },
+    });
+    if (peca) {
+      await prisma.$executeRawUnsafe(`UPDATE "OlxVenda" SET "status"='baixada', "blingPedidoNum"=$2, "baixadoEm"=now() WHERE "id"=$1`, Number(v.id), txt(peca.blingPedidoNum) || null);
+      console.log(`[olx] venda ${v.id} (SKU ${sku}) baixada pelo pedido Bling ${txt(peca.blingPedidoNum)}`);
+    }
+  }
+}
+
+// GET /olx/vendas — vendas detectadas, pendentes primeiro.
+olxRouter.get('/vendas', async (_req, res, next) => {
+  try {
+    await garantirTabela();
+    await resolverVendasOlx().catch(() => null);
+    const rows = await prisma.$queryRawUnsafe<any[]>(`SELECT * FROM "OlxVenda" ORDER BY CASE WHEN "status" = 'pendente' THEN 0 ELSE 1 END, "vendaEm" DESC, "id" DESC LIMIT 500`);
+    const itens: any[] = [];
+    for (const v of rows) {
+      const sku = txt(v.sku);
+      const disponiveis = sku && v.status === 'pendente'
+        ? await prisma.peca.count({ where: { OR: [{ idPeca: sku }, { idPeca: { startsWith: `${sku}-` } }], disponivel: true } as any }).catch(() => null)
+        : null;
+      itens.push({
+        id: Number(v.id), listId: String(v.listId), sku, titulo: txt(v.titulo), preco: v.preco != null ? Number(v.preco) : null,
+        status: txt(v.status), vendaEm: v.vendaEm, detectadoEm: v.detectadoEm, blingPedidoNum: txt(v.blingPedidoNum), baixadoEm: v.baixadoEm,
+        url: urlPublicaOlx(String(v.listId)), disponiveisNoSistema: disponiveis,
+        estoqueBling: v.blingEstoqueBaixado ? 'baixado' : (txt(v.blingEstoqueErro) ? 'erro' : (sku ? 'aguardando' : 'sem_sku')),
+        estoqueBlingErro: txt(v.blingEstoqueErro), estoqueBlingEm: v.blingEstoqueEm,
+      });
+    }
+    res.json({ ok: true, itens });
+  } catch (e) { next(e); }
+});
+
+// POST /olx/vendas/:id/status { status: 'pendente' | 'baixada' | 'ignorada' } — acerto manual.
+olxRouter.post('/vendas/:id/status', async (req, res, next) => {
+  try {
+    await garantirTabela();
+    const status = txt(req.body?.status);
+    if (!['pendente', 'baixada', 'ignorada'].includes(status)) return res.status(400).json({ ok: false, error: 'status invalido' });
+    await prisma.$executeRawUnsafe(`UPDATE "OlxVenda" SET "status"=$2, "baixadoEm"=CASE WHEN $2 = 'pendente' THEN NULL ELSE COALESCE("baixadoEm", now()) END WHERE "id"=$1`, Number(req.params.id), status);
+    let aviso = '';
+    if (status === 'ignorada') {
+      try { await devolverEstoqueBlingDaVenda(Number(req.params.id)); } catch (e: any) { aviso = `Venda ignorada, mas nao consegui devolver o estoque no Bling: ${e?.message || e}`; }
+    } else if (status === 'pendente') {
+      await baixarEstoqueBlingDasVendasPendentes().catch(() => null);
+    }
+    res.json({ ok: true, aviso: aviso || undefined });
+  } catch (e) { next(e); }
+});
+
+// POST /olx/vendas/:id/sku { sku } — informa o SKU de uma venda sem vinculo.
+olxRouter.post('/vendas/:id/sku', async (req, res, next) => {
+  try {
+    await garantirTabela();
+    const sku = txt(req.body?.sku).toUpperCase();
+    if (!sku) return res.status(400).json({ ok: false, error: 'Informe o SKU.' });
+    const peca: any = await prisma.peca.findFirst({ where: { OR: [{ idPeca: sku }, { idPeca: { startsWith: `${sku}-` } }] } as any, select: { descricao: true, precoML: true } });
+    if (!peca) return res.status(404).json({ ok: false, error: `SKU ${sku} nao encontrado no sistema.` });
+    await prisma.$executeRawUnsafe(`UPDATE "OlxVenda" SET "sku"=$2, "titulo"=$3, "preco"=$4 WHERE "id"=$1`, Number(req.params.id), sku, txt(peca.descricao) || null, peca.precoML != null ? Number(peca.precoML) : null);
+    await baixarEstoqueBlingDasVendasPendentes().catch(() => null);
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+// POST /olx/vendas/:id/estoque — tenta de novo a baixa no estoque do Bling (quando deu erro).
+olxRouter.post('/vendas/:id/estoque', async (_req, res, next) => {
+  try {
+    await baixarEstoqueBlingDasVendasPendentes();
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
 
 export function startOlxScheduler() {
   const tick = async () => {
@@ -890,10 +1083,12 @@ export function startOlxScheduler() {
     try {
       await garantirTabela();
       await sincronizarImportacoes();
-      if (Date.now() - olxUltimaVarredura > 10 * 60 * 1000) {
+      if (Date.now() - olxUltimaVarredura > 4 * 60 * 1000) {
         olxUltimaVarredura = Date.now();
         await varrerStatusPublicados();
       }
+      await resolverVendasOlx();
+      await baixarEstoqueBlingDasVendasPendentes();
     } catch (e: any) {
       console.error('[olx] rotina falhou:', e?.message || e);
     } finally { olxSchedulerRodando = false; }
