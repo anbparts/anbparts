@@ -498,7 +498,19 @@ olxRouter.get('/conversas', async (_req, res, next) => {
              (SELECT x."mensagem" FROM "OlxMensagem" x WHERE x."chatId" = m."chatId" ORDER BY x."enviadaEm" DESC LIMIT 1) AS "ultima",
              (SELECT a."sku" FROM "OlxAnuncio" a WHERE a."listId" = MAX(m."listId") OR a."adId" = MAX(m."listId") LIMIT 1) AS "sku"
       FROM "OlxMensagem" m GROUP BY m."chatId" ORDER BY MAX(m."enviadaEm") DESC LIMIT 200`);
-    res.json({ ok: true, itens: rows.map((r) => ({ ...r, total: Number(r.total), naoLidas: Number(r.naoLidas) })) });
+    // Titulo do SKU (peca; se so existir no pre-cadastro, de la) pra mostrar junto do codigo.
+    const skus = Array.from(new Set(rows.map((r) => txt(r.sku)).filter(Boolean)));
+    const titulos = new Map<string, string>();
+    if (skus.length) {
+      const pecas: any[] = await prisma.peca.findMany({ where: { idPeca: { in: skus } }, select: { idPeca: true, descricao: true } }).catch(() => []);
+      for (const p of pecas) titulos.set(String(p.idPeca), String(p.descricao || ''));
+      const faltam = skus.filter((s) => !titulos.get(s));
+      if (faltam.length) {
+        const cad: any[] = await (prisma as any).cadastroPeca.findMany({ where: { idPeca: { in: faltam } }, select: { idPeca: true, descricao: true } }).catch(() => []);
+        for (const p of cad) titulos.set(String(p.idPeca), String(p.descricao || ''));
+      }
+    }
+    res.json({ ok: true, itens: rows.map((r) => ({ ...r, total: Number(r.total), naoLidas: Number(r.naoLidas), titulo: titulos.get(txt(r.sku)) || '' })) });
   } catch (e) { next(e); }
 });
 

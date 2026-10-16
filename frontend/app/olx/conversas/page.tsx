@@ -102,7 +102,7 @@ export default function OlxConversasPage() {
     return conversas.filter((c) => {
       if (somenteNaoLidas && !(c.naoLidas > 0)) return false;
       if (!q) return true;
-      return [c.nome, c.sku, c.ultima, c.telefone, c.listId].join(' ').toLowerCase().indexOf(q) >= 0;
+      return [c.nome, c.sku, c.titulo, c.ultima, c.telefone, c.listId].join(' ').toLowerCase().indexOf(q) >= 0;
     });
   }, [conversas, busca, somenteNaoLidas]);
 
@@ -140,7 +140,9 @@ export default function OlxConversasPage() {
                       <strong style={{ fontSize: 13.5, fontWeight: c.naoLidas > 0 ? 700 : 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.nome || 'Comprador'}</strong>
                       <span style={{ fontSize: 11, color: 'var(--gray-400)', flexShrink: 0 }}>{quando(c.ultimaEm)}</span>
                     </div>
-                    <div style={{ fontSize: 11.5, color: 'var(--gray-400)', fontFamily: 'JetBrains Mono, monospace' }}>{c.sku || 'sem SKU vinculado'}</div>
+                    <div style={{ fontSize: 11.5, color: 'var(--gray-500)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={c.titulo || ''}>
+                      <span style={{ fontFamily: 'JetBrains Mono, monospace', color: 'var(--gray-400)' }}>{c.sku || 'sem SKU vinculado'}</span>{c.titulo ? <span> · {c.titulo}</span> : null}
+                    </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 2 }}>
                       <span style={{ fontSize: 12.5, color: c.naoLidas > 0 ? 'var(--gray-800)' : 'var(--gray-500)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.ultima}</span>
                       {c.naoLidas > 0 ? <span style={{ fontSize: 11, background: '#d97706', color: '#fff', borderRadius: 10, padding: '1px 8px', flexShrink: 0 }}>{c.naoLidas}</span> : null}
@@ -158,7 +160,12 @@ export default function OlxConversasPage() {
           ) : (
             <>
               <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
-                <div style={{ fontSize: 15, fontWeight: 600 }}>{aberta.nome || 'Comprador'}{aberta.sku ? ` · ${aberta.sku}` : ''}</div>
+                <div style={{ fontSize: 15, fontWeight: 600 }}>{aberta.nome || 'Comprador'}</div>
+                {aberta.sku ? (
+                  <div style={{ fontSize: 13, color: 'var(--gray-600)', marginTop: 2 }}>
+                    <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 600 }}>{aberta.sku}</span>{aberta.titulo ? <span> · {aberta.titulo}</span> : null}
+                  </div>
+                ) : null}
                 <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 3, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                   {aberta.telefone ? <span>{aberta.telefone}</span> : null}
                   {aberta.email ? <span>{aberta.email}</span> : null}
