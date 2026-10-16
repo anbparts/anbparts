@@ -67,6 +67,13 @@ function garantirTabela(): Promise<void> {
         "id" SERIAL PRIMARY KEY, "sku" TEXT NOT NULL, "listId" TEXT NOT NULL, "status" TEXT, "url" TEXT,
         "criadoEm" TIMESTAMPTZ, "encerradoEm" TIMESTAMPTZ NOT NULL DEFAULT now())`);
       await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "OlxAnuncioHistorico_sku_idx" ON "OlxAnuncioHistorico" ("sku")`);
+      // Todos os anuncios que a OLX lista na conta (com ou sem SKU vinculado) e o historico de mudancas de status de cada um.
+      await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "OlxPublicado" (
+        "listId" TEXT PRIMARY KEY, "status" TEXT, "raw" TEXT, "detalhe" TEXT,
+        "primeiraVez" TIMESTAMPTZ NOT NULL DEFAULT now(), "atualizadoEm" TIMESTAMPTZ NOT NULL DEFAULT now())`);
+      await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "OlxPublicadoEvento" (
+        "id" SERIAL PRIMARY KEY, "listId" TEXT NOT NULL, "de" TEXT, "para" TEXT, "detalhe" TEXT, "quando" TIMESTAMPTZ NOT NULL DEFAULT now())`);
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "OlxPublicadoEvento_listId_idx" ON "OlxPublicadoEvento" ("listId")`);
       await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "OlxAnuncio_listId_idx" ON "OlxAnuncio" ("listId")`);
       await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "OlxMensagem" (
         "messageId" TEXT PRIMARY KEY,
@@ -311,9 +318,19 @@ olxRouter.get('/anuncios', async (_req, res, next) => {
         criadoEm: r.criadoEm, encerradoEm: r.encerradoEm || null,
       });
     }
+    // Anuncios da conta que nao estao ligados a nenhum SKU (nem no historico): sao monitorados mesmo assim.
+    const vinculados = new Set<string>([
+      ...rows.map((x) => String(x.listId)), ...rows.map((x) => txt(x.adId)).filter(Boolean),
+      ...hist.map((h) => String(h.listId)),
+    ]);
+    const todosPublicados = await prisma.$queryRawUnsafe<any[]>(`SELECT "listId","status","primeiraVez","atualizadoEm" FROM "OlxPublicado" ORDER BY "primeiraVez" DESC`);
+    const semSku = todosPublicados.filter((p) => !vinculados.has(String(p.listId))).map((p) => ({
+      listId: String(p.listId), status: txt(p.status), url: urlPublicaOlx(String(p.listId)), primeiraVez: p.primeiraVez, atualizadoEm: p.atualizadoEm,
+    }));
     res.json({
       ok: true,
       itens,
+      semSku,
       historico: hist.map((h) => ({
         sku: String(h.sku), listId: String(h.listId), titulo: desc.get(String(h.sku)) || '', status: txt(h.status),
         url: txt(h.url) || urlPublicaOlx(String(h.listId)), criadoEm: h.criadoEm, encerradoEm: h.encerradoEm,
@@ -349,6 +366,16 @@ olxRouter.post('/anuncios', async (req, res, next) => {
       sku, listId, adId || null, confirmado?.status || null, confirmado?.url || urlPublicaOlx(listId),
     );
     res.json({ ok: true, sku, listId, confirmado: !!confirmado, statusOlx: confirmado?.status || null, url: confirmado?.url || urlPublicaOlx(listId) });
+  } catch (e) { next(e); }
+});
+
+// GET /olx/publicados/diagnostico — o que a OLX listou na conta e cada mudanca de status ja registrada (com o detalhe cru).
+olxRouter.get('/publicados/diagnostico', async (_req, res, next) => {
+  try {
+    await garantirTabela();
+    const anuncios = await prisma.$queryRawUnsafe<any[]>(`SELECT * FROM "OlxPublicado" ORDER BY "primeiraVez" DESC`);
+    const eventos = await prisma.$queryRawUnsafe<any[]>(`SELECT * FROM "OlxPublicadoEvento" ORDER BY "quando" DESC LIMIT 100`);
+    res.json({ ok: true, anuncios, eventos });
   } catch (e) { next(e); }
 });
 
@@ -797,19 +824,55 @@ let olxUltimaVarredura = 0;
 async function varrerStatusPublicados() {
   const c = await getOlxConfig();
   if (!c.accessToken) return;
-  const rows = await prisma.$queryRawUnsafe<any[]>(`SELECT "sku","listId","status" FROM "OlxAnuncio" WHERE "listId" <> ''`);
-  if (!rows.length) return;
-  const porListId = new Map<string, string>();
+  // 1) le a listagem inteira da conta (anuncios com e sem SKU). Se falhar, nao altera nada.
+  const lista: Array<{ listId: string; status: string; raw: any }> = [];
   let pageToken = '';
   for (let pagina = 0; pagina < 10; pagina++) {
     const url = `${OLX_PUBLISHED}?fetch_size=200${pageToken ? `&page_token=${encodeURIComponent(pageToken)}` : ''}`;
     const resp = await fetch(url, { headers: { Authorization: `Bearer ${c.accessToken}` } });
-    if (!resp.ok) return; // nao altera nada se a listagem falhou
+    if (!resp.ok) return;
     const j: any = await resp.json().catch(() => null);
-    for (const a of Array.isArray(j?.data) ? j.data : []) if (txt(a?.list_id)) porListId.set(txt(a.list_id), txt(a.status));
+    for (const a of Array.isArray(j?.data) ? j.data : []) if (txt(a?.list_id)) lista.push({ listId: txt(a.list_id), status: txt(a.status), raw: a });
     pageToken = txt(j?.next_token);
     if (!pageToken) break;
   }
+  const porListId = new Map(lista.map((a) => [a.listId, a.status]));
+
+  // 2) registra cada anuncio e as mudancas de status (novo, mudou, sumiu). Em cada mudanca guarda o detalhe cru que a OLX devolve
+  //    (assim vemos como aparece um anuncio vendido).
+  const conhecidos = await prisma.$queryRawUnsafe<any[]>(`SELECT "listId","status" FROM "OlxPublicado"`);
+  const statusConhecido = new Map(conhecidos.map((k) => [String(k.listId), txt(k.status)]));
+  const detalheCru = async (listId: string) => {
+    try {
+      const resp = await fetch(`https://apps.olx.com.br/autoupload/ads/${encodeURIComponent(listId)}`, { headers: { Authorization: `Bearer ${c.accessToken}` } });
+      return `${resp.status} ${(await resp.text()).slice(0, 1500)}`;
+    } catch (e: any) { return `erro ${e?.message || e}`; }
+  };
+  for (const a of lista) {
+    const antes = statusConhecido.get(a.listId);
+    if (antes === undefined) {
+      const det = await detalheCru(a.listId);
+      await prisma.$executeRawUnsafe(`INSERT INTO "OlxPublicado" ("listId","status","raw","detalhe") VALUES ($1,$2,$3,$4) ON CONFLICT ("listId") DO NOTHING`, a.listId, a.status, JSON.stringify(a.raw), det);
+      await prisma.$executeRawUnsafe(`INSERT INTO "OlxPublicadoEvento" ("listId","de","para","detalhe") VALUES ($1,NULL,$2,$3)`, a.listId, a.status, det);
+    } else if (antes !== a.status) {
+      const det = await detalheCru(a.listId);
+      await prisma.$executeRawUnsafe(`UPDATE "OlxPublicado" SET "status"=$2,"raw"=$3,"detalhe"=$4,"atualizadoEm"=now() WHERE "listId"=$1`, a.listId, a.status, JSON.stringify(a.raw), det);
+      await prisma.$executeRawUnsafe(`INSERT INTO "OlxPublicadoEvento" ("listId","de","para","detalhe") VALUES ($1,$2,$3,$4)`, a.listId, antes, a.status, det);
+      console.log(`[olx] anuncio ${a.listId}: ${antes || '-'} -> ${a.status}`);
+    } else {
+      await prisma.$executeRawUnsafe(`UPDATE "OlxPublicado" SET "atualizadoEm"=now() WHERE "listId"=$1`, a.listId);
+    }
+  }
+  // anuncio que ja foi visto e sumiu da listagem
+  for (const [listId, antes] of Array.from(statusConhecido.entries())) {
+    if (!porListId.has(listId) && antes !== 'missing') {
+      await prisma.$executeRawUnsafe(`UPDATE "OlxPublicado" SET "status"='missing',"atualizadoEm"=now() WHERE "listId"=$1`, listId);
+      await prisma.$executeRawUnsafe(`INSERT INTO "OlxPublicadoEvento" ("listId","de","para") VALUES ($1,$2,'missing')`, listId, antes || null);
+    }
+  }
+
+  // 3) atualiza o status dos anuncios vinculados a SKU
+  const rows = await prisma.$queryRawUnsafe<any[]>(`SELECT "sku","listId","status" FROM "OlxAnuncio" WHERE "listId" <> ''`);
   for (const r of rows) {
     const atual = porListId.get(String(r.listId));
     const novo = atual || 'deleted'; // sumiu da listagem = nao esta mais no ar
@@ -827,7 +890,7 @@ export function startOlxScheduler() {
     try {
       await garantirTabela();
       await sincronizarImportacoes();
-      if (Date.now() - olxUltimaVarredura > 30 * 60 * 1000) {
+      if (Date.now() - olxUltimaVarredura > 10 * 60 * 1000) {
         olxUltimaVarredura = Date.now();
         await varrerStatusPublicados();
       }

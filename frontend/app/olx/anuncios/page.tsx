@@ -39,6 +39,7 @@ function rotuloStatus(status: string, listId: string) {
 export default function OlxAnunciosPage() {
   const [itens, setItens] = useState<any[]>([]);
   const [historico, setHistorico] = useState<any[]>([]);
+  const [semSku, setSemSku] = useState<any[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [aba, setAba] = useState<'ativos' | 'encerrados'>('ativos');
   const [busca, setBusca] = useState('');
@@ -52,6 +53,7 @@ export default function OlxAnunciosPage() {
       const d = await chamar('/olx/anuncios');
       setItens(Array.isArray(d.itens) ? d.itens : []);
       setHistorico(Array.isArray(d.historico) ? d.historico : []);
+      setSemSku(Array.isArray(d.semSku) ? d.semSku : []);
     } catch (e: any) { alert(e.message || 'Erro ao carregar os anuncios'); }
     setCarregando(false);
   }
@@ -134,6 +136,26 @@ export default function OlxAnunciosPage() {
                   <button style={{ ...s.btn, padding: '4px 12px', fontSize: 12, background: 'var(--white)', color: 'var(--gray-700)', borderColor: 'var(--border)' }} onClick={() => confirmarExcluido(i.sku)}>Ja excluí</button>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {semSku.length > 0 && (
+          <div style={s.card}>
+            <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Anuncios na OLX sem SKU vinculado ({semSku.length})</div>
+            <div style={{ fontSize: 13, color: 'var(--gray-500)', marginBottom: 12 }}>Estao na conta da OLX mas nao ligados a nenhum SKU. O status deles e acompanhado mesmo assim; cada mudanca fica registrada.</div>
+            <div style={{ display: 'grid', gap: 8 }}>
+              {semSku.map((a) => {
+                const r = rotuloStatus(a.status === 'missing' ? 'deleted' : a.status, a.listId);
+                return (
+                  <div key={a.listId} style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', fontSize: 13, padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
+                    <span style={{ fontFamily: 'JetBrains Mono, monospace', color: 'var(--gray-600)' }}>{a.listId}</span>
+                    <button type="button" onClick={() => window.open(String(a.url), '_blank', 'noopener,noreferrer')} title="Abrir anuncio na OLX" style={{ fontSize: 11.5, fontWeight: 600, padding: '2px 10px', borderRadius: 99, border: '1px solid ' + r.cor, background: r.fundo, color: r.cor, cursor: 'pointer', fontFamily: 'Geist Mono, JetBrains Mono, monospace' }}>{r.texto}</button>
+                    <span style={{ color: 'var(--gray-400)', fontSize: 12 }}>visto em {dataBr(a.primeiraVez)}</span>
+                    <button type="button" style={{ ...s.btn, padding: '3px 12px', fontSize: 12, background: 'var(--white)', color: 'var(--gray-600)', borderColor: 'var(--border)', marginLeft: 'auto' }} onClick={() => { setNovoLink(String(a.url)); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>Vincular a um SKU</button>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
