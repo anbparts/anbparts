@@ -20,6 +20,21 @@ export const APP_NOTIFICATION_CATALOG: NotificationType[] = [
     href: '/mercado-livre/perguntas',
   },
   {
+    key: 'olx_messages',
+    label: 'Mensagens OLX',
+    description: 'Avisa quando um comprador manda mensagem num anuncio da OLX e ainda nao foi lida.',
+    pageKey: 'olx_conversas',
+    actionKey: 'responder',
+    href: '/olx/conversas',
+  },
+  {
+    key: 'olx_excluir',
+    label: 'Excluir anuncio na OLX',
+    description: 'Avisa quando uma peca foi vendida (estoque zerado) e o anuncio ainda esta no ar na OLX.',
+    pageKey: 'olx_anuncios',
+    href: '/olx/anuncios',
+  },
+  {
     key: 'cadastro_pre_cadastro',
     label: 'SKUs em pre-cadastro',
     description: 'Avisa quando existem SKUs com pre-cadastro aguardando cadastro final.',
@@ -106,6 +121,58 @@ async function collectMlQuestions(limit: number) {
     createdAt: row.dataPergunta || row.createdAt,
     meta: row.nomeCliente || row.tituloAnuncio || '',
   }));
+}
+
+async function collectOlxMensagens(limit: number) {
+  try {
+    const rows = await prisma.$queryRawUnsafe<any[]>(`
+      SELECT DISTINCT ON (m."chatId") m."chatId", m."messageId", m."mensagem", m."nome", m."listId", m."enviadaEm",
+             (SELECT a."sku" FROM "OlxAnuncio" a WHERE a."listId" = m."listId" OR a."adId" = m."listId" LIMIT 1) AS "sku"
+      FROM "OlxMensagem" m WHERE m."origem" = 'buyer' AND m."lida" = false
+      ORDER BY m."chatId", m."enviadaEm" DESC`);
+    return rows
+      .sort((a, b) => new Date(b.enviadaEm).getTime() - new Date(a.enviadaEm).getTime())
+      .slice(0, limit)
+      .map((r) => ({
+        type: 'olx_messages',
+        itemKey: `${r.chatId}-${r.messageId}`,
+        title: `Mensagem OLX${r.sku ? ` - ${r.sku}` : ''}`,
+        description: shortText(r.mensagem),
+        href: '/olx/conversas',
+        createdAt: r.enviadaEm,
+        meta: r.nome || '',
+      }));
+  } catch { return []; } // tabelas da OLX ainda nao criadas
+}
+
+// Peca vendida (nenhuma unidade disponivel) com anuncio ainda no ar na OLX: precisa ser excluido la.
+async function collectOlxExcluir(limit: number) {
+  try {
+    const rows = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT "sku","listId" FROM "OlxAnuncio" WHERE "listId" <> '' AND COALESCE("status", '') NOT IN ('deleted','refused')`,
+    );
+    const out: any[] = [];
+    for (const r of rows) {
+      const sku = String(r.sku);
+      const where: any = { OR: [{ idPeca: sku }, { idPeca: { startsWith: `${sku}-` } }] };
+      const total = await prisma.peca.count({ where });
+      if (!total) continue;
+      const disponiveis = await prisma.peca.count({ where: { ...where, disponivel: true } });
+      if (disponiveis > 0) continue;
+      const venda = await prisma.peca.findFirst({ where, orderBy: { dataVenda: 'desc' }, select: { dataVenda: true, updatedAt: true, blingPedidoNum: true } });
+      out.push({
+        type: 'olx_excluir',
+        itemKey: `${sku}-${r.listId}`,
+        title: `Excluir anuncio OLX - ${sku}`,
+        description: 'Peca vendida: exclua o anuncio na OLX.',
+        href: '/olx/anuncios',
+        createdAt: venda?.dataVenda || venda?.updatedAt || null,
+        meta: venda?.blingPedidoNum ? `Pedido ${venda.blingPedidoNum}` : '',
+      });
+      if (out.length >= limit) break;
+    }
+    return out;
+  } catch { return []; }
 }
 
 async function collectPreCadastros(limit: number) {
@@ -248,6 +315,8 @@ export async function collectNotificationsForTypes(types: string[], limitPerType
   const enabled = new Set(types);
   const groups = await Promise.all([
     enabled.has('ml_questions') ? collectMlQuestions(limitPerType) : [],
+    enabled.has('olx_messages') ? collectOlxMensagens(limitPerType) : [],
+    enabled.has('olx_excluir') ? collectOlxExcluir(limitPerType) : [],
     enabled.has('cadastro_pre_cadastro') ? collectPreCadastros(limitPerType) : [],
     enabled.has('pagamentos_dia') ? collectPagamentosDia(limitPerType) : [],
     enabled.has('detran_baixa') ? collectDetranBaixaEAtivacao(limitPerType) : [],

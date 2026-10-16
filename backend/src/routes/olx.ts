@@ -60,6 +60,13 @@ function garantirTabela(): Promise<void> {
       await prisma.$executeRawUnsafe(`ALTER TABLE "OlxAnuncio" ADD COLUMN IF NOT EXISTS "importToken" TEXT`);
       await prisma.$executeRawUnsafe(`ALTER TABLE "OlxAnuncio" ADD COLUMN IF NOT EXISTS "status" TEXT`);
       await prisma.$executeRawUnsafe(`ALTER TABLE "OlxAnuncio" ADD COLUMN IF NOT EXISTS "mensagem" TEXT`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "OlxAnuncio" ADD COLUMN IF NOT EXISTS "url" TEXT`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "OlxAnuncio" ADD COLUMN IF NOT EXISTS "encerradoEm" TIMESTAMPTZ`);
+      // Anuncios anteriores do SKU (um SKU pode ter tido varios): ao trocar o vinculo ou remover, o antigo vai pra ca.
+      await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "OlxAnuncioHistorico" (
+        "id" SERIAL PRIMARY KEY, "sku" TEXT NOT NULL, "listId" TEXT NOT NULL, "status" TEXT, "url" TEXT,
+        "criadoEm" TIMESTAMPTZ, "encerradoEm" TIMESTAMPTZ NOT NULL DEFAULT now())`);
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "OlxAnuncioHistorico_sku_idx" ON "OlxAnuncioHistorico" ("sku")`);
       await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "OlxAnuncio_listId_idx" ON "OlxAnuncio" ("listId")`);
       await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "OlxMensagem" (
         "messageId" TEXT PRIMARY KEY,
@@ -259,14 +266,59 @@ async function consultarAnuncioOlx(listId: string): Promise<{ status: string; ur
   } catch { return null; }
 }
 
+const urlPublicaOlx = (listId: string) => (listId ? `https://www.olx.com.br/vi/${listId}.htm` : '');
+const statusEncerrado = (s: string) => s === 'deleted' || s === 'refused';
+
+async function estoqueDoSku(sku: string): Promise<number | null> {
+  const where = { OR: [{ idPeca: sku }, { idPeca: { startsWith: `${sku}-` } }] } as any;
+  const total = await prisma.peca.count({ where });
+  if (!total) return null; // SKU so no pre-cadastro: sem como saber
+  return prisma.peca.count({ where: { ...where, disponivel: true } as any });
+}
+
+// Move o anuncio atual do SKU pro historico (quando o vinculo troca, e' removido ou o anuncio e' encerrado).
+async function arquivarAnuncioDoSku(sku: string) {
+  const rows = await prisma.$queryRawUnsafe<any[]>(`SELECT * FROM "OlxAnuncio" WHERE "sku" = $1`, sku);
+  const r = rows[0];
+  if (!r || !txt(r.listId)) return;
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "OlxAnuncioHistorico" ("sku","listId","status","url","criadoEm","encerradoEm") VALUES ($1,$2,$3,$4,$5,COALESCE($6, now()))`,
+    sku, txt(r.listId), txt(r.status) || null, txt(r.url) || urlPublicaOlx(txt(r.listId)), r.criadoEm || null, r.encerradoEm || null,
+  );
+}
+
+// GET /olx/anuncios — { itens (vinculo atual de cada SKU, com ativo/estoque/precisaExcluir), historico (anuncios anteriores) }
 olxRouter.get('/anuncios', async (_req, res, next) => {
   try {
     await garantirTabela();
     const rows = await prisma.$queryRawUnsafe<any[]>(`SELECT * FROM "OlxAnuncio" ORDER BY "criadoEm" DESC`);
-    const skus = rows.map((r) => String(r.sku));
+    const hist = await prisma.$queryRawUnsafe<any[]>(`SELECT * FROM "OlxAnuncioHistorico" ORDER BY "encerradoEm" DESC LIMIT 500`);
+    const skus = Array.from(new Set([...rows.map((r) => String(r.sku)), ...hist.map((r) => String(r.sku))]));
     const pecas: any[] = skus.length ? await prisma.peca.findMany({ where: { idPeca: { in: skus } }, select: { idPeca: true, descricao: true } }) : [];
     const desc = new Map(pecas.map((p: any) => [String(p.idPeca), String(p.descricao || '')]));
-    res.json({ ok: true, itens: rows.map((r) => ({ sku: String(r.sku), listId: String(r.listId), titulo: desc.get(String(r.sku)) || '', status: txt(r.status), mensagem: txt(r.mensagem), criadoEm: r.criadoEm })) });
+    // titulo do pre-cadastro/outras unidades quando o SKU base nao e' uma Peca exata
+    const itens: any[] = [];
+    for (const r of rows) {
+      const sku = String(r.sku);
+      const status = txt(r.status);
+      const listId = String(r.listId || '');
+      const ativo = !statusEncerrado(status);
+      const estoque = ativo && listId ? await estoqueDoSku(sku).catch(() => null) : null;
+      itens.push({
+        sku, listId, titulo: desc.get(sku) || '', status, mensagem: txt(r.mensagem),
+        url: txt(r.url) || urlPublicaOlx(listId), ativo, estoque,
+        precisaExcluir: ativo && !!listId && estoque === 0,
+        criadoEm: r.criadoEm, encerradoEm: r.encerradoEm || null,
+      });
+    }
+    res.json({
+      ok: true,
+      itens,
+      historico: hist.map((h) => ({
+        sku: String(h.sku), listId: String(h.listId), titulo: desc.get(String(h.sku)) || '', status: txt(h.status),
+        url: txt(h.url) || urlPublicaOlx(String(h.listId)), criadoEm: h.criadoEm, encerradoEm: h.encerradoEm,
+      })),
+    });
   } catch (e) { next(e); }
 });
 
@@ -287,11 +339,35 @@ olxRouter.post('/anuncios', async (req, res, next) => {
       const alt = await consultarAnuncioOlx(adId);
       if (alt) { confirmado = alt; [listId, adId] = [adId, listId]; }
     }
+    // Se o SKU ja tinha OUTRO anuncio vinculado, o antigo vai pro historico.
+    const atual = await prisma.$queryRawUnsafe<any[]>(`SELECT "listId" FROM "OlxAnuncio" WHERE "sku" = $1`, sku);
+    if (atual.length && txt(atual[0].listId) && txt(atual[0].listId) !== listId) await arquivarAnuncioDoSku(sku);
     await prisma.$executeRawUnsafe(
-      `INSERT INTO "OlxAnuncio" ("sku","listId","adId") VALUES ($1,$2,$3)
-       ON CONFLICT ("sku") DO UPDATE SET "listId" = EXCLUDED."listId", "adId" = EXCLUDED."adId"`, sku, listId, adId || null,
+      `INSERT INTO "OlxAnuncio" ("sku","listId","adId","status","url") VALUES ($1,$2,$3,$4,$5)
+       ON CONFLICT ("sku") DO UPDATE SET "listId" = EXCLUDED."listId", "adId" = EXCLUDED."adId", "status" = EXCLUDED."status", "url" = EXCLUDED."url",
+         "encerradoEm" = NULL, "criadoEm" = now()`,
+      sku, listId, adId || null, confirmado?.status || null, confirmado?.url || urlPublicaOlx(listId),
     );
-    res.json({ ok: true, sku, listId, confirmado: !!confirmado, statusOlx: confirmado?.status || null, url: confirmado?.url || null });
+    res.json({ ok: true, sku, listId, confirmado: !!confirmado, statusOlx: confirmado?.status || null, url: confirmado?.url || urlPublicaOlx(listId) });
+  } catch (e) { next(e); }
+});
+
+// POST /olx/anuncios/atualizar — confere agora o status de todos os anuncios (o mesmo que a rotina automatica faz a cada 30 min).
+olxRouter.post('/anuncios/atualizar', async (_req, res, next) => {
+  try {
+    await sincronizarImportacoes();
+    await varrerStatusPublicados();
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+// POST /olx/anuncios/:sku/excluido — confirma na mao que o anuncio foi excluido na OLX (quando a rotina ainda nao viu).
+olxRouter.post('/anuncios/:sku/excluido', async (req, res, next) => {
+  try {
+    await garantirTabela();
+    const sku = txt(req.params.sku).toUpperCase();
+    await prisma.$executeRawUnsafe(`UPDATE "OlxAnuncio" SET "status"='deleted', "encerradoEm"=now() WHERE "sku"=$1`, sku);
+    res.json({ ok: true });
   } catch (e) { next(e); }
 });
 
@@ -328,6 +404,7 @@ olxRouter.get('/anuncios/:sku/consulta', async (req, res, next) => {
 olxRouter.delete('/anuncios/:sku', async (req, res, next) => {
   try {
     await garantirTabela();
+    await arquivarAnuncioDoSku(txt(req.params.sku).toUpperCase());
     await prisma.$executeRawUnsafe(`DELETE FROM "OlxAnuncio" WHERE "sku" = $1`, txt(req.params.sku).toUpperCase());
     res.json({ ok: true });
   } catch (e) { next(e); }
@@ -725,7 +802,7 @@ async function varrerStatusPublicados() {
     const atual = porListId.get(String(r.listId));
     const novo = atual || 'deleted'; // sumiu da listagem = nao esta mais no ar
     if (novo !== txt(r.status)) {
-      await prisma.$executeRawUnsafe(`UPDATE "OlxAnuncio" SET "status"=$2 WHERE "sku"=$1`, String(r.sku), novo);
+      await prisma.$executeRawUnsafe(`UPDATE "OlxAnuncio" SET "status"=$2, "encerradoEm"=CASE WHEN $2 IN ('deleted','refused') THEN COALESCE("encerradoEm", now()) ELSE NULL END, "url"=COALESCE("url", $3) WHERE "sku"=$1`, String(r.sku), novo, urlPublicaOlx(String(r.listId)));
       console.log(`[olx] anuncio ${r.sku} (${r.listId}): ${txt(r.status) || '-'} -> ${novo}`);
     }
   }
