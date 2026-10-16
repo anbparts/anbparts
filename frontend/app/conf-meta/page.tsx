@@ -282,7 +282,7 @@ export default function ConfMetaPage() {
               </div>
 
               {(dryData.pendentes || []).length ? (
-                <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+                <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 8, overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
                     <thead style={{ background: 'var(--gray-50)' }}>
                       <tr>

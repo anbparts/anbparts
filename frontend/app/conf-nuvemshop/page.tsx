@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { API_BASE } from '@/lib/api-base';
+import { useIsPhone } from '@/lib/use-is-phone';
 
 const API = API_BASE;
 
@@ -17,6 +18,7 @@ const s: any = {
 };
 
 export default function ConfNuvemshopPage() {
+  const isPhone = useIsPhone();
   const [loading, setLoading] = useState(true);
   const [appId, setAppId] = useState('');
   const [clientSecret, setClientSecret] = useState('');
@@ -103,7 +105,7 @@ export default function ConfNuvemshopPage() {
           <div style={s.h3}>Credenciais do aplicativo</div>
           <div style={s.p}>Preencha os dados do seu App Nuvemshop. O Access Token não expira — só invalida se você gerar um novo ou desinstalar o app.</div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '1fr 1fr', gap: 16, marginBottom: 16 }}>
             <div>
               <label style={s.label}>App ID</label>
               <input style={s.input} placeholder="Ex: 29803" value={appId} onChange={(e) => setAppId(e.target.value)} />

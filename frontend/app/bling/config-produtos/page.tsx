@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { API_BASE } from '@/lib/api-base';
 import { api } from '@/lib/api';
+import { useIsPhone } from '@/lib/use-is-phone';
 
 const API = API_BASE;
 
@@ -21,6 +22,7 @@ function emptyPrefixo(): PrefixoItem {
 }
 
 export default function BlingConfigProdutosPage() {
+  const isPhone = useIsPhone();
   const [motos, setMotos] = useState<any[]>([]);
   const [prefixos, setPrefixos] = useState<PrefixoItem[]>([emptyPrefixo()]);
   const [savedPrefs, setSavedPrefs] = useState<any[]>([]);
@@ -104,14 +106,14 @@ export default function BlingConfigProdutosPage() {
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr auto', gap: 10, marginBottom: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '160px 1fr auto', gap: 10, marginBottom: 8 }}>
             <div style={{ fontSize: 11, fontFamily: 'JetBrains Mono, monospace', color: 'var(--gray-400)', letterSpacing: '.8px', textTransform: 'uppercase' }}>Prefixo SKU</div>
             <div style={{ fontSize: 11, fontFamily: 'JetBrains Mono, monospace', color: 'var(--gray-400)', letterSpacing: '.8px', textTransform: 'uppercase' }}>Moto no ANB</div>
             <div />
           </div>
 
           {prefixos.map((item, index) => (
-            <div key={index} style={{ display: 'grid', gridTemplateColumns: '160px 1fr auto', gap: 10, marginBottom: 10, alignItems: 'center' }}>
+            <div key={index} style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '160px 1fr auto', gap: 10, marginBottom: 10, alignItems: 'center' }}>
               <div style={{ position: 'relative' }}>
                 <input
                   style={{ ...s.input, fontFamily: 'JetBrains Mono, monospace', textTransform: 'uppercase', letterSpacing: '.5px', paddingRight: 38 }}

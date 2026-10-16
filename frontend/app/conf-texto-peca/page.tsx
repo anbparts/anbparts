@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
+import { useIsPhone } from '@/lib/use-is-phone';
 
 type Variavel = { key: string; label: string; fonte: 'moto' | 'peca' };
 
@@ -36,6 +37,7 @@ const s: any = {
 };
 
 export default function ConfTextoPecaPage() {
+  const isPhone = useIsPhone();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [tipos, setTipos] = useState<string[]>([]);
@@ -135,7 +137,7 @@ export default function ConfTextoPecaPage() {
         <Link href="/motos" style={{ ...s.btn, background: 'var(--white)', color: 'var(--gray-700)', border: '1px solid var(--border)', textDecoration: 'none' }}>← Voltar para Motos</Link>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(240px, 320px) 1fr', gap: 18, padding: 22, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'minmax(240px, 320px) 1fr', gap: 18, padding: 22, alignItems: 'start' }}>
         {/* Lista de tipos */}
         <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
           <div style={{ padding: '14px 14px 10px' }}>

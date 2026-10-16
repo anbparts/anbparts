@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { API_BASE } from '@/lib/api-base';
 import { api } from '@/lib/api';
+import { useIsPhone } from '@/lib/use-is-phone';
 
 const API = API_BASE;
 
@@ -21,6 +22,7 @@ function ConfiguredBadge() {
 }
 
 export default function ConfGoogleDrivePage() {
+  const isPhone = useIsPhone();
   const [config, setConfig] = useState<any>(null);
   const [motos, setMotos] = useState<any[]>([]);
   const [pastasDrive, setPastasDrive] = useState<any[]>([]);
@@ -287,7 +289,7 @@ export default function ConfGoogleDrivePage() {
             </p>
             <div style={{ display: 'grid', gap: 10, marginBottom: 16 }}>
               {motos.map(m => (
-                <div key={m.id} style={{ display: 'grid', gridTemplateColumns: '200px 1fr', gap: 10, alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--gray-100)' }}>
+                <div key={m.id} style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '200px 1fr', gap: 10, alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--gray-100)' }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-700)' }}>
                     #{m.id} — {m.marca} {m.modelo}
                   </div>

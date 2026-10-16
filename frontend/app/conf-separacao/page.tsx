@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '@/lib/api';
+import { useIsPhone } from '@/lib/use-is-phone';
 
 type Observacao = { id: number; texto: string };
 type Transportadora = { id: number; nome: string; observacoes: Observacao[] };
@@ -13,6 +14,7 @@ const s: any = {
 };
 
 export default function ConfSeparacaoPage() {
+  const isPhone = useIsPhone();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [transportadoras, setTransportadoras] = useState<Transportadora[]>([]);
@@ -159,7 +161,7 @@ export default function ConfSeparacaoPage() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(240px, 320px) 1fr', gap: 18, padding: 22, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'minmax(240px, 320px) 1fr', gap: 18, padding: 22, alignItems: 'start' }}>
         {/* Lista de transportadoras */}
         <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
           <div style={{ padding: '14px 14px 10px' }}>

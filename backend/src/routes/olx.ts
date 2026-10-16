@@ -9,7 +9,8 @@ import { prisma } from '../lib/prisma';
 import { carregarAnuncioBase } from '../lib/anuncioBase';
 import { exigirFotosOficiais, lerDadosBlingSku } from '../lib/anuncioPreparar';
 import { buscarFotosDriveSku } from '../lib/fotos-cadastro';
-import { getConfiguracaoGeral } from '../lib/configuracoes-gerais';
+import { getConfiguracaoGeral, DEFAULT_RESEND_FROM } from '../lib/configuracoes-gerais';
+import { sendResendEmail, renderAlertEmailLayout, renderEmailPanel } from '../lib/email';
 import { blingReq, findBlingProductsByCodes } from './bling';
 import { depositoParaBaixa } from './brinde';
 
@@ -495,6 +496,43 @@ olxRouter.post('/chat/desativar', async (_req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// ───────────── E-mails de alerta (nova mensagem e venda) ─────────────
+// Mesmo envio do Monitor de Conexoes: Resend configurado em Conf. E-mails e destinatario do alerta automatico. Falha no e-mail nunca
+// derruba o webhook nem o registro da venda.
+const escHtml = (v: any) => String(v ?? '').replace(/[&<>"]/g, (c) => (c === '&' ? '&amp;' : c === '<' ? '&lt;' : c === '>' ? '&gt;' : '&quot;'));
+
+async function enviarEmailOlx(o: { assunto: string; titulo: string; subtitulo?: string; linhas: Array<[string, string]>; link?: { texto: string; url: string } }) {
+  try {
+    const geral: any = await getConfiguracaoGeral();
+    const to = txt(geral.auditoriaEmailDestinatario);
+    if (!geral.resendApiKey || !to) { console.log('[olx] e-mail nao enviado: Resend/destinatario nao configurado'); return; }
+    const linhas = o.linhas.filter(([, v]) => txt(v));
+    const tabela = linhas.map(([k, v]) => `<tr><td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;color:#64748b;width:130px;vertical-align:top;">${escHtml(k)}</td><td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-weight:600;white-space:pre-wrap;">${escHtml(v)}</td></tr>`).join('');
+    const botao = o.link ? `<div style="margin-top:16px;"><a href="${escHtml(o.link.url)}" style="display:inline-block;background:#6e0ad6;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:10px 18px;border-radius:10px;">${escHtml(o.link.texto)}</a></div>` : '';
+    const html = renderAlertEmailLayout({
+      eyebrow: 'OLX · ANB Parts',
+      title: escHtml(o.titulo),
+      subtitle: o.subtitulo ? escHtml(o.subtitulo) : undefined,
+      contentHtml: renderEmailPanel(`<table style="width:100%;border-collapse:collapse;font-size:14px;"><tbody>${tabela}</tbody></table>${botao}`, { accentColor: '#6e0ad6' }),
+    });
+    const text = [o.titulo, '', ...linhas.map(([k, v]) => `${k}: ${v}`), o.link ? `\n${o.link.texto}: ${o.link.url}` : ''].join('\n');
+    await sendResendEmail({ apiKey: geral.resendApiKey, from: geral.emailRemetente || DEFAULT_RESEND_FROM, to, subject: o.assunto, html, text });
+  } catch (e: any) {
+    console.error('[olx] falha ao enviar e-mail de alerta:', e?.message || e);
+  }
+}
+
+// SKU e titulo do anuncio (vinculo atual ou historico), pra identificar a peca nos e-mails.
+async function infoAnuncioOlx(listId: string): Promise<{ sku: string; titulo: string }> {
+  if (!listId) return { sku: '', titulo: '' };
+  const v = await prisma.$queryRawUnsafe<any[]>(`SELECT "sku" FROM "OlxAnuncio" WHERE "listId" = $1 OR "adId" = $1 LIMIT 1`, listId).catch(() => [] as any[]);
+  const h = v.length ? [] : await prisma.$queryRawUnsafe<any[]>(`SELECT "sku" FROM "OlxAnuncioHistorico" WHERE "listId" = $1 LIMIT 1`, listId).catch(() => [] as any[]);
+  const sku = txt((v[0] || h[0])?.sku);
+  if (!sku) return { sku: '', titulo: '' };
+  const peca: any = await prisma.peca.findFirst({ where: { OR: [{ idPeca: sku }, { idPeca: { startsWith: `${sku}-` } }] } as any, select: { descricao: true } }).catch(() => null);
+  return { sku, titulo: txt(peca?.descricao) };
+}
+
 // POST /olx/webhook?k=CHAVE — chamado pela OLX (publico, protegido pela chave na URL).
 olxRouter.post('/webhook', async (req, res) => {
   try {
@@ -509,13 +547,35 @@ olxRouter.post('/webhook', async (req, res) => {
       if (!messageId || !chatId) continue;
       const origem = txt(b?.origin).toLowerCase() === 'seller' ? 'seller' : 'buyer';
       const quando = b?.messageTimestamp ? new Date(String(b.messageTimestamp)) : new Date();
-      await prisma.$executeRawUnsafe(
+      const inseridas = await prisma.$executeRawUnsafe(
         `INSERT INTO "OlxMensagem" ("messageId","chatId","listId","origem","senderType","mensagem","nome","email","telefone","enviadaEm","lida")
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT ("messageId") DO NOTHING`,
         messageId, chatId, txt(b?.listId) || null, origem, txt(b?.senderType) || null, String(b?.message ?? ''),
         txt(b?.name) || null, txt(b?.email) || null, txt(b?.phone) || null,
         isNaN(quando.getTime()) ? new Date() : quando, origem === 'seller',
       );
+      // Mensagem NOVA de comprador (nao reenvio da OLX): avisa por e-mail.
+      if (inseridas > 0 && origem === 'buyer') {
+        const listId = txt(b?.listId);
+        const mensagem = String(b?.message ?? '');
+        const nome = txt(b?.name);
+        const telefone = txt(b?.phone);
+        const emailComprador = txt(b?.email);
+        void (async () => {
+          const info = await infoAnuncioOlx(listId);
+          await enviarEmailOlx({
+            assunto: `OLX - Nova mensagem${info.sku ? ` - ${info.sku}` : ''}${nome ? ` (${nome})` : ''}`,
+            titulo: 'Nova mensagem de comprador na OLX',
+            subtitulo: 'Responda pelo sistema em OLX > Conversas.',
+            linhas: [
+              ['Comprador', nome], ['Telefone', telefone], ['E-mail', emailComprador],
+              ['SKU', info.sku], ['Peca', info.titulo], ['Anuncio', listId ? urlPublicaOlx(listId) : ''],
+              ['Mensagem', mensagem.slice(0, 1500)],
+            ],
+            link: { texto: 'Abrir conversas', url: `${getFrontendBase()}/olx/conversas` },
+          });
+        })();
+      }
     }
     res.json({ ok: true });
   } catch (e: any) {
@@ -928,6 +988,21 @@ async function registrarVendaOlx(listId: string) {
   );
   console.log(`[olx] venda registrada: anuncio ${listId}${sku ? ` (SKU ${sku})` : ' (sem SKU)'}`);
   await baixarEstoqueBlingDasVendasPendentes().catch(() => null);
+  // E-mail de venda nova (uma unica vez: so chega aqui quando o registro acabou de ser criado).
+  const estado = await prisma.$queryRawUnsafe<any[]>(`SELECT "blingEstoqueBaixado","blingEstoqueErro" FROM "OlxVenda" WHERE "listId" = $1`, listId).catch(() => [] as any[]);
+  const baixado = !!estado[0]?.blingEstoqueBaixado;
+  const erroEstoque = txt(estado[0]?.blingEstoqueErro);
+  await enviarEmailOlx({
+    assunto: `OLX - Venda nova${sku ? ` - ${sku}` : ''} - Gere o pedido no Bling`,
+    titulo: 'Venda nova na OLX',
+    subtitulo: 'Gere o pedido no Bling para fechar a venda.',
+    linhas: [
+      ['SKU', sku || 'sem SKU vinculado (informe em OLX > Vendas)'], ['Peca', titulo], ['Preco do anuncio', preco != null ? preco.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : ''],
+      ['Venda em', vendaEm.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })], ['Anuncio', urlPublicaOlx(listId)],
+      ['Estoque no Bling', !sku ? 'nao baixado (sem SKU)' : baixado ? 'baixado (1 unidade)' : `NAO baixado${erroEstoque ? `: ${erroEstoque}` : ''}`],
+    ],
+    link: { texto: 'Abrir OLX > Vendas', url: `${getFrontendBase()}/olx/vendas` },
+  });
 }
 
 // ───────────── Baixa do estoque no Bling (venda OLX) ─────────────

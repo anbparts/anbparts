@@ -2,6 +2,7 @@
 
 import { useRef, useState } from 'react';
 import { api } from '@/lib/api';
+import { useIsPhone } from '@/lib/use-is-phone';
 
 const cs: any = {
   topbar: { height: 'var(--topbar-h)', display: 'flex', alignItems: 'center', padding: '0 28px', background: 'var(--white)', borderBottom: '1px solid var(--border)' },
@@ -34,6 +35,7 @@ function getRowValue(row: Record<string, any>, aliases: string[]) {
 }
 
 export default function ImportPage() {
+  const isPhone = useIsPhone();
   const [log, setLog] = useState<{ msg: string; type: 'info' | 'ok' | 'err' }[]>([]);
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
@@ -135,7 +137,7 @@ export default function ImportPage() {
             Selecione o arquivo <strong>.xlsm</strong>. No momento, somente as abas abaixo sao importadas:
           </p>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 20 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '1fr 1fr', gap: 8, marginBottom: 20 }}>
             {[
               { icon: 'D', label: 'Despesas', sub: 'Aba "Detalhamento"' },
               { icon: 'I', label: 'Investimentos', sub: 'Aba "Investimento"' },

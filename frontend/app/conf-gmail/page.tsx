@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { API_BASE } from '@/lib/api-base';
 import { api } from '@/lib/api';
+import { useIsPhone } from '@/lib/use-is-phone';
 
 const API = API_BASE;
 
@@ -18,6 +19,7 @@ const s: any = {
 };
 
 export default function ConfGmailPage() {
+  const isPhone = useIsPhone();
   const [motos, setMotos] = useState<any[]>([]);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState('');
@@ -158,7 +160,7 @@ export default function ConfGmailPage() {
             <div style={s.sectionSub}>Client ID, Client Secret e Refresh Token para acesso ao Google Drive</div>
           </div>
           <div style={{ padding: 20 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 16 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '1fr 1fr', gap: 14, marginBottom: 16 }}>
               <div style={{ gridColumn: '1 / -1' }}>
                 <label style={s.label}>Client ID</label>
                 <input style={s.input} value={driveClientId} onChange={e => setDriveClientId(e.target.value)} placeholder="Ex: 937053908914-kkbp1gal8btl25jan30..." />
@@ -267,7 +269,7 @@ export default function ConfGmailPage() {
               </div>
               <div style={{ display: 'grid', gap: 8 }}>
                 {motos.map(m => (
-                  <div key={m.id} style={{ display: 'grid', gridTemplateColumns: '200px 1fr', gap: 10, alignItems: 'center' }}>
+                  <div key={m.id} style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '200px 1fr', gap: 10, alignItems: 'center' }}>
                     <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-700)' }}>#{m.id} — {m.marca} {m.modelo}</div>
                     {pastasDrive.length > 0 ? (
                       <select style={s.input} value={motoDirs[String(m.id)] || ''}
