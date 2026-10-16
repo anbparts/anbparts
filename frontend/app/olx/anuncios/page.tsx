@@ -31,6 +31,7 @@ function rotuloStatus(status: string, listId: string) {
   if (!listId) return { texto: 'Em analise', cor: '#92400e', fundo: '#fffbeb' };
   if (status === 'published' || status === 'accepted') return { texto: 'No ar', cor: '#16a34a', fundo: '#f0fdf4' };
   if (status === 'pending' || status === 'queued' || status === 'pending_review') return { texto: 'Em analise', cor: '#92400e', fundo: '#fffbeb' };
+  if (status === 'sold') return { texto: 'Vendido', cor: '#1d4ed8', fundo: '#eff6ff' };
   if (status === 'deleted') return { texto: 'Removido', cor: '#475569', fundo: '#f1f5f9' };
   if (status === 'refused') return { texto: 'Recusado', cor: '#dc2626', fundo: '#fef2f2' };
   return { texto: status || 'Sem status', cor: '#475569', fundo: '#f1f5f9' };
@@ -41,7 +42,7 @@ export default function OlxAnunciosPage() {
   const [historico, setHistorico] = useState<any[]>([]);
   const [semSku, setSemSku] = useState<any[]>([]);
   const [carregando, setCarregando] = useState(true);
-  const [aba, setAba] = useState<'ativos' | 'encerrados'>('ativos');
+  const [aba, setAba] = useState<'ativos' | 'encerrados' | 'semvinculo'>('ativos');
   const [busca, setBusca] = useState('');
   const [novoSku, setNovoSku] = useState('');
   const [novoLink, setNovoLink] = useState('');
@@ -96,7 +97,13 @@ export default function OlxAnunciosPage() {
     } catch (e: any) { alert(e.message || 'Erro ao confirmar'); }
   }
 
-  const ativos = useMemo(() => itens.filter((i) => i.ativo), [itens]);
+  const semSkuItens = useMemo(() => semSku.map((a) => {
+    const status = a.status === 'missing' ? 'deleted' : a.status;
+    const encerrado = status === 'deleted' || status === 'sold' || status === 'refused';
+    return { sku: '', titulo: '', listId: a.listId, status, mensagem: '', url: a.url, ativo: !encerrado, estoque: null, precisaExcluir: false, semSku: true, criadoEm: a.primeiraVez, encerradoEm: a.atualizadoEm };
+  }), [semSku]);
+  const semVinculoEncerrados = useMemo(() => semSkuItens.filter((i) => !i.ativo), [semSkuItens]);
+  const ativos = useMemo(() => [...itens.filter((i) => i.ativo), ...semSkuItens.filter((i) => i.ativo)], [itens, semSkuItens]);
   const encerrados = useMemo(() => [
     ...itens.filter((i) => !i.ativo),
     ...historico.map((h) => ({ ...h, ativo: false, historico: true })),
@@ -104,11 +111,11 @@ export default function OlxAnunciosPage() {
   const aExcluir = ativos.filter((i) => i.precisaExcluir);
 
   const lista = useMemo(() => {
-    const base = aba === 'ativos' ? ativos : encerrados;
+    const base = aba === 'ativos' ? ativos : aba === 'semvinculo' ? semVinculoEncerrados : encerrados;
     const q = busca.trim().toLowerCase();
     if (!q) return base;
     return base.filter((i) => [i.sku, i.titulo, i.listId].join(' ').toLowerCase().indexOf(q) >= 0);
-  }, [aba, ativos, encerrados, busca]);
+  }, [aba, ativos, encerrados, semVinculoEncerrados, busca]);
 
   return (
     <>
@@ -140,26 +147,6 @@ export default function OlxAnunciosPage() {
           </div>
         )}
 
-        {semSku.length > 0 && (
-          <div style={s.card}>
-            <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Anuncios na OLX sem SKU vinculado ({semSku.length})</div>
-            <div style={{ fontSize: 13, color: 'var(--gray-500)', marginBottom: 12 }}>Estao na conta da OLX mas nao ligados a nenhum SKU. O status deles e acompanhado mesmo assim; cada mudanca fica registrada.</div>
-            <div style={{ display: 'grid', gap: 8 }}>
-              {semSku.map((a) => {
-                const r = rotuloStatus(a.status === 'missing' ? 'deleted' : a.status, a.listId);
-                return (
-                  <div key={a.listId} style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', fontSize: 13, padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
-                    <span style={{ fontFamily: 'JetBrains Mono, monospace', color: 'var(--gray-600)' }}>{a.listId}</span>
-                    <button type="button" onClick={() => window.open(String(a.url), '_blank', 'noopener,noreferrer')} title="Abrir anuncio na OLX" style={{ fontSize: 11.5, fontWeight: 600, padding: '2px 10px', borderRadius: 99, border: '1px solid ' + r.cor, background: r.fundo, color: r.cor, cursor: 'pointer', fontFamily: 'Geist Mono, JetBrains Mono, monospace' }}>{r.texto}</button>
-                    <span style={{ color: 'var(--gray-400)', fontSize: 12 }}>visto em {dataBr(a.primeiraVez)}</span>
-                    <button type="button" style={{ ...s.btn, padding: '3px 12px', fontSize: 12, background: 'var(--white)', color: 'var(--gray-600)', borderColor: 'var(--border)', marginLeft: 'auto' }} onClick={() => { setNovoLink(String(a.url)); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>Vincular a um SKU</button>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
         <div style={s.card}>
           <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Vincular anuncio a um SKU</div>
           <div style={{ fontSize: 13, color: 'var(--gray-500)', marginBottom: 12 }}>Cole o link do anuncio na OLX (ou so o numero do final). Se o SKU ja tinha outro anuncio, o antigo vai para o historico.</div>
@@ -174,7 +161,7 @@ export default function OlxAnunciosPage() {
 
         <div style={s.card}>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>
-            {([['ativos', `Ativos (${ativos.length})`], ['encerrados', `Ja tiveram anuncio (${encerrados.length})`]] as Array<['ativos' | 'encerrados', string]>).map(([id, rotulo]) => (
+            {([['ativos', `Ativos (${ativos.length})`], ['encerrados', `Ja tiveram anuncio (${encerrados.length})`], ['semvinculo', `Encerrados - Sem vinculos (${semVinculoEncerrados.length})`]] as Array<['ativos' | 'encerrados' | 'semvinculo', string]>).map(([id, rotulo]) => (
               <button key={id} type="button" onClick={() => setAba(id)}
                 style={{ ...s.btn, padding: '7px 16px', borderRadius: 999, background: aba === id ? 'var(--gray-800)' : 'var(--gray-50)', color: aba === id ? '#fff' : 'var(--gray-600)' }}>{rotulo}</button>
             ))}
@@ -201,7 +188,7 @@ export default function OlxAnunciosPage() {
                     const r = rotuloStatus(i.status, i.listId);
                     return (
                       <tr key={`${i.sku}-${i.listId}-${idx}`}>
-                        <td style={{ ...s.td, fontFamily: 'JetBrains Mono, monospace', fontWeight: 600 }}>{i.sku}</td>
+                        <td style={{ ...s.td, fontFamily: 'JetBrains Mono, monospace', fontWeight: 600 }}>{i.sku || <span style={{ color: 'var(--gray-400)', fontWeight: 400 }}>sem SKU</span>}</td>
                         <td style={{ ...s.td, color: 'var(--gray-600)', maxWidth: 360 }}>{i.titulo || '—'}</td>
                         <td style={s.td}>
                           {i.listId ? <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12.5, color: 'var(--gray-500)' }}>{i.listId}</span> : <span style={{ color: 'var(--gray-400)' }}>aguardando</span>}
@@ -218,7 +205,9 @@ export default function OlxAnunciosPage() {
                           ? <td style={s.td}>{i.estoque == null ? '—' : i.estoque}</td>
                           : <td style={{ ...s.td, color: 'var(--gray-500)' }}>{dataBr(i.encerradoEm)}</td>}
                         <td style={{ ...s.td, textAlign: 'right' }}>
-                          {!i.historico ? <button style={{ ...s.btn, padding: '4px 12px', fontSize: 12, background: 'var(--white)', color: 'var(--gray-500)', borderColor: 'var(--border)' }} onClick={() => remover(i.sku)}>Remover vinculo</button> : null}
+                          {i.semSku
+                            ? <button style={{ ...s.btn, padding: '4px 12px', fontSize: 12, background: 'var(--white)', color: 'var(--gray-600)', borderColor: 'var(--border)' }} onClick={() => { setNovoLink(String(i.url)); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>Vincular a um SKU</button>
+                            : !i.historico ? <button style={{ ...s.btn, padding: '4px 12px', fontSize: 12, background: 'var(--white)', color: 'var(--gray-500)', borderColor: 'var(--border)' }} onClick={() => remover(i.sku)}>Remover vinculo</button> : null}
                         </td>
                       </tr>
                     );
