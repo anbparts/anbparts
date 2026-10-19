@@ -66,13 +66,13 @@ export default function BlingPedidosPage() {
     return d;
   }
 
-  async function carregar(p = pagina, f = filtros) {
-    setCarregando(true);
+  async function carregar(p = pagina, f = filtros, silencioso = false) {
+    if (!silencioso) setCarregando(true);
     try {
       const qs = new URLSearchParams({ pagina: String(p), limite: '50', busca: f.busca, situacao: f.situacao, canal: f.canal, de: f.de, ate: f.ate });
       setDados(await chamar(`/bling-pedidos/pedidos?${qs.toString()}`));
     } catch (e: any) { alert(e?.message || 'Erro ao carregar os pedidos'); }
-    setCarregando(false);
+    if (!silencioso) setCarregando(false);
   }
   async function carregarSync() {
     try { setSync(await chamar('/bling-pedidos/sincronizacao')); } catch { /* painel opcional */ }
@@ -93,6 +93,9 @@ export default function BlingPedidosPage() {
       carregar(1);
     }
   }, [sync?.job?.rodando]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // enquanto importa, a lista vai sendo atualizada com os pedidos novos
+  useEffect(() => { if (sync?.job?.rodando && sync?.job?.fase === 'pedidos') carregar(pagina, filtros, true); }, [sync?.job?.feitos]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function expandir(id: string) {
     if (expandido === id) { setExpandido(null); return; }
@@ -115,9 +118,8 @@ export default function BlingPedidosPage() {
     if (!periodo.de || !periodo.ate) return alert('Informe as duas datas.');
     setSincronizando(true);
     try {
-      const r = await chamar('/bling-pedidos/sincronizacao/periodo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(periodo) });
-      alert(`Periodo importado.\n\nEncontrados: ${r.encontrados}\nNovos: ${r.novos}\nAtualizados: ${r.atualizados}`);
-      await Promise.all([carregar(1), carregarSync()]);
+      await chamar('/bling-pedidos/sincronizacao/periodo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(periodo) });
+      await carregarSync();
     } catch (e: any) { alert(e?.message || 'Erro ao importar o periodo'); }
     setSincronizando(false);
   }
@@ -153,7 +155,7 @@ export default function BlingPedidosPage() {
                   <div style={{ width: `${job.total ? Math.min(100, (job.feitos / job.total) * 100) : 5}%`, height: '100%', background: '#2563eb', borderRadius: 99, transition: 'width .4s' }} />
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 4 }}>
-                  {job.fase === 'clientes' ? 'Buscando dados dos clientes' : 'Importando pedidos'}: {job.feitos} de {job.total}{job.erros ? ` · ${job.erros} erro(s)` : ''} — pode sair da tela, a importação continua no servidor.
+                  {job.fase === 'listando' ? 'Consultando a lista de pedidos do período no Bling...' : <>{job.fase === 'clientes' ? 'Buscando dados dos clientes' : 'Importando pedidos'}: {job.feitos} de {job.total}</>}{job.erros ? ` · ${job.erros} erro(s)` : ''} — pode sair da tela, a importação continua no servidor.
                 </div>
               </div>
             ) : job?.ultimoErro ? <div style={{ fontSize: 12, color: '#b45309', marginTop: 6 }}>Último aviso: {job.ultimoErro}</div> : null}
@@ -165,7 +167,7 @@ export default function BlingPedidosPage() {
               </button>
               <input type="date" style={{ ...s.input, width: 150 }} value={periodo.de} onChange={(e) => setPeriodo({ ...periodo, de: e.target.value })} />
               <input type="date" style={{ ...s.input, width: 150 }} value={periodo.ate} onChange={(e) => setPeriodo({ ...periodo, ate: e.target.value })} />
-              <button type="button" style={s.btn} disabled={sincronizando || !!job?.rodando} onClick={importarPeriodo}>{sincronizando ? 'Importando...' : 'Importar período'}</button>
+              <button type="button" style={s.btn} disabled={sincronizando || !!job?.rodando} onClick={importarPeriodo}>{job?.rodando && job?.modo === 'periodo' ? 'Importando...' : 'Importar período'}</button>
             </div>
           )}
         </div>

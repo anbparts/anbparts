@@ -2,7 +2,7 @@
 import { Router } from 'express';
 import {
   detalheCliente, detalhePedido, enriquecerCliente, iniciarCargaHistorica, listarClientes, listarPedidos,
-  sincronizarPeriodo, statusSincronizacao,
+  iniciarPeriodo, statusSincronizacao,
 } from '../lib/bling-pedidos';
 
 export const blingPedidosRouter = Router();
@@ -77,6 +77,8 @@ blingPedidosRouter.post('/sincronizacao/periodo', async (req, res) => {
     const de = String(req.body?.de || '').trim();
     const ate = String(req.body?.ate || '').trim();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(de) || !/^\d{4}-\d{2}-\d{2}$/.test(ate)) return res.status(400).json({ ok: false, error: 'Informe o periodo (de/ate) no formato AAAA-MM-DD.' });
-    res.json({ ok: true, ...(await sincronizarPeriodo(de, ate)) });
+    const r: any = await iniciarPeriodo(de, ate);
+    if (r.jaRodando) return res.status(409).json({ ok: false, error: 'A sincronizacao ja esta em andamento.' });
+    res.json({ ok: true });
   } catch (e: any) { res.status(400).json({ ok: false, error: e?.message || 'Erro ao sincronizar o periodo' }); }
 });

@@ -214,6 +214,47 @@ export async function sincronizarPeriodo(de: string, ate: string) {
   return { encontrados: arr.length, novos, atualizados };
 }
 
+// Importacao de periodo em segundo plano, com progresso (mesmo painel da carga historica).
+export async function iniciarPeriodo(de: string, ate: string) {
+  if (jobPedidos.rodando) return { ok: false, jaRodando: true };
+  await garantirTabelasPedidos();
+  Object.assign(jobPedidos, { rodando: true, modo: 'periodo', fase: 'listando', total: 0, feitos: 0, erros: 0, iniciadoEm: new Date().toISOString(), finalizadoEm: null, ultimoErro: '' });
+  void (async () => {
+    try {
+      await carregarCanais(true);
+      const lista: any = await listPedidos(de, ate);
+      const arr: Array<{ id: number; situacao: any }> = Array.isArray(lista) ? lista : Array.from(lista?.values?.() || []);
+      const existentes = new Map<string, string>((await prisma.$queryRawUnsafe<any[]>(
+        `SELECT "id"::text AS id, "situacao" FROM "BlingPedido" WHERE "id" = ANY($1::bigint[])`, arr.map((p) => String(p.id)),
+      )).map((r) => [String(r.id), txt(r.situacao)]));
+      const fila = arr.filter((p) => {
+        const atual = existentes.get(String(p.id));
+        const label = txt(p.situacao?.label);
+        return atual === undefined || (!!label && atual !== label);
+      });
+      Object.assign(jobPedidos, { fase: 'pedidos', total: fila.length, feitos: 0 });
+      for (const p of fila) {
+        try { await sincronizarPedido(String(p.id)); } catch (e: any) {
+          jobPedidos.erros += 1; jobPedidos.ultimoErro = `${p.id}: ${String(e?.message || e).slice(0, 200)}`;
+          if (/renovar token|Reconecte/i.test(String(e?.message))) throw e;
+        }
+        jobPedidos.feitos += 1;
+      }
+      const pend = await prisma.$queryRawUnsafe<any[]>(`SELECT COUNT(*)::int AS n FROM "BlingCliente" WHERE "enriquecidoEm" IS NULL`);
+      Object.assign(jobPedidos, { fase: 'clientes', total: Number(pend[0]?.n || 0), feitos: 0 });
+      while (true) {
+        const n = await enriquecerPendentes(50);
+        if (n < 50) break;
+      }
+    } catch (e: any) {
+      jobPedidos.ultimoErro = String(e?.message || e).slice(0, 300);
+    } finally {
+      Object.assign(jobPedidos, { rodando: false, fase: '', finalizadoEm: new Date().toISOString() });
+    }
+  })();
+  return { ok: true };
+}
+
 export async function sincronizarRecentes(dias = 3) {
   const fmt = (d: Date) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
   const hoje = new Date();
@@ -265,7 +306,7 @@ export async function listarPedidos(f: { busca?: string; situacao?: string; cana
             p."total", p."frete", p."entregaCidade", p."entregaUf",
             (SELECT COALESCE(SUM(it."quantidade"),0) FROM "BlingPedidoItem" it WHERE it."pedidoId" = p."id") AS pecas,
             (SELECT string_agg(DISTINCT it."sku", ', ') FROM "BlingPedidoItem" it WHERE it."pedidoId" = p."id") AS skus
-     FROM "BlingPedido" p ${where} ORDER BY p."data" DESC NULLS LAST, p."id" DESC LIMIT ${limite} OFFSET ${offset}`, ...params,
+     FROM "BlingPedido" p ${where} ORDER BY (CASE WHEN p."numero" ~ '^[0-9]{1,15}$' THEN p."numero"::bigint END) DESC NULLS LAST, p."id" DESC LIMIT ${limite} OFFSET ${offset}`, ...params,
   );
   const canais = await prisma.$queryRawUnsafe<any[]>(`SELECT DISTINCT "canal" FROM "BlingPedido" WHERE "canal" IS NOT NULL ORDER BY 1`);
   const situacoes = await prisma.$queryRawUnsafe<any[]>(`SELECT DISTINCT "situacao" FROM "BlingPedido" WHERE "situacao" IS NOT NULL ORDER BY 1`);
