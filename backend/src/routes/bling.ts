@@ -3500,7 +3500,7 @@ async function compareProdutosBlingCodes(
     const marketplacesEstoque: Array<{ id: 'shopee' | 'magalu'; nome: string; mapa: Map<string, AnuncioEstoque> }> = [];
     try {
       await emitProgress({ totalProcessados: 0, fase: 'Consultando anuncios Shopee' });
-      const mapaShopee = await buscarEstoqueShopee();
+      const mapaShopee = await buscarEstoqueShopee((fase) => emitProgress({ totalProcessados: 0, fase }));
       if (mapaShopee) marketplacesEstoque.push({ id: 'shopee', nome: 'Shopee', mapa: mapaShopee });
     } catch (e: any) {
       warnings.add(`Falha ao consultar Shopee: ${e?.message || 'erro desconhecido'}`);
@@ -3510,7 +3510,7 @@ async function compareProdutosBlingCodes(
       const candidatos = codigos.filter((c) => comAnuncioMagalu.has(c));
       if (candidatos.length) {
         await emitProgress({ totalProcessados: 0, fase: 'Consultando anuncios Magalu' });
-        const r = await consultarEstoqueMagalu(candidatos);
+        const r = await consultarEstoqueMagalu(candidatos, 350, (feitos, total) => emitProgress({ totalProcessados: 0, fase: `Consultando anuncios Magalu (${feitos} de ${total})` }));
         marketplacesEstoque.push({ id: 'magalu', nome: 'Magalu', mapa: r.mapa });
         if (r.falhas) warnings.add(`Magalu: ${r.falhas} SKU(s) sem leitura de estoque (${r.ultimoErro})`);
       }
@@ -3949,7 +3949,7 @@ function buildAuditoriaTraceResumo(
   );
 }
 
-async function runTraceSkuComparison(rawSkus: any, rawMotoId: any) {
+async function runTraceSkuComparison(rawSkus: any, rawMotoId: any, onProgress?: (payload: { totalParaProcessar: number; totalProcessados: number; fase: string }) => Promise<void> | void) {
   const cfg = await getConfig();
   const traceSkuSet = buildAuditoriaTraceSkuSet(rawSkus);
   const motoId = Number(rawMotoId) || 0;
@@ -4028,6 +4028,7 @@ async function runTraceSkuComparison(rawSkus: any, rawMotoId: any) {
     batchSize: Math.max(10, Math.min(cfg.consultaManualTamanhoLote, codigosParaComparar.length || 1)),
     pauseMs: cfg.consultaManualPausaMs,
     traceSkus: traceSkuSet,
+    onProgress,
   });
 
   return {
@@ -4947,7 +4948,18 @@ async function executeAuditoriaRapida(origem: 'manual' | 'auto' | 'mes' = 'manua
     const vendidas = await prisma.peca.findMany({ where: { dataVenda: { gte: corte } }, select: { idPeca: true } });
     const skus = Array.from(new Set(vendidas.map((p: any) => getBaseSku(p.idPeca)).filter(Boolean))) as string[];
     await prisma.auditoriaAutomaticaExecucao.update({ where: { id: execution.id }, data: { totalSkus: skus.length } });
-    const bruto: any = skus.length ? (await runTraceSkuComparison(skus, null)).resultado : null;
+    // progresso visivel na tela (fase atual e quantos SKUs ja foram), gravado no maximo a cada ~1,5 s
+    let ultimoSalvo = 0;
+    const salvarProgresso = async (p: { totalParaProcessar: number; totalProcessados: number; fase: string }) => {
+      if (Date.now() - ultimoSalvo < 1500) return;
+      ultimoSalvo = Date.now();
+      await prisma.auditoriaAutomaticaExecucao.update({
+        where: { id: execution.id },
+        data: { resumo: JSON.parse(JSON.stringify({ progresso: { totalParaProcessar: Math.max(skus.length, Number(p.totalParaProcessar) || 0), totalProcessados: Number(p.totalProcessados) || 0, fase: p.fase, atualizadoEm: new Date().toISOString() } })) },
+      }).catch(() => undefined);
+    };
+    await salvarProgresso({ totalParaProcessar: skus.length, totalProcessados: 0, fase: `Conferindo ${skus.length} SKU(s) vendidos` });
+    const bruto: any = skus.length ? (await runTraceSkuComparison(skus, null, salvarProgresso)).resultado : null;
     const base = bruto || { ok: true, totalConsultados: 0, totalDivergencias: 0, totalSemDivergencia: 0, divergencias: [], warnings: [] };
     const { resultado, resumoPedidosAbertos } = await aplicarFiltroPedidosAbertosAuditoria(base);
     const resumo: any = JSON.parse(JSON.stringify({

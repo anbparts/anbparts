@@ -23,7 +23,7 @@ function estoqueDoItemShopee(item: any): number | null {
 }
 
 // Catalogo Shopee com status NORMAL (anuncios no ar). Devolve null se a loja nao esta conectada.
-export async function buscarEstoqueShopee(): Promise<Map<string, AnuncioEstoque> | null> {
+export async function buscarEstoqueShopee(onProgress?: (fase: string) => Promise<void> | void): Promise<Map<string, AnuncioEstoque> | null> {
   if (shopeeCache && shopeeCache.expiraEm > Date.now()) return shopeeCache.mapa;
   const cfg = await getShopeeConfig();
   if (!cfg.accessToken || !cfg.shopId) return null;
@@ -36,12 +36,14 @@ export async function buscarEstoqueShopee(): Promise<Map<string, AnuncioEstoque>
     for (const it of lista) if (it?.item_id != null) ids.push(String(it.item_id));
     if (!r?.response?.has_next_page) break;
     offset = Number(r?.response?.next_offset ?? offset + 100);
+    if (onProgress) await onProgress(`Lendo anuncios ativos da Shopee (${ids.length} encontrados)`);
     await sleep(250);
   }
 
   const mapa = new Map<string, AnuncioEstoque>();
   for (let i = 0; i < ids.length; i += 50) {
     const lote = ids.slice(i, i + 50);
+    if (onProgress) await onProgress(`Lendo estoque dos anuncios da Shopee (${Math.min(i + 50, ids.length)} de ${ids.length})`);
     const r = await shopeeReq(`/api/v2/product/get_item_base_info?item_id_list=${lote.join(',')}&need_tax_info=false&need_complaint_policy=false`);
     for (const item of (r?.response?.item_list || [])) {
       const sku = baseSku(item?.item_sku);
@@ -76,13 +78,16 @@ function estoqueDoPayloadMagalu(p: any): number | null {
 const STATUS_MAGALU_NAO_ATIVO = /draft|rascunho|inativ|inactive|block|bloque|delet|exclu|reject|reprov|suspend|pause|pend|disable|desativ/i;
 
 // Consulta o SKU (status) e o saldo no Magalu, um por vez. Devolve so os SKUs ativos que foi possivel ler.
-export async function consultarEstoqueMagalu(skus: string[], pausaMs = 350): Promise<{ mapa: Map<string, AnuncioEstoque>; falhas: number; ultimoErro: string }> {
+export async function consultarEstoqueMagalu(skus: string[], pausaMs = 350, onProgress?: (feitos: number, total: number) => Promise<void> | void): Promise<{ mapa: Map<string, AnuncioEstoque>; falhas: number; ultimoErro: string }> {
   const mapa = new Map<string, AnuncioEstoque>();
   let falhas = 0;
   let ultimoErro = '';
   const cfg = await getMagaluConfig();
   if (!cfg.accessToken) return { mapa, falhas: 0, ultimoErro: '' };
+  let feitos = 0;
   for (const sku of skus) {
+    if (onProgress) await onProgress(feitos, skus.length);
+    feitos += 1;
     try {
       const dados: any = await magaluGetSku(sku);
       const status = String(dados?.status || '');
