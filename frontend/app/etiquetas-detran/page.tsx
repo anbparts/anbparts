@@ -230,6 +230,16 @@ export default function EtiquetasDetranPage() {
   const [isPhone, setIsPhone] = useState(false);
   const [modalValidacao, setModalValidacao] = useState(false);
   const [validacaoLoading, setValidacaoLoading] = useState(false);
+  const [compradasResumo, setCompradasResumo] = useState<any>(null);
+  const [importandoCompradas, setImportandoCompradas] = useState(false);
+  const [menuAcoesAberto, setMenuAcoesAberto] = useState(false);
+  // fecha o menu "Mais acoes" ao clicar fora dele
+  useEffect(() => {
+    if (!menuAcoesAberto) return undefined;
+    const fora = (ev: MouseEvent) => { if (!(ev.target as HTMLElement)?.closest?.('[data-menu-acoes]')) setMenuAcoesAberto(false); };
+    document.addEventListener('mousedown', fora);
+    return () => document.removeEventListener('mousedown', fora);
+  }, [menuAcoesAberto]);
   const [validacaoResult, setValidacaoResult] = useState<any>(null);
   const [validacaoFiltro, setValidacaoFiltro] = useState('todos');
   const [validacaoTexto, setValidacaoTexto] = useState('');
@@ -253,7 +263,58 @@ export default function EtiquetasDetranPage() {
   const linhasOrdenadas = useMemo(() => sortRows(linhas, sort), [linhas, sort]);
   const pendenciasOrdenadas = useMemo(() => sortRows(pendencias, pendenciasSort), [pendencias, pendenciasSort]);
 
-  useEffect(() => { buscar(); }, []);
+  useEffect(() => { buscar(); carregarResumoCompradas(); }, []);
+
+  async function carregarResumoCompradas() {
+    try {
+      const resp = await fetch(`${API}/etiquetas-detran/compradas/resumo`, { credentials: 'include' });
+      const data = await resp.json();
+      if (data?.ok) setCompradasResumo(data);
+    } catch { /* o painel de compradas e' opcional */ }
+  }
+
+  // Importa a listagem de etiquetas compradas (planilha dos distribuidores: Lote, Numero da Cartela, Distribuidor, Descricao, Criado Em, Status, Tipo de Veiculo).
+  async function importarEtiquetasCompradas(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+    setImportandoCompradas(true);
+    try {
+      const XLSX = await import('xlsx');
+      const ab = await file.arrayBuffer();
+      const wb = XLSX.read(ab, { cellDates: true });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows: any[] = XLSX.utils.sheet_to_json(ws, { defval: '' });
+      const norm = (x: string) => String(x || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+      const linhasCompra = rows.map((row: any) => {
+        const keys = Object.keys(row);
+        const achar = (pat: RegExp) => { const k = keys.find((kk) => pat.test(norm(kk))); return k ? row[k] : ''; };
+        const criado = achar(/criado/);
+        return {
+          numero: String(achar(/numero da cartela|numero/) || '').trim(),
+          lote: String(achar(/lote/) || '').trim(),
+          cnpj: String(achar(/distribuidor/) || '').trim(),
+          distribuidor: String(achar(/descri/) || '').trim(),
+          criadoEm: criado instanceof Date ? criado.toISOString() : (criado ? String(criado) : null),
+          status: String(achar(/status/) || '').trim(),
+          tipoVeiculo: String(achar(/tipo/) || '').trim(),
+        };
+      }).filter((l: any) => l.numero);
+      if (!linhasCompra.length) throw new Error('Nenhuma etiqueta encontrada. Confira se o arquivo e a listagem de cartelas fornecidas (coluna "Numero da Cartela").');
+      if (!confirm(`Importar ${linhasCompra.length} etiqueta(s) comprada(s) do arquivo "${file.name}"?\n\nReimportar o mesmo arquivo so atualiza; nada e apagado.`)) { setImportandoCompradas(false); return; }
+      const resp = await fetch(`${API}/etiquetas-detran/compradas/importar`, {
+        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ linhas: linhasCompra }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || data?.ok === false) throw new Error(data?.error || `Erro ${resp.status}`);
+      alert(`Importacao concluida.\n\nNovas: ${data.novas}\nAtualizadas: ${data.atualizadas}${data.totalInvalidas ? `\nIgnoradas (numero fora do padrao): ${data.totalInvalidas}${data.invalidas?.length ? ` — ex: ${data.invalidas.slice(0, 5).join(', ')}` : ''}` : ''}\n\nTotal na base: ${data.totalNaBase}`);
+      carregarResumoCompradas();
+    } catch (err: any) {
+      alert(err?.message || 'Erro ao importar a listagem de etiquetas.');
+    }
+    setImportandoCompradas(false);
+  }
   useEffect(() => {
     const phoneMedia = window.matchMedia('(max-width: 767px)');
     const sync = () => setIsPhone(phoneMedia.matches);
@@ -719,52 +780,75 @@ export default function EtiquetasDetranPage() {
   return (
     <>
       <div style={{ ...s.topbar, height: 'auto', minHeight: 'var(--topbar-h)', padding: isPhone ? '12px 14px' : '10px 28px', alignItems: isPhone ? 'stretch' : 'center', flexDirection: isPhone ? 'column' : 'row', flexWrap: 'wrap' as const, rowGap: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-          <div>
-            <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)' }}>Etiquetas Detran</div>
-            <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>
-              {loading ? 'Carregando...' : `${linhas.length} etiqueta(s) encontrada(s)`}
-            </div>
+        <div>
+          <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)' }}>Etiquetas Detran</div>
+          <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>
+            {loading ? 'Carregando...' : `${linhas.length} etiqueta(s) encontrada(s)`}
           </div>
+        </div>
+        <div style={{ display: 'flex', gap: 10, flexDirection: isPhone ? 'column' : 'row', flexWrap: 'wrap' as const, alignItems: isPhone ? 'stretch' : 'center', rowGap: 10, width: isPhone ? '100%' : undefined, justifyContent: isPhone ? undefined : 'flex-end' }}>
           {canProcessarBaixa && (
           <button style={{ ...s.btn, background: 'var(--gray-800)', color: '#fff', width: isPhone ? '100%' : undefined }} onClick={abrirVerificarPendencias}>
             ✓ Verificar Pendências
           </button>
           )}
-        </div>
-        <div style={{ display: 'flex', gap: 8, flexDirection: isPhone ? 'column' : 'row', flexWrap: 'wrap' as const, rowGap: 8, width: isPhone ? '100%' : undefined, justifyContent: isPhone ? undefined : 'flex-end' }}>
-          {canProcessarBaixa && (
-          <button style={{ ...s.btn, background: '#7c3aed', color: '#fff', width: isPhone ? '100%' : undefined }} onClick={abrirPendencias}>
-            Pendencias Baixa
-          </button>
-          )}
-          {canProcessarBaixa && (
-          <button style={{ ...s.btn, background: '#c2410c', color: '#fff', width: isPhone ? '100%' : undefined }} onClick={abrirPendenciasAtivacao}>
-            Pendencias Etiqueta Avulsa
-          </button>
-          )}
-          {canProcessarDevolucao && (
-          <button style={{ ...s.btn, background: '#2563eb', color: '#fff', width: isPhone ? '100%' : undefined }} onClick={abrirPendenciasDev}>
-            Pendências Devolução
-          </button>
+          {(canProcessarBaixa || canProcessarDevolucao) && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' as const, width: isPhone ? '100%' : undefined }}>
+            <span style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--gray-500)' }}>Pendências</span>
+            <div style={{ display: 'inline-flex', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', background: 'var(--white)', width: isPhone ? '100%' : undefined, flex: isPhone ? 1 : undefined }}>
+              {canProcessarBaixa && (
+              <button style={{ ...s.btn, borderRadius: 0, border: 'none', background: 'var(--white)', color: 'var(--gray-700)', flex: isPhone ? 1 : undefined }} onClick={abrirPendencias}>Baixa</button>
+              )}
+              {canProcessarBaixa && (
+              <button style={{ ...s.btn, borderRadius: 0, border: 'none', borderLeft: '1px solid var(--border)', background: 'var(--white)', color: 'var(--gray-700)', flex: isPhone ? 1 : undefined }} onClick={abrirPendenciasAtivacao}>Etiqueta avulsa</button>
+              )}
+              {canProcessarDevolucao && (
+              <button style={{ ...s.btn, borderRadius: 0, border: 'none', borderLeft: '1px solid var(--border)', background: 'var(--white)', color: 'var(--gray-700)', flex: isPhone ? 1 : undefined }} onClick={abrirPendenciasDev}>Devolução</button>
+              )}
+            </div>
+          </div>
           )}
           {canGerenciarCartelas && (
-          <button style={{ ...s.btn, background: '#0f766e', color: '#fff', width: isPhone ? '100%' : undefined }} onClick={abrirCartelas}>
+          <button style={{ ...s.btn, background: 'var(--white)', color: 'var(--gray-700)', borderColor: 'var(--border)', width: isPhone ? '100%' : undefined }} onClick={abrirCartelas}>
             Etiquetas
           </button>
           )}
-          <label style={{ ...s.btn, background: '#059669', color: '#fff', width: isPhone ? '100%' : undefined, cursor: validacaoLoading ? 'wait' : 'pointer', opacity: validacaoLoading ? 0.7 : 1 }}>
-            {validacaoLoading ? 'Processando...' : 'Validação Detran - Ativa'}
-            <input type="file" accept=".xlsx,.xls" style={{ display: 'none' }} disabled={validacaoLoading} onChange={(e) => { setModalValidacao(true); rodarValidacaoDetran(e); }} />
-          </label>
-          <label style={{ ...s.btn, background: '#dc2626', color: '#fff', width: isPhone ? '100%' : undefined, cursor: validacaoBaixaLoading ? 'wait' : 'pointer', opacity: validacaoBaixaLoading ? 0.7 : 1 }}>
-            {validacaoBaixaLoading ? 'Processando...' : 'Validação Detran - Baixada'}
-            <input type="file" accept=".xlsx,.xls" style={{ display: 'none' }} disabled={validacaoBaixaLoading} onChange={(e) => { setModalValidacaoBaixa(true); rodarValidacaoDetranBaixa(e); }} />
-          </label>
+          <div data-menu-acoes style={{ position: 'relative', width: isPhone ? '100%' : undefined }}>
+            <button style={{ ...s.btn, background: 'var(--white)', color: 'var(--gray-700)', borderColor: 'var(--border)', width: isPhone ? '100%' : undefined }} onClick={() => setMenuAcoesAberto((v) => !v)}>
+              Mais ações ▾
+            </button>
+            {/* Itens sempre montados (so escondidos): o seletor de arquivo precisa continuar no DOM depois de escolher a opcao. */}
+            <div style={{ display: menuAcoesAberto ? 'block' : 'none', position: 'absolute', top: 'calc(100% + 6px)', right: 0, left: isPhone ? 0 : undefined, zIndex: 60, minWidth: 270, background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 10px 30px rgba(15,23,42,.12)', padding: 6 }}>
+              {canGerenciarCartelas && (
+              <label style={{ display: 'block', padding: '9px 12px', fontSize: 13, borderRadius: 6, color: 'var(--gray-700)', cursor: importandoCompradas ? 'wait' : 'pointer', opacity: importandoCompradas ? 0.6 : 1 }}>
+                {importandoCompradas ? 'Importando...' : 'Importar etiquetas compradas'}
+                <input type="file" accept=".xlsx,.xls" style={{ display: 'none' }} disabled={importandoCompradas} onChange={(e) => { setMenuAcoesAberto(false); importarEtiquetasCompradas(e); }} />
+              </label>
+              )}
+              <label style={{ display: 'block', padding: '9px 12px', fontSize: 13, borderRadius: 6, color: 'var(--gray-700)', cursor: validacaoLoading ? 'wait' : 'pointer', opacity: validacaoLoading ? 0.6 : 1 }}>
+                {validacaoLoading ? 'Processando...' : 'Validação Detran - Ativa'}
+                <input type="file" accept=".xlsx,.xls" style={{ display: 'none' }} disabled={validacaoLoading} onChange={(e) => { setMenuAcoesAberto(false); setModalValidacao(true); rodarValidacaoDetran(e); }} />
+              </label>
+              <label style={{ display: 'block', padding: '9px 12px', fontSize: 13, borderRadius: 6, color: 'var(--gray-700)', cursor: validacaoBaixaLoading ? 'wait' : 'pointer', opacity: validacaoBaixaLoading ? 0.6 : 1 }}>
+                {validacaoBaixaLoading ? 'Processando...' : 'Validação Detran - Baixada'}
+                <input type="file" accept=".xlsx,.xls" style={{ display: 'none' }} disabled={validacaoBaixaLoading} onChange={(e) => { setMenuAcoesAberto(false); setModalValidacaoBaixa(true); rodarValidacaoDetranBaixa(e); }} />
+              </label>
+            </div>
+          </div>
         </div>
       </div>
 
       <div style={{ padding: isPhone ? 14 : 28, display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {compradasResumo && compradasResumo.total > 0 && (
+          <div style={{ ...s.card, padding: '12px 16px', display: 'flex', flexWrap: 'wrap', gap: isPhone ? 10 : 22, alignItems: 'center', fontSize: 13 }}>
+            <strong style={{ color: 'var(--gray-800)' }}>Etiquetas compradas</strong>
+            <span>{compradasResumo.total} no total</span>
+            {Object.entries(compradasResumo.porTipo || {}).map(([tipo, v]: any) => (
+              <span key={tipo} style={{ color: 'var(--gray-600)' }}>{tipo === 'PECA' ? 'Peça' : tipo === 'MOTO' ? 'Moto (cartela)' : tipo}: {v.total} · <span style={{ color: '#b45309' }}>{v.emUso} em uso</span> · <span style={{ color: '#16a34a', fontWeight: 600 }}>{v.livres} livres</span></span>
+            ))}
+            {compradasResumo.ultimaImportacao ? <span style={{ color: 'var(--gray-400)', marginLeft: isPhone ? 0 : 'auto' }}>Importada em {new Date(compradasResumo.ultimaImportacao).toLocaleDateString('pt-BR')}</span> : null}
+          </div>
+        )}
         <div style={{ ...s.card, padding: 16 }}>
           <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fit, minmax(170px, 1fr)) 118px', gap: 12, alignItems: 'end' }}>
             <div>

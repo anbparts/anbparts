@@ -8,6 +8,7 @@ import { spDayStart, spDayEnd } from '../lib/timezone';
 import { getConfiguracaoGeral, saveConfiguracaoGeral } from '../lib/configuracoes-gerais';
 import { blingReq, findBlingProductsByCodes } from './bling';
 import { sugerirMagaluCategoriaId, invalidarCacheMagaluCategorias } from '../lib/magaluCategoriaResolver';
+import { validarEtiquetasParaSku, etiquetasDoTexto } from '../lib/detranEtiquetasCompradas';
 
 export const pecasRouter = Router();
 
@@ -1118,9 +1119,14 @@ pecasRouter.put('/:id', requireEstoqueAction('editar'), async (req, res, next) =
     const data = updatePecaSchema.parse(req.body);
     const current = await prisma.peca.findUnique({
       where: { id: Number(req.params.id) },
-      select: { id: true, precoML: true, valorFrete: true, valorTaxas: true, emPrejuizo: true },
+      select: { id: true, idPeca: true, motoId: true, detranEtiqueta: true, precoML: true, valorFrete: true, valorTaxas: true, emPrejuizo: true },
     });
     if (!current) return res.status(404).json({ error: 'Peca nao encontrada' });
+    // Etiquetas Detran NOVAS: precisam constar na listagem comprada e nunca podem estar em outro SKU.
+    if (data.detranEtiqueta !== undefined) {
+      const erroEtiqueta = await validarEtiquetasParaSku({ etiquetas: etiquetasDoTexto(data.detranEtiqueta), skuBase: current.idPeca, motoId: current.motoId, jaTinha: etiquetasDoTexto(current.detranEtiqueta) });
+      if (erroEtiqueta) return res.status(400).json({ error: erroEtiqueta });
+    }
     if (current.emPrejuizo) {
       return res.status(400).json({ error: 'Peca em prejuizo nao pode ser editada pela tela de estoque' });
     }

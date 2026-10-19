@@ -16,6 +16,7 @@ import { gerarTagsCadastroEmSegundoPlano } from '../lib/nuvemshopTags';
 import { shopeeReq } from '../lib/shopee-api';
 import { magaluSetPrice, magaluAtualizarConteudoSku, prepararTituloMagalu, trocarTermosSensiveisMagalu } from '../lib/magalu-api';
 import { carregarAnuncioBase } from '../lib/anuncioBase';
+import { validarEtiquetasParaSku, etiquetasDoTexto } from '../lib/detranEtiquetasCompradas';
 
 const CAMPOS_COMPLETOS_WHERE = {
   peso: { not: null as null },
@@ -611,6 +612,10 @@ cadastroRouter.post('/', requireCadastroAction('criar_pre_cadastro'), async (req
     const existing = await prisma.cadastroPeca.findUnique({ where: { idPeca } });
     if (existing) return res.status(400).json({ error: 'ID de peça já existe no cadastro' });
 
+    // Etiquetas Detran: precisam constar na listagem comprada e nunca podem estar em outro SKU.
+    const erroEtiqueta = await validarEtiquetasParaSku({ etiquetas: etiquetasDoTexto(detranEtiqueta), skuBase: String(idPeca), motoId: Number(motoId) });
+    if (erroEtiqueta) return res.status(400).json({ error: erroEtiqueta });
+
     const record = await (prisma as any).cadastroPeca.create({
       data: {
         motoId: Number(motoId),
@@ -805,6 +810,9 @@ cadastroRouter.post('/copiar-peca/:pecaId', requireCadastroAction('criar_pre_cad
         });
         if (dup) return res.status(400).json({ error: `A etiqueta Detran ${et} ja esta em uso na variacao ${dup.idPeca}.` });
       }
+      // Listagem comprada + nunca em outro SKU (alem da checagem da propria familia do SKU acima).
+      const erroEtiquetas = await validarEtiquetasParaSku({ etiquetas: preenchidas, skuBase: baseSku, motoId: origem.motoId, jaTinha: etiquetasDoTexto(detranOrigem) });
+      if (erroEtiquetas) return res.status(400).json({ error: erroEtiquetas });
     }
 
     const { blingProdutoId, produto } = await resolveBlingProductStateForBaseSku(baseSku);
@@ -1208,6 +1216,10 @@ cadastroRouter.put('/:id', requireCadastroAction('editar_pre_cadastro'), async (
     const numeroMotorEfetivo = numeroMotor !== undefined ? numeroMotor : (atual as any).numeroMotor;
     const numeroMotorMsg = getNumeroMotorValidationMessage(detranEtiquetaEfetiva, tipoPecaAvulsaEfetivo, numeroMotorEfetivo);
     if (numeroMotorMsg) return res.status(400).json({ error: numeroMotorMsg });
+    if (detranEtiqueta !== undefined) {
+      const erroEtiqueta = await validarEtiquetasParaSku({ etiquetas: etiquetasDoTexto(detranEtiqueta), skuBase: atual.idPeca, motoId: atual.motoId, jaTinha: etiquetasDoTexto(atual.detranEtiqueta) });
+      if (erroEtiqueta) return res.status(400).json({ error: erroEtiqueta });
+    }
     const data: any = {};
     if (descricao !== undefined) data.descricao = String(descricao).trim().slice(0, 60);
     if (descricaoPeca !== undefined) data.descricaoPeca = descricaoPeca || null;

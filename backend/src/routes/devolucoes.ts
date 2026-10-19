@@ -4,6 +4,7 @@ import { syncDetranEtiquetaBling } from '../lib/sync-bling-detran';
 import { spDayStart, spDayEnd } from '../lib/timezone';
 import { sendDetranAtivacaoEmailIfNeeded } from '../lib/detran-alert';
 import { calcularTipoPeca, carregarCartelaMap } from './etiquetas-detran';
+import { validarEtiquetasParaSku } from '../lib/detranEtiquetasCompradas';
 
 export const devolucoesRouter = Router();
 
@@ -187,7 +188,13 @@ devolucoesRouter.get('/pendentes-etiqueta', async (_req, res, next) => {
     const pecas = await prisma.peca.findMany({
       // Inclui peca ja vendida com a pendencia aberta (venda lancada antes de resolver a etiqueta): ela precisa
       // aparecer aqui pra ser regularizada, sem voltar pro estoque (ver nova-etiqueta).
-      where: { etiquetaPendente: true },
+      // Peca em prejuizo ou sucata nunca entra (nao volta pro estoque, nao tem o que regularizar aqui).
+      where: {
+        etiquetaPendente: true,
+        emPrejuizo: false,
+        sucata: false,
+        OR: [{ disponivel: true }, { blingPedidoId: { not: null } }, { dataVenda: { not: null } }],
+      } as any,
       select: {
         id: true, idPeca: true, descricao: true, motoId: true,
         localizacao: true, cadastro: true, disponivel: true,
@@ -250,6 +257,9 @@ devolucoesRouter.post('/pendentes-etiqueta/:pecaId/nova-etiqueta', requirePenden
     if (etiquetaEmUso) {
       return res.status(409).json({ ok: false, error: `Etiqueta ja esta cadastrada no SKU ${etiquetaEmUso.idPeca}` });
     }
+    // Listagem comprada + nunca em outro SKU (inclui pre-cadastro, etiquetas multiplas e historico de devolucao).
+    const erroEtiqueta = await validarEtiquetasParaSku({ etiquetas: [novaEtiqueta], skuBase: peca.idPeca, motoId: peca.motoId });
+    if (erroEtiqueta) return res.status(409).json({ ok: false, error: erroEtiqueta });
 
     // Verifica se a nova etiqueta e de cartela (bate com a cartela da moto) ou avulsa —
     // mesma regra do pre-cadastro. Se for avulsa, marca a data de atribuicao (peca pode ter

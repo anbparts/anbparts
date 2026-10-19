@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { blingReq } from './bling';
+import { importarCompradas, resumoCompradas } from '../lib/detranEtiquetasCompradas';
 
 export const etiquetasDetranRouter = Router();
 const prisma = new PrismaClient();
@@ -684,6 +685,33 @@ etiquetasDetranRouter.get('/pendencias-baixa', async (req, res, next) => {
     }
 
     res.json({ ok: true, total: linhas.length, linhas });
+  } catch (e) { next(e); }
+});
+
+// Quem pode importar a listagem comprada: mesmo perfil que gerencia cartelas (Motos > etiqueta), admin ou Bruno.
+function podeGerenciarEtiquetas(req: any) {
+  const user = req.authUser || {};
+  if (user.isAdmin || String(user.username || '').trim().toLowerCase() === 'bruno') return true;
+  const acoes = user.permissions?.motos;
+  return Array.isArray(acoes) && acoes.includes('etiqueta');
+}
+
+// POST /etiquetas-detran/compradas/importar { linhas: [{ numero, lote, cnpj, distribuidor, criadoEm, status, tipoVeiculo }] }
+etiquetasDetranRouter.post('/compradas/importar', async (req, res, next) => {
+  try {
+    if (!podeGerenciarEtiquetas(req)) return res.status(403).json({ ok: false, error: 'Seu usuario nao tem permissao para importar etiquetas.' });
+    const linhas = Array.isArray(req.body?.linhas) ? req.body.linhas : [];
+    if (!linhas.length) return res.status(400).json({ ok: false, error: 'Nenhuma etiqueta enviada.' });
+    if (linhas.length > 20000) return res.status(400).json({ ok: false, error: 'Arquivo muito grande (maximo 20000 linhas).' });
+    const r = await importarCompradas(linhas);
+    res.json({ ok: true, ...r });
+  } catch (e) { next(e); }
+});
+
+// GET /etiquetas-detran/compradas/resumo — total comprado, em uso e livres por tipo (PECA / MOTO).
+etiquetasDetranRouter.get('/compradas/resumo', async (_req, res, next) => {
+  try {
+    res.json({ ok: true, ...(await resumoCompradas()) });
   } catch (e) { next(e); }
 });
 
