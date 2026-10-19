@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { blingReq } from './bling';
-import { importarCompradas, resumoCompradas } from '../lib/detranEtiquetasCompradas';
+import { importarCompradas, resumoCompradas, listarCompradas, descartarComprada, restaurarComprada } from '../lib/detranEtiquetasCompradas';
 
 export const etiquetasDetranRouter = Router();
 const prisma = new PrismaClient();
@@ -712,6 +712,32 @@ etiquetasDetranRouter.post('/compradas/importar', async (req, res, next) => {
 etiquetasDetranRouter.get('/compradas/resumo', async (_req, res, next) => {
   try {
     res.json({ ok: true, ...(await resumoCompradas()) });
+  } catch (e) { next(e); }
+});
+
+// GET /etiquetas-detran/compradas/lista?situacao=disponivel|em_uso|descartada|todas&tipo=PECA|MOTO|todas&busca=
+etiquetasDetranRouter.get('/compradas/lista', async (req, res, next) => {
+  try {
+    const r = await listarCompradas({ situacao: String(req.query.situacao || 'disponivel'), tipo: String(req.query.tipo || 'todas'), busca: String(req.query.busca || '') });
+    res.json({ ok: true, ...r });
+  } catch (e) { next(e); }
+});
+
+// POST /etiquetas-detran/compradas/:numero/descartar { motivo } — etiqueta danificada/perdida: sai dos disponiveis.
+etiquetasDetranRouter.post('/compradas/:numero/descartar', async (req, res, next) => {
+  try {
+    if (!podeGerenciarEtiquetas(req)) return res.status(403).json({ ok: false, error: 'Seu usuario nao tem permissao para alterar etiquetas.' });
+    await descartarComprada(req.params.numero, req.body?.motivo);
+    res.json({ ok: true });
+  } catch (e: any) { res.status(400).json({ ok: false, error: e?.message || 'Erro ao marcar a etiqueta' }); }
+});
+
+// POST /etiquetas-detran/compradas/:numero/restaurar — desfaz o descarte.
+etiquetasDetranRouter.post('/compradas/:numero/restaurar', async (req, res, next) => {
+  try {
+    if (!podeGerenciarEtiquetas(req)) return res.status(403).json({ ok: false, error: 'Seu usuario nao tem permissao para alterar etiquetas.' });
+    await restaurarComprada(req.params.numero);
+    res.json({ ok: true });
   } catch (e) { next(e); }
 });
 

@@ -25,6 +25,9 @@ export function garantirTabelaCompradas(): Promise<void> {
         "statusCartela" TEXT,
         "tipoVeiculo" TEXT,
         "importadoEm" TIMESTAMPTZ NOT NULL DEFAULT now())`);
+      // Etiqueta danificada/perdida: sai da lista de disponiveis e nao pode mais ser usada.
+      await prisma.$executeRawUnsafe(`ALTER TABLE "DetranEtiquetaComprada" ADD COLUMN IF NOT EXISTS "descartadaEm" TIMESTAMPTZ`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "DetranEtiquetaComprada" ADD COLUMN IF NOT EXISTS "descarteMotivo" TEXT`);
     })().catch((e) => { tabelaPronta = null; throw e; });
   }
   return tabelaPronta;
@@ -81,19 +84,81 @@ async function mapaEtiquetasEmUso() {
   return uso;
 }
 
-export async function resumoCompradas() {
-  await garantirTabelaCompradas();
-  const rows = await prisma.$queryRawUnsafe<any[]>(`SELECT "numero","tipoVeiculo","distribuidor","lote","criadoEm" FROM "DetranEtiquetaComprada"`);
-  const uso = await mapaEtiquetasEmUso();
-  const porTipo: Record<string, { total: number; emUso: number; livres: number }> = {};
-  for (const r of rows) {
-    const t = txt(r.tipoVeiculo) || 'SEM TIPO';
-    porTipo[t] = porTipo[t] || { total: 0, emUso: 0, livres: 0 };
-    porTipo[t].total += 1;
-    if (uso.has(String(r.numero))) porTipo[t].emUso += 1; else porTipo[t].livres += 1;
+// Cartelas de MOTO em uso: tabela "Cartela" (ativas e inativadas) + prefixo atual da moto.
+async function mapaCartelasEmUso() {
+  const uso = new Map<string, { ativa: boolean; moto: string }>();
+  const cartelas = await prisma.$queryRawUnsafe<any[]>(
+    `SELECT c."cartelaId", c."ativa", m."marca", m."modelo", m."ano" FROM "Cartela" c JOIN "Moto" m ON m."id" = c."motoId"`,
+  ).catch(() => [] as any[]);
+  for (const c of cartelas) uso.set(normalizarEtiqueta(c.cartelaId), { ativa: c.ativa !== false, moto: [c.marca, c.modelo, c.ano].filter(Boolean).join(' ') });
+  const motos = await prisma.moto.findMany({ where: { detranCartelaId: { not: null } }, select: { detranCartelaId: true, marca: true, modelo: true, ano: true } });
+  for (const m of motos) {
+    const n = normalizarEtiqueta(m.detranCartelaId);
+    if (n && !uso.has(n)) uso.set(n, { ativa: true, moto: [m.marca, m.modelo, m.ano].filter(Boolean).join(' ') });
   }
-  const ultimaImportacao = await prisma.$queryRawUnsafe<any[]>(`SELECT MAX("importadoEm") AS d FROM "DetranEtiquetaComprada"`);
-  return { total: rows.length, porTipo, ultimaImportacao: ultimaImportacao[0]?.d || null };
+  return uso;
+}
+
+export type SituacaoEtiqueta = 'disponivel' | 'em_uso' | 'descartada';
+
+// Lista da listagem comprada com a situacao de cada etiqueta (disponivel / em uso / descartada) e onde esta sendo usada.
+export async function listarCompradas(f: { situacao?: string; tipo?: string; busca?: string } = {}) {
+  await garantirTabelaCompradas();
+  const rows = await prisma.$queryRawUnsafe<any[]>(
+    `SELECT "numero","lote","cnpj","distribuidor","criadoEm","statusCartela","tipoVeiculo","descartadaEm","descarteMotivo" FROM "DetranEtiquetaComprada" ORDER BY "numero" ASC`,
+  );
+  const [usoSku, usoCartela] = await Promise.all([mapaEtiquetasEmUso(), mapaCartelasEmUso()]);
+  const todas = rows.map((r) => {
+    const numero = String(r.numero);
+    const tipo = txt(r.tipoVeiculo) || 'SEM TIPO';
+    let situacao: SituacaoEtiqueta = 'disponivel';
+    let detalhe = '';
+    if (r.descartadaEm) { situacao = 'descartada'; detalhe = txt(r.descarteMotivo); }
+    else if (tipo === 'MOTO' && usoCartela.has(numero)) {
+      const c = usoCartela.get(numero)!;
+      situacao = 'em_uso';
+      detalhe = `${c.moto}${c.ativa ? '' : ' (cartela inativada)'}`;
+    } else if (tipo !== 'MOTO' && usoSku.has(numero)) { situacao = 'em_uso'; detalhe = `SKU ${usoSku.get(numero)}`; }
+    return {
+      numero, tipo, lote: txt(r.lote), distribuidor: txt(r.distribuidor), cnpj: txt(r.cnpj), criadoEm: r.criadoEm, statusCartela: txt(r.statusCartela),
+      situacao, detalhe, descartadaEm: r.descartadaEm || null,
+    };
+  });
+  const resumo: Record<string, { total: number; disponiveis: number; emUso: number; descartadas: number }> = {};
+  for (const e of todas) {
+    const x = (resumo[e.tipo] = resumo[e.tipo] || { total: 0, disponiveis: 0, emUso: 0, descartadas: 0 });
+    x.total += 1;
+    if (e.situacao === 'disponivel') x.disponiveis += 1; else if (e.situacao === 'em_uso') x.emUso += 1; else x.descartadas += 1;
+  }
+  const q = txt(f.busca).toUpperCase();
+  const itens = todas.filter((e) => {
+    if (f.tipo && f.tipo !== 'todas' && e.tipo !== f.tipo) return false;
+    if (f.situacao && f.situacao !== 'todas' && e.situacao !== f.situacao) return false;
+    if (q && !(e.numero.includes(q) || e.lote.toUpperCase().includes(q) || e.detalhe.toUpperCase().includes(q))) return false;
+    return true;
+  });
+  return { resumo, itens, total: todas.length };
+}
+
+export async function resumoCompradas() {
+  const { resumo, total } = await listarCompradas();
+  const ultima = await prisma.$queryRawUnsafe<any[]>(`SELECT MAX("importadoEm") AS d FROM "DetranEtiquetaComprada"`);
+  return { total, porTipo: resumo, ultimaImportacao: ultima[0]?.d || null };
+}
+
+// Marca como danificada/perdida (sai dos disponiveis). Nao permite se a etiqueta ja esta em uso.
+export async function descartarComprada(numeroBruto: any, motivo: any) {
+  const numero = normalizarEtiqueta(numeroBruto);
+  const { itens } = await listarCompradas({ busca: numero });
+  const e = itens.find((x) => x.numero === numero);
+  if (!e) throw new Error('Etiqueta nao encontrada na listagem comprada.');
+  if (e.situacao === 'em_uso') throw new Error(`Essa etiqueta ja esta em uso (${e.detalhe}). So etiquetas disponiveis podem ser marcadas como danificadas.`);
+  await prisma.$executeRawUnsafe(`UPDATE "DetranEtiquetaComprada" SET "descartadaEm" = now(), "descarteMotivo" = $2 WHERE "numero" = $1`, numero, txt(motivo) || 'Danificada');
+}
+
+export async function restaurarComprada(numeroBruto: any) {
+  await garantirTabelaCompradas();
+  await prisma.$executeRawUnsafe(`UPDATE "DetranEtiquetaComprada" SET "descartadaEm" = NULL, "descarteMotivo" = NULL WHERE "numero" = $1`, normalizarEtiqueta(numeroBruto));
 }
 
 // Validacao de etiquetas NOVAS de um SKU. `jaTinha` = etiquetas que o SKU ja possuia (nao sao revalidadas: dado antigo nao trava edicao).
@@ -111,7 +176,10 @@ export async function validarEtiquetasParaSku(o: { etiquetas: any[]; skuBase: st
   // 1) precisa constar na listagem comprada (so cobra se a listagem ja foi importada)
   const total = await prisma.$queryRawUnsafe<any[]>(`SELECT COUNT(*)::int AS n FROM "DetranEtiquetaComprada"`);
   if (Number(total[0]?.n) > 0) {
-    const compradas = new Set((await prisma.$queryRawUnsafe<any[]>(`SELECT "numero" FROM "DetranEtiquetaComprada" WHERE "numero" = ANY($1::text[])`, alvo)).map((r) => String(r.numero)));
+    const linhasCompradas = await prisma.$queryRawUnsafe<any[]>(`SELECT "numero","descartadaEm","descarteMotivo" FROM "DetranEtiquetaComprada" WHERE "numero" = ANY($1::text[])`, alvo);
+    const compradas = new Set(linhasCompradas.map((r) => String(r.numero)));
+    const descartada = linhasCompradas.find((r) => r.descartadaEm);
+    if (descartada) return `A etiqueta ${descartada.numero} foi marcada como danificada${txt(descartada.descarteMotivo) ? ` (${txt(descartada.descarteMotivo)})` : ''} e nao pode ser usada.`;
     const cartelasMoto = new Set((await prisma.$queryRawUnsafe<any[]>(`SELECT "numero" FROM "DetranEtiquetaComprada" WHERE "tipoVeiculo" = 'MOTO'`)).map((r) => String(r.numero)));
     let baseMoto = '';
     if (o.motoId) {

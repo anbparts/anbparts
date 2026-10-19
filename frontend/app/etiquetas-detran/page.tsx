@@ -233,6 +233,53 @@ export default function EtiquetasDetranPage() {
   const [compradasResumo, setCompradasResumo] = useState<any>(null);
   const [importandoCompradas, setImportandoCompradas] = useState(false);
   const [menuAcoesAberto, setMenuAcoesAberto] = useState(false);
+  const [menuPendenciasAberto, setMenuPendenciasAberto] = useState(false);
+  useEffect(() => {
+    if (!menuPendenciasAberto) return undefined;
+    const fora = (ev: MouseEvent) => { if (!(ev.target as HTMLElement)?.closest?.('[data-menu-pendencias]')) setMenuPendenciasAberto(false); };
+    document.addEventListener('mousedown', fora);
+    return () => document.removeEventListener('mousedown', fora);
+  }, [menuPendenciasAberto]);
+  const [abaPrincipal, setAbaPrincipal] = useState<'sistema' | 'compradas'>('sistema');
+  const [compradasLista, setCompradasLista] = useState<any>(null);
+  const [compradasFiltro, setCompradasFiltro] = useState({ tipo: 'todas', situacao: 'disponivel', busca: '' });
+  const [carregandoCompradas, setCarregandoCompradas] = useState(false);
+
+  async function carregarListaCompradas(filtro = compradasFiltro) {
+    setCarregandoCompradas(true);
+    try {
+      const qs = new URLSearchParams({ tipo: filtro.tipo, situacao: filtro.situacao, busca: filtro.busca });
+      const resp = await fetch(`${API}/etiquetas-detran/compradas/lista?${qs.toString()}`, { credentials: 'include' });
+      const data = await resp.json();
+      if (data?.ok) setCompradasLista(data);
+    } catch { /* mantem a lista atual */ }
+    setCarregandoCompradas(false);
+  }
+
+  async function descartarEtiquetaComprada(numero: string) {
+    const motivo = prompt(`Marcar a etiqueta ${numero} como danificada/perdida?\n\nEla sai dos disponiveis e nao podera mais ser usada em nenhum SKU.\n\nMotivo (opcional):`, 'Danificada');
+    if (motivo === null) return;
+    try {
+      const resp = await fetch(`${API}/etiquetas-detran/compradas/${encodeURIComponent(numero)}/descartar`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ motivo }) });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || data?.ok === false) throw new Error(data?.error || `Erro ${resp.status}`);
+      await carregarListaCompradas();
+      carregarResumoCompradas();
+    } catch (e: any) { alert(e?.message || 'Erro ao marcar a etiqueta'); }
+  }
+
+  async function restaurarEtiquetaComprada(numero: string) {
+    if (!confirm(`Voltar a etiqueta ${numero} para disponivel?`)) return;
+    try {
+      const resp = await fetch(`${API}/etiquetas-detran/compradas/${encodeURIComponent(numero)}/restaurar`, { method: 'POST', credentials: 'include' });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || data?.ok === false) throw new Error(data?.error || `Erro ${resp.status}`);
+      await carregarListaCompradas();
+      carregarResumoCompradas();
+    } catch (e: any) { alert(e?.message || 'Erro ao restaurar a etiqueta'); }
+  }
+
+  useEffect(() => { if (abaPrincipal === 'compradas') carregarListaCompradas(); }, [abaPrincipal]);
   // fecha o menu "Mais acoes" ao clicar fora dele
   useEffect(() => {
     if (!menuAcoesAberto) return undefined;
@@ -310,6 +357,7 @@ export default function EtiquetasDetranPage() {
       if (!resp.ok || data?.ok === false) throw new Error(data?.error || `Erro ${resp.status}`);
       alert(`Importacao concluida.\n\nNovas: ${data.novas}\nAtualizadas: ${data.atualizadas}${data.totalInvalidas ? `\nIgnoradas (numero fora do padrao): ${data.totalInvalidas}${data.invalidas?.length ? ` — ex: ${data.invalidas.slice(0, 5).join(', ')}` : ''}` : ''}\n\nTotal na base: ${data.totalNaBase}`);
       carregarResumoCompradas();
+      if (abaPrincipal === 'compradas') carregarListaCompradas();
     } catch (err: any) {
       alert(err?.message || 'Erro ao importar a listagem de etiquetas.');
     }
@@ -793,19 +841,23 @@ export default function EtiquetasDetranPage() {
           </button>
           )}
           {(canProcessarBaixa || canProcessarDevolucao) && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' as const, width: isPhone ? '100%' : undefined }}>
-            <span style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--gray-500)' }}>Pendências</span>
-            <div style={{ display: 'inline-flex', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', background: 'var(--white)', width: isPhone ? '100%' : undefined, flex: isPhone ? 1 : undefined }}>
-              {canProcessarBaixa && (
-              <button style={{ ...s.btn, borderRadius: 0, border: 'none', background: 'var(--white)', color: 'var(--gray-700)', flex: isPhone ? 1 : undefined }} onClick={abrirPendencias}>Baixa</button>
-              )}
-              {canProcessarBaixa && (
-              <button style={{ ...s.btn, borderRadius: 0, border: 'none', borderLeft: '1px solid var(--border)', background: 'var(--white)', color: 'var(--gray-700)', flex: isPhone ? 1 : undefined }} onClick={abrirPendenciasAtivacao}>Etiqueta avulsa</button>
-              )}
-              {canProcessarDevolucao && (
-              <button style={{ ...s.btn, borderRadius: 0, border: 'none', borderLeft: '1px solid var(--border)', background: 'var(--white)', color: 'var(--gray-700)', flex: isPhone ? 1 : undefined }} onClick={abrirPendenciasDev}>Devolução</button>
-              )}
-            </div>
+          <div data-menu-pendencias style={{ position: 'relative', width: isPhone ? '100%' : undefined }}>
+            <button style={{ ...s.btn, background: 'var(--white)', color: 'var(--gray-700)', borderColor: 'var(--border)', width: isPhone ? '100%' : undefined }} onClick={() => { setMenuAcoesAberto(false); setMenuPendenciasAberto((v) => !v); }}>
+              Pendências ▾
+            </button>
+            {menuPendenciasAberto && (
+              <div style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, left: isPhone ? 0 : undefined, zIndex: 60, minWidth: 220, background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 10px 30px rgba(15,23,42,.12)', padding: 6 }}>
+                {canProcessarBaixa && (
+                <button style={{ display: 'block', width: '100%', textAlign: 'left' as const, padding: '9px 12px', fontSize: 13, borderRadius: 6, border: 'none', background: 'transparent', color: 'var(--gray-700)', cursor: 'pointer', fontFamily: 'inherit' }} onClick={() => { setMenuPendenciasAberto(false); abrirPendencias(); }}>Baixa</button>
+                )}
+                {canProcessarBaixa && (
+                <button style={{ display: 'block', width: '100%', textAlign: 'left' as const, padding: '9px 12px', fontSize: 13, borderRadius: 6, border: 'none', background: 'transparent', color: 'var(--gray-700)', cursor: 'pointer', fontFamily: 'inherit' }} onClick={() => { setMenuPendenciasAberto(false); abrirPendenciasAtivacao(); }}>Etiqueta avulsa</button>
+                )}
+                {canProcessarDevolucao && (
+                <button style={{ display: 'block', width: '100%', textAlign: 'left' as const, padding: '9px 12px', fontSize: 13, borderRadius: 6, border: 'none', background: 'transparent', color: 'var(--gray-700)', cursor: 'pointer', fontFamily: 'inherit' }} onClick={() => { setMenuPendenciasAberto(false); abrirPendenciasDev(); }}>Devolução</button>
+                )}
+              </div>
+            )}
           </div>
           )}
           {canGerenciarCartelas && (
@@ -814,7 +866,7 @@ export default function EtiquetasDetranPage() {
           </button>
           )}
           <div data-menu-acoes style={{ position: 'relative', width: isPhone ? '100%' : undefined }}>
-            <button style={{ ...s.btn, background: 'var(--white)', color: 'var(--gray-700)', borderColor: 'var(--border)', width: isPhone ? '100%' : undefined }} onClick={() => setMenuAcoesAberto((v) => !v)}>
+            <button style={{ ...s.btn, background: 'var(--white)', color: 'var(--gray-700)', borderColor: 'var(--border)', width: isPhone ? '100%' : undefined }} onClick={() => { setMenuPendenciasAberto(false); setMenuAcoesAberto((v) => !v); }}>
               Mais ações ▾
             </button>
             {/* Itens sempre montados (so escondidos): o seletor de arquivo precisa continuar no DOM depois de escolher a opcao. */}
@@ -838,17 +890,17 @@ export default function EtiquetasDetranPage() {
         </div>
       </div>
 
-      <div style={{ padding: isPhone ? 14 : 28, display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {compradasResumo && compradasResumo.total > 0 && (
-          <div style={{ ...s.card, padding: '12px 16px', display: 'flex', flexWrap: 'wrap', gap: isPhone ? 10 : 22, alignItems: 'center', fontSize: 13 }}>
-            <strong style={{ color: 'var(--gray-800)' }}>Etiquetas compradas</strong>
-            <span>{compradasResumo.total} no total</span>
-            {Object.entries(compradasResumo.porTipo || {}).map(([tipo, v]: any) => (
-              <span key={tipo} style={{ color: 'var(--gray-600)' }}>{tipo === 'PECA' ? 'Peça' : tipo === 'MOTO' ? 'Moto (cartela)' : tipo}: {v.total} · <span style={{ color: '#b45309' }}>{v.emUso} em uso</span> · <span style={{ color: '#16a34a', fontWeight: 600 }}>{v.livres} livres</span></span>
-            ))}
-            {compradasResumo.ultimaImportacao ? <span style={{ color: 'var(--gray-400)', marginLeft: isPhone ? 0 : 'auto' }}>Importada em {new Date(compradasResumo.ultimaImportacao).toLocaleDateString('pt-BR')}</span> : null}
-          </div>
-        )}
+      <div style={{ padding: isPhone ? '10px 14px 0' : '12px 28px 0', display: 'flex', gap: 6, flexWrap: 'wrap' as const, borderBottom: '1px solid var(--border)', background: 'var(--white)' }}>
+        {([['sistema', 'Etiquetas do sistema'], ['compradas', 'Etiquetas compradas']] as Array<['sistema' | 'compradas', string]>).map(([id, rotulo]) => (
+          <button key={id} type="button" onClick={() => setAbaPrincipal(id)}
+            style={{ border: 'none', background: 'transparent', cursor: 'pointer', padding: isPhone ? '8px 10px' : '10px 16px', fontSize: 13.5, fontWeight: abaPrincipal === id ? 700 : 500, color: abaPrincipal === id ? 'var(--gray-800)' : 'var(--gray-400)', borderBottom: abaPrincipal === id ? '2px solid var(--gray-800)' : '2px solid transparent', marginBottom: -1, fontFamily: 'inherit' }}>
+            {rotulo}
+            {id === 'compradas' && compradasResumo?.porTipo ? <span style={{ marginLeft: 8, fontSize: 11.5, fontWeight: 600, color: '#16a34a' }}>{Object.values(compradasResumo.porTipo).reduce((acc: number, v: any) => acc + (v.disponiveis || 0), 0)} disp.</span> : null}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ padding: isPhone ? 14 : 28, display: abaPrincipal === 'sistema' ? 'flex' : 'none', flexDirection: 'column', gap: 16 }}>
         <div style={{ ...s.card, padding: 16 }}>
           <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fit, minmax(170px, 1fr)) 118px', gap: 12, alignItems: 'end' }}>
             <div>
@@ -1052,6 +1104,107 @@ export default function EtiquetasDetranPage() {
           )}
         </div>
       </div>
+
+      {abaPrincipal === 'compradas' && (
+        <div style={{ padding: isPhone ? 14 : 28, display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
+            {([['MOTO', 'Cartelas de moto'], ['PECA', 'Etiquetas avulsas']] as Array<[string, string]>).map(([tipo, rotulo]) => {
+              const v = compradasLista?.resumo?.[tipo];
+              return (
+                <div key={tipo} style={{ ...s.card, padding: 16 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-500)' }}>{rotulo}</div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 4 }}>
+                    <span style={{ fontSize: 30, fontWeight: 700, color: '#16a34a', lineHeight: 1 }}>{v ? v.disponiveis : '—'}</span>
+                    <span style={{ fontSize: 13, color: 'var(--gray-500)' }}>disponíveis</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 6 }}>
+                    {v ? `${v.total} compradas · ${v.emUso} em uso · ${v.descartadas} danificadas` : 'Importe a listagem para ver o resumo.'}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div style={{ ...s.card, padding: 16 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'minmax(150px, 190px) minmax(170px, 210px) minmax(200px, 1fr) auto', gap: 12, alignItems: 'end' }}>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--gray-500)', marginBottom: 4 }}>Tipo</div>
+                <select style={{ ...s.select, width: '100%' }} value={compradasFiltro.tipo} onChange={(e) => { const f2 = { ...compradasFiltro, tipo: e.target.value }; setCompradasFiltro(f2); carregarListaCompradas(f2); }}>
+                  <option value="todas">Todas</option>
+                  <option value="PECA">Avulsa (peça)</option>
+                  <option value="MOTO">Cartela de moto</option>
+                </select>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--gray-500)', marginBottom: 4 }}>Situação</div>
+                <select style={{ ...s.select, width: '100%' }} value={compradasFiltro.situacao} onChange={(e) => { const f2 = { ...compradasFiltro, situacao: e.target.value }; setCompradasFiltro(f2); carregarListaCompradas(f2); }}>
+                  <option value="disponivel">Disponíveis</option>
+                  <option value="em_uso">Em uso</option>
+                  <option value="descartada">Danificadas</option>
+                  <option value="todas">Todas</option>
+                </select>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--gray-500)', marginBottom: 4 }}>Buscar</div>
+                <input style={{ ...s.input, width: '100%', boxSizing: 'border-box' as const }} placeholder="Etiqueta, lote ou SKU/moto" value={compradasFiltro.busca}
+                  onChange={(e) => setCompradasFiltro({ ...compradasFiltro, busca: e.target.value })}
+                  onKeyDown={(e) => { if (e.key === 'Enter') carregarListaCompradas(); }} />
+              </div>
+              <button style={{ ...s.btn, background: 'var(--gray-800)', color: '#fff', width: isPhone ? '100%' : undefined }} onClick={() => carregarListaCompradas()} disabled={carregandoCompradas}>
+                {carregandoCompradas ? 'Buscando...' : 'Buscar'}
+              </button>
+            </div>
+          </div>
+
+          <div style={s.card}>
+            {!compradasLista ? <div style={{ padding: 20, fontSize: 13, color: 'var(--gray-400)' }}>Carregando...</div> : null}
+            {compradasLista && compradasLista.total === 0 ? <div style={{ padding: 24, fontSize: 13, color: 'var(--gray-500)', textAlign: 'center' }}>Nenhuma etiqueta importada ainda. Use <strong>Mais ações &gt; Importar etiquetas compradas</strong>.</div> : null}
+            {compradasLista && compradasLista.total > 0 && !compradasLista.itens.length ? <div style={{ padding: 24, fontSize: 13, color: 'var(--gray-500)', textAlign: 'center' }}>Nenhuma etiqueta nesse filtro.</div> : null}
+            {compradasLista && compradasLista.itens.length > 0 ? (
+              <>
+                <div style={{ padding: '10px 14px', fontSize: 12, color: 'var(--gray-500)', borderBottom: '1px solid var(--border)' }}>{compradasLista.itens.length} etiqueta(s)</div>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: isPhone ? 640 : undefined }}>
+                    <thead>
+                      <tr>
+                        <th style={s.th}>Etiqueta</th>
+                        <th style={s.th}>Tipo</th>
+                        <th style={s.th}>Lote</th>
+                        <th style={s.th}>Comprada em</th>
+                        <th style={s.th}>Situação</th>
+                        <th style={s.th}>Detalhe</th>
+                        {canGerenciarCartelas ? <th style={s.th}></th> : null}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {compradasLista.itens.map((e: any) => (
+                        <tr key={e.numero}>
+                          <td style={{ ...s.td, fontFamily: 'JetBrains Mono, monospace', fontSize: 12.5 }}>{e.numero}</td>
+                          <td style={s.td}>{e.tipo === 'MOTO' ? 'Cartela de moto' : e.tipo === 'PECA' ? 'Avulsa' : e.tipo}</td>
+                          <td style={{ ...s.td, color: 'var(--gray-500)' }}>{e.lote || '—'}</td>
+                          <td style={{ ...s.td, color: 'var(--gray-500)' }}>{e.criadoEm ? new Date(e.criadoEm).toLocaleDateString('pt-BR') : '—'}</td>
+                          <td style={s.td}>
+                            <span style={{ padding: '2px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 700, background: e.situacao === 'disponivel' ? '#ecfdf3' : e.situacao === 'em_uso' ? '#fff7ed' : '#f1f5f9', color: e.situacao === 'disponivel' ? '#16a34a' : e.situacao === 'em_uso' ? '#c2410c' : '#64748b' }}>
+                              {e.situacao === 'disponivel' ? 'Disponível' : e.situacao === 'em_uso' ? 'Em uso' : 'Danificada'}
+                            </span>
+                          </td>
+                          <td style={{ ...s.td, color: 'var(--gray-600)' }}>{e.detalhe || '—'}</td>
+                          {canGerenciarCartelas ? (
+                            <td style={{ ...s.td, textAlign: 'right', whiteSpace: 'nowrap' as const }}>
+                              {e.situacao === 'disponivel' ? <button style={{ ...s.btn, padding: '4px 12px', fontSize: 12, background: 'var(--white)', color: 'var(--gray-600)', borderColor: 'var(--border)' }} onClick={() => descartarEtiquetaComprada(e.numero)}>Marcar danificada</button> : null}
+                              {e.situacao === 'descartada' ? <button style={{ ...s.btn, padding: '4px 12px', fontSize: 12, background: 'var(--white)', color: 'var(--gray-600)', borderColor: 'var(--border)' }} onClick={() => restaurarEtiquetaComprada(e.numero)}>Restaurar</button> : null}
+                            </td>
+                          ) : null}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            ) : null}
+          </div>
+        </div>
+      )}
 
       {/* Modal editar Tipo de Peça (avulsa) */}
       {editTipoPeca && (
