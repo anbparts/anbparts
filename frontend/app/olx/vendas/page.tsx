@@ -6,7 +6,7 @@ import { API_BASE } from '@/lib/api-base';
 const API = API_BASE;
 
 const s: any = {
-  topbar: { height: 'var(--topbar-h)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 28px', background: 'var(--white)', borderBottom: '1px solid var(--border)', position: 'sticky' as const, top: 0, zIndex: 50 },
+  topbar: { minHeight: 'var(--topbar-h)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 28px', background: 'var(--white)', borderBottom: '1px solid var(--border)', position: 'sticky' as const, top: 0, zIndex: 50, gap: 12, flexWrap: 'wrap' as const },
   card: { background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 14, padding: 22, marginBottom: 18 },
   input: { width: '100%', background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 8, padding: '9px 13px', fontSize: 13, fontFamily: 'Inter, sans-serif', outline: 'none', color: 'var(--gray-800)', boxSizing: 'border-box' as const },
   btn: { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 18px', borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: 'pointer', border: '1px solid transparent', fontFamily: 'Inter, sans-serif' },
@@ -110,7 +110,7 @@ export default function OlxVendasPage() {
 
   return (
     <>
-      <div style={s.topbar}>
+      <div style={{ ...s.topbar, padding: isPhone ? '12px 14px' : '10px 28px' }}>
         <div>
           <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)', letterSpacing: '-0.3px' }}>OLX · Vendas</div>
           <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>Anuncios vendidos na OLX aguardando o pedido no Bling</div>
@@ -131,7 +131,7 @@ export default function OlxVendasPage() {
           </div>
         )}
 
-        <div style={s.card}>
+        <div style={{ ...s.card, padding: isPhone ? 12 : 22 }}>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>
             {([['pendente', `Aguardando pedido (${pendentes.length})`], ['todas', `Todas (${itens.length})`]] as Array<['pendente' | 'todas', string]>).map(([id, rotulo]) => (
               <button key={id} type="button" onClick={() => setFiltro(id)}

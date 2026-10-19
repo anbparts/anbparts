@@ -6,7 +6,7 @@ import { API_BASE } from '@/lib/api-base';
 const API = API_BASE;
 
 const s: any = {
-  topbar: { height: 'var(--topbar-h)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 28px', background: 'var(--white)', borderBottom: '1px solid var(--border)', position: 'sticky' as const, top: 0, zIndex: 50 },
+  topbar: { minHeight: 'var(--topbar-h)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 28px', background: 'var(--white)', borderBottom: '1px solid var(--border)', position: 'sticky' as const, top: 0, zIndex: 50, gap: 12, flexWrap: 'wrap' as const },
   card: { background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 12, padding: 26, marginBottom: 18 },
   h3: { fontSize: 15, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 6, letterSpacing: '-0.3px' },
   p: { fontSize: 13.5, color: 'var(--gray-500)', lineHeight: 1.7, marginBottom: 14 },
@@ -23,6 +23,13 @@ async function chamar(path: string, init?: RequestInit) {
 }
 
 export default function ConfigOlxPage() {
+  const [isPhone, setIsPhone] = useState(false);
+  useEffect(() => {
+    const ajustar = () => setIsPhone(typeof window !== 'undefined' && window.innerWidth <= 768);
+    ajustar();
+    window.addEventListener('resize', ajustar);
+    return () => window.removeEventListener('resize', ajustar);
+  }, []);
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<any>(null);
   const [clientId, setClientId] = useState('');
@@ -127,7 +134,7 @@ export default function ConfigOlxPage() {
   if (loading) {
     return (
       <>
-        <div style={s.topbar}><div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)' }}>Conf. OLX</div></div>
+        <div style={{ ...s.topbar, padding: '12px 14px' }}><div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)' }}>Conf. OLX</div></div>
         <div style={{ padding: 28, color: 'var(--gray-400)', fontSize: 13 }}>Carregando...</div>
       </>
     );
@@ -135,7 +142,7 @@ export default function ConfigOlxPage() {
 
   return (
     <>
-      <div style={s.topbar}>
+      <div style={{ ...s.topbar, padding: isPhone ? '12px 14px' : '10px 28px' }}>
         <div>
           <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)', letterSpacing: '-0.3px' }}>Conf. OLX</div>
           <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>Conexao com a API de integradores da OLX Brasil</div>
@@ -145,8 +152,8 @@ export default function ConfigOlxPage() {
         </span>
       </div>
 
-      <div style={{ padding: 28, maxWidth: 820 }}>
-        <div style={s.card}>
+      <div style={{ padding: isPhone ? 12 : 28, maxWidth: 820 }}>
+        <div style={{ ...s.card, padding: isPhone ? 14 : 26 }}>
           <div style={s.h3}>1. Credenciais do integrador</div>
           <p style={s.p}>
             Recebidas da equipe de integracao da OLX. O Client Secret fica guardado no servidor e nunca volta para esta tela.
@@ -167,7 +174,7 @@ export default function ConfigOlxPage() {
           </button>
         </div>
 
-        <div style={s.card}>
+        <div style={{ ...s.card, padding: isPhone ? 14 : 26 }}>
           <div style={s.h3}>2. Conectar a conta da ANB na OLX</div>
           <p style={s.p}>
             Abre o login da OLX para autorizar o sistema a publicar anuncios, receber mensagens e configurar avisos da conta.
@@ -193,7 +200,7 @@ export default function ConfigOlxPage() {
           )}
         </div>
 
-        <div style={s.card}>
+        <div style={{ ...s.card, padding: isPhone ? 14 : 26 }}>
           <div style={s.h3}>3. Recebimento de mensagens (chat)</div>
           <p style={s.p}>
             {status?.chatAtivoEm
@@ -205,7 +212,7 @@ export default function ConfigOlxPage() {
           </button>
         </div>
 
-        <div style={s.card}>
+        <div style={{ ...s.card, padding: isPhone ? 14 : 26 }}>
           <div style={s.h3}>Contato dos anuncios criados pelo sistema</div>
           <p style={s.p}>
             Telefone e CEP enviados nos anuncios novos. Deixe em branco para usar os da Empresa
@@ -230,7 +237,7 @@ export default function ConfigOlxPage() {
           </button>
         </div>
 
-        <div style={s.card}>
+        <div style={{ ...s.card, padding: isPhone ? 14 : 26 }}>
           <div style={s.h3}>Dados tecnicos</div>
           <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>
             Redirect URI (cadastrada na OLX): <code style={{ background: 'var(--gray-100)', padding: '1px 6px', borderRadius: 4, fontFamily: 'JetBrains Mono, monospace' }}>{status?.redirectUri || `${API}/olx/callback`}</code>

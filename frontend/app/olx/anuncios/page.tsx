@@ -6,7 +6,7 @@ import { API_BASE } from '@/lib/api-base';
 const API = API_BASE;
 
 const s: any = {
-  topbar: { height: 'var(--topbar-h)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 28px', background: 'var(--white)', borderBottom: '1px solid var(--border)', position: 'sticky' as const, top: 0, zIndex: 50 },
+  topbar: { minHeight: 'var(--topbar-h)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 28px', background: 'var(--white)', borderBottom: '1px solid var(--border)', position: 'sticky' as const, top: 0, zIndex: 50, gap: 12, flexWrap: 'wrap' as const },
   card: { background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 14, padding: 22, marginBottom: 18 },
   input: { width: '100%', background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 8, padding: '9px 13px', fontSize: 13, fontFamily: 'Inter, sans-serif', outline: 'none', color: 'var(--gray-800)', boxSizing: 'border-box' as const },
   btn: { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 18px', borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: 'pointer', border: '1px solid transparent', fontFamily: 'Inter, sans-serif' },
@@ -126,7 +126,7 @@ export default function OlxAnunciosPage() {
 
   return (
     <>
-      <div style={s.topbar}>
+      <div style={{ ...s.topbar, padding: isPhone ? '12px 14px' : '10px 28px' }}>
         <div>
           <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)', letterSpacing: '-0.3px' }}>OLX · Anuncios</div>
           <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>SKU x link do anuncio, com o status acompanhado automaticamente</div>
@@ -154,19 +154,19 @@ export default function OlxAnunciosPage() {
           </div>
         )}
 
-        <div style={s.card}>
+        <div style={{ ...s.card, padding: isPhone ? 14 : 22 }}>
           <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Vincular anuncio a um SKU</div>
           <div style={{ fontSize: 13, color: 'var(--gray-500)', marginBottom: 12 }}>Cole o link do anuncio na OLX (ou so o numero do final). Se o SKU ja tinha outro anuncio, o antigo vai para o historico.</div>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            <input style={{ ...s.input, flex: '1 1 160px', width: 'auto' }} placeholder="SKU (ex: HD01_0190)" value={novoSku} onChange={(e) => setNovoSku(e.target.value)} />
-            <input style={{ ...s.input, flex: '3 1 320px', width: 'auto' }} placeholder="Link ou ID do anuncio na OLX" value={novoLink} onChange={(e) => setNovoLink(e.target.value)} />
+            <input style={{ ...s.input, flex: isPhone ? '1 1 100%' : '1 1 160px', width: 'auto' }} placeholder="SKU (ex: HD01_0190)" value={novoSku} onChange={(e) => setNovoSku(e.target.value)} />
+            <input style={{ ...s.input, flex: isPhone ? '1 1 100%' : '3 1 320px', width: 'auto' }} placeholder="Link ou ID do anuncio na OLX" value={novoLink} onChange={(e) => setNovoLink(e.target.value)} />
             <button style={{ ...s.btn, background: 'var(--blue-500)', color: '#fff', opacity: novoSku.trim() && novoLink.trim() && !vinculando ? 1 : 0.6 }} onClick={vincular} disabled={!novoSku.trim() || !novoLink.trim() || vinculando}>
               {vinculando ? 'Vinculando...' : 'Vincular'}
             </button>
           </div>
         </div>
 
-        <div style={s.card}>
+        <div style={{ ...s.card, padding: isPhone ? 12 : 22 }}>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>
             {([['ativos', `Ativos (${ativos.length})`], ['encerrados', `Ja tiveram anuncio (${encerrados.length})`], ['semvinculo', `Encerrados - Sem vinculos (${semVinculoEncerrados.length})`]] as Array<['ativos' | 'encerrados' | 'semvinculo', string]>).map(([id, rotulo]) => (
               <button key={id} type="button" onClick={() => setAba(id)}

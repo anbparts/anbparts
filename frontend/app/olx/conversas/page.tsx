@@ -6,7 +6,7 @@ import { API_BASE } from '@/lib/api-base';
 const API = API_BASE;
 
 const s: any = {
-  topbar: { height: 'var(--topbar-h)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 28px', background: 'var(--white)', borderBottom: '1px solid var(--border)', position: 'sticky' as const, top: 0, zIndex: 50 },
+  topbar: { minHeight: 'var(--topbar-h)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 28px', background: 'var(--white)', borderBottom: '1px solid var(--border)', position: 'sticky' as const, top: 0, zIndex: 50, gap: 12, flexWrap: 'wrap' as const },
   input: { width: '100%', background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 8, padding: '9px 13px', fontSize: 13, fontFamily: 'Inter, sans-serif', outline: 'none', color: 'var(--gray-800)', boxSizing: 'border-box' as const },
   btn: { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 18px', borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: 'pointer', border: '1px solid transparent', fontFamily: 'Inter, sans-serif' },
 };
@@ -50,6 +50,7 @@ export default function OlxConversasPage() {
   const [resposta, setResposta] = useState('');
   const [enviando, setEnviando] = useState(false);
   const fimRef = useRef<HTMLDivElement | null>(null);
+  const caixaRef = useRef<HTMLDivElement | null>(null);
   const abertaRef = useRef<any>(null);
   abertaRef.current = aberta;
 
@@ -87,7 +88,7 @@ export default function OlxConversasPage() {
     return () => clearInterval(t);
   }, []);
 
-  useEffect(() => { fimRef.current?.scrollIntoView({ block: 'end' }); }, [mensagens.length, aberta?.chatId]);
+  useEffect(() => { const c = caixaRef.current; if (c) c.scrollTop = c.scrollHeight; }, [mensagens.length, aberta?.chatId]);
 
   async function enviar() {
     if (!aberta || !resposta.trim()) return;
@@ -117,7 +118,7 @@ export default function OlxConversasPage() {
 
   return (
     <>
-      <div style={s.topbar}>
+      <div style={{ ...s.topbar, padding: isPhone ? '12px 14px' : '10px 28px' }}>
         <div>
           <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)', letterSpacing: '-0.3px' }}>OLX · Conversas</div>
           <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>Mensagens dos compradores dos anuncios da OLX</div>
@@ -128,12 +129,12 @@ export default function OlxConversasPage() {
       <div style={{ padding: isPhone ? 10 : 20, display: 'grid', gridTemplateColumns: isPhone ? 'minmax(0, 1fr)' : 'minmax(280px, 360px) minmax(0, 1fr)', gap: 16, alignItems: 'start' }}>
         <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 14, overflow: 'hidden', display: isPhone && aberta ? 'none' : 'block' }}>
           <div style={{ padding: 14, display: 'grid', gap: 10, borderBottom: '1px solid var(--border)' }}>
-            <input style={{ ...s.input, borderRadius: 999, padding: '9px 16px', background: 'var(--gray-50)', border: '1px solid transparent' }} placeholder="Buscar nome, SKU ou mensagem" value={busca} onChange={(e) => setBusca(e.target.value)} />
+            <input style={{ ...s.input, fontSize: isPhone ? 16 : 13, borderRadius: 999, padding: '9px 16px', background: 'var(--gray-50)', border: '1px solid transparent' }} placeholder="Buscar nome, SKU ou mensagem" value={busca} onChange={(e) => setBusca(e.target.value)} />
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--gray-500)' }}>
               <input type="checkbox" checked={somenteNaoLidas} onChange={(e) => setSomenteNaoLidas(e.target.checked)} /> Somente nao lidas
             </label>
           </div>
-          <div style={{ maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' }}>
+          <div style={{ maxHeight: isPhone ? 'calc(100dvh - 230px)' : 'calc(100vh - 220px)', overflowY: 'auto', WebkitOverflowScrolling: 'touch' as const }}>
             {carregando ? <div style={{ padding: 20, fontSize: 13, color: 'var(--gray-400)' }}>Carregando...</div> : null}
             {!carregando && !filtradas.length ? <div style={{ padding: 24, fontSize: 13, color: 'var(--gray-400)', textAlign: 'center' }}>{conversas.length ? 'Nenhuma conversa encontrada.' : 'Nenhuma mensagem recebida ainda.'}</div> : null}
             {filtradas.map((c) => {
@@ -161,12 +162,12 @@ export default function OlxConversasPage() {
           </div>
         </div>
 
-        <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 14, overflow: 'hidden', display: isPhone && !aberta ? 'none' : 'flex', flexDirection: 'column', minHeight: isPhone ? 0 : 420 }}>
+        <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 14, overflow: 'hidden', display: isPhone && !aberta ? 'none' : 'flex', flexDirection: 'column', minHeight: isPhone ? 0 : 420, ...(isPhone ? { height: 'calc(100dvh - 130px)' } : {}) }}>
           {!aberta ? (
             <div style={{ padding: 40, fontSize: 13.5, color: 'var(--gray-400)', textAlign: 'center', margin: 'auto' }}>Selecione uma conversa para ver o historico e responder.</div>
           ) : (
             <>
-              <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
+              <div style={{ padding: isPhone ? '12px 14px' : '14px 18px', borderBottom: '1px solid var(--border)' }}>
                 {isPhone ? <button type="button" onClick={() => setAberta(null)} style={{ background: 'none', border: 'none', color: 'var(--blue-500)', fontSize: 13.5, cursor: 'pointer', padding: '0 0 8px', fontFamily: 'Inter, sans-serif' }}>← Conversas</button> : null}
                 <div style={{ fontSize: 15, fontWeight: 600 }}>{aberta.nome || 'Comprador'}</div>
                 {aberta.sku ? (
@@ -180,24 +181,24 @@ export default function OlxConversasPage() {
                   {aberta.listId ? <a href={'https://www.olx.com.br/vi/' + aberta.listId + '.htm'} target="_blank" rel="noreferrer" style={{ color: 'var(--blue-500)' }}>Abrir anuncio na OLX</a> : null}
                 </div>
               </div>
-              <div style={{ padding: 18, display: 'grid', gap: 8, alignContent: 'start', maxHeight: isPhone ? 'calc(100vh - 330px)' : 'calc(100vh - 360px)', minHeight: isPhone ? 160 : 240, overflowY: 'auto', flex: 1 }}>
+              <div ref={caixaRef} style={{ padding: isPhone ? 12 : 18, display: 'grid', gap: 8, alignContent: 'start', ...(isPhone ? { minHeight: 0, WebkitOverflowScrolling: 'touch' as const } : { maxHeight: 'calc(100vh - 360px)', minHeight: 240 }), overflowY: 'auto', flex: 1 }}>
                 {mensagens.map((m) => (
-                  <div key={m.messageId} style={{ justifySelf: m.origem === 'seller' ? 'end' : 'start', maxWidth: '78%', background: m.origem === 'seller' ? '#e0f2fe' : 'var(--gray-100)', borderRadius: 12, padding: '8px 12px', fontSize: 13.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                  <div key={m.messageId} style={{ justifySelf: m.origem === 'seller' ? 'end' : 'start', maxWidth: isPhone ? '90%' : '78%', background: m.origem === 'seller' ? '#e0f2fe' : 'var(--gray-100)', borderRadius: 12, padding: '8px 12px', fontSize: 13.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                     {m.mensagem}
                     <div style={{ fontSize: 10.5, color: 'var(--gray-400)', marginTop: 4 }}>{quando(m.enviadaEm)}</div>
                   </div>
                 ))}
                 <div ref={fimRef} />
               </div>
-              <div style={{ padding: 14, borderTop: '1px solid var(--border)', display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: isPhone ? 'wrap' : 'nowrap' }}>
-                <textarea style={{ ...s.input, minHeight: 56, resize: 'vertical' as const, flex: 1 }} placeholder="Responder ao comprador" value={resposta}
+              <div style={{ padding: isPhone ? '10px 12px calc(10px + env(safe-area-inset-bottom))' : 14, borderTop: '1px solid var(--border)', display: 'flex', gap: 10, alignItems: 'flex-end', flexShrink: 0, flexWrap: isPhone ? 'wrap' : 'nowrap' }}>
+                <textarea style={{ ...s.input, fontSize: isPhone ? 16 : 13, minHeight: isPhone ? 44 : 56, maxHeight: isPhone ? 110 : undefined, resize: isPhone ? 'none' as const : 'vertical' as const, flex: 1 }} placeholder="Responder ao comprador" value={resposta}
                   onChange={(e) => setResposta(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); enviar(); } }} />
-                <button style={{ ...s.btn, background: 'var(--blue-500)', color: '#fff', opacity: resposta.trim() ? 1 : 0.6 }} onClick={enviar} disabled={enviando || !resposta.trim()}>
+                <button style={{ ...s.btn, justifyContent: 'center', width: isPhone ? '100%' : undefined, background: 'var(--blue-500)', color: '#fff', opacity: resposta.trim() ? 1 : 0.6 }} onClick={enviar} disabled={enviando || !resposta.trim()}>
                   {enviando ? 'Enviando...' : 'Enviar'}
                 </button>
               </div>
-              <div style={{ padding: '0 14px 10px', fontSize: 11, color: 'var(--gray-400)' }}>Ctrl + Enter envia.</div>
+              {isPhone ? null : <div style={{ padding: '0 14px 10px', fontSize: 11, color: 'var(--gray-400)' }}>Ctrl + Enter envia.</div>}
             </>
           )}
         </div>
