@@ -732,6 +732,81 @@ motosRouter.put('/:id/anexos', requireMotosAction('editar'), async (req, res, ne
   } catch (e) { next(e); }
 });
 
+// ───────────── Fluxo de Desmontagem (10 etapas por moto) ─────────────
+// Uma linha por moto/etapa confirmada, com a data. A etapa 1 (Moto adquirida) vem do cadastro da moto (dataCompra): confirmar/alterar a
+// data dela atualiza a data de compra da moto. Toda moto cadastrada aparece no fluxo automaticamente (etapas sem linha = nao confirmadas).
+let fluxoTabelaPronta: Promise<void> | null = null;
+function garantirTabelaFluxo(): Promise<void> {
+  if (!fluxoTabelaPronta) {
+    fluxoTabelaPronta = (async () => {
+      await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "MotoFluxoEtapa" (
+        "motoId" INTEGER NOT NULL, "etapa" INTEGER NOT NULL, "data" DATE NOT NULL,
+        "atualizadoEm" TIMESTAMPTZ NOT NULL DEFAULT now(), "atualizadoPor" TEXT,
+        PRIMARY KEY ("motoId","etapa"))`);
+    })().catch((e) => { fluxoTabelaPronta = null; throw e; });
+  }
+  return fluxoTabelaPronta;
+}
+
+// GET /motos/fluxo — todas as motos com as datas das etapas confirmadas.
+motosRouter.get('/fluxo', async (_req, res, next) => {
+  try {
+    await garantirTabelaFluxo();
+    const motos = await prisma.moto.findMany({
+      select: { id: true, marca: true, modelo: true, ano: true, placa: true, dataCompra: true },
+      orderBy: { id: 'desc' },
+    });
+    const rows = await prisma.$queryRawUnsafe<any[]>(`SELECT "motoId","etapa","data"::text AS "data","atualizadoPor" FROM "MotoFluxoEtapa"`);
+    const porMoto = new Map<number, Record<number, { data: string; por: string | null }>>();
+    for (const r of rows) {
+      const m = porMoto.get(Number(r.motoId)) || {};
+      m[Number(r.etapa)] = { data: String(r.data).slice(0, 10), por: r.atualizadoPor ? String(r.atualizadoPor) : null };
+      porMoto.set(Number(r.motoId), m);
+    }
+    res.json({
+      ok: true,
+      motos: motos.map((m) => {
+        const etapas = { ...(porMoto.get(m.id) || {}) };
+        // Etapa 1 = data de compra do cadastro da moto.
+        delete etapas[1];
+        if (m.dataCompra) etapas[1] = { data: new Date(m.dataCompra).toISOString().slice(0, 10), por: null };
+        return { id: m.id, marca: m.marca, modelo: m.modelo, ano: m.ano, placa: m.placa, etapas };
+      }),
+    });
+  } catch (e) { next(e); }
+});
+
+// PUT /motos/:id/fluxo/:etapa { data: 'YYYY-MM-DD' | null } — confirma a etapa (com a data) ou volta para pendente (null).
+motosRouter.put('/:id/fluxo/:etapa', requireMotosAction('fluxo'), async (req, res, next) => {
+  try {
+    await garantirTabelaFluxo();
+    const motoId = Number(req.params.id);
+    const etapa = Number(req.params.etapa);
+    if (!Number.isInteger(motoId) || motoId <= 0) return res.status(400).json({ ok: false, error: 'moto invalida' });
+    if (!Number.isInteger(etapa) || etapa < 1 || etapa > 10) return res.status(400).json({ ok: false, error: 'etapa invalida (1 a 10)' });
+    const data = req.body?.data == null || req.body?.data === '' ? null : String(req.body.data).trim();
+    if (data !== null && !/^\d{4}-\d{2}-\d{2}$/.test(data)) return res.status(400).json({ ok: false, error: 'data deve ser YYYY-MM-DD' });
+    const moto = await prisma.moto.findUnique({ where: { id: motoId }, select: { id: true } });
+    if (!moto) return res.status(404).json({ ok: false, error: 'Moto nao encontrada' });
+
+    if (etapa === 1) {
+      // A etapa 1 e' a data de compra do cadastro da moto.
+      await prisma.moto.update({ where: { id: motoId }, data: { dataCompra: data ? new Date(`${data}T00:00:00.000Z`) : null } });
+      await prisma.$executeRawUnsafe(`DELETE FROM "MotoFluxoEtapa" WHERE "motoId" = $1 AND "etapa" = 1`, motoId);
+    } else if (data === null) {
+      await prisma.$executeRawUnsafe(`DELETE FROM "MotoFluxoEtapa" WHERE "motoId" = $1 AND "etapa" = $2`, motoId, etapa);
+    } else {
+      const por = String((req as any).authUser?.username || '').trim() || null;
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO "MotoFluxoEtapa" ("motoId","etapa","data","atualizadoPor") VALUES ($1,$2,$3::date,$4)
+         ON CONFLICT ("motoId","etapa") DO UPDATE SET "data" = EXCLUDED."data", "atualizadoEm" = now(), "atualizadoPor" = EXCLUDED."atualizadoPor"`,
+        motoId, etapa, data, por,
+      );
+    }
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
 // GET /motos/:id
 motosRouter.get('/:id', async (req, res, next) => {
   try {

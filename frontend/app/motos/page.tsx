@@ -7,6 +7,7 @@ import EtiquetaCartelaModal from '../estoque/EtiquetaCartelaModal';
 import { API_BASE } from '@/lib/api-base';
 import { useAuth } from '@/lib/auth';
 import { canProcessAction } from '@/lib/permissions';
+import FluxoDesmontagemTab from './FluxoDesmontagemTab';
 const API = API_BASE;
 
 function fmt(v: number) {
@@ -1870,8 +1871,9 @@ export default function MotosPage() {
   const canEditarMoto = canProcessAction(user, 'motos', 'editar');
   const canEtiquetaMoto = canProcessAction(user, 'motos', 'etiqueta');
   const canContratosMoto = canProcessAction(user, 'motos', 'contratos');
+  const canFluxoMoto = canProcessAction(user, 'motos', 'fluxo');
   const canExcluirMoto = canProcessAction(user, 'motos', 'excluir');
-  const [abaAtiva, setAbaAtiva] = useState<'cadastro' | 'contratos'>('cadastro');
+  const [abaAtiva, setAbaAtiva] = useState<'cadastro' | 'fluxo' | 'contratos'>('cadastro');
   const [motos, setMotos] = useState<any[]>([]);
   const [filtered, setFiltered] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -2101,7 +2103,7 @@ export default function MotosPage() {
   const desktopHeaders = ['ID', 'Marca', 'Modelo', 'Ano', 'Placa', 'Chassi', 'Renavam', 'Data compra', 'Itens', 'Anexos', 'Detran', ''];
   const tabletHeaders = ['ID', 'Marca', 'Modelo', 'Ano', 'Placa', 'Compra', 'Itens', 'Anexos', 'Detran', ''];
   const activeHeaders = compactTable ? tabletHeaders : desktopHeaders;
-  const abasDisponiveis: Array<'cadastro' | 'contratos'> = canContratosMoto ? ['cadastro', 'contratos'] : ['cadastro'];
+  const abasDisponiveis: Array<'cadastro' | 'fluxo' | 'contratos'> = canContratosMoto ? ['cadastro', 'fluxo', 'contratos'] : ['cadastro', 'fluxo'];
 
   function renderAnexosButton(m: any) {
     return (
@@ -2229,24 +2231,7 @@ export default function MotosPage() {
           <div style={cs.title}>Motos</div>
           <div style={cs.sub}>Cadastro e gestao de motos</div>
         </div>
-        {/* Abas */}
         <div style={{ display: 'flex', gap: 4 }}>
-          {abasDisponiveis.map((aba) => (
-            <button
-              key={aba}
-              onClick={() => setAbaAtiva(aba)}
-              style={{
-                padding: '7px 18px', borderRadius: 8, fontSize: 13, fontWeight: 500,
-                cursor: 'pointer', fontFamily: 'Geist, sans-serif',
-                border: abaAtiva === aba ? '1px solid var(--ink)' : '1px solid var(--border)',
-                background: abaAtiva === aba ? 'var(--ink)' : 'var(--white)',
-                color: abaAtiva === aba ? 'var(--white)' : 'var(--ink-soft)',
-                transition: 'all 0.15s',
-              }}
-            >
-              {aba === 'cadastro' ? 'Cadastro' : 'Contratos'}
-            </button>
-          ))}
           <Link
             href="/conf-texto-peca"
             style={{
@@ -2261,8 +2246,31 @@ export default function MotosPage() {
         </div>
       </div>
 
+      {/* Abas */}
+      <div style={{ padding: viewportMode === 'phone' ? '8px 14px 0' : '10px 28px 0', display: 'flex', gap: 6, flexWrap: 'wrap', borderBottom: '1px solid var(--border)', background: 'var(--white)' }}>
+        {abasDisponiveis.map((aba) => (
+          <button
+            key={aba}
+            type="button"
+            onClick={() => setAbaAtiva(aba)}
+            style={{
+              border: 'none', background: 'transparent', cursor: 'pointer',
+              padding: viewportMode === 'phone' ? '8px 10px' : '10px 16px', fontSize: 13.5,
+              fontWeight: abaAtiva === aba ? 700 : 500,
+              color: abaAtiva === aba ? 'var(--ink)' : 'var(--ink-muted)',
+              borderBottom: abaAtiva === aba ? '2px solid var(--ink)' : '2px solid transparent',
+              marginBottom: -1, fontFamily: 'Geist, sans-serif',
+            }}
+          >
+            {aba === 'cadastro' ? 'Cadastro' : aba === 'fluxo' ? 'Fluxo Desmontagem' : 'Contratos'}
+          </button>
+        ))}
+      </div>
+
       {abaAtiva === 'contratos' ? (
         <ContratosTab viewportMode={viewportMode} />
+      ) : abaAtiva === 'fluxo' ? (
+        <FluxoDesmontagemTab canEdit={canFluxoMoto} isPhone={viewportMode === 'phone'} />
       ) : (
         <>
       <div style={{ padding: pagePadding }}>

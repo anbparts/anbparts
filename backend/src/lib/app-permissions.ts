@@ -20,6 +20,7 @@ export const APP_PERMISSION_CATALOG: AppPagePermission[] = [
     { key: 'editar', label: 'Editar moto', description: 'Libera editar dados da moto, texto modelo e anexos.' },
     { key: 'etiqueta', label: 'Etiqueta', description: 'Libera a area de etiquetas DETRAN da moto.' },
     { key: 'contratos', label: 'Contratos', description: 'Libera a aba Contratos dentro de Motos, incluindo criar, editar, excluir, detalhes da moto e gerar PDF.' },
+    { key: 'fluxo', label: 'Fluxo Desmontagem', description: 'Libera confirmar, alterar a data e voltar para pendente as etapas da aba Fluxo Desmontagem em Motos.' },
     { key: 'excluir', label: 'Excluir moto', description: 'Libera excluir uma moto.' },
   ] },
   { key: 'cadastro', label: 'Cadastro', href: '/cadastro', actions: [
