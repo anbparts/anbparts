@@ -6,6 +6,7 @@ import {
   createSessionToken,
   parseCookies,
   readSessionFromToken,
+  refreshSessionFromDatabase,
   serializeClearedSessionCookie,
   serializeSessionCookie,
 } from '../lib/auth';
@@ -60,13 +61,23 @@ authRouter.get('/me', async (req, res) => {
     return res.status(401).json({ error: 'Sessao invalida ou expirada' });
   }
 
+  // Pega mudancas de perfil feitas no banco (permissoes, nome, usuario desativado) sem exigir novo login.
+  const atual = await refreshSessionFromDatabase(session);
+  if (!atual) {
+    res.setHeader('Set-Cookie', serializeClearedSessionCookie(isSecureRequest(req)));
+    return res.status(401).json({ error: 'Sessao invalida ou expirada' });
+  }
+  if (atual.changed) {
+    res.setHeader('Set-Cookie', serializeSessionCookie(createSessionToken(atual.user, atual.user.expiresAt), isSecureRequest(req)));
+  }
+
   return res.json({
     ok: true,
     user: {
-      username: session.username,
-      displayName: session.displayName,
-      isAdmin: session.isAdmin,
-      permissions: session.permissions,
+      username: atual.user.username,
+      displayName: atual.user.displayName,
+      isAdmin: atual.user.isAdmin,
+      permissions: atual.user.permissions,
     },
   });
 });

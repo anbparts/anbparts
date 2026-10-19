@@ -209,17 +209,42 @@ function signPayload(payloadBase64: string, secret: string) {
   return createHmac('sha256', secret).update(payloadBase64).digest('base64url');
 }
 
-export function createSessionToken(user: { username: string; displayName: string; isAdmin?: boolean; permissions?: Record<string, string[]> }) {
+export function createSessionToken(user: { username: string; displayName: string; isAdmin?: boolean; permissions?: Record<string, string[]> }, expiresAt?: number) {
   const payload: SessionPayload = {
     sub: user.username,
     name: user.displayName,
     admin: !!user.isAdmin || user.username === 'bruno',
     permissions: user.permissions || (user.username === 'bruno' ? buildFullPermissions() : {}),
-    exp: Date.now() + SESSION_TTL_MS,
+    exp: expiresAt && expiresAt > Date.now() ? expiresAt : Date.now() + SESSION_TTL_MS,
   };
   const payloadBase64 = base64UrlEncode(JSON.stringify(payload));
   const signature = signPayload(payloadBase64, getSessionSecret());
   return `${payloadBase64}.${signature}`;
+}
+
+// Sessao em andamento x cadastro atual do usuario: se as permissoes (ou o nome/admin) mudaram no banco, devolve os dados novos pra
+// reemitir o cookie com a MESMA validade; se o usuario foi desativado/removido, devolve null (sessao encerrada). Usuarios que nao
+// estao no banco (Bruno / usuarios do ambiente) e falhas de leitura mantem a sessao como esta.
+export async function refreshSessionFromDatabase(session: { username: string; displayName: string; isAdmin: boolean; permissions: Record<string, string[]>; expiresAt: number }) {
+  if (session.username === 'bruno') return { changed: false as const, user: session };
+  try {
+    const dbUser = await (prisma as any).appUser.findUnique({ where: { username: session.username } });
+    if (!dbUser) return { changed: false as const, user: session };
+    if (!dbUser.active) return null;
+    const isAdmin = !!dbUser.isAdmin || session.username === 'bruno';
+    const fresh = {
+      username: session.username,
+      displayName: normalizeText(dbUser.displayName) || session.displayName,
+      isAdmin,
+      permissions: isAdmin ? buildFullPermissions() : normalizePermissions(dbUser.permissions),
+      expiresAt: session.expiresAt,
+    };
+    const mudou = fresh.displayName !== session.displayName || fresh.isAdmin !== session.isAdmin
+      || JSON.stringify(fresh.permissions) !== JSON.stringify(session.permissions);
+    return { changed: mudou as boolean, user: fresh };
+  } catch {
+    return { changed: false as const, user: session };
+  }
 }
 
 export function readSessionFromToken(token: string | null | undefined) {
