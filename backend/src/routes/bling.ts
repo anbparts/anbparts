@@ -4930,8 +4930,6 @@ async function executeAuditoriaRapida(origem: 'manual' | 'auto' | 'mes' = 'manua
   const corte = origem === 'mes'
     ? new Date(`${getTimezoneDateParts(executedAt).dateKey.slice(0, 7)}-01T00:00:00-03:00`)
     : new Date(Date.now() - AUDITORIA_RAPIDA_DIAS * 24 * 60 * 60 * 1000);
-  const vendidas = await prisma.peca.findMany({ where: { dataVenda: { gte: corte } }, select: { idPeca: true } });
-  const skus = Array.from(new Set(vendidas.map((p: any) => getBaseSku(p.idPeca)).filter(Boolean))) as string[];
   const tituloEmail = origem === 'mes'
     ? 'ALERTA ANB Parts - Conferencia do mes atual (vendidos no mes) - Verifique'
     : `ALERTA ANB Parts - Conferencia rapida (vendidos nos ultimos ${AUDITORIA_RAPIDA_DIAS} dias) - Verifique`;
@@ -4941,11 +4939,14 @@ async function executeAuditoriaRapida(origem: 'manual' | 'auto' | 'mes' = 'manua
       status: 'executando',
       emailDestinatario: emailConfig.auditoriaEmailDestinatario || null,
       emailAssunto: buildDatedEmailSubject(tituloEmail, DEFAULT_AUDITORIA_EMAIL_TITULO, executedAt),
-      totalSkus: skus.length,
-      resumo: JSON.parse(JSON.stringify({ progresso: { totalParaProcessar: skus.length, totalProcessados: 0, fase: 'Conferencia rapida', atualizadoEm: new Date().toISOString() } })),
+      totalSkus: 0,
+      resumo: JSON.parse(JSON.stringify({ progresso: { totalParaProcessar: 0, totalProcessados: 0, fase: 'Conferencia rapida', atualizadoEm: new Date().toISOString() } })),
     },
   });
   try {
+    const vendidas = await prisma.peca.findMany({ where: { dataVenda: { gte: corte } }, select: { idPeca: true } });
+    const skus = Array.from(new Set(vendidas.map((p: any) => getBaseSku(p.idPeca)).filter(Boolean))) as string[];
+    await prisma.auditoriaAutomaticaExecucao.update({ where: { id: execution.id }, data: { totalSkus: skus.length } });
     const bruto: any = skus.length ? (await runTraceSkuComparison(skus, null)).resultado : null;
     const base = bruto || { ok: true, totalConsultados: 0, totalDivergencias: 0, totalSemDivergencia: 0, divergencias: [], warnings: [] };
     const { resultado, resumoPedidosAbertos } = await aplicarFiltroPedidosAbertosAuditoria(base);
@@ -5345,12 +5346,10 @@ blingRouter.post('/auditoria-automatica/rapida/executar', async (_req, res, next
   try {
     if (auditoriaSchedulerState.running) return res.status(409).json({ error: 'Ja existe uma auditoria em andamento' });
     auditoriaSchedulerState.running = true;
-    try {
-      const execucao = await executeAuditoriaRapida('manual');
-      res.json({ ok: true, execucao });
-    } finally {
-      auditoriaSchedulerState.running = false;
-    }
+    void executeAuditoriaRapida('manual')
+      .catch((error) => console.error('Falha na conferencia rapida manual:', error))
+      .finally(() => { auditoriaSchedulerState.running = false; });
+    res.json({ ok: true, iniciada: true });
   } catch (e) { next(e); }
 });
 
@@ -5358,12 +5357,10 @@ blingRouter.post('/auditoria-automatica/mes/executar', async (_req, res, next) =
   try {
     if (auditoriaSchedulerState.running) return res.status(409).json({ error: 'Ja existe uma auditoria em andamento' });
     auditoriaSchedulerState.running = true;
-    try {
-      const execucao = await executeAuditoriaRapida('mes');
-      res.json({ ok: true, execucao });
-    } finally {
-      auditoriaSchedulerState.running = false;
-    }
+    void executeAuditoriaRapida('mes')
+      .catch((error) => console.error('Falha na conferencia do mes:', error))
+      .finally(() => { auditoriaSchedulerState.running = false; });
+    res.json({ ok: true, iniciada: true });
   } catch (e) { next(e); }
 });
 

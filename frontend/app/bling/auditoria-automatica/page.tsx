@@ -230,11 +230,11 @@ export default function AuditoriaAutomaticaPage() {
     setExecutando(true);
     try {
       const response = await fetch(`${API}/bling/auditoria-automatica/${modo}/executar`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
-      const data = await response.json();
-      if (!response.ok) return alert(data.error || 'Erro ao executar a conferencia rapida');
-      if (data.execucao) setExecucaoSelecionada(data.execucao);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) return alert(data.error || `Erro ao executar a conferencia (${response.status})`);
+      // roda em segundo plano: a tela acompanha pelo historico
       await loadConfig();
-      await loadExecucoes(data.execucao?.id);
+      await loadExecucoes();
     } catch (e: any) {
       alert(`Erro ao executar: ${e.message}`);
     } finally {
