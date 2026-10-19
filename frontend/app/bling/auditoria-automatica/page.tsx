@@ -73,6 +73,7 @@ const fmtDateTime = (value?: string | null) => {
 const statusLabel = (status?: string) => status === 'sucesso' ? 'Sucesso' : status === 'sucesso_parcial' ? 'Sucesso parcial' : status === 'erro' ? 'Erro' : status === 'executando' ? 'Executando' : status || 'Nao informado';
 const statusColor = (status?: string) => status === 'sucesso' ? 'var(--green)' : status === 'sucesso_parcial' ? 'var(--amber)' : status === 'erro' ? 'var(--red)' : status === 'executando' ? 'var(--blue-500)' : 'var(--gray-500)';
 const borderColor = (tipo: string) => tipo === 'nao_encontrado_bling' ? 'var(--amber)' : tipo === 'nao_encontrado_anb' ? 'var(--blue-500)' : tipo === 'peca_em_prejuizo' ? '#b91c1c' : 'var(--red)';
+const origemLabel = (o: string) => o === 'auto' ? 'Automatica' : o === 'rapida_auto' ? 'Conferencia rapida' : o === 'rapida_manual' ? 'Conferencia rapida (manual)' : o === 'mes_manual' ? 'Conferencia do mes atual' : 'Manual';
 const tipoLabel = (tipo: string) => String(tipo || '').replaceAll('_', ' ').replace(/\bml\b/gi, 'ML');
 const escopoLabel = (value?: AuditoriaEscopo | string | null) => ESCOPOS.find((item) => item.value === value)?.label || 'Full';
 const infoValue = (value?: string | null) => String(value || '').trim() || 'Nao configurado';
@@ -225,6 +226,22 @@ export default function AuditoriaAutomaticaPage() {
     }
   }
 
+  async function executarRapida(modo: 'rapida' | 'mes' = 'rapida') {
+    setExecutando(true);
+    try {
+      const response = await fetch(`${API}/bling/auditoria-automatica/${modo}/executar`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+      const data = await response.json();
+      if (!response.ok) return alert(data.error || 'Erro ao executar a conferencia rapida');
+      if (data.execucao) setExecucaoSelecionada(data.execucao);
+      await loadConfig();
+      await loadExecucoes(data.execucao?.id);
+    } catch (e: any) {
+      alert(`Erro ao executar: ${e.message}`);
+    } finally {
+      setExecutando(false);
+    }
+  }
+
   async function excluirExecucao(id: number) {
     const execucao = execucoes.find((item) => item.id === id) || execucaoSelecionada;
     const extra = execucao?.status === 'executando' && !config?.executandoAgora ? 'Essa execucao parece ter ficado presa por interrupcao ou deploy.' : null;
@@ -271,6 +288,8 @@ export default function AuditoriaAutomaticaPage() {
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', width: isPhone ? '100%' : undefined }}>
           <Link href="/conf-auditoria" style={{ ...s.btnGhost }}>Conf. Auditoria</Link>
+          <button style={{ ...s.btnGhost }} onClick={() => executarRapida('rapida')} disabled={executando || !!config?.executandoAgora} title="So os SKUs vendidos nos ultimos 3 dias (roda sozinha as 11:00 e 16:00)">Conferencia rapida</button>
+          <button style={{ ...s.btnGhost }} onClick={() => executarRapida('mes')} disabled={executando || !!config?.executandoAgora} title="So os SKUs vendidos desde o dia 1 do mes atual">Conferencia do mes</button>
           <button style={{ ...s.btn, background: 'var(--blue-500)', color: '#fff', opacity: executando ? 0.6 : 1 }} onClick={executarAgora} disabled={executando || !!config?.executandoAgora}>{executando || config?.executandoAgora ? 'Executando...' : 'Executar agora'}</button>
         </div>
       </div>
@@ -383,7 +402,7 @@ export default function AuditoriaAutomaticaPage() {
                   <div key={item.id} style={{ background: execucaoSelecionada?.id === item.id ? 'var(--blue-50)' : 'var(--white)', border: `1px solid ${execucaoSelecionada?.id === item.id ? 'var(--blue-200)' : 'var(--border)'}`, borderRadius: 10, padding: '12px 14px' }}>
                     <div role="button" tabIndex={0} onClick={() => loadExecucaoDetalhe(item.id)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); loadExecucaoDetalhe(item.id); } }} style={{ cursor: 'pointer' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginBottom: 6 }}>
-                        <strong style={{ color: 'var(--gray-800)', fontSize: 13 }}>#{item.id} - {item.origem === 'auto' ? 'Automatica' : 'Manual'}</strong>
+                        <strong style={{ color: 'var(--gray-800)', fontSize: 13 }}>#{item.id} - {origemLabel(item.origem)}</strong>
                         <span style={{ fontSize: 12, color: statusColor(item.status), fontWeight: 700 }}>{statusLabel(item.status)}</span>
                       </div>
                       <div style={{ fontSize: 12, color: 'var(--gray-400)', marginBottom: 6 }}>{fmtDateTime(item.startedAt)}</div>
@@ -415,7 +434,7 @@ export default function AuditoriaAutomaticaPage() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
                     <div>
                       <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--gray-800)' }}>Execucao #{execucaoSelecionada.id}</div>
-                      <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>{execucaoSelecionada.origem === 'auto' ? 'Rotina automatica' : 'Execucao manual'} - {fmtDateTime(execucaoSelecionada.startedAt)}</div>
+                      <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>{execucaoSelecionada.origem === 'auto' ? 'Rotina automatica' : execucaoSelecionada.origem === 'manual' ? 'Execucao manual' : origemLabel(execucaoSelecionada.origem)} - {fmtDateTime(execucaoSelecionada.startedAt)}</div>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                       <div style={{ fontSize: 13, fontWeight: 700, color: statusColor(execucaoSelecionada.status) }}>{statusLabel(execucaoSelecionada.status)}</div>

@@ -4756,11 +4756,11 @@ function renderAuditoriaEmailHtmlClean(resultado: any, executedAt: Date | string
   });
 }
 
-async function sendAuditoriaEmail(config: any, resultado: any, executedAt: Date | string) {
+async function sendAuditoriaEmail(config: any, resultado: any, executedAt: Date | string, tituloOverride?: string) {
   const apiKey = String(config?.resendApiKey || '').trim();
   const to = String(config?.auditoriaEmailDestinatario || '').trim();
   const from = String(config?.emailRemetente || DEFAULT_RESEND_FROM).trim() || DEFAULT_RESEND_FROM;
-  const titulo = String(config?.auditoriaEmailTitulo || DEFAULT_AUDITORIA_EMAIL_TITULO).trim() || DEFAULT_AUDITORIA_EMAIL_TITULO;
+  const titulo = tituloOverride || String(config?.auditoriaEmailTitulo || DEFAULT_AUDITORIA_EMAIL_TITULO).trim() || DEFAULT_AUDITORIA_EMAIL_TITULO;
   const subject = buildDatedEmailSubject(titulo, DEFAULT_AUDITORIA_EMAIL_TITULO, executedAt);
 
   if (!apiKey) throw new Error('API Key do Resend nao configurada');
@@ -4918,6 +4918,81 @@ async function executeAuditoriaAutomatica(origem: 'manual' | 'auto' = 'manual') 
   }
 }
 
+// ── Conferencia rapida: so os SKUs vendidos nos ultimos dias, 2x ao dia (double check durante o dia) ──
+const AUDITORIA_RAPIDA_HORARIOS = ['11:00', '16:00'];
+const AUDITORIA_RAPIDA_DIAS = 3;
+const auditoriaRapidaState = { ultimaChave: '' };
+
+async function executeAuditoriaRapida(origem: 'manual' | 'auto' | 'mes' = 'manual') {
+  const emailConfig = await getConfiguracaoGeral();
+  const executedAt = new Date();
+  // 'mes' = vendidos desde o dia 1 do mes atual (horario de Sao Paulo); demais = ultimos N dias
+  const corte = origem === 'mes'
+    ? new Date(`${getTimezoneDateParts(executedAt).dateKey.slice(0, 7)}-01T00:00:00-03:00`)
+    : new Date(Date.now() - AUDITORIA_RAPIDA_DIAS * 24 * 60 * 60 * 1000);
+  const vendidas = await prisma.peca.findMany({ where: { dataVenda: { gte: corte } }, select: { idPeca: true } });
+  const skus = Array.from(new Set(vendidas.map((p: any) => getBaseSku(p.idPeca)).filter(Boolean))) as string[];
+  const tituloEmail = origem === 'mes'
+    ? 'ALERTA ANB Parts - Conferencia do mes atual (vendidos no mes) - Verifique'
+    : `ALERTA ANB Parts - Conferencia rapida (vendidos nos ultimos ${AUDITORIA_RAPIDA_DIAS} dias) - Verifique`;
+  const execution = await prisma.auditoriaAutomaticaExecucao.create({
+    data: {
+      origem: origem === 'auto' ? 'rapida_auto' : origem === 'mes' ? 'mes_manual' : 'rapida_manual',
+      status: 'executando',
+      emailDestinatario: emailConfig.auditoriaEmailDestinatario || null,
+      emailAssunto: buildDatedEmailSubject(tituloEmail, DEFAULT_AUDITORIA_EMAIL_TITULO, executedAt),
+      totalSkus: skus.length,
+      resumo: JSON.parse(JSON.stringify({ progresso: { totalParaProcessar: skus.length, totalProcessados: 0, fase: 'Conferencia rapida', atualizadoEm: new Date().toISOString() } })),
+    },
+  });
+  try {
+    const bruto: any = skus.length ? (await runTraceSkuComparison(skus, null)).resultado : null;
+    const base = bruto || { ok: true, totalConsultados: 0, totalDivergencias: 0, totalSemDivergencia: 0, divergencias: [], warnings: [] };
+    const { resultado, resumoPedidosAbertos } = await aplicarFiltroPedidosAbertosAuditoria(base);
+    const resumo: any = JSON.parse(JSON.stringify({
+      ...buildAuditoriaResumo(resultado),
+      conferenciaRapida: { dias: origem === 'mes' ? null : AUDITORIA_RAPIDA_DIAS, desde: corte.toISOString(), skusVendidos: skus.length },
+      pedidosAbertosIgnorados: resumoPedidosAbertos,
+    }));
+    let emailEnviado = false;
+    let emailErro: string | null = null;
+    // sempre avisa quando ha divergencia, mesmo repetida da execucao anterior
+    if (resultado.totalDivergencias > 0 && emailConfig.auditoriaEmailConfigurado) {
+      try { await sendAuditoriaEmail(emailConfig, resultado, executedAt, tituloEmail); emailEnviado = true; } catch (error: any) { emailErro = error?.message || String(error); }
+    }
+    const updated = await prisma.auditoriaAutomaticaExecucao.update({
+      where: { id: execution.id },
+      data: {
+        status: emailErro ? 'sucesso_parcial' : 'sucesso', finishedAt: new Date(),
+        totalSkus: resultado.totalConsultados, totalDivergencias: resultado.totalDivergencias, totalSemDivergencia: resultado.totalSemDivergencia,
+        emailEnviado, emailErro, resumo, divergencias: resultado.divergencias,
+      },
+    });
+    return { ...updated, resumo, divergencias: resultado.divergencias };
+  } catch (error: any) {
+    return prisma.auditoriaAutomaticaExecucao.update({ where: { id: execution.id }, data: { status: 'erro', finishedAt: new Date(), erro: error?.message || String(error) } });
+  }
+}
+
+async function tickAuditoriaRapida() {
+  if (auditoriaSchedulerState.running) return;
+  const cfg = await getConfig();
+  if (!cfg.auditoriaAtiva) return;
+  const now = getTimezoneDateParts(new Date());
+  if (!AUDITORIA_RAPIDA_HORARIOS.includes(now.timeKey)) return;
+  if (auditoriaRapidaState.ultimaChave === now.runKey) return;
+  auditoriaRapidaState.ultimaChave = now.runKey;
+  // se o servidor reiniciou dentro do mesmo horario, nao repete
+  const recente = await prisma.auditoriaAutomaticaExecucao.findFirst({ where: { origem: 'rapida_auto', startedAt: { gte: new Date(Date.now() - 10 * 60 * 1000) } } });
+  if (recente) return;
+  auditoriaSchedulerState.running = true;
+  try {
+    await executeAuditoriaRapida('auto');
+  } finally {
+    auditoriaSchedulerState.running = false;
+  }
+}
+
 async function tickAuditoriaAutomatica() {
   if (auditoriaSchedulerState.running) return;
 
@@ -4960,6 +5035,10 @@ export function startBlingAuditoriaScheduler() {
   const runTick = () => {
     tickAuditoriaAutomatica().catch((error) => {
       console.error('Falha na auditoria automatica do Bling:', error);
+      auditoriaSchedulerState.running = false;
+    });
+    tickAuditoriaRapida().catch((error) => {
+      console.error('Falha na conferencia rapida do Bling:', error);
       auditoriaSchedulerState.running = false;
     });
     tickAuditoriaLinkMl().catch((error) => {
@@ -5260,6 +5339,32 @@ blingRouter.post('/auditoria-automatica/executar', async (_req, res, next) => {
   } catch (e) {
     next(e);
   }
+});
+
+blingRouter.post('/auditoria-automatica/rapida/executar', async (_req, res, next) => {
+  try {
+    if (auditoriaSchedulerState.running) return res.status(409).json({ error: 'Ja existe uma auditoria em andamento' });
+    auditoriaSchedulerState.running = true;
+    try {
+      const execucao = await executeAuditoriaRapida('manual');
+      res.json({ ok: true, execucao });
+    } finally {
+      auditoriaSchedulerState.running = false;
+    }
+  } catch (e) { next(e); }
+});
+
+blingRouter.post('/auditoria-automatica/mes/executar', async (_req, res, next) => {
+  try {
+    if (auditoriaSchedulerState.running) return res.status(409).json({ error: 'Ja existe uma auditoria em andamento' });
+    auditoriaSchedulerState.running = true;
+    try {
+      const execucao = await executeAuditoriaRapida('mes');
+      res.json({ ok: true, execucao });
+    } finally {
+      auditoriaSchedulerState.running = false;
+    }
+  } catch (e) { next(e); }
 });
 
 blingRouter.post('/auditoria-automatica/link-ml/executar', async (_req, res, next) => {
