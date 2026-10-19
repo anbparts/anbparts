@@ -986,7 +986,7 @@ function resolvePedidoEnderecoEntregaLinha(pedido: any) {
   return null;
 }
 
-function classifyOrderSituation(detail: any) {
+export function classifyOrderSituation(detail: any) {
   const source = detail?.situacao ?? detail?.situacaoPedido ?? detail?.situacoes ?? {};
   const rawText = extractSituationText(source)
     || extractSituationText(detail?.situacao)
@@ -1959,7 +1959,7 @@ function findAvailablePecasForVenda(
   return selected;
 }
 
-async function listPedidos(dataInicio?: string, dataFim?: string, situacoes?: number[]) {
+export async function listPedidos(dataInicio?: string, dataFim?: string, situacoes?: number[]) {
   const pedidosMap = new Map<number, { id: number; situacao: ReturnType<typeof classifyOrderSituation> }>();
   let pagina = 1;
 

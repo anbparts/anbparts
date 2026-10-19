@@ -64,6 +64,8 @@ export const APP_PERMISSION_CATALOG: AppPagePermission[] = [
     { key: 'atualizar_vendas', label: 'Atualizar vendas' },
   ] },
   { key: 'bling_relatorio', label: 'Relatorio de Vendas', href: '/bling/relatorio-vendas', actions: [] },
+  { key: 'bling_pedidos', label: 'Pedidos Bling', href: '/bling/pedidos', actions: [{ key: 'sincronizar', label: 'Sincronizar pedidos e clientes' }] },
+  { key: 'bling_clientes', label: 'Clientes Bling', href: '/bling/clientes', actions: [] },
   { key: 'bling_produtos', label: 'Produtos Bling', href: '/bling/produtos', actions: [{ key: 'auditar', label: 'Auditar produtos' }] },
   { key: 'bling_auditoria', label: 'Auditoria Automatica', href: '/bling/auditoria-automatica', actions: [{ key: 'executar', label: 'Executar auditoria' }] },
   { key: 'conf_auditoria', label: 'Conf. Auditoria Automatica', href: '/conf-auditoria', actions: [{ key: 'editar', label: 'Editar configuracao' }] },

@@ -38,6 +38,8 @@ import { pecasRouter, startLimpezaFotosPecaScheduler } from './routes/pecas';
 import { sucataRouter } from './routes/sucata';
 import { shopeeRouter } from './routes/shopee';
 import { olxRouter, startOlxScheduler } from './routes/olx';
+import { blingPedidosRouter } from './routes/blingPedidos';
+import { startBlingPedidosScheduler } from './lib/bling-pedidos';
 import { magaluRouter } from './routes/magalu';
 import { authMiddleware } from './middlewares/auth';
 import { errorMiddleware } from './middlewares/error';
@@ -108,6 +110,7 @@ app.use('/pecas', pecasRouter);
 app.use('/sucata', sucataRouter);
 app.use('/shopee', shopeeRouter);
 app.use('/olx', olxRouter);
+app.use('/bling-pedidos', blingPedidosRouter);
 app.use('/magalu', magaluRouter);
 
 app.use(errorMiddleware);
@@ -125,6 +128,7 @@ app.listen(port, () => {
   startReversaoPrecoDescontoScheduler();
   startMonitorConexoesScheduler();
   startOlxScheduler();
+  startBlingPedidosScheduler();
   startImportacaoVendasAutomatica();
   console.log(`ANB Backend rodando na porta ${port}`);
 });
