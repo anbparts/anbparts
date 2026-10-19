@@ -161,11 +161,53 @@ export async function restaurarComprada(numeroBruto: any) {
   await prisma.$executeRawUnsafe(`UPDATE "DetranEtiquetaComprada" SET "descartadaEm" = NULL, "descarteMotivo" = NULL WHERE "numero" = $1`, normalizarEtiqueta(numeroBruto));
 }
 
+// Divergencias de etiqueta de um SKU, para o Resumo do Pre-cadastro: numero fora da listagem comprada, etiqueta danificada ou
+// repetida em outro SKU. Carrega tudo uma vez (o resumo avalia ate 500 SKUs). Devolve null se a listagem ainda nao foi importada.
+// Texto livre (ex.: "SIM") nao entra aqui: ja e' sinalizado como "Etiqueta Detran" pelo padrao SP + 14 numeros.
+export async function criarContextoDivergencias() {
+  await garantirTabelaCompradas();
+  const rows = await prisma.$queryRawUnsafe<any[]>(`SELECT "numero","tipoVeiculo","descartadaEm" FROM "DetranEtiquetaComprada"`);
+  if (!rows.length) return null;
+  const compradas = new Map<string, boolean>(rows.map((r) => [String(r.numero), !!r.descartadaEm]));
+  const cartelasMoto = new Set(rows.filter((r) => txt(r.tipoVeiculo) === 'MOTO').map((r) => String(r.numero)));
+  const motos = await prisma.moto.findMany({ select: { id: true, detranCartelaId: true } });
+  const baseMoto = new Map<number, string>(motos.map((m) => [m.id, normalizarEtiqueta(m.detranCartelaId)]));
+  const bases = new Map<string, Set<string>>();
+  const add = (texto: any, sku: any) => { for (const e of etiquetasDoTexto(texto)) { const s = bases.get(e) || new Set<string>(); s.add(skuBase(sku)); bases.set(e, s); } };
+  const [pecas, cadastros, historico] = await Promise.all([
+    prisma.peca.findMany({ where: { detranEtiqueta: { not: null } }, select: { idPeca: true, detranEtiqueta: true } }),
+    (prisma as any).cadastroPeca.findMany({ where: { detranEtiqueta: { not: null } }, select: { idPeca: true, detranEtiqueta: true } }),
+    prisma.historicoDevolucao.findMany({ where: { etiquetasDetran: { not: null } }, select: { idPeca: true, etiquetasDetran: true } }),
+  ]);
+  for (const p of pecas) add(p.detranEtiqueta, p.idPeca);
+  for (const p of cadastros as any[]) add(p.detranEtiqueta, p.idPeca);
+  for (const h of historico) add(h.etiquetasDetran, h.idPeca);
+
+  return (sku: any, motoId: any, texto: any): string[] => {
+    const out: string[] = [];
+    const meu = skuBase(sku);
+    for (const e of etiquetasDoTexto(texto)) {
+      if (!/^SP\d{14}$/.test(e)) continue;
+      const pos = Number(e.slice(-3));
+      const ehCartela = pos >= 1 && pos <= 34 && ((baseMoto.get(Number(motoId)) && e.slice(0, -3) === baseMoto.get(Number(motoId))) || cartelasMoto.has(e.slice(0, -3)));
+      if (!compradas.has(e) && !ehCartela) out.push(`${e} fora da listagem comprada`);
+      else if (compradas.get(e)) out.push(`${e} marcada como danificada`);
+      const outros = Array.from(bases.get(e) || []).filter((b) => b !== meu);
+      if (outros.length) out.push(`${e} repetida no SKU ${outros[0]}`);
+    }
+    return out;
+  };
+}
+
 // Validacao de etiquetas NOVAS de um SKU. `jaTinha` = etiquetas que o SKU ja possuia (nao sao revalidadas: dado antigo nao trava edicao).
 // Devolve a mensagem de erro (ou null se esta tudo certo).
-export async function validarEtiquetasParaSku(o: { etiquetas: any[]; skuBase: string; motoId?: number | null; jaTinha?: any[] }): Promise<string | null> {
+// modo 'preCadastro': so recusa etiqueta REPETIDA (em outro SKU ou 2x no mesmo SKU). Texto livre (ex.: "SIM") e numero fora da listagem
+// passam e ficam sinalizados como divergencia no Resumo do Pre-cadastro (ver criarContextoDivergencias).
+// modo 'estrito' (padrao, usado em Pecas/Estoque/devolucao): alem da repeticao, exige constar na listagem comprada e nao estar danificada.
+export async function validarEtiquetasParaSku(o: { etiquetas: any[]; skuBase: string; motoId?: number | null; jaTinha?: any[]; modo?: 'estrito' | 'preCadastro' }): Promise<string | null> {
   await garantirTabelaCompradas();
-  const todas = (o.etiquetas || []).map(normalizarEtiqueta).filter(Boolean);
+  const preCadastro = o.modo === 'preCadastro';
+  const todas = (o.etiquetas || []).map(normalizarEtiqueta).filter(Boolean).filter((e) => !preCadastro || /^SP\d{14}$/.test(e));
   const repetida = todas.find((e, i) => todas.indexOf(e) !== i);
   if (repetida) return `A etiqueta ${repetida} foi informada mais de uma vez neste SKU.`;
   const jaTinha = new Set((o.jaTinha || []).map(normalizarEtiqueta));
@@ -175,7 +217,7 @@ export async function validarEtiquetasParaSku(o: { etiquetas: any[]; skuBase: st
 
   // 1) precisa constar na listagem comprada (so cobra se a listagem ja foi importada)
   const total = await prisma.$queryRawUnsafe<any[]>(`SELECT COUNT(*)::int AS n FROM "DetranEtiquetaComprada"`);
-  if (Number(total[0]?.n) > 0) {
+  if (!preCadastro && Number(total[0]?.n) > 0) {
     const linhasCompradas = await prisma.$queryRawUnsafe<any[]>(`SELECT "numero","descartadaEm","descarteMotivo" FROM "DetranEtiquetaComprada" WHERE "numero" = ANY($1::text[])`, alvo);
     const compradas = new Set(linhasCompradas.map((r) => String(r.numero)));
     const descartada = linhasCompradas.find((r) => r.descartadaEm);

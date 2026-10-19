@@ -16,7 +16,7 @@ import { gerarTagsCadastroEmSegundoPlano } from '../lib/nuvemshopTags';
 import { shopeeReq } from '../lib/shopee-api';
 import { magaluSetPrice, magaluAtualizarConteudoSku, prepararTituloMagalu, trocarTermosSensiveisMagalu } from '../lib/magalu-api';
 import { carregarAnuncioBase } from '../lib/anuncioBase';
-import { validarEtiquetasParaSku, etiquetasDoTexto } from '../lib/detranEtiquetasCompradas';
+import { validarEtiquetasParaSku, etiquetasDoTexto, criarContextoDivergencias } from '../lib/detranEtiquetasCompradas';
 
 const CAMPOS_COMPLETOS_WHERE = {
   peso: { not: null as null },
@@ -613,7 +613,7 @@ cadastroRouter.post('/', requireCadastroAction('criar_pre_cadastro'), async (req
     if (existing) return res.status(400).json({ error: 'ID de peça já existe no cadastro' });
 
     // Etiquetas Detran: precisam constar na listagem comprada e nunca podem estar em outro SKU.
-    const erroEtiqueta = await validarEtiquetasParaSku({ etiquetas: etiquetasDoTexto(detranEtiqueta), skuBase: String(idPeca), motoId: Number(motoId) });
+    const erroEtiqueta = await validarEtiquetasParaSku({ etiquetas: etiquetasDoTexto(detranEtiqueta), skuBase: String(idPeca), motoId: Number(motoId), modo: 'preCadastro' });
     if (erroEtiqueta) return res.status(400).json({ error: erroEtiqueta });
 
     const record = await (prisma as any).cadastroPeca.create({
@@ -1021,6 +1021,9 @@ cadastroRouter.get('/resumo', async (req, res, next) => {
       for (const p of (scan.pastas || [])) { const b = getBaseSku(p.sku || p.nome); if (b) zipSkus.add(b); }
     } catch { /* Drive indisponível: segue sem info de zip */ }
 
+    // Divergencias de etiqueta (fora da listagem comprada / danificada / repetida em outro SKU), carregadas uma vez.
+    const ctxEtiquetas = await criarContextoDivergencias().catch(() => null);
+
     // Processa com concorrência limitada (só chama o Drive por SKU quando precisa checar "pasta movida")
     const itens: any[] = new Array(pecas.length);
     let cursor = 0;
@@ -1035,6 +1038,10 @@ cadastroRouter.get('/resumo', async (req, res, next) => {
         if (p.localizacao == null || String(p.localizacao).trim() === '') dadosFaltando.push('localização');
         if (!(Number(p.precoVenda) > 0)) dadosFaltando.push('preço');
         if (etiquetaDetranForaDoPadrao((p as any).detranEtiqueta)) dadosFaltando.push('Etiqueta Detran');
+        if (ctxEtiquetas) {
+          const divergencias = ctxEtiquetas(p.idPeca, p.motoId, (p as any).detranEtiqueta);
+          if (divergencias.length) dadosFaltando.push(`divergência de etiqueta (${divergencias.join('; ')})`);
+        }
 
         // Imagens (3 estados) — "tratada" exige 2+ arquivos com nome no padrão (Capa/02...):
         //  completo            = zip na pasta pendente OU 2+ fotos TRATADAS (Capa/02) na moto oficial
@@ -1217,7 +1224,7 @@ cadastroRouter.put('/:id', requireCadastroAction('editar_pre_cadastro'), async (
     const numeroMotorMsg = getNumeroMotorValidationMessage(detranEtiquetaEfetiva, tipoPecaAvulsaEfetivo, numeroMotorEfetivo);
     if (numeroMotorMsg) return res.status(400).json({ error: numeroMotorMsg });
     if (detranEtiqueta !== undefined) {
-      const erroEtiqueta = await validarEtiquetasParaSku({ etiquetas: etiquetasDoTexto(detranEtiqueta), skuBase: atual.idPeca, motoId: atual.motoId, jaTinha: etiquetasDoTexto(atual.detranEtiqueta) });
+      const erroEtiqueta = await validarEtiquetasParaSku({ etiquetas: etiquetasDoTexto(detranEtiqueta), skuBase: atual.idPeca, motoId: atual.motoId, jaTinha: etiquetasDoTexto(atual.detranEtiqueta), modo: 'preCadastro' });
       if (erroEtiqueta) return res.status(400).json({ error: erroEtiqueta });
     }
     const data: any = {};
