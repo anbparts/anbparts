@@ -9,6 +9,7 @@ import ModalImpressaoA4 from '@/app/components/ModalImpressaoA4';
 import { compressFotoCapaFile } from '@/lib/image-compression';
 import { canProcessAction } from '@/lib/permissions';
 import TabsBar from '@/components/ui/TabsBar';
+import { usePersistentTab } from '@/lib/use-persistent-tab';
 
 const API = API_BASE;
 
@@ -423,7 +424,7 @@ export default function CadastroPage() {
   const [resumoFiltro, setResumoFiltro] = useState<'' | 'liberadas' | 'pendentes' | 'pendente_imagens' | 'sem_fotos'>('');
   const [resumoFiltroSku, setResumoFiltroSku] = useState('');
   const [skusCopiados, setSkusCopiados] = useState(false);
-  const [paginaCadastro, setPaginaCadastro] = useState<'sku' | 'fotos-drive' | 'anuncio' | 'fotos' | 'categoria' | 'fotos-manutencao'>('sku');
+  const [paginaCadastro, setPaginaCadastro] = usePersistentTab<'sku' | 'fotos-drive' | 'anuncio' | 'fotos' | 'categoria' | 'fotos-manutencao'>('aba', 'sku', ['sku', 'fotos-drive', 'anuncio', 'fotos', 'categoria', 'fotos-manutencao']);
   // Aba Anuncio: cria anuncios de verdade em varios marketplaces (busca SKUs, categoria com ajuste
   // manual, fila 1-a-1 com progresso — mesmo padrao da aba Fotos Anuncios), avisando o Bling
   // automaticamente em seguida. Hoje: Shopee (categoria mapeada) e Magalu (categoria ainda

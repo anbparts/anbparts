@@ -5,6 +5,7 @@ import { API_BASE } from '@/lib/api-base';
 import { ChartPanel, HeatmapChart, HorizontalBarChart, ViewModeSwitch, type ViewMode } from '@/components/finance/Charts';
 import { api } from '@/lib/api';
 import { sensitiveMaskStyle, sensitiveText, useCompanyValueVisibility, useFinancialViewportMode } from '@/lib/company-values';
+import { usePersistentTab } from '@/lib/use-persistent-tab';
 
 const API = API_BASE;
 const MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
@@ -104,7 +105,7 @@ export default function FaturamentoMotoPage() {
   const [filtMes, setFiltMes] = useState('');
   const [relatorioSort, setRelatorioSort] = useState<{ key: string; dir: 'asc' | 'desc' }>({ key: 'ano', dir: 'desc' });
   const [loading, setLoading] = useState(true);
-  const [modo, setModo] = useState<ViewMode>('grafico');
+  const [modo, setModo] = usePersistentTab<ViewMode>('aba', 'grafico', ['grafico', 'relatorio', 'estoque', 'giro', 'valor', 'provisao']);
   const [estoqueData, setEstoqueData] = useState<{ meses: string[]; porMoto: any[]; consolidado: any[] } | null>(null);
   const [estoqueLoading, setEstoqueLoading] = useState(false);
   const [estoqueMotoFilt, setEstoqueMotoFilt] = useState('todas');

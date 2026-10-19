@@ -5,6 +5,7 @@ import { API_BASE } from '@/lib/api-base';
 import { useAuth } from '@/lib/auth';
 import { canProcessAction } from '@/lib/permissions';
 import TabsBar from '@/components/ui/TabsBar';
+import { usePersistentTab } from '@/lib/use-persistent-tab';
 
 const API = API_BASE;
 
@@ -56,7 +57,7 @@ type PecaItem = {
 export default function CurvaAbcPage() {
   const { user } = useAuth();
   const podeSugerirIA = canProcessAction(user as any, 'curva_abc', 'sugerir_ia');
-  const [aba, setAba] = useState<'relatorio' | 'manual' | 'conf'>('relatorio');
+  const [aba, setAba] = usePersistentTab<'relatorio' | 'manual' | 'conf'>('aba', 'relatorio', ['relatorio', 'manual', 'conf']);
   const [loading, setLoading] = useState(true);
   const [rel, setRel] = useState<Relatorio | null>(null);
   const [motos, setMotos] = useState<any[]>([]);
@@ -98,6 +99,8 @@ export default function CurvaAbcPage() {
   const [drillNome, setDrillNome] = useState<string | null>(null);
   const [drillData, setDrillData] = useState<{ itens: any[]; serieMeses: any[] } | null>(null);
   const [drillLoading, setDrillLoading] = useState(false);
+
+  useEffect(() => { if (aba === 'conf') carregarConf(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function carregarConf() {
     setConfLoading(true);

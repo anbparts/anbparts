@@ -5,6 +5,7 @@ import { ChartPanel, ColumnChart, DonutChart, HorizontalBarChart, ViewModeSwitch
 import { api } from '@/lib/api';
 import { useFinancialViewportMode } from '@/lib/company-values';
 import { compressFotoCapaFile } from '@/lib/image-compression';
+import { usePersistentTab } from '@/lib/use-persistent-tab';
 
 const CATEGORIAS = ['Insumo', 'Servicos', 'Taxas', 'Aluguel', 'Sistemas', 'Imposto', 'Moto', 'Outros'];
 const RECORRENCIAS = [
@@ -473,7 +474,7 @@ export default function DespesasPage() {
   const [solicitandoRelatorioMp, setSolicitandoRelatorioMp] = useState(false);
   const [analisandoCsvMp, setAnalisandoCsvMp] = useState(false);
   const [importandoCsvMp, setImportandoCsvMp] = useState(false);
-  const [modo, setModo] = useState<ViewMode>('relatorio');
+  const [modo, setModo] = usePersistentTab<ViewMode>('aba', 'relatorio', ['grafico', 'relatorio', 'estoque', 'giro', 'valor', 'provisao']);
   const [pagamentoDespesa, setPagamentoDespesa] = useState<any | null>(null);
   const [deletePrompt, setDeletePrompt] = useState<{ despesa: any; futureCount: number } | null>(null);
   const [mercadoPagoAte, setMercadoPagoAte] = useState(today());

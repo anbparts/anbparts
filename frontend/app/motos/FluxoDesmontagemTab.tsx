@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { API_BASE } from '@/lib/api-base';
 
 const API = API_BASE;
@@ -28,6 +28,20 @@ const ETAPAS: Array<{ n: number; nome: string; fase: Fase; icone: string }> = [
 ];
 
 const PENDENTE = '#7b7a8e';
+
+// Nivel de compactacao conforme a largura disponivel: o fluxo se ajusta sozinho (sem barra de rolagem); abaixo do minimo vira lista vertical.
+type Nivel = 'normal' | 'compacto' | 'minimo' | 'vertical';
+const TOKENS: Record<Exclude<Nivel, 'vertical'>, { circulo: number; fonteCirculo: number; icone: number; nome: number; valor: number; rotulo: number; rodape: number; gap: number; padX: number; faixa: number; nomeMinH: number }> = {
+  normal:   { circulo: 40, fonteCirculo: 18, icone: 26, nome: 12,   valor: 12.5, rotulo: 10.5, rodape: 10,  gap: 8, padX: 9, faixa: 12,   nomeMinH: 96 },
+  compacto: { circulo: 34, fonteCirculo: 15, icone: 20, nome: 10.5, valor: 11,   rotulo: 9.5,  rodape: 8.5, gap: 6, padX: 6, faixa: 10.5, nomeMinH: 84 },
+  minimo:   { circulo: 28, fonteCirculo: 13, icone: 0,  nome: 9.5,  valor: 10,   rotulo: 9,    rodape: 7.5, gap: 4, padX: 4, faixa: 9,    nomeMinH: 64 },
+};
+function nivelPorLargura(largura: number, isPhone: boolean): Nivel {
+  if (isPhone || largura < 820) return 'vertical';
+  if (largura < 940) return 'minimo';
+  if (largura < 1200) return 'compacto';
+  return 'normal';
+}
 
 function Icone({ tipo, cor, tamanho = 34 }: { tipo: string; cor: string; tamanho?: number }) {
   const props = { width: tamanho, height: tamanho, viewBox: '0 0 24 24', fill: 'none', stroke: cor, strokeWidth: 1.7, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
@@ -94,6 +108,24 @@ export default function FluxoDesmontagemTab({ canEdit, isPhone }: { canEdit: boo
   const [editando, setEditando] = useState<{ motoId: number; etapa: number; data: string } | null>(null);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState('');
+  const contRef = useRef<HTMLDivElement | null>(null);
+  const [largura, setLargura] = useState(1400);
+  useEffect(() => {
+    const el = contRef.current;
+    if (!el) return undefined;
+    const medir = () => setLargura(el.clientWidth);
+    medir();
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(medir);
+      ro.observe(el);
+      return () => ro.disconnect();
+    }
+    window.addEventListener('resize', medir);
+    return () => window.removeEventListener('resize', medir);
+  }, []);
+  // largura util do fluxo = largura da pagina menos o recuo dos cartoes
+  const nivel = nivelPorLargura(largura - (isPhone ? 24 : 100), isPhone);
+  const compactoHeader = !isPhone && largura < 1050;
 
   async function carregar() {
     try {
@@ -167,6 +199,7 @@ export default function FluxoDesmontagemTab({ canEdit, isPhone }: { canEdit: boo
 
   // ── Cartao de uma etapa (desktop) ──
   function CartaoEtapa({ motoId, l, atual }: { motoId: number; l: any; atual: boolean }) {
+    const T = TOKENS[nivel === 'vertical' ? 'normal' : nivel];
     const fase = FASES[l.fase as Fase];
     const concluida = !!l.data;
     const emAndamento = !concluida && atual;
@@ -175,24 +208,24 @@ export default function FluxoDesmontagemTab({ canEdit, isPhone }: { canEdit: boo
     const corRodape = concluida ? fase.cor : emAndamento ? '#c2560a' : '#6b6a80';
     const ativo = editando?.motoId === motoId && editando?.etapa === l.n;
     return (
-      <div style={{ background: 'var(--white)', border: `2px solid ${ativo ? fase.cor : fase.claro}`, borderTop: `7px solid ${fase.cor}`, borderRadius: 10, display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: ativo ? '0 4px 14px rgba(15,23,42,.12)' : 'none' }}>
-        <div style={{ padding: '14px 10px 10px', textAlign: 'center', minHeight: 118, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-          <Icone tipo={l.icone} cor={fase.cor} />
-          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.25 }}>{l.nome}</div>
+      <div style={{ background: 'var(--white)', border: `2px solid ${ativo ? fase.cor : fase.claro}`, borderTop: `6px solid ${fase.cor}`, borderRadius: 9, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: '100%', boxShadow: ativo ? '0 4px 14px rgba(15,23,42,.12)' : 'none' }}>
+        <div style={{ padding: `10px ${T.padX}px 8px`, textAlign: 'center', minHeight: T.nomeMinH, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+          {T.icone > 0 ? <Icone tipo={l.icone} cor={fase.cor} tamanho={T.icone} /> : null}
+          <div style={{ fontSize: T.nome, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.22, wordBreak: 'break-word' }}>{l.nome}</div>
         </div>
-        <div style={{ padding: '10px 12px', borderTop: '1px solid var(--border)', display: 'grid', gap: 8, fontSize: 12 }}>
+        <div style={{ padding: `8px ${T.padX}px`, borderTop: '1px solid var(--border)', display: 'grid', gap: 6 }}>
           <div>
-            <div style={{ color: 'var(--ink-muted)', fontSize: 11 }}>Data</div>
-            <div style={{ fontWeight: 700, color: concluida ? 'var(--ink)' : 'var(--ink-muted)', fontSize: 13.5 }}>{fmtData(l.data)}</div>
+            <div style={{ color: 'var(--ink-muted)', fontSize: T.rotulo }}>Data</div>
+            <div style={{ fontWeight: 700, color: concluida ? 'var(--ink)' : 'var(--ink-muted)', fontSize: T.valor }}>{fmtData(l.data)}</div>
           </div>
           <div>
-            <div style={{ color: 'var(--ink-muted)', fontSize: 11 }}>Duração</div>
-            <div style={{ fontWeight: 700, color: l.duracao != null && l.duracao < 0 ? '#dc2626' : concluida ? 'var(--ink)' : 'var(--ink-muted)', fontSize: 13.5 }}>{l.duracao != null ? pluralDias(l.duracao) : '—'}</div>
+            <div style={{ color: 'var(--ink-muted)', fontSize: T.rotulo }}>Duração</div>
+            <div style={{ fontWeight: 700, color: l.duracao != null && l.duracao < 0 ? '#dc2626' : concluida ? 'var(--ink)' : 'var(--ink-muted)', fontSize: T.valor }}>{l.duracao != null ? pluralDias(l.duracao) : '—'}</div>
           </div>
         </div>
         <button type="button" disabled={!canEdit} onClick={() => abrirEdicao(motoId, l.n, l.data)}
           title={canEdit ? (concluida ? 'Alterar a data ou voltar para pendente' : 'Confirmar esta etapa') : 'Seu usuário não tem permissão para alterar o fluxo'}
-          style={{ marginTop: 'auto', border: 'none', background: fundoRodape, color: corRodape, fontSize: 11, fontWeight: 800, letterSpacing: '.3px', padding: '9px 6px', cursor: canEdit ? 'pointer' : 'default', fontFamily: 'Geist, sans-serif' }}>
+          style={{ marginTop: 'auto', border: 'none', background: fundoRodape, color: corRodape, fontSize: T.rodape, fontWeight: 800, letterSpacing: '.2px', padding: '8px 3px', cursor: canEdit ? 'pointer' : 'default', fontFamily: 'Geist, sans-serif', lineHeight: 1.2 }}>
           {estado}
         </button>
       </div>
@@ -257,7 +290,7 @@ export default function FluxoDesmontagemTab({ canEdit, isPhone }: { canEdit: boo
       </div>
     );
 
-    if (isPhone) {
+    if (nivel === 'vertical') {
       return (
         <div>
           {a.linhas.map((l: any, idx: number) => {
@@ -288,39 +321,37 @@ export default function FluxoDesmontagemTab({ canEdit, isPhone }: { canEdit: boo
       );
     }
 
+    const T = TOKENS[nivel as Exclude<Nivel, 'vertical'>];
+    const colunas = 'repeat(10, minmax(0, 1fr))';
     return (
       <div>
-        <div style={{ overflowX: 'auto', paddingBottom: 6 }}>
-          <div style={{ minWidth: 1180 }}>
-            {/* Faixas das fases */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(10, minmax(112px, 1fr))', gap: 8, marginBottom: 14 }}>
-              {([['compra', '1 / 2'], ['recepcao', '2 / 3'], ['documentacao', '3 / 9'], ['desmonte', '9 / 11']] as Array<[Fase, string]>).map(([k, col]) => (
-                <div key={k} style={{ gridColumn: col, background: FASES[k].cor, color: '#fff', borderRadius: 8, padding: '9px 0', textAlign: 'center', fontSize: 13, fontWeight: 800, letterSpacing: '.3px' }}>{FASES[k].rotulo}</div>
-              ))}
-            </div>
-            {/* Linha de circulos */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(10, minmax(112px, 1fr))', gap: 8, marginBottom: 12 }}>
-              {a.linhas.map((l: any, idx: number) => {
-                const fase = FASES[l.fase as Fase];
-                const concluida = !!l.data;
-                const emAndamento = !concluida && a.atual === l.n;
-                return (
-                  <div key={l.n} style={{ display: 'flex', alignItems: 'center' }}>
-                    <div style={{ flex: 1, height: 3, background: idx === 0 ? 'transparent' : fase.cor, opacity: idx === 0 ? 0 : 0.85 }} />
-                    <div style={{ position: 'relative', width: 46, height: 46, borderRadius: '50%', background: concluida || emAndamento ? fase.cor : PENDENTE, color: '#fff', fontSize: 20, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(15,23,42,.18)' }}>
-                      {l.n}
-                      <span style={{ position: 'absolute', bottom: -14, left: '50%', transform: 'translateX(-50%)', width: 20, height: 20, borderRadius: '50%', background: concluida ? '#16a34a' : '#fff', border: concluida ? '2px solid #fff' : `5px solid ${emAndamento ? fase.cor : PENDENTE}`, color: '#fff', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>{concluida ? '✓' : ''}</span>
-                    </div>
-                    <div style={{ flex: 1, height: 3, background: idx === a.linhas.length - 1 ? 'transparent' : fase.cor, opacity: idx === a.linhas.length - 1 ? 0 : 0.85 }} />
-                  </div>
-                );
-              })}
-            </div>
-            {/* Cartoes */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(10, minmax(112px, 1fr))', gap: 8, marginTop: 22 }}>
-              {a.linhas.map((l: any) => <div key={l.n}>{CartaoEtapa({ motoId: moto.id, l, atual: a.atual === l.n })}</div>)}
-            </div>
-          </div>
+        {/* Faixas das fases */}
+        <div style={{ display: 'grid', gridTemplateColumns: colunas, gap: T.gap, marginBottom: 12 }}>
+          {([['compra', '1 / 2'], ['recepcao', '2 / 3'], ['documentacao', '3 / 9'], ['desmonte', '9 / 11']] as Array<[Fase, string]>).map(([k, col]) => (
+            <div key={k} style={{ gridColumn: col, background: FASES[k].cor, color: '#fff', borderRadius: 7, padding: '7px 2px', textAlign: 'center', fontSize: T.faixa, fontWeight: 800, letterSpacing: '.2px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{FASES[k].rotulo}</div>
+          ))}
+        </div>
+        {/* Linha de circulos */}
+        <div style={{ display: 'grid', gridTemplateColumns: colunas, gap: T.gap, marginBottom: 10 }}>
+          {a.linhas.map((l: any, idx: number) => {
+            const fase = FASES[l.fase as Fase];
+            const concluida = !!l.data;
+            const emAndamento = !concluida && a.atual === l.n;
+            return (
+              <div key={l.n} style={{ display: 'flex', alignItems: 'center' }}>
+                <div style={{ flex: 1, height: 3, background: idx === 0 ? 'transparent' : fase.cor, opacity: idx === 0 ? 0 : 0.85 }} />
+                <div style={{ position: 'relative', width: T.circulo, height: T.circulo, flexShrink: 0, borderRadius: '50%', background: concluida || emAndamento ? fase.cor : PENDENTE, color: '#fff', fontSize: T.fonteCirculo, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(15,23,42,.18)' }}>
+                  {l.n}
+                  <span style={{ position: 'absolute', bottom: -12, left: '50%', transform: 'translateX(-50%)', width: 17, height: 17, borderRadius: '50%', background: concluida ? '#16a34a' : '#fff', border: concluida ? '2px solid #fff' : `4px solid ${emAndamento ? fase.cor : PENDENTE}`, color: '#fff', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>{concluida ? '✓' : ''}</span>
+                </div>
+                <div style={{ flex: 1, height: 3, background: idx === a.linhas.length - 1 ? 'transparent' : fase.cor, opacity: idx === a.linhas.length - 1 ? 0 : 0.85 }} />
+              </div>
+            );
+          })}
+        </div>
+        {/* Cartoes */}
+        <div style={{ display: 'grid', gridTemplateColumns: colunas, gap: T.gap, marginTop: 18, alignItems: 'stretch' }}>
+          {a.linhas.map((l: any) => <div key={l.n}>{CartaoEtapa({ motoId: moto.id, l, atual: a.atual === l.n })}</div>)}
         </div>
         {BarraEdicao({ motoId: moto.id, a })}
         {rodape}
@@ -329,7 +360,7 @@ export default function FluxoDesmontagemTab({ canEdit, isPhone }: { canEdit: boo
   }
 
   return (
-    <div style={{ padding: isPhone ? 12 : 28, display: 'grid', gap: 16 }}>
+    <div ref={contRef} style={{ padding: isPhone ? 12 : 28, display: 'grid', gap: 16 }}>
       <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 12, padding: isPhone ? 12 : '14px 18px', display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
         <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por ID, marca, modelo ou placa..."
           style={{ flex: '1 1 260px', border: '1px solid var(--border)', borderRadius: 999, padding: '9px 16px', fontSize: 13, background: 'var(--gray-50, #f8fafc)', fontFamily: 'Geist, sans-serif', outline: 'none' }} />
@@ -354,13 +385,13 @@ export default function FluxoDesmontagemTab({ canEdit, isPhone }: { canEdit: boo
         return (
           <div key={moto.id} style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 14, overflow: 'hidden' }}>
             <button type="button" onClick={() => alternarExpandido(moto.id)}
-              style={{ width: '100%', border: 'none', background: 'transparent', cursor: 'pointer', textAlign: 'left', padding: isPhone ? '14px' : '16px 20px', display: 'grid', gridTemplateColumns: isPhone ? '24px minmax(0,1fr)' : '24px minmax(220px, 1.3fr) minmax(200px, 1fr) minmax(220px, 1.2fr) 150px 130px', gap: isPhone ? 10 : 18, alignItems: 'center', fontFamily: 'Geist, sans-serif' }}>
+              style={{ width: '100%', border: 'none', background: 'transparent', cursor: 'pointer', textAlign: 'left', padding: isPhone ? '14px' : '16px 20px', display: 'grid', gridTemplateColumns: isPhone ? '24px minmax(0,1fr)' : compactoHeader ? '24px minmax(0, 1fr) auto' : '24px minmax(200px, 1.2fr) minmax(160px, 1fr) minmax(200px, 1.2fr) 120px 120px', gap: isPhone ? 10 : 18, alignItems: 'center', fontFamily: 'Geist, sans-serif' }}>
               <span style={{ color: 'var(--ink-muted)', fontSize: 14 }}>{aberto ? '▾' : '▸'}</span>
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--ink)' }}><span style={{ color: 'var(--ink-muted)', fontWeight: 600 }}>#{moto.id}</span> {moto.marca} {moto.modelo}{moto.ano ? ` ${moto.ano}` : ''}</div>
-                <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>{moto.placa ? `Placa ${moto.placa}` : 'Sem placa'}</div>
+                <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>{moto.placa ? `Placa ${moto.placa}` : 'Sem placa'}{compactoHeader ? ` · ${a.concluidas}/${ETAPAS.length} etapas${completa ? '' : ` · etapa ${a.atual}`}` : ''}</div>
               </div>
-              {!isPhone && (
+              {!isPhone && !compactoHeader && (
                 <div>
                   <div style={{ height: 8, borderRadius: 99, background: '#e9e9f1', overflow: 'hidden' }}>
                     <div style={{ width: `${(a.concluidas / ETAPAS.length) * 100}%`, height: '100%', background: completa ? '#16a34a' : faseAtual.cor, borderRadius: 99 }} />
@@ -368,12 +399,12 @@ export default function FluxoDesmontagemTab({ canEdit, isPhone }: { canEdit: boo
                   <div style={{ fontSize: 11.5, color: 'var(--ink-muted)', marginTop: 5 }}>{a.concluidas} de {ETAPAS.length} etapas concluídas</div>
                 </div>
               )}
-              {!isPhone && (
+              {!isPhone && !compactoHeader && (
                 <div style={{ fontSize: 12.5, color: 'var(--ink-soft)' }}>
                   {completa ? 'Fluxo finalizado' : <><span style={{ color: faseAtual.cor, fontWeight: 700 }}>Etapa {a.atual}</span> · {etapaAtual?.nome}</>}
                 </div>
               )}
-              {!isPhone && (
+              {!isPhone && !compactoHeader && (
                 <div style={{ fontSize: 12.5, color: 'var(--ink-soft)' }}>
                   {a.diasDesdeCompra != null ? <><strong>{pluralDias(a.diasDesdeCompra)}</strong><div style={{ fontSize: 11, color: 'var(--ink-muted)' }}>{completa ? 'da compra até a conclusão' : 'desde a compra'}</div></> : <span style={{ color: 'var(--ink-muted)' }}>Sem data de compra</span>}
                 </div>

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ChartPanel, HeatmapChart, ViewModeSwitch, type ViewMode } from '@/components/finance/Charts';
 import { api } from '@/lib/api';
 import { sensitiveMaskStyle, sensitiveText, useCompanyValueVisibility, useFinancialViewportMode } from '@/lib/company-values';
+import { usePersistentTab } from '@/lib/use-persistent-tab';
 
 const MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 const currentYear = String(new Date().getFullYear());
@@ -61,7 +62,7 @@ const cs: any = {
 
 export default function DespesasReceitaPage() {
   const [loading, setLoading] = useState(true);
-  const [modo, setModo] = useState<ViewMode>('grafico');
+  const [modo, setModo] = usePersistentTab<ViewMode>('aba', 'grafico', ['grafico', 'relatorio', 'estoque', 'giro', 'valor', 'provisao']);
   const [filtroAno, setFiltroAno] = useState(currentYear);
   const [filtroMes, setFiltroMes] = useState(currentMonth);
   const [payload, setPayload] = useState<any>(null);

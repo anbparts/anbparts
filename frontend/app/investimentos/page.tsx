@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { ChartPanel, DonutChart, HeatmapChart, HorizontalBarChart, ViewModeSwitch, type ViewMode } from '@/components/finance/Charts';
 import { api } from '@/lib/api';
+import { usePersistentTab } from '@/lib/use-persistent-tab';
 const SOCIOS = ['Bruno', 'Nelson', 'Alex'];
 const DESPESA_CATEGORIAS = ['Insumo', 'Servicos', 'Taxas', 'Aluguel', 'Sistemas', 'Imposto', 'Moto', 'Outros'];
 const SOCIO_COLORS: Record<string, string> = {
@@ -174,7 +175,7 @@ export default function InvestimentosPage() {
   const [ordenacao, setOrdenacao] = useState<{ key: string; dir: 'asc' | 'desc' }>({ key: 'data', dir: 'desc' });
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [modo, setModo] = useState<ViewMode>('grafico');
+  const [modo, setModo] = usePersistentTab<ViewMode>('aba', 'grafico', ['grafico', 'relatorio', 'estoque', 'giro', 'valor', 'provisao']);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState({ data: today(), socio: 'Bruno', tipo: 'Moto', moto: '', valor: '' });
   const [showReplicarDespesaModal, setShowReplicarDespesaModal] = useState(false);

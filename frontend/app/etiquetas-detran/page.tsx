@@ -5,6 +5,7 @@ import { API_BASE } from '@/lib/api-base';
 import { compressFotoCapaFile } from '@/lib/image-compression';
 import { useAuth } from '@/lib/auth';
 import { canProcessAction } from '@/lib/permissions';
+import { usePersistentTab } from '@/lib/use-persistent-tab';
 
 const API = API_BASE;
 
@@ -240,7 +241,7 @@ export default function EtiquetasDetranPage() {
     document.addEventListener('mousedown', fora);
     return () => document.removeEventListener('mousedown', fora);
   }, [menuPendenciasAberto]);
-  const [abaPrincipal, setAbaPrincipal] = useState<'sistema' | 'compradas'>('sistema');
+  const [abaPrincipal, setAbaPrincipal] = usePersistentTab<'sistema' | 'compradas'>('aba', 'sistema', ['sistema', 'compradas']);
   const [compradasLista, setCompradasLista] = useState<any>(null);
   const [compradasFiltro, setCompradasFiltro] = useState({ tipo: 'todas', situacao: 'disponivel', busca: '' });
   const [carregandoCompradas, setCarregandoCompradas] = useState(false);

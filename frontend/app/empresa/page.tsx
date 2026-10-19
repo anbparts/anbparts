@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/auth';
 import { canProcessAction } from '@/lib/permissions';
 import FornecedoresTab from './FornecedoresTab';
 import AcessosTab from './AcessosTab';
+import { usePersistentTab } from '@/lib/use-persistent-tab';
 
 const EMPRESA_ANEXO_FIELDS = [
   { key: 'cartaoCnpj', label: 'Cartao CNPJ' },
@@ -159,7 +160,7 @@ export default function EmpresaPage() {
   const [feedback, setFeedback] = useState('');
   const [localError, setLocalError] = useState('');
   const [isPhone, setIsPhone] = useState(false);
-  const [aba, setAba] = useState<'dados' | 'anexos' | 'acessos' | 'fornecedores'>('dados');
+  const [aba, setAba] = usePersistentTab<'dados' | 'anexos' | 'acessos' | 'fornecedores'>('aba', 'dados', ['dados', 'anexos', 'acessos', 'fornecedores']);
   const [snapshotDados, setSnapshotDados] = useState('');
   const [extras, setExtras] = useState<Array<{ id: string; name: string; dataUrl?: string } | null>>([]);
   const [contasBancarias, setContasBancarias] = useState<ContaBancaria[]>([]);

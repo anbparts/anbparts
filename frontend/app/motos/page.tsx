@@ -8,6 +8,7 @@ import { API_BASE } from '@/lib/api-base';
 import { useAuth } from '@/lib/auth';
 import { canProcessAction } from '@/lib/permissions';
 import FluxoDesmontagemTab from './FluxoDesmontagemTab';
+import { usePersistentTab } from '@/lib/use-persistent-tab';
 const API = API_BASE;
 
 function fmt(v: number) {
@@ -1873,7 +1874,7 @@ export default function MotosPage() {
   const canContratosMoto = canProcessAction(user, 'motos', 'contratos');
   const canFluxoMoto = canProcessAction(user, 'motos', 'fluxo');
   const canExcluirMoto = canProcessAction(user, 'motos', 'excluir');
-  const [abaAtiva, setAbaAtiva] = useState<'cadastro' | 'fluxo' | 'contratos'>('cadastro');
+  const [abaAtiva, setAbaAtiva] = usePersistentTab<'cadastro' | 'fluxo' | 'contratos'>('aba', 'cadastro', ['cadastro', 'fluxo', 'contratos']);
   const [motos, setMotos] = useState<any[]>([]);
   const [filtered, setFiltered] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);

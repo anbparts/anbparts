@@ -5,6 +5,7 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { canProcessAction } from '@/lib/permissions';
 import TabsBar from '@/components/ui/TabsBar';
+import { usePersistentTab } from '@/lib/use-persistent-tab';
 
 function fmt(value: any) {
   return Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -29,7 +30,7 @@ export default function SucataPage() {
   const { user } = useAuth();
   const canGerarTexto = canProcessAction(user, 'sucata', 'gerar_texto');
 
-  const [aba, setAba] = useState<'pendente' | 'vendida'>('pendente');
+  const [aba, setAba] = usePersistentTab<'pendente' | 'vendida'>('aba', 'pendente', ['pendente', 'vendida']);
   const [loading, setLoading] = useState(true);
   const [pecas, setPecas] = useState<any[]>([]);
   const [selecionadas, setSelecionadas] = useState<Set<number>>(new Set());

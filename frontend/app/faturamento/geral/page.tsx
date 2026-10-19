@@ -5,6 +5,7 @@ import { ChartPanel, DonutChart, HeatmapChart, HorizontalBarChart, ViewModeSwitc
 import { api } from '@/lib/api';
 import { API_BASE } from '@/lib/api-base';
 import { sensitiveMaskStyle, sensitiveText, useCompanyValueVisibility, useFinancialViewportMode } from '@/lib/company-values';
+import { usePersistentTab } from '@/lib/use-persistent-tab';
 
 const API = API_BASE;
 
@@ -176,7 +177,7 @@ export default function FaturamentoGeralPage() {
   const [data, setData] = useState<any[]>([]);
   const [filtAno, setFiltAno] = useState(currentYear());
   const [loading, setLoading] = useState(true);
-  const [modo, setModo] = useState<ViewMode>('grafico');
+  const [modo, setModo] = usePersistentTab<ViewMode>('aba', 'grafico', ['grafico', 'relatorio', 'estoque', 'giro', 'valor', 'provisao']);
   const [giroData, setGiroData] = useState<any[] | null>(null);
   const [giroLoading, setGiroLoading] = useState(false);
   const [giroAno, setGiroAno] = useState('');
