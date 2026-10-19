@@ -2,6 +2,7 @@
 
 import { type CSSProperties, type ReactNode } from 'react';
 import { sensitiveMaskStyle, sensitiveText, useCompanyValueVisibility } from '@/lib/company-values';
+import TabsBar from '@/components/ui/TabsBar';
 
 export type ViewMode = 'grafico' | 'relatorio' | 'estoque' | 'giro' | 'valor' | 'provisao';
 
@@ -54,6 +55,7 @@ function emptyBlock(message: string) {
   );
 }
 
+// As "visoes" (Grafico / Relatorio / ...) usam a barra de abas padrao do sistema (sublinhada), colocada logo abaixo do cabecalho da pagina.
 export function ViewModeSwitch({
   value,
   onChange,
@@ -63,37 +65,13 @@ export function ViewModeSwitch({
   onChange: (mode: ViewMode) => void;
   modes?: ViewMode[];
 }) {
-  const wrap: CSSProperties = {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 4,
-    flexWrap: 'wrap',
-    padding: 4,
-    borderRadius: 999,
-    background: 'var(--gray-50)',
-    border: '1px solid var(--border)',
-  };
-
-  const button = (active: boolean): CSSProperties => ({
-    border: 'none',
-    background: active ? 'var(--ink)' : 'transparent',
-    color: active ? 'var(--white)' : 'var(--ink-soft)',
-    padding: '7px 14px',
-    borderRadius: 999,
-    fontSize: 12,
-    fontWeight: 600,
-    cursor: 'pointer',
-    fontFamily: 'Geist, sans-serif',
-    transition: 'all .18s ease',
-  });
-
   const allButtons: { mode: ViewMode; label: string }[] = [
-    { mode: 'grafico',   label: 'Grafico' },
-    { mode: 'relatorio', label: 'Relatorio' },
+    { mode: 'grafico',   label: 'Gráfico' },
+    { mode: 'relatorio', label: 'Relatório' },
     { mode: 'estoque',   label: '% Estoque' },
     { mode: 'giro',      label: 'Tempo de Giro' },
     { mode: 'valor',     label: 'Por Valor' },
-    { mode: 'provisao',  label: 'Provisao' },
+    { mode: 'provisao',  label: 'Provisão' },
   ];
   const modosExtras: ViewMode[] = ['estoque', 'giro', 'valor', 'provisao'];
   const buttons = modes
@@ -101,13 +79,11 @@ export function ViewModeSwitch({
     : allButtons.filter(b => !modosExtras.includes(b.mode));
 
   return (
-    <div style={wrap}>
-      {buttons.map(({ mode, label }) => (
-        <button key={mode} type="button" style={button(value === mode)} onClick={() => onChange(mode)}>
-          {label}
-        </button>
-      ))}
-    </div>
+    <TabsBar
+      tabs={buttons.map(({ mode, label }) => ({ id: mode, label }))}
+      active={value}
+      onChange={(id) => onChange(id as ViewMode)}
+    />
   );
 }
 

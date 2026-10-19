@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { canProcessAction } from '@/lib/permissions';
+import TabsBar from '@/components/ui/TabsBar';
 
 function fmt(value: any) {
   return Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -89,21 +90,13 @@ export default function SucataPage() {
           <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)', letterSpacing: '-0.3px' }}>Sucata</div>
           <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>Peças de sucata cadastradas via Pré-Cadastro</div>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button
-            onClick={() => setAba('pendente')}
-            style={{ ...s.btn, background: aba === 'pendente' ? 'var(--gray-800)' : 'var(--white)', color: aba === 'pendente' ? '#fff' : 'var(--ink)', borderColor: 'var(--border)' }}
-          >
-            Sucatas Pendentes
-          </button>
-          <button
-            onClick={() => setAba('vendida')}
-            style={{ ...s.btn, background: aba === 'vendida' ? 'var(--gray-800)' : 'var(--white)', color: aba === 'vendida' ? '#fff' : 'var(--ink)', borderColor: 'var(--border)' }}
-          >
-            Vendidas
-          </button>
-        </div>
       </div>
+
+      <TabsBar
+        tabs={[{ id: 'pendente', label: 'Sucatas Pendentes' }, { id: 'vendida', label: 'Vendidas' }]}
+        active={aba}
+        onChange={(k) => setAba(k as any)}
+      />
 
       <div style={{ padding: 28 }}>
         {aba === 'pendente' && (

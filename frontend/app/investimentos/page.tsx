@@ -281,6 +281,7 @@ export default function InvestimentosPage() {
     rows.map((item) => normalizeTipo(item.tipo)),
   )).sort((a, b) => a.localeCompare(b, 'pt-BR'));
 
+  const filtroAtivo = Boolean(filtroAno || filtroSocio || filtroTipo || filtroPeriodo);
   const mesesPeriodo = mesesDoFiltroPeriodo(filtroPeriodo);
   const filtradas = rows.filter((item) => {
     const dataItem = new Date(item.data);
@@ -515,7 +516,6 @@ export default function InvestimentosPage() {
           <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>Aportes por socio</div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', width: topbarActionsWidth }}>
-          <ViewModeSwitch value={modo} onChange={setModo} />
           <button
             onClick={() => {
               if (showForm) {
@@ -530,6 +530,7 @@ export default function InvestimentosPage() {
           </button>
         </div>
       </div>
+      <ViewModeSwitch value={modo} onChange={setModo} />
 
       <div style={{ padding: pagePadding }}>
         <div style={{ display: 'grid', gridTemplateColumns: summaryColumns, gap: 14, marginBottom: 20 }}>
@@ -685,6 +686,34 @@ export default function InvestimentosPage() {
               </select>
             </div>
           </div>
+          {filtroAtivo && sociosChart.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, padding: '10px 18px', background: 'var(--gray-25, #fafafa)' }}>
+              <span style={{ fontSize: 11.5, color: 'var(--ink-muted)', alignSelf: 'center' }}>Subtotal no filtro:</span>
+              {sociosChart.map((socio) => (
+                <span
+                  key={socio.label}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    fontSize: 12.5,
+                    fontWeight: 600,
+                    padding: '4px 10px',
+                    borderRadius: 999,
+                    background: 'var(--white)',
+                    border: '1px solid var(--border)',
+                    color: 'var(--ink)',
+                  }}
+                >
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: socio.color || 'var(--ink-muted)' }} />
+                  {socio.label}: {fmt(socio.value)}
+                </span>
+              ))}
+              <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', alignSelf: 'center', marginLeft: 4 }}>
+                Total: {fmt(totalFiltro)}
+              </span>
+            </div>
+          )}
         </div>
 
         {modo === 'grafico' ? (

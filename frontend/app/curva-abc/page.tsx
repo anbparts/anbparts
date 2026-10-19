@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { API_BASE } from '@/lib/api-base';
 import { useAuth } from '@/lib/auth';
 import { canProcessAction } from '@/lib/permissions';
+import TabsBar from '@/components/ui/TabsBar';
 
 const API = API_BASE;
 
@@ -469,16 +470,14 @@ export default function CurvaAbcPage() {
               ))}
             </div>
           )}
-          <div style={{ display: 'inline-flex', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
-            {([['relatorio', 'Relatório'], ['manual', 'Categorização manual'], ['conf', 'Conf. Categorias']] as const).map(([k, label]) => (
-              <button key={k} onClick={() => { setAba(k); if (k === 'conf' && !confBuscou) carregarConf(); }}
-                style={{ border: 'none', padding: '8px 16px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'Inter, sans-serif', background: aba === k ? '#7c3aed' : 'var(--white)', color: aba === k ? '#fff' : 'var(--gray-600)' }}>
-                {label}
-              </button>
-            ))}
-          </div>
         </div>
       </div>
+
+      <TabsBar
+        tabs={[{ id: 'relatorio', label: 'Relatório' }, { id: 'manual', label: 'Categorização manual' }, { id: 'conf', label: 'Conf. Categorias' }]}
+        active={aba}
+        onChange={(k) => { setAba(k as any); if (k === 'conf' && !confBuscou) carregarConf(); }}
+      />
 
       <div style={{ padding: '20px 28px', display: 'flex', flexDirection: 'column', gap: 16 }}>
         {aba === 'relatorio' && <>

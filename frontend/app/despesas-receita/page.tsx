@@ -255,8 +255,8 @@ export default function DespesasReceitaPage() {
           <div style={cs.title}>Despesas x Receita</div>
           <div style={cs.sub}>Comparativo mensal entre receita bruta, taxas, frete e despesas gerais</div>
         </div>
-        <ViewModeSwitch value={modo} onChange={setModo} />
       </div>
+      <ViewModeSwitch value={modo} onChange={setModo} />
 
       <div style={{ padding: isCompact ? 16 : 28 }}>
         <div

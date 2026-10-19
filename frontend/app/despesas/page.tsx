@@ -894,7 +894,6 @@ export default function DespesasPage() {
           <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>Controle de vencimento, pagamento e comprovantes</div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, width: isCompact ? '100%' : 'auto', flexWrap: 'wrap' }}>
-          <ViewModeSwitch value={modo} onChange={setModo} modes={['relatorio', 'grafico']} />
           <button
             onClick={toggleFormVisibility}
             style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px 18px', borderRadius: 7, background: 'var(--blue-500)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 500, cursor: 'pointer', width: isPhone ? '100%' : 'auto' }}
@@ -903,6 +902,7 @@ export default function DespesasPage() {
           </button>
         </div>
       </div>
+      <ViewModeSwitch value={modo} onChange={setModo} modes={['relatorio', 'grafico']} />
 
       <div style={{ padding: isCompact ? 16 : 28 }}>
         <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fit, minmax(170px, 1fr))', gap: 14, marginBottom: 20 }}>

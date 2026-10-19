@@ -670,8 +670,8 @@ export default function FaturamentoGeralPage() {
           <div style={cs.title}>Faturamento Geral</div>
           <div style={cs.sub}>Receita total consolidada</div>
         </div>
-        <ViewModeSwitch value={modo} onChange={setModo} modes={['grafico', 'relatorio', 'giro', 'valor', 'provisao']} />
       </div>
+      <ViewModeSwitch value={modo} onChange={setModo} modes={['grafico', 'relatorio', 'giro', 'valor', 'provisao']} />
 
       <div style={{ padding: isCompact ? 16 : 28 }}>
         {modo !== 'giro' && modo !== 'valor' && modo !== 'provisao' && (

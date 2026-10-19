@@ -8,6 +8,7 @@ import { formatEtiquetaMotoLabel, printSkuLabels } from '@/lib/estoque-label-pri
 import ModalImpressaoA4 from '@/app/components/ModalImpressaoA4';
 import { compressFotoCapaFile } from '@/lib/image-compression';
 import { canProcessAction } from '@/lib/permissions';
+import TabsBar from '@/components/ui/TabsBar';
 
 const API = API_BASE;
 
@@ -3600,26 +3601,6 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
           )}
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', width: isPhone ? '100%' : undefined, justifyContent: isPhone ? 'space-between' : 'flex-end' }}>
-          <div style={{ display: 'inline-flex', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', background: 'var(--white)' }}>
-            {(['sku', 'fotos-drive', 'anuncio', 'fotos', 'categoria', 'fotos-manutencao'] as const).map((tab, index, arr) => (
-              <button
-                key={tab}
-                onClick={() => setPaginaCadastro(tab)}
-                style={{
-                  border: 'none',
-                  borderRight: index < arr.length - 1 ? '1px solid var(--border)' : 'none',
-                  background: paginaCadastro === tab ? 'var(--gray-800)' : 'var(--white)',
-                  color: paginaCadastro === tab ? '#fff' : 'var(--gray-600)',
-                  padding: isPhone ? '7px 12px' : '7px 14px',
-                  fontSize: 12,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                }}
-              >
-                {tab === 'sku' ? 'SKU' : tab === 'fotos-drive' ? 'Fotos Drive' : tab === 'anuncio' ? 'Anúncio' : tab === 'fotos' ? 'Fotos Anúncios' : tab === 'categoria' ? 'Categoria' : 'Fotos - Manutenção'}
-              </button>
-            ))}
-          </div>
           {paginaCadastro === 'sku' && (
             <div style={{ display: 'flex', gap: 6 }}>
               {canCriarPreCadastro && (
@@ -3631,6 +3612,12 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
           )}
         </div>
       </div>
+
+      <TabsBar
+        tabs={[{ id: 'sku', label: 'SKU' }, { id: 'fotos-drive', label: 'Fotos Drive' }, { id: 'anuncio', label: 'Anúncio' }, { id: 'fotos', label: 'Fotos Anúncios' }, { id: 'categoria', label: 'Categoria' }, { id: 'fotos-manutencao', label: 'Fotos - Manutenção' }]}
+        active={paginaCadastro}
+        onChange={(k) => setPaginaCadastro(k as any)}
+      />
 
       <div style={{ padding: isPhone ? '14px' : '20px 24px' }}>
         {paginaCadastro === 'categoria' ? renderCategoriaConteudo() : paginaCadastro === 'fotos-drive' ? renderFotosDriveConteudo() : paginaCadastro === 'anuncio' ? renderAnuncioConteudo() : paginaCadastro === 'fotos-manutencao' ? renderFotosManutencaoConteudo() : paginaCadastro === 'fotos' ? (
