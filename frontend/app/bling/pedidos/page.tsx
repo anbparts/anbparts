@@ -56,6 +56,7 @@ export default function BlingPedidosPage() {
   const [detalhes, setDetalhes] = useState<Record<string, any>>({});
   const [sync, setSync] = useState<any>(null);
   const [periodo, setPeriodo] = useState({ de: '', ate: '' });
+  const [numerosTxt, setNumerosTxt] = useState('');
   const [sincronizando, setSincronizando] = useState(false);
   const pollRef = useRef<any>(null);
 
@@ -124,6 +125,16 @@ export default function BlingPedidosPage() {
     setSincronizando(false);
   }
 
+  async function atualizarNumeros() {
+    if (!numerosTxt.trim()) return alert('Informe o numero do pedido (ex.: 628, ou 620-628).');
+    setSincronizando(true);
+    try {
+      await chamar('/bling-pedidos/sincronizacao/numeros', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ numeros: numerosTxt }) });
+      await carregarSync();
+    } catch (e: any) { alert(e?.message || 'Erro ao atualizar os pedidos'); }
+    setSincronizando(false);
+  }
+
   function aplicar() { setPagina(1); carregar(1, filtros); }
   function irPara(p: number) { setPagina(p); carregar(p); }
 
@@ -168,6 +179,8 @@ export default function BlingPedidosPage() {
               <input type="date" style={{ ...s.input, width: 150 }} value={periodo.de} onChange={(e) => setPeriodo({ ...periodo, de: e.target.value })} />
               <input type="date" style={{ ...s.input, width: 150 }} value={periodo.ate} onChange={(e) => setPeriodo({ ...periodo, ate: e.target.value })} />
               <button type="button" style={s.btn} disabled={sincronizando || !!job?.rodando} onClick={importarPeriodo}>{job?.rodando && job?.modo === 'periodo' ? 'Importando...' : 'Importar período'}</button>
+              <input style={{ ...s.input, width: 170 }} placeholder="Nº pedido: 628 ou 620-628" value={numerosTxt} onChange={(e) => setNumerosTxt(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') atualizarNumeros(); }} />
+              <button type="button" style={s.btn} disabled={sincronizando || !!job?.rodando || !numerosTxt.trim()} onClick={atualizarNumeros}>{job?.rodando && job?.modo === 'numeros' ? 'Atualizando...' : 'Atualizar pedido(s)'}</button>
             </div>
           )}
         </div>

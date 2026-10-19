@@ -21,6 +21,7 @@ import { downloadImageAsDataUrl } from '../lib/image';
 import { cancelarVendaComDevolucaoEtiqueta } from '../lib/cancelamento-venda';
 import { getMercadoLivreItemPermalink } from '../lib/mercado-livre';
 import { getNuvemshopStatusBySkus, buildNuvemshopCatalogMap, NuvemshopAnuncioStatus } from '../lib/nuvemshop';
+import { buscarEstoqueShopee, consultarEstoqueMagalu, skusComAnuncioMagalu, AnuncioEstoque } from '../lib/auditoria-marketplaces';
 import { spDayStart, spDayEnd } from '../lib/timezone';
 
 export const blingRouter = Router();
@@ -3495,6 +3496,28 @@ async function compareProdutosBlingCodes(
       }
     }
 
+    // Shopee e Magalu: so anuncios ATIVOS, comparando o estoque de la com o nosso (falha aqui vira aviso, nunca derruba a auditoria)
+    const marketplacesEstoque: Array<{ id: 'shopee' | 'magalu'; nome: string; mapa: Map<string, AnuncioEstoque> }> = [];
+    try {
+      await emitProgress({ totalProcessados: 0, fase: 'Consultando anuncios Shopee' });
+      const mapaShopee = await buscarEstoqueShopee();
+      if (mapaShopee) marketplacesEstoque.push({ id: 'shopee', nome: 'Shopee', mapa: mapaShopee });
+    } catch (e: any) {
+      warnings.add(`Falha ao consultar Shopee: ${e?.message || 'erro desconhecido'}`);
+    }
+    try {
+      const comAnuncioMagalu = await skusComAnuncioMagalu();
+      const candidatos = codigos.filter((c) => comAnuncioMagalu.has(c));
+      if (candidatos.length) {
+        await emitProgress({ totalProcessados: 0, fase: 'Consultando anuncios Magalu' });
+        const r = await consultarEstoqueMagalu(candidatos);
+        marketplacesEstoque.push({ id: 'magalu', nome: 'Magalu', mapa: r.mapa });
+        if (r.falhas) warnings.add(`Magalu: ${r.falhas} SKU(s) sem leitura de estoque (${r.ultimoErro})`);
+      }
+    } catch (e: any) {
+      warnings.add(`Falha ao consultar Magalu: ${e?.message || 'erro desconhecido'}`);
+    }
+
     const divergencias: any[] = [];
     let processadosNaConsolidacao = 0;
     for (const codigo of codigos) {
@@ -3717,7 +3740,29 @@ async function compareProdutosBlingCodes(
         }
       }
     }
-    // ── Fim Divergências Nuvemshop ───────────────────────────────────────────
+    // ── Divergências Shopee / Magalu (somente anuncios ativos) ──────────────────────
+    for (const mk of marketplacesEstoque) {
+      const anuncio = mk.mapa.get(codigo);
+      if (!anuncio?.ativo) continue;
+      const temEstoqueAqui = local.qtdDisponivelAnb > 0 || qtdBling > 0;
+      const extra = { marketplaceNome: mk.nome, estoqueMarketplace: anuncio.estoque, statusMarketplace: 'Ativo' };
+      if (!temEstoqueAqui && anuncio.estoque > 0) {
+        divergenciasSku.push(buildDivergenciaPayload(codigo, local, qtdBling, descricaoBling, statusMercadoLivre, {
+          tipo: `${mk.id}_anuncio_ativo_sem_estoque`,
+          titulo: `Anuncio ${mk.nome} ativo sem estoque`,
+          detalhe: `Nao ha estoque disponivel no ANB nem no Bling, mas o anuncio na ${mk.nome} segue ativo com ${anuncio.estoque} unidade(s).`,
+          ...extra,
+        }));
+      } else if (temEstoqueAqui && anuncio.estoque <= 0) {
+        divergenciasSku.push(buildDivergenciaPayload(codigo, local, qtdBling, descricaoBling, statusMercadoLivre, {
+          tipo: `${mk.id}_anuncio_ativo_zerado`,
+          titulo: `Anuncio ${mk.nome} ativo zerado com estoque`,
+          detalhe: `Ha estoque disponivel no sistema, mas o anuncio ativo na ${mk.nome} esta com estoque zerado (nao vende).`,
+          ...extra,
+        }));
+      }
+    }
+    // ── Fim Divergências Shopee / Magalu ───────────────────────────────────────────────────────────────────────────────────────
 
     if (!produtoBling) {
       divergenciasSku.push(buildDivergenciaPayload(codigo, local, 0, descricaoBling, statusMercadoLivre, {
@@ -4692,6 +4737,8 @@ function renderAuditoriaEmailHtmlClean(resultado: any, executedAt: Date | string
         ${renderAuditoriaMetricCard('Status ML', item?.statusMercadoLivre || 'Nao identificado', statusColor)}
         ${item?.statusNuvemshop != null ? renderAuditoriaMetricCard('Total Nuvemshop', item?.estoqueNuvemshop ?? 0) : ''}
         ${item?.statusNuvemshop != null ? renderAuditoriaMetricCard('Status Nuvemshop', item.statusNuvemshop, item.statusNuvemshop === 'Ativo' ? '#16a34a' : item.statusNuvemshop === 'Pausado' ? '#dc2626' : '#64748b') : ''}
+        ${item?.marketplaceNome ? renderAuditoriaMetricCard(`Total ${item.marketplaceNome}`, item?.estoqueMarketplace ?? 0, '#b91c1c') : ''}
+        ${item?.marketplaceNome ? renderAuditoriaMetricCard(`Status ${item.marketplaceNome}`, item?.statusMarketplace || 'Ativo', '#16a34a') : ''}
       </div>
     `, { accentColor: borderColor, marginBottom: 18 });
   }).join('');

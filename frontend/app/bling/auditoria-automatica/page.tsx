@@ -45,6 +45,7 @@ type Divergencia = {
   qtdPrejuizoAnb?: number; idsPecaPrejuizo?: string[]; motivosPrejuizo?: string[]; descricaoAnb: string | null; descricaoBling: string | null; moto: string | null;
   statusMercadoLivre?: string | null; statusMercadoLivreAtivo?: boolean | null;
   estoqueNuvemshop?: number | null; statusNuvemshop?: string | null;
+  marketplaceNome?: string | null; estoqueMarketplace?: number | null; statusMarketplace?: string | null;
 };
 type Execucao = {
   id: number; origem: string; status: string; startedAt: string; finishedAt?: string | null; totalSkus: number; totalDivergencias: number; totalSemDivergencia: number;
@@ -471,6 +472,7 @@ export default function AuditoriaAutomaticaPage() {
                           {item.tipo === 'nuvemshop_anuncio_inativo' && <span style={{ fontSize: 12, background: '#fef9c3', color: '#92400e', padding: '2px 8px', borderRadius: 5 }}>🏪 Nuvemshop: Inativo c/ estoque</span>}
                           {item.tipo === 'nuvemshop_anuncio_ativo_sem_estoque' && <span style={{ fontSize: 12, background: '#fef2f2', color: '#b91c1c', padding: '2px 8px', borderRadius: 5 }}>🏪 Nuvemshop: Ativo sem estoque</span>}
                           {item.tipo === 'nuvemshop_anuncio_ativo_prejuizo' && <span style={{ fontSize: 12, background: '#fef2f2', color: '#b91c1c', padding: '2px 8px', borderRadius: 5 }}>🏪 Nuvemshop: Ativo c/ prejuizo</span>}
+                          {item.marketplaceNome && <span style={{ fontSize: 12, background: '#fef2f2', color: '#b91c1c', padding: '2px 8px', borderRadius: 5 }}>🛒 {item.marketplaceNome}: {item.tipo.endsWith('_zerado') ? 'Ativo zerado c/ estoque aqui' : 'Ativo sem estoque aqui'}</span>}
                           {item.moto && <span style={{ fontSize: 12, color: 'var(--gray-400)' }}>{item.moto}</span>}
                         </div>
                         <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 6 }}>{item.descricaoAnb || item.descricaoBling || 'Sem descricao'}</div>
@@ -492,6 +494,10 @@ export default function AuditoriaAutomaticaPage() {
                             ...(item.statusNuvemshop != null ? [
                               { label: 'Total Nuvemshop', value: item.estoqueNuvemshop ?? 0, color: 'var(--gray-700)' },
                               { label: 'Status Nuvemshop', value: item.statusNuvemshop, color: item.statusNuvemshop === 'Ativo' ? '#16a34a' : item.statusNuvemshop === 'Pausado' ? '#b91c1c' : 'var(--gray-500)' },
+                            ] : []),
+                            ...(item.marketplaceNome ? [
+                              { label: `Total ${item.marketplaceNome}`, value: item.estoqueMarketplace ?? 0, color: '#b91c1c' },
+                              { label: `Status ${item.marketplaceNome}`, value: item.statusMarketplace || 'Ativo', color: '#16a34a' },
                             ] : []),
                           ].map((metric) => (
                             <div key={`${item.sku}-${metric.label}`} style={{ background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>

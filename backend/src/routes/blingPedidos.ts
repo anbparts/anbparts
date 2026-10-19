@@ -2,7 +2,7 @@
 import { Router } from 'express';
 import {
   detalheCliente, detalhePedido, enriquecerCliente, iniciarCargaHistorica, listarClientes, listarPedidos,
-  iniciarPeriodo, statusSincronizacao,
+  iniciarPeriodo, iniciarPorNumeros, interpretarNumeros, statusSincronizacao,
 } from '../lib/bling-pedidos';
 
 export const blingPedidosRouter = Router();
@@ -68,6 +68,18 @@ blingPedidosRouter.post('/sincronizacao/historico', async (req, res) => {
     if ((r as any).jaRodando) return res.status(409).json({ ok: false, error: 'A sincronizacao ja esta em andamento.' });
     res.json({ ...r, ok: true });
   } catch (e: any) { res.status(400).json({ ok: false, error: e?.message || 'Erro ao iniciar a sincronizacao' }); }
+});
+
+// POST /bling-pedidos/sincronizacao/numeros { numeros: "628, 620-625" } — atualiza pedidos especificos pelo numero.
+blingPedidosRouter.post('/sincronizacao/numeros', async (req, res) => {
+  try {
+    if (!podeSincronizar(req)) return res.status(403).json({ ok: false, error: 'Seu usuario nao tem permissao para sincronizar.' });
+    const numeros = interpretarNumeros(String(req.body?.numeros || ''));
+    if (!numeros.length) return res.status(400).json({ ok: false, error: 'Informe o numero do pedido.' });
+    const r: any = await iniciarPorNumeros(numeros);
+    if (r.jaRodando) return res.status(409).json({ ok: false, error: 'A sincronizacao ja esta em andamento.' });
+    res.json({ ok: true, total: numeros.length });
+  } catch (e: any) { res.status(400).json({ ok: false, error: e?.message || 'Erro ao atualizar os pedidos' }); }
 });
 
 // POST /bling-pedidos/sincronizacao/periodo { de, ate } — traz os pedidos do periodo (todos, com ou sem peca vinculada).

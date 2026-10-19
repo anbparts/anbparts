@@ -255,6 +255,62 @@ export async function iniciarPeriodo(de: string, ate: string) {
   return { ok: true };
 }
 
+// Aceita "628", "620, 625" e faixas "620-628" (maximo 200 numeros).
+export function interpretarNumeros(entrada: string): string[] {
+  const saida = new Set<string>();
+  for (const parte of String(entrada || '').split(/[\s,;]+/).filter(Boolean)) {
+    const m = parte.match(/^(\d+)-(\d+)$/);
+    if (m) {
+      const a = Number(m[1]); const b = Number(m[2]);
+      if (b < a || b - a > 199) throw new Error('Faixa invalida (maximo 200 pedidos por vez): ' + parte);
+      for (let n = a; n <= b; n += 1) saida.add(String(n));
+    } else if (/^\d+$/.test(parte)) saida.add(parte);
+    else throw new Error('Numero de pedido invalido: ' + parte);
+  }
+  if (saida.size > 200) throw new Error('Maximo de 200 pedidos por vez.');
+  return Array.from(saida);
+}
+
+// Atualiza pedidos especificos pelo numero (rebusca o detalhe no Bling mesmo que ja estejam na base). Roda em segundo plano.
+export async function iniciarPorNumeros(numeros: string[]) {
+  if (jobPedidos.rodando) return { ok: false, jaRodando: true };
+  await garantirTabelasPedidos();
+  Object.assign(jobPedidos, { rodando: true, modo: 'numeros', fase: 'pedidos', total: numeros.length, feitos: 0, erros: 0, iniciadoEm: new Date().toISOString(), finalizadoEm: null, ultimoErro: '' });
+  void (async () => {
+    const naoEncontrados: string[] = [];
+    try {
+      await carregarCanais(true);
+      for (const n of numeros) {
+        try {
+          let id: string | null = null;
+          const local = await prisma.$queryRawUnsafe<any[]>(`SELECT "id"::text AS id FROM "BlingPedido" WHERE "numero" = $1 LIMIT 1`, n);
+          if (local[0]?.id) id = String(local[0].id);
+          else {
+            const r: any = await blingReq(`/pedidos/vendas?numero=${encodeURIComponent(n)}&limite=10`);
+            const achado = (r?.data || []).find((p: any) => txt(p?.numero) === n);
+            if (achado?.id) id = String(achado.id);
+          }
+          if (!id) naoEncontrados.push(n);
+          else await sincronizarPedido(id);
+        } catch (e: any) {
+          jobPedidos.erros += 1; jobPedidos.ultimoErro = `${n}: ${String(e?.message || e).slice(0, 200)}`;
+          if (/renovar token|Reconecte/i.test(String(e?.message))) throw e;
+        }
+        jobPedidos.feitos += 1;
+      }
+      if (naoEncontrados.length) jobPedidos.ultimoErro = 'Nao encontrado no Bling: ' + naoEncontrados.slice(0, 20).join(', ');
+      const pend = await prisma.$queryRawUnsafe<any[]>(`SELECT COUNT(*)::int AS n FROM "BlingCliente" WHERE "enriquecidoEm" IS NULL`);
+      Object.assign(jobPedidos, { fase: 'clientes', total: Number(pend[0]?.n || 0), feitos: 0 });
+      while (true) { const n = await enriquecerPendentes(50); if (n < 50) break; }
+    } catch (e: any) {
+      jobPedidos.ultimoErro = String(e?.message || e).slice(0, 300);
+    } finally {
+      Object.assign(jobPedidos, { rodando: false, fase: '', finalizadoEm: new Date().toISOString() });
+    }
+  })();
+  return { ok: true, total: numeros.length };
+}
+
 export async function sincronizarRecentes(dias = 3) {
   const fmt = (d: Date) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
   const hoje = new Date();
