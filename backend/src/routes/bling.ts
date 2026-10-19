@@ -5033,6 +5033,12 @@ export function startBlingAuditoriaScheduler() {
   if (auditoriaSchedulerState.started) return;
   auditoriaSchedulerState.started = true;
 
+  // execucoes que ficaram "executando" por reinicio/deploy do servidor nao terminam nunca: marca como interrompidas ao subir
+  void prisma.auditoriaAutomaticaExecucao.updateMany({
+    where: { status: 'executando' },
+    data: { status: 'erro', finishedAt: new Date(), erro: 'Interrompida por reinicio do servidor (deploy).' },
+  }).catch((error) => console.error('Falha ao encerrar execucoes de auditoria interrompidas:', error));
+
   const runTick = () => {
     tickAuditoriaAutomatica().catch((error) => {
       console.error('Falha na auditoria automatica do Bling:', error);
