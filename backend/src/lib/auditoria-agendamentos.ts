@@ -8,18 +8,21 @@ import { prisma } from './prisma';
 export type Modo = 'desligado' | 'estoque' | 'status' | 'completo';
 export type Verificar = { anbBling: boolean; ml: Modo; nuvemshop: Modo; shopee: Modo; magalu: Modo };
 export type PeriodoRapida = { tipo: 'dias' | 'mes_atual' | 'mes_anterior'; dias: number };
+export type Conferencia = { id: string; nome: string; ativo: boolean; horarios: string[]; periodo: PeriodoRapida; verificar: Verificar; enviarEmail: boolean };
 export type AgendamentosConfig = {
   madrugada: { verificar: Verificar; enviarEmail: boolean };
-  rapida: { ativo: boolean; horarios: string[]; periodo: PeriodoRapida; verificar: Verificar; enviarEmail: boolean };
+  conferencias: Conferencia[]; // conferencias menores (durante o dia): pode haver varias, cada uma com seus horarios/periodo/canais
 };
+export const MAX_CONFERENCIAS = 8;
 
 const verificarPadrao = (): Verificar => ({ anbBling: true, ml: 'completo', nuvemshop: 'completo', shopee: 'estoque', magalu: 'estoque' });
 
+export function conferenciaPadrao(id = 'c1', nome = 'Conferência menor'): Conferencia {
+  return { id, nome, ativo: true, horarios: ['11:00', '16:00'], periodo: { tipo: 'dias', dias: 3 }, verificar: verificarPadrao(), enviarEmail: true };
+}
+
 export function agendamentosPadrao(): AgendamentosConfig {
-  return {
-    madrugada: { verificar: verificarPadrao(), enviarEmail: true },
-    rapida: { ativo: true, horarios: ['11:00', '16:00'], periodo: { tipo: 'dias', dias: 3 }, verificar: verificarPadrao(), enviarEmail: true },
-  };
+  return { madrugada: { verificar: verificarPadrao(), enviarEmail: true }, conferencias: [conferenciaPadrao()] };
 }
 
 function limparModo(x: any, padrao: Modo, somenteEstoque = false): Modo {
@@ -45,23 +48,35 @@ function limparHorarios(h: any, base: string[]): string[] {
   return ok.slice(0, 8);
 }
 
+function limparConferencia(c: any, idx: number, idsUsados: Set<string>): Conferencia {
+  const base = conferenciaPadrao();
+  const tipo = ['dias', 'mes_atual', 'mes_anterior'].includes(String(c?.periodo?.tipo)) ? c.periodo.tipo : base.periodo.tipo;
+  const dias = Math.max(1, Math.min(365, Math.round(Number(c?.periodo?.dias) || base.periodo.dias)));
+  let id = String(c?.id || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 24) || 'c' + (idx + 1);
+  while (idsUsados.has(id)) id = id + 'x';
+  idsUsados.add(id);
+  return {
+    id,
+    nome: String(c?.nome || '').trim().slice(0, 60) || 'Conferência ' + (idx + 1),
+    ativo: typeof c?.ativo === 'boolean' ? c.ativo : true,
+    horarios: Array.isArray(c?.horarios) ? limparHorarios(c.horarios, []) : base.horarios,
+    periodo: { tipo, dias },
+    verificar: limparVerificar(c?.verificar, base.verificar),
+    enviarEmail: typeof c?.enviarEmail === 'boolean' ? c.enviarEmail : true,
+  };
+}
+
 export function limparAgendamentos(entrada: any): AgendamentosConfig {
   const base = agendamentosPadrao();
-  const r = entrada?.rapida || {};
-  const tipo = ['dias', 'mes_atual', 'mes_anterior'].includes(String(r?.periodo?.tipo)) ? r.periodo.tipo : base.rapida.periodo.tipo;
-  const dias = Math.max(1, Math.min(365, Math.round(Number(r?.periodo?.dias) || base.rapida.periodo.dias)));
+  // formato antigo: uma unica conferencia em "rapida"
+  const lista: any[] = Array.isArray(entrada?.conferencias) ? entrada.conferencias : entrada?.rapida ? [{ ...entrada.rapida, id: 'c1', nome: 'Conferência menor' }] : base.conferencias;
+  const usados = new Set<string>();
   return {
     madrugada: {
       verificar: limparVerificar(entrada?.madrugada?.verificar, base.madrugada.verificar),
       enviarEmail: typeof entrada?.madrugada?.enviarEmail === 'boolean' ? entrada.madrugada.enviarEmail : base.madrugada.enviarEmail,
     },
-    rapida: {
-      ativo: typeof r?.ativo === 'boolean' ? r.ativo : base.rapida.ativo,
-      horarios: Array.isArray(r?.horarios) ? limparHorarios(r.horarios, []) : base.rapida.horarios,
-      periodo: { tipo, dias },
-      verificar: limparVerificar(r?.verificar, base.rapida.verificar),
-      enviarEmail: typeof r?.enviarEmail === 'boolean' ? r.enviarEmail : base.rapida.enviarEmail,
-    },
+    conferencias: lista.slice(0, MAX_CONFERENCIAS).map((c, i) => limparConferencia(c, i, usados)),
   };
 }
 

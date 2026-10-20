@@ -170,7 +170,7 @@ export default function ConfAuditoriaPage() {
       </div>
 
       <div style={{ padding: pagePadding }}>
-        <AgendamentosSection isPhone={isPhone} />
+        <AgendamentosSection isPhone={isPhone} onConfigChanged={() => { loadConfig().catch(() => undefined); }} />
         <div style={s.card}>
           <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 8 }}>Configuracao da Rotina de Validacao / Detran / Localizacao</div>
           <div style={{ fontSize: 12, color: 'var(--gray-400)', marginBottom: 16 }}>Defina quando a rotina principal vai rodar, como a base sera filtrada e com qual cadencia os lotes serao enviados para o Bling. O link do ML nao e mais atualizado aqui.</div>
@@ -185,7 +185,7 @@ export default function ConfAuditoriaPage() {
           <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>{ESCOPOS.find((item) => item.value === auditoriaEscopo)?.detail}</div>
         </div>
 
-        <div style={s.card}>
+        <div id="cfg-linkml" style={s.card}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
             <div>
               <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 6 }}>Configuracao da Rotina de Link ML</div>

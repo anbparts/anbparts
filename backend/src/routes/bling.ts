@@ -22,7 +22,7 @@ import { cancelarVendaComDevolucaoEtiqueta } from '../lib/cancelamento-venda';
 import { getMercadoLivreItemPermalink } from '../lib/mercado-livre';
 import { getNuvemshopStatusBySkus, buildNuvemshopCatalogMap, NuvemshopAnuncioStatus } from '../lib/nuvemshop';
 import { buscarEstoqueShopee, consultarEstoqueMagalu, skusComAnuncioMagalu, AnuncioEstoque } from '../lib/auditoria-marketplaces';
-import { carregarAgendamentos, salvarAgendamentos, aplicarVerificar, intervaloDoPeriodo, descreverPeriodo, descreverVerificar, proximaExecucao } from '../lib/auditoria-agendamentos';
+import { Conferencia, carregarAgendamentos, salvarAgendamentos, aplicarVerificar, intervaloDoPeriodo, descreverPeriodo, descreverVerificar, proximaExecucao } from '../lib/auditoria-agendamentos';
 import { spDayStart, spDayEnd } from '../lib/timezone';
 
 export const blingRouter = Router();
@@ -4929,19 +4929,23 @@ async function executeAuditoriaAutomatica(origem: 'manual' | 'auto' = 'manual') 
 }
 
 // ── Conferencia menor (durante o dia): horarios, periodo e o que verificar vem de Conf. Auditoria Automatica ──
-const auditoriaRapidaState = { ultimaChave: '' };
+const auditoriaRapidaState = { ultimasChaves: new Set<string>() };
 
-// origem: 'auto' = agendada, 'manual' = botao (usa o periodo configurado), 'mes' = botao fixo "mes atual"
-async function executeAuditoriaRapida(origem: 'manual' | 'auto' | 'mes' = 'manual') {
+// origem: 'auto' = agendada, 'manual' = botao (usa o periodo da conferencia), 'mes' = botao fixo "mes atual"
+// confId: qual conferencia usar (padrao: a primeira)
+async function executeAuditoriaRapida(origem: 'manual' | 'auto' | 'mes' = 'manual', confId?: string) {
   const cfg = await getConfig();
   const emailConfig = await getConfiguracaoGeral();
   const agend = await carregarAgendamentos();
   const executedAt = new Date();
-  const periodo = origem === 'mes' ? { tipo: 'mes_atual' as const, dias: agend.rapida.periodo.dias } : agend.rapida.periodo;
+  const conf: Conferencia | undefined = agend.conferencias.find((c) => c.id === confId) || agend.conferencias[0];
+  if (!conf) throw new Error('Nenhuma conferencia configurada.');
+  const periodo = origem === 'mes' ? { tipo: 'mes_atual' as const, dias: conf.periodo.dias } : conf.periodo;
   const { de, ate } = intervaloDoPeriodo(periodo, executedAt);
   const rotuloPeriodo = descreverPeriodo(periodo);
-  const verificar = agend.rapida.verificar;
-  const tituloEmail = `ALERTA ANB Parts - Conferencia rapida (${rotuloPeriodo}) - Verifique`;
+  const verificar = conf.verificar;
+  const idConf = { confId: conf.id, nome: conf.nome };
+  const tituloEmail = `ALERTA ANB Parts - ${conf.nome} (${rotuloPeriodo}) - Verifique`;
   const execution = await prisma.auditoriaAutomaticaExecucao.create({
     data: {
       origem: origem === 'auto' ? 'rapida_auto' : origem === 'mes' ? 'mes_manual' : 'rapida_manual',
@@ -4949,7 +4953,7 @@ async function executeAuditoriaRapida(origem: 'manual' | 'auto' | 'mes' = 'manua
       emailDestinatario: emailConfig.auditoriaEmailDestinatario || null,
       emailAssunto: buildDatedEmailSubject(tituloEmail, DEFAULT_AUDITORIA_EMAIL_TITULO, executedAt),
       totalSkus: 0,
-      resumo: JSON.parse(JSON.stringify({ progresso: { totalParaProcessar: 0, totalProcessados: 0, fase: 'Conferencia rapida', atualizadoEm: new Date().toISOString() } })),
+      resumo: JSON.parse(JSON.stringify({ progresso: { totalParaProcessar: 0, totalProcessados: 0, fase: conf.nome, atualizadoEm: new Date().toISOString() }, conferenciaRapida: idConf })),
     },
   });
   try {
@@ -4963,7 +4967,7 @@ async function executeAuditoriaRapida(origem: 'manual' | 'auto' | 'mes' = 'manua
       ultimoSalvo = Date.now();
       await prisma.auditoriaAutomaticaExecucao.update({
         where: { id: execution.id },
-        data: { resumo: JSON.parse(JSON.stringify({ progresso: { totalParaProcessar: Math.max(skus.length, Number(p.totalParaProcessar) || 0), totalProcessados: Number(p.totalProcessados) || 0, fase: p.fase, atualizadoEm: new Date().toISOString() } })) },
+        data: { resumo: JSON.parse(JSON.stringify({ progresso: { totalParaProcessar: Math.max(skus.length, Number(p.totalParaProcessar) || 0), totalProcessados: Number(p.totalProcessados) || 0, fase: p.fase, atualizadoEm: new Date().toISOString() }, conferenciaRapida: idConf })) },
       }).catch(() => undefined);
     };
     await salvarProgresso({ totalParaProcessar: skus.length, totalProcessados: 0, fase: `Conferindo ${skus.length} SKU(s) vendidos` });
@@ -4974,13 +4978,13 @@ async function executeAuditoriaRapida(origem: 'manual' | 'auto' | 'mes' = 'manua
     const { resultado, resumoPedidosAbertos } = await aplicarFiltroPedidosAbertosAuditoria(base);
     const resumo: any = JSON.parse(JSON.stringify({
       ...buildAuditoriaResumo(resultado),
-      conferenciaRapida: { periodo: rotuloPeriodo, desde: de.toISOString(), ate: ate ? ate.toISOString() : null, skusVendidos: skus.length, verificado: descreverVerificar(verificar) },
+      conferenciaRapida: { ...idConf, periodo: rotuloPeriodo, desde: de.toISOString(), ate: ate ? ate.toISOString() : null, skusVendidos: skus.length, verificado: descreverVerificar(verificar) },
       pedidosAbertosIgnorados: resumoPedidosAbertos,
     }));
     let emailEnviado = false;
     let emailErro: string | null = null;
     // sempre avisa quando ha divergencia, mesmo repetida da execucao anterior
-    if (resultado.totalDivergencias > 0 && emailConfig.auditoriaEmailConfigurado && agend.rapida.enviarEmail) {
+    if (resultado.totalDivergencias > 0 && emailConfig.auditoriaEmailConfigurado && conf.enviarEmail) {
       try { await sendAuditoriaEmail(emailConfig, resultado, executedAt, tituloEmail); emailEnviado = true; } catch (error: any) { emailErro = error?.message || String(error); }
     }
     const updated = await prisma.auditoriaAutomaticaExecucao.update({
@@ -5000,17 +5004,22 @@ async function executeAuditoriaRapida(origem: 'manual' | 'auto' | 'mes' = 'manua
 async function tickAuditoriaRapida() {
   if (auditoriaSchedulerState.running) return;
   const agend = await carregarAgendamentos();
-  if (!agend.rapida.ativo || !agend.rapida.horarios.length) return;
   const now = getTimezoneDateParts(new Date());
-  if (!agend.rapida.horarios.includes(now.timeKey)) return;
-  if (auditoriaRapidaState.ultimaChave === now.runKey) return;
-  auditoriaRapidaState.ultimaChave = now.runKey;
-  // se o servidor reiniciou dentro do mesmo horario, nao repete
-  const recente = await prisma.auditoriaAutomaticaExecucao.findFirst({ where: { origem: 'rapida_auto', startedAt: { gte: new Date(Date.now() - 10 * 60 * 1000) } } });
-  if (recente) return;
+  const devidas = agend.conferencias.filter((c) => c.ativo && c.horarios.includes(now.timeKey) && !auditoriaRapidaState.ultimasChaves.has(`${c.id}|${now.runKey}`));
+  if (!devidas.length) return;
+  if (auditoriaRapidaState.ultimasChaves.size > 200) auditoriaRapidaState.ultimasChaves.clear();
   auditoriaSchedulerState.running = true;
   try {
-    await executeAuditoriaRapida('auto');
+    for (const conf of devidas) {
+      auditoriaRapidaState.ultimasChaves.add(`${conf.id}|${now.runKey}`);
+      // se o servidor reiniciou dentro do mesmo horario, nao repete
+      const recente = await prisma.$queryRawUnsafe<any[]>(
+        `SELECT 1 FROM "AuditoriaAutomaticaExecucao" WHERE "origem" = 'rapida_auto' AND "startedAt" > now() - interval '10 minutes' AND "resumo"::text LIKE $1 LIMIT 1`,
+        `%"confId":"${conf.id}"%`,
+      );
+      if (recente.length) continue;
+      await executeAuditoriaRapida('auto', conf.id);
+    }
   } finally {
     auditoriaSchedulerState.running = false;
   }
@@ -5237,29 +5246,32 @@ async function montarRelatorioAgendamentos() {
     const e = await prisma.auditoriaAutomaticaExecucao.findFirst({ where: { origem: { in: origens } }, orderBy: { id: 'desc' }, select: { id: true, origem: true, status: true, startedAt: true, totalSkus: true, totalDivergencias: true, emailEnviado: true } });
     return e || null;
   };
+  const ultimaConf = async (confId: string) => {
+    const rows = await prisma.$queryRawUnsafe<any[]>(`SELECT "id", "origem", "status", "startedAt", "totalSkus", "totalDivergencias", "emailEnviado" FROM "AuditoriaAutomaticaExecucao" WHERE "origem" IN ('rapida_auto','rapida_manual','mes_manual') AND "resumo"::text LIKE $1 ORDER BY "id" DESC LIMIT 1`, `%"confId":"${confId}"%`);
+    return rows[0] || null;
+  };
   const destinatario = geral.auditoriaEmailDestinatario || '';
   const emailTxt = (enviar: boolean) => (!geral.auditoriaEmailConfigurado ? 'E-mail não configurado' : enviar ? `E-mail para ${destinatario} quando houver divergência` : 'Sem e-mail (só na tela)');
   const madrugadaHorarios = [cfg.auditoriaHorario];
-  const r = agend.rapida;
   const linkHorarios = [cfg.auditoriaLinkMlHorario];
   return [
     {
-      id: 'madrugada', nome: 'Auditoria completa (madrugada)', ativo: !!cfg.auditoriaAtiva, horarios: madrugadaHorarios,
+      id: 'madrugada', tipo: 'madrugada', nome: 'Auditoria completa (madrugada)', ativo: !!cfg.auditoriaAtiva, horarios: madrugadaHorarios,
       proxima: cfg.auditoriaAtiva ? proximaExecucao(madrugadaHorarios) : null,
       escopo: escoposTxt[cfg.auditoriaEscopo] || cfg.auditoriaEscopo, periodo: null,
       verifica: descreverVerificar(agend.madrugada.verificar), email: emailTxt(agend.madrugada.enviarEmail),
       detalhe: `Lote de ${cfg.auditoriaTamanhoLote} SKUs, pausa de ${cfg.auditoriaPausaMs} ms`,
       ultima: await ultima(['auto', 'manual']),
     },
+    ...(await Promise.all(agend.conferencias.map(async (c) => ({
+      id: 'conf:' + c.id, nome: c.nome, tipo: 'conferencia', ativo: c.ativo && c.horarios.length > 0, horarios: c.horarios,
+      proxima: c.ativo ? proximaExecucao(c.horarios) : null,
+      escopo: 'Somente SKUs com peça vendida no período', periodo: descreverPeriodo(c.periodo),
+      verifica: descreverVerificar(c.verificar), email: emailTxt(c.enviarEmail), detalhe: null,
+      ultima: await ultimaConf(c.id),
+    })))),
     {
-      id: 'rapida', nome: 'Conferência menor (durante o dia)', ativo: r.ativo && r.horarios.length > 0, horarios: r.horarios,
-      proxima: r.ativo ? proximaExecucao(r.horarios) : null,
-      escopo: 'Somente SKUs com peça vendida no período', periodo: descreverPeriodo(r.periodo),
-      verifica: descreverVerificar(r.verificar), email: emailTxt(r.enviarEmail), detalhe: null,
-      ultima: await ultima(['rapida_auto', 'rapida_manual', 'mes_manual']),
-    },
-    {
-      id: 'linkml', nome: 'Atualização de links do ML', ativo: !!cfg.auditoriaLinkMlAtiva, horarios: linkHorarios,
+      id: 'linkml', tipo: 'linkml', nome: 'Atualização de links do ML', ativo: !!cfg.auditoriaLinkMlAtiva, horarios: linkHorarios,
       proxima: cfg.auditoriaLinkMlAtiva ? proximaExecucao(linkHorarios) : null,
       escopo: 'Peças com estoque e item ID do ML', periodo: `A cada ${cfg.auditoriaLinkMlIntervaloDias} dia(s)`,
       verifica: ['Permalink dos anúncios ML'], email: 'Sem e-mail', detalhe: null,
@@ -5423,11 +5435,11 @@ blingRouter.post('/auditoria-automatica/executar', async (_req, res, next) => {
   }
 });
 
-blingRouter.post('/auditoria-automatica/rapida/executar', async (_req, res, next) => {
+blingRouter.post('/auditoria-automatica/rapida/executar', async (req, res, next) => {
   try {
     if (auditoriaSchedulerState.running) return res.status(409).json({ error: 'Ja existe uma auditoria em andamento' });
     auditoriaSchedulerState.running = true;
-    void executeAuditoriaRapida('manual')
+    void executeAuditoriaRapida('manual', typeof req.body?.id === 'string' ? req.body.id : undefined)
       .catch((error) => console.error('Falha na conferencia rapida manual:', error))
       .finally(() => { auditoriaSchedulerState.running = false; });
     res.json({ ok: true, iniciada: true });
