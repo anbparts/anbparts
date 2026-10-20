@@ -846,11 +846,11 @@ export default function DashboardPage() {
                   {moto.modelo}
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: 10, marginBottom: 12 }}>
                   {[
                     { label: 'Em estoque', value: moto.qtdDisp, color: 'var(--sage)' },
                     { label: 'Vendidas', value: moto.qtdVendidas, color: 'var(--ink)' },
-                    { label: 'Preco compra', value: fmt(moto.precoCompra || 0), color: 'var(--blue-500)', sm: true },
+                    { label: 'Preco compra', value: fmt(moto.precoCompra || 0), color: 'var(--blue-500)', sm: true, extra: Number(moto.valorFipe) > 0 && Number(moto.precoCompra) > 0 ? `(${Math.round((Number(moto.precoCompra) / Number(moto.valorFipe)) * 100)}%)` : '', extraTitle: 'Preco pago na moto em relacao ao valor FIPE informado no cadastro' },
                     { label: 'Receita liq.', value: fmt(moto.vlVendidas || 0), color: 'var(--amber)', sm: true },
                     {
                       label: 'Lucro prev.',
@@ -885,7 +885,7 @@ export default function DashboardPage() {
                           ...sensitiveMaskStyle(ocultarValores),
                         }}
                       >
-                        {stat.value}
+                        {stat.value}{(stat as any).extra ? <span title={(stat as any).extraTitle} style={{ marginLeft: 6, fontSize: 11, color: 'var(--ink-muted)', fontWeight: 500, whiteSpace: 'nowrap' }}>{(stat as any).extra}</span> : null}
                       </div>
                     </div>
                   ))}
