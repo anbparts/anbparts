@@ -66,6 +66,61 @@ function VerificarEditor({ valor, onChange, enviarEmail, onEmail, isPhone }: { v
 }
 
 const MAX_CONFERENCIAS = 8;
+const ESCOPOS: Array<{ value: string; label: string; detail: string }> = [
+  { value: 'full', label: 'Full', detail: 'Consulta toda a base cadastrada no ANB.' },
+  { value: 'com_estoque', label: 'Somente com estoque', detail: 'Varre apenas materiais ainda disponíveis.' },
+  { value: 'com_estoque_mais_vendidos_ano', label: 'Com estoque + vendidos no ano', detail: 'Inclui estoque atual e peças sem estoque que venderam no ano corrente.' },
+];
+
+type Rascunho = { ativa: boolean; horario: string; escopo: string; lote: string; pausa: string; intervalo: string };
+
+function EditorMadrugada({ r, setR, verificar, onVerificar, email, onEmail, onSalvar, onCancelar, salvando, isPhone }: {
+  r: Rascunho; setR: (r: Rascunho) => void; verificar: Verificar; onVerificar: (v: Verificar) => void; email: boolean; onEmail: (b: boolean) => void;
+  onSalvar: () => void; onCancelar: () => void; salvando: boolean; isPhone: boolean;
+}) {
+  return (
+    <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px dashed var(--border)' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12, marginBottom: 6 }}>
+        <div><label style={s.label}>Rotina</label>
+          <select style={{ ...s.input, width: '100%', cursor: 'pointer' }} value={r.ativa ? '1' : '0'} onChange={(e) => setR({ ...r, ativa: e.target.value === '1' })}><option value="1">Ativa</option><option value="0">Pausada</option></select></div>
+        <div><label style={s.label}>Horário da execução</label><input style={{ ...s.input, width: '100%' }} type="time" value={r.horario} onChange={(e) => setR({ ...r, horario: e.target.value })} /></div>
+        <div><label style={s.label}>Escopo da auditoria</label>
+          <select style={{ ...s.input, width: '100%', cursor: 'pointer' }} value={r.escopo} onChange={(e) => setR({ ...r, escopo: e.target.value })}>{ESCOPOS.map((x) => <option key={x.value} value={x.value}>{x.label}</option>)}</select></div>
+        <div><label style={s.label}>Tamanho do lote</label><input style={{ ...s.input, width: '100%' }} type="number" min="10" max="500" value={r.lote} onChange={(e) => setR({ ...r, lote: e.target.value })} /></div>
+        <div><label style={s.label}>Pausa entre lotes (ms)</label><input style={{ ...s.input, width: '100%' }} type="number" min="0" max="15000" value={r.pausa} onChange={(e) => setR({ ...r, pausa: e.target.value })} /></div>
+      </div>
+      <div style={{ fontSize: 12, color: 'var(--gray-400)', marginBottom: 14 }}>{ESCOPOS.find((x) => x.value === r.escopo)?.detail}</div>
+      <VerificarEditor valor={verificar} onChange={onVerificar} enviarEmail={email} onEmail={onEmail} isPhone={isPhone} />
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
+        <button style={{ ...s.btn, background: 'var(--white)', color: 'var(--gray-700)', border: '1px solid var(--border)' }} onClick={onCancelar} disabled={salvando}>Cancelar</button>
+        <button style={{ ...s.btn, background: 'var(--blue-500)', color: '#fff', opacity: salvando ? 0.6 : 1 }} onClick={onSalvar} disabled={salvando}>{salvando ? 'Salvando...' : 'Salvar'}</button>
+      </div>
+    </div>
+  );
+}
+
+function EditorLinkMl({ r, setR, onSalvar, onCancelar, onExecutar, executando, salvando, isPhone }: {
+  r: Rascunho; setR: (r: Rascunho) => void; onSalvar: () => void; onCancelar: () => void; onExecutar: () => void; executando: boolean; salvando: boolean; isPhone: boolean;
+}) {
+  return (
+    <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px dashed var(--border)' }}>
+      <div style={{ fontSize: 12, color: 'var(--gray-400)', marginBottom: 12 }}>Usa o item ID do Mercado Livre salvo nas peças com estoque e atualiza o permalink em horário separado, sem misturar com a auditoria completa.</div>
+      <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12 }}>
+        <div><label style={s.label}>Rotina</label>
+          <select style={{ ...s.input, width: '100%', cursor: 'pointer' }} value={r.ativa ? '1' : '0'} onChange={(e) => setR({ ...r, ativa: e.target.value === '1' })}><option value="1">Ativa</option><option value="0">Pausada</option></select></div>
+        <div><label style={s.label}>Intervalo (dias)</label><input style={{ ...s.input, width: '100%' }} type="number" min="1" max="365" value={r.intervalo} onChange={(e) => setR({ ...r, intervalo: e.target.value })} /></div>
+        <div><label style={s.label}>Horário da execução</label><input style={{ ...s.input, width: '100%' }} type="time" value={r.horario} onChange={(e) => setR({ ...r, horario: e.target.value })} /></div>
+      </div>
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between', flexWrap: 'wrap', marginTop: 14 }}>
+        <button style={{ ...s.btn, background: 'var(--white)', color: 'var(--gray-700)', border: '1px solid var(--border)', opacity: executando ? 0.6 : 1 }} onClick={onExecutar} disabled={executando}>{executando ? 'Atualizando links...' : 'Atualizar links ML agora'}</button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button style={{ ...s.btn, background: 'var(--white)', color: 'var(--gray-700)', border: '1px solid var(--border)' }} onClick={onCancelar} disabled={salvando}>Cancelar</button>
+          <button style={{ ...s.btn, background: 'var(--blue-500)', color: '#fff', opacity: salvando ? 0.6 : 1 }} onClick={onSalvar} disabled={salvando}>{salvando ? 'Salvando...' : 'Salvar'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 const novoId = () => 'c' + Date.now().toString(36);
 
 function EditorConferencia({ conf, onChange, onSalvar, onCancelar, salvando, isPhone }: { conf: Conferencia; onChange: (c: Conferencia) => void; onSalvar: () => void; onCancelar: () => void; salvando: boolean; isPhone: boolean }) {
@@ -116,6 +171,9 @@ export default function AgendamentosSection({ isPhone, onConfigChanged }: { isPh
   const [salvando, setSalvando] = useState(false);
   const [editando, setEditando] = useState<string | null>(null);
   const [erro, setErro] = useState('');
+  const [main, setMain] = useState<any>(null);
+  const [rascunho, setRascunho] = useState<Rascunho | null>(null);
+  const [executandoLink, setExecutandoLink] = useState(false);
 
   async function carregar() {
     try {
@@ -128,6 +186,66 @@ export default function AgendamentosSection({ isPhone, onConfigChanged }: { isPh
     } catch (e: any) { setErro(e?.message || 'Erro ao carregar os agendamentos'); }
   }
   useEffect(() => { carregar(); }, []);
+
+  async function carregarMain() {
+    try {
+      const resp = await fetch(`${API}/bling/auditoria-automatica/config`, { credentials: 'include' });
+      const d = await resp.json();
+      if (resp.ok) setMain(d);
+    } catch { /* painel segue com o que ja tem */ }
+  }
+  useEffect(() => { carregarMain(); }, []);
+
+  function abrirFixo(tipo: 'madrugada' | 'linkml') {
+    if (editando === tipo) { setEditando(null); return; }
+    const m = main || {};
+    setRascunho(tipo === 'madrugada'
+      ? { ativa: !!m.auditoriaAtiva, horario: m.auditoriaHorario || '03:00', escopo: m.auditoriaEscopo || 'full', lote: String(m.auditoriaTamanhoLote || 100), pausa: String(m.auditoriaPausaMs ?? 400), intervalo: '1' }
+      : { ativa: !!m.auditoriaLinkMlAtiva, horario: m.auditoriaLinkMlHorario || '05:00', escopo: 'full', lote: '100', pausa: '400', intervalo: String(m.auditoriaLinkMlIntervaloDias || 1) });
+    setEditando(tipo);
+  }
+
+  async function postMain(body: any) {
+    const resp = await fetch(`${API}/bling/auditoria-automatica/config`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const d = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(d?.error || `Erro ${resp.status}`);
+  }
+
+  async function salvarMadrugada() {
+    if (!rascunho || !config) return;
+    setSalvando(true);
+    try {
+      await postMain({ auditoriaAtiva: rascunho.ativa, auditoriaHorario: rascunho.horario, auditoriaEscopo: rascunho.escopo, auditoriaTamanhoLote: Number(rascunho.lote) || 100, auditoriaPausaMs: Number(rascunho.pausa) || 0 });
+      const resp = await fetch(`${API}/bling/auditoria-automatica/agendamentos`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ config }) });
+      const d = await resp.json().catch(() => ({}));
+      if (!resp.ok || d?.ok === false) throw new Error(d?.error || `Erro ${resp.status}`);
+      setConfig(d.config); setRelatorio(Array.isArray(d.relatorio) ? d.relatorio : []);
+      await carregarMain(); onConfigChanged?.(); setEditando(null);
+    } catch (e: any) { alert(`Erro ao salvar: ${e?.message || e}`); }
+    setSalvando(false);
+  }
+
+  async function salvarLinkMl() {
+    if (!rascunho) return;
+    setSalvando(true);
+    try {
+      await postMain({ auditoriaLinkMlAtiva: rascunho.ativa, auditoriaLinkMlHorario: rascunho.horario, auditoriaLinkMlIntervaloDias: Number(rascunho.intervalo) || 1 });
+      await carregar(); await carregarMain(); onConfigChanged?.(); setEditando(null);
+    } catch (e: any) { alert(`Erro ao salvar: ${e?.message || e}`); }
+    setSalvando(false);
+  }
+
+  async function executarLinkMl() {
+    setExecutandoLink(true);
+    try {
+      const resp = await fetch(`${API}/bling/auditoria-automatica/link-ml/executar`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' } });
+      const d = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(d?.error || `Erro ${resp.status}`);
+      await carregar();
+      alert(`Rotina de Link ML concluida. ${d.totalAtualizadas || 0} peca(s) atualizada(s).`);
+    } catch (e: any) { alert(`Erro ao executar rotina de Link ML: ${e?.message || e}`); }
+    setExecutandoLink(false);
+  }
 
   // grava a configuracao inteira; devolve true se salvou
   async function gravar(nova: AgendConfig, avisar = false): Promise<boolean> {
@@ -151,6 +269,7 @@ export default function AgendamentosSection({ isPhone, onConfigChanged }: { isPh
       const d = await resp.json().catch(() => ({}));
       if (!resp.ok) throw new Error(d?.error || `Erro ${resp.status}`);
       await carregar();
+      await carregarMain();
       onConfigChanged?.();
     } catch (e: any) { alert(`Erro: ${e?.message || e}`); }
   }
@@ -195,7 +314,7 @@ export default function AgendamentosSection({ isPhone, onConfigChanged }: { isPh
           <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)' }}>Relatório dos agendamentos</div>
           {confs.length < MAX_CONFERENCIAS ? <button style={{ ...s.btn, background: 'var(--blue-500)', color: '#fff' }} onClick={nova}>+ Nova conferência</button> : null}
         </div>
-        <div style={{ fontSize: 12, color: 'var(--gray-400)', marginBottom: 14 }}>Como cada rotina está configurada hoje e como vai rodar na próxima vez (horário de São Paulo). Edite, pause ou exclua direto em cada cartão.</div>
+        <div style={{ fontSize: 12, color: 'var(--gray-400)', marginBottom: 14 }}>Como cada rotina está configurada hoje e como vai rodar na próxima vez (horário de São Paulo). Clique em Editar para mexer em tudo da rotina num lugar só; também dá para pausar, executar e excluir.</div>
         <div style={{ display: 'grid', gap: 10 }}>
           {relatorio.map((linha) => {
             const confId = linha.tipo === 'conferencia' ? linha.id.replace(/^conf:/, '') : '';
@@ -210,7 +329,7 @@ export default function AgendamentosSection({ isPhone, onConfigChanged }: { isPh
                   </div>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                     {conf ? <button style={btnMini} onClick={() => setEditando(aberto ? null : conf.id)}>{aberto ? 'Fechar' : 'Editar'}</button>
-                      : <button style={btnMini} onClick={() => irPara(linha.tipo === 'madrugada' ? 'cfg-madrugada' : 'cfg-linkml')}>Editar</button>}
+                      : <button style={btnMini} onClick={() => abrirFixo(linha.tipo as 'madrugada' | 'linkml')}>{editando === linha.tipo ? 'Fechar' : 'Editar'}</button>}
                     {conf ? <button style={btnMini} onClick={() => alternarConferencia(conf)} disabled={salvando}>{conf.ativo ? 'Pausar' : 'Ativar'}</button>
                       : <button style={btnMini} onClick={() => alternarRotinaFixa(linha)}>{linha.ativo ? 'Pausar' : 'Ativar'}</button>}
                     {conf ? <button style={btnMini} onClick={() => executarConferencia(conf.id)}>Executar agora</button> : null}
@@ -225,6 +344,12 @@ export default function AgendamentosSection({ isPhone, onConfigChanged }: { isPh
                   {linha.detalhe ? <div><strong>Lotes:</strong> {linha.detalhe}</div> : null}
                   <div><strong>Última execução:</strong> {linha.ultima ? <>{fmtDataHora(linha.ultima.startedAt)}{linha.ultima.status ? <> — <span style={{ color: statusCor(linha.ultima.status), fontWeight: 600 }}>{linha.ultima.status}</span> ({origemTxt(linha.ultima.origem)}; {linha.ultima.totalSkus ?? 0} SKU(s), {linha.ultima.totalDivergencias ?? 0} divergência(s))</> : null}</> : 'nunca'}</div>
                 </div>
+                {editando === 'madrugada' && linha.tipo === 'madrugada' && rascunho ? <EditorMadrugada r={rascunho} setR={setRascunho} verificar={config.madrugada.verificar}
+                  onVerificar={(v) => setConfig({ ...config, madrugada: { ...config.madrugada, verificar: v } })} email={config.madrugada.enviarEmail}
+                  onEmail={(b) => setConfig({ ...config, madrugada: { ...config.madrugada, enviarEmail: b } })} salvando={salvando} isPhone={isPhone}
+                  onSalvar={salvarMadrugada} onCancelar={async () => { setEditando(null); await carregar(); }} /> : null}
+                {editando === 'linkml' && linha.tipo === 'linkml' && rascunho ? <EditorLinkMl r={rascunho} setR={setRascunho} salvando={salvando} isPhone={isPhone}
+                  executando={executandoLink || !!main?.auditoriaLinkMlExecutandoAgora} onExecutar={executarLinkMl} onSalvar={salvarLinkMl} onCancelar={() => setEditando(null)} /> : null}
                 {aberto && conf ? <EditorConferencia conf={conf} onChange={(c) => setConf(conf.id, c)} salvando={salvando} isPhone={isPhone}
                   onSalvar={async () => { if (await gravar(config)) setEditando(null); }} onCancelar={async () => { setEditando(null); await carregar(); }} /> : null}
               </div>
@@ -241,15 +366,6 @@ export default function AgendamentosSection({ isPhone, onConfigChanged }: { isPh
         </div>
       </div>
 
-      <div id="cfg-madrugada" style={s.card}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 6 }}>Auditoria completa (madrugada) — o que verifica</div>
-        <div style={{ fontSize: 12, color: 'var(--gray-400)', marginBottom: 14 }}>Horário, escopo e lotes ficam no bloco "Rotina de Validação" abaixo. Aqui você escolhe, em cada canal, o que conferir: só estoque, só status ou completo. Canal em "Não verificar" deixa de ser consultado (Nuvemshop, Shopee e Magalu); no ML e no Estoque ANB × Bling só os alertas são ocultados.</div>
-        <VerificarEditor valor={config.madrugada.verificar} onChange={(v) => setConfig({ ...config, madrugada: { ...config.madrugada, verificar: v } })}
-          enviarEmail={config.madrugada.enviarEmail} onEmail={(b) => setConfig({ ...config, madrugada: { ...config.madrugada, enviarEmail: b } })} isPhone={isPhone} />
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
-          <button style={{ ...s.btn, background: 'var(--blue-500)', color: '#fff', opacity: salvando ? 0.6 : 1 }} onClick={() => gravar(config, true)} disabled={salvando}>{salvando ? 'Salvando...' : 'Salvar'}</button>
-        </div>
-      </div>
     </>
   );
 }
