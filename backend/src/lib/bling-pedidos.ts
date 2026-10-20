@@ -389,6 +389,9 @@ export async function detalhePedido(id: string) {
   };
 }
 
+// Palavras no nome que sugerem oficina/loja do ramo (primeira palavra encontrada e mostrada na tela como motivo).
+const REGEX_OFICINA = String.raw`\m(oficina|mec[aâ]nic[ao]s?|mec[aâ]nica|moto|motos|motopeças|motopecas|motocicletas?|motor|motors|motores|garage|garagem|racing|custom|bike|bikes|auto|automotiv[oa]s?|retifica|retífica|funilaria|borracharia|performance|speed|duas rodas|2 rodas|center|centro automotivo)\M`;
+
 export async function listarClientes(f: { busca?: string; filtro?: string; ordem?: string; pagina?: number; limite?: number }) {
   await garantirTabelasPedidos();
   const params: any[] = [];
@@ -405,13 +408,20 @@ export async function listarClientes(f: { busca?: string; filtro?: string; ordem
     SELECT c."id"::text AS id, c."nome", c."documento", c."tipoPessoa", c."email", c."telefone", c."celular", c."cidade", c."uf",
            ped.pedidos, COALESCE(pec.pecas, 0) AS pecas, ped.total, ped.primeira::text AS primeira, ped.ultima::text AS ultima, ped.canais,
            CASE WHEN ped.pedidos > 1 THEN ROUND((ped.ultima - ped.primeira)::numeric / (ped.pedidos - 1), 0) ELSE NULL END AS frequencia_dias,
-           (CURRENT_DATE - ped.ultima) AS dias_sem_comprar
+           (CURRENT_DATE - ped.ultima) AS dias_sem_comprar,
+           (length(regexp_replace(coalesce(c."documento", ''), '\\D', '', 'g')) = 14 OR c."tipoPessoa" = 'J') AS eh_cnpj,
+           substring(c."nome" from '${REGEX_OFICINA}') AS palavra_oficina
     FROM "BlingCliente" c JOIN ped ON ped."clienteId" = c."id" LEFT JOIN pec ON pec."clienteId" = c."id"
     WHERE 1=1 ${condBusca}`;
   let filtroSql = '';
   if (f.filtro === 'recorrentes') filtroSql = 'WHERE x.pedidos >= 2';
   else if (f.filtro === 'unica') filtroSql = 'WHERE x.pedidos = 1';
   else if (f.filtro === 'inativos') filtroSql = 'WHERE x.dias_sem_comprar > 180';
+  // possiveis oficinas: CNPJ e/ou palavra do ramo no nome ("provaveis" = os dois ao mesmo tempo)
+  else if (f.filtro === 'oficinas') filtroSql = 'WHERE (x.eh_cnpj OR x.palavra_oficina IS NOT NULL)';
+  else if (f.filtro === 'oficinas_provaveis') filtroSql = 'WHERE (x.eh_cnpj AND x.palavra_oficina IS NOT NULL)';
+  else if (f.filtro === 'oficinas_cnpj') filtroSql = 'WHERE (x.eh_cnpj AND x.palavra_oficina IS NULL)';
+  else if (f.filtro === 'oficinas_nome') filtroSql = 'WHERE (NOT x.eh_cnpj AND x.palavra_oficina IS NOT NULL)';
   const ordens: Record<string, string> = {
     total: 'x.total DESC NULLS LAST', pedidos: 'x.pedidos DESC, x.total DESC', pecas: 'x.pecas DESC, x.total DESC',
     ultima: 'x.ultima DESC NULLS LAST', nome: 'x.nome ASC', frequencia: 'x.frequencia_dias ASC NULLS LAST',
@@ -431,6 +441,7 @@ export async function listarClientes(f: { busca?: string; filtro?: string; ordem
       id: r.id, nome: r.nome, documento: r.documento, tipoPessoa: r.tipoPessoa, email: r.email, telefone: r.telefone, celular: r.celular, cidade: r.cidade, uf: r.uf,
       pedidos: Number(r.pedidos), pecas: num(r.pecas), total: num(r.total), primeira: r.primeira, ultima: r.ultima, canais: r.canais || [],
       frequenciaDias: r.frequencia_dias != null ? Number(r.frequencia_dias) : null, diasSemComprar: r.dias_sem_comprar != null ? Number(r.dias_sem_comprar) : null,
+      oficina: r.eh_cnpj || r.palavra_oficina ? { nivel: r.eh_cnpj && r.palavra_oficina ? 'provavel' : r.eh_cnpj ? 'cnpj' : 'nome', palavra: r.palavra_oficina || null } : null,
     })),
   };
 }

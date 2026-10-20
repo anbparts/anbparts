@@ -46,7 +46,12 @@ const pill = (texto: string, c: { cor: string; fundo: string }) => (
   <span key={texto} style={{ display: 'inline-block', padding: '2px 9px', borderRadius: 999, fontSize: 11, fontWeight: 700, background: c.fundo, color: c.cor, whiteSpace: 'nowrap' }}>{texto}</span>
 );
 
-const FILTROS: Array<[string, string]> = [['todos', 'Todos'], ['recorrentes', 'Recorrentes (2+ compras)'], ['unica', 'Compra única'], ['inativos', 'Sem comprar há 6+ meses']];
+const FILTROS: Array<[string, string]> = [['todos', 'Todos'], ['recorrentes', 'Recorrentes (2+ compras)'], ['unica', 'Compra única'], ['inativos', 'Sem comprar há 6+ meses'], ['oficinas', '🔧 Possíveis oficinas'], ['oficinas_provaveis', 'Provável oficina (CNPJ + nome)'], ['oficinas_cnpj', 'Só CNPJ'], ['oficinas_nome', 'Só nome (CPF)']];
+
+function rotuloOficina(o: any): string {
+  if (!o) return '';
+  return o.nivel === 'provavel' ? `Provável oficina · CNPJ + “${o.palavra}”` : o.nivel === 'cnpj' ? 'Possível oficina · CNPJ' : `Possível oficina · nome “${o.palavra}”`;
+}
 const ORDENS: Array<[string, string]> = [['total', 'Maior gasto'], ['pedidos', 'Mais pedidos'], ['pecas', 'Mais peças'], ['ultima', 'Compra mais recente'], ['frequencia', 'Mais frequentes'], ['nome', 'Nome (A-Z)']];
 
 export default function BlingClientesPage() {
@@ -108,10 +113,10 @@ export default function BlingClientesPage() {
         linhas.push(...d.itens);
         if (linhas.length >= d.total) break;
       }
-      const cab = ['Cliente', 'Documento', 'E-mail', 'Telefone', 'Cidade', 'UF', 'Pedidos', 'Peças', 'Total gasto', 'Ticket médio', 'Primeira compra', 'Última compra', 'Frequência (dias)', 'Canais'];
+      const cab = ['Cliente', 'Documento', 'E-mail', 'Telefone', 'Cidade', 'UF', 'Pedidos', 'Peças', 'Total gasto', 'Ticket médio', 'Primeira compra', 'Última compra', 'Frequência (dias)', 'Canais', 'Possível oficina'];
       const esc = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`;
       const corpo = linhas.map((c) => [c.nome, fmtDoc(c.documento), c.email, c.celular || c.telefone, c.cidade, c.uf, c.pedidos, c.pecas,
-        String(c.total).replace('.', ','), c.pedidos ? String((c.total / c.pedidos).toFixed(2)).replace('.', ',') : '', fmtData(c.primeira), fmtData(c.ultima), c.frequenciaDias ?? '', (c.canais || []).join(' / ')].map(esc).join(';'));
+        String(c.total).replace('.', ','), c.pedidos ? String((c.total / c.pedidos).toFixed(2)).replace('.', ',') : '', fmtData(c.primeira), fmtData(c.ultima), c.frequenciaDias ?? '', (c.canais || []).join(' / '), rotuloOficina(c.oficina)].map(esc).join(';'));
       const blob = new Blob(['﻿' + [cab.map(esc).join(';'), ...corpo].join('\r\n')], { type: 'text/csv;charset=utf-8' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
@@ -189,7 +194,7 @@ export default function BlingClientesPage() {
                             <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                               <div style={{ width: 34, height: 34, borderRadius: '50%', background: 'var(--gray-100)', color: 'var(--ink-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 12, flexShrink: 0 }}>{iniciais(c.nome)}</div>
                               <div style={{ minWidth: 0 }}>
-                                <div style={{ fontWeight: 600 }}>{c.nome || '—'}</div>
+                                <div style={{ fontWeight: 600 }}>{c.nome || '—'}{c.oficina ? <span title={rotuloOficina(c.oficina)} style={{ marginLeft: 8, fontSize: 10.5, fontWeight: 600, padding: '2px 8px', borderRadius: 99, background: c.oficina.nivel === 'provavel' ? '#fef3c7' : '#f1f5f9', color: c.oficina.nivel === 'provavel' ? '#92400e' : '#475569', border: '1px solid ' + (c.oficina.nivel === 'provavel' ? '#fde68a' : '#e2e8f0'), whiteSpace: 'nowrap' }}>🔧 {c.oficina.nivel === 'provavel' ? 'Provável oficina' : c.oficina.nivel === 'cnpj' ? 'CNPJ' : 'Nome'}</span> : null}</div>
                                 <div style={{ fontSize: 11.5, color: 'var(--ink-muted)' }}>{[fmtDoc(c.documento), c.cidade && `${c.cidade}${c.uf ? `/${c.uf}` : ''}`].filter(Boolean).join(' · ') || '—'}</div>
                               </div>
                             </div>
@@ -218,6 +223,7 @@ export default function BlingClientesPage() {
                 <div key={c.id} style={{ borderBottom: '1px solid var(--border)', padding: 12 }}>
                   <div onClick={() => expandir(c.id)} style={{ cursor: 'pointer', display: 'grid', gap: 4 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}><strong>{c.nome || '—'}</strong><strong>{brl(c.total)}</strong></div>
+                    {c.oficina ? <div style={{ fontSize: 11.5, color: '#92400e' }}>🔧 {rotuloOficina(c.oficina)}</div> : null}
                     <div style={{ fontSize: 12, color: 'var(--ink-muted)' }}>{c.pedidos} pedido(s) · {Math.round(c.pecas)} peça(s) · última {fmtData(c.ultima)}</div>
                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>{(c.canais || []).map((x: string) => pill(x, corCanal(x)))}</div>
                   </div>
