@@ -288,7 +288,7 @@ export default function AuditoriaAutomaticaPage() {
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', width: isPhone ? '100%' : undefined }}>
           <Link href="/conf-auditoria" style={{ ...s.btnGhost }}>Conf. Auditoria</Link>
-          <button style={{ ...s.btnGhost }} onClick={() => executarRapida('rapida')} disabled={executando || !!config?.executandoAgora} title="So os SKUs vendidos nos ultimos 3 dias (roda sozinha as 11:00 e 16:00)">Conferencia rapida</button>
+          <button style={{ ...s.btnGhost }} onClick={() => executarRapida('rapida')} disabled={executando || !!config?.executandoAgora} title="So os SKUs vendidos no periodo configurado em Conf. Auditoria Automatica">Conferencia rapida</button>
           <button style={{ ...s.btnGhost }} onClick={() => executarRapida('mes')} disabled={executando || !!config?.executandoAgora} title="So os SKUs vendidos desde o dia 1 do mes atual">Conferencia do mes</button>
           <button style={{ ...s.btn, background: 'var(--blue-500)', color: '#fff', opacity: executando ? 0.6 : 1 }} onClick={executarAgora} disabled={executando || !!config?.executandoAgora}>{executando || config?.executandoAgora ? 'Executando...' : 'Executar agora'}</button>
         </div>

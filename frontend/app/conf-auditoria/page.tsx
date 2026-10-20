@@ -2,6 +2,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { API_BASE } from '@/lib/api-base';
+import AgendamentosSection from './AgendamentosSection';
 
 const API = API_BASE;
 
@@ -169,6 +170,7 @@ export default function ConfAuditoriaPage() {
       </div>
 
       <div style={{ padding: pagePadding }}>
+        <AgendamentosSection isPhone={isPhone} />
         <div style={s.card}>
           <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 8 }}>Configuracao da Rotina de Validacao / Detran / Localizacao</div>
           <div style={{ fontSize: 12, color: 'var(--gray-400)', marginBottom: 16 }}>Defina quando a rotina principal vai rodar, como a base sera filtrada e com qual cadencia os lotes serao enviados para o Bling. O link do ML nao e mais atualizado aqui.</div>

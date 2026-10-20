@@ -22,6 +22,7 @@ import { cancelarVendaComDevolucaoEtiqueta } from '../lib/cancelamento-venda';
 import { getMercadoLivreItemPermalink } from '../lib/mercado-livre';
 import { getNuvemshopStatusBySkus, buildNuvemshopCatalogMap, NuvemshopAnuncioStatus } from '../lib/nuvemshop';
 import { buscarEstoqueShopee, consultarEstoqueMagalu, skusComAnuncioMagalu, AnuncioEstoque } from '../lib/auditoria-marketplaces';
+import { carregarAgendamentos, salvarAgendamentos, aplicarVerificar, intervaloDoPeriodo, descreverPeriodo, descreverVerificar, proximaExecucao } from '../lib/auditoria-agendamentos';
 import { spDayStart, spDayEnd } from '../lib/timezone';
 
 export const blingRouter = Router();
@@ -3346,6 +3347,8 @@ async function compareProdutosBlingCodes(
     nuvemshopLojaId?: number;
     nuvemshopStatusMap?: Map<string, NuvemshopAnuncioStatus>;
     suppressMarketplaceErrors?: boolean;
+    auditarShopee?: boolean;
+    auditarMagalu?: boolean;
     traceSkus?: Set<string> | string[];
     onProgress?: (payload: { totalParaProcessar: number; totalProcessados: number; fase: string }) => Promise<void> | void;
   },
@@ -3498,14 +3501,14 @@ async function compareProdutosBlingCodes(
 
     // Shopee e Magalu: so anuncios ATIVOS, comparando o estoque de la com o nosso (falha aqui vira aviso, nunca derruba a auditoria)
     const marketplacesEstoque: Array<{ id: 'shopee' | 'magalu'; nome: string; mapa: Map<string, AnuncioEstoque> }> = [];
-    try {
+    if (options?.auditarShopee !== false) try {
       await emitProgress({ totalProcessados: 0, fase: 'Consultando anuncios Shopee' });
       const mapaShopee = await buscarEstoqueShopee((fase) => emitProgress({ totalProcessados: 0, fase }));
       if (mapaShopee) marketplacesEstoque.push({ id: 'shopee', nome: 'Shopee', mapa: mapaShopee });
     } catch (e: any) {
       warnings.add(`Falha ao consultar Shopee: ${e?.message || 'erro desconhecido'}`);
     }
-    try {
+    if (options?.auditarMagalu !== false) try {
       const comAnuncioMagalu = await skusComAnuncioMagalu();
       const candidatos = codigos.filter((c) => comAnuncioMagalu.has(c));
       if (candidatos.length) {
@@ -3949,7 +3952,7 @@ function buildAuditoriaTraceResumo(
   );
 }
 
-async function runTraceSkuComparison(rawSkus: any, rawMotoId: any, onProgress?: (payload: { totalParaProcessar: number; totalProcessados: number; fase: string }) => Promise<void> | void) {
+async function runTraceSkuComparison(rawSkus: any, rawMotoId: any, onProgress?: (payload: { totalParaProcessar: number; totalProcessados: number; fase: string }) => Promise<void> | void, canais?: { nuvemshop?: boolean; shopee?: boolean; magalu?: boolean }) {
   const cfg = await getConfig();
   const traceSkuSet = buildAuditoriaTraceSkuSet(rawSkus);
   const motoId = Number(rawMotoId) || 0;
@@ -4022,8 +4025,10 @@ async function runTraceSkuComparison(rawSkus: any, rawMotoId: any, onProgress?: 
     syncMercadoLivreItemId: true,
     syncMercadoLivreLink: false,
     syncCamposFisicos: true,
-    nuvemshopAtiva: cfg.nuvemshopAtiva,
+    nuvemshopAtiva: canais?.nuvemshop ?? cfg.nuvemshopAtiva,
     nuvemshopLojaId: cfg.nuvemshopLojaId,
+    auditarShopee: canais?.shopee,
+    auditarMagalu: canais?.magalu,
     suppressMarketplaceErrors: true,
     batchSize: Math.max(10, Math.min(cfg.consultaManualTamanhoLote, codigosParaComparar.length || 1)),
     pauseMs: cfg.consultaManualPausaMs,
@@ -4786,6 +4791,8 @@ async function executeAuditoriaAutomatica(origem: 'manual' | 'auto' = 'manual') 
     DEFAULT_AUDITORIA_EMAIL_TITULO,
     executedAt,
   );
+  const agend = await carregarAgendamentos();
+  const verificarMadrugada = agend.madrugada.verificar;
   const local = await loadAllLocalSkuResumo(cfg.auditoriaEscopo);
   const traceSkuSet = buildAuditoriaTraceSkuSet();
   let progressSnapshot = {
@@ -4848,14 +4855,16 @@ async function executeAuditoriaAutomatica(origem: 'manual' | 'auto' = 'manual') 
       syncMercadoLivreItemId: true,
       syncMercadoLivreLink: false,
       syncCamposFisicos: true,
-      nuvemshopAtiva: cfg.nuvemshopAtiva,
+      nuvemshopAtiva: cfg.nuvemshopAtiva && verificarMadrugada.nuvemshop !== 'desligado',
       nuvemshopLojaId: cfg.nuvemshopLojaId,
+      auditarShopee: verificarMadrugada.shopee !== 'desligado',
+      auditarMagalu: verificarMadrugada.magalu !== 'desligado',
       batchSize: cfg.auditoriaTamanhoLote,
       pauseMs: cfg.auditoriaPausaMs,
       traceSkus: traceSkuSet,
       onProgress: persistProgress,
     });
-    const { resultado, resumoPedidosAbertos } = await aplicarFiltroPedidosAbertosAuditoria(resultadoAuditoria);
+    const { resultado, resumoPedidosAbertos } = await aplicarFiltroPedidosAbertosAuditoria(aplicarVerificar(resultadoAuditoria, verificarMadrugada));
     await persistProgress({
       totalParaProcessar: resultado.totalConsultados,
       totalProcessados: resultado.totalConsultados,
@@ -4870,7 +4879,7 @@ async function executeAuditoriaAutomatica(origem: 'manual' | 'auto' = 'manual') 
     let emailEnviado = false;
     let emailErro: string | null = null;
 
-    if (resultado.totalDivergencias > 0 && emailConfig.auditoriaEmailConfigurado) {
+    if (resultado.totalDivergencias > 0 && emailConfig.auditoriaEmailConfigurado && agend.madrugada.enviarEmail) {
       try {
         await sendAuditoriaEmail(emailConfig, resultado, executedAt);
         emailEnviado = true;
@@ -4919,21 +4928,20 @@ async function executeAuditoriaAutomatica(origem: 'manual' | 'auto' = 'manual') 
   }
 }
 
-// ── Conferencia rapida: so os SKUs vendidos nos ultimos dias, 2x ao dia (double check durante o dia) ──
-const AUDITORIA_RAPIDA_HORARIOS = ['11:00', '16:00'];
-const AUDITORIA_RAPIDA_DIAS = 3;
+// ── Conferencia menor (durante o dia): horarios, periodo e o que verificar vem de Conf. Auditoria Automatica ──
 const auditoriaRapidaState = { ultimaChave: '' };
 
+// origem: 'auto' = agendada, 'manual' = botao (usa o periodo configurado), 'mes' = botao fixo "mes atual"
 async function executeAuditoriaRapida(origem: 'manual' | 'auto' | 'mes' = 'manual') {
+  const cfg = await getConfig();
   const emailConfig = await getConfiguracaoGeral();
+  const agend = await carregarAgendamentos();
   const executedAt = new Date();
-  // 'mes' = vendidos desde o dia 1 do mes atual (horario de Sao Paulo); demais = ultimos N dias
-  const corte = origem === 'mes'
-    ? new Date(`${getTimezoneDateParts(executedAt).dateKey.slice(0, 7)}-01T00:00:00-03:00`)
-    : new Date(Date.now() - AUDITORIA_RAPIDA_DIAS * 24 * 60 * 60 * 1000);
-  const tituloEmail = origem === 'mes'
-    ? 'ALERTA ANB Parts - Conferencia do mes atual (vendidos no mes) - Verifique'
-    : `ALERTA ANB Parts - Conferencia rapida (vendidos nos ultimos ${AUDITORIA_RAPIDA_DIAS} dias) - Verifique`;
+  const periodo = origem === 'mes' ? { tipo: 'mes_atual' as const, dias: agend.rapida.periodo.dias } : agend.rapida.periodo;
+  const { de, ate } = intervaloDoPeriodo(periodo, executedAt);
+  const rotuloPeriodo = descreverPeriodo(periodo);
+  const verificar = agend.rapida.verificar;
+  const tituloEmail = `ALERTA ANB Parts - Conferencia rapida (${rotuloPeriodo}) - Verifique`;
   const execution = await prisma.auditoriaAutomaticaExecucao.create({
     data: {
       origem: origem === 'auto' ? 'rapida_auto' : origem === 'mes' ? 'mes_manual' : 'rapida_manual',
@@ -4945,7 +4953,7 @@ async function executeAuditoriaRapida(origem: 'manual' | 'auto' | 'mes' = 'manua
     },
   });
   try {
-    const vendidas = await prisma.peca.findMany({ where: { dataVenda: { gte: corte } }, select: { idPeca: true } });
+    const vendidas = await prisma.peca.findMany({ where: { dataVenda: ate ? { gte: de, lt: ate } : { gte: de } }, select: { idPeca: true } });
     const skus = Array.from(new Set(vendidas.map((p: any) => getBaseSku(p.idPeca)).filter(Boolean))) as string[];
     await prisma.auditoriaAutomaticaExecucao.update({ where: { id: execution.id }, data: { totalSkus: skus.length } });
     // progresso visivel na tela (fase atual e quantos SKUs ja foram), gravado no maximo a cada ~1,5 s
@@ -4959,18 +4967,20 @@ async function executeAuditoriaRapida(origem: 'manual' | 'auto' | 'mes' = 'manua
       }).catch(() => undefined);
     };
     await salvarProgresso({ totalParaProcessar: skus.length, totalProcessados: 0, fase: `Conferindo ${skus.length} SKU(s) vendidos` });
-    const bruto: any = skus.length ? (await runTraceSkuComparison(skus, null, salvarProgresso)).resultado : null;
-    const base = bruto || { ok: true, totalConsultados: 0, totalDivergencias: 0, totalSemDivergencia: 0, divergencias: [], warnings: [] };
+    const bruto: any = skus.length
+      ? (await runTraceSkuComparison(skus, null, salvarProgresso, { nuvemshop: cfg.nuvemshopAtiva && verificar.nuvemshop !== 'desligado', shopee: verificar.shopee !== 'desligado', magalu: verificar.magalu !== 'desligado' })).resultado
+      : null;
+    const base = aplicarVerificar(bruto || { ok: true, totalConsultados: 0, totalDivergencias: 0, totalSemDivergencia: 0, divergencias: [], warnings: [] }, verificar);
     const { resultado, resumoPedidosAbertos } = await aplicarFiltroPedidosAbertosAuditoria(base);
     const resumo: any = JSON.parse(JSON.stringify({
       ...buildAuditoriaResumo(resultado),
-      conferenciaRapida: { dias: origem === 'mes' ? null : AUDITORIA_RAPIDA_DIAS, desde: corte.toISOString(), skusVendidos: skus.length },
+      conferenciaRapida: { periodo: rotuloPeriodo, desde: de.toISOString(), ate: ate ? ate.toISOString() : null, skusVendidos: skus.length, verificado: descreverVerificar(verificar) },
       pedidosAbertosIgnorados: resumoPedidosAbertos,
     }));
     let emailEnviado = false;
     let emailErro: string | null = null;
     // sempre avisa quando ha divergencia, mesmo repetida da execucao anterior
-    if (resultado.totalDivergencias > 0 && emailConfig.auditoriaEmailConfigurado) {
+    if (resultado.totalDivergencias > 0 && emailConfig.auditoriaEmailConfigurado && agend.rapida.enviarEmail) {
       try { await sendAuditoriaEmail(emailConfig, resultado, executedAt, tituloEmail); emailEnviado = true; } catch (error: any) { emailErro = error?.message || String(error); }
     }
     const updated = await prisma.auditoriaAutomaticaExecucao.update({
@@ -4989,10 +4999,10 @@ async function executeAuditoriaRapida(origem: 'manual' | 'auto' | 'mes' = 'manua
 
 async function tickAuditoriaRapida() {
   if (auditoriaSchedulerState.running) return;
-  const cfg = await getConfig();
-  if (!cfg.auditoriaAtiva) return;
+  const agend = await carregarAgendamentos();
+  if (!agend.rapida.ativo || !agend.rapida.horarios.length) return;
   const now = getTimezoneDateParts(new Date());
-  if (!AUDITORIA_RAPIDA_HORARIOS.includes(now.timeKey)) return;
+  if (!agend.rapida.horarios.includes(now.timeKey)) return;
   if (auditoriaRapidaState.ultimaChave === now.runKey) return;
   auditoriaRapidaState.ultimaChave = now.runKey;
   // se o servidor reiniciou dentro do mesmo horario, nao repete
@@ -5216,6 +5226,59 @@ blingRouter.get('/auditoria-automatica/config', async (_req, res, next) => {
   } catch (e) {
     next(e);
   }
+});
+
+async function montarRelatorioAgendamentos() {
+  const cfg = await getConfig();
+  const agend = await carregarAgendamentos();
+  const geral = await getConfiguracaoGeral();
+  const escoposTxt: Record<string, string> = { full: 'Full (toda a base)', com_estoque: 'Somente com estoque', com_estoque_mais_vendidos_ano: 'Com estoque + vendidos no ano' };
+  const ultima = async (origens: string[]) => {
+    const e = await prisma.auditoriaAutomaticaExecucao.findFirst({ where: { origem: { in: origens } }, orderBy: { id: 'desc' }, select: { id: true, origem: true, status: true, startedAt: true, totalSkus: true, totalDivergencias: true, emailEnviado: true } });
+    return e || null;
+  };
+  const destinatario = geral.auditoriaEmailDestinatario || '';
+  const emailTxt = (enviar: boolean) => (!geral.auditoriaEmailConfigurado ? 'E-mail não configurado' : enviar ? `E-mail para ${destinatario} quando houver divergência` : 'Sem e-mail (só na tela)');
+  const madrugadaHorarios = [cfg.auditoriaHorario];
+  const r = agend.rapida;
+  const linkHorarios = [cfg.auditoriaLinkMlHorario];
+  return [
+    {
+      id: 'madrugada', nome: 'Auditoria completa (madrugada)', ativo: !!cfg.auditoriaAtiva, horarios: madrugadaHorarios,
+      proxima: cfg.auditoriaAtiva ? proximaExecucao(madrugadaHorarios) : null,
+      escopo: escoposTxt[cfg.auditoriaEscopo] || cfg.auditoriaEscopo, periodo: null,
+      verifica: descreverVerificar(agend.madrugada.verificar), email: emailTxt(agend.madrugada.enviarEmail),
+      detalhe: `Lote de ${cfg.auditoriaTamanhoLote} SKUs, pausa de ${cfg.auditoriaPausaMs} ms`,
+      ultima: await ultima(['auto', 'manual']),
+    },
+    {
+      id: 'rapida', nome: 'Conferência menor (durante o dia)', ativo: r.ativo && r.horarios.length > 0, horarios: r.horarios,
+      proxima: r.ativo ? proximaExecucao(r.horarios) : null,
+      escopo: 'Somente SKUs com peça vendida no período', periodo: descreverPeriodo(r.periodo),
+      verifica: descreverVerificar(r.verificar), email: emailTxt(r.enviarEmail), detalhe: null,
+      ultima: await ultima(['rapida_auto', 'rapida_manual', 'mes_manual']),
+    },
+    {
+      id: 'linkml', nome: 'Atualização de links do ML', ativo: !!cfg.auditoriaLinkMlAtiva, horarios: linkHorarios,
+      proxima: cfg.auditoriaLinkMlAtiva ? proximaExecucao(linkHorarios) : null,
+      escopo: 'Peças com estoque e item ID do ML', periodo: `A cada ${cfg.auditoriaLinkMlIntervaloDias} dia(s)`,
+      verifica: ['Permalink dos anúncios ML'], email: 'Sem e-mail', detalhe: null,
+      ultima: cfg.auditoriaLinkMlUltimaExecucaoEm ? { startedAt: cfg.auditoriaLinkMlUltimaExecucaoEm } : null,
+    },
+  ];
+}
+
+blingRouter.get('/auditoria-automatica/agendamentos', async (_req, res, next) => {
+  try {
+    res.json({ ok: true, config: await carregarAgendamentos(), relatorio: await montarRelatorioAgendamentos() });
+  } catch (e) { next(e); }
+});
+
+blingRouter.post('/auditoria-automatica/agendamentos', async (req, res, next) => {
+  try {
+    const config = await salvarAgendamentos(req.body?.config ?? req.body);
+    res.json({ ok: true, config, relatorio: await montarRelatorioAgendamentos() });
+  } catch (e) { next(e); }
 });
 
 blingRouter.post('/auditoria-automatica/config', async (req, res, next) => {
