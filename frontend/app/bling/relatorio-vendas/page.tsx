@@ -444,6 +444,8 @@ export default function RelatorioVendasPage() {
   const [ajustarFretePedido, setAjustarFretePedido] = useState<PedidoGroup | null>(null);
   const [brindePedido, setBrindePedido] = useState<PedidoGroup | null>(null);
   const [termoPedido, setTermoPedido] = useState<PedidoGroup | null>(null);
+  const [statusReceb, setStatusReceb] = useState<Record<string, string>>({});
+  const [marcandoReceb, setMarcandoReceb] = useState('');
 
   const anosDisponiveis = Array.from({ length: 11 }, (_, index) => String(currentYear() - index));
 
@@ -461,8 +463,36 @@ export default function RelatorioVendasPage() {
       if (!response.ok || !data.ok) { alert(data.error || 'Erro ao consultar relatorio'); return; }
       setRelatorio(data);
       setBuscou(true);
+      carregarStatusReceb(data.pedidos || []);
     } catch (e: any) { alert(`Erro: ${e.message}`); }
     setBuscando(false);
+  }
+
+  async function carregarStatusReceb(lista: PedidoGroup[]) {
+    const nums = lista.map((p) => p.pedidoNum).filter(Boolean);
+    if (!nums.length) { setStatusReceb({}); return; }
+    try {
+      const resp = await fetch(`${API}/pendente-recebimento/status?pedidos=${encodeURIComponent(nums.join(','))}`, { credentials: 'include' });
+      const d = await resp.json();
+      if (resp.ok && d.ok) setStatusReceb(d.status || {});
+    } catch { /* botao segue sem o estado */ }
+  }
+
+  // Marca o pedido como pendente de recebimento (ou tira a marcacao se ja estava pendente)
+  async function alternarPendenteReceb(p: PedidoGroup) {
+    const atual = statusReceb[p.pedidoNum];
+    if (atual === 'pendente' && !confirm(`Tirar o pedido #${p.pedidoNum} da lista de Pendente Recebimento?`)) return;
+    setMarcandoReceb(p.pedidoNum);
+    try {
+      const resp = await fetch(`${API}/pendente-recebimento/${atual === 'pendente' ? 'desmarcar' : 'marcar'}`, {
+        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pedidoNum: p.pedidoNum, pedidoId: p.pedidoId, nomeCliente: p.nomeCliente }),
+      });
+      const d = await resp.json().catch(() => ({}));
+      if (!resp.ok || d.ok === false) throw new Error(d.error || `Erro ${resp.status}`);
+      setStatusReceb((prev) => { const n = { ...prev }; if (atual === 'pendente') delete n[p.pedidoNum]; else n[p.pedidoNum] = 'pendente'; return n; });
+    } catch (e: any) { alert(`Erro: ${e?.message || e}`); }
+    setMarcandoReceb('');
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); if (!buscando) buscarRelatorio(); }
@@ -637,6 +667,16 @@ export default function RelatorioVendasPage() {
                     style={{ ...s.btn, padding: '4px 12px', fontSize: 12, background: '#ecfdf5', color: '#047857', borderColor: '#a7f3d0', opacity: pedidoGroup.pedidoId ? 1 : 0.5 }}
                   >
                     Termo de Retirada
+                  </button>
+                  <button
+                    onClick={() => alternarPendenteReceb(pedidoGroup)}
+                    disabled={marcandoReceb === pedidoGroup.pedidoNum}
+                    title={statusReceb[pedidoGroup.pedidoNum] === 'pendente' ? 'Este pedido esta em Financeiro > Pendente Recebimento. Clique para tirar da lista.' : 'Marca este pedido como pendente de recebimento (vai para Financeiro > Pendente Recebimento)'}
+                    style={statusReceb[pedidoGroup.pedidoNum] === 'pendente'
+                      ? { ...s.btn, padding: '4px 12px', fontSize: 12, background: '#fef2f2', color: '#b91c1c', borderColor: '#fca5a5', fontWeight: 700 }
+                      : { ...s.btn, padding: '4px 12px', fontSize: 12, background: '#fff7ed', color: '#c2410c', borderColor: '#fed7aa' }}
+                  >
+                    {statusReceb[pedidoGroup.pedidoNum] === 'pendente' ? '✓ Pendente recebimento' : statusReceb[pedidoGroup.pedidoNum] === 'baixado' ? 'Pendente recebimento (já baixado)' : 'Pendente recebimento'}
                   </button>
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 4 }}>

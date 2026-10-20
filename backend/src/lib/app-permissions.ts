@@ -48,6 +48,7 @@ export const APP_PERMISSION_CATALOG: AppPagePermission[] = [
   { key: 'faturamento', label: 'Fat. por Moto', href: '/faturamento', actions: [] },
   { key: 'faturamento_geral', label: 'Fat. Geral', href: '/faturamento/geral', actions: [] },
   { key: 'despesas_receita', label: 'Despesas x Receita', href: '/despesas-receita', actions: [] },
+  { key: 'pendente_recebimento', label: 'Pendente Recebimento', href: '/pendente-recebimento', actions: [{ key: 'baixar', label: 'Dar baixa nos pedidos' }] },
   { key: 'dre', label: 'DRE', href: '/dre', actions: [] },
   { key: 'curva_abc', label: 'Curva ABC', href: '/curva-abc', actions: [
     { key: 'sugerir_ia', label: 'Sugerir categorias com IA (categorização manual)' },

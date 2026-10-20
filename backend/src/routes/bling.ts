@@ -6452,12 +6452,12 @@ blingRouter.post('/comparar-produtos-csv', async (req, res, next) => {
   }
 });
 
-blingRouter.get('/relatorio-vendas', async (req, res, next) => {
-  try {
-    const dataDe = String(req.query?.dataDe || '').trim();
-    const dataAte = String(req.query?.dataAte || '').trim();
-    const pedido = String(req.query?.pedido || '').trim();
-    const idPeca = String(req.query?.idPeca || '').trim().toUpperCase();
+// Calculo do Relatorio de Vendas (pedidos agrupados com itens e valores). Usado pela rota e por Financeiro > Pendente Recebimento.
+export async function montarRelatorioVendas(q: { dataDe?: any; dataAte?: any; pedido?: any; idPeca?: any; skipNomeCliente?: any; pedidosExatos?: string[] }) {
+    const dataDe = String(q?.dataDe || '').trim();
+    const dataAte = String(q?.dataAte || '').trim();
+    const pedido = String(q?.pedido || '').trim();
+    const idPeca = String(q?.idPeca || '').trim().toUpperCase();
 
     const andFilters: any[] = [
       { dataVenda: { not: null } },
@@ -6486,6 +6486,9 @@ blingRouter.get('/relatorio-vendas', async (req, res, next) => {
           mode: 'insensitive',
         },
       });
+    }
+    if (Array.isArray(q?.pedidosExatos) && q.pedidosExatos.length) {
+      andFilters.push({ blingPedidoNum: { in: q.pedidosExatos } });
     }
 
     const pecas = await (prisma as any).peca.findMany({
@@ -6519,7 +6522,7 @@ blingRouter.get('/relatorio-vendas', async (req, res, next) => {
 
     // Busca nomes de clientes no Bling para cada pedido único que tem blingPedidoId
     // Só faz isso quando explicitamente solicitado (não no dashboard)
-    const skipNomeCliente = req.query?.skipNomeCliente === 'true';
+    const skipNomeCliente = q?.skipNomeCliente === true || q?.skipNomeCliente === 'true';
     const pedidoIdSet = new Set<string>();
     if (!skipNomeCliente) {
       for (const peca of pecas) {
@@ -6635,8 +6638,7 @@ blingRouter.get('/relatorio-vendas', async (req, res, next) => {
 
     totaisGerais.totalPedidos = pedidos.length;
 
-    res.json({
-      ok: true,
+    return {
       filtros: {
         dataDe,
         dataAte,
@@ -6645,7 +6647,12 @@ blingRouter.get('/relatorio-vendas', async (req, res, next) => {
       },
       totaisGerais,
       pedidos,
-    });
+    };
+}
+
+blingRouter.get('/relatorio-vendas', async (req, res, next) => {
+  try {
+    res.json({ ok: true, ...(await montarRelatorioVendas(req.query as any)) });
   } catch (e) {
     next(e);
   }
