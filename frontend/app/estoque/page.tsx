@@ -3535,15 +3535,18 @@ function PecaDetalheNovaModal({ open, peca, onClose, onSaved, canEditarPeca = fa
       </div>
 
       {motivoPendente && (
-        <MotivoPrecoModal
-          precoAnterior={motivoPendente.precoAnterior}
-          precoNovo={motivoPendente.precoNovo}
-          onCancel={() => setMotivoPendente(null)}
-          onConfirm={async (motivo: 'desconto_cliente' | 'reajuste_mercado', observacao: string) => {
-            setMotivoPendente(null);
-            await executarSalvar(motivo, observacao);
-          }}
-        />
+        // o clique dentro do modal de motivo nao pode subir ate o fundo desta tela (que fecha os detalhes antes de gravar)
+        <div onClick={(e) => e.stopPropagation()}>
+          <MotivoPrecoModal
+            precoAnterior={motivoPendente.precoAnterior}
+            precoNovo={motivoPendente.precoNovo}
+            onCancel={() => setMotivoPendente(null)}
+            onConfirm={async (motivo: 'desconto_cliente' | 'reajuste_mercado', observacao: string) => {
+              setMotivoPendente(null);
+              await executarSalvar(motivo, observacao);
+            }}
+          />
+        </div>
       )}
 
       {fotoGrande && fotoArquivo ? (
