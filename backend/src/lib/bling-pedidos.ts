@@ -21,6 +21,8 @@ export function garantirTabelasPedidos(): Promise<void> {
         "totalProdutos" NUMERIC(14,2), "total" NUMERIC(14,2), "frete" NUMERIC(14,2), "desconto" NUMERIC(14,2), "taxaComissao" NUMERIC(14,2),
         "entregaCidade" TEXT, "entregaUf" TEXT, "entregaCep" TEXT, "entregaEndereco" TEXT, "observacoes" TEXT,
         "sincronizadoEm" TIMESTAMPTZ NOT NULL DEFAULT now())`);
+      // detalhe completo do pedido (JSON do Bling): o relatorio de separacao le daqui em vez de chamar o Bling
+      await prisma.$executeRawUnsafe(`ALTER TABLE "BlingPedido" ADD COLUMN IF NOT EXISTS "raw" TEXT`);
       await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "BlingPedido_data_idx" ON "BlingPedido" ("data")`);
       await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "BlingPedido_cliente_idx" ON "BlingPedido" ("clienteId")`);
       await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "BlingPedidoItem" (
@@ -104,6 +106,7 @@ export async function sincronizarPedido(pedidoId: number | string) {
     txt(etq?.municipio) || null, txt(etq?.uf) || null, txt(etq?.cep) || null, enderecoEntrega || null, txt(d?.observacoes) || null,
   );
 
+  await prisma.$executeRawUnsafe(`UPDATE "BlingPedido" SET "raw" = $2 WHERE "id" = $1::bigint`, String(d.id), JSON.stringify(d));
   await prisma.$executeRawUnsafe(`DELETE FROM "BlingPedidoItem" WHERE "pedidoId" = $1::bigint`, String(d.id));
   for (const it of Array.isArray(d?.itens) ? d.itens : []) {
     const qtd = num(it?.quantidade) || 1;
@@ -192,10 +195,25 @@ export async function iniciarCargaHistorica(opcoes: { reprocessar?: boolean } = 
   return { ok: true, total: ids.length };
 }
 
+// Detalhe completo do pedido guardado localmente (mesmo JSON de GET /pedidos/vendas/{id}); null se ainda nao foi guardado.
+export async function lerDetalheLocal(pedidoId: number | string): Promise<any | null> {
+  await garantirTabelasPedidos();
+  const rows = await prisma.$queryRawUnsafe<Array<{ raw: string | null }>>(`SELECT "raw" FROM "BlingPedido" WHERE "id" = $1::bigint`, String(pedidoId));
+  const raw = rows[0]?.raw;
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { return null; }
+}
+
 // Pedidos de um periodo (todos, mesmo sem peca vinculada): traz os novos e atualiza a situacao dos que mudaram.
 export async function sincronizarPeriodo(de: string, ate: string) {
   await garantirTabelasPedidos();
   const lista: any[] = await listPedidos(de, ate) as any;
+  return sincronizarAPartirDaLista(lista);
+}
+
+// Mesma regra, a partir de uma lista de pedidos que ja foi consultada no Bling (evita repetir a consulta de lista).
+export async function sincronizarAPartirDaLista(lista: any) {
+  await garantirTabelasPedidos();
   const arr: Array<{ id: number; situacao: any }> = Array.isArray(lista) ? lista : Array.from((lista as any)?.values?.() || []);
   const existentes = new Map<string, string>((await prisma.$queryRawUnsafe<any[]>(
     `SELECT "id"::text AS id, "situacao" FROM "BlingPedido" WHERE "id" = ANY($1::bigint[])`, arr.map((p) => String(p.id)),

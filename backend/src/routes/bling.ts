@@ -6769,7 +6769,17 @@ async function obterDetalhePedidoCache(pedidoId: string | number, opts: { forceR
   const chave = String(pedidoId);
   const hit = pedidoDetalheCache.get(chave);
   if (!opts.forceRefresh && hit && hit.expiraEm > Date.now()) return hit.detalhe;
-  const detalhe = await blingReq(`/pedidos/vendas/${chave}`) as any;
+  // 1) banco local (pedido ja sincronizado: Pedidos/Clientes); 2) se ainda nao esta la, le no Bling e passa a guardar localmente
+  let detalhe: any = null;
+  if (!opts.forceRefresh) {
+    try {
+      const pedidosLib = await import('../lib/bling-pedidos');
+      let local = await pedidosLib.lerDetalheLocal(chave);
+      if (!local) { await pedidosLib.sincronizarPedido(chave); local = await pedidosLib.lerDetalheLocal(chave); }
+      if (local) detalhe = { data: local };
+    } catch { /* banco local indisponivel: cai no Bling */ }
+  }
+  if (!detalhe) detalhe = await blingReq(`/pedidos/vendas/${chave}`) as any;
   if (detalhe?.data) {
     if (pedidoDetalheCache.size >= PEDIDO_DETALHE_CACHE_MAX) {
       const maisAntiga = pedidoDetalheCache.keys().next().value;
@@ -6812,6 +6822,18 @@ async function preaquecerProdutosDoRelatorio(pedidoIds: Array<string | number>, 
       if (c) c.expiresAt = Date.now() + PRODUTO_PREAQUECIDO_TTL_MS;
     }
   } catch { /* pre-aquecimento e' so otimizacao: se falhar, o relatorio busca na hora */ }
+}
+
+// Canal de venda (Mercado Livre, Shopee, Magalu, Manual...) de cada pedido, lido do banco local de pedidos.
+async function canaisDosPedidos(pedidoIds: Array<number | string>): Promise<Map<string, string>> {
+  const mapa = new Map<string, string>();
+  const ids = Array.from(new Set(pedidoIds.map((x) => String(x || '').trim()).filter((x) => /^\d+$/.test(x))));
+  if (!ids.length) return mapa;
+  try {
+    const rows = await prisma.$queryRawUnsafe<Array<{ id: string; canal: string | null }>>(`SELECT "id"::text AS id, "canal" FROM "BlingPedido" WHERE "id" = ANY($1::bigint[])`, ids);
+    for (const r of rows) if (r.canal) mapa.set(String(r.id), String(r.canal));
+  } catch { /* tabela local ainda nao criada: sem etiqueta de canal */ }
+  return mapa;
 }
 
 async function buildRelatorioSeparacaoFromPedidoIds(
@@ -6909,10 +6931,9 @@ async function buildRelatorioSeparacaoFromPedidoIds(
     });
   }
 
+  const canalPorPedido = await canaisDosPedidos(pedidosRaw.map((p) => p.pedidoId));
   const codigos = Array.from(codigosSeparacao);
   const todasPecas = codigos.length ? await listPecasForComparacaoByCodes(codigos) : [];
-  const produtosByCode = codigos.length ? await findBlingProductsByCodes(codigos) : new Map<string, any>();
-  const productDetailCache = new Map<number, any | null>();
   const reservedVendaPecaIds = new Set<number>();
   const sortFactor = options.sortDirection === 'desc' ? -1 : 1;
 
@@ -6954,19 +6975,9 @@ async function buildRelatorioSeparacaoFromPedidoIds(
 
     for (const item of pedidoRaw.itens) {
       const codigosItem = [item.skuBling, item.idBling].filter(Boolean);
-      const produtoResumo = item.baseSku ? (produtosByCode.get(item.baseSku) || null) : null;
-      const produtoIdResolved = item.produtoId || Number(produtoResumo?.id || 0) || null;
-      let produtoDetalhe = null;
-
-      if (produtoIdResolved) {
-        if (!productDetailCache.has(produtoIdResolved)) {
-          productDetailCache.set(produtoIdResolved, await fetchBlingProductDetailById(produtoIdResolved));
-        }
-        produtoDetalhe = productDetailCache.get(produtoIdResolved) || null;
-      }
-
       const pecaReferencia = findSkuReferencePeca(todasPecas, item.skuBling, item.idBling);
-      const localizacaoBling = normalizeLocation(resolveBlingLocation(produtoResumo, produtoDetalhe).location);
+      // A posicao da peca vem so do ANB (fonte oficial): o relatorio nao consulta mais o produto no Bling.
+      const localizacaoBling: string | null = null;
       const pecasVinculadasSku = findLinkedPecasByPedido(
         todasPecas,
         pedidoRaw.pedidoId,
@@ -6987,16 +6998,7 @@ async function buildRelatorioSeparacaoFromPedidoIds(
           && codigosItem.some((codigo) => matchesSku(peca.idPeca, codigo)),
         )
         .sort((a, b) => a.id - b.id);
-      const locationMatchesBling = (peca: any) => {
-        const location = normalizeLocation(peca.localizacao);
-        return !!localizacaoBling && !!location && normalizeText(location) === normalizeText(localizacaoBling);
-      };
-      const pecasOrdenadasParaSeparacao = localizacaoBling
-        ? [
-          ...pecasDisponiveisSku.filter((peca) => locationMatchesBling(peca)),
-          ...pecasDisponiveisSku.filter((peca) => !locationMatchesBling(peca)),
-        ]
-        : pecasDisponiveisSku;
+      const pecasOrdenadasParaSeparacao = pecasDisponiveisSku;
       const pecasDisponiveisSelecionadas = pecasOrdenadasParaSeparacao.slice(0, quantidadeRestante);
       pecasDisponiveisSelecionadas.forEach((peca) => reservedVendaPecaIds.add(peca.id));
       const pecasSelecionadas = [...pecasVinculadasSelecionadas, ...pecasDisponiveisSelecionadas];
@@ -7011,12 +7013,7 @@ async function buildRelatorioSeparacaoFromPedidoIds(
           .filter((location): location is string => Boolean(location)),
       ));
       const localizacaoAnb = localizacoesAnb.join(' / ') || null;
-      const localizacaoConfere = (!localizacaoBling && localizacoesAnb.length === 0)
-        || (
-          !!localizacaoBling
-          && localizacoesAnb.length > 0
-          && localizacoesAnb.every((location) => normalizeText(location) === normalizeText(localizacaoBling))
-        );
+      const localizacaoConfere = true;
       const detranRelatorio = etiquetasDetranDisponiveis.length > 1
         ? 'ENVIAR FOTO DA ETIQUETA DETRAN'
         : (etiquetasDetranDisponiveis[0] || '');
@@ -7059,6 +7056,7 @@ async function buildRelatorioSeparacaoFromPedidoIds(
       dataVenda: pedidoRaw.dataVenda,
       statusLabel: pedidoRaw.statusLabel,
       nomeCliente: pedidoRaw.nomeCliente,
+      canal: canalPorPedido.get(String(pedidoRaw.pedidoId)) || null,
       transportador: pedidoRaw.transportador,
       enderecoEntrega: pedidoRaw.enderecoEntrega,
       observacoesInternas: pedidoRaw.observacoesInternas,
@@ -7213,13 +7211,13 @@ blingRouter.get('/relatorio-separacao-manual/pedidos', async (req, res, next) =>
       }
       p.nomeCliente = nomeClientePedidoCache.get(chave) || null;
     }
-    // Aquece os produtos dos itens (busca por codigo + detalhe) pra o relatorio sair rapido.
-    await preaquecerProdutosDoRelatorio((pedidos as any[]).map((p) => p.pedidoId));
     const envios: any[] = await (prisma as any).blingPedidoEnvioPosterior.findMany({
       where: { pedidoId: { in: (pedidos as any[]).map((p) => BigInt(p.pedidoId)) } },
     }).catch(() => []);
     const envioPorPedido = new Map<string, string>(envios.map((e: any) => [String(e.pedidoId), new Date(e.envioPrevisto).toISOString().split('T')[0]]));
     for (const p of pedidos as any[]) p.envioPrevisto = envioPorPedido.get(String(p.pedidoId)) || null;
+    const canalPorPedido = await canaisDosPedidos((pedidos as any[]).map((p) => p.pedidoId));
+    for (const p of pedidos as any[]) p.canal = canalPorPedido.get(String(p.pedidoId)) || null;
 
     res.json({
       ok: true,
@@ -7340,6 +7338,8 @@ blingRouter.get('/relatorio-separacao', async (req, res, next) => {
     const pedidosMeta = await listPedidos(dataInicio, dataFim);
     const pedidosMetaById = new Map(pedidosMeta.map((pedido) => [Number(pedido.id), pedido]));
     const pedidoIds = pedidosMeta.map((pedido) => Number(pedido.id)).filter(Boolean);
+    // Pedidos novos ou com situacao alterada sao lidos no Bling e guardados no banco; os demais saem direto do banco.
+    try { await (await import('../lib/bling-pedidos')).sincronizarAPartirDaLista(pedidosMeta); } catch (e: any) { console.error('[relatorio-separacao] atualizacao local falhou:', e?.message || e); }
 
     const relatorio = await buildRelatorioSeparacaoFromPedidoIds(pedidoIds, {
       onlyOpen: true,
