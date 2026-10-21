@@ -7772,6 +7772,13 @@ export async function baixarPecasVenda(p: { ids: number[]; dataVenda: any; pedid
     },
   });
 
+  // Aviso de venda por e-mail para marketplaces que nao avisam sozinhos (Magalu, Shopee...). Nao bloqueia a baixa.
+  if (atualizadas.count > 0 && p.pedidoId) {
+    void import('../lib/venda-marketplace-aviso')
+      .then((m) => m.avisarVendaMarketplace({ pedidoId: p.pedidoId, pedidoNum: p.pedidoNum, dataVenda: p.dataVenda, pecaIds: p.ids }))
+      .catch((error) => console.error('[venda-marketplace] falha ao avisar:', error?.message || error));
+  }
+
   // Alerta de baixa DETRAN agora e' consolidado no digest periodico (Conf. E-mails -> Processo: Baixa Etiqueta DETRAN).
   let alertaNfeTextoEmailEnviado = false;
   let alertaNfeTextoEmailErro: string | null = null;
