@@ -11,6 +11,7 @@ import { canProcessAction } from '@/lib/permissions';
 import { usePersistentTab } from '@/lib/use-persistent-tab';
 import TabsBar from '@/components/ui/TabsBar';
 import DevolucoesTab from './DevolucoesTab';
+import HistoricoPrecoTab from './HistoricoPrecoTab';
 
 function fmt(v: number) {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -2392,235 +2393,6 @@ function DevolucaoModal({ peca, onClose, onSaved }: any) {
 }
 
 // ── Modal Histórico de Devoluções ─────────────────────────────────────────────
-function DevolucaoHistoricoModal({ motos, onClose }: any) {
-  const hoje = new Date().toISOString().slice(0, 10);
-  const [isPhone, setIsPhone] = useState(false);
-  const [filtros, setFiltros] = useState({
-    idPeca: '', descricao: '', motoId: '', pedidoBlingNum: '',
-    comEtiqueta: '', dataVendaDe: '', dataVendaAte: '',
-    dataDevolucaoDe: hoje, dataDevolucaoAte: hoje,
-    orderBy: 'dataDevolucao', orderDir: 'desc',
-    page: 1, perPage: 50,
-  });
-  const [dados, setDados] = useState<any>({ total: 0, devolucoes: [] });
-  const [loading, setLoading] = useState(false);
-
-  const fmt = (v: any) => v ? `R$ ${Number(v).toFixed(2).replace('.', ',')}` : '—';
-  const fmtDate = (d: any) => d ? new Date(d).toLocaleDateString('pt-BR') : '—';
-
-  async function buscar(f = filtros) {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams();
-      Object.entries(f).forEach(([k, v]) => { if (v !== '' && v !== undefined) params.set(k, String(v)); });
-      const resp = await fetch(`${API_BASE}/devolucoes?${params}`, { credentials: 'include' });
-      const data = await resp.json();
-      setDados(data);
-    } catch {}
-    setLoading(false);
-  }
-
-  useEffect(() => { buscar(); }, []);
-  useEffect(() => {
-    const phoneMedia = window.matchMedia('(max-width: 767px)');
-    const sync = () => setIsPhone(phoneMedia.matches);
-    sync();
-    phoneMedia.addEventListener('change', sync);
-    return () => phoneMedia.removeEventListener('change', sync);
-  }, []);
-
-  function setF(key: string, value: any) {
-    const next = { ...filtros, [key]: value, page: 1 };
-    setFiltros(next);
-  }
-
-  function sort(col: string) {
-    const next = { ...filtros, orderBy: col, orderDir: filtros.orderBy === col && filtros.orderDir === 'asc' ? 'desc' : 'asc', page: 1 };
-    setFiltros(next);
-    buscar(next);
-  }
-
-  const sortIcon = (col: string) => filtros.orderBy === col ? (filtros.orderDir === 'asc' ? ' ↑' : ' ↓') : '';
-
-  const colunas = [
-    { key: 'idPeca',         label: 'SKU' },
-    { key: 'descricao',      label: 'Descrição' },
-    { key: 'motoNome',       label: 'Moto' },
-    { key: 'pedidoBlingNum', label: 'Pedido Bling' },
-    { key: 'valorLiq',       label: 'Valor Líq.' },
-    { key: 'valorFrete',     label: 'Frete' },
-    { key: 'dataVenda',      label: 'Data Venda' },
-    { key: 'dataDevolucao',  label: 'Data Devolução' },
-    { key: 'etiquetasDetran',label: 'Etiqueta Detran' },
-    { key: 'nfVendaNumero',  label: 'NF Venda' },
-    { key: 'nfDevolucaoNumero', label: 'NF Devolução' },
-    { key: 'observacoes',    label: 'Observações' },
-  ];
-
-  return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 400, display: 'flex', alignItems: isPhone ? 'stretch' : 'center', justifyContent: 'center', padding: isPhone ? 0 : 16, backdropFilter: 'blur(2px)' }}>
-      <div style={{ background: 'var(--white)', borderRadius: isPhone ? 0 : 16, width: '100%', maxWidth: isPhone ? undefined : 1200, maxHeight: isPhone ? '100dvh' : '95vh', minHeight: isPhone ? '100dvh' : undefined, display: 'flex', flexDirection: 'column', boxShadow: isPhone ? 'none' : '0 20px 60px rgba(0,0,0,.2)', overflow: 'hidden' }}>
-
-        {/* Header */}
-        <div style={{ padding: isPhone ? '14px 14px 12px' : '16px 22px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, gap: 12 }}>
-          <div>
-            <div style={{ fontFamily: 'Fraunces, serif', fontSize: 17, fontWeight: 700 }}>📦 Histórico de Devoluções</div>
-            <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>{dados.total} registro(s)</div>
-          </div>
-          <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', fontSize: 16 }}>✕</button>
-        </div>
-
-        {/* Filtros */}
-        <div style={{ padding: isPhone ? 14 : '14px 22px', borderBottom: '1px solid var(--border)', background: 'var(--gray-50)', flexShrink: 0 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10, marginBottom: 10 }}>
-            <input placeholder="SKU" value={filtros.idPeca} onChange={e => setF('idPeca', e.target.value.toUpperCase())}
-              style={{ ...cs.fi, fontSize: 12, fontFamily: 'Geist Mono, monospace' }} />
-            <input placeholder="Descrição" value={filtros.descricao} onChange={e => setF('descricao', e.target.value)}
-              style={{ ...cs.fi, fontSize: 12 }} />
-            <select value={filtros.motoId} onChange={e => setF('motoId', e.target.value)} style={{ ...cs.fi, fontSize: 12 }}>
-              <option value="">Todas as motos</option>
-              {motos.map((m: any) => <option key={m.id} value={m.id}>{m.marca} {m.modelo}{m.ano ? ' ' + m.ano : ''}</option>)}
-            </select>
-            <input placeholder="Pedido Bling" value={filtros.pedidoBlingNum} onChange={e => setF('pedidoBlingNum', e.target.value)}
-              style={{ ...cs.fi, fontSize: 12, fontFamily: 'Geist Mono, monospace' }} />
-            <select value={filtros.comEtiqueta} onChange={e => setF('comEtiqueta', e.target.value)} style={{ ...cs.fi, fontSize: 12 }}>
-              <option value="">Etiqueta Detran</option>
-              <option value="com">Com etiqueta</option>
-              <option value="sem">Sem etiqueta</option>
-            </select>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr 1fr' : 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10, alignItems: 'flex-end' }}>
-            <div>
-              <div style={{ fontSize: 10.5, color: 'var(--ink-muted)', marginBottom: 3 }}>Devolução de</div>
-              <input type="date" value={filtros.dataDevolucaoDe} onChange={e => setF('dataDevolucaoDe', e.target.value)} style={{ ...cs.fi, fontSize: 12 }} />
-            </div>
-            <div>
-              <div style={{ fontSize: 10.5, color: 'var(--ink-muted)', marginBottom: 3 }}>Devolução até</div>
-              <input type="date" value={filtros.dataDevolucaoAte} onChange={e => setF('dataDevolucaoAte', e.target.value)} style={{ ...cs.fi, fontSize: 12 }} />
-            </div>
-            <div>
-              <div style={{ fontSize: 10.5, color: 'var(--ink-muted)', marginBottom: 3 }}>Venda de</div>
-              <input type="date" value={filtros.dataVendaDe} onChange={e => setF('dataVendaDe', e.target.value)} style={{ ...cs.fi, fontSize: 12 }} />
-            </div>
-            <div>
-              <div style={{ fontSize: 10.5, color: 'var(--ink-muted)', marginBottom: 3 }}>Venda até</div>
-              <input type="date" value={filtros.dataVendaAte} onChange={e => setF('dataVendaAte', e.target.value)} style={{ ...cs.fi, fontSize: 12 }} />
-            </div>
-            <button onClick={() => buscar(filtros)} style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)', justifyContent: 'center', gridColumn: isPhone ? 'span 2' : undefined }}>
-              Buscar
-            </button>
-          </div>
-        </div>
-
-        {/* Tabela */}
-        <div style={{ overflowY: 'auto', flex: 1 }}>
-          {loading ? (
-            <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-muted)' }}>Carregando...</div>
-          ) : dados.devolucoes.length === 0 ? (
-            <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-muted)' }}>
-              <div style={{ fontSize: 28, marginBottom: 10 }}>📦</div>
-              <div>Nenhuma devolução encontrada</div>
-            </div>
-          ) : isPhone ? (
-            <div style={{ padding: 12, display: 'grid', gap: 10, background: '#f8fafc' }}>
-              {dados.devolucoes.map((d: any) => (
-                <div key={d.id} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 12, background: 'var(--white)', display: 'grid', gap: 10 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 12, fontWeight: 700, color: 'var(--blue)' }}>{d.idPeca}</div>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', marginTop: 3, lineHeight: 1.25 }}>{d.descricao}</div>
-                      <div style={{ fontSize: 11.5, color: 'var(--ink-muted)', marginTop: 4 }}>{d.motoNome}</div>
-                    </div>
-                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                      <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 12, fontWeight: 700, color: 'var(--sage)' }}>{fmt(d.valorLiq)}</div>
-                      <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginTop: 3 }}>{fmtDate(d.dataDevolucao)}</div>
-                    </div>
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                    <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 8 }}>
-                      <div style={{ fontSize: 10, color: 'var(--ink-muted)', marginBottom: 3 }}>Pedido Bling</div>
-                      <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11.5 }}>{d.pedidoBlingNum || '—'}</div>
-                    </div>
-                    <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 8 }}>
-                      <div style={{ fontSize: 10, color: 'var(--ink-muted)', marginBottom: 3 }}>Venda</div>
-                      <div style={{ fontSize: 11.5 }}>{fmtDate(d.dataVenda)}</div>
-                    </div>
-                    <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 8 }}>
-                      <div style={{ fontSize: 10, color: 'var(--ink-muted)', marginBottom: 3 }}>Frete</div>
-                      <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11.5 }}>{fmt(d.valorFrete)}</div>
-                    </div>
-                    <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 8 }}>
-                      <div style={{ fontSize: 10, color: 'var(--ink-muted)', marginBottom: 3 }}>Etiqueta</div>
-                      {d.etiquetasDetran
-                        ? <span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11, padding: '2px 5px', borderRadius: 5, ...(d.etiquetaBaixada ? { background: '#fef2f2', color: '#dc2626' } : { background: '#ecfdf5', color: '#065f46' }) }}>{d.etiquetasDetran}</span>
-                        : <div style={{ fontSize: 11.5, color: 'var(--ink-muted)' }}>—</div>}
-                    </div>
-                  </div>
-                  {(d.nfVendaNumero || d.nfDevolucaoNumero || d.observacoes) && (
-                    <div style={{ fontSize: 11.5, color: 'var(--ink-soft)', lineHeight: 1.45 }}>
-                      {d.nfVendaNumero && <div>NF venda: <span style={{ fontFamily: 'Geist Mono, monospace' }}>{d.nfVendaNumero}</span></div>}
-                      {d.nfDevolucaoNumero && <div>NF devolução: <span style={{ fontFamily: 'Geist Mono, monospace' }}>{d.nfDevolucaoNumero}</span></div>}
-                      {d.observacoes && <div>{d.observacoes}</div>}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-              <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, zIndex: 1 }}>
-                <tr>
-                  {colunas.map(c => (
-                    <th key={c.key} onClick={() => sort(c.key)}
-                      style={{ padding: '9px 12px', textAlign: 'left', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none', color: filtros.orderBy === c.key ? 'var(--ink)' : 'var(--ink-soft)', fontSize: 11 }}>
-                      {c.label}{sortIcon(c.key)}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {dados.devolucoes.map((d: any) => (
-                  <tr key={d.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                    <td style={{ padding: '8px 12px', fontFamily: 'Geist Mono, monospace', fontWeight: 600, color: 'var(--blue)', whiteSpace: 'nowrap' }}>{d.idPeca}</td>
-                    <td style={{ padding: '8px 12px', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.descricao}</td>
-                    <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>{d.motoNome}</td>
-                    <td style={{ padding: '8px 12px', fontFamily: 'Geist Mono, monospace', whiteSpace: 'nowrap' }}>{d.pedidoBlingNum || '—'}</td>
-                    <td style={{ padding: '8px 12px', fontFamily: 'Geist Mono, monospace', whiteSpace: 'nowrap', color: 'var(--sage)' }}>{fmt(d.valorLiq)}</td>
-                    <td style={{ padding: '8px 12px', fontFamily: 'Geist Mono, monospace', whiteSpace: 'nowrap' }}>{fmt(d.valorFrete)}</td>
-                    <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>{fmtDate(d.dataVenda)}</td>
-                    <td style={{ padding: '8px 12px', whiteSpace: 'nowrap', fontWeight: 600 }}>{fmtDate(d.dataDevolucao)}</td>
-                    <td style={{ padding: '8px 12px', fontFamily: 'Geist Mono, monospace', fontSize: 11 }}>
-                      {d.etiquetasDetran
-                        ? <span style={{ padding: '2px 6px', borderRadius: 6, ...(d.etiquetaBaixada ? { background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' } : { background: '#ecfdf5', color: '#065f46', border: '1px solid #a7f3d0' }) }}>{d.etiquetasDetran}</span>
-                        : <span style={{ color: 'var(--ink-muted)' }}>—</span>}
-                    </td>
-                    <td style={{ padding: '8px 12px', fontFamily: 'Geist Mono, monospace', fontSize: 11 }}>{d.nfVendaNumero || '—'}</td>
-                    <td style={{ padding: '8px 12px', fontFamily: 'Geist Mono, monospace', fontSize: 11 }}>{d.nfDevolucaoNumero || '—'}</td>
-                    <td style={{ padding: '8px 12px', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--ink-soft)', fontSize: 11 }}>{d.observacoes || '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-
-        {/* Paginação */}
-        {dados.total > filtros.perPage && (
-          <div style={{ padding: isPhone ? '12px 14px calc(12px + env(safe-area-inset-bottom))' : '12px 22px', borderTop: '1px solid var(--border)', display: 'flex', gap: 8, alignItems: isPhone ? 'stretch' : 'center', justifyContent: 'flex-end', flexShrink: 0, flexDirection: isPhone ? 'column' : 'row' }}>
-            <span style={{ fontSize: 12, color: 'var(--ink-muted)' }}>
-              Página {filtros.page} de {Math.ceil(dados.total / filtros.perPage)}
-            </span>
-            <button disabled={filtros.page <= 1} onClick={() => { const next = { ...filtros, page: filtros.page - 1 }; setFiltros(next); buscar(next); }}
-              style={{ ...cs.btn, padding: '5px 12px', fontSize: 12, opacity: filtros.page <= 1 ? 0.4 : 1 }}>← Anterior</button>
-            <button disabled={filtros.page >= Math.ceil(dados.total / filtros.perPage)} onClick={() => { const next = { ...filtros, page: filtros.page + 1 }; setFiltros(next); buscar(next); }}
-              style={{ ...cs.btn, padding: '5px 12px', fontSize: 12, opacity: filtros.page >= Math.ceil(dados.total / filtros.perPage) ? 0.4 : 1 }}>Próximo →</button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 // Modal exigido ao salvar uma peca com preco alterado: categoriza o motivo do reajuste
 // (desconto ao cliente dispara reversao automatica em 3 dias) + observacao livre pro historico.
 function MotivoPrecoModal({ precoAnterior, precoNovo, onConfirm, onCancel }: any) {
@@ -2672,159 +2444,6 @@ function MotivoPrecoModal({ precoAnterior, precoNovo, onConfirm, onCancel }: any
           <button onClick={confirmar} disabled={salvando || !motivo} style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)', opacity: !motivo || salvando ? 0.6 : 1 }}>
             {salvando ? 'Salvando...' : 'Confirmar e salvar'}
           </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Tela de histórico de reajustes de preço (botão "Histórico Preço" na barra superior).
-function HistoricoPrecoModal({ onClose, skuInicial }: any) {
-  const [skuFiltro, setSkuFiltro] = useState(skuInicial || '');
-  const [itens, setItens] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
-
-  const fmt = (v: any) => `R$ ${Number(v || 0).toFixed(2).replace('.', ',')}`;
-  const fmtData = (d: any) => d ? new Date(d).toLocaleString('pt-BR') : '—';
-  const motivoLabel: Record<string, string> = {
-    desconto_cliente: 'Desconto ao cliente',
-    reajuste_mercado: 'Reajuste de mercado',
-    reversao_automatica: 'Ajuste automático (reversão)',
-  };
-
-  async function buscar(sku = skuFiltro) {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams();
-      if (sku.trim()) params.set('sku', sku.trim());
-      const resp = await fetch(`${API_BASE}/pecas/historico-preco?${params}`, { credentials: 'include' });
-      const data = await resp.json();
-      setItens(Array.isArray(data.itens) ? data.itens : []);
-    } catch {}
-    setLoading(false);
-  }
-
-  useEffect(() => { buscar(); }, []);
-
-  // Estatisticas por motivo: quantas vezes foi usado e quantos desses casos a peca acabou
-  // vendida (usa o mesmo status Vendido/Disponivel/Prejuizo ja calculado por linha).
-  // "reversao_automatica" fica de fora — ela e disparada justamente quando o desconto NAO
-  // virou venda em 3 dias, entao uma % de conversao dela nao tem significado (seria sempre 0%).
-  const MOTIVOS_SEM_ESTATISTICA = new Set(['reversao_automatica']);
-  const ordemMotivos = ['desconto_cliente', 'reajuste_mercado'];
-  const statsPorMotivo: Record<string, { total: number; vendidos: number; prejuizo: number }> = {};
-  for (const it of itens) {
-    const motivo = String(it.motivo || '');
-    if (MOTIVOS_SEM_ESTATISTICA.has(motivo)) continue;
-    if (!statsPorMotivo[motivo]) statsPorMotivo[motivo] = { total: 0, vendidos: 0, prejuizo: 0 };
-    const e = statsPorMotivo[motivo];
-    e.total += 1;
-    if (it.pecaEmPrejuizo) e.prejuizo += 1;
-    else if (it.pecaDisponivel === false) e.vendidos += 1;
-  }
-  const motivosPresentes = [
-    ...ordemMotivos.filter((m) => statsPorMotivo[m]),
-    ...Object.keys(statsPorMotivo).filter((m) => !ordemMotivos.includes(m)),
-  ];
-
-  return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, backdropFilter: 'blur(2px)' }}>
-      <div style={{ background: 'var(--white)', borderRadius: 16, width: '100%', maxWidth: 1100, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,.2)', overflow: 'hidden' }}>
-        <div style={{ padding: '16px 22px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-          <div>
-            <div style={{ fontFamily: 'Fraunces, serif', fontSize: 17, fontWeight: 700 }}>💲 Histórico Preço</div>
-            <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>{itens.length} registro(s)</div>
-          </div>
-          <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', fontSize: 16 }}>✕</button>
-        </div>
-
-        {motivosPresentes.length > 0 && (
-          <div style={{ padding: '14px 22px', borderBottom: '1px solid var(--border)', background: 'var(--gray-50)', display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            {motivosPresentes.map((motivo) => {
-              const e = statsPorMotivo[motivo];
-              const pctVendido = e.total > 0 ? (e.vendidos / e.total) * 100 : 0;
-              return (
-                <div key={motivo} style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 16px', minWidth: 190 }}>
-                  <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 6 }}>
-                    {motivoLabel[motivo] || motivo}
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                    <span style={{ fontFamily: 'Fraunces, serif', fontSize: 20, fontWeight: 700, color: 'var(--ink)' }}>{e.total}</span>
-                    <span style={{ fontSize: 11.5, color: 'var(--ink-muted)' }}>uso(s)</span>
-                  </div>
-                  <div style={{ fontSize: 12, marginTop: 4 }}>
-                    <span style={{ fontWeight: 700, color: pctVendido >= 50 ? '#16a34a' : pctVendido > 0 ? '#c2410c' : 'var(--ink-muted)' }}>
-                      {pctVendido.toFixed(0)}%
-                    </span>
-                    <span style={{ color: 'var(--ink-muted)' }}> converteu em venda ({e.vendidos}/{e.total})</span>
-                  </div>
-                  {e.prejuizo > 0 && (
-                    <div style={{ fontSize: 11, color: '#c2410c', marginTop: 2 }}>{e.prejuizo} em prejuízo</div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        <div style={{ padding: '12px 22px', borderBottom: '1px solid var(--border)', background: 'var(--gray-50)', display: 'flex', gap: 10 }}>
-          <input placeholder="Filtrar por SKU" value={skuFiltro} onChange={(e) => setSkuFiltro(e.target.value.toUpperCase())}
-            onKeyDown={(e) => { if (e.key === 'Enter') buscar(); }}
-            style={{ ...cs.fi, fontSize: 12, fontFamily: 'Geist Mono, monospace', maxWidth: 260 }} />
-          <button onClick={() => buscar()} style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)' }}>Buscar</button>
-        </div>
-
-        <div style={{ overflowY: 'auto', flex: 1 }}>
-          {loading ? (
-            <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-muted)' }}>Carregando...</div>
-          ) : itens.length === 0 ? (
-            <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-muted)' }}>Nenhum reajuste registrado.</div>
-          ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-              <thead>
-                <tr style={{ background: 'var(--gray-50)', position: 'sticky', top: 0 }}>
-                  {['SKU', 'Descrição', 'Anterior', 'Novo', '%', '', 'Motivo', 'Status', 'Observação', 'Quando', 'Por'].map((h) => (
-                    <th key={h} style={{ textAlign: 'left', padding: '8px 12px', borderBottom: '1px solid var(--border)', color: 'var(--ink-muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {itens.map((it: any) => {
-                  const anterior = Number(it.valorAnterior);
-                  const novo = Number(it.valorNovo);
-                  const pct = anterior ? ((novo - anterior) / anterior) * 100 : 0;
-                  const subiu = novo > anterior;
-                  return (
-                    <tr key={it.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                      <td style={{ padding: '8px 12px', fontFamily: 'Geist Mono, monospace', fontWeight: 700, color: 'var(--blue)' }}>{it.sku}</td>
-                      <td style={{ padding: '8px 12px', maxWidth: 220 }}>{it.descricao}</td>
-                      <td style={{ padding: '8px 12px', fontFamily: 'Geist Mono, monospace' }}>{fmt(anterior)}</td>
-                      <td style={{ padding: '8px 12px', fontFamily: 'Geist Mono, monospace', fontWeight: 700 }}>{fmt(novo)}</td>
-                      <td style={{ padding: '8px 12px', fontFamily: 'Geist Mono, monospace', color: subiu ? '#16a34a' : '#dc2626' }}>{pct >= 0 ? '+' : ''}{pct.toFixed(1)}%</td>
-                      <td style={{ padding: '8px 12px', fontSize: 15, color: subiu ? '#16a34a' : '#dc2626' }}>{subiu ? '↑' : '↓'}</td>
-                      <td style={{ padding: '8px 12px' }}>{motivoLabel[it.motivo] || it.motivo}</td>
-                      <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>
-                        {it.pecaDisponivel == null ? (
-                          <span style={{ color: 'var(--ink-muted)' }}>—</span>
-                        ) : it.pecaEmPrejuizo ? (
-                          <span style={{ color: '#c2410c', fontWeight: 600 }}>Prejuízo</span>
-                        ) : it.pecaDisponivel === false ? (
-                          <span style={{ color: '#16a34a', fontWeight: 600 }}>
-                            Vendido{it.pecaDataVenda ? ` em ${fmtData(it.pecaDataVenda).split(',')[0]}` : ''}
-                          </span>
-                        ) : (
-                          <span style={{ color: '#2563eb', fontWeight: 600 }}>Disponível</span>
-                        )}
-                      </td>
-                      <td style={{ padding: '8px 12px', color: 'var(--ink-muted)', maxWidth: 200 }}>{it.observacao || '—'}</td>
-                      <td style={{ padding: '8px 12px', whiteSpace: 'nowrap', color: 'var(--ink-muted)' }}>{fmtData(it.criadoEm)}</td>
-                      <td style={{ padding: '8px 12px', whiteSpace: 'nowrap', color: 'var(--ink-muted)' }}>{it.usuario || '—'}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          )}
         </div>
       </div>
     </div>
@@ -3572,7 +3191,7 @@ export default function EstoquePage() {
   const canTrocarFotoCapa = canProcessAction(user, 'estoque', 'trocar_foto');
   const canImpressaoCaixa = canProcessAction(user, 'estoque', 'impressao_caixa');
   const canDevolucoes = canProcessAction(user, 'estoque', 'devolucoes');
-  const [abaEstoque, setAbaEstoque] = usePersistentTab<'estoque' | 'devolucoes'>('aba', 'estoque', ['estoque', 'devolucoes'] as const);
+  const [abaEstoque, setAbaEstoque] = usePersistentTab<'estoque' | 'devolucoes' | 'historico_preco'>('aba', 'estoque', ['estoque', 'devolucoes', 'historico_preco'] as const);
   const colStorageKey = getColumnStorageKey(user?.username);
   const [data, setData] = useState<any>({ total: 0, totalDisp: 0, totalVend: 0, totalEtiquetas: 0, data: [] });
   const [exportando, setExportando] = useState(false);
@@ -3626,8 +3245,6 @@ export default function EstoquePage() {
   const [etiquetaCartelaOpen, setEtiquetaCartelaOpen] = useState(false);
   const [devolucaoModal, setDevolucaoModal] = useState(false);
   const [devolucaoPeca, setDevolucaoPeca] = useState<any>(null);
-  const [devolucaoHistoricoOpen, setDevolucaoHistoricoOpen] = useState(false);
-  const [historicoPrecoOpen, setHistoricoPrecoOpen] = useState(false);
   const [historicoPrecoSkuInicial, setHistoricoPrecoSkuInicial] = useState('');
   const [precoMotivoPendente, setPrecoMotivoPendente] = useState<{ formData: any } | null>(null);
 
@@ -4564,20 +4181,6 @@ export default function EstoquePage() {
           >
             📦 Atualizar Caixa
           </button>}
-          {canDevolucoes && <button
-            type="button"
-            onClick={() => setDevolucaoHistoricoOpen(true)}
-            style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink)', borderColor: 'var(--border)', padding: '7px 14px', fontSize: 13, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}
-          >
-            ↩️ Devoluções
-          </button>}
-          {canEditarPeca && <button
-            type="button"
-            onClick={() => { setHistoricoPrecoSkuInicial(''); setHistoricoPrecoOpen(true); }}
-            style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink)', borderColor: 'var(--border)', padding: '7px 14px', fontSize: 13, width: isPhone ? '100%' : undefined, justifyContent: 'center' }}
-          >
-            💲 Histórico Preço
-          </button>}
           {filters.motoId && (
             <button
               type="button"
@@ -4603,8 +4206,8 @@ export default function EstoquePage() {
           </button>}
         </div>
       </div>
-      <TabsBar tabs={[{ id: 'estoque', label: 'Estoque' }, { id: 'devolucoes', label: 'Devoluções' }]} active={abaEstoque} onChange={(id) => setAbaEstoque(id as 'estoque' | 'devolucoes')} />
-      {abaEstoque === 'devolucoes' ? <DevolucoesTab padding={pagePadding} /> : (
+      <TabsBar tabs={[{ id: 'estoque', label: 'Estoque' }, ...(canDevolucoes || canEditarPeca ? [{ id: 'devolucoes', label: 'Devoluções' }] : []), ...(canEditarPeca ? [{ id: 'historico_preco', label: 'Histórico Preço' }] : [])]} active={abaEstoque} onChange={(id) => setAbaEstoque(id as 'estoque' | 'devolucoes' | 'historico_preco')} />
+      {abaEstoque === 'devolucoes' && (canDevolucoes || canEditarPeca) ? <DevolucoesTab padding={pagePadding} /> : abaEstoque === 'historico_preco' && canEditarPeca ? <HistoricoPrecoTab padding={pagePadding} skuInicial={historicoPrecoSkuInicial} /> : (
       <div style={{ padding: pagePadding }}>
         {/* Seletor de colunas */}
         {colSelectorOpen && (
@@ -5174,7 +4777,7 @@ export default function EstoquePage() {
       </div>
       )}
 
-      <PecaModal open={modal && canEditarPeca} onClose={() => { setModal(false); setEditPeca(null); }} onSave={handleSavePeca} onCancelSale={handleCancelSale} onMarkPrejuizo={handleMarkPrejuizo} onOpenHistoricoPreco={(sku: string) => { setHistoricoPrecoSkuInicial(sku); setHistoricoPrecoOpen(true); }} peca={editPeca} motos={motos} viewportMode={viewportMode} />
+      <PecaModal open={modal && canEditarPeca} onClose={() => { setModal(false); setEditPeca(null); }} onSave={handleSavePeca} onCancelSale={handleCancelSale} onMarkPrejuizo={handleMarkPrejuizo} onOpenHistoricoPreco={(sku: string) => { setHistoricoPrecoSkuInicial(sku); setModal(false); setEditPeca(null); setAbaEstoque('historico_preco'); }} peca={editPeca} motos={motos} viewportMode={viewportMode} />
       <ImpressaoCaixaModal
         open={impressaoCaixaOpen && canImpressaoCaixa}
         loading={loadingCaixas}
@@ -5294,17 +4897,7 @@ export default function EstoquePage() {
         />
       )}
 
-      {/* Modal Histórico de Devoluções */}
-      {canDevolucoes && devolucaoHistoricoOpen && (
-        <DevolucaoHistoricoModal
-          motos={motos}
-          onClose={() => setDevolucaoHistoricoOpen(false)}
-        />
-      )}
 
-      {canEditarPeca && historicoPrecoOpen && (
-        <HistoricoPrecoModal onClose={() => setHistoricoPrecoOpen(false)} skuInicial={historicoPrecoSkuInicial} />
-      )}
 
       {precoMotivoPendente && (
         <MotivoPrecoModal

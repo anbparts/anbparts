@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { garantirTabelasDevolucao, completarCanais, registrarDevolucoes } from '../lib/devolucao-historico';
 import { garantirTabelaRevisao } from '../lib/pecas-revisao';
+import { loadBlingVendaInfo } from './etiquetas-detran';
 
 // Situacao ATUAL da peca (nao a da epoca da devolucao): em revisao, prejuizo, em estoque, vendida de novo ou sem peca no sistema
 const JOINS_STATUS = `LEFT JOIN "Peca" pc ON pc."id" = d."pecaId" LEFT JOIN "PecaEmRevisao" rv ON rv."pecaId" = d."pecaId"`;
@@ -64,8 +65,13 @@ devolucaoHistoricoRouter.get('/', async (req, res, next) => {
 
     const rows = await prisma.$queryRawUnsafe<any[]>(
       `SELECT d."id", d."pecaId", d."idPeca", d."descricao", d."pedidoNum", d."pedidoId", d."dataVenda"::text AS "dataVenda", d."dataDevolucao"::text AS "dataDevolucao",
-              d."motoId", d."motoNome", d."motoLabel", d."valor", d."valorLiq", d."canal", d."motivoId", mo."nome" AS "motivoNome", d."observacao", d."origem",
-              d."criadoEm", d."atualizadoEm", d."atualizadoPor", ${STATUS_ATUAL} AS "statusAtual", pc."localizacao" AS "localizacaoAtual"
+              d."motoId", d."motoNome", d."motoLabel", d."valor", d."valorLiq", d."frete", d."taxas", d."nfVenda", d."nfDevolucao", d."canal", d."motivoId", mo."nome" AS "motivoNome", d."observacao", d."origem",
+              d."criadoEm", d."atualizadoEm", d."atualizadoPor", ${STATUS_ATUAL} AS "statusAtual", pc."localizacao" AS "localizacaoAtual", pc."etiquetaPendente" AS "etiquetaPendente",
+              (SELECT json_agg(json_build_object('etiqueta', h."etiquetasDetran", 'baixada', COALESCE(h."etiquetaBaixada", false)) ORDER BY h."id")
+                 FROM "HistoricoDevolucao" h
+                WHERE h."pecaId" = d."pecaId" AND h."etiquetasDetran" IS NOT NULL AND h."etiquetasDetran" <> ''
+                  AND COALESCE(h."pedidoBlingNum", '') = COALESCE(d."pedidoNum", '')
+                  AND (h."dataDevolucao" AT TIME ZONE 'America/Sao_Paulo')::date = d."dataDevolucao") AS "etiquetas"
        FROM "DevolucaoRegistro" d LEFT JOIN "DevolucaoMotivo" mo ON mo."id" = d."motivoId" ${JOINS_STATUS}
        ${filtro} ORDER BY d."dataDevolucao" DESC, d."id" DESC LIMIT ${per} OFFSET ${(page - 1) * per}`, ...params);
     const [tot] = await prisma.$queryRawUnsafe<any[]>(
@@ -81,7 +87,7 @@ devolucaoHistoricoRouter.get('/', async (req, res, next) => {
       ok: true, page, per, total: num(tot?.n),
       resumo: { qtd: num(tot?.n), valor: num(tot?.valor), valorLiq: num(tot?.valorLiq), semMotivo: num(tot?.semMotivo), porMotivo },
       canais: canais.map((c) => c.canal), motivos, podeEditar: podeEditar(req),
-      itens: rows.map((r) => ({ ...r, id: Number(r.id), valor: r.valor == null ? null : num(r.valor), valorLiq: r.valorLiq == null ? null : num(r.valorLiq) })),
+      itens: rows.map((r) => ({ ...r, id: Number(r.id), valor: r.valor == null ? null : num(r.valor), valorLiq: r.valorLiq == null ? null : num(r.valorLiq), frete: r.frete == null ? null : num(r.frete), taxas: r.taxas == null ? null : num(r.taxas) })),
     });
   } catch (e) { next(e); }
 });
@@ -109,6 +115,18 @@ devolucaoHistoricoRouter.get('/consulta', async (req, res, next) => {
       } catch { /* pedidos locais ainda nao criados */ }
     }
     res.json({ ok: true, peca, pedido });
+  } catch (e) { next(e); }
+});
+
+// GET /devolucoes-historico/nf-venda?pedido=&pedidoId= — procura no Bling a NF de venda do pedido (chamada sob demanda, pode demorar)
+devolucaoHistoricoRouter.get('/nf-venda', async (req, res, next) => {
+  try {
+    const pedidoNum = String(req.query.pedido || '').trim().replace(/^#/, '');
+    const pedidoId = String(req.query.pedidoId || '').trim();
+    if (!pedidoNum && !pedidoId) return res.status(400).json({ ok: false, error: 'Informe o pedido.' });
+    const info = await loadBlingVendaInfo({ pedidoNum, pedidoId } as any);
+    if (!info?.nfNumero) return res.json({ ok: true, nf: null, aviso: 'O Bling nao retornou uma NF para esse pedido.' });
+    res.json({ ok: true, nf: info.nfNumero, clienteNome: info.clienteNome || null });
   } catch (e) { next(e); }
 });
 
@@ -147,10 +165,12 @@ devolucaoHistoricoRouter.post('/', exigirEdicao, async (req, res, next) => {
     const valorLiq = b.valorLiq === '' || b.valorLiq == null ? null : Number(b.valorLiq);
     if ((valor != null && !Number.isFinite(valor)) || (valorLiq != null && !Number.isFinite(valorLiq))) return res.status(400).json({ ok: false, error: 'Valor invalido.' });
     const [row] = await prisma.$queryRawUnsafe<any[]>(
-      `INSERT INTO "DevolucaoRegistro" ("pecaId","idPeca","descricao","pedidoNum","pedidoId","dataVenda","dataDevolucao","motoId","motoNome","motoLabel","valor","valorLiq","canal","motivoId","observacao","origem","atualizadoPor")
-       VALUES ($1::int,$2,$3,$4,$5,$6::date,$7::date,$8::int,$9,$10,$11::numeric,$12::numeric,$13,$14::int,$15,'manual',$16) ON CONFLICT DO NOTHING RETURNING "id"`,
+      `INSERT INTO "DevolucaoRegistro" ("pecaId","idPeca","descricao","pedidoNum","pedidoId","dataVenda","dataDevolucao","motoId","motoNome","motoLabel","valor","valorLiq","canal","motivoId","observacao","origem","atualizadoPor","frete","taxas","nfVenda","nfDevolucao")
+       VALUES ($1::int,$2,$3,$4,$5,$6::date,$7::date,$8::int,$9,$10,$11::numeric,$12::numeric,$13,$14::int,$15,'manual',$16,$17::numeric,$18::numeric,$19,$20) ON CONFLICT DO NOTHING RETURNING "id"`,
       pecaId, skuFinal || null, descFinal || null, pedidoNum, pedidoId, b.dataVenda || null, b.dataDevolucao, motoId, motoNome, motoLabel, valor, valorLiq, canal, motivoId,
-      String(b.observacao || '').trim().slice(0, 1000) || null, usuario(req));
+      String(b.observacao || '').trim().slice(0, 1000) || null, usuario(req),
+      b.frete === '' || b.frete == null ? null : Number(b.frete), b.taxas === '' || b.taxas == null ? null : Number(b.taxas),
+      String(b.nfVenda || '').trim().slice(0, 40) || null, String(b.nfDevolucao || '').trim().slice(0, 40) || null);
     if (!row) return res.status(409).json({ ok: false, error: 'Ja existe um registro desta peca/pedido nessa data.' });
     res.json({ ok: true, id: Number(row.id), pecaEncontrada: pecaId != null });
   } catch (e) { next(e); }
@@ -173,6 +193,8 @@ devolucaoHistoricoRouter.patch('/:id(\\d+)', exigirEdicao, async (req, res, next
       }
     }
     if ('observacao' in req.body) set('observacao', String(req.body.observacao || '').trim().slice(0, 1000) || null);
+    if ('nfVenda' in req.body) set('nfVenda', String(req.body.nfVenda || '').trim().slice(0, 40) || null);
+    if ('nfDevolucao' in req.body) set('nfDevolucao', String(req.body.nfDevolucao || '').trim().slice(0, 40) || null);
     if ('dataDevolucao' in req.body) {
       if (!dataOk(req.body.dataDevolucao)) return res.status(400).json({ ok: false, error: 'Data invalida.' });
       set('dataDevolucao', req.body.dataDevolucao, '::date');

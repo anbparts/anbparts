@@ -29,6 +29,9 @@ export function garantirTabelasDevolucao(): Promise<void> {
         "valor" NUMERIC(14,2), "valorLiq" NUMERIC(14,2), "canal" TEXT,
         "motivoId" INTEGER, "observacao" TEXT, "origem" TEXT,
         "criadoEm" TIMESTAMP NOT NULL DEFAULT now(), "atualizadoEm" TIMESTAMP, "atualizadoPor" TEXT)`);
+      for (const col of ['"frete" NUMERIC(14,2)', '"taxas" NUMERIC(14,2)', '"nfVenda" TEXT', '"nfDevolucao" TEXT']) {
+        await prisma.$executeRawUnsafe(`ALTER TABLE "DevolucaoRegistro" ADD COLUMN IF NOT EXISTS ${col}`);
+      }
       await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "DevolucaoRegistro_dedupe_uq" ON "DevolucaoRegistro" ("pecaId", COALESCE("pedidoNum", ''), "dataDevolucao")`);
       await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "DevolucaoRegistro_peca_idx" ON "DevolucaoRegistro" ("pecaId")`);
       const [{ n }] = await prisma.$queryRawUnsafe<Array<{ n: number }>>(`SELECT count(*)::int AS n FROM "DevolucaoMotivo"`);
@@ -38,6 +41,7 @@ export function garantirTabelasDevolucao(): Promise<void> {
         }
       }
       await importarHistoricoAntigo();
+      await completarDoHistoricoAntigo();
     })().catch((e) => { tabelasPromise = null; throw e; });
   }
   return tabelasPromise;
@@ -67,6 +71,19 @@ async function importarHistoricoAntigo() {
   await completarCanais();
 }
 
+// Traz frete, taxas, NFs e observacao do historico antigo para registros que ainda nao tem (idempotente)
+async function completarDoHistoricoAntigo() {
+  try {
+    await prisma.$executeRawUnsafe(`UPDATE "DevolucaoRegistro" d SET "frete" = COALESCE(d."frete", x.frete), "taxas" = COALESCE(d."taxas", x.taxas),
+        "nfVenda" = COALESCE(d."nfVenda", x.nfv), "nfDevolucao" = COALESCE(d."nfDevolucao", x.nfd), "observacao" = COALESCE(d."observacao", x.obs)
+      FROM (SELECT h."pecaId", COALESCE(h."pedidoBlingNum", '') AS ped, (h."dataDevolucao" AT TIME ZONE 'America/Sao_Paulo')::date AS dia,
+                   max(h."valorFrete") AS frete, max(h."valorTaxas") AS taxas, max(NULLIF(h."nfVendaNumero", '')) AS nfv, max(NULLIF(h."nfDevolucaoNumero", '')) AS nfd, max(NULLIF(h."observacoes", '')) AS obs
+            FROM "HistoricoDevolucao" h GROUP BY 1, 2, 3) x
+      WHERE d."pecaId" = x."pecaId" AND COALESCE(d."pedidoNum", '') = x.ped AND d."dataDevolucao" = x.dia
+        AND (d."frete" IS NULL OR d."taxas" IS NULL OR d."nfVenda" IS NULL OR d."nfDevolucao" IS NULL OR d."observacao" IS NULL)`);
+  } catch { /* historico antigo indisponivel */ }
+}
+
 // Preenche o marketplace pelos pedidos ja importados (best-effort)
 export async function completarCanais() {
   try {
@@ -79,7 +96,8 @@ export type NovoRegistroDevolucao = {
   pecaId: number; idPeca?: string | null; descricao?: string | null;
   pedidoNum?: string | null; pedidoId?: string | null; dataVenda?: Date | string | null; dataDevolucao?: Date | string | null;
   motoId?: number | null; motoNome?: string | null; motoLabel?: string | null;
-  valor?: number | null; valorLiq?: number | null; origem: string; observacao?: string | null;
+  valor?: number | null; valorLiq?: number | null; frete?: number | null; taxas?: number | null; nfVenda?: string | null; nfDevolucao?: string | null;
+  origem: string; observacao?: string | null;
 };
 
 const dia = (d: any) => (d ? new Date(d).toISOString().slice(0, 10) : null);
@@ -88,27 +106,24 @@ export async function registrarDevolucoes(itens: NovoRegistroDevolucao[]) {
   if (!itens.length) return;
   await garantirTabelasDevolucao();
   try { await (await import('./bling-pedidos')).garantirTabelasPedidos(); } catch { /* sem canal */ }
+  const n = (v: any) => (v == null || v === '' ? null : Number(v));
   for (const i of itens) {
     const pedidoId = i.pedidoId ? String(i.pedidoId) : null;
+    const valores = [
+      i.pecaId, i.idPeca || null, i.descricao || null, i.pedidoNum ? String(i.pedidoNum) : null, pedidoId, dia(i.dataVenda), dia(i.dataDevolucao),
+      i.motoId ?? null, i.motoNome || null, i.motoLabel || null, n(i.valor), n(i.valorLiq), n(i.frete), n(i.taxas),
+      i.nfVenda || null, i.nfDevolucao || null, i.observacao || null, i.origem,
+    ];
+    const colunas = '"pecaId","idPeca","descricao","pedidoNum","pedidoId","dataVenda","dataDevolucao","motoId","motoNome","motoLabel","valor","valorLiq","frete","taxas","nfVenda","nfDevolucao","observacao","origem"';
+    const base = `$1,$2,$3,$4,$5::text,$6::date,COALESCE($7::date,(now() AT TIME ZONE 'America/Sao_Paulo')::date),$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18`;
     try {
       await prisma.$executeRawUnsafe(
-        `INSERT INTO "DevolucaoRegistro" ("pecaId","idPeca","descricao","pedidoNum","pedidoId","dataVenda","dataDevolucao","motoId","motoNome","motoLabel","valor","valorLiq","canal","observacao","origem")
-         VALUES ($1,$2,$3,$4,$5::text,$6::date,COALESCE($7::date,(now() AT TIME ZONE 'America/Sao_Paulo')::date),$8,$9,$10,$11,$12,
-           CASE WHEN $5::text ~ '^[0-9]+$' THEN (SELECT "canal" FROM "BlingPedido" WHERE "id" = ($5::text)::bigint) END,$13,$14)
-         ON CONFLICT DO NOTHING`,
-        i.pecaId, i.idPeca || null, i.descricao || null, i.pedidoNum ? String(i.pedidoNum) : null, pedidoId, dia(i.dataVenda), dia(i.dataDevolucao),
-        i.motoId ?? null, i.motoNome || null, i.motoLabel || null, i.valor == null ? null : Number(i.valor), i.valorLiq == null ? null : Number(i.valorLiq),
-        i.observacao || null, i.origem,
+        `INSERT INTO "DevolucaoRegistro" (${colunas},"canal") VALUES (${base}, CASE WHEN $5::text ~ '^[0-9]+$' THEN (SELECT "canal" FROM "BlingPedido" WHERE "id" = ($5::text)::bigint) END) ON CONFLICT DO NOTHING`,
+        ...valores,
       );
-    } catch (e) {
+    } catch {
       // canal depende da tabela de pedidos; se falhar, grava sem ele
-      await prisma.$executeRawUnsafe(
-        `INSERT INTO "DevolucaoRegistro" ("pecaId","idPeca","descricao","pedidoNum","pedidoId","dataVenda","dataDevolucao","motoId","motoNome","motoLabel","valor","valorLiq","observacao","origem")
-         VALUES ($1,$2,$3,$4,$5,$6::date,COALESCE($7::date,(now() AT TIME ZONE 'America/Sao_Paulo')::date),$8,$9,$10,$11,$12,$13,$14) ON CONFLICT DO NOTHING`,
-        i.pecaId, i.idPeca || null, i.descricao || null, i.pedidoNum ? String(i.pedidoNum) : null, pedidoId, dia(i.dataVenda), dia(i.dataDevolucao),
-        i.motoId ?? null, i.motoNome || null, i.motoLabel || null, i.valor == null ? null : Number(i.valor), i.valorLiq == null ? null : Number(i.valorLiq),
-        i.observacao || null, i.origem,
-      );
+      await prisma.$executeRawUnsafe(`INSERT INTO "DevolucaoRegistro" (${colunas}) VALUES (${base}) ON CONFLICT DO NOTHING`, ...valores);
     }
   }
 }
@@ -121,6 +136,7 @@ export function registroDePeca(peca: any, origem: string, observacao?: string | 
     pedidoNum: peca.blingPedidoNum || null, pedidoId: peca.blingPedidoId || null, dataVenda: peca.dataVenda || null,
     motoId: peca.motoId ?? null, motoNome: [moto.marca, moto.modelo, moto.ano].filter(Boolean).join(' ').trim() || null,
     motoLabel: moto.etiquetaSkuLabel || null, valor: peca.precoML == null ? null : Number(peca.precoML), valorLiq: peca.valorLiq == null ? null : Number(peca.valorLiq),
+    frete: peca.valorFrete == null ? null : Number(peca.valorFrete), taxas: peca.valorTaxas == null ? null : Number(peca.valorTaxas),
     origem, observacao: observacao || null,
   };
 }

@@ -329,7 +329,7 @@ async function findNotaFiscalByPedido(pedido: any, pedidoNum: string) {
   return null;
 }
 
-async function loadBlingVendaInfo(ref: BlingVendaRef) {
+export async function loadBlingVendaInfo(ref: BlingVendaRef) {
   const pedidoNum = String(ref.pedidoNum || '').trim();
   let pedidoId = String(ref.pedidoId || '').trim();
   let pedido: any = null;

@@ -73,7 +73,7 @@ devolucoesRouter.post('/', requireEstoqueAction('devolucoes'), async (req, res, 
 
     // historico unico de devolucoes (Estoque > Devolucoes); nunca bloqueia a devolucao
     try {
-      await registrarDevolucoes([{ ...registroDePeca(peca, 'devolucao_manual', observacoes || null), dataDevolucao: dataDevolucao || null }]);
+      await registrarDevolucoes([{ ...registroDePeca(peca, 'devolucao_manual', observacoes || null), dataDevolucao: dataDevolucao || null, nfVenda: nfVendaNumero || null, nfDevolucao: nfDevolucaoNumero || null }]);
     } catch (e) { console.error('[devolucoes] falha ao gravar historico:', (e as any)?.message || e); }
 
     // Registrar histórico de devolução — 1 linha por etiqueta
