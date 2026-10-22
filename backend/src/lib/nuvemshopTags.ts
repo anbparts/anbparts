@@ -2,11 +2,10 @@
 // Categoria (routes/nuvemshop.ts /sugerir-ia): partes do nome do produto, marca/modelo/ano da moto,
 // prefixo do SKU e termos tecnicos, so com letras/numeros/espacos/hifens. Aqui e' 1 SKU por vez,
 // gravado no pre-cadastro (CadastroPeca.nuvemshopTags) e depois usado na criacao do anuncio.
-// Se a IA falhar (sem chave, timeout, resposta ruim), cai numa montagem por regra — a criacao do
-// anuncio nunca fica travada por causa de tag.
+// Agora 100% interno (sem chamar IA): regra por titulo/moto + termos aprendidos com as tags que a IA ja gerou antes
+// (CadastroPeca.nuvemshopTags): palavras do nome da peca que costumam vir acompanhadas de sinonimos e da area geral.
 import { prisma } from './prisma';
 
-const MODELO_IA = 'claude-sonnet-4-6';
 // Padrao extraido da base real da Nuvemshop (48 SKUs BM03 preenchidos pela IA da aba Categoria):
 // 10 a 12 tags por produto; SEMPRE ano, prefixo do SKU (ex: BM03), marca e o modelo escrito de duas
 // formas ("F800 GS" e "F800GS"); quase sempre "moto <marca>", o nome da peca + sinonimos, a categoria
@@ -95,75 +94,77 @@ export function tagsPorRegra(input: TagsInput): string[] {
   return normalizarLista(tags);
 }
 
-async function tagsPorIA(input: TagsInput): Promise<string[]> {
-  const chave = process.env.ANTHROPIC_API_KEY;
-  if (!chave) throw new Error('ANTHROPIC_API_KEY nao configurado');
+// ───────────── Aprendizado com as tags ja geradas ─────────────
+// Para cada palavra do nome da peca guarda quais tags "genericas" (sinonimos, termos tecnicos, area geral) apareceram junto, e quantas vezes.
+// Tags especificas (ano, prefixo do SKU, marca, modelo, PN, condicao) ficam de fora: essas a regra monta sozinha.
+type Aprendizado = Map<string, Map<string, number>>;
+let cacheAprendizado: { expira: number; mapa: Aprendizado } | null = null;
+const MIN_OCORRENCIAS = 2; // a tag so e sugerida se apareceu em pelo menos 2 produtos com essa palavra
 
-  const moto = input.moto || {};
-  const motoTexto = [moto.marca, moto.modelo, moto.ano].filter(Boolean).join(' ').replace(/["\\]/g, '');
-  const titulo = String(input.titulo || '').replace(/["\\]/g, '');
-  const prompt = `Voce e um especialista em e-commerce de pecas de moto usadas. Sugira tags de busca para este produto de uma loja Nuvemshop.
-
-SKU: ${input.sku}
-Titulo: ${titulo}
-Moto: ${motoTexto}
-${input.numeroPeca ? `Codigo da peca (PN): ${input.numeroPeca}` : ''}
-
-Condicao: ${String(input.condicao || '').toLowerCase() === 'novo' ? 'nova (peca nova)' : 'usada (peca de moto usada)'}
-
-Gere de 10 a ${MAX_TAGS} tags, seguindo este padrao:
-- SEMPRE inclua: o ano da moto, o prefixo do SKU (ex: BM03), a marca, o modelo escrito de duas formas (com e sem espaco, ex: "F800 GS" e "F800GS") e "moto <marca>".
-- Inclua o nome da peca e suas variacoes, sinonimos e termos tecnicos que o cliente digitaria na busca, alem da area geral da peca (ex: suspensao, eletrica, freio, transmissao).
-- Inclua uma tag de condicao: "usada"/"usado" (conforme o genero da peca) ou "nova"/"novo" se a peca for nova.
-- Palavras em portugues em minusculas e SEM acento; marca, modelo e siglas (ABS, TBI, ECU) mantem a grafia.
-- Apenas letras, numeros, espacos e hifens. NAO use aspas, virgulas ou caracteres especiais. Cada tag com no maximo ${MAX_TAMANHO_TAG} caracteres.`;
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 25000);
-  try {
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      signal: controller.signal,
-      headers: { 'Content-Type': 'application/json', 'anthropic-version': '2023-06-01', 'x-api-key': chave },
-      body: JSON.stringify({
-        model: MODELO_IA,
-        max_tokens: 1000,
-        tool_choice: { type: 'tool', name: 'responder_tags' },
-        tools: [{
-          name: 'responder_tags',
-          description: 'Retorna as tags de busca sugeridas para o produto.',
-          input_schema: {
-            type: 'object',
-            additionalProperties: false,
-            properties: { tags: { type: 'array', items: { type: 'string' } } },
-            required: ['tags'],
-          },
-        }],
-        messages: [{ role: 'user', content: prompt }],
-      }),
-    });
-    if (!resp.ok) throw new Error(`Claude API ${resp.status}`);
-    const data: any = await resp.json();
-    const uso = Array.isArray(data?.content) ? data.content.find((c: any) => c?.type === 'tool_use' && c?.name === 'responder_tags') : null;
-    const tags = Array.isArray(uso?.input?.tags) ? uso.input.tags.map((t: any) => String(t)) : [];
-    if (!tags.length) throw new Error('IA sem tags');
-    return tags;
-  } finally {
-    clearTimeout(timeout);
-  }
+function palavrasDoNome(titulo: string, marca: string, modelo: string, ano: string): string[] {
+  const modeloSem = limparTag(modelo).replace(/ /g, '').toLowerCase();
+  const ignorar = new Set([limparTag(marca).toLowerCase(), ano, 'usd', 'usado', 'usada', 'nova', 'novo'].filter(Boolean));
+  return limparTag(titulo).toLowerCase().split(' ')
+    .filter((p) => p.length >= 3 && !STOPWORDS.has(p) && !ignorar.has(p) && !/^\d+$/.test(p) && p.replace(/ /g, '') !== modeloSem && !modeloSem.includes(p));
 }
 
-// Gera as tags (IA, com plano B por regra) e devolve no formato da Nuvemshop: "a, b, c".
-export async function gerarTagsNuvemshop(input: TagsInput): Promise<string> {
-  let tags: string[] = [];
+async function carregarAprendizado(): Promise<Aprendizado> {
+  if (cacheAprendizado && cacheAprendizado.expira > Date.now()) return cacheAprendizado.mapa;
+  const mapa: Aprendizado = new Map();
   try {
-    tags = normalizarLista(await tagsPorIA(input));
-  } catch (e: any) {
-    console.warn(`[nuvemshopTags] IA indisponivel (${e?.message || e}) — usando regra pro SKU ${input.sku}`);
+    const linhas: any[] = await (prisma as any).cadastroPeca.findMany({
+      where: { nuvemshopTags: { not: null } },
+      select: { idPeca: true, descricao: true, nuvemshopTags: true, moto: { select: { marca: true, modelo: true, ano: true } } },
+      take: 5000,
+    });
+    for (const l of linhas) {
+      const marca = String(l.moto?.marca || ''); const modelo = String(l.moto?.modelo || ''); const ano = l.moto?.ano ? String(l.moto.ano) : '';
+      const prefixo = String(l.idPeca || '').toUpperCase().split('_')[0].toLowerCase();
+      const marcaT = limparTag(marca).toLowerCase(); const modeloT = limparTag(modelo).toLowerCase().replace(/ /g, '');
+      const palavras = palavrasDoNome(String(l.descricao || ''), marca, modelo, ano);
+      if (!palavras.length) continue;
+      const tags = String(l.nuvemshopTags || '').split(',').map((t) => limparTag(t).toLowerCase()).filter((t) => t.length >= 3);
+      for (const tag of tags) {
+        const compacta = tag.replace(/ /g, '');
+        if (tag === ano || tag === prefixo || tag === 'usada' || tag === 'usado' || tag === 'nova' || tag === 'novo') continue;
+        if ((marcaT && tag.includes(marcaT)) || (modeloT && compacta.includes(modeloT)) || /\d{4,}/.test(tag)) continue;
+        for (const p of palavras) {
+          const m = mapa.get(p) || new Map<string, number>();
+          m.set(tag, (m.get(tag) || 0) + 1);
+          mapa.set(p, m);
+        }
+      }
+    }
+  } catch (e: any) { console.warn('[nuvemshopTags] nao foi possivel carregar o aprendizado:', e?.message || e); }
+  cacheAprendizado = { expira: Date.now() + 30 * 60 * 1000, mapa };
+  return mapa;
+}
+
+async function tagsAprendidas(input: TagsInput, jaTem: string[]): Promise<string[]> {
+  const moto = input.moto || {};
+  const palavras = palavrasDoNome(input.titulo, String(moto.marca || ''), String(moto.modelo || ''), moto.ano ? String(moto.ano) : '');
+  if (!palavras.length) return [];
+  const mapa = await carregarAprendizado();
+  const existentes = new Set(jaTem.map((t) => t.toLowerCase()));
+  const pontos = new Map<string, number>();
+  for (const p of palavras) {
+    for (const [tag, n] of Array.from((mapa.get(p) || new Map()).entries())) {
+      if (n < MIN_OCORRENCIAS || existentes.has(tag)) continue;
+      pontos.set(tag, (pontos.get(tag) || 0) + n);
+    }
   }
-  // Completa/substitui pela regra se a IA devolveu pouco.
-  if (tags.length < 8) tags = normalizarLista([...tags, ...tagsPorRegra(input)]);
-  return tags.join(', ');
+  return Array.from(pontos.entries()).sort((a, b) => b[1] - a[1]).map(([tag]) => tag);
+}
+
+// Gera as tags 100% internas e devolve no formato da Nuvemshop: "a, b, c".
+// Base por regra (ano, prefixo, marca, modelo, nome da peca...) + ate 3 termos aprendidos; a tag de condicao (usada/nova) sempre fica.
+export async function gerarTagsNuvemshop(input: TagsInput): Promise<string> {
+  const base = tagsPorRegra(input);
+  const condicao = base.find((t) => /^(nova|usada)$/i.test(t)) || (String(input.condicao || '').toLowerCase() === 'novo' ? 'nova' : 'usada');
+  const semCondicao = base.filter((t) => t !== condicao);
+  const aprendidas = (await tagsAprendidas(input, semCondicao)).slice(0, 3);
+  const reservadas = aprendidas.length + 1; // aprendidas + condicao
+  return normalizarLista([...semCondicao.slice(0, Math.max(0, MAX_TAGS - reservadas)), ...aprendidas, condicao]).join(', ');
 }
 
 // Pre-cadastro: gera e grava CadastroPeca.nuvemshopTags em segundo plano (nao bloqueia a resposta).

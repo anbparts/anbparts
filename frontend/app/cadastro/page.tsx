@@ -2941,7 +2941,7 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
                                   <button type="button" onClick={() => { carregarCategoriasDoMarketplace(mk); setCategoriaModalMarketplace(mk); setCategoriaModalSku(linha.sku); setCategoriaModalBusca(''); }} style={{ fontSize: 11, color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}>trocar</button>
                                   {mk === 'mercado-livre' && mp.categoriaPreCadastro && String(mp.categoriaPreCadastro.id) !== String(mp.categoriaEscolhidaId) && (
                                     <div style={{ fontSize: 11, color: 'var(--gray-500)' }}>
-                                      Pré-cadastro: {mp.categoriaPreCadastro.nome} ({mp.categoriaPreCadastro.id}){mp.sugestaoOrigem === 'ia' ? ' · sugestão da IA' : mp.sugestaoOrigem === 'palavras' ? ' · por palavras (IA indisponível — confira)' : ''}
+                                      Pré-cadastro: {mp.categoriaPreCadastro.nome} ({mp.categoriaPreCadastro.id}){mp.sugestaoOrigem === 'ml' ? ' · sugestão do Mercado Livre' : mp.sugestaoOrigem === 'ia' ? ' · sugestão da IA' : mp.sugestaoOrigem === 'palavras' ? ' · por palavras (IA indisponível — confira)' : ''}
                                     </div>
                                   )}
                                   {mp.restricoes && mp.restricoes.length > 0 && (

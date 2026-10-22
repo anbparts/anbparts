@@ -147,7 +147,7 @@ mlAnuncioRouter.post('/anuncio/buscar', async (req, res, next) => {
         const pre = await categoriaDoPreCadastro(sku);
         linha.categoriaPreCadastro = pre;
         try {
-          const sug = await sugerirCategoriaML({ titulo: base.descricao, marca: base.moto?.marca, modelo: base.moto?.modelo, condicao });
+          const sug = await sugerirCategoriaML({ usuario: String((req as any).authUser?.username || '').trim() || null, titulo: base.descricao, marca: base.moto?.marca, modelo: base.moto?.modelo, condicao });
           if (sug) {
             const ver = await verificarCategoriaML(sug.id, condicao, { modelo: base.moto?.modelo || null });
             linha.fichaFaltando = ver.fichaFaltando;

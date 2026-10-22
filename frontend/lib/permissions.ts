@@ -16,6 +16,7 @@ export const PAGE_KEY_BY_HREF: Record<string, string> = {
   '/faturamento/geral': 'faturamento_geral',
   '/despesas-receita': 'despesas_receita',
   '/pendencias': 'pendencias',
+  '/conf-anthropic': 'conf_anthropic',
   '/dre': 'dre',
   '/curva-abc': 'curva_abc',
   '/despesas': 'despesas',

@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { obterChaveAnthropic, registrarUsoAnthropic } from '../lib/anthropic';
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
@@ -425,7 +426,7 @@ async function listarModelosAnthropic(apiKey: string) {
 }
 
 nuvemshopRouter.get('/testar-ia', async (_req, res) => {
-  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  const anthropicKey = await obterChaveAnthropic();
   if (!anthropicKey) {
     return res.status(500).json({ ok: false, error: 'ANTHROPIC_API_KEY nao configurado nas variaveis de ambiente do servidor' });
   }
@@ -522,9 +523,9 @@ nuvemshopRouter.post('/sugerir-ia', async (req, res, next) => {
       return res.status(400).json({ ok: false, error: 'produtos e categorias sao obrigatorios' });
     }
 
-    const anthropicKey = process.env.ANTHROPIC_API_KEY;
+    const anthropicKey = await obterChaveAnthropic();
     if (!anthropicKey) {
-      return res.status(500).json({ ok: false, error: 'ANTHROPIC_API_KEY nao configurado nas variaveis de ambiente do servidor' });
+      return res.status(500).json({ ok: false, error: 'Chave da Anthropic nao configurada (Configuracoes > Conf. Anthropic).' });
     }
 
     // Monta árvore de categorias para contexto (igual para todos os lotes)
@@ -646,6 +647,7 @@ IMPORTANTE: tags devem ser strings simples sem aspas internas ou caracteres espe
     }
 
     const data = await response.json() as any;
+    void registrarUsoAnthropic({ recurso: 'nuvemshop_sugerir_ia', usuario: String((req as any).authUser?.username || '').trim() || null, modelo: anthropicModel, tokensEntrada: data?.usage?.input_tokens, tokensSaida: data?.usage?.output_tokens, contexto: `${produtos.length} produto(s)` });
     const toolUse = Array.isArray(data.content)
       ? data.content.find((item: any) => item?.type === 'tool_use' && item?.name === 'responder_sugestoes')
       : null;

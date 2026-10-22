@@ -12,7 +12,7 @@ type Preco = { preco: number; precoTexto: string; codigoFipe: string; referencia
 const s: any = {
   input: { background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 6, padding: '7px 11px', fontSize: 13, fontFamily: 'Geist, sans-serif', outline: 'none', width: '100%', boxSizing: 'border-box' as const },
   label: { fontSize: 11, fontWeight: 600, color: 'var(--ink-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.6px', display: 'block', marginBottom: 4 },
-  btn: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '6px 12px', borderRadius: 6, fontSize: 12.5, fontWeight: 500, cursor: 'pointer', border: '1px solid var(--border)', background: 'var(--white)', color: 'var(--ink-soft)', fontFamily: 'Geist, sans-serif' },
+  btn: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '3px 10px', borderRadius: 6, fontSize: 12, fontWeight: 500, cursor: 'pointer', border: '1px solid var(--border)', background: 'var(--white)', color: 'var(--ink-soft)', fontFamily: 'Geist, sans-serif' },
 };
 
 async function chamar(path: string) {
@@ -20,6 +20,18 @@ async function chamar(path: string) {
   const d = await resp.json().catch(() => ({}));
   if (!resp.ok || d?.ok === false) throw new Error(d?.error || `Erro ${resp.status}`);
   return d;
+}
+
+// Tamanho da janela do navegador: o popup se ajusta (mais compacto em telas baixas/pequenas, mais folgado em telas grandes)
+function useJanela() {
+  const [j, setJ] = useState({ w: 1366, h: 768 });
+  useEffect(() => {
+    const f = () => setJ({ w: window.innerWidth, h: window.innerHeight });
+    f();
+    window.addEventListener('resize', f);
+    return () => window.removeEventListener('resize', f);
+  }, []);
+  return j;
 }
 
 const brl = (v: number) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -39,6 +51,14 @@ export default function FipeConsultaModal({ open, marca, modelo, ano, isPhone, o
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState('');
   const seq = useRef(0);
+  const { w, h } = useJanela();
+  // apertado: telas baixas (notebook 768) | normal | folgado: telas grandes (1080p ou mais)
+  const dens: 'apertado' | 'normal' | 'folgado' = h < 760 || w < 1100 ? 'apertado' : h >= 1000 && w >= 1700 ? 'folgado' : 'normal';
+  const fs = dens === 'apertado' ? 12 : dens === 'folgado' ? 13.5 : 12.5; // fonte das linhas
+  const py = dens === 'apertado' ? 4 : dens === 'folgado' ? 7 : 5; // espaco vertical das linhas
+  const px = dens === 'apertado' ? 12 : 16;
+  const largura = Math.min(dens === 'folgado' ? 1000 : 880, Math.round(w * 0.94));
+  const altura = Math.min(dens === 'folgado' ? 760 : 620, Math.round(h * 0.88));
 
   // ao abrir: carrega as marcas e escolhe a mais parecida com a do cadastro
   useEffect(() => {
@@ -90,67 +110,67 @@ export default function FipeConsultaModal({ open, marca, modelo, ano, isPhone, o
   if (!open) return null;
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.5)', zIndex: 330, display: 'flex', alignItems: isPhone ? 'stretch' : 'center', justifyContent: 'center', padding: isPhone ? 0 : 20 }} onClick={onClose}>
-      <div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: isPhone ? 0 : 14, width: '100%', maxWidth: 960, maxHeight: isPhone ? '100dvh' : 'calc(100vh - 40px)', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,.2)' }}>
-        <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-          <div>
-            <div style={{ fontFamily: 'Fraunces, serif', fontSize: 17, fontWeight: 600 }}>Consultar tabela FIPE</div>
-            <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>Preço do mês de referência atual · cadastro: {marca || '—'} {modelo || ''}{ano ? ` ${ano}` : ''}</div>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.5)', zIndex: 330, display: 'flex', alignItems: isPhone ? 'stretch' : 'center', justifyContent: 'center', padding: isPhone ? 0 : 12 }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: isPhone ? 0 : 14, width: '100%', maxWidth: largura, height: isPhone ? '100dvh' : altura, maxHeight: isPhone ? '100dvh' : 'calc(100vh - 24px)', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,.2)' }}>
+        <div style={{ padding: `${py + 6}px ${px}px`, borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>Consultar tabela FIPE</div>
+            <div style={{ fontSize: 11.5, color: 'var(--ink-muted)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Preço do mês de referência atual · cadastro: {marca || '—'} {modelo || ''}{ano ? ` ${ano}` : ''}</div>
           </div>
-          <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', fontSize: 16 }}>X</button>
+          <button onClick={onClose} style={{ width: 26, height: 26, borderRadius: 7, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', fontSize: 13, flexShrink: 0 }}>X</button>
         </div>
 
-        <div style={{ padding: '14px 20px', display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '260px minmax(0, 1fr)', gap: 12, borderBottom: '1px solid var(--border)' }}>
+        <div style={{ padding: `${py + 4}px ${px}px`, display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '230px minmax(0, 1fr)', gap: 10, borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
           <div>
-            <label style={s.label}>Marca</label>
-            <select style={{ ...s.input, cursor: 'pointer' }} value={marcaId} onChange={(e) => { setMarcaId(e.target.value); setModeloSel(null); setAnos([]); setPrecos({}); }}>
+            <label style={{ ...s.label, fontSize: 10, marginBottom: 2 }}>Marca</label>
+            <select style={{ ...s.input, padding: '5px 9px', fontSize: fs, cursor: 'pointer' }} value={marcaId} onChange={(e) => { setMarcaId(e.target.value); setModeloSel(null); setAnos([]); setPrecos({}); }}>
               <option value="">Escolha a marca…</option>
               {marcas.map((m) => <option key={m.id} value={m.id}>{m.nome}</option>)}
             </select>
           </div>
           <div>
-            <label style={s.label}>Modelo (digite para filtrar a lista)</label>
-            <input style={s.input} value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Ex: F 800 GS" disabled={!marcaId} />
+            <label style={{ ...s.label, fontSize: 10, marginBottom: 2 }}>Modelo (digite para filtrar a lista)</label>
+            <input style={{ ...s.input, padding: '5px 9px', fontSize: fs }} value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Ex: F 800 GS" disabled={!marcaId} />
           </div>
         </div>
 
-        {erro ? <div style={{ padding: '8px 20px', background: '#fef2f2', color: '#b91c1c', fontSize: 12.5, borderBottom: '1px solid #fecaca' }}>{erro}</div> : null}
+        {erro ? <div style={{ padding: `${py}px ${px}px`, background: '#fef2f2', color: '#b91c1c', fontSize: 12, borderBottom: '1px solid #fecaca', flexShrink: 0 }}>{erro}</div> : null}
 
-        <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'minmax(0, 1fr) minmax(0, 1fr)', flex: 1, minHeight: 0, overflow: isPhone ? 'auto' : 'hidden' }}>
-          <div style={{ borderRight: isPhone ? 'none' : '1px solid var(--border)', overflowY: 'auto', maxHeight: isPhone ? 260 : 'none', minHeight: 0 }}>
-            <div style={{ padding: '10px 20px 4px', fontSize: 11, color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'minmax(0, 1.15fr) minmax(0, 1fr)', flex: 1, minHeight: 0, overflow: isPhone ? 'auto' : 'hidden' }}>
+          <div style={{ borderRight: isPhone ? 'none' : '1px solid var(--border)', overflowY: 'auto', maxHeight: isPhone ? 240 : 'none', minHeight: 0 }}>
+            <div style={{ padding: `${py + 2}px ${px}px ${py}px`, fontSize: 10, color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: '0.6px', position: 'sticky', top: 0, background: 'var(--white)', zIndex: 1 }}>
               Modelos {marcaId ? `(${modelos.length}${totalModelos > modelos.length ? ` de ${totalModelos}` : ''})` : ''}
             </div>
-            {!marcaId ? <div style={{ padding: '10px 20px', fontSize: 13, color: 'var(--ink-muted)' }}>{carregando ? 'Consultando a FIPE…' : 'Escolha a marca para listar os modelos.'}</div> : null}
-            {marcaId && !modelos.length && !carregando ? <div style={{ padding: '10px 20px', fontSize: 13, color: 'var(--ink-muted)' }}>Nenhum modelo encontrado. Ajuste o texto do modelo.</div> : null}
+            {!marcaId ? <div style={{ padding: `${py + 4}px ${px}px`, fontSize: fs, color: 'var(--ink-muted)' }}>{carregando ? 'Consultando a FIPE…' : 'Escolha a marca para listar os modelos.'}</div> : null}
+            {marcaId && !modelos.length && !carregando ? <div style={{ padding: `${py + 4}px ${px}px`, fontSize: fs, color: 'var(--ink-muted)' }}>Nenhum modelo encontrado. Ajuste o texto do modelo.</div> : null}
             {modelos.map((m) => {
               const ativo = modeloSel?.id === m.id;
               return (
-                <div key={m.id} onClick={() => escolherModelo(m)} style={{ padding: '9px 20px', cursor: 'pointer', borderBottom: '1px solid var(--border)', background: ativo ? '#eff6ff' : 'transparent', display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
-                  <span style={{ fontSize: 13, fontWeight: ativo ? 700 : 500, color: 'var(--ink)' }}>{m.nome}</span>
-                  {m.pontos >= 50 ? <span style={{ fontSize: 10.5, color: m.pontos >= 85 ? '#166534' : '#92400e', background: m.pontos >= 85 ? '#dcfce7' : '#fffbeb', borderRadius: 99, padding: '1px 8px', whiteSpace: 'nowrap' }}>{m.pontos}% parecido</span> : null}
+                <div key={m.id} onClick={() => escolherModelo(m)} style={{ padding: `${py}px ${px}px`, cursor: 'pointer', borderBottom: '1px solid var(--border)', background: ativo ? '#eff6ff' : 'transparent', display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
+                  <span style={{ fontSize: fs, fontWeight: ativo ? 700 : 500, color: 'var(--ink)', lineHeight: 1.25 }}>{m.nome}</span>
+                  {m.pontos >= 50 ? <span style={{ fontSize: 10, color: m.pontos >= 85 ? '#166534' : '#92400e', background: m.pontos >= 85 ? '#dcfce7' : '#fffbeb', borderRadius: 99, padding: '0 7px', whiteSpace: 'nowrap', flexShrink: 0 }}>{m.pontos}%</span> : null}
                 </div>
               );
             })}
           </div>
 
           <div style={{ overflowY: 'auto', minHeight: 0 }}>
-            <div style={{ padding: '10px 20px 4px', fontSize: 11, color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Anos / valores {modeloSel ? `· ${modeloSel.nome}` : ''}</div>
-            {!modeloSel ? <div style={{ padding: '10px 20px', fontSize: 13, color: 'var(--ink-muted)' }}>Clique em um modelo para ver os anos e valores.</div> : null}
-            {modeloSel && !anos.length && !carregando ? <div style={{ padding: '10px 20px', fontSize: 13, color: 'var(--ink-muted)' }}>Sem anos disponíveis para este modelo.</div> : null}
+            <div style={{ padding: `${py + 2}px ${px}px ${py}px`, fontSize: 10, color: 'var(--ink-muted)', textTransform: 'uppercase', letterSpacing: '0.6px', position: 'sticky', top: 0, background: 'var(--white)', zIndex: 1 }}>Anos / valores {modeloSel ? `· ${modeloSel.nome}` : ''}</div>
+            {!modeloSel ? <div style={{ padding: `${py + 4}px ${px}px`, fontSize: fs, color: 'var(--ink-muted)' }}>Clique em um modelo para ver os anos e valores.</div> : null}
+            {modeloSel && !anos.length && !carregando ? <div style={{ padding: `${py + 4}px ${px}px`, fontSize: fs, color: 'var(--ink-muted)' }}>Sem anos disponíveis para este modelo.</div> : null}
             {anos.map((a) => {
               const p = precos[a.id];
               const doCadastro = String(a.nome) === String(ano || '');
               return (
-                <div key={a.id} style={{ padding: '9px 20px', borderBottom: '1px solid var(--border)', background: doCadastro ? '#f0fdf4' : 'transparent' }}>
+                <div key={a.id} style={{ padding: `${py}px ${px}px`, borderBottom: '1px solid var(--border)', background: doCadastro ? '#f0fdf4' : 'transparent' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 13, fontWeight: 600 }}>{a.nome === '32000' ? '0 km' : a.nome}{doCadastro ? <span style={{ marginLeft: 8, fontSize: 10.5, color: '#166534' }}>ano do cadastro</span> : null}</span>
+                    <span style={{ fontSize: fs, fontWeight: 600 }}>{a.nome === '32000' ? '0 km' : a.nome}{doCadastro ? <span style={{ marginLeft: 6, fontSize: 10, color: '#166534' }}>• ano do cadastro</span> : null}</span>
                     {!p ? <button style={s.btn} onClick={() => verValor(modeloSel!, a)}>Ver valor</button>
                       : p === 'carregando' ? <span style={{ fontSize: 12, color: 'var(--ink-muted)' }}>Consultando…</span>
                         : typeof p === 'string' ? <span style={{ fontSize: 12, color: '#b91c1c' }}>{p}</span>
                           : <button style={{ ...s.btn, background: 'var(--ink)', color: '#fff', borderColor: 'var(--ink)', fontWeight: 700 }} onClick={() => onUsar(p.preco)}>Usar {brl(p.preco)}</button>}
                   </div>
-                  {p && typeof p === 'object' ? <div style={{ fontSize: 11.5, color: 'var(--ink-muted)', marginTop: 4 }}>{p.modelo} · {p.combustivel} · cód. FIPE {p.codigoFipe} · ref. {p.referencia}</div> : null}
+                  {p && typeof p === 'object' ? <div style={{ fontSize: 10.5, color: 'var(--ink-muted)', marginTop: 2 }}>{p.modelo} · {p.combustivel} · cód. FIPE {p.codigoFipe} · ref. {p.referencia}</div> : null}
                 </div>
               );
             })}

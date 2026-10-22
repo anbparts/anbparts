@@ -69,6 +69,7 @@ export const APP_PERMISSION_CATALOG: AppPagePermission[] = [
   { key: 'bling_clientes', label: 'Clientes Bling', href: '/bling/clientes', actions: [] },
   { key: 'bling_produtos', label: 'Produtos Bling', href: '/bling/produtos', actions: [{ key: 'auditar', label: 'Auditar produtos' }] },
   { key: 'bling_auditoria', label: 'Auditoria Automatica', href: '/bling/auditoria-automatica', actions: [{ key: 'executar', label: 'Executar auditoria' }] },
+  { key: 'conf_anthropic', label: 'Conf. Anthropic', href: '/conf-anthropic', actions: [{ key: 'editar', label: 'Trocar a chave da API' }] },
   { key: 'conf_auditoria', label: 'Conf. Auditoria Automatica', href: '/conf-auditoria', actions: [{ key: 'editar', label: 'Editar configuracao' }] },
   { key: 'mercado_livre_perguntas', label: 'Perguntas ML', href: '/mercado-livre/perguntas', actions: [{ key: 'responder', label: 'Responder pergunta' }] },
   { key: 'nuvemshop_produtos', label: 'Produtos Nuvemshop', href: '/nuvemshop/produtos', actions: [

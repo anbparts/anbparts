@@ -88,6 +88,7 @@ export const NAV: NavGroup[] = [
     section: 'Configuracoes',
     items: [
       { href: '/conf-monitor-conexoes', icon: 'radar', label: 'Monitor de Conexoes' },
+      { href: '/conf-anthropic', icon: 'sparkles', label: 'Conf. Anthropic' },
       { href: '/configuracoes', icon: 'key-round', label: 'Conf. Perfil' },
       { href: '/conf-meta', icon: 'message-circle', label: 'Conf. Meta' },
       { href: '/bling', icon: 'plug', label: 'Conf. Conexao Bling' },

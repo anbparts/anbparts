@@ -4,6 +4,8 @@
 // sistema ainda nao preenche...). Usa a API publica do ML (categorias nao exigem token) e a API de
 // Anuncios do Bling pra ler os atributos obrigatorios.
 import { blingReq } from '../routes/bling';
+import { chamarAnthropic, registrarEvitadaAnthropic } from './anthropic';
+import { prisma } from './prisma';
 
 const ML_API = 'https://api.mercadolibre.com';
 export const ML_LOJA_BLING_ID = 205204423; // loja "Mercado Livre" no Bling
@@ -239,9 +241,7 @@ async function candidatosDomainDiscovery(titulo: string): Promise<string[]> {
   return ids;
 }
 
-async function escolherComIA(titulo: string, moto: string, condicao: string, candidatos: FolhaML[]) {
-  const chave = process.env.ANTHROPIC_API_KEY;
-  if (!chave) throw new Error('ANTHROPIC_API_KEY nao configurado');
+async function escolherComIA(titulo: string, moto: string, condicao: string, candidatos: FolhaML[], usuario?: string | null) {
   const lista = candidatos.map((c) => `${c.id} | ${c.caminho}`).join('\n');
   const prompt = `Voce classifica pecas e acessorios de MOTO (${condicao}) para o Mercado Livre Brasil.
 
@@ -256,48 +256,48 @@ Escolha a categoria FINAL mais especifica e adequada para este produto. Regras:
 - Se nenhuma servir, escolha a categoria "Outros" da familia correta (pecas ou acessorios).
 - Responda SOMENTE pela ferramenta, com um id exatamente igual a um da lista.`;
 
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 25000);
-  try {
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      signal: ctrl.signal,
-      headers: { 'Content-Type': 'application/json', 'anthropic-version': '2023-06-01', 'x-api-key': chave },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 400,
-        tool_choice: { type: 'tool', name: 'escolher_categoria' },
-        tools: [{
-          name: 'escolher_categoria',
-          description: 'Escolhe a categoria do Mercado Livre para o produto.',
-          input_schema: {
-            type: 'object',
-            additionalProperties: false,
-            properties: {
-              categoria_id: { type: 'string' },
-              confianca: { type: 'string', enum: ['alta', 'media', 'baixa'] },
-              alternativas: { type: 'array', items: { type: 'string' } },
-            },
-            required: ['categoria_id', 'confianca'],
+  const data: any = await chamarAnthropic({
+    recurso: 'ml_categoria', usuario, contexto: titulo,
+    body: {
+      model: 'claude-sonnet-4-6',
+      max_tokens: 400,
+      tool_choice: { type: 'tool', name: 'escolher_categoria' },
+      tools: [{
+        name: 'escolher_categoria',
+        description: 'Escolhe a categoria do Mercado Livre para o produto.',
+        input_schema: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            categoria_id: { type: 'string' },
+            confianca: { type: 'string', enum: ['alta', 'media', 'baixa'] },
+            alternativas: { type: 'array', items: { type: 'string' } },
           },
-        }],
-        messages: [{ role: 'user', content: prompt }],
-      }),
-    });
-    if (!resp.ok) throw new Error(`Claude API ${resp.status}`);
-    const data: any = await resp.json();
-    const uso = Array.isArray(data?.content) ? data.content.find((c: any) => c?.type === 'tool_use') : null;
-    const id = String(uso?.input?.categoria_id || '').trim();
-    if (!id) throw new Error('IA sem categoria');
-    return { id, confianca: String(uso?.input?.confianca || ''), alternativas: Array.isArray(uso?.input?.alternativas) ? uso.input.alternativas.map(String) : [] };
-  } finally {
-    clearTimeout(t);
-  }
+          required: ['categoria_id', 'confianca'],
+        },
+      }],
+      messages: [{ role: 'user', content: prompt }],
+    },
+  });
+  const uso = Array.isArray(data?.content) ? data.content.find((c: any) => c?.type === 'tool_use') : null;
+  const id = String(uso?.input?.categoria_id || '').trim();
+  if (!id) throw new Error('IA sem categoria');
+  return { id, confianca: String(uso?.input?.confianca || ''), alternativas: Array.isArray(uso?.input?.alternativas) ? uso.input.alternativas.map(String) : [] };
 }
 
-export type SugestaoCategoriaML = { id: string; nome: string; caminho: string; origem: 'ia' | 'palavras'; confianca: string; alternativas: FolhaML[] };
+// Cache em banco das escolhas da IA (por titulo+condicao): o mesmo anuncio nao gasta IA de novo, nem depois de um deploy.
+let tabelaCacheCategoriaPronta: Promise<void> | null = null;
+function garantirTabelaCacheCategoria() {
+  if (!tabelaCacheCategoriaPronta) {
+    tabelaCacheCategoriaPronta = prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "MlCategoriaSugestaoIA" ("chave" TEXT PRIMARY KEY, "categoriaId" TEXT NOT NULL, "confianca" TEXT, "alternativas" TEXT, "criadoEm" TIMESTAMP NOT NULL DEFAULT now())`)
+      .then(() => undefined).catch((e) => { tabelaCacheCategoriaPronta = null; throw e; });
+  }
+  return tabelaCacheCategoriaPronta;
+}
 
-export async function sugerirCategoriaML(input: { titulo: string; marca?: string | null; modelo?: string | null; condicao: 'usado' | 'novo' }): Promise<SugestaoCategoriaML | null> {
+export type SugestaoCategoriaML = { id: string; nome: string; caminho: string; origem: 'ia' | 'palavras' | 'ml'; confianca: string; alternativas: FolhaML[] };
+
+export async function sugerirCategoriaML(input: { titulo: string; marca?: string | null; modelo?: string | null; condicao: 'usado' | 'novo'; usuario?: string | null }): Promise<SugestaoCategoriaML | null> {
   const chaveCache = norm(`${input.titulo}|${input.condicao}`);
   const hit = cacheSugestao.get(chaveCache);
   if (hit && hit.expira > Date.now()) return hit.r;
@@ -315,6 +315,38 @@ export async function sugerirCategoriaML(input: { titulo: string; marca?: string
   const pontuados = folhas.map((f) => ({ f, s: pontuar(titTokens, f) })).sort((a, b) => b.s - a.s);
   const candidatos = folhas;
 
+  // 1) API do proprio Mercado Livre (domain_discovery): se o 1o resultado ja e' uma categoria de MOTO, usa direto, sem IA.
+  for (const q of [`${input.titulo} moto`, input.titulo]) {
+    try {
+      const resp = await mlGet(`/sites/MLB/domain_discovery/search?q=${encodeURIComponent(q)}&limit=8`, 1);
+      const lista: any[] = Array.isArray(resp) ? resp : [];
+      const topo = lista[0]?.category_id ? porId.get(String(lista[0].category_id)) : undefined;
+      if (topo) {
+        const alt = lista.slice(1).map((x) => porId.get(String(x?.category_id))).filter((f): f is FolhaML => !!f && f.id !== topo.id);
+        const rml: SugestaoCategoriaML = { id: topo.id, nome: topo.nome, caminho: topo.caminho, origem: 'ml', confianca: 'alta', alternativas: alt.slice(0, 3) };
+        registrarEvitadaAnthropic('ml_categoria', input.usuario, input.titulo);
+        cacheSugestao.set(chaveCache, { r: rml, expira: Date.now() + 60 * 60 * 1000 });
+        return rml;
+      }
+    } catch { /* ML fora do ar nessa consulta: tenta a proxima ou cai na IA */ }
+  }
+
+  // 2) Escolha da IA ja feita antes para o mesmo titulo (guardada em banco): nao gasta IA de novo
+  try {
+    await garantirTabelaCacheCategoria();
+    const rows = await prisma.$queryRawUnsafe<Array<{ categoriaId: string; confianca: string | null; alternativas: string | null }>>(
+      `SELECT "categoriaId","confianca","alternativas" FROM "MlCategoriaSugestaoIA" WHERE "chave" = $1 AND "criadoEm" > now() - interval '60 days'`, chaveCache,
+    );
+    const f = rows[0] ? porId.get(rows[0].categoriaId) : undefined;
+    if (f) {
+      const alts = String(rows[0].alternativas || '').split(',').map((a) => porId.get(a.trim())).filter((x): x is FolhaML => !!x && x.id !== f.id);
+      const rc: SugestaoCategoriaML = { id: f.id, nome: f.nome, caminho: f.caminho, origem: 'ia', confianca: rows[0].confianca || 'media', alternativas: alts.slice(0, 3) };
+      registrarEvitadaAnthropic('ml_categoria_cache', input.usuario, input.titulo);
+      cacheSugestao.set(chaveCache, { r: rc, expira: Date.now() + 60 * 60 * 1000 });
+      return rc;
+    }
+  } catch { /* sem cache em banco: segue para a IA */ }
+
   const moto = [input.marca, input.modelo].filter(Boolean).join(' ');
   let escolhida: FolhaML | null = null;
   let origem: 'ia' | 'palavras' = 'palavras';
@@ -322,11 +354,12 @@ export async function sugerirCategoriaML(input: { titulo: string; marca?: string
   let alternativas: FolhaML[] = [];
 
   try {
-    const r = await escolherComIA(input.titulo, moto, input.condicao, candidatos);
+    const r = await escolherComIA(input.titulo, moto, input.condicao, candidatos, input.usuario);
     const f = porId.get(r.id);
     if (f) {
       escolhida = f; origem = 'ia'; confianca = r.confianca;
       alternativas = r.alternativas.map((a: string) => porId.get(a)).filter(Boolean) as FolhaML[];
+      prisma.$executeRawUnsafe(`INSERT INTO "MlCategoriaSugestaoIA" ("chave","categoriaId","confianca","alternativas","criadoEm") VALUES ($1,$2,$3,$4,now()) ON CONFLICT ("chave") DO UPDATE SET "categoriaId"=EXCLUDED."categoriaId","confianca"=EXCLUDED."confianca","alternativas"=EXCLUDED."alternativas","criadoEm"=now()`, chaveCache, f.id, r.confianca, alternativas.map((a) => a.id).join(',')).catch(() => undefined);
     }
   } catch (e: any) {
     console.warn(`[mlCategorias] IA indisponivel (${e?.message || e}) — usando palavras pro "${input.titulo}"`);
