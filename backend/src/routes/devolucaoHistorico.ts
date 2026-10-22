@@ -66,7 +66,7 @@ devolucaoHistoricoRouter.get('/', async (req, res, next) => {
     const rows = await prisma.$queryRawUnsafe<any[]>(
       `SELECT d."id", d."pecaId", d."idPeca", d."descricao", d."pedidoNum", d."pedidoId", d."dataVenda"::text AS "dataVenda", d."dataDevolucao"::text AS "dataDevolucao",
               d."motoId", d."motoNome", d."motoLabel", d."valor", d."valorLiq", d."frete", d."taxas", d."nfVenda", d."nfDevolucao", d."canal", d."motivoId", mo."nome" AS "motivoNome", d."observacao", d."origem",
-              d."criadoEm", d."atualizadoEm", d."atualizadoPor", ${STATUS_ATUAL} AS "statusAtual", pc."localizacao" AS "localizacaoAtual", pc."etiquetaPendente" AS "etiquetaPendente",
+              d."criadoEm", d."atualizadoEm", d."atualizadoPor", ${STATUS_ATUAL} AS "statusAtual", pc."localizacao" AS "localizacaoAtual", pc."etiquetaPendente" AS "etiquetaPendente", pc."detranEtiqueta" AS "etiquetaAtual",
               (SELECT json_agg(json_build_object('etiqueta', h."etiquetasDetran", 'baixada', COALESCE(h."etiquetaBaixada", false)) ORDER BY h."id")
                  FROM "HistoricoDevolucao" h
                 WHERE h."pecaId" = d."pecaId" AND h."etiquetasDetran" IS NOT NULL AND h."etiquetasDetran" <> ''

@@ -12,15 +12,22 @@ type Registro = {
   motoNome: string | null; motoLabel: string | null; valor: number | null; valorLiq: number | null; frete: number | null; taxas: number | null; nfVenda: string | null; nfDevolucao: string | null; pedidoId: string | null; canal: string | null;
   motivoId: number | null; motivoNome: string | null; observacao: string | null; origem: string | null;
   statusAtual: string; localizacaoAtual: string | null;
-  etiquetas: Array<{ etiqueta: string; baixada: boolean }> | null; etiquetaPendente: boolean | null;
+  etiquetas: Array<{ etiqueta: string; baixada: boolean }> | null; etiquetaPendente: boolean | null; etiquetaAtual: string | null;
 };
 
 // Etiqueta Detran da devolucao: uma ou varias (pecas como motor tem 2). Clicar abre todas.
 function etiquetasDe(r: Registro) { return Array.isArray(r.etiquetas) ? r.etiquetas : []; }
 function statusEtiqueta(r: Registro): { texto: string; bg: string; cor: string; borda: string } | null {
   if (!etiquetasDe(r).length) return null;
-  if (r.etiquetaPendente) return { texto: 'Pendente de reposição', bg: '#fffbeb', cor: '#92400e', borda: '#fde68a' };
-  return { texto: 'Reposta', bg: '#f0fdf4', cor: '#15803d', borda: '#bbf7d0' };
+  // 1) a peca esta marcada como "precisa de etiqueta nova"
+  if (r.etiquetaPendente) return { texto: 'Aguardando nova etiqueta', bg: '#fffbeb', cor: '#92400e', borda: '#fde68a' };
+  // 2) a peca hoje tem uma etiqueta que nao e nenhuma das da devolucao: ja recebeu etiqueta nova
+  const daDevolucao = new Set(etiquetasDe(r).map((x) => x.etiqueta));
+  const atuais = String(r.etiquetaAtual || '').split('/').map((x) => x.trim()).filter(Boolean);
+  if (atuais.some((x) => !daDevolucao.has(x))) return { texto: 'Nova etiqueta atribuída', bg: '#f0fdf4', cor: '#15803d', borda: '#bbf7d0' };
+  // 3) senao, mostra a situacao das etiquetas da propria devolucao
+  if (etiquetasDe(r).every((x) => x.baixada)) return { texto: 'Etiqueta baixada', bg: '#fef2f2', cor: '#b91c1c', borda: '#fecaca' };
+  return { texto: 'Etiqueta ativa', bg: '#f1f5f9', cor: '#475569', borda: '#cbd5e1' };
 }
 function ChipEtiqueta({ r, onAbrir }: { r: Registro; onAbrir: (r: Registro) => void }) {
   const lista = etiquetasDe(r);
@@ -57,7 +64,7 @@ function EtiquetasModal({ r, onClose }: { r: Registro; onClose: () => void }) {
               <span style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 10px', borderRadius: 99, whiteSpace: 'nowrap', ...(x.baixada ? { background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca' } : { background: '#ecfdf5', color: '#065f46', border: '1px solid #a7f3d0' }) }}>{x.baixada ? 'Baixada no Detran' : 'Não baixada'}</span>
             </div>
           ))}
-          {st ? <div style={{ fontSize: 12.5, color: 'var(--gray-600)', marginTop: 4 }}>Situação da peça: <strong style={{ color: st.cor }}>{st.texto}</strong>{r.etiquetaPendente ? ' — precisa de etiqueta nova para voltar a ser vendida.' : '.'}</div> : null}
+          {st ? <div style={{ fontSize: 12.5, color: 'var(--gray-600)', marginTop: 4 }}>Situação: <strong style={{ color: st.cor }}>{st.texto}</strong>{r.etiquetaPendente ? ' — a peça precisa de uma etiqueta nova para voltar a ser vendida.' : ''}{r.etiquetaAtual ? <div style={{ marginTop: 4 }}>Etiqueta atual da peça: <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>{r.etiquetaAtual}</span></div> : null}</div> : null}
         </div>
         <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end' }}>
           <button type="button" onClick={onClose} style={{ padding: '7px 14px', borderRadius: 8, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', border: '1px solid var(--gray-800)', background: 'var(--gray-800)', color: '#fff' }}>Fechar</button>
@@ -86,6 +93,9 @@ type Resposta = {
   resumo: { qtd: number; valor: number; valorLiq: number; semMotivo: number; porMotivo: Array<{ nome: string; qtd: number }> };
   itens: Registro[];
 };
+
+// larguras fixas das colunas (px): a tabela rola na horizontal em vez de espremer o conteudo
+const COLS = [128, 270, 150, 200, 120, 140, 180, 120, 190, 92];
 
 const ORIGENS: Record<string, string> = {
   cancelamento_importado: 'Cancelamento importado', cancelamento_estoque: 'Cancelamento no estoque', devolucao_manual: 'Devolução registrada', historico_antigo: 'Histórico anterior',
@@ -401,10 +411,11 @@ export default function DevolucoesTab({ padding }: { padding: number }) {
       ) : (
         <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 1400 }}>
+            <table style={{ borderCollapse: 'collapse', fontSize: 13, tableLayout: 'fixed', width: COLS.reduce((a, c) => a + c, 0), minWidth: '100%' }}>
+              <colgroup>{COLS.map((w, i) => <col key={i} style={{ width: w }} />)}</colgroup>
               <thead>
                 <tr style={{ background: 'var(--gray-50, #f9fafb)', textAlign: 'left' }}>
-                  {['Devolução', 'Peça', 'Pedido', 'Marketplace', 'Moto', 'Venda', 'Valor', 'Etiqueta Detran', 'Status etiqueta', 'Status atual', 'Motivo', ''].map((h, i) => (
+                  {['Devolução', 'Peça', 'Pedido', 'Moto', 'Valor', 'Etiqueta Detran', 'Status etiqueta', 'Status atual', 'Motivo', ''].map((h, i) => (
                     <th key={i} style={{ padding: '10px 12px', fontSize: 10.5, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '0.5px', borderBottom: '1px solid var(--border)', textAlign: h === 'Valor' ? 'right' : 'left', whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -414,25 +425,24 @@ export default function DevolucoesTab({ padding }: { padding: number }) {
                   <tr key={r.id} style={{ borderBottom: '1px solid var(--border)', verticalAlign: 'top' }}>
                     <td style={{ padding: '10px 12px', whiteSpace: 'nowrap', color: 'var(--gray-700)' }}>
                       {dataBr(r.dataDevolucao)}
+                      <div style={{ fontSize: 11, color: 'var(--gray-500)', marginTop: 2 }}>venda {dataBr(r.dataVenda)}</div>
                       <div style={{ fontSize: 10.5, color: 'var(--gray-400)', marginTop: 2 }}>{ORIGENS[r.origem || ''] || r.origem || ''}</div>
                     </td>
-                    <td style={{ padding: '10px 12px', maxWidth: 300 }}>
+                    <td style={{ padding: '10px 12px' }}>
                       <div style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: 12.5, color: 'var(--blue-500)' }}>{r.idPeca || '—'}</div>
                       <div style={{ color: 'var(--gray-800)', marginTop: 2 }}>{r.descricao || '—'}</div>
-                      {r.observacao ? <div style={{ fontSize: 11.5, color: 'var(--gray-500)', marginTop: 3 }}>Obs.: {r.observacao}</div> : null}
+                      {r.observacao ? <div title={r.observacao} style={{ fontSize: 11.5, color: 'var(--gray-500)', marginTop: 3, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>Obs.: {r.observacao}</div> : null}
                     </td>
                     <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>
-                      <div style={{ fontWeight: 600 }}>{r.pedidoNum ? `#${r.pedidoNum}` : '—'}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ fontWeight: 600 }}>{r.pedidoNum ? `#${r.pedidoNum}` : '—'}</span><CanalBadge canal={r.canal} /></div>
                       {r.nfVenda ? <div style={{ fontSize: 11, color: 'var(--gray-500)', marginTop: 2 }}>NF venda <span style={{ fontFamily: 'JetBrains Mono, monospace', color: 'var(--gray-700)' }}>{r.nfVenda}</span></div> : null}
                       {r.nfDevolucao ? <div style={{ fontSize: 11, color: 'var(--gray-500)', marginTop: 1 }}>NF devol. <span style={{ fontFamily: 'JetBrains Mono, monospace', color: 'var(--gray-700)' }}>{r.nfDevolucao}</span></div> : null}
                     </td>
-                    <td style={{ padding: '10px 12px' }}><CanalBadge canal={r.canal} />{!r.canal ? <span style={{ color: 'var(--gray-400)' }}>—</span> : null}</td>
-                    <td style={{ padding: '10px 12px', maxWidth: 230 }}>
+                    <td style={{ padding: '10px 12px' }}>
                       {r.motoLabel ? <div style={{ fontWeight: 700, fontSize: 12.5 }}>{r.motoLabel}</div> : null}
                       <div style={{ color: 'var(--gray-600)', fontSize: 12.5 }}>{r.motoNome || '—'}</div>
                     </td>
-                    <td style={{ padding: '10px 12px', whiteSpace: 'nowrap', color: 'var(--gray-600)' }}>{dataBr(r.dataVenda)}</td>
-                    <td style={{ padding: '10px 12px', textAlign: 'right', whiteSpace: 'nowrap', fontWeight: 700, color: 'var(--blue-500)' }}>
+                                        <td style={{ padding: '10px 12px', textAlign: 'right', whiteSpace: 'nowrap', fontWeight: 700, color: 'var(--blue-500)' }}>
                       {brl(r.valor)}
                       {r.valorLiq != null ? <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--green)', marginTop: 2 }}>líq. {brl(r.valorLiq)}</div> : null}
                       {r.frete != null ? <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--gray-500)', marginTop: 1 }}>frete {brl(r.frete)}</div> : null}
