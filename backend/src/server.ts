@@ -5,6 +5,7 @@ import { armazenagemRouter } from './routes/armazenagem';
 import { authRouter } from './routes/auth';
 import { pendenteRecebimentoRouter } from './routes/pendenteRecebimento';
 import { fipeRouter } from './routes/fipe';
+import { preferenciasRouter } from './routes/preferencias';
 import { anthropicConfigRouter } from './routes/anthropicConfig';
 import { blingRouter, startBlingAuditoriaScheduler , startImportacaoVendasAutomatica } from './routes/bling';
 import { cadastroRouter } from './routes/cadastro';
@@ -81,6 +82,7 @@ app.use(authMiddleware);
 app.use('/armazenagem', armazenagemRouter);
 app.use('/bling', blingRouter);
 app.use('/fipe', fipeRouter);
+app.use('/preferencias', preferenciasRouter);
 app.use('/anthropic', anthropicConfigRouter);
 app.use('/pendencias', pendenteRecebimentoRouter);
 app.use('/pendente-recebimento', pendenteRecebimentoRouter); // nome antigo (compatibilidade)

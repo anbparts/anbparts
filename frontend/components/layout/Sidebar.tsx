@@ -1,7 +1,9 @@
 'use client';
 
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import { API_BASE } from '@/lib/api-base';
 import { canAccessPage, isBruno } from '@/lib/permissions';
 import type { LoggedUser } from '@/lib/auth';
 
@@ -245,6 +247,37 @@ export function Sidebar({
   const path = usePathname();
   const router = useRouter();
   const activeHref = getActiveHref(path, authUser);
+
+  // Grupos do menu recolhidos (guardado por usuario no servidor; copia local so para abrir sem piscar)
+  const usuarioMenu = String((authUser as any)?.username || user || '').trim().toLowerCase();
+  const [fechados, setFechados] = useState<Record<string, boolean>>({});
+  const timerSalvar = useRef<any>(null);
+  useEffect(() => {
+    if (!usuarioMenu) return;
+    try { const local = window.localStorage.getItem(`anb:menu:fechados:${usuarioMenu}`); if (local) setFechados(JSON.parse(local)); } catch { /* sem armazenamento local */ }
+    let cancelado = false;
+    fetch(`${API_BASE}/preferencias/menu`, { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => {
+        if (cancelado || !d?.ok || !d.fechados) return;
+        setFechados(d.fechados);
+        try { window.localStorage.setItem(`anb:menu:fechados:${usuarioMenu}`, JSON.stringify(d.fechados)); } catch { /* ignora */ }
+      })
+      .catch(() => { /* sem servidor: fica com a copia local */ });
+    return () => { cancelado = true; };
+  }, [usuarioMenu]);
+  function alternarGrupo(secao: string) {
+    setFechados((atual) => {
+      const novo = { ...atual };
+      if (novo[secao]) delete novo[secao]; else novo[secao] = true;
+      try { window.localStorage.setItem(`anb:menu:fechados:${usuarioMenu}`, JSON.stringify(novo)); } catch { /* ignora */ }
+      if (timerSalvar.current) clearTimeout(timerSalvar.current);
+      timerSalvar.current = setTimeout(() => {
+        fetch(`${API_BASE}/preferencias/menu`, { method: 'PUT', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fechados: novo }) }).catch(() => undefined);
+      }, 500);
+      return novo;
+    });
+  }
   const visibleNav = NAV
     .filter((group) => !group.requiresBruno || isBruno(authUser as any))
     .map((group) => ({
@@ -425,11 +458,27 @@ export function Sidebar({
             overscrollBehavior: 'contain',
           }}
         >
-          {visibleNav.map((group, groupIndex) => (
+          {visibleNav.map((group, groupIndex) => {
+            // grupo recolhido: some a lista, mas a pagina aberta continua aparecendo (so no menu largo; no menu so de icones tudo fica visivel)
+            const recolhido = expanded && !!fechados[group.section];
+            const itensDoGrupo = recolhido ? group.items.filter((item) => item.href === activeHref) : group.items;
+            return (
             <div key={group.section}>
               {expanded ? (
-                <div
+                <button
+                  type="button"
+                  onClick={() => alternarGrupo(group.section)}
+                  aria-expanded={!recolhido}
+                  title={recolhido ? 'Expandir ' + group.section : 'Recolher ' + group.section}
                   style={{
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    background: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    textAlign: 'left',
                     fontSize: compactDesktop ? 9.5 : 10,
                     fontFamily: "'JetBrains Mono', monospace",
                     color: 'rgba(255,255,255,.3)',
@@ -438,8 +487,9 @@ export function Sidebar({
                     padding: compactDesktop ? '8px 8px 3px' : '10px 8px 4px',
                   }}
                 >
-                  {group.section}
-                </div>
+                  <span>{group.section}</span>
+                  <span aria-hidden style={{ display: 'inline-block', fontSize: 10, transition: 'transform 150ms ease', transform: recolhido ? 'rotate(-90deg)' : 'rotate(0deg)' }}>▾</span>
+                </button>
               ) : groupIndex > 0 ? (
                 <div
                   style={{
@@ -450,7 +500,7 @@ export function Sidebar({
                 />
               ) : null}
 
-              {group.items.map((item) => {
+              {itensDoGrupo.map((item) => {
                 const active = item.href === activeHref;
                 return (
                   <Link
@@ -512,7 +562,8 @@ export function Sidebar({
                 );
               })}
             </div>
-          ))}
+            );
+          })}
         </nav>
 
         <div

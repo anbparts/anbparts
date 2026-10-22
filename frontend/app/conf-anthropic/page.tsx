@@ -38,7 +38,7 @@ type Uso = {
 async function chamar(path: string, init?: RequestInit) {
   const resp = await fetch(`${API}${path}`, { credentials: 'include', ...init });
   const d = await resp.json().catch(() => ({}));
-  if (!resp.ok || d?.ok === false) throw new Error(d?.error || `Erro ${resp.status}`);
+  if (!resp.ok || d?.ok === false) throw new Error(d?.error || d?.mensagem || `Erro ${resp.status}`);
   return d;
 }
 
