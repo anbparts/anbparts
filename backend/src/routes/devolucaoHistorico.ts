@@ -2,6 +2,11 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { garantirTabelasDevolucao, completarCanais, registrarDevolucoes } from '../lib/devolucao-historico';
+import { garantirTabelaRevisao } from '../lib/pecas-revisao';
+
+// Situacao ATUAL da peca (nao a da epoca da devolucao): em revisao, prejuizo, em estoque, vendida de novo ou sem peca no sistema
+const JOINS_STATUS = `LEFT JOIN "Peca" pc ON pc."id" = d."pecaId" LEFT JOIN "PecaEmRevisao" rv ON rv."pecaId" = d."pecaId"`;
+const STATUS_ATUAL = `(CASE WHEN pc."id" IS NULL THEN 'sem_peca' WHEN rv."status" = 'em_revisao' THEN 'em_revisao' WHEN pc."emPrejuizo" THEN 'prejuizo' WHEN pc."disponivel" THEN 'estoque' ELSE 'vendida' END)`;
 
 export const devolucaoHistoricoRouter = Router();
 
@@ -35,6 +40,7 @@ const dataOk = (v: any) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ''));
 devolucaoHistoricoRouter.get('/', async (req, res, next) => {
   try {
     await completarCanais();
+    await garantirTabelaRevisao();
     const q = req.query as Record<string, string>;
     const where: string[] = [];
     const params: any[] = [];
@@ -48,6 +54,7 @@ devolucaoHistoricoRouter.get('/', async (req, res, next) => {
     if (dataOk(q.de)) add(`d."dataDevolucao" >= ?::date`, q.de);
     if (dataOk(q.ate)) add(`d."dataDevolucao" <= ?::date`, q.ate);
     if (q.canal) add(`d."canal" = ?`, String(q.canal));
+    if (['em_revisao', 'prejuizo', 'estoque', 'vendida', 'sem_peca'].includes(String(q.status || ''))) add(`${STATUS_ATUAL} = ?`, String(q.status));
     if (q.origem) add(`d."origem" = ?`, String(q.origem));
     if (q.motivo === 'sem') where.push(`d."motivoId" IS NULL`);
     else if (/^\d+$/.test(String(q.motivo || ''))) add(`d."motivoId" = ?::int`, q.motivo);
@@ -58,15 +65,15 @@ devolucaoHistoricoRouter.get('/', async (req, res, next) => {
     const rows = await prisma.$queryRawUnsafe<any[]>(
       `SELECT d."id", d."pecaId", d."idPeca", d."descricao", d."pedidoNum", d."pedidoId", d."dataVenda"::text AS "dataVenda", d."dataDevolucao"::text AS "dataDevolucao",
               d."motoId", d."motoNome", d."motoLabel", d."valor", d."valorLiq", d."canal", d."motivoId", mo."nome" AS "motivoNome", d."observacao", d."origem",
-              d."criadoEm", d."atualizadoEm", d."atualizadoPor"
-       FROM "DevolucaoRegistro" d LEFT JOIN "DevolucaoMotivo" mo ON mo."id" = d."motivoId"
+              d."criadoEm", d."atualizadoEm", d."atualizadoPor", ${STATUS_ATUAL} AS "statusAtual", pc."localizacao" AS "localizacaoAtual"
+       FROM "DevolucaoRegistro" d LEFT JOIN "DevolucaoMotivo" mo ON mo."id" = d."motivoId" ${JOINS_STATUS}
        ${filtro} ORDER BY d."dataDevolucao" DESC, d."id" DESC LIMIT ${per} OFFSET ${(page - 1) * per}`, ...params);
     const [tot] = await prisma.$queryRawUnsafe<any[]>(
       `SELECT count(*)::int AS n, COALESCE(sum(d."valor"),0) AS valor, COALESCE(sum(d."valorLiq"),0) AS "valorLiq", count(*) FILTER (WHERE d."motivoId" IS NULL)::int AS "semMotivo"
-       FROM "DevolucaoRegistro" d ${filtro}`, ...params);
+       FROM "DevolucaoRegistro" d ${JOINS_STATUS} ${filtro}`, ...params);
     const porMotivo = await prisma.$queryRawUnsafe<any[]>(
       `SELECT COALESCE(mo."nome", 'Sem motivo informado') AS nome, count(*)::int AS qtd
-       FROM "DevolucaoRegistro" d LEFT JOIN "DevolucaoMotivo" mo ON mo."id" = d."motivoId" ${filtro} GROUP BY 1 ORDER BY 2 DESC`, ...params);
+       FROM "DevolucaoRegistro" d LEFT JOIN "DevolucaoMotivo" mo ON mo."id" = d."motivoId" ${JOINS_STATUS} ${filtro} GROUP BY 1 ORDER BY 2 DESC`, ...params);
     const canais = await prisma.$queryRawUnsafe<any[]>(`SELECT DISTINCT "canal" FROM "DevolucaoRegistro" WHERE "canal" IS NOT NULL ORDER BY 1`);
     const motivos = await prisma.$queryRawUnsafe<any[]>(`SELECT "id","nome" FROM "DevolucaoMotivo" WHERE "ativo" ORDER BY "ordem","nome"`);
 

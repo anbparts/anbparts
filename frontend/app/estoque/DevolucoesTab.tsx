@@ -11,7 +11,23 @@ type Registro = {
   id: number; pecaId: number | null; idPeca: string | null; descricao: string | null; pedidoNum: string | null; dataVenda: string | null; dataDevolucao: string;
   motoNome: string | null; motoLabel: string | null; valor: number | null; valorLiq: number | null; canal: string | null;
   motivoId: number | null; motivoNome: string | null; observacao: string | null; origem: string | null;
+  statusAtual: string; localizacaoAtual: string | null;
 };
+
+// Situacao atual da peca (hoje), independente do que aconteceu na devolucao
+const STATUS: Record<string, { texto: string; bg: string; cor: string; borda: string }> = {
+  estoque: { texto: 'Em estoque', bg: '#f0fdf4', cor: '#15803d', borda: '#bbf7d0' },
+  em_revisao: { texto: 'Em revisão', bg: '#fffbeb', cor: '#92400e', borda: '#fde68a' },
+  prejuizo: { texto: 'Prejuízo', bg: '#fef2f2', cor: '#b91c1c', borda: '#fecaca' },
+  vendida: { texto: 'Vendida', bg: '#eff6ff', cor: '#1d4ed8', borda: '#bfdbfe' },
+  sem_peca: { texto: 'Peça não encontrada', bg: '#f1f5f9', cor: '#475569', borda: '#cbd5e1' },
+};
+function ChipStatus({ r }: { r: Registro }) {
+  const e = STATUS[r.statusAtual] || STATUS.sem_peca;
+  return (
+    <span title={r.statusAtual === 'estoque' && r.localizacaoAtual ? `Localização: ${r.localizacaoAtual}` : undefined} style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 10px', borderRadius: 99, background: e.bg, color: e.cor, border: `1px solid ${e.borda}`, whiteSpace: 'nowrap' }}>{e.texto}</span>
+  );
+}
 type Resposta = {
   total: number; per: number; page: number; podeEditar: boolean; canais: string[]; motivos: MotivoOpcao[];
   resumo: { qtd: number; valor: number; valorLiq: number; semMotivo: number; porMotivo: Array<{ nome: string; qtd: number }> };
@@ -116,6 +132,7 @@ export default function DevolucoesTab({ padding }: { padding: number }) {
   const [ate, setAte] = useState('');
   const [canal, setCanal] = useState('');
   const [motivo, setMotivo] = useState('');
+  const [statusF, setStatusF] = useState('');
   const [editar, setEditar] = useState<Registro | null>(null);
   const [tipos, setTipos] = useState(false);
   const [novo, setNovo] = useState(false);
@@ -131,13 +148,14 @@ export default function DevolucoesTab({ padding }: { padding: number }) {
       if (ate) qs.set('ate', ate);
       if (canal) qs.set('canal', canal);
       if (motivo) qs.set('motivo', motivo);
+      if (statusF) qs.set('status', statusF);
       const resp = await fetch(`${API_BASE}/devolucoes-historico?${qs}`, { credentials: 'include' });
       const d = await resp.json().catch(() => ({}));
       if (!resp.ok || d.ok === false) throw new Error(d.error || `Erro ${resp.status}`);
       if (minha === seq.current) setDados(d);
     } catch (e: any) { if (minha === seq.current) setErro(e?.message || 'Erro ao carregar'); }
     if (minha === seq.current) setCarregando(false);
-  }, [page, buscaAplicada, de, ate, canal, motivo]);
+  }, [page, buscaAplicada, de, ate, canal, motivo, statusF]);
   useEffect(() => { carregar(); }, [carregar]);
 
   // busca por digitacao, com pequena pausa
@@ -154,8 +172,8 @@ export default function DevolucoesTab({ padding }: { padding: number }) {
     await carregar();
   }
 
-  const filtrando = Boolean(buscaAplicada || de || ate || canal || motivo);
-  const limpar = () => { setBusca(''); setBuscaAplicada(''); setDe(''); setAte(''); setCanal(''); setMotivo(''); setPage(1); };
+  const filtrando = Boolean(buscaAplicada || de || ate || canal || motivo || statusF);
+  const limpar = () => { setBusca(''); setBuscaAplicada(''); setDe(''); setAte(''); setCanal(''); setMotivo(''); setStatusF(''); setPage(1); };
   const mudar = (fn: () => void) => { fn(); setPage(1); };
   const resumo = dados?.resumo;
   const totalPaginas = dados ? Math.max(1, Math.ceil(dados.total / dados.per)) : 1;
@@ -188,7 +206,7 @@ export default function DevolucoesTab({ padding }: { padding: number }) {
       </div>
 
       {/* Filtros */}
-      <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 12, padding: '12px 14px', marginBottom: 14, display: 'grid', gridTemplateColumns: isPhone ? '1fr 1fr' : 'minmax(220px, 1.6fr) repeat(4, minmax(130px, 1fr)) auto', gap: 10, alignItems: 'end' }}>
+      <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 12, padding: '12px 14px', marginBottom: 14, display: 'grid', gridTemplateColumns: isPhone ? '1fr 1fr' : 'minmax(220px, 1.5fr) repeat(5, minmax(120px, 1fr)) auto', gap: 10, alignItems: 'end' }}>
         <div style={isPhone ? { gridColumn: '1 / -1' } : undefined}>
           <label style={rotulo}>Buscar</label>
           <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="SKU, descrição, pedido ou moto" style={{ ...entrada, width: '100%', boxSizing: 'border-box' }} />
@@ -208,6 +226,13 @@ export default function DevolucoesTab({ padding }: { padding: number }) {
             <option value="">Todos</option>
             <option value="sem">Sem motivo informado</option>
             {(dados?.motivos || []).map((m) => <option key={m.id} value={m.id}>{m.nome}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={rotulo}>Status atual</label>
+          <select value={statusF} onChange={(e) => mudar(() => setStatusF(e.target.value))} style={{ ...entrada, width: '100%', cursor: 'pointer' }}>
+            <option value="">Todos</option>
+            {Object.entries(STATUS).map(([k, v]) => <option key={k} value={k}>{v.texto}</option>)}
           </select>
         </div>
         <div style={{ display: 'flex', gap: 8, ...(isPhone ? { gridColumn: '1 / -1' } : {}) }}>
@@ -243,7 +268,7 @@ export default function DevolucoesTab({ padding }: { padding: number }) {
                 <CanalBadge canal={r.canal} />
                 <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--blue-500)', marginLeft: 'auto' }}>{brl(r.valor)}</span>
               </div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 10, flexWrap: 'wrap' }}>{chipMotivo(r)}{botaoEditar(r)}</div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 10, flexWrap: 'wrap' }}><ChipStatus r={r} />{chipMotivo(r)}{botaoEditar(r)}</div>
               {r.observacao ? <div style={{ fontSize: 12, color: 'var(--gray-600)', marginTop: 8 }}>Obs.: {r.observacao}</div> : null}
             </div>
           ))}
@@ -254,7 +279,7 @@ export default function DevolucoesTab({ padding }: { padding: number }) {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 1100 }}>
               <thead>
                 <tr style={{ background: 'var(--gray-50, #f9fafb)', textAlign: 'left' }}>
-                  {['Devolução', 'Peça', 'Pedido', 'Marketplace', 'Moto', 'Venda', 'Valor', 'Motivo', ''].map((h, i) => (
+                  {['Devolução', 'Peça', 'Pedido', 'Marketplace', 'Moto', 'Venda', 'Valor', 'Status atual', 'Motivo', ''].map((h, i) => (
                     <th key={i} style={{ padding: '10px 12px', fontSize: 10.5, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '0.5px', borderBottom: '1px solid var(--border)', textAlign: h === 'Valor' ? 'right' : 'left', whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -282,6 +307,7 @@ export default function DevolucoesTab({ padding }: { padding: number }) {
                       {brl(r.valor)}
                       {r.valorLiq != null ? <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--green)', marginTop: 2 }}>líq. {brl(r.valorLiq)}</div> : null}
                     </td>
+                    <td style={{ padding: '10px 12px' }}><ChipStatus r={r} /></td>
                     <td style={{ padding: '10px 12px' }}>{chipMotivo(r)}</td>
                     <td style={{ padding: '10px 12px', textAlign: 'right' }}>{botaoEditar(r)}</td>
                   </tr>
