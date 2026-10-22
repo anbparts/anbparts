@@ -27,6 +27,83 @@ const dataBr = (v?: string | null) => { if (!v) return '—'; const [y, m, d] = 
 const entrada: any = { padding: '7px 10px', border: '1px solid var(--border)', borderRadius: 8, fontSize: 13, background: 'var(--white)', fontFamily: 'inherit', color: 'var(--gray-800)', minWidth: 0 };
 const rotulo: any = { fontSize: 10.5, fontWeight: 600, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 3, display: 'block' };
 
+// Registro manual de devolucao (principalmente as do passado). So grava no historico: nao mexe em estoque nem no Bling.
+function NovaDevolucaoModal({ motivos, canais, onClose, onSalvo }: { motivos: MotivoOpcao[]; canais: string[]; onClose: () => void; onSalvo: () => void }) {
+  const [f, setF] = useState({ sku: '', descricao: '', pedidoNum: '', canal: '', dataVenda: '', dataDevolucao: '', valor: '', valorLiq: '', motivoId: '', observacao: '' });
+  const [info, setInfo] = useState('');
+  const [erro, setErro] = useState('');
+  const [salvando, setSalvando] = useState(false);
+  const set = (k: keyof typeof f, v: string) => setF((c) => ({ ...c, [k]: v }));
+  const canaisBase = Array.from(new Set(['Mercado Livre', 'Shopee', 'Magalu', 'Nuvemshop', 'OLX'].concat(canais)));
+
+  async function consultar() {
+    if (!f.sku.trim() && !f.pedidoNum.trim()) return;
+    try {
+      const qs = new URLSearchParams({ sku: f.sku.trim(), pedido: f.pedidoNum.trim() });
+      const resp = await fetch(`${API_BASE}/devolucoes-historico/consulta?${qs}`, { credentials: 'include' });
+      const d = await resp.json().catch(() => ({}));
+      if (!resp.ok || d.ok === false) return;
+      const msgs: string[] = [];
+      if (d.peca) msgs.push(`Peça encontrada${d.peca.motoNome ? `: ${[d.peca.motoLabel, d.peca.motoNome].filter(Boolean).join(' · ')}` : ''}`);
+      else if (f.sku.trim()) msgs.push('SKU não encontrado no estoque: será gravado só com o que você informar');
+      if (d.pedido) msgs.push(`Pedido importado (${d.pedido.canal || 'sem canal'})`);
+      else if (f.pedidoNum.trim()) msgs.push('Pedido não encontrado nos pedidos importados: informe o marketplace');
+      setF((c) => {
+        const n = { ...c };
+        if (d.peca) { if (!n.descricao) n.descricao = d.peca.descricao || ''; if (!n.valor && d.peca.precoML) n.valor = String(d.peca.precoML); }
+        if (d.pedido) { if (!n.canal && d.pedido.canal) n.canal = d.pedido.canal; if (!n.dataVenda && d.pedido.data) n.dataVenda = String(d.pedido.data).slice(0, 10); if (d.pedido.valorItem) n.valor = String(d.pedido.valorItem); }
+        return n;
+      });
+      setInfo(msgs.join(' · '));
+    } catch { /* sem consulta: preenche na mao */ }
+  }
+
+  async function salvar() {
+    setErro('');
+    if (!f.sku.trim() && !f.descricao.trim()) { setErro('Informe o SKU ou a descrição.'); return; }
+    if (!f.dataDevolucao) { setErro('Informe a data da devolução.'); return; }
+    setSalvando(true);
+    try {
+      const resp = await fetch(`${API_BASE}/devolucoes-historico`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...f, motivoId: f.motivoId ? Number(f.motivoId) : null }) });
+      const d = await resp.json().catch(() => ({}));
+      if (!resp.ok || d.ok === false) throw new Error(d.error || `Erro ${resp.status}`);
+      onSalvo();
+    } catch (e: any) { setErro(e?.message || 'Erro ao salvar'); setSalvando(false); }
+  }
+
+  const campo = (rot: string, el: any, largo = false) => <div style={largo ? { gridColumn: '1 / -1' } : undefined}><label style={rotulo}>{rot}</label>{el}</div>;
+  const inp: any = { ...entrada, width: '100%', boxSizing: 'border-box' };
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.5)', zIndex: 320, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--white)', borderRadius: 14, width: '100%', maxWidth: 620, boxShadow: '0 20px 60px rgba(0,0,0,.2)', display: 'flex', flexDirection: 'column', maxHeight: 'calc(100dvh - 32px)' }}>
+        <div style={{ padding: '18px 20px 12px', borderBottom: '1px solid var(--border)' }}>
+          <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--gray-800)' }}>Registrar devolução</div>
+          <div style={{ fontSize: 12.5, color: 'var(--gray-500)', marginTop: 3 }}>Só entra no histórico. Não altera o estoque da peça nem o Bling.</div>
+        </div>
+        <div style={{ padding: 20, overflowY: 'auto', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
+          {campo('SKU da peça', <input value={f.sku} onChange={(e) => set('sku', e.target.value)} onBlur={consultar} placeholder="Ex: BM03_0039" style={inp} autoFocus />)}
+          {campo('Nº do pedido', <input value={f.pedidoNum} onChange={(e) => set('pedidoNum', e.target.value)} onBlur={consultar} placeholder="Nº do Bling ou do marketplace" style={inp} />)}
+          {info ? <div style={{ gridColumn: '1 / -1', fontSize: 12, color: 'var(--gray-600)', background: 'var(--gray-50, #f9fafb)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 10px' }}>{info}</div> : null}
+          {campo('Descrição', <input value={f.descricao} onChange={(e) => set('descricao', e.target.value)} placeholder="Preenche sozinha quando o SKU é encontrado" style={inp} />, true)}
+          {campo('Marketplace', <input list="canais-dev" value={f.canal} onChange={(e) => set('canal', e.target.value)} placeholder="Selecione ou digite" style={inp} />)}
+          <datalist id="canais-dev">{canaisBase.map((c) => <option key={c} value={c} />)}</datalist>
+          {campo('Motivo', <select value={f.motivoId} onChange={(e) => set('motivoId', e.target.value)} style={{ ...inp, cursor: 'pointer' }}><option value="">Sem motivo</option>{motivos.map((m) => <option key={m.id} value={m.id}>{m.nome}</option>)}</select>)}
+          {campo('Data da venda', <input type="date" value={f.dataVenda} onChange={(e) => set('dataVenda', e.target.value)} style={inp} />)}
+          {campo('Data da devolução', <input type="date" value={f.dataDevolucao} onChange={(e) => set('dataDevolucao', e.target.value)} style={inp} />)}
+          {campo('Valor da venda (R$)', <input inputMode="decimal" value={f.valor} onChange={(e) => set('valor', e.target.value.replace(',', '.'))} placeholder="0.00" style={inp} />)}
+          {campo('Valor líquido (R$)', <input inputMode="decimal" value={f.valorLiq} onChange={(e) => set('valorLiq', e.target.value.replace(',', '.'))} placeholder="opcional" style={inp} />)}
+          {campo('Observação', <textarea value={f.observacao} onChange={(e) => set('observacao', e.target.value)} rows={2} style={{ ...inp, fontFamily: 'inherit' }} />, true)}
+          {erro ? <div style={{ gridColumn: '1 / -1', fontSize: 12.5, color: '#b91c1c' }}>{erro}</div> : null}
+        </div>
+        <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <button type="button" onClick={onClose} style={{ ...entrada, cursor: 'pointer', fontWeight: 600 }}>Cancelar</button>
+          <button type="button" onClick={salvar} disabled={salvando} style={{ ...entrada, cursor: 'pointer', fontWeight: 600, background: 'var(--gray-800)', color: '#fff', borderColor: 'var(--gray-800)' }}>{salvando ? 'Salvando...' : 'Registrar'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function DevolucoesTab({ padding }: { padding: number }) {
   const isPhone = useIsPhone();
   const [dados, setDados] = useState<Resposta | null>(null);
@@ -41,6 +118,7 @@ export default function DevolucoesTab({ padding }: { padding: number }) {
   const [motivo, setMotivo] = useState('');
   const [editar, setEditar] = useState<Registro | null>(null);
   const [tipos, setTipos] = useState(false);
+  const [novo, setNovo] = useState(false);
   const seq = useRef(0);
 
   const carregar = useCallback(async () => {
@@ -134,6 +212,7 @@ export default function DevolucoesTab({ padding }: { padding: number }) {
         </div>
         <div style={{ display: 'flex', gap: 8, ...(isPhone ? { gridColumn: '1 / -1' } : {}) }}>
           {filtrando ? <button type="button" onClick={limpar} style={{ ...entrada, cursor: 'pointer', fontWeight: 600 }}>Limpar</button> : null}
+          {podeEditar ? <button type="button" onClick={() => setNovo(true)} style={{ ...entrada, cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap', background: 'var(--gray-800)', color: '#fff', borderColor: 'var(--gray-800)' }}>+ Registrar devolução</button> : null}
           <button type="button" onClick={() => setTipos(true)} style={{ ...entrada, cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}>⚙ Tipos de devolução</button>
         </div>
       </div>
@@ -238,6 +317,7 @@ export default function DevolucoesTab({ padding }: { padding: number }) {
           onSalvar={(motivoId, obs) => salvar(editar, motivoId, obs)} onClose={() => setEditar(null)}
         />
       ) : null}
+      {novo ? <NovaDevolucaoModal motivos={dados?.motivos || []} canais={dados?.canais || []} onClose={() => setNovo(false)} onSalvo={() => { setNovo(false); carregar(); }} /> : null}
       {tipos ? <TiposDevolucaoModal onClose={() => setTipos(false)} onAlterou={carregar} /> : null}
     </div>
   );

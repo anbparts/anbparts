@@ -79,6 +79,76 @@ devolucaoHistoricoRouter.get('/', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// GET /devolucoes-historico/consulta?sku=&pedido= — ajuda a preencher o registro manual (peca + moto, e pedido ja importado)
+devolucaoHistoricoRouter.get('/consulta', async (req, res, next) => {
+  try {
+    const sku = String(req.query.sku || '').trim();
+    const pedidoTxt = String(req.query.pedido || '').trim().replace(/^#/, '');
+    let peca: any = null;
+    let pedido: any = null;
+    if (sku) {
+      const [p] = await prisma.$queryRawUnsafe<any[]>(
+        `SELECT p."id", p."idPeca", p."descricao", p."motoId", p."precoML", NULLIF(trim(concat_ws(' ', m."marca", m."modelo", m."ano")), '') AS "motoNome", m."etiquetaSkuLabel" AS "motoLabel"
+         FROM "Peca" p LEFT JOIN "Moto" m ON m."id" = p."motoId" WHERE upper(p."idPeca") = upper($1) ORDER BY p."id" DESC LIMIT 1`, sku);
+      if (p) peca = { id: Number(p.id), idPeca: p.idPeca, descricao: p.descricao, motoId: p.motoId, motoNome: p.motoNome, motoLabel: p.motoLabel, precoML: p.precoML == null ? null : num(p.precoML) };
+    }
+    if (pedidoTxt) {
+      try {
+        const [b] = await prisma.$queryRawUnsafe<any[]>(
+          `SELECT b."id"::text AS id, b."numero", b."data"::text AS data, b."canal", b."total", b."situacao",
+                  (SELECT i."valor" FROM "BlingPedidoItem" i WHERE i."pedidoId" = b."id" AND upper(i."sku") = upper($2) LIMIT 1) AS "valorItem"
+           FROM "BlingPedido" b WHERE b."numero" = $1 OR b."numeroLoja" = $1 OR b."id"::text = $1 LIMIT 1`, pedidoTxt, sku);
+        if (b) pedido = { id: b.id, numero: b.numero, data: b.data, canal: b.canal, situacao: b.situacao, valorItem: b.valorItem == null ? null : num(b.valorItem) };
+      } catch { /* pedidos locais ainda nao criados */ }
+    }
+    res.json({ ok: true, peca, pedido });
+  } catch (e) { next(e); }
+});
+
+// POST /devolucoes-historico — registro manual (devolucoes do passado). Nao mexe em estoque nem em Bling.
+devolucaoHistoricoRouter.post('/', exigirEdicao, async (req, res, next) => {
+  try {
+    const b = req.body || {};
+    const idPeca = String(b.sku || '').trim().slice(0, 60);
+    const descricao = String(b.descricao || '').trim().slice(0, 300);
+    if (!idPeca && !descricao) return res.status(400).json({ ok: false, error: 'Informe o SKU ou a descricao da peca.' });
+    if (!dataOk(b.dataDevolucao)) return res.status(400).json({ ok: false, error: 'Informe a data da devolucao.' });
+    if (b.dataVenda && !dataOk(b.dataVenda)) return res.status(400).json({ ok: false, error: 'Data da venda invalida.' });
+    let motivoId: number | null = null;
+    if (b.motivoId) {
+      const [ok] = await prisma.$queryRawUnsafe<any[]>(`SELECT 1 AS x FROM "DevolucaoMotivo" WHERE "id" = $1::int`, Number(b.motivoId));
+      if (!ok) return res.status(400).json({ ok: false, error: 'Motivo invalido.' });
+      motivoId = Number(b.motivoId);
+    }
+    let pecaId: number | null = null, motoId: number | null = null, motoNome: string | null = null, motoLabel: string | null = null, descFinal = descricao, skuFinal = idPeca;
+    if (idPeca) {
+      const [p] = await prisma.$queryRawUnsafe<any[]>(
+        `SELECT p."id", p."idPeca", p."descricao", p."motoId", NULLIF(trim(concat_ws(' ', m."marca", m."modelo", m."ano")), '') AS "motoNome", m."etiquetaSkuLabel" AS "motoLabel"
+         FROM "Peca" p LEFT JOIN "Moto" m ON m."id" = p."motoId" WHERE upper(p."idPeca") = upper($1) ORDER BY p."id" DESC LIMIT 1`, idPeca);
+      if (p) { pecaId = Number(p.id); motoId = p.motoId ?? null; motoNome = p.motoNome; motoLabel = p.motoLabel; skuFinal = p.idPeca; if (!descFinal) descFinal = p.descricao || ''; }
+    }
+    const pedidoNum = String(b.pedidoNum || '').trim().replace(/^#/, '').slice(0, 60) || null;
+    let pedidoId: string | null = null;
+    let canal = String(b.canal || '').trim().slice(0, 60) || null;
+    if (pedidoNum) {
+      try {
+        const [bp] = await prisma.$queryRawUnsafe<any[]>(`SELECT b."id"::text AS id, b."canal" FROM "BlingPedido" b WHERE b."numero" = $1 OR b."numeroLoja" = $1 OR b."id"::text = $1 LIMIT 1`, pedidoNum);
+        if (bp) { pedidoId = bp.id; if (!canal) canal = bp.canal || null; }
+      } catch { /* sem pedidos locais */ }
+    }
+    const valor = b.valor === '' || b.valor == null ? null : Number(b.valor);
+    const valorLiq = b.valorLiq === '' || b.valorLiq == null ? null : Number(b.valorLiq);
+    if ((valor != null && !Number.isFinite(valor)) || (valorLiq != null && !Number.isFinite(valorLiq))) return res.status(400).json({ ok: false, error: 'Valor invalido.' });
+    const [row] = await prisma.$queryRawUnsafe<any[]>(
+      `INSERT INTO "DevolucaoRegistro" ("pecaId","idPeca","descricao","pedidoNum","pedidoId","dataVenda","dataDevolucao","motoId","motoNome","motoLabel","valor","valorLiq","canal","motivoId","observacao","origem","atualizadoPor")
+       VALUES ($1::int,$2,$3,$4,$5,$6::date,$7::date,$8::int,$9,$10,$11::numeric,$12::numeric,$13,$14::int,$15,'manual',$16) ON CONFLICT DO NOTHING RETURNING "id"`,
+      pecaId, skuFinal || null, descFinal || null, pedidoNum, pedidoId, b.dataVenda || null, b.dataDevolucao, motoId, motoNome, motoLabel, valor, valorLiq, canal, motivoId,
+      String(b.observacao || '').trim().slice(0, 1000) || null, usuario(req));
+    if (!row) return res.status(409).json({ ok: false, error: 'Ja existe um registro desta peca/pedido nessa data.' });
+    res.json({ ok: true, id: Number(row.id), pecaEncontrada: pecaId != null });
+  } catch (e) { next(e); }
+});
+
 // PATCH /devolucoes-historico/:id { motivoId?, observacao?, dataDevolucao? }
 devolucaoHistoricoRouter.patch('/:id(\\d+)', exigirEdicao, async (req, res, next) => {
   try {
