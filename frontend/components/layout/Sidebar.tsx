@@ -29,7 +29,6 @@ export const NAV: NavGroup[] = [
       { href: '/motos', icon: 'moto', label: 'Motos' },
       { href: '/cadastro', icon: 'clipboard', label: 'Cadastro' },
       { href: '/estoque', icon: 'box', label: 'Estoque' },
-      { href: '/inventario', icon: 'inventory', label: 'Inventario' },
       { href: '/etiquetas-detran', icon: 'tag', label: 'Etiquetas Detran' },
       { href: '/empresa', icon: 'building', label: 'Empresa' },
     ],
@@ -54,7 +53,6 @@ export const NAV: NavGroup[] = [
       { href: '/bling/relatorio-vendas', icon: 'clipboard', label: 'Relatorio de Vendas' },
       { href: '/bling/pedidos', icon: 'receipt', label: 'Pedidos' },
       { href: '/bling/clientes', icon: 'briefcase', label: 'Clientes' },
-      { href: '/bling/auditoria-automatica', icon: 'radar', label: 'Auditoria Automatica' },
     ],
   },
   {
@@ -81,9 +79,11 @@ export const NAV: NavGroup[] = [
   {
     section: 'Operacoes',
     items: [
+      { href: '/pendencias', icon: 'clipboard', label: 'Pendencias' },
+      { href: '/inventario', icon: 'inventory', label: 'Inventario' },
       { href: '/armazenagem', icon: 'warehouse', label: 'Armazenagem' },
       { href: '/sucata', icon: 'recycle', label: 'Sucata' },
-      { href: '/pendencias', icon: 'clipboard', label: 'Pendencias' },
+      { href: '/bling/auditoria-automatica', icon: 'radar', label: 'Auditoria Automatica' },
     ],
   },
   {

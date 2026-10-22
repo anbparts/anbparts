@@ -5,6 +5,7 @@ import { spDayStart, spDayEnd } from '../lib/timezone';
 import { sendDetranAtivacaoEmailIfNeeded } from '../lib/detran-alert';
 import { calcularTipoPeca, carregarCartelaMap } from './etiquetas-detran';
 import { validarEtiquetasParaSku } from '../lib/detranEtiquetasCompradas';
+import { registrarDevolucoes, registroDePeca } from '../lib/devolucao-historico';
 
 export const devolucoesRouter = Router();
 
@@ -69,6 +70,11 @@ devolucoesRouter.post('/', requireEstoqueAction('devolucoes'), async (req, res, 
 
     if (!peca) return res.status(404).json({ error: 'Peca nao encontrada' });
     if (peca.disponivel) return res.status(400).json({ error: 'Peca ja esta em estoque' });
+
+    // historico unico de devolucoes (Estoque > Devolucoes); nunca bloqueia a devolucao
+    try {
+      await registrarDevolucoes([{ ...registroDePeca(peca, 'devolucao_manual', observacoes || null), dataDevolucao: dataDevolucao || null }]);
+    } catch (e) { console.error('[devolucoes] falha ao gravar historico:', (e as any)?.message || e); }
 
     // Registrar histórico de devolução — 1 linha por etiqueta
     const baseHistorico = {

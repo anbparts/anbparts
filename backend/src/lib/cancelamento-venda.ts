@@ -1,5 +1,6 @@
 import { prisma } from './prisma';
 import { garantirTabelaRevisao, registrarRevisao } from './pecas-revisao';
+import { registrarDevolucoes, registroDePeca, type NovoRegistroDevolucao } from './devolucao-historico';
 
 type FinancialUpdate = {
   precoML?: number;
@@ -74,11 +75,13 @@ export async function cancelarVendaComDevolucaoEtiqueta(ids: number[], options: 
 
   if (options.enviarParaRevisao) await garantirTabelaRevisao();
 
-  return prisma.$transaction(async (tx: any) => {
+  const paraHistorico: NovoRegistroDevolucao[] = [];
+
+  const resultado = await prisma.$transaction(async (tx: any) => {
     const pecas = await tx.peca.findMany({
       where: { id: { in: safeIds } },
       include: {
-        moto: { select: { id: true, marca: true, modelo: true, ano: true } },
+        moto: { select: { id: true, marca: true, modelo: true, ano: true, etiquetaSkuLabel: true } },
       },
     });
 
@@ -127,6 +130,8 @@ export async function cancelarVendaComDevolucaoEtiqueta(ids: number[], options: 
 
       const financials = options.resolveFinancials ? options.resolveFinancials(peca) : {};
       const irParaRevisao = !!options.enviarParaRevisao && vendaCancelavel;
+      // historico unico de cancelamentos/devolucoes (gravado depois da transacao, com os dados da venda de antes de zerar)
+      if (vendaCancelavel) paraHistorico.push(registroDePeca(peca, irParaRevisao ? 'cancelamento_importado' : 'cancelamento_estoque', options.observacoes));
       if (irParaRevisao) {
         // guarda o que foi vendido/estornado antes de zerar os dados da venda
         await registrarRevisao(tx, {
@@ -166,4 +171,7 @@ export async function cancelarVendaComDevolucaoEtiqueta(ids: number[], options: 
       etiquetasPendentes,
     };
   });
+
+  try { await registrarDevolucoes(paraHistorico); } catch (e) { console.error('[devolucoes] falha ao gravar historico:', (e as any)?.message || e); }
+  return resultado;
 }

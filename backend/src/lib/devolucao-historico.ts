@@ -1,0 +1,126 @@
+// Historico unico de cancelamentos e devolucoes (Estoque > Devolucoes) e lista padronizada de motivos.
+// Tabelas criadas sob demanda (sem migration). Registrar nunca pode quebrar o cancelamento: quem chama envolve em try/catch.
+import { prisma } from './prisma';
+
+let tabelasPromise: Promise<void> | null = null;
+
+export const MOTIVOS_PADRAO = [
+  'Desistência do cliente',
+  'Peça incompatível com a moto',
+  'Peça com defeito',
+  'Avaria no transporte',
+  'Extravio / não entregue',
+  'Cancelado pelo marketplace',
+  'Venda duplicada / erro de cadastro',
+  'Outros',
+];
+
+export function garantirTabelasDevolucao(): Promise<void> {
+  if (!tabelasPromise) {
+    tabelasPromise = (async () => {
+      await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "DevolucaoMotivo" (
+        "id" SERIAL PRIMARY KEY, "nome" TEXT NOT NULL, "ativo" BOOLEAN NOT NULL DEFAULT true, "ordem" INTEGER NOT NULL DEFAULT 0, "criadoEm" TIMESTAMP NOT NULL DEFAULT now())`);
+      await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "DevolucaoMotivo_nome_uq" ON "DevolucaoMotivo" (lower("nome"))`);
+      await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "DevolucaoRegistro" (
+        "id" SERIAL PRIMARY KEY, "pecaId" INTEGER, "idPeca" TEXT, "descricao" TEXT,
+        "pedidoNum" TEXT, "pedidoId" TEXT, "dataVenda" DATE,
+        "dataDevolucao" DATE NOT NULL DEFAULT ((now() AT TIME ZONE 'America/Sao_Paulo')::date),
+        "motoId" INTEGER, "motoNome" TEXT, "motoLabel" TEXT,
+        "valor" NUMERIC(14,2), "valorLiq" NUMERIC(14,2), "canal" TEXT,
+        "motivoId" INTEGER, "observacao" TEXT, "origem" TEXT,
+        "criadoEm" TIMESTAMP NOT NULL DEFAULT now(), "atualizadoEm" TIMESTAMP, "atualizadoPor" TEXT)`);
+      await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "DevolucaoRegistro_dedupe_uq" ON "DevolucaoRegistro" ("pecaId", COALESCE("pedidoNum", ''), "dataDevolucao")`);
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "DevolucaoRegistro_peca_idx" ON "DevolucaoRegistro" ("pecaId")`);
+      const [{ n }] = await prisma.$queryRawUnsafe<Array<{ n: number }>>(`SELECT count(*)::int AS n FROM "DevolucaoMotivo"`);
+      if (!n) {
+        for (let i = 0; i < MOTIVOS_PADRAO.length; i++) {
+          await prisma.$executeRawUnsafe(`INSERT INTO "DevolucaoMotivo" ("nome","ordem") VALUES ($1,$2) ON CONFLICT DO NOTHING`, MOTIVOS_PADRAO[i], i + 1);
+        }
+      }
+      await importarHistoricoAntigo();
+    })().catch((e) => { tabelasPromise = null; throw e; });
+  }
+  return tabelasPromise;
+}
+
+// Na primeira vez traz o que ja existia (devolucoes antigas e pecas hoje em revisao) para o historico nao comecar vazio.
+async function importarHistoricoAntigo() {
+  const [{ n }] = await prisma.$queryRawUnsafe<Array<{ n: number }>>(`SELECT count(*)::int AS n FROM "DevolucaoRegistro"`);
+  if (n) return;
+  try {
+    await prisma.$executeRawUnsafe(`INSERT INTO "DevolucaoRegistro" ("pecaId","idPeca","descricao","pedidoNum","pedidoId","dataVenda","dataDevolucao","motoId","motoNome","motoLabel","valor","valorLiq","origem","criadoEm")
+      SELECT h."pecaId", max(h."idPeca"), max(h."descricao"), h."pedidoBlingNum", max(h."pedidoBlingId"), max(h."dataVenda")::date, (h."dataDevolucao" AT TIME ZONE 'America/Sao_Paulo')::date,
+             max(h."motoId"), max(h."motoNome"), max(m."etiquetaSkuLabel"), max(h."precoML"), max(h."valorLiq"), 'historico_antigo', min(h."dataDevolucao")
+      FROM "HistoricoDevolucao" h LEFT JOIN "Moto" m ON m."id" = h."motoId"
+      GROUP BY h."pecaId", h."pedidoBlingNum", (h."dataDevolucao" AT TIME ZONE 'America/Sao_Paulo')::date
+      ON CONFLICT DO NOTHING`);
+  } catch { /* historico antigo indisponivel: segue sem ele */ }
+  try {
+    const { garantirTabelaRevisao } = await import('./pecas-revisao');
+    await garantirTabelaRevisao();
+    await prisma.$executeRawUnsafe(`INSERT INTO "DevolucaoRegistro" ("pecaId","idPeca","descricao","pedidoNum","pedidoId","dataVenda","dataDevolucao","motoId","motoNome","motoLabel","valor","valorLiq","origem","criadoEm")
+      SELECT r."pecaId", p."idPeca", p."descricao", r."pedidoNum", r."pedidoId", r."dataVenda", (r."criadoEm" AT TIME ZONE 'America/Sao_Paulo')::date,
+             p."motoId", NULLIF(trim(concat_ws(' ', m."marca", m."modelo", m."ano")), ''), m."etiquetaSkuLabel", r."precoML", r."valorLiq", 'cancelamento_importado', r."criadoEm"
+      FROM "PecaEmRevisao" r JOIN "Peca" p ON p."id" = r."pecaId" LEFT JOIN "Moto" m ON m."id" = p."motoId"
+      ON CONFLICT DO NOTHING`);
+  } catch { /* sem revisoes: segue */ }
+  await completarCanais();
+}
+
+// Preenche o marketplace pelos pedidos ja importados (best-effort)
+export async function completarCanais() {
+  try {
+    await prisma.$executeRawUnsafe(`UPDATE "DevolucaoRegistro" d SET "canal" = b."canal"
+      FROM "BlingPedido" b WHERE d."canal" IS NULL AND d."pedidoId" ~ '^[0-9]+$' AND b."id" = d."pedidoId"::bigint AND b."canal" IS NOT NULL`);
+  } catch { /* tabela de pedidos ainda nao existe */ }
+}
+
+export type NovoRegistroDevolucao = {
+  pecaId: number; idPeca?: string | null; descricao?: string | null;
+  pedidoNum?: string | null; pedidoId?: string | null; dataVenda?: Date | string | null; dataDevolucao?: Date | string | null;
+  motoId?: number | null; motoNome?: string | null; motoLabel?: string | null;
+  valor?: number | null; valorLiq?: number | null; origem: string; observacao?: string | null;
+};
+
+const dia = (d: any) => (d ? new Date(d).toISOString().slice(0, 10) : null);
+
+export async function registrarDevolucoes(itens: NovoRegistroDevolucao[]) {
+  if (!itens.length) return;
+  await garantirTabelasDevolucao();
+  try { await (await import('./bling-pedidos')).garantirTabelasPedidos(); } catch { /* sem canal */ }
+  for (const i of itens) {
+    const pedidoId = i.pedidoId ? String(i.pedidoId) : null;
+    try {
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO "DevolucaoRegistro" ("pecaId","idPeca","descricao","pedidoNum","pedidoId","dataVenda","dataDevolucao","motoId","motoNome","motoLabel","valor","valorLiq","canal","observacao","origem")
+         VALUES ($1,$2,$3,$4,$5::text,$6::date,COALESCE($7::date,(now() AT TIME ZONE 'America/Sao_Paulo')::date),$8,$9,$10,$11,$12,
+           CASE WHEN $5::text ~ '^[0-9]+$' THEN (SELECT "canal" FROM "BlingPedido" WHERE "id" = ($5::text)::bigint) END,$13,$14)
+         ON CONFLICT DO NOTHING`,
+        i.pecaId, i.idPeca || null, i.descricao || null, i.pedidoNum ? String(i.pedidoNum) : null, pedidoId, dia(i.dataVenda), dia(i.dataDevolucao),
+        i.motoId ?? null, i.motoNome || null, i.motoLabel || null, i.valor == null ? null : Number(i.valor), i.valorLiq == null ? null : Number(i.valorLiq),
+        i.observacao || null, i.origem,
+      );
+    } catch (e) {
+      // canal depende da tabela de pedidos; se falhar, grava sem ele
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO "DevolucaoRegistro" ("pecaId","idPeca","descricao","pedidoNum","pedidoId","dataVenda","dataDevolucao","motoId","motoNome","motoLabel","valor","valorLiq","observacao","origem")
+         VALUES ($1,$2,$3,$4,$5,$6::date,COALESCE($7::date,(now() AT TIME ZONE 'America/Sao_Paulo')::date),$8,$9,$10,$11,$12,$13,$14) ON CONFLICT DO NOTHING`,
+        i.pecaId, i.idPeca || null, i.descricao || null, i.pedidoNum ? String(i.pedidoNum) : null, pedidoId, dia(i.dataVenda), dia(i.dataDevolucao),
+        i.motoId ?? null, i.motoNome || null, i.motoLabel || null, i.valor == null ? null : Number(i.valor), i.valorLiq == null ? null : Number(i.valorLiq),
+        i.observacao || null, i.origem,
+      );
+    }
+  }
+}
+
+// Monta o registro a partir da peca (com moto) antes dos dados de venda serem limpos
+export function registroDePeca(peca: any, origem: string, observacao?: string | null): NovoRegistroDevolucao {
+  const moto = peca?.moto || {};
+  return {
+    pecaId: peca.id, idPeca: peca.idPeca, descricao: peca.descricao,
+    pedidoNum: peca.blingPedidoNum || null, pedidoId: peca.blingPedidoId || null, dataVenda: peca.dataVenda || null,
+    motoId: peca.motoId ?? null, motoNome: [moto.marca, moto.modelo, moto.ano].filter(Boolean).join(' ').trim() || null,
+    motoLabel: moto.etiquetaSkuLabel || null, valor: peca.precoML == null ? null : Number(peca.precoML), valorLiq: peca.valorLiq == null ? null : Number(peca.valorLiq),
+    origem, observacao: observacao || null,
+  };
+}

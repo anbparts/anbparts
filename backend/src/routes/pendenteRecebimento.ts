@@ -5,6 +5,7 @@ import { prisma } from '../lib/prisma';
 import { montarRelatorioVendas } from './bling';
 import { garantirTabelaRevisao, marcarRevisada, enviarParaPrejuizo, processarSaidaBling, MOTIVOS_PREJUIZO } from '../lib/pecas-revisao';
 import { garantirTabelasPedidos } from '../lib/bling-pedidos';
+import { garantirTabelasDevolucao } from '../lib/devolucao-historico';
 
 export const pendenteRecebimentoRouter = Router();
 
@@ -140,26 +141,32 @@ pendenteRecebimentoRouter.get('/devolucoes', async (req, res, next) => {
   try {
     await garantirTabelaRevisao();
     await garantirTabelasPedidos();
+    await garantirTabelasDevolucao();
     const status = String(req.query.status || 'em_revisao') === 'revisada' ? 'revisada' : 'em_revisao';
+    const motivos = await prisma.$queryRawUnsafe<any[]>(`SELECT "id","nome" FROM "DevolucaoMotivo" WHERE "ativo" ORDER BY "ordem","nome"`);
     const rows = await prisma.$queryRawUnsafe<any[]>(
       `SELECT r."pecaId", r."pedidoNum", r."pedidoId", r."dataVenda"::text AS "dataVenda", r."precoML", r."valorLiq", r."valorFrete", r."valorTaxas", r."motivo", r."status",
               r."criadoEm", r."revisadaEm", r."revisadaPor", r."observacao", r."blingSaida", r."blingSaidaErro",
               p."idPeca", p."descricao", p."localizacao", p."detranEtiqueta", p."etiquetaPendente", p."precoML" AS "precoAtual",
-              m."marca", m."modelo", m."ano", b."clienteNome", b."canal", b."situacao"
+              m."marca", m."modelo", m."ano", b."clienteNome", b."canal", b."situacao",
+              dr."motivoId" AS "tipoId", dm."nome" AS "tipoNome", dr."observacao" AS "tipoObs"
        FROM "PecaEmRevisao" r
        JOIN "Peca" p ON p."id" = r."pecaId"
        LEFT JOIN "Moto" m ON m."id" = p."motoId"
+       LEFT JOIN LATERAL (SELECT x."motivoId", x."observacao" FROM "DevolucaoRegistro" x WHERE x."pecaId" = r."pecaId" ORDER BY x."dataDevolucao" DESC, x."id" DESC LIMIT 1) dr ON true
+       LEFT JOIN "DevolucaoMotivo" dm ON dm."id" = dr."motivoId"
        LEFT JOIN "BlingPedido" b ON r."pedidoId" ~ '^[0-9]+$' AND b."id" = r."pedidoId"::bigint
        WHERE ${status === 'revisada' ? `r."status" IN ('revisada','prejuizo')` : `r."status" = 'em_revisao'`}
        ORDER BY ${status === 'revisada' ? 'r."revisadaEm"' : 'r."criadoEm"'} DESC LIMIT 500`,
     );
     res.json({
-      ok: true, status, podeRevisar: temAcao(req, 'revisar'), motivosPrejuizo: MOTIVOS_PREJUIZO,
+      ok: true, status, podeRevisar: temAcao(req, 'revisar'), motivosPrejuizo: MOTIVOS_PREJUIZO, motivosDevolucao: motivos.map((m) => ({ id: Number(m.id), nome: m.nome })),
       itens: rows.map((r) => ({
         pecaId: Number(r.pecaId), idPeca: r.idPeca, descricao: r.descricao, localizacao: r.localizacao, detranEtiqueta: r.detranEtiqueta, etiquetaPendente: !!r.etiquetaPendente,
         moto: [r.marca, r.modelo, r.ano].filter(Boolean).join(' '),
         pedido: { num: r.pedidoNum, id: r.pedidoId, dataVenda: r.dataVenda, clienteNome: r.clienteNome, canal: r.canal, situacao: r.situacao },
         estornado: { precoML: Number(r.precoML || 0), valorLiq: Number(r.valorLiq || 0), valorFrete: Number(r.valorFrete || 0), valorTaxas: Number(r.valorTaxas || 0) },
+        tipo: r.tipoId ? { id: Number(r.tipoId), nome: r.tipoNome, observacao: r.tipoObs || null } : null,
         blingSaida: !!r.blingSaida, blingSaidaErro: r.blingSaidaErro || null, motivo: r.motivo, status: r.status, criadoEm: r.criadoEm, revisadaEm: r.revisadaEm, revisadaPor: r.revisadaPor, observacao: r.observacao,
       })),
     });

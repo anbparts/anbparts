@@ -8,6 +8,9 @@ import { formatEtiquetaMotoLabel, printCaixaLabels, printSkuLabels } from '@/lib
 import ModalImpressaoA4 from '@/app/components/ModalImpressaoA4';
 import { compressFotoCapaFile } from '@/lib/image-compression';
 import { canProcessAction } from '@/lib/permissions';
+import { usePersistentTab } from '@/lib/use-persistent-tab';
+import TabsBar from '@/components/ui/TabsBar';
+import DevolucoesTab from './DevolucoesTab';
 
 function fmt(v: number) {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -3569,6 +3572,7 @@ export default function EstoquePage() {
   const canTrocarFotoCapa = canProcessAction(user, 'estoque', 'trocar_foto');
   const canImpressaoCaixa = canProcessAction(user, 'estoque', 'impressao_caixa');
   const canDevolucoes = canProcessAction(user, 'estoque', 'devolucoes');
+  const [abaEstoque, setAbaEstoque] = usePersistentTab<'estoque' | 'devolucoes'>('aba', 'estoque', ['estoque', 'devolucoes'] as const);
   const colStorageKey = getColumnStorageKey(user?.username);
   const [data, setData] = useState<any>({ total: 0, totalDisp: 0, totalVend: 0, totalEtiquetas: 0, data: [] });
   const [exportando, setExportando] = useState(false);
@@ -4599,6 +4603,8 @@ export default function EstoquePage() {
           </button>}
         </div>
       </div>
+      <TabsBar tabs={[{ id: 'estoque', label: 'Estoque' }, { id: 'devolucoes', label: 'Devoluções' }]} active={abaEstoque} onChange={(id) => setAbaEstoque(id as 'estoque' | 'devolucoes')} />
+      {abaEstoque === 'devolucoes' ? <DevolucoesTab padding={pagePadding} /> : (
       <div style={{ padding: pagePadding }}>
         {/* Seletor de colunas */}
         {colSelectorOpen && (
@@ -5166,6 +5172,7 @@ export default function EstoquePage() {
           </div>
         </div>
       </div>
+      )}
 
       <PecaModal open={modal && canEditarPeca} onClose={() => { setModal(false); setEditPeca(null); }} onSave={handleSavePeca} onCancelSale={handleCancelSale} onMarkPrejuizo={handleMarkPrejuizo} onOpenHistoricoPreco={(sku: string) => { setHistoricoPrecoSkuInicial(sku); setHistoricoPrecoOpen(true); }} peca={editPeca} motos={motos} viewportMode={viewportMode} />
       <ImpressaoCaixaModal

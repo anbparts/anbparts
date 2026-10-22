@@ -5,6 +5,7 @@ import { useIsPhone } from '@/lib/use-is-phone';
 import { usePersistentTab } from '@/lib/use-persistent-tab';
 import TabsBar from '@/components/ui/TabsBar';
 import CanalBadge from '@/components/ui/CanalBadge';
+import { MotivoDevolucaoModal, TiposDevolucaoModal, type MotivoOpcao } from '@/components/devolucoes/DevolucaoModais';
 
 const API = API_BASE;
 
@@ -217,6 +218,7 @@ type ItemDev = {
   estornado: { precoML: number; valorLiq: number; valorFrete: number; valorTaxas: number };
   motivo: string | null; status: string; criadoEm: string; revisadaEm: string | null; revisadaPor: string | null; observacao: string | null;
   blingSaida?: boolean; blingSaidaErro?: string | null;
+  tipo?: { id: number; nome: string; observacao: string | null } | null;
 };
 
 function DevolucoesTab() {
@@ -230,6 +232,17 @@ function DevolucoesTab() {
   const [prejuizoDe, setPrejuizoDe] = useState<ItemDev | null>(null);
   const [motivoPrej, setMotivoPrej] = useState('Defeito');
   const [obsPrej, setObsPrej] = useState('');
+  const [tiposDevolucao, setTiposDevolucao] = useState<MotivoOpcao[]>([]);
+  const [motivoDe, setMotivoDe] = useState<ItemDev | null>(null);
+  const [gerenciarTipos, setGerenciarTipos] = useState(false);
+
+  async function salvarMotivo(it: ItemDev, motivoId: number | null, observacao: string) {
+    const resp = await fetch(`${API}/devolucoes-historico/motivo-por-peca`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pecaId: it.pecaId, motivoId, observacao }) });
+    const d = await resp.json().catch(() => ({}));
+    if (!resp.ok || d.ok === false) throw new Error(d.error || `Erro ${resp.status}`);
+    setMotivoDe(null);
+    await carregar(sub);
+  }
 
   async function carregar(status = sub) {
     setCarregando(true);
@@ -240,6 +253,7 @@ function DevolucoesTab() {
       setItens(d.itens || []);
       setPodeRevisar(!!d.podeRevisar);
       if (Array.isArray(d.motivosPrejuizo) && d.motivosPrejuizo.length) setMotivos(d.motivosPrejuizo);
+      setTiposDevolucao(Array.isArray(d.motivosDevolucao) ? d.motivosDevolucao : []);
     } catch (e: any) { alert(e?.message || 'Erro ao carregar'); }
     setCarregando(false);
   }
@@ -296,6 +310,7 @@ function DevolucoesTab() {
           <button key={id} type="button" onClick={() => setSub(id)} style={{ border: '1px solid ' + (sub === id ? 'var(--gray-800)' : 'var(--border)'), background: sub === id ? 'var(--gray-800)' : 'var(--white)', color: sub === id ? '#fff' : 'var(--gray-600)', borderRadius: 999, padding: '6px 14px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>{rotulo}</button>
         ))}
         <span style={{ fontSize: 12, color: 'var(--gray-400)', alignSelf: 'center' }}>Peças de vendas canceladas aguardando revisão antes de voltar ao estoque</span>
+        <button type="button" onClick={() => setGerenciarTipos(true)} style={{ ...s.btn, marginLeft: 'auto', background: 'var(--white)', color: 'var(--gray-700)', borderColor: 'var(--border)', fontWeight: 600, padding: '6px 14px', fontSize: 12.5, borderRadius: 999 }}>⚙ Tipos de devolução</button>
       </div>
       <div style={{ padding: isPhone ? 14 : 28, maxWidth: 1250 }}>
         <div style={{ ...s.card, padding: '12px 16px', display: 'inline-block', minWidth: 190, marginBottom: 14 }}>
@@ -317,6 +332,8 @@ function DevolucoesTab() {
                   <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: 14, color: 'var(--blue-500)' }}>{it.idPeca}</span>
                   <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 10px', borderRadius: 99, background: it.status === 'em_revisao' ? '#fffbeb' : it.status === 'prejuizo' ? '#fef2f2' : '#f0fdf4', color: it.status === 'em_revisao' ? '#92400e' : it.status === 'prejuizo' ? '#b91c1c' : '#15803d', border: '1px solid ' + (it.status === 'em_revisao' ? '#fde68a' : it.status === 'prejuizo' ? '#fecaca' : '#bbf7d0') }}>{it.status === 'em_revisao' ? 'Em Revisão' : it.status === 'prejuizo' ? 'Enviada para Prejuízo' : 'Revisada'}</span>
                   <CanalBadge canal={it.pedido.canal} />
+                  {it.tipo ? <span title={it.tipo.observacao || undefined} style={{ fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 99, background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' }}>{it.tipo.nome}</span> : <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 10px', borderRadius: 99, background: 'var(--white)', color: 'var(--gray-500)', border: '1px dashed var(--border)' }}>Sem motivo</span>}
+                  {podeRevisar ? <button onClick={() => setMotivoDe(it)} style={{ ...s.btn, background: '#eff6ff', color: '#1d4ed8', borderColor: '#bfdbfe', fontWeight: 700 }}>{it.tipo ? 'Alterar motivo' : 'Informar motivo'}</button> : null}
                   {podeRevisar && it.status === 'em_revisao' ? <button onClick={() => revisar(it)} disabled={agindo === it.pecaId} style={{ ...s.btn, background: '#ecfdf5', color: '#047857', borderColor: '#a7f3d0', fontWeight: 700 }}>Marcar como revisada</button> : null}
                   {podeRevisar && it.status === 'em_revisao' ? <button onClick={() => { setPrejuizoDe(it); setMotivoPrej('Defeito'); setObsPrej(''); }} disabled={agindo === it.pecaId} style={{ ...s.btn, background: '#fef2f2', color: '#b91c1c', borderColor: '#fecaca', fontWeight: 700 }}>Enviar para Prejuízo</button> : null}
                 </div>
@@ -345,6 +362,15 @@ function DevolucoesTab() {
           </div>
         ))}
       </div>
+      {motivoDe ? (
+        <MotivoDevolucaoModal
+          subtitulo={`${motivoDe.idPeca} — ${motivoDe.descricao}${motivoDe.pedido.num ? ` · pedido #${motivoDe.pedido.num}` : ''}`}
+          motivos={tiposDevolucao} motivoIdAtual={motivoDe.tipo?.id} observacaoAtual={motivoDe.tipo?.observacao}
+          podeGerenciar={podeRevisar} onGerenciar={() => setGerenciarTipos(true)}
+          onSalvar={(motivoId, obs) => salvarMotivo(motivoDe, motivoId, obs)} onClose={() => setMotivoDe(null)}
+        />
+      ) : null}
+      {gerenciarTipos ? <TiposDevolucaoModal onClose={() => setGerenciarTipos(false)} onAlterou={() => carregar(sub)} /> : null}
       {prejuizoDe ? (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.5)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => setPrejuizoDe(null)}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--white)', borderRadius: 14, width: '100%', maxWidth: 440, padding: 20, boxShadow: '0 20px 60px rgba(0,0,0,.2)' }}>
