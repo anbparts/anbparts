@@ -42,11 +42,6 @@ function ChipEtiqueta({ r, onAbrir }: { r: Registro; onAbrir: (r: Registro) => v
     </button>
   );
 }
-function ChipStatusEtiqueta({ r }: { r: Registro }) {
-  const e = statusEtiqueta(r);
-  if (!e) return <span style={{ color: 'var(--gray-400)' }}>—</span>;
-  return <span style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 10px', borderRadius: 99, background: e.bg, color: e.cor, border: `1px solid ${e.borda}`, whiteSpace: 'nowrap' }}>{e.texto}</span>;
-}
 function EtiquetasModal({ r, onClose }: { r: Registro; onClose: () => void }) {
   const lista = etiquetasDe(r);
   const st = statusEtiqueta(r);
@@ -95,7 +90,7 @@ type Resposta = {
 };
 
 // larguras fixas das colunas (px): a tabela rola na horizontal em vez de espremer o conteudo
-const COLS = [128, 270, 150, 200, 120, 140, 180, 120, 190, 92];
+const COLS = [128, 280, 160, 210, 130, 150, 125, 200, 96];
 
 const ORIGENS: Record<string, string> = {
   cancelamento_importado: 'Cancelamento importado', cancelamento_estoque: 'Cancelamento no estoque', devolucao_manual: 'Devolução registrada', historico_antigo: 'Histórico anterior',
@@ -403,7 +398,7 @@ export default function DevolucoesTab({ padding }: { padding: number }) {
                 <CanalBadge canal={r.canal} />
                 <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--blue-500)', marginLeft: 'auto' }}>{brl(r.valor)}</span>
               </div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 10, flexWrap: 'wrap' }}><ChipStatus r={r} />{etiquetasDe(r).length ? <><ChipEtiqueta r={r} onAbrir={setVerEtiquetas} /><ChipStatusEtiqueta r={r} /></> : null}{chipMotivo(r)}{botaoEditar(r)}</div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 10, flexWrap: 'wrap' }}><ChipStatus r={r} />{etiquetasDe(r).length ? <ChipEtiqueta r={r} onAbrir={setVerEtiquetas} /> : null}{chipMotivo(r)}{botaoEditar(r)}</div>
               {r.observacao ? <div style={{ fontSize: 12, color: 'var(--gray-600)', marginTop: 8 }}>Obs.: {r.observacao}</div> : null}
             </div>
           ))}
@@ -415,7 +410,7 @@ export default function DevolucoesTab({ padding }: { padding: number }) {
               <colgroup>{COLS.map((w, i) => <col key={i} style={{ width: w }} />)}</colgroup>
               <thead>
                 <tr style={{ background: 'var(--gray-50, #f9fafb)', textAlign: 'left' }}>
-                  {['Devolução', 'Peça', 'Pedido', 'Moto', 'Valor', 'Etiqueta Detran', 'Status etiqueta', 'Status atual', 'Motivo', ''].map((h, i) => (
+                  {['Devolução', 'Peça', 'Pedido', 'Moto', 'Valor', 'Etiqueta Detran', 'Status atual', 'Motivo', ''].map((h, i) => (
                     <th key={i} style={{ padding: '10px 12px', fontSize: 10.5, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '0.5px', borderBottom: '1px solid var(--border)', textAlign: h === 'Valor' ? 'right' : 'left', whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -448,7 +443,6 @@ export default function DevolucoesTab({ padding }: { padding: number }) {
                       {r.frete != null ? <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--gray-500)', marginTop: 1 }}>frete {brl(r.frete)}</div> : null}
                     </td>
                     <td style={{ padding: '10px 12px' }}><ChipEtiqueta r={r} onAbrir={setVerEtiquetas} /></td>
-                    <td style={{ padding: '10px 12px' }}><ChipStatusEtiqueta r={r} /></td>
                     <td style={{ padding: '10px 12px' }}><ChipStatus r={r} /></td>
                     <td style={{ padding: '10px 12px' }}>{chipMotivo(r)}</td>
                     <td style={{ padding: '10px 12px', textAlign: 'right' }}>{botaoEditar(r)}</td>
