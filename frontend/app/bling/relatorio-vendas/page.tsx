@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState, type FormEvent } from 'react';
 import { API_BASE } from '@/lib/api-base';
+import CanalBadge from '@/components/ui/CanalBadge';
 import { gerarTermoRetiradaPdf, cpfValido, formatarCpf } from '@/lib/termo-retirada-pdf';
 
 const API = API_BASE;
@@ -50,7 +51,7 @@ const s: any = {
 };
 
 type ReportItem = { id: number; idPeca: string; descricao: string; dataVenda: string; pedidoId: string | null; pedidoNum: string; motoId: number | null; moto: string | null; precoML: number; valorTaxas: number; valorFrete: number; valorLiq: number; brinde?: boolean; };
-type PedidoGroup = { pedidoNum: string; pedidoId: string | null; nomeCliente: string | null; dataVenda: string; quantidadeItens: number; subtotalPrecoML: number; subtotalTaxas: number; subtotalFrete: number; subtotalValorLiq: number; itens: ReportItem[]; };
+type PedidoGroup = { pedidoNum: string; pedidoId: string | null; nomeCliente: string | null; canal?: string | null; dataVenda: string; quantidadeItens: number; subtotalPrecoML: number; subtotalTaxas: number; subtotalFrete: number; subtotalValorLiq: number; itens: ReportItem[]; };
 type TotaisGerais = { totalPedidos: number; totalItens: number; precoML: number; valorTaxas: number; valorFrete: number; valorLiq: number; };
 type RelatorioResponse = { ok: boolean; filtros: any; totaisGerais: TotaisGerais; pedidos: PedidoGroup[]; };
 
@@ -472,7 +473,7 @@ export default function RelatorioVendasPage() {
     const nums = lista.map((p) => p.pedidoNum).filter(Boolean);
     if (!nums.length) { setStatusReceb({}); return; }
     try {
-      const resp = await fetch(`${API}/pendente-recebimento/status?pedidos=${encodeURIComponent(nums.join(','))}`, { credentials: 'include' });
+      const resp = await fetch(`${API}/pendencias/status?pedidos=${encodeURIComponent(nums.join(','))}`, { credentials: 'include' });
       const d = await resp.json();
       if (resp.ok && d.ok) setStatusReceb(d.status || {});
     } catch { /* botao segue sem o estado */ }
@@ -484,7 +485,7 @@ export default function RelatorioVendasPage() {
     if (atual === 'pendente' && !confirm(`Tirar o pedido #${p.pedidoNum} da lista de Pendente Recebimento?`)) return;
     setMarcandoReceb(p.pedidoNum);
     try {
-      const resp = await fetch(`${API}/pendente-recebimento/${atual === 'pendente' ? 'desmarcar' : 'marcar'}`, {
+      const resp = await fetch(`${API}/pendencias/${atual === 'pendente' ? 'desmarcar' : 'marcar'}`, {
         method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pedidoNum: p.pedidoNum, pedidoId: p.pedidoId, nomeCliente: p.nomeCliente }),
       });
@@ -646,6 +647,7 @@ export default function RelatorioVendasPage() {
                       <span style={{ fontWeight: 400, color: 'var(--gray-500)' }}> — {pedidoGroup.nomeCliente}</span>
                     )}
                   </div>
+                  <CanalBadge canal={pedidoGroup.canal} />
                   <button
                     onClick={() => setAjustarFretePedido(pedidoGroup)}
                     style={{ ...s.btn, padding: '4px 12px', fontSize: 12, background: '#eff6ff', color: 'var(--blue-500)', borderColor: '#bfdbfe' }}
@@ -671,7 +673,7 @@ export default function RelatorioVendasPage() {
                   <button
                     onClick={() => alternarPendenteReceb(pedidoGroup)}
                     disabled={marcandoReceb === pedidoGroup.pedidoNum}
-                    title={statusReceb[pedidoGroup.pedidoNum] === 'pendente' ? 'Este pedido esta em Financeiro > Pendente Recebimento. Clique para tirar da lista.' : 'Marca este pedido como pendente de recebimento (vai para Financeiro > Pendente Recebimento)'}
+                    title={statusReceb[pedidoGroup.pedidoNum] === 'pendente' ? 'Este pedido esta em Pendencias > Recebimentos. Clique para tirar da lista.' : 'Marca este pedido como pendente de recebimento (vai para Pendencias > Recebimentos)'}
                     style={statusReceb[pedidoGroup.pedidoNum] === 'pendente'
                       ? { ...s.btn, padding: '4px 12px', fontSize: 12, background: '#fef2f2', color: '#b91c1c', borderColor: '#fca5a5', fontWeight: 700 }
                       : { ...s.btn, padding: '4px 12px', fontSize: 12, background: '#fff7ed', color: '#c2410c', borderColor: '#fed7aa' }}

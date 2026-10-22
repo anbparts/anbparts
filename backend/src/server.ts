@@ -4,6 +4,7 @@ import cors from 'cors';
 import { armazenagemRouter } from './routes/armazenagem';
 import { authRouter } from './routes/auth';
 import { pendenteRecebimentoRouter } from './routes/pendenteRecebimento';
+import { fipeRouter } from './routes/fipe';
 import { blingRouter, startBlingAuditoriaScheduler , startImportacaoVendasAutomatica } from './routes/bling';
 import { cadastroRouter } from './routes/cadastro';
 import { configuracoesGeraisRouter } from './routes/configuracoes-gerais';
@@ -78,7 +79,9 @@ app.use(authMiddleware);
 
 app.use('/armazenagem', armazenagemRouter);
 app.use('/bling', blingRouter);
-app.use('/pendente-recebimento', pendenteRecebimentoRouter);
+app.use('/fipe', fipeRouter);
+app.use('/pendencias', pendenteRecebimentoRouter);
+app.use('/pendente-recebimento', pendenteRecebimentoRouter); // nome antigo (compatibilidade)
 app.use('/cadastro', cadastroRouter);
 app.use('/configuracoes-gerais', configuracoesGeraisRouter);
 app.use('/configuracoes', configuracoesUsuariosRouter);

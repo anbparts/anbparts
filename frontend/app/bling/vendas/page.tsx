@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { API_BASE } from '@/lib/api-base';
+import CanalBadge from '@/components/ui/CanalBadge';
 import { useAuth } from '@/lib/auth';
 import { canProcessAction } from '@/lib/permissions';
 
@@ -146,24 +147,6 @@ type SeparacaoManualPedido = {
   envioPrevisto?: string | null; // YYYY-MM-DD: separado agora, enviado so nessa data
   canal?: string | null; // marketplace do pedido (so aparece na tela, nao vai pro PDF)
 };
-
-// Etiqueta com o marketplace do pedido (ML, Shopee, Magalu, Nuvemshop, Manual...). So aparece na tela.
-function canalEtiqueta(canal?: string | null) {
-  const c = String(canal || '').trim();
-  if (!c) return null;
-  if (/mercado\s*livre/i.test(c)) return { texto: 'ML', bg: '#fef9c3', cor: '#854d0e', borda: '#fde047' };
-  if (/shopee/i.test(c)) return { texto: 'Shopee', bg: '#fff7ed', cor: '#c2410c', borda: '#fdba74' };
-  if (/magalu|magazine/i.test(c)) return { texto: 'Magalu', bg: '#eff6ff', cor: '#1d4ed8', borda: '#93c5fd' };
-  if (/nuvem/i.test(c)) return { texto: 'Nuvemshop', bg: '#f5f3ff', cor: '#5b21b6', borda: '#c4b5fd' };
-  if (/olx/i.test(c)) return { texto: 'OLX', bg: '#faf5ff', cor: '#6b21a8', borda: '#d8b4fe' };
-  if (/^manual$/i.test(c)) return { texto: 'Manual', bg: '#f1f5f9', cor: '#475569', borda: '#cbd5e1' };
-  return { texto: c.length > 18 ? c.slice(0, 17) + '…' : c, bg: '#f1f5f9', cor: '#334155', borda: '#cbd5e1' };
-}
-function CanalBadge({ canal }: { canal?: string | null }) {
-  const e = canalEtiqueta(canal);
-  if (!e) return null;
-  return <span title={`Canal de venda: ${canal}`} style={{ border: `1px solid ${e.borda}`, background: e.bg, color: e.cor, borderRadius: 999, padding: '2px 8px', fontSize: 10.5, fontWeight: 800, whiteSpace: 'nowrap' }}>{e.texto}</span>;
-}
 
 const SEPARACAO_STATUS_KEY = 'anb:bling:vendas:separacao-pdfs';
 
@@ -533,6 +516,7 @@ async function baixarSeparacaoPdf(relatorio: SeparacaoRelatorio) {
 export default function VendasBlingPage() {
   const { user } = useAuth();
   const [dataInicio, setDataInicio] = useState(() => defaultDateRange().dataInicio);
+  const [pedidosNumeros, setPedidosNumeros] = useState('');
   const [dataFim, setDataFim] = useState(() => defaultDateRange().dataFim);
   const [buscando, setBuscando] = useState(false);
   const [carregandoSeparacao, setCarregandoSeparacao] = useState(false);
@@ -648,12 +632,15 @@ export default function VendasBlingPage() {
       const response = await fetch(`${API}/bling/sync/vendas`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dataInicio, dataFim }),
+        body: JSON.stringify({ dataInicio, dataFim, pedidos: pedidosNumeros.trim() }),
       });
       const data = await response.json();
       if (!data.ok) {
         alert(data.error || 'Erro ao buscar vendas');
         return;
+      }
+      if (Array.isArray(data.numerosNaoEncontrados) && data.numerosNaoEncontrados.length) {
+        alert(`Pedido(s) nao encontrado(s) no Bling: ${data.numerosNaoEncontrados.join(', ')}`);
       }
 
       if (data.defaults) {
@@ -1044,6 +1031,8 @@ export default function VendasBlingPage() {
       if (data.ok) {
         updateItem(idx, '_cancelamentoAprovado', true);
         updateItem(idx, 'jaEstornada', true);
+        if (data.avisoBling) alert(data.avisoBling);
+        else if (data.ajusteBling) alert(`Estoque do Bling: ${data.ajusteBling}`);
       } else {
         updateItem(idx, '_erro', data.error || 'Erro ao aprovar cancelamento');
       }
@@ -1116,6 +1105,10 @@ export default function VendasBlingPage() {
               <label style={s.label}>Data fim</label>
               <input style={{ ...s.input, width: isPhone ? '100%' : 160, minHeight: isPhone ? 42 : undefined }} type="date" value={dataFim} onChange={(e) => setPeriodoFim(e.target.value)} />
             </div>
+            <div style={{ width: isPhone ? '100%' : undefined }}>
+              <label style={s.label}>Nº do pedido (opcional)</label>
+              <input style={{ ...s.input, width: isPhone ? '100%' : 190, minHeight: isPhone ? 42 : undefined }} type="text" placeholder="Ex: 633 ou 630-635" title="Com o numero preenchido, as datas sao ignoradas e so esse(s) pedido(s) e consultado de novo no Bling" value={pedidosNumeros} onChange={(e) => setPedidosNumeros(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && canAtualizarVendas && !buscando) buscarVendas(); }} />
+            </div>
             {canAtualizarVendas && (
               <button style={{ ...s.btn, ...phoneButtonStyle, background: '#FF6900', color: '#fff', opacity: buscando ? 0.7 : 1 }} onClick={buscarVendas} disabled={buscando}>
                 {buscando ? 'Buscando...' : 'Buscar vendas'}
@@ -1133,7 +1126,7 @@ export default function VendasBlingPage() {
             )}
           </div>
           <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 8 }}>
-            A busca agora traz pedidos concluidos e cancelados. Frete padrao atual: {fmtMoney(defaults.fretePadrao)} · Taxa padrao: {fmtPercent(defaults.taxaPadraoPct)}
+            {pedidosNumeros.trim() ? 'Com o numero do pedido preenchido, as datas sao ignoradas. ' : ''}A busca agora traz pedidos concluidos e cancelados. Frete padrao atual: {fmtMoney(defaults.fretePadrao)} · Taxa padrao: {fmtPercent(defaults.taxaPadraoPct)}
           </div>
         </div>
 

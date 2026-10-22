@@ -3,6 +3,7 @@ import { prisma } from '../lib/prisma';
 import { sendDetranBaixaEmailIfNeeded } from '../lib/detran-alert';
 import { compressDataUrlImage, normalizeImageFileName } from '../lib/image';
 import { cancelarVendaComDevolucaoEtiqueta } from '../lib/cancelamento-venda';
+import { idsEmRevisao } from '../lib/pecas-revisao';
 import { z } from 'zod';
 import { spDayStart, spDayEnd } from '../lib/timezone';
 import { getConfiguracaoGeral, saveConfiguracaoGeral } from '../lib/configuracoes-gerais';
@@ -767,6 +768,7 @@ pecasRouter.get('/', async (req, res, next) => {
       imagem,
       detranEtiquetaTexto,
       dimensoes,
+      emRevisao,
       page = '1',
       per = '20',
       orderBy = 'cadastro',
@@ -790,6 +792,11 @@ pecasRouter.get('/', async (req, res, next) => {
       });
     }
     if (disponivel !== undefined) where.disponivel = disponivel === 'true';
+    // filtro "Em revisao": so as pecas devolvidas por cancelamento que ainda nao foram liberadas
+    if (String(emRevisao || '') === 'true') {
+      const ids = Array.from(await idsEmRevisao());
+      andConditions.push({ id: { in: ids.length ? ids : [-1] } });
+    }
     if (mercadoLivreLink === 'com') {
       andConditions.push({ mercadoLivreLink: { not: null } });
       andConditions.push({ NOT: { mercadoLivreLink: '' } });
@@ -965,7 +972,8 @@ pecasRouter.get('/', async (req, res, next) => {
 
     const totalEtiquetas = etiquetas.reduce((sum, item) => sum + countDetranEtiquetas(item.detranEtiqueta), 0);
 
-    res.json({ total, totalDisp, totalVend, totalEtiquetas, page: Number(page), per: Number(per), data: pecas });
+    const revisao = await idsEmRevisao((pecas as any[]).map((p) => p.id)).catch(() => new Set<number>());
+    res.json({ total, totalDisp, totalVend, totalEtiquetas, page: Number(page), per: Number(per), data: (pecas as any[]).map((p) => ({ ...p, emRevisao: revisao.has(p.id) })) });
   } catch (e) { next(e); }
 });
 

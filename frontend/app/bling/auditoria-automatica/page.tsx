@@ -73,7 +73,7 @@ const fmtDateTime = (value?: string | null) => {
 const statusLabel = (status?: string) => status === 'sucesso' ? 'Sucesso' : status === 'sucesso_parcial' ? 'Sucesso parcial' : status === 'erro' ? 'Erro' : status === 'executando' ? 'Executando' : status || 'Nao informado';
 const statusColor = (status?: string) => status === 'sucesso' ? 'var(--green)' : status === 'sucesso_parcial' ? 'var(--amber)' : status === 'erro' ? 'var(--red)' : status === 'executando' ? 'var(--blue-500)' : 'var(--gray-500)';
 const borderColor = (tipo: string) => tipo === 'nao_encontrado_bling' ? 'var(--amber)' : tipo === 'nao_encontrado_anb' ? 'var(--blue-500)' : tipo === 'peca_em_prejuizo' ? '#b91c1c' : 'var(--red)';
-const origemLabel = (o: string) => o === 'auto' ? 'Automatica' : o === 'rapida_auto' ? 'Conferencia rapida' : o === 'rapida_manual' ? 'Conferencia rapida (manual)' : o === 'mes_manual' ? 'Conferencia do mes atual' : 'Manual';
+const origemLabel = (o: string) => o === 'auto' ? 'Automatica' : o === 'rapida_auto' ? 'Conferencia rapida' : o === 'rapida_manual' ? 'Conferencia rapida (manual)' : o === 'mes_manual' ? 'Conferencia do mes atual' : o === 'cancelamento_auto' ? 'Verificacao automatica (cancelamento)' : 'Manual';
 const tipoLabel = (tipo: string) => String(tipo || '').replaceAll('_', ' ').replace(/\bml\b/gi, 'ML');
 const escopoLabel = (value?: AuditoriaEscopo | string | null) => ESCOPOS.find((item) => item.value === value)?.label || 'Full';
 const infoValue = (value?: string | null) => String(value || '').trim() || 'Nao configurado';
@@ -472,6 +472,12 @@ export default function AuditoriaAutomaticaPage() {
                     ))}
                   </div>
                   {execucaoSelecionada.emailErro && <div style={{ background: '#fff7ed', border: '1px solid #fdba74', borderRadius: 8, padding: '12px 14px', color: 'var(--amber)', fontSize: 13, marginBottom: 10 }}>Erro no envio do email: {execucaoSelecionada.emailErro}</div>}
+                  {(execucaoSelecionada as any).resumo?.verificacaoAutomatica?.motivo ? (
+                    <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: '10px 14px', color: '#1d4ed8', fontSize: 13 }}>
+                      <strong>Verificacao automatica:</strong> {(execucaoSelecionada as any).resumo.verificacaoAutomatica.motivo}
+                      <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>SKUs: {((execucaoSelecionada as any).resumo.verificacaoAutomatica.skus || []).join(', ')} · Verificado: {((execucaoSelecionada as any).resumo.verificacaoAutomatica.verificado || []).join(' · ')}</div>
+                    </div>
+                  ) : null}
                   {execucaoSelecionada.erro && <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, padding: '12px 14px', color: 'var(--red)', fontSize: 13 }}>Erro da execucao: {execucaoSelecionada.erro}</div>}
                 </div>
 

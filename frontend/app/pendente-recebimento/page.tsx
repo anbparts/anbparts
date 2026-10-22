@@ -4,6 +4,7 @@ import { API_BASE } from '@/lib/api-base';
 import { useIsPhone } from '@/lib/use-is-phone';
 import { usePersistentTab } from '@/lib/use-persistent-tab';
 import TabsBar from '@/components/ui/TabsBar';
+import CanalBadge from '@/components/ui/CanalBadge';
 
 const API = API_BASE;
 
@@ -14,7 +15,7 @@ const s: any = {
 };
 
 type Item = { id: number; idPeca: string; descricao: string; dataVenda: string; moto: string | null; precoML: number; valorTaxas: number; valorFrete: number; valorLiq: number; brinde?: boolean };
-type Pedido = { pedidoNum: string; pedidoId: string | null; nomeCliente: string | null; dataVenda: string; quantidadeItens: number; subtotalPrecoML: number; subtotalTaxas: number; subtotalFrete: number; subtotalValorLiq: number; itens: Item[] };
+type Pedido = { pedidoNum: string; pedidoId: string | null; nomeCliente: string | null; canal?: string | null; dataVenda: string; quantidadeItens: number; subtotalPrecoML: number; subtotalTaxas: number; subtotalFrete: number; subtotalValorLiq: number; itens: Item[] };
 type Marcacao = { pedidoNum: string; status: string; marcadoEm: string; marcadoPor: string | null; baixadoEm: string | null; baixadoPor: string | null; observacao: string | null };
 type Linha = { marcacao: Marcacao; pedido: Pedido; semDados: boolean };
 
@@ -111,6 +112,7 @@ export default function PendenteRecebimentoPage() {
                       Pedido #{p.pedidoNum}
                       {p.nomeCliente ? <span style={{ fontWeight: 400, color: 'var(--gray-500)' }}> — {p.nomeCliente}</span> : null}
                     </div>
+                    <CanalBadge canal={p.canal} />
                     {aba === 'pendente' ? (
                       <>
                         {podeBaixar ? <button onClick={() => darBaixa(l)} disabled={agindo === p.pedidoNum} style={{ ...s.btn, background: '#ecfdf5', color: '#047857', borderColor: '#a7f3d0', fontWeight: 700 }}>Dar baixa</button> : null}

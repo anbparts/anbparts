@@ -8,6 +8,7 @@ import { API_BASE } from '@/lib/api-base';
 import { useAuth } from '@/lib/auth';
 import { canProcessAction } from '@/lib/permissions';
 import FluxoDesmontagemTab from './FluxoDesmontagemTab';
+import FipeConsultaModal from './FipeConsultaModal';
 import { usePersistentTab } from '@/lib/use-persistent-tab';
 const API = API_BASE;
 
@@ -353,6 +354,7 @@ type MotosViewportMode = 'phone' | 'tablet-portrait' | 'tablet-landscape' | 'des
 function Modal({ open, title, onClose, onSave, moto, viewportMode = 'desktop' }: any) {
   const empty = { marca: '', modelo: '', ano: '', cor: '', placa: '', chassi: '', renavam: '', notaFiscalEntrada: '', notaFiscalEntradaData: '', cilindros: '', combustivel: '', cilindrada: '', potencia: '', dataCompra: '', precoCompra: '', origemCompra: '', valorFipe: '', observacoes: '' };
   const [form, setForm] = useState(empty);
+  const [fipeAberta, setFipeAberta] = useState(false);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
   const [gerandoFolhaCapa, setGerandoFolhaCapa] = useState(false);
@@ -406,7 +408,8 @@ function Modal({ open, title, onClose, onSave, moto, viewportMode = 'desktop' }:
 
   const modalIsPhone = viewportMode === 'phone';
   const modalIsTabletLandscape = viewportMode === 'tablet-landscape';
-  const modalColumns = modalIsPhone ? '1fr' : '1fr 1fr';
+  const modalColumns = modalIsPhone ? '1fr' : modalIsTabletLandscape ? 'repeat(3, minmax(0, 1fr))' : 'repeat(4, minmax(0, 1fr))';
+  const docColumns = modalIsPhone ? '1fr' : modalIsTabletLandscape ? 'repeat(3, minmax(0, 1fr))' : 'repeat(5, minmax(0, 1fr))';
   const modalShellPadding = modalIsPhone ? 0 : modalIsTabletLandscape ? 16 : 24;
   const modalHeaderPadding = modalIsPhone ? '16px 14px 14px' : '22px 24px 16px';
   const modalBodyPadding = modalIsPhone ? '16px 14px 18px' : modalIsTabletLandscape ? '20px 22px' : '22px 24px';
@@ -447,7 +450,7 @@ function Modal({ open, title, onClose, onSave, moto, viewportMode = 'desktop' }:
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 200, display: 'flex', alignItems: modalIsPhone ? 'stretch' : 'center', justifyContent: 'center', padding: modalShellPadding, backdropFilter: 'blur(2px)' }}>
-      <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: modalIsPhone ? 0 : 16, width: '100%', maxWidth: modalIsTabletLandscape ? 900 : 540, maxHeight: modalIsPhone ? '100dvh' : modalIsTabletLandscape ? 'calc(100dvh - 32px)' : '92vh', minHeight: modalIsPhone ? '100dvh' : undefined, overflowY: 'auto', boxShadow: 'var(--shadow-lg)' }}>
+      <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: modalIsPhone ? 0 : 16, width: '100%', maxWidth: modalIsTabletLandscape ? 900 : 1100, maxHeight: modalIsPhone ? '100dvh' : modalIsTabletLandscape ? 'calc(100dvh - 32px)' : '92vh', minHeight: modalIsPhone ? '100dvh' : undefined, overflowY: 'auto', boxShadow: 'var(--shadow-lg)' }}>
         <div style={{ padding: modalHeaderPadding, borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
           <div style={{ fontFamily: 'Fraunces, serif', fontSize: modalIsPhone ? 17 : 18, fontWeight: 600 }}>{title}</div>
           <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', fontSize: 16, flexShrink: 0 }}>X</button>
@@ -461,11 +464,9 @@ function Modal({ open, title, onClose, onSave, moto, viewportMode = 'desktop' }:
             {row('Cor', 'cor', 'text', 'Ex: Preto')}
           </div>
           <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '0.8px', textTransform: 'uppercase', margin: '16px 0 12px', paddingBottom: 8, borderBottom: '1px solid var(--border)' }}>Documentacao</div>
-          <div style={{ display: 'grid', gridTemplateColumns: modalColumns, gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: docColumns, gap: 12 }}>
             {row('Placa', 'placa', 'text', 'ABC-1234')}
             {row('Chassi', 'chassi', 'text')}
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: modalColumns, gap: 12 }}>
             {row('Renavam', 'renavam', 'text')}
             {row('Nº NF de Entrada', 'notaFiscalEntrada', 'text', 'NF de entrada da moto')}
             {row('Data da NF de Entrada', 'notaFiscalEntradaData', 'date')}
@@ -481,9 +482,13 @@ function Modal({ open, title, onClose, onSave, moto, viewportMode = 'desktop' }:
           <div style={{ display: 'grid', gridTemplateColumns: modalColumns, gap: 12 }}>
             {row('Data de compra', 'dataCompra', 'date')}
             {row('Preco de compra (R$) *', 'precoCompra', 'number', '0,00')}
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: modalColumns, gap: 12 }}>
-            {row('Valor FIPE na epoca (R$)', 'valorFipe', 'number', 'Ex: 45000')}
+            <div style={{ marginBottom: 14 }}>
+              <label style={cs.fl}>Valor FIPE na epoca (R$)</label>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'stretch' }}>
+                <input style={{ ...cs.fi, minWidth: 0 }} type="number" placeholder="Ex: 45000" value={form.valorFipe} onChange={(e) => setForm({ ...form, valorFipe: e.target.value })} />
+                <button type="button" onClick={() => setFipeAberta(true)} title="Busca o valor na tabela FIPE (mes atual) pela marca e modelo do cadastro" style={{ ...cs.btn, marginTop: 4, padding: '0 14px', background: 'var(--white)', color: 'var(--blue-500)', borderColor: 'var(--blue-500)', fontWeight: 600, whiteSpace: 'nowrap' }}>Consultar</button>
+              </div>
+            </div>
             {row('Origem da compra', 'origemCompra', 'text', 'Ex: Leilao, Particular...')}
           </div>
           <div style={{ marginBottom: 14 }}>
@@ -496,6 +501,7 @@ function Modal({ open, title, onClose, onSave, moto, viewportMode = 'desktop' }:
           </div>
           {err && <div style={{ fontSize: 12, color: 'var(--red)', marginTop: 4 }}>! {err}</div>}
         </div>
+        <FipeConsultaModal open={fipeAberta} marca={form.marca} modelo={form.modelo} ano={form.ano} isPhone={modalIsPhone} onClose={() => setFipeAberta(false)} onUsar={(valor: number) => { setForm({ ...form, valorFipe: String(valor) }); setFipeAberta(false); }} />
         <div style={{ padding: modalFooterPadding, display: 'flex', gap: 8, justifyContent: 'space-between', borderTop: '1px solid var(--border)', flexDirection: modalIsPhone ? 'column-reverse' : 'row', alignItems: 'center' }}>
           <div>
             {moto?.id && (

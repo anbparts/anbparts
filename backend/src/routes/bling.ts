@@ -5001,6 +5001,108 @@ async function executeAuditoriaRapida(origem: 'manual' | 'auto' | 'mes' = 'manua
   }
 }
 
+// ── Verificacao automatica apos importar um cancelamento: 5 min depois, confere os SKUs envolvidos na auditoria (escopo fixo) ──
+const ATRASO_VERIFICACAO_POS_CANCELAMENTO_MS = 5 * 60 * 1000;
+const VERIFICAR_POS_CANCELAMENTO = { anbBling: true, ml: 'completo', nuvemshop: 'completo', shopee: 'estoque', magalu: 'estoque' } as const;
+
+let verificacaoAgendadaPronta: Promise<void> | null = null;
+function garantirTabelaVerificacaoAgendada() {
+  if (!verificacaoAgendadaPronta) {
+    verificacaoAgendadaPronta = prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "VerificacaoAgendada" (
+      "id" SERIAL PRIMARY KEY, "origem" TEXT NOT NULL, "skus" TEXT NOT NULL, "pedidos" TEXT, "executarEm" TIMESTAMP NOT NULL,
+      "status" TEXT NOT NULL DEFAULT 'pendente', "execucaoId" INTEGER, "criadoEm" TIMESTAMP NOT NULL DEFAULT now())`)
+      .then(() => undefined)
+      .catch((e) => { verificacaoAgendadaPronta = null; throw e; });
+  }
+  return verificacaoAgendadaPronta;
+}
+
+// Agenda (no banco, sobrevive a deploy/reinicio) a verificacao dos SKUs envolvidos para daqui a 5 minutos.
+async function agendarVerificacaoPosCancelamento(pecaIds: number[]) {
+  await garantirTabelaVerificacaoAgendada();
+  const rows = await prisma.$queryRawUnsafe<Array<{ idPeca: string; pedidoNum: string | null }>>(
+    `SELECT p."idPeca", r."pedidoNum" FROM "PecaEmRevisao" r JOIN "Peca" p ON p."id" = r."pecaId" WHERE r."pecaId" = ANY($1::int[])`, pecaIds,
+  ).catch(() => [] as Array<{ idPeca: string; pedidoNum: string | null }>);
+  const skus = Array.from(new Set(rows.map((r) => getBaseSku(r.idPeca)).filter(Boolean)));
+  if (!skus.length) return;
+  const pedidos = Array.from(new Set(rows.map((r) => String(r.pedidoNum || '').trim()).filter(Boolean)));
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "VerificacaoAgendada" ("origem","skus","pedidos","executarEm") VALUES ('cancelamento',$1,$2, now() + ($3 || ' milliseconds')::interval)`,
+    skus.join(','), pedidos.join(','), String(ATRASO_VERIFICACAO_POS_CANCELAMENTO_MS),
+  );
+}
+
+async function executeVerificacaoPosCancelamento(skus: string[], pedidos: string[]) {
+  const cfg = await getConfig();
+  const emailConfig = await getConfiguracaoGeral();
+  const executedAt = new Date();
+  const verificar: any = VERIFICAR_POS_CANCELAMENTO;
+  const rotuloPedidos = pedidos.length ? pedidos.map((p) => `#${p}`).join(', ') : '';
+  const motivo = `Verificacao automatica devido a importacao do cancelamento${pedidos.length > 1 ? ' dos pedidos' : ' do pedido'} ${rotuloPedidos || '(sem numero)'}.`;
+  const tituloEmail = `ALERTA ANB Parts - Verificacao automatica pos-cancelamento ${rotuloPedidos} - Verifique`.replace(/\s+/g, ' ').trim();
+  const execution = await prisma.auditoriaAutomaticaExecucao.create({
+    data: {
+      origem: 'cancelamento_auto', status: 'executando', emailDestinatario: emailConfig.auditoriaEmailDestinatario || null,
+      emailAssunto: buildDatedEmailSubject(tituloEmail, DEFAULT_AUDITORIA_EMAIL_TITULO, executedAt), totalSkus: skus.length,
+      resumo: JSON.parse(JSON.stringify({ progresso: { totalParaProcessar: skus.length, totalProcessados: 0, fase: 'Verificacao pos-cancelamento', atualizadoEm: new Date().toISOString() }, verificacaoAutomatica: { motivo, pedidos, skus } })),
+    },
+  });
+  try {
+    let ultimoSalvo = 0;
+    const salvarProgresso = async (p: { totalParaProcessar: number; totalProcessados: number; fase: string }) => {
+      if (Date.now() - ultimoSalvo < 1500) return;
+      ultimoSalvo = Date.now();
+      await prisma.auditoriaAutomaticaExecucao.update({
+        where: { id: execution.id },
+        data: { resumo: JSON.parse(JSON.stringify({ progresso: { totalParaProcessar: Math.max(skus.length, Number(p.totalParaProcessar) || 0), totalProcessados: Number(p.totalProcessados) || 0, fase: p.fase, atualizadoEm: new Date().toISOString() }, verificacaoAutomatica: { motivo, pedidos, skus } })) },
+      }).catch(() => undefined);
+    };
+    const bruto: any = (await runTraceSkuComparison(skus, null, salvarProgresso, { nuvemshop: cfg.nuvemshopAtiva, shopee: true, magalu: true })).resultado;
+    const base = aplicarVerificar(bruto || { ok: true, totalConsultados: 0, totalDivergencias: 0, totalSemDivergencia: 0, divergencias: [], warnings: [] }, verificar);
+    const { resultado, resumoPedidosAbertos } = await aplicarFiltroPedidosAbertosAuditoria(base);
+    const resumo: any = JSON.parse(JSON.stringify({
+      ...buildAuditoriaResumo(resultado),
+      verificacaoAutomatica: { motivo, pedidos, skus, verificado: descreverVerificar(verificar) },
+      pedidosAbertosIgnorados: resumoPedidosAbertos,
+    }));
+    let emailEnviado = false;
+    let emailErro: string | null = null;
+    if (resultado.totalDivergencias > 0 && emailConfig.auditoriaEmailConfigurado) {
+      try { await sendAuditoriaEmail(emailConfig, resultado, executedAt, tituloEmail); emailEnviado = true; } catch (error: any) { emailErro = error?.message || String(error); }
+    }
+    return await prisma.auditoriaAutomaticaExecucao.update({
+      where: { id: execution.id },
+      data: {
+        status: emailErro ? 'sucesso_parcial' : 'sucesso', finishedAt: new Date(), totalSkus: resultado.totalConsultados, totalDivergencias: resultado.totalDivergencias,
+        totalSemDivergencia: resultado.totalSemDivergencia, emailEnviado, emailErro, resumo, divergencias: resultado.divergencias,
+      },
+    });
+  } catch (error: any) {
+    return prisma.auditoriaAutomaticaExecucao.update({ where: { id: execution.id }, data: { status: 'erro', finishedAt: new Date(), erro: error?.message || String(error) } });
+  }
+}
+
+// Roda (uma por vez) as verificacoes agendadas que ja venceram; se outra auditoria estiver rodando, espera o proximo minuto.
+async function tickVerificacoesAgendadas() {
+  if (auditoriaSchedulerState.running) return;
+  await garantirTabelaVerificacaoAgendada();
+  const vencidas = await prisma.$queryRawUnsafe<any[]>(`SELECT "id","skus","pedidos" FROM "VerificacaoAgendada" WHERE "status" = 'pendente' AND "executarEm" <= now() ORDER BY "id" LIMIT 1`);
+  if (!vencidas.length) return;
+  const v = vencidas[0];
+  const reservou = await prisma.$executeRawUnsafe(`UPDATE "VerificacaoAgendada" SET "status" = 'executando' WHERE "id" = $1 AND "status" = 'pendente'`, Number(v.id));
+  if (!reservou) return;
+  auditoriaSchedulerState.running = true;
+  try {
+    const exec: any = await executeVerificacaoPosCancelamento(String(v.skus).split(',').filter(Boolean), String(v.pedidos || '').split(',').filter(Boolean));
+    await prisma.$executeRawUnsafe(`UPDATE "VerificacaoAgendada" SET "status" = 'concluida', "execucaoId" = $2 WHERE "id" = $1`, Number(v.id), Number(exec?.id || 0) || null);
+  } catch (e) {
+    await prisma.$executeRawUnsafe(`UPDATE "VerificacaoAgendada" SET "status" = 'erro' WHERE "id" = $1`, Number(v.id)).catch(() => undefined);
+    throw e;
+  } finally {
+    auditoriaSchedulerState.running = false;
+  }
+}
+
 async function tickAuditoriaRapida() {
   if (auditoriaSchedulerState.running) return;
   const agend = await carregarAgendamentos();
@@ -5077,6 +5179,10 @@ export function startBlingAuditoriaScheduler() {
     });
     tickAuditoriaRapida().catch((error) => {
       console.error('Falha na conferencia rapida do Bling:', error);
+      auditoriaSchedulerState.running = false;
+    });
+    tickVerificacoesAgendadas().catch((error) => {
+      console.error('Falha na verificacao agendada pos-cancelamento:', error);
       auditoriaSchedulerState.running = false;
     });
     tickAuditoriaLinkMl().catch((error) => {
@@ -6532,7 +6638,8 @@ export async function montarRelatorioVendas(q: { dataDe?: any; dataAte?: any; pe
     const nomeClienteMap = new Map<string, string>();
     for (const pedidoId of pedidoIdSet) {
       try {
-        const detalhe = await blingReq(`/pedidos/vendas/${pedidoId}`) as any;
+        // banco local primeiro (e passa a guardar o pedido, o que tambem permite mostrar o canal); so vai ao Bling se nao der
+        const detalhe = await obterDetalhePedidoCache(pedidoId) as any;
         const nome = String(detalhe?.data?.contato?.nome || '').trim();
         if (nome) nomeClienteMap.set(pedidoId, nome);
       } catch { /* ignora falha individual */ }
@@ -6637,6 +6744,10 @@ export async function montarRelatorioVendas(q: { dataDe?: any; dataAte?: any; pe
       });
 
     totaisGerais.totalPedidos = pedidos.length;
+
+    // Canal de venda de cada pedido (etiqueta do marketplace na tela)
+    const canalPorPedido = await canaisDosPedidos(pedidos.map((p: any) => p.pedidoId).filter(Boolean));
+    for (const p of pedidos as any[]) (p as any).canal = canalPorPedido.get(String(p.pedidoId)) || null;
 
     return {
       filtros: {
@@ -7454,7 +7565,29 @@ blingRouter.post('/importar-produto', async (req, res, next) => {
 });
 
 // Monta a lista de vendas/cancelamentos do periodo (usada pelo botao "Buscar vendas" e pela importacao automatica).
-export async function montarItensSyncVendas(dataInicio: string, dataFim: string) {
+// Pedidos pelo numero (ex.: "633", "630-635", "633, 640"): acha o id no banco local e, se nao achar, pergunta ao Bling.
+async function resolverPedidoIdsPorNumeros(numeros: string[]): Promise<{ ids: number[]; naoEncontrados: string[] }> {
+  const ids: number[] = [];
+  const naoEncontrados: string[] = [];
+  for (const n of numeros) {
+    let id: number | null = null;
+    try {
+      const rows = await prisma.$queryRawUnsafe<Array<{ id: string }>>(`SELECT "id"::text AS id FROM "BlingPedido" WHERE "numero" = $1 LIMIT 1`, n);
+      if (rows[0]?.id) id = Number(rows[0].id);
+    } catch { /* tabela local ainda nao existe: pergunta ao Bling */ }
+    if (!id) {
+      try {
+        const r: any = await blingReq(`/pedidos/vendas?numero=${encodeURIComponent(n)}&limite=10`);
+        const achado = (r?.data || []).find((p: any) => String(p?.numero ?? '').trim() === n);
+        if (achado?.id) id = Number(achado.id);
+      } catch { /* segue como nao encontrado */ }
+    }
+    if (id) ids.push(id); else naoEncontrados.push(n);
+  }
+  return { ids, naoEncontrados };
+}
+
+export async function montarItensSyncVendas(dataInicio: string, dataFim: string, pedidosNumeros?: string[]) {
     const cfg = await getConfig();
     const defaults = getProdutoDefaults(cfg);
 
@@ -7486,11 +7619,14 @@ export async function montarItensSyncVendas(dataInicio: string, dataFim: string)
         .map((p: any) => String(p.blingPedidoId)),
     );
 
-    const pedidosConcluidos = await listPedidos(dataInicio, dataFim, [STATUS_ID_CONCLUIDO]);
-    const pedidosGerais = await listPedidos(dataInicio, dataFim);
+    // Com numero(s) de pedido informado(s), a data e ignorada: so esses pedidos sao consultados de novo no Bling.
+    const porNumero = Array.isArray(pedidosNumeros) && pedidosNumeros.length > 0;
+    const resolvidos = porNumero ? await resolverPedidoIdsPorNumeros(pedidosNumeros as string[]) : { ids: [] as number[], naoEncontrados: [] as string[] };
+    const pedidosConcluidos = porNumero ? [] : await listPedidos(dataInicio, dataFim, [STATUS_ID_CONCLUIDO]);
+    const pedidosGerais = porNumero ? [] : await listPedidos(dataInicio, dataFim);
     const pedidosGeraisMap = new Map(pedidosGerais.map((pedido) => [pedido.id, pedido]));
     const pedidosConcluidosMap = new Map(pedidosConcluidos.map((pedido) => [pedido.id, pedido]));
-    const pedidoIds = Array.from(new Set([
+    const pedidoIds = porNumero ? Array.from(new Set(resolvidos.ids)) : Array.from(new Set([
       ...pedidosConcluidos.map((pedido) => pedido.id),
       ...pedidosGerais.map((pedido) => pedido.id),
     ]));
@@ -7733,13 +7869,20 @@ export async function montarItensSyncVendas(dataInicio: string, dataFim: string)
       }
     }
 
-    return { ok: true, total: itens.length, defaults, itens };
+    return { ok: true, total: itens.length, defaults, itens, numerosNaoEncontrados: resolvidos.naoEncontrados };
 }
 
 blingRouter.post('/sync/vendas', async (req, res, next) => {
   try {
     const { dataInicio, dataFim } = req.body;
-    res.json(await montarItensSyncVendas(dataInicio, dataFim));
+    // numero(s) do pedido: "633", "630-635" ou "633, 640" (ignora as datas)
+    let numeros: string[] | undefined;
+    const textoNumeros = String(req.body?.pedidos || '').trim();
+    if (textoNumeros) {
+      try { numeros = (await import('../lib/bling-pedidos')).interpretarNumeros(textoNumeros); }
+      catch (e: any) { return res.status(400).json({ ok: false, error: e?.message || 'Numero de pedido invalido' }); }
+    }
+    res.json(await montarItensSyncVendas(dataInicio, dataFim, numeros));
   } catch (e) {
     next(e);
   }
@@ -7865,6 +8008,15 @@ export async function importarVendasAutomatico() {
   }
 }
 
+// Roda a importacao de vendas e espera terminar (se ja estiver rodando, espera essa execucao). Usada antes de equalizar o estoque do Bling,
+// para o total do sistema ja contar as vendas mais recentes.
+export async function garantirImportacaoVendasAtualizada() {
+  const limite = Date.now() + 90_000;
+  while (importacaoVendasAutoStatus.rodando && Date.now() < limite) await sleep(1500);
+  await importarVendasAutomatico();
+  if (importacaoVendasAutoStatus.erro) throw new Error(`Nao foi possivel atualizar a importacao de vendas: ${importacaoVendasAutoStatus.erro}`);
+}
+
 export function startImportacaoVendasAutomatica() {
   setTimeout(() => { void importarVendasAutomatico(); }, 3 * 60 * 1000);
   setInterval(() => { void importarVendasAutomatico(); }, 5 * 60 * 1000);
@@ -7894,6 +8046,7 @@ blingRouter.post('/aprovar-cancelamento', async (req, res, next) => {
 
     const result = await cancelarVendaComDevolucaoEtiqueta(ids, {
       observacoes: 'Cancelamento de venda aprovado pela tela Vendas Bling.',
+      enviarParaRevisao: true,
       resolveFinancials: () => ({
         valorFrete: defaults.fretePadrao,
         valorTaxas: financials.taxaValor,
@@ -7901,12 +8054,28 @@ blingRouter.post('/aprovar-cancelamento', async (req, res, next) => {
       }),
     });
 
+    // O Bling devolve a unidade ao saldo quando o pedido e cancelado; a peca fica em revisao, entao damos saida nessa quantidade (por SKU base)
+    let avisoBling: string | null = null;
+    let ajusteBling: string | null = null;
+    try {
+      const rev = await (await import('../lib/pecas-revisao')).processarSaidaBling(ids);
+      ajusteBling = rev.ajustes.map((a) => a.texto).join(' | ') || null;
+      if (rev.erros.length) avisoBling = `Estoque do Bling nao foi atualizado (tente de novo em Pendencias > Devolucoes): ${rev.erros.join(' | ')}`;
+    } catch (e: any) {
+      avisoBling = `Estoque do Bling nao foi atualizado: ${e?.message || e}`;
+    }
+
+    // Daqui a 5 minutos a auditoria confere os SKUs envolvidos (fica no log como verificacao automatica do cancelamento)
+    try { await agendarVerificacaoPosCancelamento(ids); } catch (e: any) { console.error('[cancelamento] nao foi possivel agendar a verificacao:', e?.message || e); }
+
     res.json({
       ok: true,
       ids,
       defaults,
       devolucoesCriadas: result.devolucoesCriadas,
       etiquetasPendentes: result.etiquetasPendentes,
+      avisoBling,
+      ajusteBling,
     });
   } catch (e) {
     next(e);

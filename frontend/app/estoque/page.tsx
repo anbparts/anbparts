@@ -268,7 +268,10 @@ function ActionIconButton({ onClick, disabled = false, title = 'Acoes da peca' }
   );
 }
 
-function StatusLinkButton({ disponivel, link, pendente = false }: { disponivel: boolean; link: string | null | undefined; pendente?: boolean }) {
+function StatusLinkButton({ disponivel, link, pendente = false, emRevisao = false }: { disponivel: boolean; link: string | null | undefined; pendente?: boolean; emRevisao?: boolean }) {
+  if (emRevisao) {
+    return <span title="Peca devolvida por cancelamento de venda: aguardando revisao em Pendencias > Devolucoes" style={{ padding: '2px 8px', borderRadius: 99, fontSize: 11, fontFamily: 'Geist Mono, monospace', border: '1px solid #fde68a', background: '#fffbeb', color: '#92400e', fontWeight: 700, whiteSpace: 'nowrap' }}>Em Revisão</span>;
+  }
   const enabled = hasMercadoLivreLink(link);
   const label = pendente ? 'Pendente' : disponivel ? 'Estoque' : 'Vendido';
 
@@ -3090,6 +3093,8 @@ function PecaDetalheNovaModal({ open, peca, onClose, onSaved, canEditarPeca = fa
   const motoLabel = peca.moto ? `${peca.moto.marca || ''} ${peca.moto.modelo || ''}`.trim() : `Moto #${peca.motoId}`;
   const statusChip = emPrejuizo
     ? { texto: 'Prejuízo', cor: '#b91c1c', fundo: '#fee2e2' }
+    : peca.emRevisao
+      ? { texto: 'Em Revisão', cor: '#92400e', fundo: '#fffbeb' }
     : !peca.disponivel
       ? { texto: `Vendida${peca.blingPedidoNum ? ` · pedido ${peca.blingPedidoNum}` : ''}`, cor: '#92400e', fundo: '#fef3c7' }
       : peca.etiquetaPendente
@@ -3692,7 +3697,8 @@ export default function EstoquePage() {
     };
     if (filters.motoId) params.motoId = filters.motoId;
     if (filters.marca) params.marca = filters.marca;
-    if (filters.disponivel !== '') params.disponivel = filters.disponivel;
+    if (filters.disponivel === 'revisao') params.emRevisao = 'true';
+    else if (filters.disponivel !== '') params.disponivel = filters.disponivel;
     if (filters.mercadoLivreLink !== '') params.mercadoLivreLink = filters.mercadoLivreLink;
     if (filters.localizacao !== '') params.localizacao = filters.localizacao;
     if (filters.caixas.length) params.caixas = filters.caixas;
@@ -4209,7 +4215,7 @@ export default function EstoquePage() {
         'ID Peca': p.idPeca,
         'Descricao': p.descricao,
         'Moto': p.moto ? `${p.moto.marca} ${p.moto.modelo}` : '',
-        'Status': p.emPrejuizo ? 'Prejuizo' : p.etiquetaPendente ? 'Pendente etiqueta' : p.disponivel ? 'Em estoque' : 'Vendida',
+        'Status': p.emPrejuizo ? 'Prejuizo' : p.emRevisao ? 'Em Revisao' : p.etiquetaPendente ? 'Pendente etiqueta' : p.disponivel ? 'Em estoque' : 'Vendida',
         'Localizacao': p.localizacao || '',
         'Numero de Peca': p.numeroPeca || '',
         'Preco ML': Number(p.precoML) || 0,
@@ -4664,6 +4670,7 @@ export default function EstoquePage() {
                 <option value="">Todos status</option>
                 <option value="true">Em estoque</option>
                 <option value="false">Vendido</option>
+                <option value="revisao">Em Revisão</option>
               </select>
               <select style={{ ...cs.sel, width: '100%' }} value={filters.mercadoLivreLink} onChange={(e) => setFilters({ ...filters, mercadoLivreLink: e.target.value, page: 1 })}>
                 <option value="">Link ML</option>
@@ -4963,7 +4970,7 @@ export default function EstoquePage() {
                         {bloqueadaPrejuizo ? (
                           <PrejuizoBadge />
                         ) : (
-                          <StatusLinkButton disponivel={Boolean(p.disponivel)} link={p.mercadoLivreLink} pendente={Boolean(p.etiquetaPendente)} />
+                          <StatusLinkButton disponivel={Boolean(p.disponivel)} link={p.mercadoLivreLink} pendente={Boolean(p.etiquetaPendente)} emRevisao={Boolean(p.emRevisao)} />
                         )}
                         {hasDetranEtiqueta(p.detranEtiqueta) ? (
                           <button
@@ -5128,7 +5135,7 @@ export default function EstoquePage() {
                             {isPrejuizoPeca(p) ? (
                               <PrejuizoBadge />
                             ) : (
-                              <StatusLinkButton disponivel={Boolean(p.disponivel)} link={p.mercadoLivreLink} pendente={Boolean(p.etiquetaPendente)} />
+                              <StatusLinkButton disponivel={Boolean(p.disponivel)} link={p.mercadoLivreLink} pendente={Boolean(p.etiquetaPendente)} emRevisao={Boolean(p.emRevisao)} />
                             )}
                           </td>}
                           <td style={{ ...cs.td, padding: denseTablePadding, textAlign: 'center' }}>

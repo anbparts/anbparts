@@ -1,4 +1,5 @@
 import { prisma } from './prisma';
+import { garantirTabelaRevisao, registrarRevisao } from './pecas-revisao';
 
 type FinancialUpdate = {
   precoML?: number;
@@ -9,6 +10,8 @@ type FinancialUpdate = {
 
 type CancelamentoOptions = {
   observacoes?: string;
+  // Cancelamento importado do Bling: os valores da venda sao estornados, mas a peca NAO volta ao estoque; fica "Em Revisao" ate ser liberada em Pendencias > Devolucoes
+  enviarParaRevisao?: boolean;
   resolveFinancials?: (peca: any) => FinancialUpdate;
 };
 
@@ -69,6 +72,8 @@ export async function cancelarVendaComDevolucaoEtiqueta(ids: number[], options: 
     return { ok: true, ids: [], pecas: [], devolucoesCriadas: 0, etiquetasPendentes: 0 };
   }
 
+  if (options.enviarParaRevisao) await garantirTabelaRevisao();
+
   return prisma.$transaction(async (tx: any) => {
     const pecas = await tx.peca.findMany({
       where: { id: { in: safeIds } },
@@ -121,8 +126,16 @@ export async function cancelarVendaComDevolucaoEtiqueta(ids: number[], options: 
       }
 
       const financials = options.resolveFinancials ? options.resolveFinancials(peca) : {};
+      const irParaRevisao = !!options.enviarParaRevisao && vendaCancelavel;
+      if (irParaRevisao) {
+        // guarda o que foi vendido/estornado antes de zerar os dados da venda
+        await registrarRevisao(tx, {
+          pecaId: peca.id, pedidoNum: peca.blingPedidoNum, pedidoId: peca.blingPedidoId, dataVenda: peca.dataVenda,
+          precoML: peca.precoML, valorLiq: peca.valorLiq, valorFrete: peca.valorFrete, valorTaxas: peca.valorTaxas, motivo: options.observacoes || 'Cancelamento de venda',
+        });
+      }
       const updateData: any = {
-        disponivel: true,
+        disponivel: !irParaRevisao,
         emPrejuizo: false,
         dataVenda: null,
         blingPedidoId: null,

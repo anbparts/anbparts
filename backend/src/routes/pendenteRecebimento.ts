@@ -3,6 +3,8 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { montarRelatorioVendas } from './bling';
+import { garantirTabelaRevisao, marcarRevisada, enviarParaPrejuizo, processarSaidaBling, MOTIVOS_PREJUIZO } from '../lib/pecas-revisao';
+import { garantirTabelasPedidos } from '../lib/bling-pedidos';
 
 export const pendenteRecebimentoRouter = Router();
 
@@ -22,12 +24,17 @@ function garantirTabela() {
 const usuario = (req: any) => String(req.authUser?.username || '').trim() || null;
 const numeroPedido = (v: any) => String(v ?? '').trim().slice(0, 60);
 
-function podeBaixar(req: any) {
+function temAcao(req: any, acao: string) {
   const user = req.authUser || {};
   if (user.isAdmin || String(user.username || '').trim().toLowerCase() === 'bruno') return true;
-  const acoes = user.permissions?.pendente_recebimento;
-  return Array.isArray(acoes) && acoes.includes('baixar');
+  // chave nova (Pendencias) ou a antiga (Pendente Recebimento), para nao perder quem ja tinha acesso
+  for (const chave of ['pendencias', 'pendente_recebimento']) {
+    const acoes = user.permissions?.[chave];
+    if (Array.isArray(acoes) && acoes.includes(acao)) return true;
+  }
+  return false;
 }
+const podeBaixar = (req: any) => temAcao(req, 'baixar');
 
 // GET /pendente-recebimento/status?pedidos=1,2,3 — situacao de cada pedido (usado pelo botao do Relatorio de Vendas)
 pendenteRecebimentoRouter.get('/status', async (req, res, next) => {
@@ -123,5 +130,74 @@ pendenteRecebimentoRouter.get('/', async (req, res, next) => {
     });
     const total = itens.reduce((acc, i) => acc + Number(i.pedido.subtotalValorLiq || 0), 0);
     res.json({ ok: true, status, itens, resumo: { pedidos: itens.length, valorLiq: Math.round(total * 100) / 100 }, podeBaixar: podeBaixar(req) });
+  } catch (e) { next(e); }
+});
+
+// ───────────── Devolucoes (pecas em revisao apos cancelamento de venda) ─────────────
+
+// GET /pendencias/devolucoes?status=em_revisao|revisada
+pendenteRecebimentoRouter.get('/devolucoes', async (req, res, next) => {
+  try {
+    await garantirTabelaRevisao();
+    await garantirTabelasPedidos();
+    const status = String(req.query.status || 'em_revisao') === 'revisada' ? 'revisada' : 'em_revisao';
+    const rows = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT r."pecaId", r."pedidoNum", r."pedidoId", r."dataVenda"::text AS "dataVenda", r."precoML", r."valorLiq", r."valorFrete", r."valorTaxas", r."motivo", r."status",
+              r."criadoEm", r."revisadaEm", r."revisadaPor", r."observacao", r."blingSaida", r."blingSaidaErro",
+              p."idPeca", p."descricao", p."localizacao", p."detranEtiqueta", p."etiquetaPendente", p."precoML" AS "precoAtual",
+              m."marca", m."modelo", m."ano", b."clienteNome", b."canal", b."situacao"
+       FROM "PecaEmRevisao" r
+       JOIN "Peca" p ON p."id" = r."pecaId"
+       LEFT JOIN "Moto" m ON m."id" = p."motoId"
+       LEFT JOIN "BlingPedido" b ON r."pedidoId" ~ '^[0-9]+$' AND b."id" = r."pedidoId"::bigint
+       WHERE ${status === 'revisada' ? `r."status" IN ('revisada','prejuizo')` : `r."status" = 'em_revisao'`}
+       ORDER BY ${status === 'revisada' ? 'r."revisadaEm"' : 'r."criadoEm"'} DESC LIMIT 500`,
+    );
+    res.json({
+      ok: true, status, podeRevisar: temAcao(req, 'revisar'), motivosPrejuizo: MOTIVOS_PREJUIZO,
+      itens: rows.map((r) => ({
+        pecaId: Number(r.pecaId), idPeca: r.idPeca, descricao: r.descricao, localizacao: r.localizacao, detranEtiqueta: r.detranEtiqueta, etiquetaPendente: !!r.etiquetaPendente,
+        moto: [r.marca, r.modelo, r.ano].filter(Boolean).join(' '),
+        pedido: { num: r.pedidoNum, id: r.pedidoId, dataVenda: r.dataVenda, clienteNome: r.clienteNome, canal: r.canal, situacao: r.situacao },
+        estornado: { precoML: Number(r.precoML || 0), valorLiq: Number(r.valorLiq || 0), valorFrete: Number(r.valorFrete || 0), valorTaxas: Number(r.valorTaxas || 0) },
+        blingSaida: !!r.blingSaida, blingSaidaErro: r.blingSaidaErro || null, motivo: r.motivo, status: r.status, criadoEm: r.criadoEm, revisadaEm: r.revisadaEm, revisadaPor: r.revisadaPor, observacao: r.observacao,
+      })),
+    });
+  } catch (e) { next(e); }
+});
+
+// POST /pendencias/devolucoes/revisar { pecaId, observacao? } — peca revisada: volta ao estoque
+pendenteRecebimentoRouter.post('/devolucoes/revisar', async (req, res, next) => {
+  try {
+    if (!temAcao(req, 'revisar')) return res.status(403).json({ ok: false, error: 'Seu usuario nao tem permissao para liberar pecas em revisao.' });
+    const pecaId = Number(req.body?.pecaId);
+    if (!Number.isInteger(pecaId) || pecaId <= 0) return res.status(400).json({ ok: false, error: 'Informe a peca.' });
+    const r = await marcarRevisada(pecaId, usuario(req), String(req.body?.observacao || '').trim().slice(0, 500) || null);
+    if (!r.ok) return res.status(400).json({ ok: false, error: r.erro || 'Nao foi possivel concluir a revisao.' });
+    res.json({ ok: true, ajusteBling: r.ajuste?.texto || null });
+  } catch (e) { next(e); }
+});
+
+// POST /pendencias/devolucoes/prejuizo { pecaId, motivo, observacao? } — voltou com defeito: vai para Prejuizo
+pendenteRecebimentoRouter.post('/devolucoes/prejuizo', async (req, res, next) => {
+  try {
+    if (!temAcao(req, 'revisar')) return res.status(403).json({ ok: false, error: 'Seu usuario nao tem permissao para tratar pecas em revisao.' });
+    const pecaId = Number(req.body?.pecaId);
+    if (!Number.isInteger(pecaId) || pecaId <= 0) return res.status(400).json({ ok: false, error: 'Informe a peca.' });
+    const r = await enviarParaPrejuizo(pecaId, String(req.body?.motivo || 'Defeito').trim(), String(req.body?.observacao || '').trim().slice(0, 500) || null, usuario(req));
+    if (!r.ok) return res.status(400).json({ ok: false, error: r.erro || 'Nao foi possivel enviar para prejuizo.' });
+    res.json({ ok: true, ajusteBling: r.ajuste?.texto || null });
+  } catch (e) { next(e); }
+});
+
+// POST /pendencias/devolucoes/tentar-bling { pecaId } — repete a saida de estoque no Bling que tinha falhado
+pendenteRecebimentoRouter.post('/devolucoes/tentar-bling', async (req, res, next) => {
+  try {
+    if (!temAcao(req, 'revisar')) return res.status(403).json({ ok: false, error: 'Seu usuario nao tem permissao.' });
+    const pecaId = Number(req.body?.pecaId);
+    if (!Number.isInteger(pecaId) || pecaId <= 0) return res.status(400).json({ ok: false, error: 'Informe a peca.' });
+    const r = await processarSaidaBling([pecaId]);
+    if (r.erros.length) return res.status(400).json({ ok: false, error: r.erros[0] });
+    res.json({ ok: true, saidas: r.saidas, ajusteBling: r.ajustes.map((a) => a.texto).join(' | ') || null });
   } catch (e) { next(e); }
 });
