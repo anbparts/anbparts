@@ -217,19 +217,11 @@ devolucoesRouter.get('/pendentes-etiqueta', async (_req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// -- POST /devolucoes/pendentes-etiqueta/:pecaId/nova-etiqueta
-// Finaliza a pendencia de devolucao cadastrando uma nova etiqueta Detran.
-devolucoesRouter.post('/pendentes-etiqueta/:pecaId/nova-etiqueta', requirePendenciaEtiquetaAction, async (req, res, next) => {
-  try {
-    const pecaId = Number(req.params.pecaId);
-    const novaEtiqueta = String(req.body?.detranEtiqueta || req.body?.novaEtiqueta || '').trim().toUpperCase();
-
-    if (!Number.isFinite(pecaId) || pecaId <= 0) {
-      return res.status(400).json({ ok: false, error: 'pecaId invalido' });
-    }
-    if (!novaEtiqueta) {
-      return res.status(400).json({ ok: false, error: 'Nova etiqueta obrigatoria' });
-    }
+// Atribui a nova etiqueta Detran a uma peca com etiqueta pendente (usada pela rota abaixo e por Pendencias > Devolucoes ao concluir a revisao)
+export async function atribuirNovaEtiquetaPeca(pecaId: number, novaEtiquetaBruta: string): Promise<{ status: number; body: any }> {
+    const novaEtiqueta = String(novaEtiquetaBruta || '').trim().toUpperCase();
+    if (!Number.isFinite(pecaId) || pecaId <= 0) return { status: 400, body: { ok: false, error: 'pecaId invalido' } };
+    if (!novaEtiqueta) return { status: 400, body: { ok: false, error: 'Nova etiqueta obrigatoria' } };
 
     const peca = await prisma.peca.findUnique({
       where: { id: pecaId },
@@ -247,9 +239,9 @@ devolucoesRouter.post('/pendentes-etiqueta/:pecaId/nova-etiqueta', requirePenden
       },
     });
 
-    if (!peca) return res.status(404).json({ ok: false, error: 'Peca nao encontrada' });
+    if (!peca) return { status: 404, body: { ok: false, error: 'Peca nao encontrada' } };
     if (!peca.etiquetaPendente) {
-      return res.status(400).json({ ok: false, error: 'Peca nao possui pendencia de etiqueta' });
+      return { status: 400, body: { ok: false, error: 'Peca nao possui pendencia de etiqueta' } };
     }
 
     const etiquetaEmUso = await prisma.peca.findFirst({
@@ -261,11 +253,11 @@ devolucoesRouter.post('/pendentes-etiqueta/:pecaId/nova-etiqueta', requirePenden
     });
 
     if (etiquetaEmUso) {
-      return res.status(409).json({ ok: false, error: `Etiqueta ja esta cadastrada no SKU ${etiquetaEmUso.idPeca}` });
+      return { status: 409, body: { ok: false, error: `Etiqueta ja esta cadastrada no SKU ${etiquetaEmUso.idPeca}` } };
     }
     // Listagem comprada + nunca em outro SKU (inclui pre-cadastro, etiquetas multiplas e historico de devolucao).
     const erroEtiqueta = await validarEtiquetasParaSku({ etiquetas: [novaEtiqueta], skuBase: peca.idPeca, motoId: peca.motoId });
-    if (erroEtiqueta) return res.status(409).json({ ok: false, error: erroEtiqueta });
+    if (erroEtiqueta) return { status: 409, body: { ok: false, error: erroEtiqueta } };
 
     // Verifica se a nova etiqueta e de cartela (bate com a cartela da moto) ou avulsa —
     // mesma regra do pre-cadastro. Se for avulsa, marca a data de atribuicao (peca pode ter
@@ -333,6 +325,14 @@ devolucoesRouter.post('/pendentes-etiqueta/:pecaId/nova-etiqueta', requirePenden
       }
     }
 
-    res.json({ ok: true, peca: atualizada, ehAvulsa });
+    return { status: 200, body: { ok: true, peca: atualizada, ehAvulsa } };
+}
+
+// -- POST /devolucoes/pendentes-etiqueta/:pecaId/nova-etiqueta
+// Finaliza a pendencia de devolucao cadastrando uma nova etiqueta Detran.
+devolucoesRouter.post('/pendentes-etiqueta/:pecaId/nova-etiqueta', requirePendenciaEtiquetaAction, async (req, res, next) => {
+  try {
+    const r = await atribuirNovaEtiquetaPeca(Number(req.params.pecaId), String(req.body?.detranEtiqueta || req.body?.novaEtiqueta || ''));
+    res.status(r.status).json(r.body);
   } catch (e) { next(e); }
 });

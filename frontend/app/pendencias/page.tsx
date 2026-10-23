@@ -284,19 +284,21 @@ function DevolucoesTab() {
   }
   const [nfEntrada, setNfEntrada] = useState('');
   const [obsRevisao, setObsRevisao] = useState('');
+  const [novaEtq, setNovaEtq] = useState('');
   const [erroRevisao, setErroRevisao] = useState('');
 
   function revisar(it: ItemDev) {
-    setRevisarDe(it); setNfEntrada(it.nfEntrada || ''); setObsRevisao(''); setErroRevisao('');
+    setRevisarDe(it); setNfEntrada(it.nfEntrada || ''); setObsRevisao(''); setNovaEtq(''); setErroRevisao('');
   }
 
   async function confirmarRevisao() {
     if (!revisarDe) return;
     const nf = nfEntrada.trim();
     if (!nf) { setErroRevisao('Informe o número da NF de entrada. A peça só sai de "Em revisão" depois que a nota de entrada foi emitida.'); return; }
+    if (revisarDe.etiquetaPendente && !novaEtq.trim()) { setErroRevisao('Esta peça está com a etiqueta Detran pendente. Informe a nova etiqueta para concluir a revisão.'); return; }
     setAgindo(revisarDe.pecaId); setErroRevisao('');
     try {
-      const resp = await fetch(`${API}/pendencias/devolucoes/revisar`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pecaId: revisarDe.pecaId, observacao: obsRevisao, nfEntrada: nf }) });
+      const resp = await fetch(`${API}/pendencias/devolucoes/revisar`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pecaId: revisarDe.pecaId, observacao: obsRevisao, nfEntrada: nf, novaEtiqueta: novaEtq.trim().toUpperCase() }) });
       const d = await resp.json().catch(() => ({}));
       if (!resp.ok || d.ok === false) throw new Error(d.error || `Erro ${resp.status}`);
       setRevisarDe(null);
@@ -420,6 +422,13 @@ function DevolucoesTab() {
             <label style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--gray-500)' }}>NF de entrada (retorno) *</label>
             <input value={nfEntrada} onChange={(e) => setNfEntrada(e.target.value)} placeholder="Número da nota fiscal de entrada" autoFocus style={{ width: '100%', padding: '8px 10px', border: '1px solid ' + (erroRevisao && !nfEntrada.trim() ? '#fca5a5' : 'var(--border)'), borderRadius: 8, marginBottom: 4, marginTop: 4, boxSizing: 'border-box', fontFamily: 'JetBrains Mono, monospace' }} />
             <div style={{ fontSize: 11.5, color: 'var(--gray-500)', marginBottom: 12 }}>Obrigatória: emita a nota de entrada da peça devolvida e informe o número aqui.</div>
+            {revisarDe.etiquetaPendente ? (
+              <>
+                <label style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--gray-500)' }}>Nova etiqueta Detran *</label>
+                <input value={novaEtq} onChange={(e) => setNovaEtq(e.target.value.toUpperCase())} placeholder="Ex: SP2210202..." style={{ width: '100%', padding: '8px 10px', border: '1px solid ' + (erroRevisao && !novaEtq.trim() ? '#fca5a5' : 'var(--border)'), borderRadius: 8, marginBottom: 4, marginTop: 4, boxSizing: 'border-box', fontFamily: 'JetBrains Mono, monospace' }} />
+                <div style={{ fontSize: 11.5, color: 'var(--gray-500)', marginBottom: 12 }}>Obrigatória: a etiqueta anterior desta peça foi baixada na venda. Informe a nova para ela voltar ao estoque.</div>
+              </>
+            ) : null}
             <label style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--gray-500)' }}>Observação da revisão (opcional)</label>
             <textarea value={obsRevisao} onChange={(e) => setObsRevisao(e.target.value)} rows={2} style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 8, marginTop: 4, boxSizing: 'border-box', fontFamily: 'inherit' }} />
             {erroRevisao ? <div style={{ marginTop: 10, fontSize: 12.5, color: '#b91c1c' }}>{erroRevisao}</div> : null}

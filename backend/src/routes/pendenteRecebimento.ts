@@ -5,6 +5,7 @@ import { prisma } from '../lib/prisma';
 import { montarRelatorioVendas } from './bling';
 import { garantirTabelaRevisao, marcarRevisada, enviarParaPrejuizo, processarSaidaBling, MOTIVOS_PREJUIZO } from '../lib/pecas-revisao';
 import { garantirTabelasPedidos } from '../lib/bling-pedidos';
+import { atribuirNovaEtiquetaPeca } from './devolucoes';
 import { garantirTabelasDevolucao, nfEntradaDaPeca, salvarNfEntrada } from '../lib/devolucao-historico';
 
 export const pendenteRecebimentoRouter = Router();
@@ -197,6 +198,14 @@ pendenteRecebimentoRouter.post('/devolucoes/revisar', async (req, res, next) => 
     // a peca so sai de "Em revisao" com a NF de entrada (retorno) emitida e informada
     const nfEntrada = String(req.body?.nfEntrada || '').trim().slice(0, 40) || await nfEntradaDaPeca(pecaId);
     if (!nfEntrada) return res.status(400).json({ ok: false, error: 'Informe a nota fiscal de entrada (retorno) desta peca. Ela so pode ser marcada como revisada depois que a NF de entrada for emitida.' });
+    // peca com etiqueta Detran pendente (a anterior foi baixada na venda): so sai da revisao com a nova etiqueta informada
+    const pecaEtq = await prisma.peca.findUnique({ where: { id: pecaId }, select: { etiquetaPendente: true } });
+    if (pecaEtq?.etiquetaPendente) {
+      const nova = String(req.body?.novaEtiqueta || '').trim();
+      if (!nova) return res.status(400).json({ ok: false, error: 'Esta peca esta com a etiqueta Detran pendente. Informe a nova etiqueta para concluir a revisao.' });
+      const ret = await atribuirNovaEtiquetaPeca(pecaId, nova);
+      if (ret.status !== 200) return res.status(ret.status).json({ ok: false, error: ret.body?.error || 'Nao foi possivel atribuir a nova etiqueta.' });
+    }
     await salvarNfEntrada(pecaId, nfEntrada, usuario(req));
     const r = await marcarRevisada(pecaId, usuario(req), String(req.body?.observacao || '').trim().slice(0, 500) || null);
     if (!r.ok) return res.status(400).json({ ok: false, error: r.erro || 'Nao foi possivel concluir a revisao.' });
