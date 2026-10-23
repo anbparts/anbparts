@@ -90,8 +90,8 @@ type Resposta = {
   itens: Registro[];
 };
 
-// larguras fixas das colunas (px): a tabela rola na horizontal em vez de espremer o conteudo
-const COLS = [158, 280, 160, 210, 130, 150, 125, 200, 96];
+// larguras das colunas em %: a tabela ocupa a tela toda, sem barra de rolagem
+const COLS = [13, 23, 11, 13, 9, 12, 9, 10];
 
 const ORIGENS: Record<string, string> = {
   cancelamento_importado: 'Cancelamento importado', cancelamento_estoque: 'Cancelamento no estoque', devolucao_manual: 'Devolução registrada', historico_antigo: 'Histórico anterior',
@@ -370,12 +370,8 @@ export default function DevolucoesTab({ padding }: { padding: number }) {
   };
 
   const chipMotivo = (r: Registro) => r.motivoNome
-    ? <span style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 10px', borderRadius: 99, background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', whiteSpace: 'nowrap' }}>{r.motivoNome}</span>
+    ? <span style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 10px', borderRadius: 12, background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', display: 'inline-block', lineHeight: 1.25 }}>{r.motivoNome}</span>
     : <span style={{ fontSize: 11.5, fontWeight: 600, padding: '3px 10px', borderRadius: 99, background: '#fffbeb', color: '#92400e', border: '1px dashed #fcd34d', whiteSpace: 'nowrap' }}>Sem motivo</span>;
-
-  const botaoEditar = (r: Registro) => podeEditar ? (
-    <button type="button" onClick={() => setEditar(r)} style={{ border: '1px solid var(--border)', background: 'var(--white)', borderRadius: 7, padding: '4px 10px', fontSize: 12, fontWeight: 600, color: 'var(--gray-700)', cursor: 'pointer' }}>Editar</button>
-  ) : null;
 
   return (
     <div style={{ padding, maxWidth: 1500 }}>
@@ -459,7 +455,7 @@ export default function DevolucoesTab({ padding }: { padding: number }) {
                 <CanalBadge canal={r.canal} />
                 <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--blue-500)', marginLeft: 'auto' }}>{brl(r.valor)}</span>
               </div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 10, flexWrap: 'wrap' }}><ChipStatus r={r} />{etiquetasDe(r).length ? <ChipEtiqueta r={r} onAbrir={setVerEtiquetas} /> : null}{chipMotivo(r)}{botaoEditar(r)}</div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 10, flexWrap: 'wrap' }}><ChipStatus r={r} />{etiquetasDe(r).length ? <ChipEtiqueta r={r} onAbrir={setVerEtiquetas} /> : null}{chipMotivo(r)}</div>
               {r.observacao ? <div style={{ fontSize: 12, color: 'var(--gray-600)', marginTop: 8 }}>Obs.: {r.observacao}</div> : null}
               <button type="button" onClick={() => alternar(r.id)} style={{ marginTop: 10, background: 'none', border: 'none', color: 'var(--blue-500)', cursor: 'pointer', fontSize: 12.5, padding: 0, fontWeight: 600 }}>{abertas[r.id] ? 'Ocultar detalhes ▴' : 'Ver detalhes ▾'}</button>
               {abertas[r.id] ? <div style={{ margin: '12px -14px -14px', borderRadius: '0 0 12px 12px', overflow: 'hidden' }}><DetalhesRegistro r={r} podeEditar={podeEditar} onEditar={setEditar} onCompletar={completarBling} completando={completando === r.id} /></div> : null}
@@ -469,11 +465,11 @@ export default function DevolucoesTab({ padding }: { padding: number }) {
       ) : (
         <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ borderCollapse: 'collapse', fontSize: 13, tableLayout: 'fixed', width: COLS.reduce((a, c) => a + c, 0), minWidth: '100%' }}>
-              <colgroup>{COLS.map((w, i) => <col key={i} style={{ width: w }} />)}</colgroup>
+            <table style={{ borderCollapse: 'collapse', fontSize: 13, tableLayout: 'fixed', width: '100%', minWidth: 960 }}>
+              <colgroup>{COLS.map((w, i) => <col key={i} style={{ width: `${w}%` }} />)}</colgroup>
               <thead>
                 <tr style={{ background: 'var(--gray-50, #f9fafb)', textAlign: 'left' }}>
-                  {['Devolução', 'Peça', 'Pedido', 'Moto', 'Valor', 'Etiqueta Detran', 'Status atual', 'Motivo', ''].map((h, i) => (
+                  {['Devolução', 'Peça', 'Pedido', 'Moto', 'Valor', 'Etiqueta Detran', 'Status atual', 'Motivo'].map((h, i) => (
                     <th key={i} style={{ padding: '10px 12px', fontSize: 10.5, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '0.5px', borderBottom: '1px solid var(--border)', textAlign: h === 'Valor' ? 'right' : 'left', whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -514,7 +510,6 @@ export default function DevolucoesTab({ padding }: { padding: number }) {
                     <td style={{ padding: '10px 12px' }}><ChipEtiqueta r={r} onAbrir={setVerEtiquetas} /></td>
                     <td style={{ padding: '10px 12px' }}><ChipStatus r={r} /></td>
                     <td style={{ padding: '10px 12px' }}>{chipMotivo(r)}</td>
-                    <td style={{ padding: '10px 12px', textAlign: 'right' }}>{botaoEditar(r)}</td>
                   </tr>
                   {abertas[r.id] ? <tr style={{ borderBottom: '1px solid var(--border)' }}><td colSpan={COLS.length} style={{ padding: 0 }}><DetalhesRegistro r={r} podeEditar={podeEditar} onEditar={setEditar} onCompletar={completarBling} completando={completando === r.id} /></td></tr> : null}
                   </Fragment>
