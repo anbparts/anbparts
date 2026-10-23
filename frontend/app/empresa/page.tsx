@@ -5,6 +5,7 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { canProcessAction } from '@/lib/permissions';
 import FornecedoresTab from './FornecedoresTab';
+import OficinasTab from './OficinasTab';
 import AcessosTab from './AcessosTab';
 import { usePersistentTab } from '@/lib/use-persistent-tab';
 
@@ -160,7 +161,7 @@ export default function EmpresaPage() {
   const [feedback, setFeedback] = useState('');
   const [localError, setLocalError] = useState('');
   const [isPhone, setIsPhone] = useState(false);
-  const [aba, setAba] = usePersistentTab<'dados' | 'anexos' | 'acessos' | 'fornecedores'>('aba', 'dados', ['dados', 'anexos', 'acessos', 'fornecedores']);
+  const [aba, setAba] = usePersistentTab<'dados' | 'anexos' | 'acessos' | 'fornecedores' | 'oficinas'>('aba', 'dados', ['dados', 'anexos', 'acessos', 'fornecedores', 'oficinas']);
   const [snapshotDados, setSnapshotDados] = useState('');
   const [extras, setExtras] = useState<Array<{ id: string; name: string; dataUrl?: string } | null>>([]);
   const [contasBancarias, setContasBancarias] = useState<ContaBancaria[]>([]);
@@ -365,7 +366,8 @@ export default function EmpresaPage() {
           { id: 'anexos', label: 'Anexos Adicionais', sujo: dirtyAnexos },
           { id: 'acessos', label: 'Acessos e Senhas', sujo: false },
           { id: 'fornecedores', label: 'Fornecedores', sujo: false },
-        ] as Array<{ id: 'dados' | 'anexos' | 'acessos' | 'fornecedores'; label: string; sujo: boolean }>).map((tab) => {
+          { id: 'oficinas', label: 'Oficinas', sujo: false },
+        ] as Array<{ id: 'dados' | 'anexos' | 'acessos' | 'fornecedores' | 'oficinas'; label: string; sujo: boolean }>).map((tab) => {
           const ativa = aba === tab.id;
           return (
             <button key={tab.id} type="button" onClick={() => setAba(tab.id)}
@@ -378,6 +380,7 @@ export default function EmpresaPage() {
 
       <div style={{ padding: isPhone ? 14 : 28, display: 'grid', gap: 18 }}>
         {aba === 'fornecedores' && <FornecedoresTab canEdit isPhone={isPhone} />}
+        {aba === 'oficinas' && <OficinasTab canEdit isPhone={isPhone} />}
 
         {aba === 'dados' && (<>
         <div style={cs.card}>

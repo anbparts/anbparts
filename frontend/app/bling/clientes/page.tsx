@@ -67,6 +67,8 @@ export default function BlingClientesPage() {
   const [expandido, setExpandido] = useState<string | null>(null);
   const [detalhes, setDetalhes] = useState<Record<string, any>>({});
   const [exportando, setExportando] = useState(false);
+  const [oficinaIds, setOficinaIds] = useState<Set<string>>(new Set());
+  const [levando, setLevando] = useState<string | null>(null);
 
   async function chamar(path: string, init?: RequestInit) {
     const resp = await fetch(`${API}${path}`, { credentials: 'include', ...init });
@@ -84,6 +86,21 @@ export default function BlingClientesPage() {
     setCarregando(false);
   }
   useEffect(() => { carregar(1); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    chamar('/oficinas/clientes-ids').then((d) => setOficinaIds(new Set<string>((d.ids || []) as string[]))).catch(() => undefined);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Leva o cliente para Empresa > Oficinas (copia os dados de cadastro; o cliente continua aqui, com o selo)
+  async function levarParaOficinas(id: string, nome: string) {
+    if (!confirm(`Levar "${nome}" para a aba Oficinas (Empresa)? Os dados de cadastro são copiados e você pode completar lá.`)) return;
+    setLevando(id);
+    try {
+      const d = await chamar('/oficinas/de-cliente', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ clienteId: id }) });
+      setOficinaIds((prev) => { const novo = new Set<string>(); prev.forEach((x) => novo.add(x)); novo.add(id); return novo; });
+      alert(d.jaExistia ? 'Este cliente já estava em Oficinas.' : 'Cliente levado para Empresa > Oficinas.');
+    } catch (e: any) { alert(e?.message || 'Erro ao levar para Oficinas'); }
+    setLevando(null);
+  }
 
   async function expandir(id: string) {
     if (expandido === id) { setExpandido(null); return; }
@@ -194,7 +211,7 @@ export default function BlingClientesPage() {
                             <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                               <div style={{ width: 34, height: 34, borderRadius: '50%', background: 'var(--gray-100)', color: 'var(--ink-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 12, flexShrink: 0 }}>{iniciais(c.nome)}</div>
                               <div style={{ minWidth: 0 }}>
-                                <div style={{ fontWeight: 600 }}>{c.nome || '—'}{c.oficina ? <span title={rotuloOficina(c.oficina)} style={{ marginLeft: 8, fontSize: 10.5, fontWeight: 600, padding: '2px 8px', borderRadius: 99, background: c.oficina.nivel === 'provavel' ? '#fef3c7' : '#f1f5f9', color: c.oficina.nivel === 'provavel' ? '#92400e' : '#475569', border: '1px solid ' + (c.oficina.nivel === 'provavel' ? '#fde68a' : '#e2e8f0'), whiteSpace: 'nowrap' }}>🔧 {c.oficina.nivel === 'provavel' ? 'Provável oficina' : c.oficina.nivel === 'cnpj' ? 'CNPJ' : 'Nome'}</span> : null}</div>
+                                <div style={{ fontWeight: 600 }}>{c.nome || '—'}{oficinaIds.has(c.id) ? <span style={{ marginLeft: 8, fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0', whiteSpace: 'nowrap' }}>🔧 Em Oficinas</span> : null}{c.oficina ? <span title={rotuloOficina(c.oficina)} style={{ marginLeft: 8, fontSize: 10.5, fontWeight: 600, padding: '2px 8px', borderRadius: 99, background: c.oficina.nivel === 'provavel' ? '#fef3c7' : '#f1f5f9', color: c.oficina.nivel === 'provavel' ? '#92400e' : '#475569', border: '1px solid ' + (c.oficina.nivel === 'provavel' ? '#fde68a' : '#e2e8f0'), whiteSpace: 'nowrap' }}>🔧 {c.oficina.nivel === 'provavel' ? 'Provável oficina' : c.oficina.nivel === 'cnpj' ? 'CNPJ' : 'Nome'}</span> : null}</div>
                                 <div style={{ fontSize: 11.5, color: 'var(--ink-muted)' }}>{[fmtDoc(c.documento), c.cidade && `${c.cidade}${c.uf ? `/${c.uf}` : ''}`].filter(Boolean).join(' · ') || '—'}</div>
                               </div>
                             </div>
@@ -275,7 +292,12 @@ export default function BlingClientesPage() {
           <div>
             <div style={{ fontWeight: 700, marginBottom: 4 }}>Endereço</div>
             <div>{[c.endereco, c.bairro, c.cidade && `${c.cidade}${c.uf ? `/${c.uf}` : ''}`, c.cep].filter(Boolean).join(' · ') || '—'}</div>
-            {podeSincronizar ? <button type="button" style={{ ...s.btn, padding: '4px 12px', fontSize: 12, marginTop: 8 }} onClick={() => atualizarCliente(id)}>Atualizar dados no Bling</button> : null}
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+              {podeSincronizar ? <button type="button" style={{ ...s.btn, padding: '4px 12px', fontSize: 12 }} onClick={() => atualizarCliente(id)}>Atualizar dados no Bling</button> : null}
+              {oficinaIds.has(id)
+                ? <span style={{ ...s.btn, padding: '4px 12px', fontSize: 12, cursor: 'default', color: '#15803d', background: '#f0fdf4', borderColor: '#bbf7d0' }}>🔧 Já está em Oficinas</span>
+                : <button type="button" disabled={levando === id} style={{ ...s.btn, padding: '4px 12px', fontSize: 12, color: '#92400e', background: '#fffbeb', borderColor: '#fde68a' }} onClick={() => levarParaOficinas(id, c.nome || 'este cliente')}>{levando === id ? 'Levando...' : '🔧 Levar para Oficinas'}</button>}
+            </div>
           </div>
         </div>
 
