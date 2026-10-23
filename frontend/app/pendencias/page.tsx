@@ -219,6 +219,7 @@ type ItemDev = {
   motivo: string | null; status: string; criadoEm: string; revisadaEm: string | null; revisadaPor: string | null; observacao: string | null;
   blingSaida?: boolean; blingSaidaErro?: string | null;
   tipo?: { id: number; nome: string; observacao: string | null } | null;
+  nfEntrada?: string | null;
 };
 
 function DevolucoesTab() {
@@ -259,18 +260,29 @@ function DevolucoesTab() {
   }
   useEffect(() => { carregar(sub); }, [sub]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function revisar(it: ItemDev) {
-    if (!confirm(`Confirmar que a peça ${it.idPeca} foi revisada? Ela volta para o Estoque como disponível e o estoque do Bling é igualado ao total do sistema.`)) return;
-    const obs = prompt('Observação da revisão (opcional):');
-    if (obs === null) return;
-    setAgindo(it.pecaId);
+  // Revisar peca: exige a NF de entrada (retorno) emitida e informada
+  const [revisarDe, setRevisarDe] = useState<ItemDev | null>(null);
+  const [nfEntrada, setNfEntrada] = useState('');
+  const [obsRevisao, setObsRevisao] = useState('');
+  const [erroRevisao, setErroRevisao] = useState('');
+
+  function revisar(it: ItemDev) {
+    setRevisarDe(it); setNfEntrada(it.nfEntrada || ''); setObsRevisao(''); setErroRevisao('');
+  }
+
+  async function confirmarRevisao() {
+    if (!revisarDe) return;
+    const nf = nfEntrada.trim();
+    if (!nf) { setErroRevisao('Informe o número da NF de entrada. A peça só sai de "Em revisão" depois que a nota de entrada foi emitida.'); return; }
+    setAgindo(revisarDe.pecaId); setErroRevisao('');
     try {
-      const resp = await fetch(`${API}/pendencias/devolucoes/revisar`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pecaId: it.pecaId, observacao: obs }) });
+      const resp = await fetch(`${API}/pendencias/devolucoes/revisar`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pecaId: revisarDe.pecaId, observacao: obsRevisao, nfEntrada: nf }) });
       const d = await resp.json().catch(() => ({}));
       if (!resp.ok || d.ok === false) throw new Error(d.error || `Erro ${resp.status}`);
+      setRevisarDe(null);
       if (d.ajusteBling) alert(`Peça liberada.\nEstoque do Bling: ${d.ajusteBling}`);
       await carregar(sub);
-    } catch (e: any) { alert(e?.message || 'Erro'); }
+    } catch (e: any) { setErroRevisao(e?.message || 'Erro'); }
     setAgindo(null);
   }
 
@@ -332,6 +344,7 @@ function DevolucoesTab() {
                   <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: 14, color: 'var(--blue-500)' }}>{it.idPeca}</span>
                   <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 10px', borderRadius: 99, background: it.status === 'em_revisao' ? '#fffbeb' : it.status === 'prejuizo' ? '#fef2f2' : '#f0fdf4', color: it.status === 'em_revisao' ? '#92400e' : it.status === 'prejuizo' ? '#b91c1c' : '#15803d', border: '1px solid ' + (it.status === 'em_revisao' ? '#fde68a' : it.status === 'prejuizo' ? '#fecaca' : '#bbf7d0') }}>{it.status === 'em_revisao' ? 'Em Revisão' : it.status === 'prejuizo' ? 'Enviada para Prejuízo' : 'Revisada'}</span>
                   <CanalBadge canal={it.pedido.canal} />
+                  {it.nfEntrada ? <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 99, background: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0' }}>NF entrada {it.nfEntrada}</span> : it.status === 'em_revisao' ? <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 99, background: '#fffbeb', color: '#92400e', border: '1px dashed #fcd34d' }}>NF de entrada pendente</span> : null}
                   {it.tipo ? <span title={it.tipo.observacao || undefined} style={{ fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 99, background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' }}>{it.tipo.nome}</span> : <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 10px', borderRadius: 99, background: 'var(--white)', color: 'var(--gray-500)', border: '1px dashed var(--border)' }}>Sem motivo</span>}
                   {podeRevisar ? <button onClick={() => setMotivoDe(it)} style={{ ...s.btn, background: '#eff6ff', color: '#1d4ed8', borderColor: '#bfdbfe', fontWeight: 700 }}>{it.tipo ? 'Alterar motivo' : 'Informar motivo'}</button> : null}
                   {podeRevisar && it.status === 'em_revisao' ? <button onClick={() => revisar(it)} disabled={agindo === it.pecaId} style={{ ...s.btn, background: '#ecfdf5', color: '#047857', borderColor: '#a7f3d0', fontWeight: 700 }}>Marcar como revisada</button> : null}
@@ -362,6 +375,24 @@ function DevolucoesTab() {
           </div>
         ))}
       </div>
+      {revisarDe ? (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.5)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => setRevisarDe(null)}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--white)', borderRadius: 14, width: '100%', maxWidth: 460, padding: 20, boxShadow: '0 20px 60px rgba(0,0,0,.2)' }}>
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>Marcar como revisada</div>
+            <div style={{ fontSize: 12.5, color: 'var(--gray-500)', marginBottom: 14 }}>{revisarDe.idPeca} — {revisarDe.descricao}. A peça volta ao Estoque como disponível e o estoque do Bling é igualado ao total do sistema.</div>
+            <label style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--gray-500)' }}>NF de entrada (retorno) *</label>
+            <input value={nfEntrada} onChange={(e) => setNfEntrada(e.target.value)} placeholder="Número da nota fiscal de entrada" autoFocus style={{ width: '100%', padding: '8px 10px', border: '1px solid ' + (erroRevisao && !nfEntrada.trim() ? '#fca5a5' : 'var(--border)'), borderRadius: 8, marginBottom: 4, marginTop: 4, boxSizing: 'border-box', fontFamily: 'JetBrains Mono, monospace' }} />
+            <div style={{ fontSize: 11.5, color: 'var(--gray-500)', marginBottom: 12 }}>Obrigatória: emita a nota de entrada da peça devolvida e informe o número aqui.</div>
+            <label style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--gray-500)' }}>Observação da revisão (opcional)</label>
+            <textarea value={obsRevisao} onChange={(e) => setObsRevisao(e.target.value)} rows={2} style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 8, marginTop: 4, boxSizing: 'border-box', fontFamily: 'inherit' }} />
+            {erroRevisao ? <div style={{ marginTop: 10, fontSize: 12.5, color: '#b91c1c' }}>{erroRevisao}</div> : null}
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
+              <button onClick={() => setRevisarDe(null)} style={{ ...s.btn, background: 'var(--white)', color: 'var(--gray-700)', borderColor: 'var(--border)' }}>Cancelar</button>
+              <button onClick={confirmarRevisao} disabled={agindo === revisarDe.pecaId} style={{ ...s.btn, background: '#047857', color: '#fff', borderColor: '#047857', fontWeight: 700 }}>{agindo === revisarDe.pecaId ? 'Salvando...' : 'Confirmar revisão'}</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {motivoDe ? (
         <MotivoDevolucaoModal
           subtitulo={`${motivoDe.idPeca} — ${motivoDe.descricao}${motivoDe.pedido.num ? ` · pedido #${motivoDe.pedido.num}` : ''}`}

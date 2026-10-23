@@ -5,7 +5,7 @@ import { prisma } from '../lib/prisma';
 import { montarRelatorioVendas } from './bling';
 import { garantirTabelaRevisao, marcarRevisada, enviarParaPrejuizo, processarSaidaBling, MOTIVOS_PREJUIZO } from '../lib/pecas-revisao';
 import { garantirTabelasPedidos } from '../lib/bling-pedidos';
-import { garantirTabelasDevolucao } from '../lib/devolucao-historico';
+import { garantirTabelasDevolucao, nfEntradaDaPeca, salvarNfEntrada } from '../lib/devolucao-historico';
 
 export const pendenteRecebimentoRouter = Router();
 
@@ -149,11 +149,11 @@ pendenteRecebimentoRouter.get('/devolucoes', async (req, res, next) => {
               r."criadoEm", r."revisadaEm", r."revisadaPor", r."observacao", r."blingSaida", r."blingSaidaErro",
               p."idPeca", p."descricao", p."localizacao", p."detranEtiqueta", p."etiquetaPendente", p."precoML" AS "precoAtual",
               m."marca", m."modelo", m."ano", b."clienteNome", b."canal", b."situacao",
-              dr."motivoId" AS "tipoId", dm."nome" AS "tipoNome", dr."observacao" AS "tipoObs"
+              dr."motivoId" AS "tipoId", dm."nome" AS "tipoNome", dr."observacao" AS "tipoObs", dr."nfDevolucao" AS "nfEntrada"
        FROM "PecaEmRevisao" r
        JOIN "Peca" p ON p."id" = r."pecaId"
        LEFT JOIN "Moto" m ON m."id" = p."motoId"
-       LEFT JOIN LATERAL (SELECT x."motivoId", x."observacao" FROM "DevolucaoRegistro" x WHERE x."pecaId" = r."pecaId" ORDER BY x."dataDevolucao" DESC, x."id" DESC LIMIT 1) dr ON true
+       LEFT JOIN LATERAL (SELECT x."motivoId", x."observacao", x."nfDevolucao" FROM "DevolucaoRegistro" x WHERE x."pecaId" = r."pecaId" ORDER BY x."dataDevolucao" DESC, x."id" DESC LIMIT 1) dr ON true
        LEFT JOIN "DevolucaoMotivo" dm ON dm."id" = dr."motivoId"
        LEFT JOIN "BlingPedido" b ON r."pedidoId" ~ '^[0-9]+$' AND b."id" = r."pedidoId"::bigint
        WHERE ${status === 'revisada' ? `r."status" IN ('revisada','prejuizo')` : `r."status" = 'em_revisao'`}
@@ -166,6 +166,7 @@ pendenteRecebimentoRouter.get('/devolucoes', async (req, res, next) => {
         moto: [r.marca, r.modelo, r.ano].filter(Boolean).join(' '),
         pedido: { num: r.pedidoNum, id: r.pedidoId, dataVenda: r.dataVenda, clienteNome: r.clienteNome, canal: r.canal, situacao: r.situacao },
         estornado: { precoML: Number(r.precoML || 0), valorLiq: Number(r.valorLiq || 0), valorFrete: Number(r.valorFrete || 0), valorTaxas: Number(r.valorTaxas || 0) },
+        nfEntrada: r.nfEntrada || null,
         tipo: r.tipoId ? { id: Number(r.tipoId), nome: r.tipoNome, observacao: r.tipoObs || null } : null,
         blingSaida: !!r.blingSaida, blingSaidaErro: r.blingSaidaErro || null, motivo: r.motivo, status: r.status, criadoEm: r.criadoEm, revisadaEm: r.revisadaEm, revisadaPor: r.revisadaPor, observacao: r.observacao,
       })),
@@ -179,6 +180,10 @@ pendenteRecebimentoRouter.post('/devolucoes/revisar', async (req, res, next) => 
     if (!temAcao(req, 'revisar')) return res.status(403).json({ ok: false, error: 'Seu usuario nao tem permissao para liberar pecas em revisao.' });
     const pecaId = Number(req.body?.pecaId);
     if (!Number.isInteger(pecaId) || pecaId <= 0) return res.status(400).json({ ok: false, error: 'Informe a peca.' });
+    // a peca so sai de "Em revisao" com a NF de entrada (retorno) emitida e informada
+    const nfEntrada = String(req.body?.nfEntrada || '').trim().slice(0, 40) || await nfEntradaDaPeca(pecaId);
+    if (!nfEntrada) return res.status(400).json({ ok: false, error: 'Informe a nota fiscal de entrada (retorno) desta peca. Ela so pode ser marcada como revisada depois que a NF de entrada for emitida.' });
+    await salvarNfEntrada(pecaId, nfEntrada, usuario(req));
     const r = await marcarRevisada(pecaId, usuario(req), String(req.body?.observacao || '').trim().slice(0, 500) || null);
     if (!r.ok) return res.status(400).json({ ok: false, error: r.erro || 'Nao foi possivel concluir a revisao.' });
     res.json({ ok: true, ajusteBling: r.ajuste?.texto || null });

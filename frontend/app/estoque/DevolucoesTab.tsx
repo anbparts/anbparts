@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { API_BASE } from '@/lib/api-base';
 import { useIsPhone } from '@/lib/use-is-phone';
 import CanalBadge from '@/components/ui/CanalBadge';
@@ -11,6 +11,7 @@ type Registro = {
   id: number; pecaId: number | null; idPeca: string | null; descricao: string | null; pedidoNum: string | null; dataVenda: string | null; dataDevolucao: string;
   motoNome: string | null; motoLabel: string | null; valor: number | null; valorLiq: number | null; frete: number | null; taxas: number | null; nfVenda: string | null; nfDevolucao: string | null; pedidoId: string | null; canal: string | null;
   motivoId: number | null; motivoNome: string | null; observacao: string | null; origem: string | null;
+  clienteNome: string | null; detranStatus: string | null; criadoEm: string | null; atualizadoEm: string | null; atualizadoPor: string | null;
   statusAtual: string; localizacaoAtual: string | null;
   etiquetas: Array<{ etiqueta: string; baixada: boolean }> | null; etiquetaPendente: boolean | null; etiquetaAtual: string | null;
 };
@@ -90,7 +91,7 @@ type Resposta = {
 };
 
 // larguras fixas das colunas (px): a tabela rola na horizontal em vez de espremer o conteudo
-const COLS = [128, 280, 160, 210, 130, 150, 125, 200, 96];
+const COLS = [158, 280, 160, 210, 130, 150, 125, 200, 96];
 
 const ORIGENS: Record<string, string> = {
   cancelamento_importado: 'Cancelamento importado', cancelamento_estoque: 'Cancelamento no estoque', devolucao_manual: 'Devolução registrada', historico_antigo: 'Histórico anterior',
@@ -101,90 +102,29 @@ const dataBr = (v?: string | null) => { if (!v) return '—'; const [y, m, d] = 
 const entrada: any = { padding: '7px 10px', border: '1px solid var(--border)', borderRadius: 8, fontSize: 13, background: 'var(--white)', fontFamily: 'inherit', color: 'var(--gray-800)', minWidth: 0 };
 const rotulo: any = { fontSize: 10.5, fontWeight: 600, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 3, display: 'block' };
 
-// Edicao completa de um registro: motivo, observacao, data e NFs (a NF de venda pode ser buscada no Bling pelo pedido)
-function EditarDevolucaoModal({ r, motivos, podeGerenciar, onGerenciar, onClose, onSalvo }: { r: Registro; motivos: MotivoOpcao[]; podeGerenciar: boolean; onGerenciar: () => void; onClose: () => void; onSalvo: () => void }) {
-  const [f, setF] = useState({ motivoId: r.motivoId ? String(r.motivoId) : '', observacao: r.observacao || '', dataDevolucao: String(r.dataDevolucao || '').slice(0, 10), nfVenda: r.nfVenda || '', nfDevolucao: r.nfDevolucao || '' });
-  const [erro, setErro] = useState('');
-  const [aviso, setAviso] = useState('');
-  const [buscando, setBuscando] = useState(false);
-  const [salvando, setSalvando] = useState(false);
-  const set = (k: keyof typeof f, v: string) => setF((c) => ({ ...c, [k]: v }));
+// Cadastro manual e edicao da linha toda. Nao mexe em estoque nem no Bling: so no historico.
+// "NF de saida" = nota da venda; "NF de entrada" = nota do retorno da peca.
+const CAMPOS_VAZIOS = { sku: '', descricao: '', pedidoNum: '', canal: '', dataVenda: '', dataDevolucao: '', motoLabel: '', motoNome: '', valor: '', valorLiq: '', frete: '', taxas: '', nfVenda: '', nfDevolucao: '', motivoId: '', observacao: '' };
+const txt = (v: any) => (v == null ? '' : String(v));
 
-  async function buscarNf() {
-    if (!r.pedidoNum && !r.pedidoId) { setAviso('Este registro não tem número de pedido.'); return; }
-    setBuscando(true); setAviso(''); setErro('');
-    try {
-      const qs = new URLSearchParams({ pedido: r.pedidoNum || '', pedidoId: r.pedidoId || '' });
-      const resp = await fetch(`${API_BASE}/devolucoes-historico/nf-venda?${qs}`, { credentials: 'include' });
-      const d = await resp.json().catch(() => ({}));
-      if (!resp.ok || d.ok === false) throw new Error(d.error || `Erro ${resp.status}`);
-      if (d.nf) { set('nfVenda', String(d.nf)); setAviso(`NF encontrada no Bling: ${d.nf}`); } else setAviso(d.aviso || 'O Bling não retornou NF para esse pedido.');
-    } catch (e: any) { setErro(e?.message || 'Não foi possível consultar o Bling'); }
-    setBuscando(false);
-  }
-
-  async function salvar() {
-    setSalvando(true); setErro('');
-    try {
-      const resp = await fetch(`${API_BASE}/devolucoes-historico/${r.id}`, { method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...f, motivoId: f.motivoId ? Number(f.motivoId) : null }) });
-      const d = await resp.json().catch(() => ({}));
-      if (!resp.ok || d.ok === false) throw new Error(d.error || `Erro ${resp.status}`);
-      onSalvo();
-    } catch (e: any) { setErro(e?.message || 'Erro ao salvar'); setSalvando(false); }
-  }
-
-  const inp: any = { ...entrada, width: '100%', boxSizing: 'border-box' };
-  const campo = (rot: string, el: any, largo = false) => <div style={largo ? { gridColumn: '1 / -1' } : undefined}><label style={rotulo}>{rot}</label>{el}</div>;
-  return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.5)', zIndex: 320, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={onClose}>
-      <div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--white)', borderRadius: 14, width: '100%', maxWidth: 560, boxShadow: '0 20px 60px rgba(0,0,0,.2)', display: 'flex', flexDirection: 'column', maxHeight: 'calc(100dvh - 32px)' }}>
-        <div style={{ padding: '18px 20px 12px', borderBottom: '1px solid var(--border)' }}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--gray-800)' }}>Editar devolução</div>
-          <div style={{ fontSize: 12.5, color: 'var(--gray-500)', marginTop: 3 }}>{r.idPeca} — {r.descricao}{r.pedidoNum ? ` · pedido #${r.pedidoNum}` : ''}</div>
-        </div>
-        <div style={{ padding: 20, overflowY: 'auto', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
-          <div style={{ gridColumn: '1 / -1' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-              <label style={rotulo}>Motivo</label>
-              {podeGerenciar ? <button type="button" onClick={onGerenciar} style={{ background: 'none', border: 'none', color: 'var(--blue-500)', cursor: 'pointer', fontSize: 12, padding: 0 }}>Configurar tipos de devolução</button> : null}
-            </div>
-            <select value={f.motivoId} onChange={(e) => set('motivoId', e.target.value)} style={{ ...inp, cursor: 'pointer' }}>
-              <option value="">Sem motivo</option>
-              {motivos.map((m) => <option key={m.id} value={m.id}>{m.nome}</option>)}
-            </select>
-          </div>
-          {campo('Data da devolução', <input type="date" value={f.dataDevolucao} onChange={(e) => set('dataDevolucao', e.target.value)} style={inp} />)}
-          <div />
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-              <label style={rotulo}>NF de venda</label>
-              <button type="button" onClick={buscarNf} disabled={buscando} style={{ background: 'none', border: 'none', color: 'var(--blue-500)', cursor: 'pointer', fontSize: 12, padding: 0 }}>{buscando ? 'Buscando...' : 'Buscar no Bling'}</button>
-            </div>
-            <input value={f.nfVenda} onChange={(e) => set('nfVenda', e.target.value)} placeholder="Número da NF" style={inp} />
-          </div>
-          {campo('NF de devolução', <input value={f.nfDevolucao} onChange={(e) => set('nfDevolucao', e.target.value)} placeholder="Número da NF" style={inp} />)}
-          {aviso ? <div style={{ gridColumn: '1 / -1', fontSize: 12, color: 'var(--gray-600)', background: 'var(--gray-50, #f9fafb)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 10px' }}>{aviso}</div> : null}
-          {campo('Observação', <textarea value={f.observacao} onChange={(e) => set('observacao', e.target.value)} rows={3} style={{ ...inp, fontFamily: 'inherit' }} />, true)}
-          {erro ? <div style={{ gridColumn: '1 / -1', fontSize: 12.5, color: '#b91c1c' }}>{erro}</div> : null}
-        </div>
-        <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-          <button type="button" onClick={onClose} style={{ ...entrada, cursor: 'pointer', fontWeight: 600 }}>Cancelar</button>
-          <button type="button" onClick={salvar} disabled={salvando} style={{ ...entrada, cursor: 'pointer', fontWeight: 600, background: 'var(--gray-800)', color: '#fff', borderColor: 'var(--gray-800)' }}>{salvando ? 'Salvando...' : 'Salvar'}</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Registro manual de devolucao (principalmente as do passado). So grava no historico: nao mexe em estoque nem no Bling.
-function NovaDevolucaoModal({ motivos, canais, onClose, onSalvo }: { motivos: MotivoOpcao[]; canais: string[]; onClose: () => void; onSalvo: () => void }) {
-  const [f, setF] = useState({ sku: '', descricao: '', pedidoNum: '', canal: '', dataVenda: '', dataDevolucao: '', valor: '', valorLiq: '', frete: '', nfVenda: '', nfDevolucao: '', motivoId: '', observacao: '' });
+function DevolucaoFormModal({ registro, motivos, canais, podeGerenciar, onGerenciar, onClose, onSalvo }: { registro?: Registro | null; motivos: MotivoOpcao[]; canais: string[]; podeGerenciar: boolean; onGerenciar: () => void; onClose: () => void; onSalvo: () => void }) {
+  const edicao = !!registro;
+  const [f, setF] = useState<typeof CAMPOS_VAZIOS>(() => registro ? {
+    sku: txt(registro.idPeca), descricao: txt(registro.descricao), pedidoNum: txt(registro.pedidoNum), canal: txt(registro.canal),
+    dataVenda: txt(registro.dataVenda).slice(0, 10), dataDevolucao: txt(registro.dataDevolucao).slice(0, 10),
+    motoLabel: txt(registro.motoLabel), motoNome: txt(registro.motoNome),
+    valor: txt(registro.valor), valorLiq: txt(registro.valorLiq), frete: txt(registro.frete), taxas: txt(registro.taxas),
+    nfVenda: txt(registro.nfVenda), nfDevolucao: txt(registro.nfDevolucao), motivoId: registro.motivoId ? String(registro.motivoId) : '', observacao: txt(registro.observacao),
+  } : { ...CAMPOS_VAZIOS });
   const [info, setInfo] = useState('');
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
-  const set = (k: keyof typeof f, v: string) => setF((c) => ({ ...c, [k]: v }));
+  const [buscandoNf, setBuscandoNf] = useState(false);
+  const set = (k: keyof typeof CAMPOS_VAZIOS, v: string) => setF((c) => ({ ...c, [k]: v }));
+  const num = (k: keyof typeof CAMPOS_VAZIOS) => (e: any) => set(k, e.target.value.replace(',', '.'));
   const canaisBase = Array.from(new Set(['Mercado Livre', 'Shopee', 'Magalu', 'Nuvemshop', 'OLX'].concat(canais)));
 
+  // preenche a partir do SKU e do pedido (em edicao, so sobrescreve a peca quando o SKU foi trocado)
   async function consultar() {
     if (!f.sku.trim() && !f.pedidoNum.trim()) return;
     try {
@@ -192,19 +132,42 @@ function NovaDevolucaoModal({ motivos, canais, onClose, onSalvo }: { motivos: Mo
       const resp = await fetch(`${API_BASE}/devolucoes-historico/consulta?${qs}`, { credentials: 'include' });
       const d = await resp.json().catch(() => ({}));
       if (!resp.ok || d.ok === false) return;
+      const skuMudou = edicao && f.sku.trim().toUpperCase() !== txt(registro?.idPeca).toUpperCase();
       const msgs: string[] = [];
       if (d.peca) msgs.push(`Peça encontrada${d.peca.motoNome ? `: ${[d.peca.motoLabel, d.peca.motoNome].filter(Boolean).join(' · ')}` : ''}`);
-      else if (f.sku.trim()) msgs.push('SKU não encontrado no estoque: será gravado só com o que você informar');
+      else if (f.sku.trim() && (!edicao || skuMudou)) msgs.push('SKU não encontrado no estoque: será gravado só com o que você informar');
       if (d.pedido) msgs.push(`Pedido importado (${d.pedido.canal || 'sem canal'})`);
-      else if (f.pedidoNum.trim()) msgs.push('Pedido não encontrado nos pedidos importados: informe o marketplace');
+      else if (f.pedidoNum.trim() && (!edicao || f.pedidoNum.trim() !== txt(registro?.pedidoNum))) msgs.push('Pedido não encontrado nos pedidos importados: informe o marketplace');
       setF((c) => {
         const n = { ...c };
-        if (d.peca) { if (!n.descricao) n.descricao = d.peca.descricao || ''; if (!n.valor && d.peca.precoML) n.valor = String(d.peca.precoML); }
-        if (d.pedido) { if (!n.canal && d.pedido.canal) n.canal = d.pedido.canal; if (!n.dataVenda && d.pedido.data) n.dataVenda = String(d.pedido.data).slice(0, 10); if (d.pedido.valorItem) n.valor = String(d.pedido.valorItem); }
+        if (d.peca) {
+          if (!n.descricao || skuMudou) n.descricao = d.peca.descricao || '';
+          if (!n.motoNome || skuMudou) n.motoNome = d.peca.motoNome || '';
+          if (!n.motoLabel || skuMudou) n.motoLabel = d.peca.motoLabel || '';
+          if (!n.valor && d.peca.precoML) n.valor = String(d.peca.precoML);
+        }
+        if (d.pedido) {
+          if (!n.canal && d.pedido.canal) n.canal = d.pedido.canal;
+          if (!n.dataVenda && d.pedido.data) n.dataVenda = String(d.pedido.data).slice(0, 10);
+          if (!n.valor && d.pedido.valorItem) n.valor = String(d.pedido.valorItem);
+        }
         return n;
       });
       setInfo(msgs.join(' · '));
     } catch { /* sem consulta: preenche na mao */ }
+  }
+
+  async function buscarNf() {
+    if (!f.pedidoNum.trim() && !registro?.pedidoId) { setInfo('Informe o número do pedido para buscar a NF no Bling.'); return; }
+    setBuscandoNf(true); setInfo(''); setErro('');
+    try {
+      const qs = new URLSearchParams({ pedido: f.pedidoNum.trim(), pedidoId: txt(registro?.pedidoId) });
+      const resp = await fetch(`${API_BASE}/devolucoes-historico/nf-venda?${qs}`, { credentials: 'include' });
+      const d = await resp.json().catch(() => ({}));
+      if (!resp.ok || d.ok === false) throw new Error(d.error || `Erro ${resp.status}`);
+      if (d.nf) { set('nfVenda', String(d.nf)); setInfo(`NF de saída encontrada no Bling: ${d.nf}`); } else setInfo(d.aviso || 'O Bling não retornou NF para esse pedido.');
+    } catch (e: any) { setErro(e?.message || 'Não foi possível consultar o Bling'); }
+    setBuscandoNf(false);
   }
 
   async function salvar() {
@@ -213,46 +176,112 @@ function NovaDevolucaoModal({ motivos, canais, onClose, onSalvo }: { motivos: Mo
     if (!f.dataDevolucao) { setErro('Informe a data da devolução.'); return; }
     setSalvando(true);
     try {
-      const resp = await fetch(`${API_BASE}/devolucoes-historico`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...f, motivoId: f.motivoId ? Number(f.motivoId) : null }) });
+      const url = edicao ? `${API_BASE}/devolucoes-historico/${registro!.id}` : `${API_BASE}/devolucoes-historico`;
+      const resp = await fetch(url, { method: edicao ? 'PATCH' : 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...f, motivoId: f.motivoId ? Number(f.motivoId) : null }) });
       const d = await resp.json().catch(() => ({}));
       if (!resp.ok || d.ok === false) throw new Error(d.error || `Erro ${resp.status}`);
       onSalvo();
     } catch (e: any) { setErro(e?.message || 'Erro ao salvar'); setSalvando(false); }
   }
 
-  const campo = (rot: string, el: any, largo = false) => <div style={largo ? { gridColumn: '1 / -1' } : undefined}><label style={rotulo}>{rot}</label>{el}</div>;
   const inp: any = { ...entrada, width: '100%', boxSizing: 'border-box' };
+  const campo = (rot: any, el: any, largo = false) => <div style={largo ? { gridColumn: '1 / -1' } : undefined}><label style={rotulo}>{rot}</label>{el}</div>;
+  const link: any = { background: 'none', border: 'none', color: 'var(--blue-500)', cursor: 'pointer', fontSize: 12, padding: 0, textTransform: 'none', letterSpacing: 0, fontWeight: 500 };
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.5)', zIndex: 320, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={onClose}>
-      <div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--white)', borderRadius: 14, width: '100%', maxWidth: 620, boxShadow: '0 20px 60px rgba(0,0,0,.2)', display: 'flex', flexDirection: 'column', maxHeight: 'calc(100dvh - 32px)' }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--white)', borderRadius: 14, width: '100%', maxWidth: 700, boxShadow: '0 20px 60px rgba(0,0,0,.2)', display: 'flex', flexDirection: 'column', maxHeight: 'calc(100dvh - 32px)' }}>
         <div style={{ padding: '18px 20px 12px', borderBottom: '1px solid var(--border)' }}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--gray-800)' }}>Registrar devolução</div>
-          <div style={{ fontSize: 12.5, color: 'var(--gray-500)', marginTop: 3 }}>Só entra no histórico. Não altera o estoque da peça nem o Bling.</div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--gray-800)' }}>{edicao ? 'Editar devolução' : 'Registrar devolução'}</div>
+          <div style={{ fontSize: 12.5, color: 'var(--gray-500)', marginTop: 3 }}>{edicao ? 'Altera apenas este registro do histórico. Não mexe no estoque da peça nem no Bling.' : 'Só entra no histórico. Não altera o estoque da peça nem o Bling.'}</div>
         </div>
         <div style={{ padding: 20, overflowY: 'auto', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
-          {campo('SKU da peça', <input value={f.sku} onChange={(e) => set('sku', e.target.value)} onBlur={consultar} placeholder="Ex: BM03_0039" style={inp} autoFocus />)}
+          {campo('SKU da peça', <input value={f.sku} onChange={(e) => set('sku', e.target.value.toUpperCase())} onBlur={consultar} placeholder="Ex: BM03_0039" style={inp} autoFocus={!edicao} />)}
           {campo('Nº do pedido', <input value={f.pedidoNum} onChange={(e) => set('pedidoNum', e.target.value)} onBlur={consultar} placeholder="Nº do Bling ou do marketplace" style={inp} />)}
           {info ? <div style={{ gridColumn: '1 / -1', fontSize: 12, color: 'var(--gray-600)', background: 'var(--gray-50, #f9fafb)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 10px' }}>{info}</div> : null}
           {campo('Descrição', <input value={f.descricao} onChange={(e) => set('descricao', e.target.value)} placeholder="Preenche sozinha quando o SKU é encontrado" style={inp} />, true)}
           {campo('Marketplace', <input list="canais-dev" value={f.canal} onChange={(e) => set('canal', e.target.value)} placeholder="Selecione ou digite" style={inp} />)}
           <datalist id="canais-dev">{canaisBase.map((c) => <option key={c} value={c} />)}</datalist>
-          {campo('Motivo', <select value={f.motivoId} onChange={(e) => set('motivoId', e.target.value)} style={{ ...inp, cursor: 'pointer' }}><option value="">Sem motivo</option>{motivos.map((m) => <option key={m.id} value={m.id}>{m.nome}</option>)}</select>)}
+          {campo(<span style={{ display: 'flex', justifyContent: 'space-between' }}><span>Motivo</span>{podeGerenciar ? <button type="button" onClick={onGerenciar} style={link}>Configurar tipos</button> : null}</span>,
+            <select value={f.motivoId} onChange={(e) => set('motivoId', e.target.value)} style={{ ...inp, cursor: 'pointer' }}><option value="">Sem motivo</option>{motivos.map((m) => <option key={m.id} value={m.id}>{m.nome}</option>)}</select>)}
+          {campo('Moto (label)', <input value={f.motoLabel} onChange={(e) => set('motoLabel', e.target.value)} placeholder="Ex: HD STREET GLIDE 2019" style={inp} />)}
+          {campo('Moto (nome)', <input value={f.motoNome} onChange={(e) => set('motoNome', e.target.value)} placeholder="Marca modelo ano" style={inp} />)}
           {campo('Data da venda', <input type="date" value={f.dataVenda} onChange={(e) => set('dataVenda', e.target.value)} style={inp} />)}
           {campo('Data da devolução', <input type="date" value={f.dataDevolucao} onChange={(e) => set('dataDevolucao', e.target.value)} style={inp} />)}
-          {campo('Valor da venda (R$)', <input inputMode="decimal" value={f.valor} onChange={(e) => set('valor', e.target.value.replace(',', '.'))} placeholder="0.00" style={inp} />)}
-          {campo('Valor líquido (R$)', <input inputMode="decimal" value={f.valorLiq} onChange={(e) => set('valorLiq', e.target.value.replace(',', '.'))} placeholder="opcional" style={inp} />)}
-          {campo('Frete (R$)', <input inputMode="decimal" value={f.frete} onChange={(e) => set('frete', e.target.value.replace(',', '.'))} placeholder="opcional" style={inp} />)}
-          <div />
-          {campo('NF de venda', <input value={f.nfVenda} onChange={(e) => set('nfVenda', e.target.value)} placeholder="opcional" style={inp} />)}
-          {campo('NF de devolução', <input value={f.nfDevolucao} onChange={(e) => set('nfDevolucao', e.target.value)} placeholder="opcional" style={inp} />)}
+          {campo('Valor da venda (R$)', <input inputMode="decimal" value={f.valor} onChange={num('valor')} placeholder="0.00" style={inp} />)}
+          {campo('Valor líquido (R$)', <input inputMode="decimal" value={f.valorLiq} onChange={num('valorLiq')} placeholder="opcional" style={inp} />)}
+          {campo('Frete (R$)', <input inputMode="decimal" value={f.frete} onChange={num('frete')} placeholder="opcional" style={inp} />)}
+          {campo('Taxas (R$)', <input inputMode="decimal" value={f.taxas} onChange={num('taxas')} placeholder="opcional" style={inp} />)}
+          {campo(<span style={{ display: 'flex', justifyContent: 'space-between' }}><span>NF de saída (venda)</span><button type="button" onClick={buscarNf} disabled={buscandoNf} style={link}>{buscandoNf ? 'Buscando...' : 'Buscar no Bling'}</button></span>,
+            <input value={f.nfVenda} onChange={(e) => set('nfVenda', e.target.value)} placeholder="Número da NF de venda" style={inp} />)}
+          {campo('NF de entrada (retorno)', <input value={f.nfDevolucao} onChange={(e) => set('nfDevolucao', e.target.value)} placeholder="Número da NF de entrada" style={inp} />)}
           {campo('Observação', <textarea value={f.observacao} onChange={(e) => set('observacao', e.target.value)} rows={2} style={{ ...inp, fontFamily: 'inherit' }} />, true)}
           {erro ? <div style={{ gridColumn: '1 / -1', fontSize: 12.5, color: '#b91c1c' }}>{erro}</div> : null}
         </div>
         <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <button type="button" onClick={onClose} style={{ ...entrada, cursor: 'pointer', fontWeight: 600 }}>Cancelar</button>
-          <button type="button" onClick={salvar} disabled={salvando} style={{ ...entrada, cursor: 'pointer', fontWeight: 600, background: 'var(--gray-800)', color: '#fff', borderColor: 'var(--gray-800)' }}>{salvando ? 'Salvando...' : 'Registrar'}</button>
+          <button type="button" onClick={salvar} disabled={salvando} style={{ ...entrada, cursor: 'pointer', fontWeight: 600, background: 'var(--gray-800)', color: '#fff', borderColor: 'var(--gray-800)' }}>{salvando ? 'Salvando...' : edicao ? 'Salvar alterações' : 'Registrar'}</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Linha expandida: tudo o que se sabe sobre a devolucao
+function Info({ k, children, aviso }: { k: string; children?: any; aviso?: boolean; key?: any }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '4px 0', fontSize: 12.5, borderBottom: '1px dashed var(--border)' }}>
+      <span style={{ color: 'var(--gray-500)' }}>{k}</span>
+      <span style={{ color: aviso ? '#b45309' : 'var(--gray-800)', fontWeight: 600, textAlign: 'right', minWidth: 0, overflowWrap: 'anywhere' }}>{children}</span>
+    </div>
+  );
+}
+function BlocoDet({ titulo, children }: { titulo: string; children?: any }) {
+  return <div style={{ minWidth: 0 }}><div style={{ ...rotulo, marginBottom: 6 }}>{titulo}</div>{children}</div>;
+}
+function DetalhesRegistro({ r, podeEditar, onEditar }: { r: Registro; podeEditar: boolean; onEditar: (r: Registro) => void }) {
+  const et = etiquetasDe(r);
+  const st = statusEtiqueta(r);
+  const mono: any = { fontFamily: 'JetBrains Mono, monospace' };
+  const nfOu = (v: string | null, vazio: string) => (v ? <span style={mono}>{v}</span> : vazio);
+  return (
+    <div style={{ background: '#f8fafc', borderTop: '1px solid var(--border)', padding: '16px 20px 18px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 22 }}>
+      <BlocoDet titulo="Cliente e pedido">
+        <Info k="Cliente">{r.clienteNome || '—'}</Info>
+        <Info k="Pedido">{r.pedidoNum ? `#${r.pedidoNum}` : '—'}</Info>
+        <Info k="Marketplace">{r.canal ? <CanalBadge canal={r.canal} /> : '—'}</Info>
+        <Info k="Data da venda">{dataBr(r.dataVenda)}</Info>
+        <Info k="Data da devolução">{dataBr(r.dataDevolucao)}</Info>
+      </BlocoDet>
+      <BlocoDet titulo="Notas fiscais">
+        <Info k="NF de saída (venda)" aviso={!r.nfVenda}>{nfOu(r.nfVenda, 'Não informada')}</Info>
+        <Info k="NF de entrada (retorno)" aviso={!r.nfDevolucao}>{nfOu(r.nfDevolucao, 'Não informada')}</Info>
+      </BlocoDet>
+      <BlocoDet titulo="Etiquetas Detran">
+        {!et.length ? <div style={{ fontSize: 12.5, color: 'var(--gray-500)' }}>Sem etiqueta Detran nesta devolução.</div> : et.map((x, i) => (
+          <Info key={`${x.etiqueta}-${i}`} k={`Etiqueta ${et.length > 1 ? i + 1 : ''}`.trim()}>
+            <span style={mono}>{x.etiqueta}</span>{' '}
+            <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 99, whiteSpace: 'nowrap', ...(x.baixada ? { background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca' } : { background: '#ecfdf5', color: '#065f46', border: '1px solid #a7f3d0' }) }}>{x.baixada ? 'Baixada' : 'Não baixada'}</span>
+          </Info>
+        ))}
+        {et.length && st ? <Info k="Situação">{st.texto}</Info> : null}
+        {r.etiquetaAtual ? <Info k="Etiqueta atual da peça"><span style={mono}>{r.etiquetaAtual}</span></Info> : null}
+        {r.detranStatus ? <Info k="Status no Detran">{r.detranStatus}</Info> : null}
+        {r.localizacaoAtual ? <Info k="Localização da peça">{r.localizacaoAtual}</Info> : null}
+      </BlocoDet>
+      <BlocoDet titulo="Valores">
+        <Info k="Valor da venda">{brl(r.valor)}</Info>
+        <Info k="Valor líquido">{brl(r.valorLiq)}</Info>
+        <Info k="Frete">{brl(r.frete)}</Info>
+        <Info k="Taxas">{brl(r.taxas)}</Info>
+      </BlocoDet>
+      <BlocoDet titulo="Registro">
+        <Info k="Origem">{ORIGENS[r.origem || ''] || r.origem || '—'}</Info>
+        <Info k="Motivo">{r.motivoNome || 'Sem motivo'}</Info>
+        <Info k="Registrado em">{r.criadoEm ? new Date(r.criadoEm).toLocaleString('pt-BR') : '—'}</Info>
+        {r.atualizadoPor ? <Info k="Última edição">{r.atualizadoPor}{r.atualizadoEm ? ` · ${new Date(r.atualizadoEm).toLocaleString('pt-BR')}` : ''}</Info> : null}
+        {r.observacao ? <div style={{ fontSize: 12.5, color: 'var(--gray-700)', marginTop: 8, whiteSpace: 'pre-wrap' }}><span style={{ color: 'var(--gray-500)' }}>Observação: </span>{r.observacao}</div> : null}
+        {podeEditar ? <button type="button" onClick={() => onEditar(r)} style={{ marginTop: 12, border: '1px solid var(--gray-800)', background: 'var(--gray-800)', color: '#fff', borderRadius: 8, padding: '6px 14px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>Editar registro</button> : null}
+      </BlocoDet>
     </div>
   );
 }
@@ -274,6 +303,8 @@ export default function DevolucoesTab({ padding }: { padding: number }) {
   const [tipos, setTipos] = useState(false);
   const [novo, setNovo] = useState(false);
   const [verEtiquetas, setVerEtiquetas] = useState<Registro | null>(null);
+  const [abertas, setAbertas] = useState<Record<number, boolean>>({});
+  const alternar = (id: number) => setAbertas((c) => ({ ...c, [id]: !c[id] }));
   const seq = useRef(0);
 
   const carregar = useCallback(async () => {
@@ -331,7 +362,7 @@ export default function DevolucoesTab({ padding }: { padding: number }) {
     : <span style={{ fontSize: 11.5, fontWeight: 600, padding: '3px 10px', borderRadius: 99, background: '#fffbeb', color: '#92400e', border: '1px dashed #fcd34d', whiteSpace: 'nowrap' }}>Sem motivo</span>;
 
   const botaoEditar = (r: Registro) => podeEditar ? (
-    <button type="button" onClick={() => setEditar(r)} style={{ border: '1px solid var(--border)', background: 'var(--white)', borderRadius: 7, padding: '4px 10px', fontSize: 12, fontWeight: 600, color: 'var(--gray-700)', cursor: 'pointer' }}>{r.motivoNome ? 'Editar' : 'Informar motivo'}</button>
+    <button type="button" onClick={() => setEditar(r)} style={{ border: '1px solid var(--border)', background: 'var(--white)', borderRadius: 7, padding: '4px 10px', fontSize: 12, fontWeight: 600, color: 'var(--gray-700)', cursor: 'pointer' }}>Editar</button>
   ) : null;
 
   return (
@@ -418,6 +449,8 @@ export default function DevolucoesTab({ padding }: { padding: number }) {
               </div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 10, flexWrap: 'wrap' }}><ChipStatus r={r} />{etiquetasDe(r).length ? <ChipEtiqueta r={r} onAbrir={setVerEtiquetas} /> : null}{chipMotivo(r)}{botaoEditar(r)}</div>
               {r.observacao ? <div style={{ fontSize: 12, color: 'var(--gray-600)', marginTop: 8 }}>Obs.: {r.observacao}</div> : null}
+              <button type="button" onClick={() => alternar(r.id)} style={{ marginTop: 10, background: 'none', border: 'none', color: 'var(--blue-500)', cursor: 'pointer', fontSize: 12.5, padding: 0, fontWeight: 600 }}>{abertas[r.id] ? 'Ocultar detalhes ▴' : 'Ver detalhes ▾'}</button>
+              {abertas[r.id] ? <div style={{ margin: '12px -14px -14px', borderRadius: '0 0 12px 12px', overflow: 'hidden' }}><DetalhesRegistro r={r} podeEditar={podeEditar} onEditar={setEditar} /></div> : null}
             </div>
           ))}
         </div>
@@ -435,11 +468,17 @@ export default function DevolucoesTab({ padding }: { padding: number }) {
               </thead>
               <tbody>
                 {(dados?.itens || []).map((r) => (
-                  <tr key={r.id} style={{ borderBottom: '1px solid var(--border)', verticalAlign: 'top' }}>
+                  <Fragment key={r.id}>
+                  <tr style={{ borderBottom: abertas[r.id] ? 'none' : '1px solid var(--border)', verticalAlign: 'top', background: abertas[r.id] ? '#f8fafc' : undefined }}>
                     <td style={{ padding: '10px 12px', whiteSpace: 'nowrap', color: 'var(--gray-700)' }}>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                      <button type="button" onClick={() => alternar(r.id)} title={abertas[r.id] ? 'Recolher detalhes' : 'Ver detalhes'} aria-expanded={!!abertas[r.id]} style={{ width: 22, height: 22, flexShrink: 0, border: '1px solid var(--border)', background: 'var(--white)', borderRadius: 6, cursor: 'pointer', fontSize: 11, color: 'var(--gray-600)', lineHeight: 1, padding: 0 }}>{abertas[r.id] ? '▾' : '▸'}</button>
+                      <div>
                       {dataBr(r.dataDevolucao)}
                       <div style={{ fontSize: 11, color: 'var(--gray-500)', marginTop: 2 }}>venda {dataBr(r.dataVenda)}</div>
                       <div style={{ fontSize: 10.5, color: 'var(--gray-400)', marginTop: 2 }}>{ORIGENS[r.origem || ''] || r.origem || ''}</div>
+                      </div>
+                      </div>
                     </td>
                     <td style={{ padding: '10px 12px' }}>
                       <div style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: 12.5, color: 'var(--blue-500)' }}>{r.idPeca || '—'}</div>
@@ -465,6 +504,8 @@ export default function DevolucoesTab({ padding }: { padding: number }) {
                     <td style={{ padding: '10px 12px' }}>{chipMotivo(r)}</td>
                     <td style={{ padding: '10px 12px', textAlign: 'right' }}>{botaoEditar(r)}</td>
                   </tr>
+                  {abertas[r.id] ? <tr style={{ borderBottom: '1px solid var(--border)' }}><td colSpan={COLS.length} style={{ padding: 0 }}><DetalhesRegistro r={r} podeEditar={podeEditar} onEditar={setEditar} /></td></tr> : null}
+                  </Fragment>
                 ))}
               </tbody>
             </table>
@@ -488,9 +529,9 @@ export default function DevolucoesTab({ padding }: { padding: number }) {
         </div>
       ) : null}
 
-      {editar ? <EditarDevolucaoModal r={editar} motivos={dados?.motivos || []} podeGerenciar={podeEditar} onGerenciar={() => setTipos(true)} onClose={() => setEditar(null)} onSalvo={() => { setEditar(null); carregar(); }} /> : null}
+      {editar ? <DevolucaoFormModal registro={editar} motivos={dados?.motivos || []} canais={dados?.canais || []} podeGerenciar={podeEditar} onGerenciar={() => setTipos(true)} onClose={() => setEditar(null)} onSalvo={() => { setEditar(null); carregar(); }} /> : null}
       {verEtiquetas ? <EtiquetasModal r={verEtiquetas} onClose={() => setVerEtiquetas(null)} /> : null}
-      {novo ? <NovaDevolucaoModal motivos={dados?.motivos || []} canais={dados?.canais || []} onClose={() => setNovo(false)} onSalvo={() => { setNovo(false); carregar(); }} /> : null}
+      {novo ? <DevolucaoFormModal motivos={dados?.motivos || []} canais={dados?.canais || []} podeGerenciar={podeEditar} onGerenciar={() => setTipos(true)} onClose={() => setNovo(false)} onSalvo={() => { setNovo(false); carregar(); }} /> : null}
       {tipos ? <TiposDevolucaoModal onClose={() => setTipos(false)} onAlterou={carregar} /> : null}
     </div>
   );

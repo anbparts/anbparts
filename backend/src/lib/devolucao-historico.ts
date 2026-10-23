@@ -140,3 +140,30 @@ export function registroDePeca(peca: any, origem: string, observacao?: string | 
     origem, observacao: observacao || null,
   };
 }
+
+// NF de entrada (retorno) da peca: usada por Pendencias > Devolucoes para exigir a nota antes de liberar a revisao
+export async function nfEntradaDaPeca(pecaId: number): Promise<string | null> {
+  await garantirTabelasDevolucao();
+  const [r] = await prisma.$queryRawUnsafe<any[]>(`SELECT "nfDevolucao" FROM "DevolucaoRegistro" WHERE "pecaId" = $1::int ORDER BY "dataDevolucao" DESC, "id" DESC LIMIT 1`, pecaId);
+  return r?.nfDevolucao ? String(r.nfDevolucao) : null;
+}
+
+export async function salvarNfEntrada(pecaId: number, nf: string, por: string | null): Promise<boolean> {
+  await garantirTabelasDevolucao();
+  const atualizar = () => prisma.$executeRawUnsafe(
+    `UPDATE "DevolucaoRegistro" SET "nfDevolucao" = $2, "atualizadoEm" = now(), "atualizadoPor" = $3
+     WHERE "id" = (SELECT "id" FROM "DevolucaoRegistro" WHERE "pecaId" = $1::int ORDER BY "dataDevolucao" DESC, "id" DESC LIMIT 1)`, pecaId, nf, por);
+  if (await atualizar()) return true;
+  // peca sem registro no historico (revisao antiga): cria a partir dos dados da revisao
+  const { garantirTabelaRevisao } = await import('./pecas-revisao');
+  await garantirTabelaRevisao();
+  const [p] = await prisma.$queryRawUnsafe<any[]>(
+    `SELECT p."idPeca", p."descricao", p."motoId", NULLIF(trim(concat_ws(' ', m."marca", m."modelo", m."ano")), '') AS "motoNome", m."etiquetaSkuLabel" AS "motoLabel",
+            r."pedidoNum", r."pedidoId", r."dataVenda"::text AS "dataVenda", r."precoML", r."valorLiq", r."valorFrete", r."valorTaxas"
+     FROM "PecaEmRevisao" r JOIN "Peca" p ON p."id" = r."pecaId" LEFT JOIN "Moto" m ON m."id" = p."motoId" WHERE r."pecaId" = $1::int`, pecaId);
+  if (!p) return false;
+  const n = (v: any) => (v == null ? null : Number(v));
+  await registrarDevolucoes([{ pecaId, idPeca: p.idPeca, descricao: p.descricao, pedidoNum: p.pedidoNum, pedidoId: p.pedidoId, dataVenda: p.dataVenda, motoId: p.motoId, motoNome: p.motoNome, motoLabel: p.motoLabel,
+    valor: n(p.precoML), valorLiq: n(p.valorLiq), frete: n(p.valorFrete), taxas: n(p.valorTaxas), nfDevolucao: nf, origem: 'cancelamento_importado' }]);
+  return (await atualizar()) > 0;
+}
