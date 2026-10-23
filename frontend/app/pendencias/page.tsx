@@ -261,7 +261,26 @@ function DevolucoesTab() {
   useEffect(() => { carregar(sub); }, [sub]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Revisar peca: exige a NF de entrada (retorno) emitida e informada
+  const [nfDe, setNfDe] = useState<ItemDev | null>(null);
+  const [nfValor, setNfValor] = useState('');
+  const [nfErro, setNfErro] = useState('');
   const [revisarDe, setRevisarDe] = useState<ItemDev | null>(null);
+
+  function abrirNf(it: ItemDev) { setNfDe(it); setNfValor(it.nfEntrada || ''); setNfErro(''); }
+  async function salvarNf() {
+    if (!nfDe) return;
+    const nf = nfValor.trim();
+    if (!nf) { setNfErro('Informe o número da NF de entrada.'); return; }
+    setAgindo(nfDe.pecaId); setNfErro('');
+    try {
+      const resp = await fetch(`${API}/pendencias/devolucoes/nf-entrada`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pecaId: nfDe.pecaId, nfEntrada: nf }) });
+      const d = await resp.json().catch(() => ({}));
+      if (!resp.ok || d.ok === false) throw new Error(d.error || `Erro ${resp.status}`);
+      setNfDe(null);
+      await carregar(sub);
+    } catch (e: any) { setNfErro(e?.message || 'Erro'); }
+    setAgindo(null);
+  }
   const [nfEntrada, setNfEntrada] = useState('');
   const [obsRevisao, setObsRevisao] = useState('');
   const [erroRevisao, setErroRevisao] = useState('');
@@ -344,7 +363,7 @@ function DevolucoesTab() {
                   <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: 14, color: 'var(--blue-500)' }}>{it.idPeca}</span>
                   <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 10px', borderRadius: 99, background: it.status === 'em_revisao' ? '#fffbeb' : it.status === 'prejuizo' ? '#fef2f2' : '#f0fdf4', color: it.status === 'em_revisao' ? '#92400e' : it.status === 'prejuizo' ? '#b91c1c' : '#15803d', border: '1px solid ' + (it.status === 'em_revisao' ? '#fde68a' : it.status === 'prejuizo' ? '#fecaca' : '#bbf7d0') }}>{it.status === 'em_revisao' ? 'Em Revisão' : it.status === 'prejuizo' ? 'Enviada para Prejuízo' : 'Revisada'}</span>
                   <CanalBadge canal={it.pedido.canal} />
-                  {it.nfEntrada ? <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 99, background: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0' }}>NF entrada {it.nfEntrada}</span> : it.status === 'em_revisao' ? <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 99, background: '#fffbeb', color: '#92400e', border: '1px dashed #fcd34d' }}>NF de entrada pendente</span> : null}
+                  {it.nfEntrada ? <button type="button" disabled={!podeRevisar} onClick={() => abrirNf(it)} title={podeRevisar ? 'Alterar a NF de entrada' : undefined} style={{ fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 99, background: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0', cursor: podeRevisar ? 'pointer' : 'default' }}>NF entrada {it.nfEntrada}</button> : it.status === 'em_revisao' ? <button type="button" disabled={!podeRevisar} onClick={() => abrirNf(it)} title={podeRevisar ? 'Informar a NF de entrada' : undefined} style={{ fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 99, background: '#fffbeb', color: '#92400e', border: '1px dashed #fcd34d', cursor: podeRevisar ? 'pointer' : 'default' }}>NF de entrada pendente — informar</button> : null}
                   {it.tipo ? <span title={it.tipo.observacao || undefined} style={{ fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 99, background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' }}>{it.tipo.nome}</span> : <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 10px', borderRadius: 99, background: 'var(--white)', color: 'var(--gray-500)', border: '1px dashed var(--border)' }}>Sem motivo</span>}
                   {podeRevisar ? <button onClick={() => setMotivoDe(it)} style={{ ...s.btn, background: '#eff6ff', color: '#1d4ed8', borderColor: '#bfdbfe', fontWeight: 700 }}>{it.tipo ? 'Alterar motivo' : 'Informar motivo'}</button> : null}
                   {podeRevisar && it.status === 'em_revisao' ? <button onClick={() => revisar(it)} disabled={agindo === it.pecaId} style={{ ...s.btn, background: '#ecfdf5', color: '#047857', borderColor: '#a7f3d0', fontWeight: 700 }}>Marcar como revisada</button> : null}
@@ -375,6 +394,22 @@ function DevolucoesTab() {
           </div>
         ))}
       </div>
+      {nfDe ? (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.5)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => setNfDe(null)}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--white)', borderRadius: 14, width: '100%', maxWidth: 440, padding: 20, boxShadow: '0 20px 60px rgba(0,0,0,.2)' }}>
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>NF de entrada (retorno)</div>
+            <div style={{ fontSize: 12.5, color: 'var(--gray-500)', marginBottom: 14 }}>{nfDe.idPeca} — {nfDe.descricao}{nfDe.pedido.num ? ` · pedido #${nfDe.pedido.num}` : ''}</div>
+            <label style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--gray-500)' }}>Número da nota fiscal de entrada</label>
+            <input value={nfValor} onChange={(e) => setNfValor(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') salvarNf(); }} placeholder="Número da NF" autoFocus style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 8, marginTop: 4, boxSizing: 'border-box', fontFamily: 'JetBrains Mono, monospace' }} />
+            <div style={{ fontSize: 11.5, color: 'var(--gray-500)', marginTop: 6 }}>Salvar só registra a nota. Para liberar a peça, use "Marcar como revisada".</div>
+            {nfErro ? <div style={{ marginTop: 10, fontSize: 12.5, color: '#b91c1c' }}>{nfErro}</div> : null}
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
+              <button onClick={() => setNfDe(null)} style={{ ...s.btn, background: 'var(--white)', color: 'var(--gray-700)', borderColor: 'var(--border)' }}>Cancelar</button>
+              <button onClick={salvarNf} disabled={agindo === nfDe.pecaId} style={{ ...s.btn, background: 'var(--gray-800)', color: '#fff', borderColor: 'var(--gray-800)', fontWeight: 700 }}>{agindo === nfDe.pecaId ? 'Salvando...' : 'Salvar NF'}</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {revisarDe ? (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.5)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => setRevisarDe(null)}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--white)', borderRadius: 14, width: '100%', maxWidth: 460, padding: 20, boxShadow: '0 20px 60px rgba(0,0,0,.2)' }}>

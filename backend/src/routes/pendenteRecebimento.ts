@@ -174,6 +174,20 @@ pendenteRecebimentoRouter.get('/devolucoes', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// POST /pendencias/devolucoes/nf-entrada { pecaId, nfEntrada } — informa (ou corrige) a NF de entrada sem concluir a revisao
+pendenteRecebimentoRouter.post('/devolucoes/nf-entrada', async (req, res, next) => {
+  try {
+    if (!temAcao(req, 'revisar')) return res.status(403).json({ ok: false, error: 'Seu usuario nao tem permissao para informar a NF de entrada.' });
+    const pecaId = Number(req.body?.pecaId);
+    const nf = String(req.body?.nfEntrada || '').trim().slice(0, 40);
+    if (!Number.isInteger(pecaId) || pecaId <= 0) return res.status(400).json({ ok: false, error: 'Informe a peca.' });
+    if (!nf) return res.status(400).json({ ok: false, error: 'Informe o numero da NF de entrada.' });
+    const ok = await salvarNfEntrada(pecaId, nf, usuario(req));
+    if (!ok) return res.status(404).json({ ok: false, error: 'Registro da devolucao nao encontrado.' });
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
 // POST /pendencias/devolucoes/revisar { pecaId, observacao? } — peca revisada: volta ao estoque
 pendenteRecebimentoRouter.post('/devolucoes/revisar', async (req, res, next) => {
   try {
