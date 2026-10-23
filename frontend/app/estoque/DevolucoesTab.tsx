@@ -243,7 +243,7 @@ function DetalhesRegistro({ r, podeEditar, onEditar, onCompletar, completando }:
   const et = etiquetasDe(r);
   const st = statusEtiqueta(r);
   const mono: any = { fontFamily: 'JetBrains Mono, monospace' };
-  const nfOu = (v: string | null, vazio: string) => (v ? <NfNumero numero={v} /> : vazio);
+  const nfOu = (v: string | null, vazio: string) => (v ? <span style={mono}>{v}</span> : vazio);
   return (
     <div style={{ background: '#f8fafc', borderTop: '1px solid var(--border)', padding: '16px 20px 18px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 22 }}>
       <BlocoDet titulo="Cliente e pedido">
@@ -497,7 +497,7 @@ export default function DevolucoesTab({ padding }: { padding: number }) {
                     <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ fontWeight: 600 }}>{r.pedidoNum ? `#${r.pedidoNum}` : '—'}</span><CanalBadge canal={r.canal} /></div>
                       {r.nfVenda ? <div style={{ fontSize: 11, color: 'var(--gray-500)', marginTop: 2 }}>NF venda <NfNumero numero={r.nfVenda} pedido={r.pedidoNum} pedidoId={r.pedidoId} /></div> : null}
-                      {r.nfDevolucao ? <div style={{ fontSize: 11, color: 'var(--gray-500)', marginTop: 1 }}>NF devol. <NfNumero numero={r.nfDevolucao} /></div> : null}
+                      {r.nfDevolucao ? <div style={{ fontSize: 11, color: 'var(--gray-500)', marginTop: 1 }}>NF devol. <span style={{ fontFamily: 'JetBrains Mono, monospace', color: 'var(--gray-700)' }}>{r.nfDevolucao}</span></div> : null}
                     </td>
                     <td style={{ padding: '10px 12px' }}>
                       {r.motoLabel ? <div style={{ fontWeight: 700, fontSize: 12.5 }}>{r.motoLabel}</div> : null}
