@@ -142,7 +142,7 @@ devolucaoHistoricoRouter.get('/nf-venda', async (req, res, next) => {
 });
 
 // POST /devolucoes-historico/:id/completar-bling — pelo numero do pedido, traz do Bling o cliente e a NF de saida (quando faltam) e grava no registro
-devolucaoHistoricoRouter.post('/:id(\d+)/completar-bling', exigirEdicao, async (req, res, next) => {
+devolucaoHistoricoRouter.post('/:id(\\d+)/completar-bling', exigirEdicao, async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     const [r] = await prisma.$queryRawUnsafe<any[]>(`SELECT "pedidoNum","pedidoId","nfVenda","clienteNome" FROM "DevolucaoRegistro" WHERE "id" = $1::int`, id);
