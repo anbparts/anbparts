@@ -470,22 +470,146 @@ function DevolucoesTab() {
   );
 }
 
+// ───────────── Anuncio: ultima etapa do fluxo de devolucao (conferir o anuncio da peca liberada) ─────────────
+type ItemAnuncio = {
+  pecaId: number; idPeca: string; descricao: string; localizacao: string | null; etiquetaAtual: string | null; moto: string; preco: number; disponivel: boolean;
+  links: { ml: string | null; shopee: string | null; magalu: string | null; nuvemshop: boolean };
+  devolucao: { motivo: string | null; nfEntrada: string | null; canal: string | null; revisadaEm: string | null; revisadaPor: string | null };
+  anuncio: { enviadoEm: string | null; revisadoEm: string | null; revisadoPor: string | null; observacao: string | null };
+};
+
+function AnuncioTab({ onMudou }: { onMudou: () => void }) {
+  const isPhone = useIsPhone();
+  const [sub, setSub] = usePersistentTab<'pendente' | 'revisado'>('subanu', 'pendente', ['pendente', 'revisado'] as const);
+  const [itens, setItens] = useState<ItemAnuncio[]>([]);
+  const [podeRevisar, setPodeRevisar] = useState(false);
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState('');
+  const [revisarDe, setRevisarDe] = useState<ItemAnuncio | null>(null);
+  const [obs, setObs] = useState('');
+  const [salvando, setSalvando] = useState(false);
+
+  async function carregar(status = sub) {
+    setCarregando(true); setErro('');
+    try {
+      const resp = await fetch(`${API}/pendencias/anuncio?status=${status}`, { credentials: 'include' });
+      const d = await resp.json();
+      if (!resp.ok || d.ok === false) throw new Error(d.error || `Erro ${resp.status}`);
+      setItens(d.itens || []); setPodeRevisar(!!d.podeRevisar);
+    } catch (e: any) { setErro(e?.message || 'Erro ao carregar'); }
+    setCarregando(false);
+  }
+  useEffect(() => { carregar(sub); }, [sub]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function confirmar() {
+    if (!revisarDe) return;
+    setSalvando(true); setErro('');
+    try {
+      const resp = await fetch(`${API}/pendencias/anuncio/revisar`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pecaId: revisarDe.pecaId, observacao: obs }) });
+      const d = await resp.json().catch(() => ({}));
+      if (!resp.ok || d.ok === false) throw new Error(d.error || `Erro ${resp.status}`);
+      setRevisarDe(null); setObs('');
+      await carregar(sub); onMudou();
+    } catch (e: any) { setErro(e?.message || 'Erro'); }
+    setSalvando(false);
+  }
+
+  const link = (rot: string, url: string | null) => url
+    ? <a href={url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 10px', borderRadius: 99, background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', textDecoration: 'none' }}>{rot} ↗</a>
+    : <span style={{ fontSize: 11.5, fontWeight: 600, padding: '3px 10px', borderRadius: 99, background: 'var(--white)', color: 'var(--gray-400)', border: '1px dashed var(--border)' }}>{rot}: sem link</span>;
+
+  return (
+    <>
+      <div style={{ padding: isPhone ? '12px 14px 0' : '16px 28px 0', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {([['pendente', 'A revisar'], ['revisado', 'Revisados']] as Array<['pendente' | 'revisado', string]>).map(([id, rotulo]) => (
+          <button key={id} type="button" onClick={() => setSub(id)} style={{ border: '1px solid ' + (sub === id ? 'var(--gray-800)' : 'var(--border)'), background: sub === id ? 'var(--gray-800)' : 'var(--white)', color: sub === id ? '#fff' : 'var(--gray-600)', borderRadius: 999, padding: '6px 14px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>{rotulo}</button>
+        ))}
+        <span style={{ fontSize: 12, color: 'var(--gray-400)', alignSelf: 'center' }}>Peças liberadas da revisão de devolução: confira o anúncio antes de finalizar o fluxo</span>
+      </div>
+      <div style={{ padding: isPhone ? 14 : 28, maxWidth: 1250 }}>
+        <div style={{ ...s.card, padding: '12px 16px', display: 'inline-block', minWidth: 190, marginBottom: 14 }}>
+          <div style={{ fontSize: 11.5, color: 'var(--gray-500)' }}>{sub === 'pendente' ? 'Anúncios a revisar' : 'Anúncios revisados'}</div>
+          <div style={{ fontSize: 22, fontWeight: 700 }}>{itens.length}</div>
+        </div>
+        {erro ? <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', borderRadius: 10, padding: '10px 14px', fontSize: 13, marginBottom: 12 }}>{erro}</div> : null}
+        {carregando ? <div style={{ fontSize: 13, color: 'var(--gray-400)', padding: 12 }}>Carregando...</div> : null}
+        {!carregando && !itens.length ? (
+          <div style={s.card}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-700)', marginBottom: 6 }}>{sub === 'pendente' ? 'Nenhum anúncio para revisar' : 'Nenhum anúncio revisado ainda'}</div>
+            {sub === 'pendente' ? <div style={{ fontSize: 13, color: 'var(--gray-500)' }}>Quando uma peça for marcada como revisada em Devoluções, ela aparece aqui para você conferir o anúncio. Peças enviadas para Prejuízo não entram.</div> : null}
+          </div>
+        ) : null}
+        {itens.map((it) => (
+          <div key={it.pecaId} style={s.card}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: 14, color: 'var(--blue-500)' }}>{it.idPeca}</span>
+                  <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 10px', borderRadius: 99, background: sub === 'pendente' ? '#fffbeb' : '#f0fdf4', color: sub === 'pendente' ? '#92400e' : '#15803d', border: '1px solid ' + (sub === 'pendente' ? '#fde68a' : '#bbf7d0') }}>{sub === 'pendente' ? 'Anúncio a revisar' : 'Anúncio revisado'}</span>
+                  <CanalBadge canal={it.devolucao.canal} />
+                  {podeRevisar && sub === 'pendente' ? <button onClick={() => { setRevisarDe(it); setObs(''); setErro(''); }} style={{ ...s.btn, background: '#ecfdf5', color: '#047857', borderColor: '#a7f3d0', fontWeight: 700 }}>Marcar anúncio como revisado</button> : null}
+                </div>
+                <div style={{ fontSize: 13.5, color: 'var(--gray-800)', marginTop: 6 }}>{it.descricao}</div>
+                <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 3 }}>{it.moto || '-'}{it.localizacao ? ` · ${it.localizacao}` : ''}{it.etiquetaAtual ? ` · etiqueta ${it.etiquetaAtual}` : ''}</div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+                  {link('Mercado Livre', it.links.ml)}
+                  {link('Shopee', it.links.shopee)}
+                  {link('Magalu', it.links.magalu)}
+                  <span style={{ fontSize: 11.5, fontWeight: 600, padding: '3px 10px', borderRadius: 99, background: it.links.nuvemshop ? '#f5f3ff' : 'var(--white)', color: it.links.nuvemshop ? '#5b21b6' : 'var(--gray-400)', border: it.links.nuvemshop ? '1px solid #c4b5fd' : '1px dashed var(--border)' }}>{it.links.nuvemshop ? 'Nuvemshop: publicado' : 'Nuvemshop: sem anúncio'}</span>
+                </div>
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--gray-500)', textAlign: isPhone ? 'left' : 'right' }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--blue-500)' }}>{fmtMoney(it.preco)}</div>
+                <div>Motivo da devolução: <strong>{it.devolucao.motivo || '—'}</strong></div>
+                <div>NF de entrada: <strong style={{ fontFamily: 'JetBrains Mono, monospace' }}>{it.devolucao.nfEntrada || '—'}</strong></div>
+                <div>Liberada da revisão em {fmtDataHora(it.devolucao.revisadaEm)}{it.devolucao.revisadaPor ? ` por ${it.devolucao.revisadaPor}` : ''}</div>
+                {sub === 'revisado' ? <div>Anúncio revisado em {fmtDataHora(it.anuncio.revisadoEm)}{it.anuncio.revisadoPor ? ` por ${it.anuncio.revisadoPor}` : ''}</div> : null}
+              </div>
+            </div>
+            {sub === 'revisado' && it.anuncio.observacao ? <div style={{ fontSize: 12, color: 'var(--gray-600)', marginTop: 10, borderTop: '1px solid var(--border)', paddingTop: 8 }}>Obs.: {it.anuncio.observacao}</div> : null}
+          </div>
+        ))}
+      </div>
+      {revisarDe ? (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.5)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => setRevisarDe(null)}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--white)', borderRadius: 14, width: '100%', maxWidth: 440, padding: 20, boxShadow: '0 20px 60px rgba(0,0,0,.2)' }}>
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>Marcar anúncio como revisado</div>
+            <div style={{ fontSize: 12.5, color: 'var(--gray-500)', marginBottom: 14 }}>{revisarDe.idPeca} — {revisarDe.descricao}. Confirma que o anúncio foi conferido e está correto. Isso finaliza o fluxo da devolução.</div>
+            <label style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--gray-500)' }}>Observação (opcional)</label>
+            <textarea value={obs} onChange={(e) => setObs(e.target.value)} rows={3} style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 8, marginTop: 4, boxSizing: 'border-box', fontFamily: 'inherit' }} />
+            {erro ? <div style={{ marginTop: 10, fontSize: 12.5, color: '#b91c1c' }}>{erro}</div> : null}
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
+              <button onClick={() => setRevisarDe(null)} style={{ ...s.btn, background: 'var(--white)', color: 'var(--gray-700)', borderColor: 'var(--border)' }}>Cancelar</button>
+              <button onClick={confirmar} disabled={salvando} style={{ ...s.btn, background: '#047857', color: '#fff', borderColor: '#047857', fontWeight: 700 }}>{salvando ? 'Salvando...' : 'Confirmar'}</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 // ───────────── Pagina ─────────────
-const ABAS_PRINCIPAIS = ['recebimentos', 'devolucoes'] as const;
+const ABAS_PRINCIPAIS = ['recebimentos', 'devolucoes', 'anuncio'] as const;
 
 export default function PendenciasPage() {
   const isPhone = useIsPhone();
-  const [aba, setAba] = usePersistentTab<'recebimentos' | 'devolucoes'>('aba', 'recebimentos', ABAS_PRINCIPAIS);
+  const [aba, setAba] = usePersistentTab<'recebimentos' | 'devolucoes' | 'anuncio'>('aba', 'recebimentos', ABAS_PRINCIPAIS);
+  const [anunciosPendentes, setAnunciosPendentes] = useState(0);
+  const contarAnuncios = () => {
+    fetch(`${API}/pendencias/anuncio/contagem`, { credentials: 'include' }).then((r) => r.json()).then((d) => setAnunciosPendentes(Number(d?.pendentes || 0))).catch(() => undefined);
+  };
+  useEffect(() => { contarAnuncios(); }, [aba]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <>
       <div style={{ ...s.topbar, padding: isPhone ? '12px 14px' : '10px 28px' }}>
         <div>
           <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)', letterSpacing: '-0.3px' }}>Pendências</div>
-          <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>Recebimentos a conferir e peças devolvidas em revisão</div>
+          <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>Recebimentos a conferir, peças devolvidas em revisão e anúncios a conferir</div>
         </div>
       </div>
-      <TabsBar tabs={[{ id: 'recebimentos', label: 'Recebimentos' }, { id: 'devolucoes', label: 'Devoluções' }]} active={aba} onChange={(id) => setAba(id as 'recebimentos' | 'devolucoes')} />
-      {aba === 'recebimentos' ? <RecebimentosTab /> : <DevolucoesTab />}
+      <TabsBar tabs={[{ id: 'recebimentos', label: 'Recebimentos' }, { id: 'devolucoes', label: 'Devoluções' }, { id: 'anuncio', label: 'Anúncio', badge: anunciosPendentes > 0 ? anunciosPendentes : undefined }]} active={aba} onChange={(id) => setAba(id as 'recebimentos' | 'devolucoes' | 'anuncio')} />
+      {aba === 'recebimentos' ? <RecebimentosTab /> : aba === 'devolucoes' ? <DevolucoesTab /> : <AnuncioTab onMudou={contarAnuncios} />}
     </>
   );
 }

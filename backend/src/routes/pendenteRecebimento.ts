@@ -135,6 +135,63 @@ pendenteRecebimentoRouter.get('/', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// ───────────── Anuncio: pecas liberadas da revisao de devolucao que precisam ter o anuncio conferido ─────────────
+
+// GET /pendencias/anuncio?status=pendente|revisado
+pendenteRecebimentoRouter.get('/anuncio', async (req, res, next) => {
+  try {
+    await garantirTabelaRevisao();
+    await garantirTabelasDevolucao();
+    const status = String(req.query.status || 'pendente') === 'revisado' ? 'revisado' : 'pendente';
+    const rows = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT r."pecaId", r."revisadaEm", r."revisadaPor", r."anuncioEm", r."anuncioRevisadoEm", r."anuncioRevisadoPor", r."anuncioObs",
+              p."idPeca", p."descricao", p."localizacao", p."detranEtiqueta", p."precoML", p."disponivel",
+              p."mercadoLivreLink", p."shopeeLink", p."magaluLink", p."nuvemshopProdutoId",
+              m."marca", m."modelo", m."ano", dr."nfDevolucao" AS "nfEntrada", dr."canal" AS "canal", dm."nome" AS "motivoNome"
+       FROM "PecaEmRevisao" r
+       JOIN "Peca" p ON p."id" = r."pecaId"
+       LEFT JOIN "Moto" m ON m."id" = p."motoId"
+       LEFT JOIN LATERAL (SELECT x."motivoId", x."nfDevolucao", x."canal" FROM "DevolucaoRegistro" x WHERE x."pecaId" = r."pecaId" ORDER BY x."dataDevolucao" DESC, x."id" DESC LIMIT 1) dr ON true
+       LEFT JOIN "DevolucaoMotivo" dm ON dm."id" = dr."motivoId"
+       WHERE r."anuncioStatus" = $1
+       ORDER BY ${status === 'revisado' ? 'r."anuncioRevisadoEm"' : 'r."anuncioEm"'} DESC LIMIT 500`, status);
+    res.json({
+      ok: true, status, podeRevisar: temAcao(req, 'revisar'),
+      itens: rows.map((r) => ({
+        pecaId: Number(r.pecaId), idPeca: r.idPeca, descricao: r.descricao, localizacao: r.localizacao, etiquetaAtual: r.detranEtiqueta || null,
+        moto: [r.marca, r.modelo, r.ano].filter(Boolean).join(' '), preco: Number(r.precoML || 0), disponivel: !!r.disponivel,
+        links: { ml: r.mercadoLivreLink || null, shopee: r.shopeeLink || null, magalu: r.magaluLink || null, nuvemshop: !!r.nuvemshopProdutoId },
+        devolucao: { motivo: r.motivoNome || null, nfEntrada: r.nfEntrada || null, canal: r.canal || null, revisadaEm: r.revisadaEm, revisadaPor: r.revisadaPor },
+        anuncio: { enviadoEm: r.anuncioEm, revisadoEm: r.anuncioRevisadoEm, revisadoPor: r.anuncioRevisadoPor, observacao: r.anuncioObs || null },
+      })),
+    });
+  } catch (e) { next(e); }
+});
+
+// GET /pendencias/anuncio/contagem — quantas pecas aguardam a revisao do anuncio (selo da aba)
+pendenteRecebimentoRouter.get('/anuncio/contagem', async (_req, res, next) => {
+  try {
+    await garantirTabelaRevisao();
+    const [r] = await prisma.$queryRawUnsafe<any[]>(`SELECT count(*)::int AS n FROM "PecaEmRevisao" WHERE "anuncioStatus" = 'pendente'`);
+    res.json({ ok: true, pendentes: Number(r?.n || 0) });
+  } catch (e) { next(e); }
+});
+
+// POST /pendencias/anuncio/revisar { pecaId, observacao? } — anuncio conferido: fecha o fluxo da devolucao
+pendenteRecebimentoRouter.post('/anuncio/revisar', async (req, res, next) => {
+  try {
+    if (!temAcao(req, 'revisar')) return res.status(403).json({ ok: false, error: 'Seu usuario nao tem permissao para revisar anuncios.' });
+    const pecaId = Number(req.body?.pecaId);
+    if (!Number.isInteger(pecaId) || pecaId <= 0) return res.status(400).json({ ok: false, error: 'Informe a peca.' });
+    await garantirTabelaRevisao();
+    const n = await prisma.$executeRawUnsafe(
+      `UPDATE "PecaEmRevisao" SET "anuncioStatus" = 'revisado', "anuncioRevisadoEm" = now(), "anuncioRevisadoPor" = $2, "anuncioObs" = $3
+       WHERE "pecaId" = $1::int AND "anuncioStatus" = 'pendente'`, pecaId, usuario(req), String(req.body?.observacao || '').trim().slice(0, 500) || null);
+    if (!n) return res.status(400).json({ ok: false, error: 'Esta peca nao esta aguardando revisao de anuncio.' });
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
 // ───────────── Devolucoes (pecas em revisao apos cancelamento de venda) ─────────────
 
 // GET /pendencias/devolucoes?status=em_revisao|revisada
@@ -209,6 +266,11 @@ pendenteRecebimentoRouter.post('/devolucoes/revisar', async (req, res, next) => 
     await salvarNfEntrada(pecaId, nfEntrada, usuario(req));
     const r = await marcarRevisada(pecaId, usuario(req), String(req.body?.observacao || '').trim().slice(0, 500) || null);
     if (!r.ok) return res.status(400).json({ ok: false, error: r.erro || 'Nao foi possivel concluir a revisao.' });
+    // peca liberada (NAO prejuizo): segue para a aba Anuncio, para conferir o anuncio e finalizar o fluxo
+    try {
+      await garantirTabelaRevisao();
+      await prisma.$executeRawUnsafe(`UPDATE "PecaEmRevisao" SET "anuncioStatus" = 'pendente', "anuncioEm" = now(), "anuncioRevisadoEm" = NULL, "anuncioRevisadoPor" = NULL, "anuncioObs" = NULL WHERE "pecaId" = $1::int`, pecaId);
+    } catch (e) { console.error('[pendencias] falha ao enviar peca para a aba Anuncio:', (e as any)?.message || e); }
     res.json({ ok: true, ajusteBling: r.ajuste?.texto || null });
   } catch (e) { next(e); }
 });

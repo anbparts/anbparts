@@ -18,6 +18,10 @@ export function garantirTabelaRevisao(): Promise<void> {
       await prisma.$executeRawUnsafe(`ALTER TABLE "PecaEmRevisao" ADD COLUMN IF NOT EXISTS "blingSaida" BOOLEAN NOT NULL DEFAULT false`);
       await prisma.$executeRawUnsafe(`ALTER TABLE "PecaEmRevisao" ADD COLUMN IF NOT EXISTS "blingSaidaEm" TIMESTAMP`);
       await prisma.$executeRawUnsafe(`ALTER TABLE "PecaEmRevisao" ADD COLUMN IF NOT EXISTS "blingSaidaErro" TEXT`);
+      // etapa final do fluxo de devolucao: conferir o anuncio da peca liberada (null | pendente | revisado)
+      for (const col of ['"anuncioStatus" TEXT', '"anuncioEm" TIMESTAMP', '"anuncioRevisadoEm" TIMESTAMP', '"anuncioRevisadoPor" TEXT', '"anuncioObs" TEXT']) {
+        await prisma.$executeRawUnsafe(`ALTER TABLE "PecaEmRevisao" ADD COLUMN IF NOT EXISTS ${col}`);
+      }
     })().catch((e) => { tabelaPronta = null; throw e; });
   }
   return tabelaPronta;
