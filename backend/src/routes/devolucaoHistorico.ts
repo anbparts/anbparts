@@ -70,7 +70,7 @@ devolucaoHistoricoRouter.get('/', async (req, res, next) => {
     const rows = await prisma.$queryRawUnsafe<any[]>(
       `SELECT d."id", d."pecaId", d."idPeca", d."descricao", d."pedidoNum", d."pedidoId", d."dataVenda"::text AS "dataVenda", d."dataDevolucao"::text AS "dataDevolucao",
               d."motoId", d."motoNome", d."motoLabel", d."valor", d."valorLiq", d."frete", d."taxas", d."nfVenda", d."nfDevolucao", d."canal", d."motivoId", mo."nome" AS "motivoNome", d."observacao", d."origem",
-              d."criadoEm", d."atualizadoEm", d."atualizadoPor", ${STATUS_ATUAL} AS "statusAtual", pc."localizacao" AS "localizacaoAtual", pc."etiquetaPendente" AS "etiquetaPendente", pc."detranEtiqueta" AS "etiquetaAtual", pc."detranStatus" AS "detranStatus", bp."clienteNome" AS "clienteNome",
+              d."criadoEm", d."atualizadoEm", d."atualizadoPor", ${STATUS_ATUAL} AS "statusAtual", pc."localizacao" AS "localizacaoAtual", pc."etiquetaPendente" AS "etiquetaPendente", pc."detranEtiqueta" AS "etiquetaAtual", pc."detranStatus" AS "detranStatus", COALESCE(bp."clienteNome", d."clienteNome") AS "clienteNome",
               (SELECT json_agg(json_build_object('etiqueta', h."etiquetasDetran", 'baixada', COALESCE(h."etiquetaBaixada", false)) ORDER BY h."id")
                  FROM "HistoricoDevolucao" h
                 WHERE h."pecaId" = d."pecaId" AND h."etiquetasDetran" IS NOT NULL AND h."etiquetasDetran" <> ''
@@ -138,6 +138,26 @@ devolucaoHistoricoRouter.get('/nf-venda', async (req, res, next) => {
     const info = await loadBlingVendaInfo({ pedidoNum, pedidoId } as any);
     if (!info?.nfNumero) return res.json({ ok: true, nf: null, aviso: 'O Bling nao retornou uma NF para esse pedido.' });
     res.json({ ok: true, nf: info.nfNumero, clienteNome: info.clienteNome || null });
+  } catch (e) { next(e); }
+});
+
+// POST /devolucoes-historico/:id/completar-bling — pelo numero do pedido, traz do Bling o cliente e a NF de saida (quando faltam) e grava no registro
+devolucaoHistoricoRouter.post('/:id(\d+)/completar-bling', exigirEdicao, async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const [r] = await prisma.$queryRawUnsafe<any[]>(`SELECT "pedidoNum","pedidoId","nfVenda","clienteNome" FROM "DevolucaoRegistro" WHERE "id" = $1::int`, id);
+    if (!r) return res.status(404).json({ ok: false, error: 'Registro nao encontrado.' });
+    if (!r.pedidoNum && !r.pedidoId) return res.status(400).json({ ok: false, error: 'Este registro nao tem numero de pedido.' });
+    const info: any = await loadBlingVendaInfo({ pedidoNum: r.pedidoNum || '', pedidoId: r.pedidoId || '' } as any);
+    const cliente = String(info?.clienteNome || '').trim();
+    const nf = String(info?.nfNumero || '').trim();
+    const pedidoId = String(info?.pedidoId || '').trim();
+    if (!cliente && !nf && !pedidoId) return res.json({ ok: true, achou: false, aviso: 'O Bling nao retornou dados para esse numero de pedido.' });
+    await prisma.$executeRawUnsafe(
+      `UPDATE "DevolucaoRegistro" SET "clienteNome" = COALESCE(NULLIF($2, ''), "clienteNome"), "nfVenda" = COALESCE("nfVenda", NULLIF($3, '')),
+         "pedidoId" = COALESCE("pedidoId", NULLIF($4, '')), "atualizadoEm" = now(), "atualizadoPor" = $5 WHERE "id" = $1::int`,
+      id, cliente, nf, pedidoId, usuario(req));
+    res.json({ ok: true, achou: true, clienteNome: cliente || null, nfVenda: nf || null });
   } catch (e) { next(e); }
 });
 

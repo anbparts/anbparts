@@ -29,7 +29,7 @@ export function garantirTabelasDevolucao(): Promise<void> {
         "valor" NUMERIC(14,2), "valorLiq" NUMERIC(14,2), "canal" TEXT,
         "motivoId" INTEGER, "observacao" TEXT, "origem" TEXT,
         "criadoEm" TIMESTAMP NOT NULL DEFAULT now(), "atualizadoEm" TIMESTAMP, "atualizadoPor" TEXT)`);
-      for (const col of ['"frete" NUMERIC(14,2)', '"taxas" NUMERIC(14,2)', '"nfVenda" TEXT', '"nfDevolucao" TEXT']) {
+      for (const col of ['"frete" NUMERIC(14,2)', '"taxas" NUMERIC(14,2)', '"nfVenda" TEXT', '"nfDevolucao" TEXT', '"clienteNome" TEXT']) {
         await prisma.$executeRawUnsafe(`ALTER TABLE "DevolucaoRegistro" ADD COLUMN IF NOT EXISTS ${col}`);
       }
       await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "DevolucaoRegistro_dedupe_uq" ON "DevolucaoRegistro" ("pecaId", COALESCE("pedidoNum", ''), "dataDevolucao")`);

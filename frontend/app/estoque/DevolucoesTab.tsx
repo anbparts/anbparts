@@ -238,7 +238,7 @@ function Info({ k, children, aviso }: { k: string; children?: any; aviso?: boole
 function BlocoDet({ titulo, children }: { titulo: string; children?: any }) {
   return <div style={{ minWidth: 0 }}><div style={{ ...rotulo, marginBottom: 6 }}>{titulo}</div>{children}</div>;
 }
-function DetalhesRegistro({ r, podeEditar, onEditar }: { r: Registro; podeEditar: boolean; onEditar: (r: Registro) => void }) {
+function DetalhesRegistro({ r, podeEditar, onEditar, onCompletar, completando }: { r: Registro; podeEditar: boolean; onEditar: (r: Registro) => void; onCompletar: (r: Registro) => void; completando: boolean }) {
   const et = etiquetasDe(r);
   const st = statusEtiqueta(r);
   const mono: any = { fontFamily: 'JetBrains Mono, monospace' };
@@ -246,14 +246,14 @@ function DetalhesRegistro({ r, podeEditar, onEditar }: { r: Registro; podeEditar
   return (
     <div style={{ background: '#f8fafc', borderTop: '1px solid var(--border)', padding: '16px 20px 18px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 22 }}>
       <BlocoDet titulo="Cliente e pedido">
-        <Info k="Cliente">{r.clienteNome || '—'}</Info>
+        <Info k="Cliente">{r.clienteNome || (podeEditar && r.pedidoNum ? <button type="button" onClick={() => onCompletar(r)} disabled={completando} style={{ background: 'none', border: 'none', color: 'var(--blue-500)', cursor: 'pointer', fontSize: 12.5, padding: 0, fontWeight: 600 }}>{completando ? 'Buscando...' : 'Buscar no Bling'}</button> : '—')}</Info>
         <Info k="Pedido">{r.pedidoNum ? `#${r.pedidoNum}` : '—'}</Info>
         <Info k="Marketplace">{r.canal ? <CanalBadge canal={r.canal} /> : '—'}</Info>
         <Info k="Data da venda">{dataBr(r.dataVenda)}</Info>
         <Info k="Data da devolução">{dataBr(r.dataDevolucao)}</Info>
       </BlocoDet>
       <BlocoDet titulo="Notas fiscais">
-        <Info k="NF de saída (venda)" aviso={!r.nfVenda}>{nfOu(r.nfVenda, 'Não informada')}</Info>
+        <Info k="NF de saída (venda)" aviso={!r.nfVenda && !(podeEditar && !!r.pedidoNum)}>{r.nfVenda ? nfOu(r.nfVenda, '') : (podeEditar && r.pedidoNum ? <button type="button" onClick={() => onCompletar(r)} disabled={completando} style={{ background: 'none', border: 'none', color: 'var(--blue-500)', cursor: 'pointer', fontSize: 12.5, padding: 0, fontWeight: 600 }}>{completando ? 'Buscando...' : 'Buscar no Bling'}</button> : 'Não informada')}</Info>
         <Info k="NF de entrada (retorno)" aviso={!r.nfDevolucao}>{nfOu(r.nfDevolucao, 'Não informada')}</Info>
       </BlocoDet>
       <BlocoDet titulo="Etiquetas Detran">
@@ -304,6 +304,18 @@ export default function DevolucoesTab({ padding }: { padding: number }) {
   const [novo, setNovo] = useState(false);
   const [verEtiquetas, setVerEtiquetas] = useState<Registro | null>(null);
   const [abertas, setAbertas] = useState<Record<number, boolean>>({});
+  const [completando, setCompletando] = useState<number | null>(null);
+  const completarBling = async (r: Registro) => {
+    setCompletando(r.id); setErro('');
+    try {
+      const resp = await fetch(`${API_BASE}/devolucoes-historico/${r.id}/completar-bling`, { method: 'POST', credentials: 'include' });
+      const d = await resp.json().catch(() => ({}));
+      if (!resp.ok || d.ok === false) throw new Error(d.error || `Erro ${resp.status}`);
+      if (d.achou === false) setErro(d.aviso || 'O Bling não retornou dados para esse pedido.');
+      await carregar();
+    } catch (e: any) { setErro(e?.message || 'Não foi possível consultar o Bling'); }
+    setCompletando(null);
+  };
   const alternar = (id: number) => setAbertas((c) => ({ ...c, [id]: !c[id] }));
   const seq = useRef(0);
 
@@ -450,7 +462,7 @@ export default function DevolucoesTab({ padding }: { padding: number }) {
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 10, flexWrap: 'wrap' }}><ChipStatus r={r} />{etiquetasDe(r).length ? <ChipEtiqueta r={r} onAbrir={setVerEtiquetas} /> : null}{chipMotivo(r)}{botaoEditar(r)}</div>
               {r.observacao ? <div style={{ fontSize: 12, color: 'var(--gray-600)', marginTop: 8 }}>Obs.: {r.observacao}</div> : null}
               <button type="button" onClick={() => alternar(r.id)} style={{ marginTop: 10, background: 'none', border: 'none', color: 'var(--blue-500)', cursor: 'pointer', fontSize: 12.5, padding: 0, fontWeight: 600 }}>{abertas[r.id] ? 'Ocultar detalhes ▴' : 'Ver detalhes ▾'}</button>
-              {abertas[r.id] ? <div style={{ margin: '12px -14px -14px', borderRadius: '0 0 12px 12px', overflow: 'hidden' }}><DetalhesRegistro r={r} podeEditar={podeEditar} onEditar={setEditar} /></div> : null}
+              {abertas[r.id] ? <div style={{ margin: '12px -14px -14px', borderRadius: '0 0 12px 12px', overflow: 'hidden' }}><DetalhesRegistro r={r} podeEditar={podeEditar} onEditar={setEditar} onCompletar={completarBling} completando={completando === r.id} /></div> : null}
             </div>
           ))}
         </div>
@@ -504,7 +516,7 @@ export default function DevolucoesTab({ padding }: { padding: number }) {
                     <td style={{ padding: '10px 12px' }}>{chipMotivo(r)}</td>
                     <td style={{ padding: '10px 12px', textAlign: 'right' }}>{botaoEditar(r)}</td>
                   </tr>
-                  {abertas[r.id] ? <tr style={{ borderBottom: '1px solid var(--border)' }}><td colSpan={COLS.length} style={{ padding: 0 }}><DetalhesRegistro r={r} podeEditar={podeEditar} onEditar={setEditar} /></td></tr> : null}
+                  {abertas[r.id] ? <tr style={{ borderBottom: '1px solid var(--border)' }}><td colSpan={COLS.length} style={{ padding: 0 }}><DetalhesRegistro r={r} podeEditar={podeEditar} onEditar={setEditar} onCompletar={completarBling} completando={completando === r.id} /></td></tr> : null}
                   </Fragment>
                 ))}
               </tbody>
