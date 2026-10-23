@@ -55,10 +55,13 @@ devolucaoHistoricoRouter.get('/', async (req, res, next) => {
     if (dataOk(q.de)) add(`d."dataDevolucao" >= ?::date`, q.de);
     if (dataOk(q.ate)) add(`d."dataDevolucao" <= ?::date`, q.ate);
     if (q.canal) add(`d."canal" = ?`, String(q.canal));
-    if (['em_revisao', 'prejuizo', 'estoque', 'vendida', 'sem_peca'].includes(String(q.status || ''))) add(`${STATUS_ATUAL} = ?`, String(q.status));
     if (q.origem) add(`d."origem" = ?`, String(q.origem));
     if (q.motivo === 'sem') where.push(`d."motivoId" IS NULL`);
     else if (/^\d+$/.test(String(q.motivo || ''))) add(`d."motivoId" = ?::int`, q.motivo);
+    // os cartoes de resumo ignoram o filtro de status (senao clicar num cartao zeraria os outros)
+    const filtroSemStatus = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    const paramsSemStatus = params.slice();
+    if (['em_revisao', 'prejuizo', 'estoque', 'vendida', 'sem_peca'].includes(String(q.status || ''))) add(`${STATUS_ATUAL} = ?`, String(q.status));
     const filtro = where.length ? `WHERE ${where.join(' AND ')}` : '';
     const per = Math.min(200, Math.max(10, Number(q.per) || 50));
     const page = Math.max(1, Number(q.page) || 1);
@@ -77,6 +80,12 @@ devolucaoHistoricoRouter.get('/', async (req, res, next) => {
     const [tot] = await prisma.$queryRawUnsafe<any[]>(
       `SELECT count(*)::int AS n, COALESCE(sum(d."valor"),0) AS valor, COALESCE(sum(d."valorLiq"),0) AS "valorLiq", count(*) FILTER (WHERE d."motivoId" IS NULL)::int AS "semMotivo"
        FROM "DevolucaoRegistro" d ${JOINS_STATUS} ${filtro}`, ...params);
+    const porStatusRows = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT ${STATUS_ATUAL} AS status, count(*)::int AS qtd, count(*) FILTER (WHERE d."motivoId" IS NULL)::int AS "semMotivo"
+       FROM "DevolucaoRegistro" d ${JOINS_STATUS} ${filtroSemStatus} GROUP BY 1`, ...paramsSemStatus);
+    const porStatus: Record<string, number> = {};
+    let totalGeral = 0; let semMotivoGeral = 0;
+    for (const r of porStatusRows) { porStatus[r.status] = num(r.qtd); totalGeral += num(r.qtd); semMotivoGeral += num(r.semMotivo); }
     const porMotivo = await prisma.$queryRawUnsafe<any[]>(
       `SELECT COALESCE(mo."nome", 'Sem motivo informado') AS nome, count(*)::int AS qtd
        FROM "DevolucaoRegistro" d LEFT JOIN "DevolucaoMotivo" mo ON mo."id" = d."motivoId" ${JOINS_STATUS} ${filtro} GROUP BY 1 ORDER BY 2 DESC`, ...params);
@@ -85,7 +94,7 @@ devolucaoHistoricoRouter.get('/', async (req, res, next) => {
 
     res.json({
       ok: true, page, per, total: num(tot?.n),
-      resumo: { qtd: num(tot?.n), valor: num(tot?.valor), valorLiq: num(tot?.valorLiq), semMotivo: num(tot?.semMotivo), porMotivo },
+      resumo: { qtd: num(tot?.n), valor: num(tot?.valor), valorLiq: num(tot?.valorLiq), semMotivo: num(tot?.semMotivo), porMotivo, totalGeral, semMotivoGeral, porStatus },
       canais: canais.map((c) => c.canal), motivos, podeEditar: podeEditar(req),
       itens: rows.map((r) => ({ ...r, id: Number(r.id), valor: r.valor == null ? null : num(r.valor), valorLiq: r.valorLiq == null ? null : num(r.valorLiq), frete: r.frete == null ? null : num(r.frete), taxas: r.taxas == null ? null : num(r.taxas) })),
     });

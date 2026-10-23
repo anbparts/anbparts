@@ -85,7 +85,7 @@ function ChipStatus({ r }: { r: Registro }) {
 }
 type Resposta = {
   total: number; per: number; page: number; podeEditar: boolean; canais: string[]; motivos: MotivoOpcao[];
-  resumo: { qtd: number; valor: number; valorLiq: number; semMotivo: number; porMotivo: Array<{ nome: string; qtd: number }> };
+  resumo: { qtd: number; valor: number; valorLiq: number; semMotivo: number; porMotivo: Array<{ nome: string; qtd: number }>; totalGeral: number; semMotivoGeral: number; porStatus: Record<string, number> };
   itens: Registro[];
 };
 
@@ -309,13 +309,22 @@ export default function DevolucoesTab({ padding }: { padding: number }) {
   const totalPaginas = dados ? Math.max(1, Math.ceil(dados.total / dados.per)) : 1;
   const podeEditar = !!dados?.podeEditar;
 
-  const cartao = (titulo: string, valor: string, cor = 'var(--gray-800)', dica?: string) => (
-    <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 12, padding: '12px 16px', minWidth: isPhone ? 0 : 170, flex: isPhone ? '1 1 140px' : '0 0 auto' }}>
-      <div style={{ fontSize: 11.5, color: 'var(--gray-500)' }}>{titulo}</div>
-      <div style={{ fontSize: 21, fontWeight: 700, color: cor, marginTop: 2 }}>{valor}</div>
-      {dica ? <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 2 }}>{dica}</div> : null}
-    </div>
-  );
+  const total = resumo?.totalGeral || 0;
+  const cardStatus = (chave: string, titulo: string, qtd: number, cor: string, dica: string) => {
+    const ativo = statusF === chave && chave !== '';
+    const pct = chave && total ? Math.round((qtd / total) * 100) : null;
+    return (
+      <button key={chave || 'todas'} type="button" onClick={() => mudar(() => setStatusF(ativo ? '' : chave))}
+        style={{ textAlign: 'left', cursor: 'pointer', background: ativo ? 'var(--gray-50, #f9fafb)' : 'var(--white)', border: ativo ? `2px solid ${cor}` : '1px solid var(--border)', borderRadius: 12, padding: ativo ? '11px 15px' : '12px 16px', fontFamily: 'inherit' }}>
+        <div style={{ fontSize: 11.5, color: 'var(--gray-500)' }}>{titulo}</div>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 2 }}>
+          <span style={{ fontSize: 22, fontWeight: 700, color: cor }}>{qtd}</span>
+          {pct != null ? <span style={{ fontSize: 11.5, color: 'var(--gray-400)' }}>{pct}%</span> : null}
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 2 }}>{dica}</div>
+      </button>
+    );
+  };
 
   const chipMotivo = (r: Registro) => r.motivoNome
     ? <span style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 10px', borderRadius: 99, background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', whiteSpace: 'nowrap' }}>{r.motivoNome}</span>
@@ -327,12 +336,21 @@ export default function DevolucoesTab({ padding }: { padding: number }) {
 
   return (
     <div style={{ padding, maxWidth: 1500 }}>
-      {/* Resumo */}
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
-        {cartao(filtrando ? 'Registros no filtro' : 'Cancelamentos e devoluções', String(resumo?.qtd ?? '—'))}
-        {cartao('Valor vendido (estornado)', brl(resumo?.valor ?? 0), 'var(--blue-500)', 'preço de venda das peças')}
-        {cartao('Valor líquido estornado', brl(resumo?.valorLiq ?? 0), 'var(--green)')}
-        {cartao('Sem motivo informado', String(resumo?.semMotivo ?? '—'), (resumo?.semMotivo || 0) > 0 ? '#b45309' : 'var(--gray-800)', 'ajuste em Editar / Informar motivo')}
+      {/* Resumo: onde estao hoje as pecas devolvidas (clique para filtrar) */}
+      <div style={{ display: 'grid', gridTemplateColumns: isPhone ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 14 }}>
+        {cardStatus('', 'Devoluções', resumo?.totalGeral ?? 0, 'var(--gray-800)', 'registradas no período')}
+        {cardStatus('estoque', 'Em estoque', resumo?.porStatus?.estoque ?? 0, '#15803d', 'voltaram e estão disponíveis')}
+        {cardStatus('vendida', 'Vendidas novamente', resumo?.porStatus?.vendida ?? 0, '#1d4ed8', 'já foram vendidas de novo')}
+        {cardStatus('prejuizo', 'Em prejuízo', resumo?.porStatus?.prejuizo ?? 0, '#b91c1c', 'viraram prejuízo')}
+        {cardStatus('em_revisao', 'Em revisão', resumo?.porStatus?.em_revisao ?? 0, '#b45309', 'aguardando revisão')}
+        {(resumo?.porStatus?.sem_peca || 0) > 0 ? cardStatus('sem_peca', 'Peça não encontrada', resumo?.porStatus?.sem_peca ?? 0, '#475569', 'SKU fora do estoque') : null}
+        {(resumo?.semMotivoGeral || 0) > 0 ? (
+          <button type="button" onClick={() => mudar(() => setMotivo(motivo === 'sem' ? '' : 'sem'))} style={{ textAlign: 'left', cursor: 'pointer', background: motivo === 'sem' ? '#fffbeb' : 'var(--white)', border: '1px ' + (motivo === 'sem' ? 'solid #fcd34d' : 'dashed #fcd34d'), borderRadius: 12, padding: '12px 16px', fontFamily: 'inherit' }}>
+            <div style={{ fontSize: 11.5, color: 'var(--gray-500)' }}>Sem motivo informado</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: '#b45309', marginTop: 2 }}>{resumo?.semMotivoGeral}</div>
+            <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 2 }}>informe em Editar</div>
+          </button>
+        ) : null}
       </div>
 
       {/* Filtros */}
