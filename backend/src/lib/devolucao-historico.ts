@@ -167,3 +167,28 @@ export async function salvarNfEntrada(pecaId: number, nf: string, por: string | 
     valor: n(p.precoML), valorLiq: n(p.valorLiq), frete: n(p.valorFrete), taxas: n(p.valorTaxas), nfDevolucao: nf, origem: 'cancelamento_importado' }]);
   return (await atualizar()) > 0;
 }
+
+// Depois do cancelamento: busca no Bling (em segundo plano) o cliente e a NF de saida de cada pedido e grava nos registros.
+// Sequencial para respeitar o limite do Bling; qualquer falha so deixa o campo vazio (ha o botao "Buscar no Bling" na aba Devolucoes).
+export async function completarDoBling(itens: NovoRegistroDevolucao[]) {
+  let loadBlingVendaInfo: any;
+  try { ({ loadBlingVendaInfo } = await import('../routes/etiquetas-detran')); } catch { return; }
+  const cache = new Map<string, { cliente: string; nf: string; pedidoId: string } | null>();
+  for (const i of itens) {
+    const num = i.pedidoNum ? String(i.pedidoNum) : '';
+    const pid = i.pedidoId ? String(i.pedidoId) : '';
+    if (!num && !pid) continue;
+    const chave = num || pid;
+    try {
+      if (!cache.has(chave)) {
+        const info: any = await loadBlingVendaInfo({ pedidoNum: num, pedidoId: pid });
+        cache.set(chave, info ? { cliente: String(info.clienteNome || '').trim(), nf: String(info.nfNumero || '').trim(), pedidoId: String(info.pedidoId || '').trim() } : null);
+      }
+      const r = cache.get(chave);
+      if (!r || (!r.cliente && !r.nf && !r.pedidoId)) continue;
+      await prisma.$executeRawUnsafe(
+        `UPDATE "DevolucaoRegistro" SET "clienteNome" = COALESCE(NULLIF($3, ''), "clienteNome"), "nfVenda" = COALESCE("nfVenda", NULLIF($4, '')), "pedidoId" = COALESCE("pedidoId", NULLIF($5, ''))
+         WHERE "pecaId" = $1::int AND COALESCE("pedidoNum", '') = $2`, i.pecaId, num, r.cliente, r.nf, r.pedidoId);
+    } catch { /* Bling indisponivel para esse pedido: fica para o botao manual */ }
+  }
+}

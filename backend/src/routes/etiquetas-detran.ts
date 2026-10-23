@@ -358,6 +358,7 @@ export async function loadBlingVendaInfo(ref: BlingVendaRef) {
     pedidoId,
     pedidoNum: firstText(pedido?.numero, pedidoNum),
     nfNumero: pickNotaNumero(notaFiscal),
+    nfChave: firstText(notaFiscal?.chaveAcesso, notaFiscal?.chave),
     clienteNome: firstText(pickContatoNome(pedido?.contato), pickContatoNome(contatoDetalhe), pickContatoNome(notaFiscal)),
     clienteDoc: firstText(pickContatoDocumento(pedido?.contato), pickContatoDocumento(contatoDetalhe), pickContatoDocumento(notaFiscal)),
   };

@@ -5,6 +5,7 @@ import { useIsPhone } from '@/lib/use-is-phone';
 import { usePersistentTab } from '@/lib/use-persistent-tab';
 import TabsBar from '@/components/ui/TabsBar';
 import CanalBadge from '@/components/ui/CanalBadge';
+import { NfNumero } from '@/components/devolucoes/NfChave';
 import { MotivoDevolucaoModal, TiposDevolucaoModal, type MotivoOpcao } from '@/components/devolucoes/DevolucaoModais';
 
 const API = API_BASE;
@@ -219,7 +220,7 @@ type ItemDev = {
   motivo: string | null; status: string; criadoEm: string; revisadaEm: string | null; revisadaPor: string | null; observacao: string | null;
   blingSaida?: boolean; blingSaidaErro?: string | null;
   tipo?: { id: number; nome: string; observacao: string | null } | null;
-  nfEntrada?: string | null;
+  nfEntrada?: string | null; nfSaida?: string | null;
 };
 
 function DevolucoesTab() {
@@ -363,7 +364,7 @@ function DevolucoesTab() {
                   <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: 14, color: 'var(--blue-500)' }}>{it.idPeca}</span>
                   <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 10px', borderRadius: 99, background: it.status === 'em_revisao' ? '#fffbeb' : it.status === 'prejuizo' ? '#fef2f2' : '#f0fdf4', color: it.status === 'em_revisao' ? '#92400e' : it.status === 'prejuizo' ? '#b91c1c' : '#15803d', border: '1px solid ' + (it.status === 'em_revisao' ? '#fde68a' : it.status === 'prejuizo' ? '#fecaca' : '#bbf7d0') }}>{it.status === 'em_revisao' ? 'Em Revisão' : it.status === 'prejuizo' ? 'Enviada para Prejuízo' : 'Revisada'}</span>
                   <CanalBadge canal={it.pedido.canal} />
-                  {it.nfEntrada ? <button type="button" disabled={!podeRevisar} onClick={() => abrirNf(it)} title={podeRevisar ? 'Alterar a NF de entrada' : undefined} style={{ fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 99, background: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0', cursor: podeRevisar ? 'pointer' : 'default' }}>NF entrada {it.nfEntrada}</button> : it.status === 'em_revisao' ? <button type="button" disabled={!podeRevisar} onClick={() => abrirNf(it)} title={podeRevisar ? 'Informar a NF de entrada' : undefined} style={{ fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 99, background: '#fffbeb', color: '#92400e', border: '1px dashed #fcd34d', cursor: podeRevisar ? 'pointer' : 'default' }}>NF de entrada pendente — informar</button> : null}
+                  {it.nfEntrada ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, padding: '2px 4px 2px 10px', borderRadius: 99, background: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0' }}>NF entrada <NfNumero numero={it.nfEntrada} />{podeRevisar ? <button type="button" onClick={() => abrirNf(it)} title="Alterar a NF de entrada" style={{ border: 'none', background: 'rgba(21,128,61,.12)', color: '#15803d', borderRadius: 99, width: 18, height: 18, fontSize: 10, cursor: 'pointer', padding: 0 }}>✎</button> : null}</span> : it.status === 'em_revisao' ? <button type="button" disabled={!podeRevisar} onClick={() => abrirNf(it)} title={podeRevisar ? 'Informar a NF de entrada' : undefined} style={{ fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 99, background: '#fffbeb', color: '#92400e', border: '1px dashed #fcd34d', cursor: podeRevisar ? 'pointer' : 'default' }}>NF de entrada pendente — informar</button> : null}
                   {it.tipo ? <span title={it.tipo.observacao || undefined} style={{ fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 99, background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' }}>{it.tipo.nome}</span> : <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 10px', borderRadius: 99, background: 'var(--white)', color: 'var(--gray-500)', border: '1px dashed var(--border)' }}>Sem motivo</span>}
                   {podeRevisar ? <button onClick={() => setMotivoDe(it)} style={{ ...s.btn, background: '#eff6ff', color: '#1d4ed8', borderColor: '#bfdbfe', fontWeight: 700 }}>{it.tipo ? 'Alterar motivo' : 'Informar motivo'}</button> : null}
                   {podeRevisar && it.status === 'em_revisao' ? <button onClick={() => revisar(it)} disabled={agindo === it.pecaId} style={{ ...s.btn, background: '#ecfdf5', color: '#047857', borderColor: '#a7f3d0', fontWeight: 700 }}>Marcar como revisada</button> : null}
@@ -378,6 +379,7 @@ function DevolucoesTab() {
               <div style={{ fontSize: 12, color: 'var(--gray-500)', textAlign: isPhone ? 'left' : 'right' }}>
                 <div>Pedido cancelado <strong>#{it.pedido.num || '-'}</strong>{it.pedido.clienteNome ? ` — ${it.pedido.clienteNome}` : ''}</div>
                 <div>Venda em {fmtDate(it.pedido.dataVenda || '')} · cancelamento importado em {fmtDataHora(it.criadoEm)}</div>
+                <div>NF de saída: {it.nfSaida ? <NfNumero numero={it.nfSaida} pedido={it.pedido.num} pedidoId={it.pedido.id} /> : <span style={{ color: 'var(--gray-400)' }}>ainda não encontrada no Bling</span>}</div>
                 {it.status === 'revisada' ? <div>Revisada em {fmtDataHora(it.revisadaEm)}{it.revisadaPor ? ` por ${it.revisadaPor}` : ''}</div> : null}
               </div>
             </div>

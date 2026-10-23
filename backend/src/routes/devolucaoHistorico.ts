@@ -4,6 +4,7 @@ import { prisma } from '../lib/prisma';
 import { garantirTabelasDevolucao, completarCanais, registrarDevolucoes } from '../lib/devolucao-historico';
 import { garantirTabelaRevisao } from '../lib/pecas-revisao';
 import { loadBlingVendaInfo } from './etiquetas-detran';
+import { blingReq } from './bling';
 
 // Situacao ATUAL da peca (nao a da epoca da devolucao): em revisao, prejuizo, em estoque, vendida de novo ou sem peca no sistema
 const JOINS_STATUS = `LEFT JOIN "Peca" pc ON pc."id" = d."pecaId" LEFT JOIN "PecaEmRevisao" rv ON rv."pecaId" = d."pecaId"`;
@@ -126,6 +127,47 @@ devolucaoHistoricoRouter.get('/consulta', async (req, res, next) => {
       } catch { /* pedidos locais ainda nao criados */ }
     }
     res.json({ ok: true, peca, pedido });
+  } catch (e) { next(e); }
+});
+
+// GET /devolucoes-historico/nf-chave?numero=&pedido=&pedidoId= — chave de acesso (44 digitos) de uma NF, consultada no Bling.
+// 1) se o numero e o da NF de venda do pedido, usa a nota vinculada ao pedido; 2) senao procura a nota pelo numero na listagem de NF-e.
+devolucaoHistoricoRouter.get('/nf-chave', async (req, res, next) => {
+  try {
+    const numero = String(req.query.numero || '').trim();
+    if (!numero) return res.status(400).json({ ok: false, error: 'Informe o numero da nota.' });
+    const pedidoNum = String(req.query.pedido || '').trim().replace(/^#/, '');
+    const pedidoId = String(req.query.pedidoId || '').trim();
+    const igual = (a: any, b: any) => {
+      const x = String(a ?? '').trim(); const y = String(b ?? '').trim();
+      return !!x && !!y && (x === y || (/^\d+$/.test(x) && /^\d+$/.test(y) && Number(x) === Number(y)));
+    };
+    const candidatos: any[] = [];
+    const vistos = new Set<string>();
+    const add = (c: any) => { const k = `${c.chave || ''}|${c.numero}|${c.serie || ''}|${c.tipo ?? ''}`; if (!vistos.has(k)) { vistos.add(k); candidatos.push(c); } };
+
+    if (pedidoNum || pedidoId) {
+      try {
+        const info: any = await loadBlingVendaInfo({ pedidoNum, pedidoId } as any);
+        if (info?.nfNumero && igual(info.nfNumero, numero)) add({ numero: info.nfNumero, chave: info.nfChave || null, origem: 'pedido', cliente: info.clienteNome || null });
+      } catch { /* segue para a busca por numero */ }
+    }
+    if (!candidatos.some((c) => c.chave)) {
+      for (const filtro of [`numero=${encodeURIComponent(numero)}`, `numeroNota=${encodeURIComponent(numero)}`]) {
+        let linhas: any[] = [];
+        try { linhas = ((await blingReq(`/nfe?pagina=1&limite=20&${filtro}`)) as any)?.data || []; } catch { continue; }
+        const achadas = linhas.filter((l) => igual(l?.numero, numero));
+        for (const l of achadas) {
+          let chave = String(l?.chaveAcesso || l?.chave || '').trim();
+          if (!chave && l?.id) {
+            try { chave = String(((await blingReq(`/nfe/${encodeURIComponent(String(l.id))}`)) as any)?.data?.chaveAcesso || '').trim(); } catch { /* sem detalhe */ }
+          }
+          add({ numero: l.numero, serie: l.serie ?? null, chave: chave || null, tipo: l.tipo ?? null, situacao: l.situacao ?? null, dataEmissao: l.dataEmissao ?? null, cliente: l?.contato?.nome || null, origem: 'listagem' });
+        }
+        if (achadas.length) break;
+      }
+    }
+    res.json({ ok: true, candidatos, aviso: candidatos.length ? null : 'O Bling nao retornou uma nota com esse numero.' });
   } catch (e) { next(e); }
 });
 

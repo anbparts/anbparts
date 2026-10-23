@@ -149,11 +149,11 @@ pendenteRecebimentoRouter.get('/devolucoes', async (req, res, next) => {
               r."criadoEm", r."revisadaEm", r."revisadaPor", r."observacao", r."blingSaida", r."blingSaidaErro",
               p."idPeca", p."descricao", p."localizacao", p."detranEtiqueta", p."etiquetaPendente", p."precoML" AS "precoAtual",
               m."marca", m."modelo", m."ano", b."clienteNome", b."canal", b."situacao",
-              dr."motivoId" AS "tipoId", dm."nome" AS "tipoNome", dr."observacao" AS "tipoObs", dr."nfDevolucao" AS "nfEntrada"
+              dr."motivoId" AS "tipoId", dm."nome" AS "tipoNome", dr."observacao" AS "tipoObs", dr."nfDevolucao" AS "nfEntrada", dr."nfVenda" AS "nfSaida", dr."clienteNome" AS "clienteRegistro"
        FROM "PecaEmRevisao" r
        JOIN "Peca" p ON p."id" = r."pecaId"
        LEFT JOIN "Moto" m ON m."id" = p."motoId"
-       LEFT JOIN LATERAL (SELECT x."motivoId", x."observacao", x."nfDevolucao" FROM "DevolucaoRegistro" x WHERE x."pecaId" = r."pecaId" ORDER BY x."dataDevolucao" DESC, x."id" DESC LIMIT 1) dr ON true
+       LEFT JOIN LATERAL (SELECT x."motivoId", x."observacao", x."nfDevolucao", x."nfVenda", x."clienteNome" FROM "DevolucaoRegistro" x WHERE x."pecaId" = r."pecaId" ORDER BY x."dataDevolucao" DESC, x."id" DESC LIMIT 1) dr ON true
        LEFT JOIN "DevolucaoMotivo" dm ON dm."id" = dr."motivoId"
        LEFT JOIN "BlingPedido" b ON r."pedidoId" ~ '^[0-9]+$' AND b."id" = r."pedidoId"::bigint
        WHERE ${status === 'revisada' ? `r."status" IN ('revisada','prejuizo')` : `r."status" = 'em_revisao'`}
@@ -164,9 +164,9 @@ pendenteRecebimentoRouter.get('/devolucoes', async (req, res, next) => {
       itens: rows.map((r) => ({
         pecaId: Number(r.pecaId), idPeca: r.idPeca, descricao: r.descricao, localizacao: r.localizacao, detranEtiqueta: r.detranEtiqueta, etiquetaPendente: !!r.etiquetaPendente,
         moto: [r.marca, r.modelo, r.ano].filter(Boolean).join(' '),
-        pedido: { num: r.pedidoNum, id: r.pedidoId, dataVenda: r.dataVenda, clienteNome: r.clienteNome, canal: r.canal, situacao: r.situacao },
+        pedido: { num: r.pedidoNum, id: r.pedidoId, dataVenda: r.dataVenda, clienteNome: r.clienteNome || r.clienteRegistro || null, canal: r.canal, situacao: r.situacao },
         estornado: { precoML: Number(r.precoML || 0), valorLiq: Number(r.valorLiq || 0), valorFrete: Number(r.valorFrete || 0), valorTaxas: Number(r.valorTaxas || 0) },
-        nfEntrada: r.nfEntrada || null,
+        nfEntrada: r.nfEntrada || null, nfSaida: r.nfSaida || null,
         tipo: r.tipoId ? { id: Number(r.tipoId), nome: r.tipoNome, observacao: r.tipoObs || null } : null,
         blingSaida: !!r.blingSaida, blingSaidaErro: r.blingSaidaErro || null, motivo: r.motivo, status: r.status, criadoEm: r.criadoEm, revisadaEm: r.revisadaEm, revisadaPor: r.revisadaPor, observacao: r.observacao,
       })),

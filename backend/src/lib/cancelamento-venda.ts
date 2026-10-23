@@ -1,6 +1,6 @@
 import { prisma } from './prisma';
 import { garantirTabelaRevisao, registrarRevisao } from './pecas-revisao';
-import { registrarDevolucoes, registroDePeca, type NovoRegistroDevolucao } from './devolucao-historico';
+import { registrarDevolucoes, registroDePeca, completarDoBling, type NovoRegistroDevolucao } from './devolucao-historico';
 
 type FinancialUpdate = {
   precoML?: number;
@@ -172,6 +172,10 @@ export async function cancelarVendaComDevolucaoEtiqueta(ids: number[], options: 
     };
   });
 
-  try { await registrarDevolucoes(paraHistorico); } catch (e) { console.error('[devolucoes] falha ao gravar historico:', (e as any)?.message || e); }
+  try {
+    await registrarDevolucoes(paraHistorico);
+    // cliente e NF de saida vem do Bling em segundo plano (nao atrasa nem trava o cancelamento)
+    void completarDoBling(paraHistorico).catch((e) => console.error('[devolucoes] falha ao completar pelo Bling:', (e as any)?.message || e));
+  } catch (e) { console.error('[devolucoes] falha ao gravar historico:', (e as any)?.message || e); }
   return resultado;
 }
