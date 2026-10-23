@@ -253,6 +253,8 @@ async function collectDetranBaixa(limit: number) {
       detranBaixada: false,
       disponivel: false,
       emPrejuizo: false,
+      // so peca VENDIDA (com pedido) precisa de baixa: peca em revisao de devolucao tambem esta "indisponivel", mas sem pedido (o cancelamento limpa o vinculo)
+      OR: [{ blingPedidoId: { not: null } }, { blingPedidoNum: { not: null } }],
     },
     orderBy: [{ dataVenda: 'desc' }, { id: 'desc' }],
     take: limit,

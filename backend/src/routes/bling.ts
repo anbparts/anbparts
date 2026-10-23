@@ -537,6 +537,28 @@ const BLING_API = 'https://api.bling.com.br/Api/v3';
 const BLING_OAUTH ='https://api.bling.com.br/Api/v3/oauth/token';
 const DEFAULT_FRETE_PADRAO = 29.9;
 const DEFAULT_TAXA_PADRAO_PCT = 17;
+
+// Magalu: o Bling nao traz a comissao do marketplace (taxaComissao vem 0). Regra do extrato do Magalu:
+// 9,9% sobre o valor dos itens (sem frete) + tarifa fixa de R$ 5,50 por unidade vendida. Ex.: item de R$ 459,00 -> 45,44 + 5,50 = 50,94 (liquido 408,06).
+const MAGALU_TAXA_PCT = 9.9;
+const MAGALU_TARIFA_FIXA = 5.5;
+function ehPedidoMagalu(pedido: any, cfg: any): boolean {
+  const lojaMagalu = Number((cfg as any)?.magaluLojaId || 0);
+  const lojaPedido = Number(pedido?.loja?.id || 0);
+  if (lojaMagalu > 0 && lojaPedido > 0) return lojaMagalu === lojaPedido;
+  return /magalu|magazine/i.test(JSON.stringify(pedido?.intermediador || '') + ' ' + String(pedido?.loja?.nome || ''));
+}
+// O campo "Frete por conta" do Bling nao e confiavel (vem "Remetente" mesmo quando o cliente pagou). O que vale e o total do pedido:
+// se total = itens - desconto + frete, quem pagou o frete foi o CLIENTE (repassado a transportadora), entao nao e custo do vendedor.
+function clientePagouFrete(pedido: any, subtotalItens: number, frete: number): boolean {
+  if (!(frete > 0)) return false;
+  const total = toNumber(pedido?.total, 0);
+  if (!(total > 0)) return false;
+  const descRaw = toNumber(pedido?.desconto?.valor, 0);
+  const desconto = String(pedido?.desconto?.unidade || '').toUpperCase() === 'PERCENTUAL' ? subtotalItens * (descRaw / 100) : descRaw;
+  const esperadoComFrete = subtotalItens - desconto + frete;
+  return Math.abs(total - esperadoComFrete) <= 0.05;
+}
 const AUDITORIA_DEFAULT_HORARIO = '03:00';
 const AUDITORIA_LINK_ML_DEFAULT_HORARIO = '05:00';
 const AUDITORIA_LINK_ML_DEFAULT_INTERVALO_DIAS = 1;
@@ -7647,12 +7669,12 @@ export async function montarItensSyncVendas(dataInicio: string, dataFim: string,
 
       const dataVenda = (pedido.data || '').split('T')[0]
         || new Date().toISOString().split('T')[0];
-      const taxaComissao = Number(pedido.taxas?.taxaComissao || 0);
+      let taxaComissao = Number(pedido.taxas?.taxaComissao || 0);
       const valorBase = Number(pedido.taxas?.valorBase || 0);
-      const taxaPct = valorBase > 0
+      let taxaPct = valorBase > 0
         ? roundMoney((taxaComissao / valorBase) * 100)
         : 0;
-      const fretePositivo = resolvePedidoFrete(pedido);
+      let fretePositivo = resolvePedidoFrete(pedido);
 
       const itensPedido = (pedido.itens || []).map((item: any) => {
         const skuBling = item.produto?.codigo || item.codigo || item.sku || '';
@@ -7680,6 +7702,18 @@ export async function montarItensSyncVendas(dataInicio: string, dataFim: string,
       });
 
       const subtotais = itensPedido.map((item: any) => item.subtotal);
+      {
+        const subtotalItens = subtotais.reduce((sum: number, value: number) => sum + value, 0);
+        const unidades = itensPedido.reduce((sum: number, item: any) => sum + item.quantidade, 0);
+        // Magalu: comissao 9,9% + tarifa fixa por unidade (so quando o Bling nao trouxe a comissao)
+        if (taxaComissao <= 0 && ehPedidoMagalu(pedido, cfg)) {
+          taxaComissao = roundMoney(subtotalItens * (MAGALU_TAXA_PCT / 100) + MAGALU_TARIFA_FIXA * unidades);
+          taxaPct = MAGALU_TAXA_PCT;
+        }
+        // frete que o cliente pagou por cima dos itens nao e custo do vendedor (quando o Bling informa o custo do frete, ele continua valendo)
+        const custoFreteBling = roundMoney(Math.abs(toNumber(pedido?.taxas?.custoFrete, 0)));
+        if (custoFreteBling <= 0 && clientePagouFrete(pedido, subtotalItens, fretePositivo)) fretePositivo = 0;
+      }
       const fretesPorLinha = distributeProportionally(fretePositivo, subtotais);
       const taxasPorLinha = distributeProportionally(taxaComissao, subtotais);
       // Desconto do pedido (Bling: pedido.desconto = { valor, unidade: 'REAL'|'PERCENTUAL' }) —
