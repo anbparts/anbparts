@@ -36,11 +36,7 @@ export const NAV: NavGroup[] = [
   {
     section: 'Financeiro',
     items: [
-      { href: '/faturamento', icon: 'chart-bars', label: 'Fat. por Moto' },
-      { href: '/faturamento/geral', icon: 'chart-line', label: 'Fat. Geral' },
-      { href: '/despesas-receita', icon: 'compare', label: 'Despesas x Receita' },
-      { href: '/dre', icon: 'file-text', label: 'DRE' },
-      { href: '/curva-abc', icon: 'chart-bars', label: 'Curva ABC' },
+      { href: '/relatorios', icon: 'chart-bars', label: 'Relatorios' },
       { href: '/despesas', icon: 'receipt', label: 'Despesas' },
       { href: '/prejuizos', icon: 'alert', label: 'Prejuizos' },
       { href: '/investimentos', icon: 'briefcase', label: 'Investimentos' },

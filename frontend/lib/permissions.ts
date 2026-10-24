@@ -53,6 +53,7 @@ export const PAGE_KEY_BY_HREF: Record<string, string> = {
   '/conf-conexoes': 'conf_conexoes',
   '/conf-sistema': 'conf_sistema',
   '/conf-prefixo': 'conf_produtos_bling',
+  '/relatorios': 'relatorios',
 };
 
 // Conf. Conexoes reune as paginas de configuracao de cada conexao em abas: quem tem acesso a qualquer uma delas entra, e cada aba segue o perfil da pagina original.
@@ -60,7 +61,9 @@ export const CONF_CONEXOES_SUBPAGINAS = ['/conf-monitor-conexoes', '/conf-anthro
 
 // Conf. Sistema: mesma ideia (a aba Perfil e' so do Bruno, por isso nao entra na lista)
 export const CONF_SISTEMA_SUBPAGINAS = ['/configuracoes-gerais', '/conf-gerais', '/conf-separacao', '/conf-auditoria'];
-const PAGINAS_AGREGADAS: Array<[string, string[]]> = [['/conf-conexoes', CONF_CONEXOES_SUBPAGINAS], ['/conf-sistema', CONF_SISTEMA_SUBPAGINAS]];
+// Relatorios (Financeiro): reune as paginas de relatorio em abas; cada aba segue o perfil da pagina original
+export const RELATORIOS_SUBPAGINAS = ['/despesas-receita', '/faturamento', '/faturamento/geral', '/dre', '/curva-abc'];
+const PAGINAS_AGREGADAS: Array<[string, string[]]> = [['/conf-conexoes', CONF_CONEXOES_SUBPAGINAS], ['/conf-sistema', CONF_SISTEMA_SUBPAGINAS], ['/relatorios', RELATORIOS_SUBPAGINAS]];
 
 export function isBruno(user?: LoggedUser | null) {
   return String(user?.username || '').trim().toLowerCase() === 'bruno';
