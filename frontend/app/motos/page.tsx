@@ -7,7 +7,6 @@ import EtiquetaCartelaModal from '../estoque/EtiquetaCartelaModal';
 import { API_BASE } from '@/lib/api-base';
 import { useAuth } from '@/lib/auth';
 import { canAccessPage, canProcessAction } from '@/lib/permissions';
-import BlingConfigProdutosPage from '../bling/config-produtos/page';
 import FluxoDesmontagemTab from './FluxoDesmontagemTab';
 import FipeConsultaModal from './FipeConsultaModal';
 import { usePersistentTab } from '@/lib/use-persistent-tab';
@@ -394,6 +393,11 @@ function Modal({ open, title, onClose, onSave, moto, todasMotos = [], viewportMo
     const atual = prefixosCfg.find((p) => Number(p.motoId) === Number(moto.id));
     setPrefixo(atual ? String(atual.prefixo || '') : '');
   }, [open, moto, prefixosCfg]);
+  // moto nova + marca ja conhecida: sugere o proximo sequencial (enquanto voce nao mexer no campo)
+  useEffect(() => {
+    if (!open || moto || prefixoEditado) return;
+    setPrefixo(proximoPrefixoDaMarca(form.marca, todasMotos, prefixosCfg));
+  }, [open, moto, prefixoEditado, form.marca, prefixosCfg, todasMotos]);
 
   async function handleGerarFolhaCapa() {
     if (!moto?.id) return;
@@ -450,12 +454,6 @@ function Modal({ open, title, onClose, onSave, moto, todasMotos = [], viewportMo
   const modalHeaderPadding = modalIsPhone ? '16px 14px 14px' : '22px 24px 16px';
   const modalBodyPadding = modalIsPhone ? '16px 14px 18px' : modalIsTabletLandscape ? '20px 22px' : '22px 24px';
   const modalFooterPadding = modalIsPhone ? '14px' : '16px 24px 22px';
-
-  // moto nova + marca ja conhecida: sugere o proximo sequencial (enquanto voce nao mexer no campo)
-  useEffect(() => {
-    if (!open || moto || prefixoEditado) return;
-    setPrefixo(proximoPrefixoDaMarca(form.marca, todasMotos, prefixosCfg));
-  }, [open, moto, prefixoEditado, form.marca, prefixosCfg, todasMotos]);
 
   async function save() {
     if (!form.marca || !form.modelo) {
@@ -1942,8 +1940,7 @@ function ContratosTab({ viewportMode }: { viewportMode: MotosViewportMode }) {
 export default function MotosPage() {
   const { user } = useAuth();
   const canCriarMoto = canProcessAction(user, 'motos', 'criar');
-  const canConfPrefixo = canAccessPage(user, '/bling/config-produtos');
-  const [prefixoAberto, setPrefixoAberto] = useState(false);
+  const canConfPrefixo = canAccessPage(user, '/conf-prefixo');
   const canEditarMoto = canProcessAction(user, 'motos', 'editar');
   const canEtiquetaMoto = canProcessAction(user, 'motos', 'etiqueta');
   const canContratosMoto = canProcessAction(user, 'motos', 'contratos');
@@ -2307,7 +2304,20 @@ export default function MotosPage() {
           <div style={cs.title}>Motos</div>
           <div style={cs.sub}>Cadastro e gestao de motos</div>
         </div>
-        <div style={{ display: 'flex', gap: 4 }}>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {canConfPrefixo && (
+            <Link
+              href="/conf-prefixo"
+              style={{
+                padding: '7px 16px', borderRadius: 8, fontSize: 13, fontWeight: 500,
+                cursor: 'pointer', fontFamily: 'Geist, sans-serif',
+                border: '1px solid var(--border)', background: 'var(--white)', color: 'var(--ink-soft)',
+                textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6,
+              }}
+            >
+              🏷️ Conf. Prefixo
+            </Link>
+          )}
           <Link
             href="/conf-texto-peca"
             style={{
@@ -2357,7 +2367,6 @@ export default function MotosPage() {
             </div>
             <div style={{ display: 'flex', gap: 8, width: controlStack ? '100%' : undefined, flexDirection: controlStack ? 'column' : 'row' }}>
               <input style={{ ...cs.input, width: controlStack ? '100%' : compactTable ? 320 : 420 }} placeholder="Buscar por ID, marca, modelo, placa, chassi ou renavam..." value={search} onChange={(e) => setSearch(e.target.value)} />
-          {canConfPrefixo && <button style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink)', border: '1px solid var(--border)', width: controlStack ? '100%' : undefined, justifyContent: 'center' }} onClick={() => setPrefixoAberto(true)}>Conf. Prefixo</button>}
           {canCriarMoto && <button style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)', width: controlStack ? '100%' : undefined, justifyContent: 'center' }} onClick={() => { setEditing(null); setModal(true); }}>+ Nova moto</button>}
             </div>
           </div>
@@ -2474,18 +2483,6 @@ export default function MotosPage() {
         </div>
       </div>
       <Modal open={modal} title={editing ? 'Editar moto' : 'Nova moto'} onClose={() => { setModal(false); setEditing(null); }} onSave={handleSave} moto={editing} todasMotos={motos} viewportMode={viewportMode} />
-      {prefixoAberto && canConfPrefixo ? (
-        <div onClick={() => setPrefixoAberto(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 210, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: viewportMode === 'phone' ? 0 : 24, backdropFilter: 'blur(2px)' }}>
-          <style>{`.conf-prefixo-aba [style*="position: sticky"] { position: static !important; }`}</style>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: viewportMode === 'phone' ? 0 : 16, width: '100%', maxWidth: 980, maxHeight: viewportMode === 'phone' ? '100dvh' : '92vh', minHeight: viewportMode === 'phone' ? '100dvh' : undefined, overflowY: 'auto', boxShadow: 'var(--shadow-lg)' }}>
-            <div style={{ padding: '16px 22px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, position: 'sticky', top: 0, background: 'var(--white)', zIndex: 2 }}>
-              <div style={{ fontFamily: 'Fraunces, serif', fontSize: 18, fontWeight: 600 }}>Conf. Prefixo</div>
-              <button onClick={() => setPrefixoAberto(false)} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', fontSize: 16, flexShrink: 0 }}>X</button>
-            </div>
-            <div className="conf-prefixo-aba"><BlingConfigProdutosPage /></div>
-          </div>
-        </div>
-      ) : null}
       <AnexosMotoModal open={anexosModalOpen} moto={anexosMoto} prefixo={prefixoMap[anexosMoto?.id]} loading={anexosLoading} data={anexosData} saving={anexosSaving} onSave={handleSaveAnexos} onClose={closeAnexosModal} viewportMode={viewportMode} />
       <DetranModal open={detranModalOpen} moto={detranMoto} loading={detranLoading} data={detranData} updatingId={detranUpdatingId} onToggleStatus={handleDetranStatusToggle} onClose={closeDetranModal} viewportMode={viewportMode} />
 

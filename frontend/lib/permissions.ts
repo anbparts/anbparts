@@ -52,6 +52,7 @@ export const PAGE_KEY_BY_HREF: Record<string, string> = {
   '/conf-google-drive': 'conf_google_drive',
   '/conf-conexoes': 'conf_conexoes',
   '/conf-sistema': 'conf_sistema',
+  '/conf-prefixo': 'conf_produtos_bling',
 };
 
 // Conf. Conexoes reune as paginas de configuracao de cada conexao em abas: quem tem acesso a qualquer uma delas entra, e cada aba segue o perfil da pagina original.
