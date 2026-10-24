@@ -54,6 +54,7 @@ export const PAGE_KEY_BY_HREF: Record<string, string> = {
   '/conf-sistema': 'conf_sistema',
   '/conf-prefixo': 'conf_produtos_bling',
   '/relatorios': 'relatorios',
+  '/operacional': 'operacional',
 };
 
 // Conf. Conexoes reune as paginas de configuracao de cada conexao em abas: quem tem acesso a qualquer uma delas entra, e cada aba segue o perfil da pagina original.
@@ -63,7 +64,9 @@ export const CONF_CONEXOES_SUBPAGINAS = ['/conf-monitor-conexoes', '/conf-anthro
 export const CONF_SISTEMA_SUBPAGINAS = ['/configuracoes-gerais', '/conf-gerais', '/conf-separacao', '/conf-auditoria'];
 // Relatorios (Financeiro): reune as paginas de relatorio em abas; cada aba segue o perfil da pagina original
 export const RELATORIOS_SUBPAGINAS = ['/despesas-receita', '/faturamento', '/faturamento/geral', '/dre', '/curva-abc'];
-const PAGINAS_AGREGADAS: Array<[string, string[]]> = [['/conf-conexoes', CONF_CONEXOES_SUBPAGINAS], ['/conf-sistema', CONF_SISTEMA_SUBPAGINAS], ['/relatorios', RELATORIOS_SUBPAGINAS]];
+// Operacional (Financeiro): despesas, prejuizos e investimentos em abas; cada aba segue o perfil da pagina original
+export const OPERACIONAL_SUBPAGINAS = ['/despesas', '/prejuizos', '/investimentos'];
+const PAGINAS_AGREGADAS: Array<[string, string[]]> = [['/conf-conexoes', CONF_CONEXOES_SUBPAGINAS], ['/conf-sistema', CONF_SISTEMA_SUBPAGINAS], ['/relatorios', RELATORIOS_SUBPAGINAS], ['/operacional', OPERACIONAL_SUBPAGINAS]];
 
 export function isBruno(user?: LoggedUser | null) {
   return String(user?.username || '').trim().toLowerCase() === 'bruno';

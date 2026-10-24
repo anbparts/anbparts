@@ -37,9 +37,7 @@ export const NAV: NavGroup[] = [
     section: 'Financeiro',
     items: [
       { href: '/relatorios', icon: 'chart-bars', label: 'Relatorios' },
-      { href: '/despesas', icon: 'receipt', label: 'Despesas' },
-      { href: '/prejuizos', icon: 'alert', label: 'Prejuizos' },
-      { href: '/investimentos', icon: 'briefcase', label: 'Investimentos' },
+      { href: '/operacional', icon: 'receipt', label: 'Operacional' },
     ],
   },
   {
