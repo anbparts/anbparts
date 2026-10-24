@@ -50,7 +50,11 @@ export const PAGE_KEY_BY_HREF: Record<string, string> = {
   '/conf-gmail': 'conf_gmail',
   '/conf-monitor-conexoes': 'conf_monitor_conexoes',
   '/conf-google-drive': 'conf_google_drive',
+  '/conf-conexoes': 'conf_conexoes',
 };
+
+// Conf. Conexoes reune as paginas de configuracao de cada conexao em abas: quem tem acesso a qualquer uma delas entra, e cada aba segue o perfil da pagina original.
+export const CONF_CONEXOES_SUBPAGINAS = ['/conf-anthropic', '/bling', '/config-ml', '/conf-nuvemshop', '/config-shopee', '/config-magalu', '/config-olx', '/conf-gmail'];
 
 export function isBruno(user?: LoggedUser | null) {
   return String(user?.username || '').trim().toLowerCase() === 'bruno';
@@ -59,6 +63,7 @@ export function isBruno(user?: LoggedUser | null) {
 export function canAccessPage(user: LoggedUser | null | undefined, href: string) {
   if (!user) return false;
   if (isBruno(user) || user.isAdmin) return true;
+  if (href.split('?')[0].replace(/\/$/, '').indexOf('/conf-conexoes') === 0) return CONF_CONEXOES_SUBPAGINAS.some((h) => canAccessPage(user, h));
   const key = resolvePageKey(href);
   if (!key) return true;
   return Array.isArray(user.permissions?.[key]) && user.permissions![key].includes('__page');
