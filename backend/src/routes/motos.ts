@@ -124,6 +124,36 @@ function requireMotosAction(action: string) {
   };
 }
 
+// Prefixo do SKU da moto (ex.: BM03): fica na lista "prefixo -> moto" do Bling (Conf. Prefixo, em Motos), usada na importacao, no proximo SKU do Cadastro e nos nomes de arquivo.
+const normalizarPrefixo = (v: any) => String(v ?? '').trim().toUpperCase().replace(/s+/g, '');
+
+async function lerPrefixosBling(): Promise<Array<{ prefixo: string; motoId: number }>> {
+  const cfg = await prisma.blingConfig.findFirst({ select: { prefixos: true } });
+  const lista = Array.isArray(cfg?.prefixos) ? (cfg!.prefixos as any[]) : [];
+  return lista.map((p) => ({ prefixo: String(p?.prefixo || ''), motoId: Number(p?.motoId) })).filter((p) => p.prefixo && Number.isFinite(p.motoId));
+}
+
+// null = ok; texto = motivo da recusa (prefixo vazio quando obrigatorio, ou ja usado por outra moto)
+async function validarPrefixoMoto(prefixoBruto: any, motoId: number | null, obrigatorio: boolean): Promise<string | null> {
+  const prefixo = normalizarPrefixo(prefixoBruto);
+  if (!prefixo) return obrigatorio ? 'Informe o prefixo do SKU da moto (ex.: BM04).' : null;
+  if (!/^[A-Z0-9_-]{2,20}$/.test(prefixo)) return 'Prefixo invalido. Use letras e numeros (ex.: BM04).';
+  const lista = await lerPrefixosBling();
+  const outro = lista.find((p) => normalizarPrefixo(p.prefixo) === prefixo && p.motoId !== motoId);
+  return outro ? `O prefixo ${prefixo} ja esta em uso pela moto #${outro.motoId}.` : null;
+}
+
+// grava (ou troca) o prefixo da moto na lista do Bling
+async function gravarPrefixoMoto(motoId: number, prefixoBruto: any) {
+  const prefixo = normalizarPrefixo(prefixoBruto);
+  if (!prefixo) return;
+  const cfg = await prisma.blingConfig.findFirst({ select: { id: true } });
+  const lista = (await lerPrefixosBling()).filter((p) => p.motoId !== motoId);
+  lista.push({ prefixo, motoId });
+  if (cfg) await prisma.blingConfig.update({ where: { id: cfg.id }, data: { prefixos: lista as any } });
+  else await prisma.blingConfig.create({ data: { prefixos: lista as any } });
+}
+
 const motoSchema = z.object({
   marca:             z.string().min(1),
   modelo:            z.string().min(1),
@@ -825,6 +855,9 @@ motosRouter.get('/:id', async (req, res, next) => {
 motosRouter.post('/', requireMotosAction('criar'), async (req, res, next) => {
   try {
     const data = motoSchema.parse(req.body);
+    // moto nova: o prefixo do SKU e' obrigatorio (e nao pode repetir o de outra moto)
+    const erroPrefixo = await validarPrefixoMoto(req.body?.prefixoSku, null, true);
+    if (erroPrefixo) return res.status(400).json({ error: erroPrefixo });
     const moto = await (prisma as any).moto.create({
       data: {
         ...data,
@@ -832,6 +865,7 @@ motosRouter.post('/', requireMotosAction('criar'), async (req, res, next) => {
         notaFiscalEntradaData: data.notaFiscalEntradaData ? new Date(data.notaFiscalEntradaData) : null,
       }
     });
+    await gravarPrefixoMoto(Number(moto.id), req.body?.prefixoSku);
     res.status(201).json(moto);
   } catch (e) { next(e); }
 });
@@ -840,6 +874,10 @@ motosRouter.post('/', requireMotosAction('criar'), async (req, res, next) => {
 motosRouter.put('/:id', requireMotosAction('editar'), async (req, res, next) => {
   try {
     const data = motoSchema.partial().parse(req.body);
+    const motoIdEdicao = Number(req.params.id);
+    // editar: se o prefixo foi enviado, valida (sem repetir o de outra moto) e atualiza a lista do Bling
+    const erroPrefixo = await validarPrefixoMoto(req.body?.prefixoSku, motoIdEdicao, false);
+    if (erroPrefixo) return res.status(400).json({ error: erroPrefixo });
     const moto = await (prisma as any).moto.update({
       where: { id: Number(req.params.id) },
       data: {
@@ -850,6 +888,7 @@ motosRouter.put('/:id', requireMotosAction('editar'), async (req, res, next) => 
           : undefined,
       }
     });
+    if (normalizarPrefixo(req.body?.prefixoSku)) await gravarPrefixoMoto(motoIdEdicao, req.body?.prefixoSku);
     res.json(moto);
   } catch (e) { next(e); }
 });

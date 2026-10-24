@@ -6,7 +6,8 @@ import { compressMotoFotoFile } from '@/lib/image-compression';
 import EtiquetaCartelaModal from '../estoque/EtiquetaCartelaModal';
 import { API_BASE } from '@/lib/api-base';
 import { useAuth } from '@/lib/auth';
-import { canProcessAction } from '@/lib/permissions';
+import { canAccessPage, canProcessAction } from '@/lib/permissions';
+import BlingConfigProdutosPage from '../bling/config-produtos/page';
 import FluxoDesmontagemTab from './FluxoDesmontagemTab';
 import FipeConsultaModal from './FipeConsultaModal';
 import { usePersistentTab } from '@/lib/use-persistent-tab';
@@ -351,13 +352,48 @@ const cs: any = {
 
 type MotosViewportMode = 'phone' | 'tablet-portrait' | 'tablet-landscape' | 'desktop';
 
-function Modal({ open, title, onClose, onSave, moto, viewportMode = 'desktop' }: any) {
+// Proximo prefixo do SKU para uma marca ja conhecida: olha o maior prefixo (letras + numero) das motos da mesma marca e soma 1 (BM03 -> BM04).
+// Marca nova (sem nenhum prefixo ainda): devolve vazio, o preenchimento fica por conta do usuario.
+function proximoPrefixoDaMarca(marca: string, motos: any[], prefixos: any[]): string {
+  const norm = (s: any) => String(s || '').trim().toUpperCase();
+  const m = norm(marca);
+  if (!m) return '';
+  const ids = new Set<number>(motos.filter((x) => norm(x.marca) === m).map((x) => Number(x.id)));
+  let maior: { letras: string; num: number; largura: number } | null = null;
+  for (const p of prefixos) {
+    if (!ids.has(Number(p.motoId))) continue;
+    const r = /^([A-Z]+)(\d+)$/.exec(norm(p.prefixo));
+    if (!r) continue;
+    const num = parseInt(r[2], 10);
+    if (!maior || num > maior.num) maior = { letras: r[1], num, largura: r[2].length };
+  }
+  return maior ? maior.letras + String(maior.num + 1).padStart(maior.largura, '0') : '';
+}
+
+function Modal({ open, title, onClose, onSave, moto, todasMotos = [], viewportMode = 'desktop' }: any) {
   const empty = { marca: '', modelo: '', ano: '', cor: '', placa: '', chassi: '', renavam: '', notaFiscalEntrada: '', notaFiscalEntradaData: '', cilindros: '', combustivel: '', cilindrada: '', potencia: '', dataCompra: '', precoCompra: '', origemCompra: '', valorFipe: '', observacoes: '' };
   const [form, setForm] = useState(empty);
   const [fipeAberta, setFipeAberta] = useState(false);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
   const [gerandoFolhaCapa, setGerandoFolhaCapa] = useState(false);
+  // Prefixo do SKU (lista "prefixo -> moto" do Bling): obrigatorio na moto nova, editavel sempre
+  const [prefixo, setPrefixo] = useState('');
+  const [prefixoEditado, setPrefixoEditado] = useState(false);
+  const [prefixosCfg, setPrefixosCfg] = useState<any[]>([]);
+  useEffect(() => {
+    if (!open) return;
+    setPrefixoEditado(false);
+    fetch(`${API}/bling/config-produtos`, { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => setPrefixosCfg(Array.isArray(d?.prefixos) ? d.prefixos : []))
+      .catch(() => setPrefixosCfg([]));
+  }, [open, moto]);
+  useEffect(() => {
+    if (!open || !moto) return;
+    const atual = prefixosCfg.find((p) => Number(p.motoId) === Number(moto.id));
+    setPrefixo(atual ? String(atual.prefixo || '') : '');
+  }, [open, moto, prefixosCfg]);
 
   async function handleGerarFolhaCapa() {
     if (!moto?.id) return;
@@ -415,9 +451,25 @@ function Modal({ open, title, onClose, onSave, moto, viewportMode = 'desktop' }:
   const modalBodyPadding = modalIsPhone ? '16px 14px 18px' : modalIsTabletLandscape ? '20px 22px' : '22px 24px';
   const modalFooterPadding = modalIsPhone ? '14px' : '16px 24px 22px';
 
+  // moto nova + marca ja conhecida: sugere o proximo sequencial (enquanto voce nao mexer no campo)
+  useEffect(() => {
+    if (!open || moto || prefixoEditado) return;
+    setPrefixo(proximoPrefixoDaMarca(form.marca, todasMotos, prefixosCfg));
+  }, [open, moto, prefixoEditado, form.marca, prefixosCfg, todasMotos]);
+
   async function save() {
     if (!form.marca || !form.modelo) {
       setErr('Marca e modelo sao obrigatorios');
+      return;
+    }
+    const prefixoLimpo = prefixo.trim().toUpperCase().replace(/\s+/g, '');
+    if (!moto && !prefixoLimpo) {
+      setErr('Informe o prefixo do SKU da moto (ex.: BM04). Ele e obrigatorio para salvar uma moto nova.');
+      return;
+    }
+    const emUso = prefixoLimpo ? prefixosCfg.find((p) => String(p.prefixo || '').toUpperCase() === prefixoLimpo && Number(p.motoId) !== Number(moto?.id)) : null;
+    if (emUso) {
+      setErr(`O prefixo ${prefixoLimpo} ja esta em uso pela moto #${emUso.motoId}.`);
       return;
     }
 
@@ -425,6 +477,7 @@ function Modal({ open, title, onClose, onSave, moto, viewportMode = 'desktop' }:
     try {
       await onSave({
         ...form,
+        prefixoSku: prefixoLimpo,
         ano: form.ano ? Number(form.ano) : null,
         precoCompra: Number(form.precoCompra) || 0,
         valorFipe: form.valorFipe !== '' ? Number(form.valorFipe) : null,
@@ -462,6 +515,20 @@ function Modal({ open, title, onClose, onSave, moto, viewportMode = 'desktop' }:
             {row('Modelo *', 'modelo', 'text', 'Ex: CROSSER')}
             {row('Ano', 'ano', 'number', '2024')}
             {row('Cor', 'cor', 'text', 'Ex: Preto')}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: modalColumns, gap: 12 }}>
+            <div style={{ marginBottom: 14 }}>
+              <label style={cs.fl}>Prefixo do SKU{moto ? '' : ' *'}</label>
+              <input
+                style={{ ...cs.fi, fontFamily: 'JetBrains Mono, monospace', textTransform: 'uppercase', letterSpacing: '.5px' }}
+                placeholder="Ex: BM04"
+                value={prefixo}
+                onChange={(e) => { setPrefixo(e.target.value.toUpperCase()); setPrefixoEditado(true); }}
+              />
+              <div style={{ fontSize: 11, color: 'var(--ink-muted)', marginTop: 4, lineHeight: 1.4 }}>
+                {moto ? 'Prefixo do SKU desta moto (Conf. Prefixo).' : prefixo && !prefixoEditado ? 'Sugerido pelo ultimo prefixo da marca. Pode editar.' : 'Obrigatorio. Entra automaticamente no Conf. Prefixo ao salvar.'}
+              </div>
+            </div>
           </div>
           <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '0.8px', textTransform: 'uppercase', margin: '16px 0 12px', paddingBottom: 8, borderBottom: '1px solid var(--border)' }}>Documentacao</div>
           <div style={{ display: 'grid', gridTemplateColumns: docColumns, gap: 12 }}>
@@ -1875,6 +1942,8 @@ function ContratosTab({ viewportMode }: { viewportMode: MotosViewportMode }) {
 export default function MotosPage() {
   const { user } = useAuth();
   const canCriarMoto = canProcessAction(user, 'motos', 'criar');
+  const canConfPrefixo = canAccessPage(user, '/bling/config-produtos');
+  const [prefixoAberto, setPrefixoAberto] = useState(false);
   const canEditarMoto = canProcessAction(user, 'motos', 'editar');
   const canEtiquetaMoto = canProcessAction(user, 'motos', 'etiqueta');
   const canContratosMoto = canProcessAction(user, 'motos', 'contratos');
@@ -2288,6 +2357,7 @@ export default function MotosPage() {
             </div>
             <div style={{ display: 'flex', gap: 8, width: controlStack ? '100%' : undefined, flexDirection: controlStack ? 'column' : 'row' }}>
               <input style={{ ...cs.input, width: controlStack ? '100%' : compactTable ? 320 : 420 }} placeholder="Buscar por ID, marca, modelo, placa, chassi ou renavam..." value={search} onChange={(e) => setSearch(e.target.value)} />
+          {canConfPrefixo && <button style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink)', border: '1px solid var(--border)', width: controlStack ? '100%' : undefined, justifyContent: 'center' }} onClick={() => setPrefixoAberto(true)}>Conf. Prefixo</button>}
           {canCriarMoto && <button style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)', width: controlStack ? '100%' : undefined, justifyContent: 'center' }} onClick={() => { setEditing(null); setModal(true); }}>+ Nova moto</button>}
             </div>
           </div>
@@ -2403,7 +2473,19 @@ export default function MotosPage() {
           )}
         </div>
       </div>
-      <Modal open={modal} title={editing ? 'Editar moto' : 'Nova moto'} onClose={() => { setModal(false); setEditing(null); }} onSave={handleSave} moto={editing} viewportMode={viewportMode} />
+      <Modal open={modal} title={editing ? 'Editar moto' : 'Nova moto'} onClose={() => { setModal(false); setEditing(null); }} onSave={handleSave} moto={editing} todasMotos={motos} viewportMode={viewportMode} />
+      {prefixoAberto && canConfPrefixo ? (
+        <div onClick={() => setPrefixoAberto(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,10,.45)', zIndex: 210, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: viewportMode === 'phone' ? 0 : 24, backdropFilter: 'blur(2px)' }}>
+          <style>{`.conf-prefixo-aba [style*="position: sticky"] { position: static !important; }`}</style>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: viewportMode === 'phone' ? 0 : 16, width: '100%', maxWidth: 980, maxHeight: viewportMode === 'phone' ? '100dvh' : '92vh', minHeight: viewportMode === 'phone' ? '100dvh' : undefined, overflowY: 'auto', boxShadow: 'var(--shadow-lg)' }}>
+            <div style={{ padding: '16px 22px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, position: 'sticky', top: 0, background: 'var(--white)', zIndex: 2 }}>
+              <div style={{ fontFamily: 'Fraunces, serif', fontSize: 18, fontWeight: 600 }}>Conf. Prefixo</div>
+              <button onClick={() => setPrefixoAberto(false)} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--white)', cursor: 'pointer', fontSize: 16, flexShrink: 0 }}>X</button>
+            </div>
+            <div className="conf-prefixo-aba"><BlingConfigProdutosPage /></div>
+          </div>
+        </div>
+      ) : null}
       <AnexosMotoModal open={anexosModalOpen} moto={anexosMoto} prefixo={prefixoMap[anexosMoto?.id]} loading={anexosLoading} data={anexosData} saving={anexosSaving} onSave={handleSaveAnexos} onClose={closeAnexosModal} viewportMode={viewportMode} />
       <DetranModal open={detranModalOpen} moto={detranMoto} loading={detranLoading} data={detranData} updatingId={detranUpdatingId} onToggleStatus={handleDetranStatusToggle} onClose={closeDetranModal} viewportMode={viewportMode} />
 

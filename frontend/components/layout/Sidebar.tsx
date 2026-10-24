@@ -89,14 +89,8 @@ export const NAV: NavGroup[] = [
   {
     section: 'Configuracoes',
     items: [
-      { href: '/conf-monitor-conexoes', icon: 'radar', label: 'Monitor de Conexoes' },
       { href: '/conf-conexoes', icon: 'plug', label: 'Conf. Conexões' },
-      { href: '/configuracoes', icon: 'key-round', label: 'Conf. Perfil' },
-      { href: '/configuracoes-gerais', icon: 'mail', label: 'Conf. E-mails' },
-      { href: '/bling/config-produtos', icon: 'sliders', label: 'Conf. Produtos Bling' },
-      { href: '/conf-gerais', icon: 'settings', label: 'Conf. Gerais' },
-      { href: '/conf-separacao', icon: 'truck', label: 'Conf. Separação' },
-      { href: '/conf-auditoria', icon: 'radar', label: 'Conf. Auditoria Automatica' },
+      { href: '/conf-sistema', icon: 'settings', label: 'Conf. Sistema' },
     ],
   },
 ];

@@ -6,6 +6,7 @@ import { canAccessPage, isBruno } from '@/lib/permissions';
 import { useIsPhone } from '@/lib/use-is-phone';
 import { usePersistentTab } from '@/lib/use-persistent-tab';
 import TabsBar from '@/components/ui/TabsBar';
+import MonitorConexoesPage from '../conf-monitor-conexoes/page';
 import ConfAnthropicPage from '../conf-anthropic/page';
 import ConfMetaPage from '../conf-meta/page';
 import BlingConfigPage from '../bling/page';
@@ -21,6 +22,7 @@ import ConfGmailPage from '../conf-gmail/page';
 type Aba = { id: string; label: string; href: string; Pagina: ComponentType<any>; soBruno?: boolean };
 
 const ABAS: Aba[] = [
+  { id: 'monitor', label: 'Monitor de Conexões', href: '/conf-monitor-conexoes', Pagina: MonitorConexoesPage },
   { id: 'anthropic', label: 'Anthropic', href: '/conf-anthropic', Pagina: ConfAnthropicPage },
   { id: 'meta', label: 'Meta', href: '/conf-meta', Pagina: ConfMetaPage, soBruno: true },
   { id: 'bling', label: 'Bling', href: '/bling', Pagina: BlingConfigPage },
