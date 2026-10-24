@@ -60,7 +60,7 @@ export function isBruno(user?: LoggedUser | null) {
   return String(user?.username || '').trim().toLowerCase() === 'bruno';
 }
 
-export function canAccessPage(user: LoggedUser | null | undefined, href: string) {
+export function canAccessPage(user: LoggedUser | null | undefined, href: string): boolean {
   if (!user) return false;
   if (isBruno(user) || user.isAdmin) return true;
   if (href.split('?')[0].replace(/\/$/, '').indexOf('/conf-conexoes') === 0) return CONF_CONEXOES_SUBPAGINAS.some((h) => canAccessPage(user, h));
