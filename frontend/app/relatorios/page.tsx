@@ -45,8 +45,14 @@ export default function RelatoriosPage() {
 
   return (
     <>
-      {/* a pagina de dentro traz o proprio cabecalho (com os botoes dela): aqui ele deixa de ficar "grudado" no topo para nao cobrir as abas */}
-      <style>{`.relatorios-aba [style*="position: sticky"] { position: static !important; }`}</style>
+      {/* a pagina de dentro traz o proprio cabecalho: aqui ele deixa de ficar "grudado" no topo, o titulo (que repete o nome da aba) some
+          e ficam so os botoes da pagina, se ela tiver; sem botoes, a barra inteira some */}
+      <style>{`
+        .relatorios-aba > [style*="position: sticky"] { position: static !important; }
+        .relatorios-aba > [style*="position: sticky"] > div:first-child { display: none !important; }
+        .relatorios-aba > [style*="position: sticky"]:has(> div:only-child) { display: none !important; }
+        .relatorios-aba > [style*="position: sticky"] > div:not(:first-child) { margin-left: auto; }
+      `}</style>
       <div style={{ minHeight: 'var(--topbar-h)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: isPhone ? '12px 14px' : '10px 28px', background: 'var(--white)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, zIndex: 60, gap: 12, flexWrap: 'wrap' }}>
         <div>
           <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)', letterSpacing: '-0.3px' }}>Relatórios</div>
