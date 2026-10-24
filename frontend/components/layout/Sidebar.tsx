@@ -44,9 +44,7 @@ export const NAV: NavGroup[] = [
     section: 'Bling ERP',
     items: [
       { href: '/bling/vendas', icon: 'shopping-cart', label: 'Vendas' },
-      { href: '/bling/relatorio-vendas', icon: 'clipboard', label: 'Relatorio de Vendas' },
       { href: '/bling/pedidos', icon: 'receipt', label: 'Pedidos' },
-      { href: '/bling/clientes', icon: 'briefcase', label: 'Clientes' },
     ],
   },
   {

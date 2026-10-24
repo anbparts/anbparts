@@ -47,7 +47,7 @@ export default function OperacionalPage() {
         .operacional-aba > [style*="position: sticky"] { position: static !important; }
         .operacional-aba > [style*="position: sticky"] > div:first-child { display: none !important; }
         .operacional-aba > [style*="position: sticky"]:has(> div:only-child) { display: none !important; }
-        .operacional-aba > [style*="position: sticky"] > div:not(:first-child) { margin-left: auto; }
+        .operacional-aba > [style*="position: sticky"] > :not(:first-child) { margin-left: auto; }
       `}</style>
       <div style={{ minHeight: 'var(--topbar-h)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: isPhone ? '12px 14px' : '10px 28px', background: 'var(--white)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, zIndex: 60, gap: 12, flexWrap: 'wrap' }}>
         <div>

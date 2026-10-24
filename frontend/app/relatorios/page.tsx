@@ -11,6 +11,7 @@ import FaturamentoMotoPage from '../faturamento/page';
 import FaturamentoGeralPage from '../faturamento/geral/page';
 import DREPage from '../dre/page';
 import CurvaAbcPage from '../curva-abc/page';
+import RelatorioVendasPage from '../bling/relatorio-vendas/page';
 
 // Relatorios (Financeiro): reune, em abas, os relatorios financeiros. Cada aba e' a pagina original inteira (com as abas e botoes que ela ja tem).
 // O acesso de cada aba segue o perfil da pagina original.
@@ -22,6 +23,7 @@ const ABAS: Aba[] = [
   { id: 'faturamento-geral', label: 'Faturamento Geral', href: '/faturamento/geral', Pagina: FaturamentoGeralPage },
   { id: 'dre', label: 'DRE', href: '/dre', Pagina: DREPage },
   { id: 'curva-abc', label: 'Curva ABC', href: '/curva-abc', Pagina: CurvaAbcPage },
+  { id: 'relatorio-vendas', label: 'Relatório de Vendas', href: '/bling/relatorio-vendas', Pagina: RelatorioVendasPage },
 ];
 
 export default function RelatoriosPage() {
@@ -51,12 +53,12 @@ export default function RelatoriosPage() {
         .relatorios-aba > [style*="position: sticky"] { position: static !important; }
         .relatorios-aba > [style*="position: sticky"] > div:first-child { display: none !important; }
         .relatorios-aba > [style*="position: sticky"]:has(> div:only-child) { display: none !important; }
-        .relatorios-aba > [style*="position: sticky"] > div:not(:first-child) { margin-left: auto; }
+        .relatorios-aba > [style*="position: sticky"] > :not(:first-child) { margin-left: auto; }
       `}</style>
       <div style={{ minHeight: 'var(--topbar-h)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: isPhone ? '12px 14px' : '10px 28px', background: 'var(--white)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, zIndex: 60, gap: 12, flexWrap: 'wrap' }}>
         <div>
           <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)', letterSpacing: '-0.3px' }}>Relatórios</div>
-          <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>Despesas x receita, faturamento, DRE e curva ABC</div>
+          <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>Despesas x receita, faturamento, DRE, curva ABC e vendas</div>
         </div>
       </div>
       {visiveis.length ? (
