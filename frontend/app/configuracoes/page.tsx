@@ -322,11 +322,11 @@ export default function ConfiguracoesPage() {
           <div style={s.card}>
             <div style={{ fontSize: 15, fontWeight: 900, color: '#0f172a', marginBottom: 14 }}>{isNovo ? 'Novo usuario' : `Editar ${selecionado?.displayName || ''}`}</div>
             <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '1fr 1fr', gap: 12 }}>
-              <div><label style={s.label}>Usuario</label><input style={s.input} value={form.username} onChange={(e) => setForm((p) => ({ ...p, username: e.target.value.toLowerCase().trim() }))} placeholder="ex: nelson" /></div>
-              <div><label style={s.label}>Nome</label><input style={s.input} value={form.displayName} onChange={(e) => setForm((p) => ({ ...p, displayName: e.target.value }))} placeholder="Nome exibido" /></div>
+              <div><label style={s.label}>Usuario</label><input style={s.input} name="anb-usuario-login" autoComplete="off" data-lpignore="true" value={form.username} onChange={(e) => setForm((p) => ({ ...p, username: e.target.value.toLowerCase().trim() }))} placeholder="ex: nelson" /></div>
+              <div><label style={s.label}>Nome</label><input style={s.input} name="anb-usuario-nome" autoComplete="off" value={form.displayName} onChange={(e) => setForm((p) => ({ ...p, displayName: e.target.value }))} placeholder="Nome exibido" /></div>
               <div>
                 <label style={s.label}>Telefone / WhatsApp</label>
-                <input style={s.input} type="tel" name="anb-telefone-whatsapp" autoComplete="off" value={form.telefone} onChange={(e) => setForm((p) => ({ ...p, telefone: e.target.value }))} placeholder="Ex.: 5511999999999 (DDI+DDD)" />
+                <input style={s.input} type="tel" name="anb-telefone-whatsapp" autoComplete="off" data-lpignore="true" value={form.telefone} onChange={(e) => setForm((p) => ({ ...p, telefone: e.target.value }))} placeholder="Ex.: 5511999999999 (DDI+DDD)" />
                 {!isNovo && form.telefone.trim() && (
                   <button onClick={testarWhatsapp} disabled={testandoWa}
                     style={{ ...s.btn, marginTop: 8, fontSize: 12, background: '#16a34a', color: '#fff', opacity: testandoWa ? 0.7 : 1 }}
@@ -335,7 +335,7 @@ export default function ConfiguracoesPage() {
                   </button>
                 )}
               </div>
-              {isNovo && <div><label style={s.label}>Senha inicial</label><input type="password" style={s.input} value={form.password} onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))} placeholder="Senha inicial" /></div>}
+              {isNovo && <div><label style={s.label}>Senha inicial</label><input type="password" name="anb-senha-inicial-usuario" autoComplete="new-password" readOnly onFocus={(e) => e.currentTarget.removeAttribute("readOnly")} data-lpignore="true" style={s.input} value={form.password} onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))} placeholder="Senha inicial" /></div>}
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#334155', fontWeight: 700 }}>
                 <input type="checkbox" checked={form.active} onChange={(e) => setForm((p) => ({ ...p, active: e.target.checked }))} />
                 Usuario ativo
@@ -358,7 +358,7 @@ export default function ConfiguracoesPage() {
             <div style={s.card}>
               <div style={{ fontSize: 14, fontWeight: 900, color: '#0f172a', marginBottom: 12 }}>Resetar senha</div>
               <div style={{ display: 'flex', gap: 10, flexDirection: isPhone ? 'column' : 'row' }}>
-                <input type="password" style={s.input} value={senhaReset} onChange={(e) => setSenhaReset(e.target.value)} placeholder="Nova senha" />
+                <input type="password" name="anb-nova-senha-usuario" autoComplete="new-password" readOnly onFocus={(e) => e.currentTarget.removeAttribute("readOnly")} data-lpignore="true" style={s.input} value={senhaReset} onChange={(e) => setSenhaReset(e.target.value)} placeholder="Nova senha" />
                 <button onClick={resetarSenha} disabled={saving || senhaReset.length < 4} style={{ ...s.btn, background: '#0f172a', color: '#fff', whiteSpace: 'nowrap', opacity: saving ? 0.7 : 1 }}>Resetar senha</button>
               </div>
             </div>
