@@ -1,10 +1,11 @@
 'use client';
 
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { API_BASE } from '@/lib/api-base';
 import { useAuth } from '@/lib/auth';
 import { canProcessAction } from '@/lib/permissions';
 import { useIsPhone } from '@/lib/use-is-phone';
+import CanalBadge from '@/components/ui/CanalBadge';
 
 const API = API_BASE;
 
@@ -24,15 +25,6 @@ function fmtData(iso?: string | null) {
   return d && m && a ? `${d}/${m}/${a}` : '—';
 }
 
-function corCanal(canal: string) {
-  const c = String(canal || '').toLowerCase();
-  if (/mercado|ml\b/.test(c)) return { cor: '#92400e', fundo: '#fef3c7' };
-  if (/shopee/.test(c)) return { cor: '#c2410c', fundo: '#ffedd5' };
-  if (/magalu|magazine/.test(c)) return { cor: '#1d4ed8', fundo: '#dbeafe' };
-  if (/nuvem|tiendanube|loja virtual/.test(c)) return { cor: '#0f766e', fundo: '#ccfbf1' };
-  if (/olx/.test(c)) return { cor: '#6d28d9', fundo: '#ede9fe' };
-  return { cor: '#475569', fundo: '#f1f5f9' };
-}
 function corSituacao(situacao: string, cancelado: boolean) {
   if (cancelado) return { cor: '#b91c1c', fundo: '#fee2e2' };
   if (/atendid|conclu|entregue|faturad/i.test(situacao)) return { cor: '#15803d', fundo: '#dcfce7' };
@@ -220,53 +212,39 @@ export default function BlingPedidosPage() {
             </div>
           ) : null}
 
-          {dados && dados.itens.length > 0 && !isPhone && (
-            <div style={{ overflowX: 'auto', opacity: carregando ? 0.6 : 1 }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead><tr>
-                  <th style={{ ...s.th, width: 28 }} />
-                  <th style={s.th}>Pedido</th><th style={s.th}>Data</th><th style={s.th}>Canal</th><th style={s.th}>Cliente</th>
-                  <th style={{ ...s.th, textAlign: 'right' }}>Peças</th><th style={{ ...s.th, textAlign: 'right' }}>Total</th><th style={s.th}>Situação</th>
-                </tr></thead>
-                <tbody>
-                  {dados.itens.map((p: any) => {
-                    const aberto = expandido === p.id;
-                    const d = detalhes[p.id];
-                    return (
-                      <Fragment key={p.id}>
-                        <tr onClick={() => expandir(p.id)} style={{ cursor: 'pointer', background: aberto ? 'var(--gray-50)' : undefined }}>
-                          <td style={{ ...s.td, color: 'var(--ink-muted)' }}>{aberto ? '▾' : '▸'}</td>
-                          <td style={s.td}><strong style={{ fontFamily: 'JetBrains Mono, monospace' }}>#{p.numero}</strong>{p.numeroLoja ? <div style={{ fontSize: 11, color: 'var(--ink-muted)' }}>{p.numeroLoja}</div> : null}</td>
-                          <td style={{ ...s.td, color: 'var(--ink-soft)' }}>{fmtData(p.data)}</td>
-                          <td style={s.td}>{pill(p.canal || '—', corCanal(p.canal))}</td>
-                          <td style={s.td}>{p.clienteNome || <span style={{ color: 'var(--ink-muted)' }}>sem cliente</span>}{p.entregaCidade ? <div style={{ fontSize: 11, color: 'var(--ink-muted)' }}>{p.entregaCidade}{p.entregaUf ? `/${p.entregaUf}` : ''}</div> : null}</td>
-                          <td style={{ ...s.td, textAlign: 'right' }}>{p.pecas}</td>
-                          <td style={{ ...s.td, textAlign: 'right', fontWeight: 700 }}>{brl(p.total)}</td>
-                          <td style={s.td}>{pill(p.situacao || '—', corSituacao(p.situacao, p.cancelado))}</td>
-                        </tr>
-                        {aberto && (
-                          <tr><td colSpan={8} style={{ padding: 0, borderBottom: '1px solid var(--border)', background: 'var(--gray-50)' }}>{DetalhePedido(d)}</td></tr>
-                        )}
-                      </Fragment>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {dados && dados.itens.length > 0 && isPhone && (
-            <div style={{ display: 'grid', gap: 0 }}>
+          {/* Lista no mesmo molde do Relatorio de Vendas: um cartao por pedido (linha resumida) que expande para os itens */}
+          {dados && dados.itens.length > 0 && (
+            <div style={{ display: 'grid', gap: 12, padding: isPhone ? 10 : 16, opacity: carregando ? 0.6 : 1 }}>
               {dados.itens.map((p: any) => {
                 const aberto = expandido === p.id;
                 return (
-                  <div key={p.id} style={{ borderBottom: '1px solid var(--border)', padding: 12 }}>
-                    <div onClick={() => expandir(p.id)} style={{ cursor: 'pointer', display: 'grid', gap: 5 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}><strong style={{ fontFamily: 'JetBrains Mono, monospace' }}>#{p.numero}</strong><span style={{ fontWeight: 700 }}>{brl(p.total)}</span></div>
-                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>{pill(p.canal || '—', corCanal(p.canal))}{pill(p.situacao || '—', corSituacao(p.situacao, p.cancelado))}<span style={{ fontSize: 12, color: 'var(--ink-muted)' }}>{fmtData(p.data)} · {p.pecas} peça(s)</span></div>
-                      <div style={{ fontSize: 13, color: 'var(--ink-soft)' }}>{p.clienteNome || 'sem cliente'}</div>
+                  <div key={p.id} style={{ border: '1px solid var(--border)', borderRadius: 12, background: 'var(--white)', overflow: 'hidden', opacity: p.cancelado ? 0.8 : 1 }}>
+                    <div
+                      onClick={() => expandir(p.id)}
+                      role="button"
+                      aria-expanded={aberto}
+                      style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: isPhone ? '12px 14px' : '14px 20px', background: aberto ? 'var(--gray-50)' : undefined }}
+                    >
+                      <div style={{ minWidth: 0, flex: '1 1 320px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                          <span aria-hidden style={{ color: 'var(--ink-muted)', fontSize: 12, width: 12 }}>{aberto ? '▾' : '▸'}</span>
+                          <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>Pedido #{p.numero}</span>
+                          <span style={{ fontSize: 14, color: 'var(--ink-muted)' }}>— {p.clienteNome || 'sem cliente'}</span>
+                          <CanalBadge canal={p.canal} />
+                          {pill(p.situacao || '—', corSituacao(p.situacao, p.cancelado))}
+                        </div>
+                        <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 4, paddingLeft: 22 }}>
+                          {p.pecas} item(ns) - Data da venda: {fmtData(p.data)}
+                          {p.numeroLoja ? ` · Pedido da loja: ${p.numeroLoja}` : ''}
+                          {p.entregaCidade ? ` · ${p.entregaCidade}${p.entregaUf ? `/${p.entregaUf}` : ''}` : ''}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                        <div style={{ fontSize: 10.5, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--ink-muted)' }}>Total do pedido</div>
+                        <div style={{ fontSize: 20, fontWeight: 700, color: p.cancelado ? '#b91c1c' : '#15803d', textDecoration: p.cancelado ? 'line-through' : undefined }}>{brl(p.total)}</div>
+                      </div>
                     </div>
-                    {aberto ? <div style={{ marginTop: 8 }}>{DetalhePedido(detalhes[p.id])}</div> : null}
+                    {aberto ? <div style={{ borderTop: '1px solid var(--border)' }}>{DetalhePedido(detalhes[p.id], p)}</div> : null}
                   </div>
                 );
               })}
@@ -287,7 +265,7 @@ export default function BlingPedidosPage() {
     </>
   );
 
-  function DetalhePedido(d: any) {
+  function DetalhePedido(d: any, p?: any) {
     if (!d) return <div style={{ padding: 16, fontSize: 13, color: 'var(--ink-muted)' }}>Carregando pedido...</div>;
     return (
       <div style={{ padding: isPhone ? 10 : '14px 20px 18px', display: 'grid', gap: 14 }}>
@@ -305,6 +283,14 @@ export default function BlingPedidosPage() {
                 </tr>
               ))}
             </tbody>
+            <tfoot>
+              <tr style={{ background: 'var(--gray-50)' }}>
+                <td colSpan={2} style={{ ...s.td, borderBottom: 'none', fontWeight: 700, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '.04em' }}>Total do pedido{p?.numero ? ` #${p.numero}` : ''}</td>
+                <td style={{ ...s.td, borderBottom: 'none', textAlign: 'right', fontWeight: 700 }}>{d.itens.reduce((sum: number, i: any) => sum + Number(i.quantidade || 0), 0)}</td>
+                <td style={{ ...s.td, borderBottom: 'none' }} />
+                <td style={{ ...s.td, borderBottom: 'none', textAlign: 'right', fontWeight: 700, color: 'var(--blue-500)' }}>{brl(d.totalProdutos)}</td>
+              </tr>
+            </tfoot>
           </table>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(3, minmax(0, 1fr))', gap: 14, fontSize: 12.5 }}>
