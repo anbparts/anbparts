@@ -287,7 +287,7 @@ export default function AuditoriaAutomaticaPage() {
           <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>Valida divergencias de estoque, mantem DETRAN/localizacao na full e roda o Link ML em rotina separada</div>
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', width: isPhone ? '100%' : undefined }}>
-          <Link href="/conf-auditoria" style={{ ...s.btnGhost }}>Conf. Auditoria</Link>
+          <Link href="/conf-sistema?aba=auditoria" style={{ ...s.btnGhost }}>Conf. Auditoria</Link>
           <button style={{ ...s.btnGhost }} onClick={() => executarRapida('rapida')} disabled={executando || !!config?.executandoAgora} title="So os SKUs vendidos no periodo configurado em Conf. Auditoria Automatica">Conferencia rapida</button>
           <button style={{ ...s.btnGhost }} onClick={() => executarRapida('mes')} disabled={executando || !!config?.executandoAgora} title="So os SKUs vendidos desde o dia 1 do mes atual">Conferencia do mes</button>
           <button style={{ ...s.btn, background: 'var(--blue-500)', color: '#fff', opacity: executando ? 0.6 : 1 }} onClick={executarAgora} disabled={executando || !!config?.executandoAgora}>{executando || config?.executandoAgora ? 'Executando...' : 'Executar agora'}</button>

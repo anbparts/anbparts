@@ -40,19 +40,6 @@ export const NAV: NavGroup[] = [
       { href: '/operacional', icon: 'receipt', label: 'Operacional' },
     ],
   },
-  {
-    section: 'Bling ERP',
-    items: [
-      { href: '/bling/vendas', icon: 'shopping-cart', label: 'Vendas' },
-      { href: '/bling/pedidos', icon: 'receipt', label: 'Pedidos' },
-    ],
-  },
-  {
-    section: 'Mercado Livre',
-    items: [
-      { href: '/mercado-livre/perguntas', icon: 'message-circle', label: 'Perguntas' },
-    ],
-  },
   // Menu da Nuvemshop (Produtos) fora do ar: a pagina /nuvemshop/produtos segue existindo, so nao aparece no menu lateral.
   // {
   //   section: 'Nuvemshop',
@@ -61,21 +48,12 @@ export const NAV: NavGroup[] = [
   //   ],
   // },
   {
-    section: 'OLX',
-    items: [
-      { href: '/olx/conversas', icon: 'message-circle', label: 'Conversas' },
-      { href: '/olx/anuncios', icon: 'store', label: 'Anuncios' },
-      { href: '/olx/vendas', icon: 'shopping-cart', label: 'Vendas' },
-    ],
-  },
-  {
     section: 'Operacoes',
     items: [
+      { href: '/pedidos-vendas', icon: 'shopping-cart', label: 'Pedidos - Vendas' },
+      { href: '/mensagens-clientes', icon: 'message-circle', label: 'Mensagens Clientes' },
       { href: '/pendencias', icon: 'clipboard', label: 'Pendencias' },
-      { href: '/inventario', icon: 'inventory', label: 'Inventario' },
-      { href: '/armazenagem', icon: 'warehouse', label: 'Armazenagem' },
-      { href: '/sucata', icon: 'recycle', label: 'Sucata' },
-      { href: '/bling/auditoria-automatica', icon: 'radar', label: 'Auditoria Automatica' },
+      { href: '/wm-gerenciamento', icon: 'warehouse', label: 'WM - Gerenciamento' },
     ],
   },
   {

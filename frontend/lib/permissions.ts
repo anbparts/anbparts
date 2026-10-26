@@ -55,6 +55,9 @@ export const PAGE_KEY_BY_HREF: Record<string, string> = {
   '/conf-prefixo': 'conf_produtos_bling',
   '/relatorios': 'relatorios',
   '/operacional': 'operacional',
+  '/pedidos-vendas': 'pedidos_vendas',
+  '/mensagens-clientes': 'mensagens_clientes',
+  '/wm-gerenciamento': 'wm_gerenciamento',
 };
 
 // Conf. Conexoes reune as paginas de configuracao de cada conexao em abas: quem tem acesso a qualquer uma delas entra, e cada aba segue o perfil da pagina original.
@@ -66,7 +69,11 @@ export const CONF_SISTEMA_SUBPAGINAS = ['/configuracoes-gerais', '/conf-gerais',
 export const RELATORIOS_SUBPAGINAS = ['/despesas-receita', '/faturamento', '/faturamento/geral', '/dre', '/curva-abc', '/bling/relatorio-vendas'];
 // Operacional (Financeiro): despesas, prejuizos e investimentos em abas; cada aba segue o perfil da pagina original
 export const OPERACIONAL_SUBPAGINAS = ['/despesas', '/prejuizos', '/investimentos'];
-const PAGINAS_AGREGADAS: Array<[string, string[]]> = [['/conf-conexoes', CONF_CONEXOES_SUBPAGINAS], ['/conf-sistema', CONF_SISTEMA_SUBPAGINAS], ['/relatorios', RELATORIOS_SUBPAGINAS], ['/operacional', OPERACIONAL_SUBPAGINAS]];
+// Operacao: tres paginas de abas; cada aba segue o perfil da pagina original
+export const PEDIDOS_VENDAS_SUBPAGINAS = ['/bling/pedidos', '/bling/vendas', '/olx/anuncios', '/olx/vendas', '/sucata'];
+export const MENSAGENS_CLIENTES_SUBPAGINAS = ['/mercado-livre/perguntas', '/olx/conversas'];
+export const WM_GERENCIAMENTO_SUBPAGINAS = ['/armazenagem', '/inventario', '/bling/auditoria-automatica'];
+const PAGINAS_AGREGADAS: Array<[string, string[]]> = [['/conf-conexoes', CONF_CONEXOES_SUBPAGINAS], ['/conf-sistema', CONF_SISTEMA_SUBPAGINAS], ['/relatorios', RELATORIOS_SUBPAGINAS], ['/operacional', OPERACIONAL_SUBPAGINAS], ['/pedidos-vendas', PEDIDOS_VENDAS_SUBPAGINAS], ['/mensagens-clientes', MENSAGENS_CLIENTES_SUBPAGINAS], ['/wm-gerenciamento', WM_GERENCIAMENTO_SUBPAGINAS]];
 
 export function isBruno(user?: LoggedUser | null) {
   return String(user?.username || '').trim().toLowerCase() === 'bruno';
