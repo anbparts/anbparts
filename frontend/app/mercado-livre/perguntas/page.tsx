@@ -331,7 +331,7 @@ export default function MercadoLivrePerguntasPage() {
             backdropFilter: topbarSticky ? 'blur(12px)' : undefined,
           }}
         >
-          <div style={{ maxWidth: containerMaxWidth, margin: '0 auto' }}>
+          <div style={{ maxWidth: containerMaxWidth, margin: 0 }}>
             <div style={{ fontSize: isPhone ? 20 : 22, fontWeight: 700, color: 'var(--gray-800)', letterSpacing: '-0.5px' }}>
               Perguntas
             </div>
@@ -358,7 +358,7 @@ export default function MercadoLivrePerguntasPage() {
         <div
           style={{
             maxWidth: containerMaxWidth,
-            margin: '0 auto',
+            margin: 0,
             display: 'flex',
             flexDirection: stackIntro ? 'column' : 'row',
             alignItems: stackIntro ? 'stretch' : 'center',
@@ -369,7 +369,7 @@ export default function MercadoLivrePerguntasPage() {
           <div style={{ minWidth: 0 }}>
             <div
               style={{
-                fontSize: isPhone ? 20 : isTabletPortrait ? 30 : 28,
+                fontSize: isPhone ? 18 : isTabletPortrait ? 24 : 22,
                 fontWeight: 700,
                 color: 'var(--gray-800)',
                 letterSpacing: isPhone ? '-0.5px' : '-0.8px',
@@ -380,7 +380,7 @@ export default function MercadoLivrePerguntasPage() {
             </div>
             <div
               style={{
-                fontSize: isPhone ? 13 : isTabletPortrait ? 14 : 13.5,
+                fontSize: isPhone ? 12.5 : isTabletPortrait ? 13 : 12.5,
                 color: 'var(--gray-500)',
                 marginTop: isPhone ? 4 : 6,
                 lineHeight: 1.6,
@@ -454,7 +454,7 @@ export default function MercadoLivrePerguntasPage() {
             ✓ {successMessage}
           </div>
         )}
-        <div style={{ maxWidth: containerMaxWidth, margin: '0 auto' }}>
+        <div style={{ maxWidth: containerMaxWidth, margin: 0 }}>
           {!perguntas.length ? (
             <div
               style={{
@@ -512,7 +512,7 @@ export default function MercadoLivrePerguntasPage() {
 
                         <div
                           style={{
-                            fontSize: isPhone ? 15 : isTabletPortrait ? 18 : 17,
+                            fontSize: isPhone ? 14 : isTabletPortrait ? 16 : 15.5,
                             fontWeight: 700,
                             color: 'var(--gray-800)',
                             marginBottom: 6,
@@ -526,7 +526,7 @@ export default function MercadoLivrePerguntasPage() {
 
                         <div
                           style={{
-                            fontSize: isPhone ? 12.5 : 13,
+                            fontSize: isPhone ? 12 : 12.5,
                             color: 'var(--gray-500)',
                             lineHeight: 1.65,
                             overflowWrap: 'anywhere',
@@ -597,7 +597,7 @@ export default function MercadoLivrePerguntasPage() {
                           </div>
                           <div
                             style={{
-                              fontSize: isPhone ? 13 : 13.5,
+                              fontSize: isPhone ? 12.5 : 13,
                               color: 'var(--gray-800)',
                               lineHeight: 1.55,
                               overflowWrap: 'anywhere',
@@ -638,7 +638,7 @@ export default function MercadoLivrePerguntasPage() {
                         </div>
                         <div
                           style={{
-                            fontSize: isPhone ? 13 : 13.5,
+                            fontSize: isPhone ? 12.5 : 13,
                             color: 'var(--gray-800)',
                             lineHeight: 1.75,
                             overflowWrap: 'anywhere',
