@@ -1197,6 +1197,22 @@ export default function VendasBlingPage() {
                 </button>
                 <button
                   type="button"
+                  onClick={() => {
+                    // entrega pessoal / sem PDF: marca como Separado (mesmo registro que o PDF gera) e tira da pendencia
+                    const pendentes = pedidosManuais.filter((p) => pedidosManuaisSelecionadosSet.has(p.pedidoId) && !pedidoSeparadoEm(p.pedidoId));
+                    if (!pendentes.length) { alert('Os pedidos selecionados ja estao como Separado.'); return; }
+                    if (!confirm(`Marcar ${pendentes.length} pedido(s) como Separado sem gerar o PDF?`)) return;
+                    marcarPedidosComoSeparados(pendentes.map((p) => ({ pedidoId: p.pedidoId })) as any);
+                    setPedidosManuaisSelecionados([]);
+                  }}
+                  disabled={!pedidosManuaisSelecionados.length}
+                  title="Para pedidos que voce vai entregar pessoalmente: marca como Separado sem gerar o PDF"
+                  style={{ ...s.btn, ...phoneButtonStyle, background: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0', opacity: !pedidosManuaisSelecionados.length ? 0.5 : 1 }}
+                >
+                  Marcar como Separado ({pedidosManuaisSelecionados.length})
+                </button>
+                <button
+                  type="button"
                   onClick={buscarRelatorioSeparacaoManual}
                   disabled={!pedidosManuaisSelecionados.length || carregandoSeparacao}
                   style={{ ...s.btn, ...phoneButtonStyle, background: '#0f172a', color: '#fff', opacity: (!pedidosManuaisSelecionados.length || carregandoSeparacao) ? 0.5 : 1 }}
