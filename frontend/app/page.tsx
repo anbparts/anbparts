@@ -781,16 +781,19 @@ export default function DashboardPage() {
 
             return (
               <div key={moto.id} style={s.mCard}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10, flexWrap: 'wrap', gap: 4 }}>
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {/* primeira linha do card: nunca quebra (ID, SKU e % vendido sempre lado a lado; o SKU encurta com "..." se faltar espaco) */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'nowrap', gap: 4 }}>
+                  <div style={{ display: 'flex', gap: 4, flexWrap: 'nowrap', minWidth: 0, flex: '1 1 auto' }}>
                     <span
                       style={{
                         fontFamily: 'Geist Mono, monospace',
                         fontSize: 10,
                         background: 'var(--gray-100)',
                         color: 'var(--ink-muted)',
-                        padding: '2px 7px',
+                        padding: '2px 5px',
                         borderRadius: 4,
+                        whiteSpace: 'nowrap',
+                        flexShrink: 0,
                       }}
                     >
                       <span style={sensitiveMaskStyle(ocultarValores)}>ID {moto.id} - {moto.ano}</span>
@@ -802,8 +805,12 @@ export default function DashboardPage() {
                           fontSize: 10,
                           background: 'var(--blue-100)',
                           color: 'var(--blue-500)',
-                          padding: '2px 7px',
+                          padding: '2px 5px',
                           borderRadius: 4,
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          minWidth: 0,
                         }}
                       >
                         <span style={sensitiveMaskStyle(ocultarValores)}>
@@ -815,13 +822,15 @@ export default function DashboardPage() {
 
                   <span
                     style={{
-                      fontSize: 11,
+                      fontSize: 10,
                       fontFamily: 'Geist Mono, monospace',
                       background:
                         pctVendida >= 80 ? 'var(--red-light)' : pctVendida >= 50 ? 'var(--amber-light)' : 'var(--sage-light)',
                       color: pctVendida >= 80 ? 'var(--red)' : pctVendida >= 50 ? 'var(--amber)' : 'var(--sage)',
-                      padding: '2px 8px',
+                      padding: '2px 6px',
                       borderRadius: 99,
+                      whiteSpace: 'nowrap',
+                      flexShrink: 0,
                       border: '1px solid',
                       borderColor: pctVendida >= 80 ? '#f5c6c6' : pctVendida >= 50 ? 'var(--amber-mid)' : 'var(--sage-mid)',
                     }}
