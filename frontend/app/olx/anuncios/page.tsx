@@ -2,6 +2,11 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { API_BASE } from '@/lib/api-base';
+import { usePersistentTab } from '@/lib/use-persistent-tab';
+import TabsBar from '@/components/ui/TabsBar';
+import { useAuth } from '@/lib/auth';
+import { canAccessPage } from '@/lib/permissions';
+import OlxVendasPage from '../vendas/page';
 
 const API = API_BASE;
 
@@ -37,7 +42,117 @@ function rotuloStatus(status: string, listId: string) {
   return { texto: status || 'Sem status', cor: '#475569', fundo: '#f1f5f9' };
 }
 
+// Aba "Pendente": SKUs que ainda vao ganhar anuncio manual na OLX. "Vincular anuncio" abre o popup com o link; ao vincular o SKU sai da fila e vai para "Publicados".
+function PendentesAnuncios({ itens, isPhone, onMudou }: { itens: any[]; isPhone: boolean; onMudou: () => Promise<void> | void }) {
+  const [skusNovos, setSkusNovos] = useState('');
+  const [adicionando, setAdicionando] = useState(false);
+  const [aviso, setAviso] = useState('');
+  const [alvo, setAlvo] = useState<any | null>(null);
+  const [link, setLink] = useState('');
+  const [vinculando, setVinculando] = useState(false);
+  const [erroPopup, setErroPopup] = useState('');
+
+  async function adicionar() {
+    if (!skusNovos.trim()) return;
+    setAdicionando(true); setAviso('');
+    try {
+      const r = await chamar('/olx/pendentes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ skus: skusNovos }) });
+      const partes: string[] = [];
+      if (r.adicionados?.length) partes.push(`${r.adicionados.length} adicionado(s)`);
+      if (r.jaNaFila?.length) partes.push(`já na fila: ${r.jaNaFila.join(', ')}`);
+      if (r.jaPublicados?.length) partes.push(`já publicado(s): ${r.jaPublicados.join(', ')}`);
+      if (r.invalidos?.length) partes.push(`SKU não encontrado: ${r.invalidos.join(', ')}`);
+      setAviso(partes.join(' · '));
+      setSkusNovos('');
+      await onMudou();
+    } catch (e: any) { setAviso(e.message || 'Erro ao adicionar'); }
+    setAdicionando(false);
+  }
+
+  async function remover(sku: string) {
+    if (!confirm('Tirar o SKU ' + sku + ' da fila de pendentes? (Nada é alterado na OLX.)')) return;
+    try { await chamar('/olx/pendentes/' + encodeURIComponent(sku), { method: 'DELETE' }); await onMudou(); }
+    catch (e: any) { alert(e.message || 'Erro ao remover'); }
+  }
+
+  function abrirPopup(item: any) { setAlvo(item); setLink(''); setErroPopup(''); }
+
+  async function vincular() {
+    if (!alvo) return;
+    setVinculando(true); setErroPopup('');
+    try {
+      const r = await chamar('/olx/anuncios', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sku: alvo.sku, listId: link }) });
+      setAlvo(null);
+      await onMudou();
+      alert(r.confirmado ? 'Vinculado e confirmado na OLX (' + (r.statusOlx || 'ok') + '). O SKU ' + alvo.sku + ' foi para Publicados.' : 'Vinculado. A OLX nao confirmou esse ID pela API; o vinculo fica salvo mesmo assim. O SKU ' + alvo.sku + ' foi para Publicados.');
+    } catch (e: any) { setErroPopup(e.message || 'Erro ao vincular'); }
+    setVinculando(false);
+  }
+
+  return (
+    <>
+      <div style={{ ...s.card, padding: isPhone ? 14 : 22 }}>
+        <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Colocar SKU na fila</div>
+        <div style={{ fontSize: 13, color: 'var(--gray-500)', marginBottom: 12 }}>Informe os SKUs que ainda vão ganhar anúncio manual na OLX (um ou vários, separados por espaço, vírgula ou linha). Depois de criar o anúncio, clique em “Vincular anúncio”.</div>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+          <textarea style={{ ...s.input, flex: isPhone ? '1 1 100%' : '1 1 360px', width: 'auto', minHeight: 40, resize: 'vertical', fontFamily: 'JetBrains Mono, monospace' }} placeholder="Ex: HD01_0190 BM03_0119" value={skusNovos} onChange={(e) => setSkusNovos(e.target.value)} rows={1} />
+          <button style={{ ...s.btn, background: 'var(--gray-800)', color: '#fff', opacity: skusNovos.trim() && !adicionando ? 1 : 0.6 }} onClick={adicionar} disabled={!skusNovos.trim() || adicionando}>{adicionando ? 'Adicionando...' : 'Adicionar à fila'}</button>
+        </div>
+        {aviso ? <div style={{ fontSize: 12.5, color: 'var(--gray-600)', marginTop: 10 }}>{aviso}</div> : null}
+      </div>
+
+      <div style={{ ...s.card, padding: isPhone ? 12 : 22 }}>
+        <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>Pendentes de anúncio <span style={{ color: 'var(--gray-400)', fontWeight: 400 }}>({itens.length})</span></div>
+        {!itens.length ? <div style={{ fontSize: 13, color: 'var(--gray-500)', padding: '10px 0' }}>Nenhum SKU pendente.</div> : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead><tr><th style={s.th}>SKU</th><th style={s.th}>Descrição</th><th style={s.th}>Moto</th><th style={s.th}>Preço</th><th style={s.th} /></tr></thead>
+              <tbody>
+                {itens.map((i) => (
+                  <tr key={i.sku}>
+                    <td style={{ ...s.td, fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>{i.sku}</td>
+                    <td style={s.td}>{i.encontrada ? i.descricao || '—' : <span style={{ color: '#b45309' }}>SKU não encontrado no estoque</span>}{i.encontrada && i.disponivel === false ? <span style={{ marginLeft: 8, fontSize: 11, color: '#b45309' }}>(sem estoque)</span> : null}</td>
+                    <td style={{ ...s.td, color: 'var(--gray-600)' }}>{i.moto || '—'}</td>
+                    <td style={{ ...s.td, whiteSpace: 'nowrap' }}>{i.preco != null ? Number(i.preco).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '—'}</td>
+                    <td style={{ ...s.td, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <button style={{ ...s.btn, padding: '6px 14px', fontSize: 12.5, background: 'var(--blue-500)', color: '#fff' }} onClick={() => abrirPopup(i)}>Vincular anúncio</button>
+                      <button style={{ ...s.btn, marginLeft: 6, padding: '4px 10px', fontSize: 12, background: 'var(--white)', color: 'var(--gray-500)', borderColor: 'var(--border)' }} onClick={() => remover(i.sku)} title="Tirar da fila">✕</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {alvo ? (
+        <div onClick={() => setAlvo(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,.5)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--white)', borderRadius: 14, width: '100%', maxWidth: 520, padding: 22, boxShadow: '0 20px 60px rgba(0,0,0,.25)' }}>
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>Vincular anúncio a um SKU</div>
+            <div style={{ fontSize: 13, color: 'var(--gray-500)', marginBottom: 14 }}>Cole o link do anúncio na OLX (ou só o número do final). Se o SKU já tinha outro anúncio, o antigo vai para o histórico.</div>
+            <label style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--gray-500)' }}>SKU</label>
+            <div style={{ ...s.input, background: 'var(--gray-50)', marginTop: 4, marginBottom: 4, fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>{alvo.sku}</div>
+            {alvo.descricao ? <div style={{ fontSize: 12.5, color: 'var(--gray-600)', marginBottom: 12 }}>{alvo.descricao}</div> : <div style={{ marginBottom: 12 }} />}
+            <label style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--gray-500)' }}>Link ou ID do anúncio na OLX</label>
+            <input autoFocus style={{ ...s.input, marginTop: 4 }} placeholder="Link ou ID do anuncio na OLX" value={link} onChange={(e) => setLink(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && link.trim() && !vinculando) vincular(); }} />
+            {erroPopup ? <div style={{ marginTop: 10, fontSize: 12.5, color: '#b91c1c' }}>{erroPopup}</div> : null}
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+              <button style={{ ...s.btn, background: 'var(--white)', color: 'var(--gray-700)', borderColor: 'var(--border)' }} onClick={() => setAlvo(null)}>Cancelar</button>
+              <button style={{ ...s.btn, background: 'var(--blue-500)', color: '#fff', opacity: link.trim() && !vinculando ? 1 : 0.6 }} onClick={vincular} disabled={!link.trim() || vinculando}>{vinculando ? 'Vinculando...' : 'Vincular'}</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 export default function OlxAnunciosPage() {
+  const { user } = useAuth();
+  const verVendas = canAccessPage(user as any, '/olx/vendas');
+  const [secao, setSecao] = usePersistentTab<'publicados' | 'pendente' | 'vendas'>('aba', 'publicados', ['publicados', 'pendente', 'vendas'] as const);
+  const [pendentes, setPendentes] = useState<any[]>([]);
   const [itens, setItens] = useState<any[]>([]);
   const [historico, setHistorico] = useState<any[]>([]);
   const [semSku, setSemSku] = useState<any[]>([]);
@@ -65,7 +180,11 @@ export default function OlxAnunciosPage() {
     } catch (e: any) { alert(e.message || 'Erro ao carregar os anuncios'); }
     setCarregando(false);
   }
-  useEffect(() => { carregar(); }, []);
+  async function carregarPendentes() {
+    try { const d = await chamar('/olx/pendentes'); setPendentes(Array.isArray(d.itens) ? d.itens : []); } catch { /* a fila e' opcional na tela */ }
+  }
+  async function recarregarTudo() { await Promise.all([carregar(), carregarPendentes()]); }
+  useEffect(() => { carregar(); carregarPendentes(); }, []);
 
   async function vincular() {
     setVinculando(true);
@@ -74,7 +193,7 @@ export default function OlxAnunciosPage() {
       alert(r.confirmado ? 'Vinculado e confirmado na OLX (' + (r.statusOlx || 'ok') + ').' : 'Vinculado. A OLX nao confirmou esse ID pela API; o vinculo fica salvo mesmo assim.');
       setNovoSku('');
       setNovoLink('');
-      await carregar();
+      await recarregarTudo();
     } catch (e: any) { alert(e.message || 'Erro ao vincular'); }
     setVinculando(false);
   }
@@ -131,11 +250,22 @@ export default function OlxAnunciosPage() {
           <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)', letterSpacing: '-0.3px' }}>OLX · Anuncios</div>
           <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>SKU x link do anuncio, com o status acompanhado automaticamente</div>
         </div>
-        <button style={{ ...s.btn, background: 'var(--white)', color: 'var(--gray-700)', borderColor: 'var(--border)', opacity: atualizando ? 0.7 : 1 }} onClick={atualizarStatus} disabled={atualizando}>
-          {atualizando ? 'Atualizando...' : 'Atualizar status agora'}
-        </button>
+        {secao !== 'vendas' && (
+          <button style={{ ...s.btn, background: 'var(--white)', color: 'var(--gray-700)', borderColor: 'var(--border)', opacity: atualizando ? 0.7 : 1 }} onClick={atualizarStatus} disabled={atualizando}>
+            {atualizando ? 'Atualizando...' : 'Atualizar status agora'}
+          </button>
+        )}
       </div>
 
+      <TabsBar tabs={[{ id: 'publicados', label: 'Publicados' }, { id: 'pendente', label: 'Pendente', badge: pendentes.length || undefined }, ...(verVendas ? [{ id: 'vendas', label: 'Vendas' }] : [])]} active={secao} onChange={(id) => setSecao(id as 'publicados' | 'pendente' | 'vendas')} />
+
+      {secao === 'vendas' && verVendas ? (
+        <OlxVendasPage />
+      ) : secao === 'pendente' ? (
+        <div style={{ padding: isPhone ? 12 : 24, maxWidth: 1100 }}>
+          <PendentesAnuncios itens={pendentes} isPhone={isPhone} onMudou={recarregarTudo} />
+        </div>
+      ) : (
       <div style={{ padding: isPhone ? 12 : 24, maxWidth: 1100 }}>
         {aExcluir.length > 0 && (
           <div style={{ ...s.card, background: '#fffbeb', borderColor: '#fde68a' }}>
@@ -247,6 +377,7 @@ export default function OlxAnunciosPage() {
           ) : null}
         </div>
       </div>
+      )}
     </>
   );
 }

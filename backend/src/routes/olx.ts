@@ -378,10 +378,92 @@ olxRouter.post('/anuncios', async (req, res, next) => {
          "encerradoEm" = NULL, "criadoEm" = now()`,
       sku, listId, adId || null, confirmado?.status || null, confirmado?.url || urlPublicaOlx(listId),
     );
+    // o SKU deixa de estar pendente: o anuncio foi criado e vinculado (passa para "Publicados")
+    await garantirPendentes().then(() => prisma.$executeRawUnsafe(`DELETE FROM "OlxAnuncioPendente" WHERE "sku" = $1`, sku)).catch(() => null);
     // Venda ja detectada desse anuncio que estava sem SKU: passa a apontar pra ele.
     await prisma.$executeRawUnsafe(`UPDATE "OlxVenda" SET "sku"=$1 WHERE ("listId"=$2 OR "listId"=$3) AND "sku"=''`, sku, listId, adId || listId).catch(() => null);
     await baixarEstoqueBlingDasVendasPendentes().catch(() => null);
     res.json({ ok: true, sku, listId, confirmado: !!confirmado, statusOlx: confirmado?.status || null, url: confirmado?.url || urlPublicaOlx(listId) });
+  } catch (e) { next(e); }
+});
+
+// ───────────── Fila de SKUs pendentes de anuncio manual na OLX ─────────────
+// O SKU entra na fila, e quando o anuncio e' criado na OLX o vinculo (POST /olx/anuncios) tira o SKU da fila e ele passa para "Publicados".
+const SKUS_PENDENTES_INICIAIS = ['BM03_0119', 'BM02_0095', 'BM02_0079-2', 'KY01_0067', 'HD03_0116', 'HD03_0136', 'PN0114', 'PN0083', 'HO01_0106', 'HO01_0092'];
+
+let pendentesPronto: Promise<void> | null = null;
+function garantirPendentes(): Promise<void> {
+  if (!pendentesPronto) {
+    pendentesPronto = (async () => {
+      await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "OlxAnuncioPendente" ("sku" TEXT PRIMARY KEY, "criadoEm" TIMESTAMPTZ NOT NULL DEFAULT now(), "criadoPor" TEXT)`);
+      await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "OlxPendenteMeta" ("chave" TEXT PRIMARY KEY)`);
+      const feito = await prisma.$queryRawUnsafe<any[]>(`SELECT 1 FROM "OlxPendenteMeta" WHERE "chave" = 'carga_inicial'`);
+      if (!feito.length) {
+        // carga inicial (uma unica vez): a fila ja comeca com estes SKUs
+        for (const sku of SKUS_PENDENTES_INICIAIS) {
+          await prisma.$executeRawUnsafe(`INSERT INTO "OlxAnuncioPendente" ("sku","criadoPor") VALUES ($1,'carga inicial') ON CONFLICT DO NOTHING`, sku);
+        }
+        await prisma.$executeRawUnsafe(`INSERT INTO "OlxPendenteMeta" ("chave") VALUES ('carga_inicial') ON CONFLICT DO NOTHING`);
+      }
+    })().catch((e) => { pendentesPronto = null; throw e; });
+  }
+  return pendentesPronto;
+}
+
+// GET /olx/pendentes — SKUs na fila, com a descricao da peca
+olxRouter.get('/pendentes', async (_req, res, next) => {
+  try {
+    await garantirTabela();
+    await garantirPendentes();
+    const rows = await prisma.$queryRawUnsafe<any[]>(`SELECT "sku","criadoEm","criadoPor" FROM "OlxAnuncioPendente" ORDER BY "criadoEm" ASC, "sku" ASC`);
+    const skus = rows.map((r) => String(r.sku));
+    const pecas: any[] = skus.length
+      ? await prisma.peca.findMany({ where: { idPeca: { in: skus } }, select: { idPeca: true, descricao: true, precoML: true, disponivel: true, moto: { select: { marca: true, modelo: true, ano: true } } } })
+      : [];
+    const porSku = new Map(pecas.map((p: any) => [String(p.idPeca), p]));
+    res.json({
+      ok: true,
+      itens: rows.map((r) => {
+        const p: any = porSku.get(String(r.sku));
+        return {
+          sku: String(r.sku), descricao: p ? txt(p.descricao) : '', encontrada: !!p, disponivel: p ? !!p.disponivel : null,
+          preco: p ? Number(p.precoML || 0) : null,
+          moto: p?.moto ? [p.moto.marca, p.moto.modelo, p.moto.ano].filter(Boolean).join(' ') : '',
+          criadoEm: r.criadoEm, criadoPor: txt(r.criadoPor),
+        };
+      }),
+    });
+  } catch (e) { next(e); }
+});
+
+// POST /olx/pendentes { skus } — coloca um ou varios SKUs na fila (separados por espaco, virgula ou quebra de linha)
+olxRouter.post('/pendentes', async (req: any, res, next) => {
+  try {
+    await garantirTabela();
+    await garantirPendentes();
+    const bruto = req.body?.skus ?? req.body?.sku ?? '';
+    const lista = (Array.isArray(bruto) ? bruto : String(bruto).split(/[\s,;]+/)).map((x: any) => txt(x).toUpperCase()).filter(Boolean);
+    const skus: string[] = Array.from(new Set<string>(lista));
+    if (!skus.length) return res.status(400).json({ ok: false, error: 'Informe ao menos um SKU.' });
+    const adicionados: string[] = []; const invalidos: string[] = []; const jaPublicados: string[] = []; const jaNaFila: string[] = [];
+    for (const sku of skus) {
+      const peca = await prisma.peca.findUnique({ where: { idPeca: sku }, select: { idPeca: true } });
+      if (!peca) { invalidos.push(sku); continue; }
+      const pub = await prisma.$queryRawUnsafe<any[]>(`SELECT "listId","status" FROM "OlxAnuncio" WHERE "sku" = $1`, sku);
+      if (pub.length && txt(pub[0].listId) && !statusEncerrado(txt(pub[0].status))) { jaPublicados.push(sku); continue; }
+      const n = await prisma.$executeRawUnsafe(`INSERT INTO "OlxAnuncioPendente" ("sku","criadoPor") VALUES ($1,$2) ON CONFLICT DO NOTHING`, sku, txt(req.authUser?.username) || null);
+      if (n) adicionados.push(sku); else jaNaFila.push(sku);
+    }
+    res.json({ ok: true, adicionados, invalidos, jaPublicados, jaNaFila });
+  } catch (e) { next(e); }
+});
+
+// DELETE /olx/pendentes/:sku — tira da fila sem vincular
+olxRouter.delete('/pendentes/:sku', async (req, res, next) => {
+  try {
+    await garantirPendentes();
+    await prisma.$executeRawUnsafe(`DELETE FROM "OlxAnuncioPendente" WHERE "sku" = $1`, txt(req.params.sku).toUpperCase());
+    res.json({ ok: true });
   } catch (e) { next(e); }
 });
 
