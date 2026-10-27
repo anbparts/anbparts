@@ -369,6 +369,62 @@ function proximoPrefixoDaMarca(marca: string, motos: any[], prefixos: any[]): st
   return maior ? maior.letras + String(maior.num + 1).padStart(maior.largura, '0') : '';
 }
 
+// Campo de marca com sugestoes: conforme digita, lista as marcas da tabela (FIPE + marcas ja usadas no sistema).
+function MarcaInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [marcas, setMarcas] = useState<string[]>([]);
+  const [aberto, setAberto] = useState(false);
+  const [ativo, setAtivo] = useState(-1);
+  useEffect(() => {
+    fetch(`${API}/fipe/marcas-cadastradas`, { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => setMarcas(Array.isArray(d?.marcas) ? d.marcas : []))
+      .catch(() => setMarcas([]));
+  }, []);
+  const chave = (t: string) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const q = chave(value);
+  const sugestoes = marcas
+    .filter((m) => !q || chave(m).includes(q))
+    .sort((a, b) => Number(chave(b).startsWith(q)) - Number(chave(a).startsWith(q)) || a.localeCompare(b))
+    .filter((m) => chave(m) !== q)
+    .slice(0, 8);
+  function escolher(m: string) { onChange(m); setAberto(false); setAtivo(-1); }
+  return (
+    <div style={{ marginBottom: 14, position: 'relative' }}>
+      <label style={cs.fl}>Marca *</label>
+      <input
+        style={cs.fi}
+        placeholder="Ex: YAMAHA"
+        value={value}
+        autoComplete="off"
+        onChange={(e) => { onChange(e.target.value); setAberto(true); setAtivo(-1); }}
+        onFocus={() => setAberto(true)}
+        onBlur={() => setTimeout(() => setAberto(false), 120)}
+        onKeyDown={(e) => {
+          if (!aberto || !sugestoes.length) return;
+          if (e.key === 'ArrowDown') { e.preventDefault(); setAtivo((a) => Math.min(a + 1, sugestoes.length - 1)); }
+          else if (e.key === 'ArrowUp') { e.preventDefault(); setAtivo((a) => Math.max(a - 1, 0)); }
+          else if (e.key === 'Enter' && ativo >= 0) { e.preventDefault(); escolher(sugestoes[ativo]); }
+          else if (e.key === 'Escape') setAberto(false);
+        }}
+      />
+      {aberto && sugestoes.length > 0 && (
+        <div style={{ position: 'absolute', left: 0, right: 0, top: '100%', marginTop: 2, zIndex: 30, background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-lg)', maxHeight: 240, overflowY: 'auto' }}>
+          {sugestoes.map((m, i) => (
+            <div
+              key={m}
+              onMouseDown={(e) => { e.preventDefault(); escolher(m); }}
+              onMouseEnter={() => setAtivo(i)}
+              style={{ padding: '8px 12px', fontSize: 13, cursor: 'pointer', background: i === ativo ? 'var(--gray-50)' : 'transparent' }}
+            >
+              {m}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Modal({ open, title, onClose, onSave, moto, todasMotos = [], viewportMode = 'desktop' }: any) {
   const empty = { marca: '', modelo: '', ano: '', cor: '', placa: '', chassi: '', renavam: '', notaFiscalEntrada: '', notaFiscalEntradaData: '', cilindros: '', combustivel: '', cilindrada: '', potencia: '', dataCompra: '', precoCompra: '', origemCompra: '', valorFipe: '', observacoes: '' };
   const [form, setForm] = useState(empty);
@@ -509,7 +565,7 @@ function Modal({ open, title, onClose, onSave, moto, todasMotos = [], viewportMo
         <div style={{ padding: modalBodyPadding }}>
           <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '0.8px', textTransform: 'uppercase', marginBottom: 12, paddingBottom: 8, borderBottom: '1px solid var(--border)' }}>Identificacao</div>
           <div style={{ display: 'grid', gridTemplateColumns: modalColumns, gap: 12 }}>
-            {row('Marca *', 'marca', 'text', 'Ex: YAMAHA')}
+            <MarcaInput value={form.marca} onChange={(v) => setForm({ ...form, marca: v })} />
             {row('Modelo *', 'modelo', 'text', 'Ex: CROSSER')}
             {row('Ano', 'ano', 'number', '2024')}
             {row('Cor', 'cor', 'text', 'Ex: Preto')}

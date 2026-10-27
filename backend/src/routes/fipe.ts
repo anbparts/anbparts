@@ -2,6 +2,7 @@
 // Usada no cadastro da moto: sugere marca e modelos parecidos com o texto do cadastro e deixa escolher o valor.
 // Sem token a API e gratuita e so entrega o mes corrente (suficiente aqui: a moto e comprada no mes). Se existir FIPE_TOKEN no ambiente, ele e enviado.
 import { Router } from 'express';
+import { prisma } from '../lib/prisma';
 
 export const fipeRouter = Router();
 
@@ -60,6 +61,97 @@ export function pontuar(consulta: string, nome: string): number {
 }
 
 const precoNumero = (txt: string) => Number(String(txt || '').replace(/[^\d,]/g, '').replace(',', '.')) || 0;
+
+// ───────────── Tabela de marcas (preenchida 1x pela FIPE, sem perder o formato das marcas ja salvas no sistema) ─────────────
+let marcasPronta = false;
+let ultimaTentativaFipe = 0;
+
+async function garantirMarcas(): Promise<void> {
+  if (marcasPronta) return;
+  await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "MarcaMoto" (
+    "id" SERIAL PRIMARY KEY,
+    "nome" TEXT NOT NULL,
+    "chave" TEXT NOT NULL UNIQUE,
+    "fipeId" TEXT,
+    "origem" TEXT NOT NULL DEFAULT 'fipe',
+    "criadoEm" TIMESTAMP NOT NULL DEFAULT NOW()
+  )`);
+  marcasPronta = true;
+}
+
+// Junta as marcas ja usadas nas motos (mantendo a grafia mais usada) e, se ainda nao veio da FIPE, completa com as marcas dela.
+async function sincronizarMarcas(forcarFipe = false): Promise<{ fipe: number; sistema: number; fipeOk: boolean; erro?: string }> {
+  await garantirMarcas();
+  const existentes: Array<{ chave: string; nome: string; origem: string }> = await prisma.$queryRawUnsafe(`SELECT "chave","nome","origem" FROM "MarcaMoto"`);
+  const porChave = new Map(existentes.map((e) => [e.chave, e]));
+  let sistema = 0; let fipe = 0;
+
+  // 1) marcas ja cadastradas nas motos: valem como estao escritas
+  const motos = await prisma.moto.findMany({ select: { marca: true } });
+  const cont = new Map<string, Map<string, number>>();
+  for (const m of motos) {
+    const nome = String(m.marca || '').trim();
+    const k = compacto(nome);
+    if (!k) continue;
+    const g = cont.get(k) || new Map<string, number>();
+    g.set(nome, (g.get(nome) || 0) + 1);
+    cont.set(k, g);
+  }
+  for (const [k, g] of cont) {
+    if (porChave.has(k)) continue;
+    const nome = Array.from(g.entries()).sort((a, b) => b[1] - a[1])[0][0];
+    await prisma.$executeRawUnsafe(`INSERT INTO "MarcaMoto" ("nome","chave","origem") VALUES ($1,$2,'sistema') ON CONFLICT ("chave") DO NOTHING`, nome, k);
+    porChave.set(k, { chave: k, nome, origem: 'sistema' });
+    sistema += 1;
+  }
+
+  // 2) marcas da FIPE (so uma vez; se a FIPE estiver fora do ar, tenta de novo depois)
+  const jaTemFipe = Array.from(porChave.values()).some((e) => e.origem === 'fipe') || (await prisma.$queryRawUnsafe<any[]>(`SELECT 1 FROM "MarcaMoto" WHERE "fipeId" IS NOT NULL LIMIT 1`)).length > 0;
+  if (!jaTemFipe || forcarFipe) {
+    if (!forcarFipe && Date.now() - ultimaTentativaFipe < 10 * 60 * 1000) return { fipe, sistema, fipeOk: false, erro: 'Aguardando nova tentativa na FIPE' };
+    ultimaTentativaFipe = Date.now();
+    try {
+      const marcas: Array<{ code: string; name: string }> = await fipeGet('/brands');
+      for (const b of marcas) {
+        const k = compacto(b.name);
+        if (!k) continue;
+        // ja existe a mesma marca (ex.: HARLEY DAVIDSON da FIPE x HARLEY-DAVIDSON do sistema), ou a do sistema e' o inicio do nome da FIPE (HARLEY x HARLEY-DAVIDSON)
+        let alvo = porChave.get(k);
+        if (!alvo) alvo = Array.from(porChave.values()).find((e) => e.origem === 'sistema' && e.chave.length >= 4 && k.startsWith(e.chave));
+        if (alvo) {
+          await prisma.$executeRawUnsafe(`UPDATE "MarcaMoto" SET "fipeId" = $1 WHERE "chave" = $2 AND "fipeId" IS NULL`, String(b.code), alvo.chave);
+          continue;
+        }
+        await prisma.$executeRawUnsafe(`INSERT INTO "MarcaMoto" ("nome","chave","fipeId","origem") VALUES ($1,$2,$3,'fipe') ON CONFLICT ("chave") DO NOTHING`, b.name.trim(), k, String(b.code));
+        porChave.set(k, { chave: k, nome: b.name, origem: 'fipe' });
+        fipe += 1;
+      }
+      return { fipe, sistema, fipeOk: true };
+    } catch (e: any) { return { fipe, sistema, fipeOk: false, erro: e?.message || 'Erro ao consultar a FIPE' }; }
+  }
+  return { fipe, sistema, fipeOk: true };
+}
+
+// GET /fipe/marcas-cadastradas?busca=har — marcas da tabela propria (digitou, filtra); sem busca devolve todas
+fipeRouter.get('/marcas-cadastradas', async (req, res) => {
+  try {
+    const r = await sincronizarMarcas();
+    const rows: Array<{ nome: string; origem: string }> = await prisma.$queryRawUnsafe(`SELECT "nome","origem" FROM "MarcaMoto" ORDER BY "nome"`);
+    const busca = compacto(String(req.query.busca || ''));
+    const lista = busca
+      ? rows.filter((m) => compacto(m.nome).includes(busca)).sort((a, b) => Number(compacto(b.nome).startsWith(busca)) - Number(compacto(a.nome).startsWith(busca)) || a.nome.localeCompare(b.nome))
+      : rows;
+    res.json({ ok: true, marcas: lista.map((m) => m.nome), fipeOk: r.fipeOk });
+  } catch (e: any) { res.status(500).json({ ok: false, error: e?.message || 'Erro ao listar marcas' }); }
+});
+
+// POST /fipe/marcas-cadastradas/sincronizar — forca nova leitura da FIPE (so acrescenta marcas que faltam)
+fipeRouter.post('/marcas-cadastradas/sincronizar', async (_req, res) => {
+  try {
+    const r = await sincronizarMarcas(true);
+    res.json({ ok: r.fipeOk, ...r });
+  } catch (e: any) { res.status(500).json({ ok: false, error: e?.message || 'Erro ao sincronizar' }); }
+});
 
 // GET /fipe/marcas?busca=HARLEY DAVIDSON — todas as marcas, com a mais parecida primeiro e marcada como sugerida
 fipeRouter.get('/marcas', async (req, res, next) => {
