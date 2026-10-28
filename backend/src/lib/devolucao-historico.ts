@@ -29,7 +29,7 @@ export function garantirTabelasDevolucao(): Promise<void> {
         "valor" NUMERIC(14,2), "valorLiq" NUMERIC(14,2), "canal" TEXT,
         "motivoId" INTEGER, "observacao" TEXT, "origem" TEXT,
         "criadoEm" TIMESTAMP NOT NULL DEFAULT now(), "atualizadoEm" TIMESTAMP, "atualizadoPor" TEXT)`);
-      for (const col of ['"frete" NUMERIC(14,2)', '"taxas" NUMERIC(14,2)', '"nfVenda" TEXT', '"nfDevolucao" TEXT', '"clienteNome" TEXT']) {
+      for (const col of ['"frete" NUMERIC(14,2)', '"taxas" NUMERIC(14,2)', '"nfVenda" TEXT', '"nfDevolucao" TEXT', '"clienteNome" TEXT', '"nfDevolucaoData" DATE']) {
         await prisma.$executeRawUnsafe(`ALTER TABLE "DevolucaoRegistro" ADD COLUMN IF NOT EXISTS ${col}`);
       }
       await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "DevolucaoRegistro_dedupe_uq" ON "DevolucaoRegistro" ("pecaId", COALESCE("pedidoNum", ''), "dataDevolucao")`);
@@ -146,6 +146,36 @@ export async function nfEntradaDaPeca(pecaId: number): Promise<string | null> {
   await garantirTabelasDevolucao();
   const [r] = await prisma.$queryRawUnsafe<any[]>(`SELECT "nfDevolucao" FROM "DevolucaoRegistro" WHERE "pecaId" = $1::int ORDER BY "dataDevolucao" DESC, "id" DESC LIMIT 1`, pecaId);
   return r?.nfDevolucao ? String(r.nfDevolucao) : null;
+}
+
+// NF de entrada usada na ativacao da etiqueta avulsa de uma peca DEVOLVIDA: e a NF de entrada (retorno) lancada na devolucao,
+// com a data de emissao buscada no Bling (e guardada no registro pra nao consultar de novo).
+// Peca sem devolucao/NF de retorno devolve null (quem chama usa a NF de entrada da moto).
+export async function nfEntradaDevolucaoParaAtivacao(pecaId: number): Promise<{ numero: string; data: string | null } | null> {
+  await garantirTabelasDevolucao();
+  const [r] = await prisma.$queryRawUnsafe<any[]>(
+    `SELECT "id", "nfDevolucao", "nfDevolucaoData"::text AS "data" FROM "DevolucaoRegistro" WHERE "pecaId" = $1::int AND NULLIF(trim("nfDevolucao"), '') IS NOT NULL ORDER BY "dataDevolucao" DESC, "id" DESC LIMIT 1`, pecaId);
+  if (!r) return null;
+  const numero = String(r.nfDevolucao).trim();
+  if (r.data) return { numero, data: r.data };
+  let data: string | null = null;
+  try {
+    const { blingReq } = await import('../routes/bling');
+    const igual = (a: any) => { const x = String(a ?? '').trim(); return x === numero || (/^\d+$/.test(x) && /^\d+$/.test(numero) && Number(x) === Number(numero)); };
+    for (const filtro of [`numero=${encodeURIComponent(numero)}`, `numeroNota=${encodeURIComponent(numero)}`]) {
+      let linhas: any[] = [];
+      try { linhas = ((await blingReq(`/nfe?pagina=1&limite=20&${filtro}`)) as any)?.data || []; } catch { continue; }
+      const achadas = linhas.filter((l) => igual(l?.numero));
+      // varias notas podem ter o mesmo numero (series/saida): prefere a de entrada (tipo 0)
+      const nota = achadas.find((l) => Number(l?.tipo) === 0) || achadas[0];
+      const dia10 = String(nota?.dataEmissao || '').slice(0, 10);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(dia10)) { data = dia10; break; }
+    }
+  } catch { /* Bling indisponivel: mostra so o numero e tenta de novo na proxima */ }
+  if (data) {
+    try { await prisma.$executeRawUnsafe(`UPDATE "DevolucaoRegistro" SET "nfDevolucaoData" = $2::date WHERE "id" = $1::int`, r.id, data); } catch { /* sem cache */ }
+  }
+  return { numero, data };
 }
 
 export async function salvarNfEntrada(pecaId: number, nf: string, por: string | null): Promise<boolean> {

@@ -308,6 +308,7 @@ export async function atribuirNovaEtiquetaPeca(pecaId: number, novaEtiquetaBruta
 
     if (ehAvulsa && tipoPecaParaAtivacao) {
       try {
+        const nfDev = await (await import('../lib/devolucao-historico')).nfEntradaDevolucaoParaAtivacao(peca.id).catch(() => null);
         await sendDetranAtivacaoEmailIfNeeded([{
           idPeca: peca.idPeca,
           descricao: peca.descricao,
@@ -317,8 +318,8 @@ export async function atribuirNovaEtiquetaPeca(pecaId: number, novaEtiquetaBruta
           renavam: moto?.renavam || null,
           placa: moto?.placa || null,
           chassi: moto?.chassi || null,
-          notaFiscalEntrada: moto?.notaFiscalEntrada || null,
-          notaFiscalEntradaData: moto?.notaFiscalEntradaData || null,
+          notaFiscalEntrada: nfDev ? nfDev.numero : (moto?.notaFiscalEntrada || null),
+          notaFiscalEntradaData: nfDev ? nfDev.data : (moto?.notaFiscalEntradaData || null),
         }]);
       } catch (err) {
         console.error('[ativacao-email] falha ao enviar alerta de ativacao (devolucao):', err);

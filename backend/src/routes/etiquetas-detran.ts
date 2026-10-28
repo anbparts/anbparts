@@ -1096,9 +1096,18 @@ etiquetasDetranRouter.get('/pendencias-ativacao', async (req, res, next) => {
       if (pos.idPeca && pos.etiqueta) cartelaSet.add(`${pos.motoId}|${pos.idPeca}|${pos.etiqueta}`);
     }
 
+    // Peca devolvida que ganhou nova etiqueta: a NF de entrada e a do retorno (devolucao), nao a da moto.
+    const { nfEntradaDevolucaoParaAtivacao } = await import('../lib/devolucao-historico');
+    const nfDevolucaoPorPeca = new Map<number, { numero: string; data: string | null } | null>();
+    for (const peca of pecas) {
+      if (!(peca as any).etiquetaAtribuidaEm) continue;
+      try { nfDevolucaoPorPeca.set(peca.id, await nfEntradaDevolucaoParaAtivacao(peca.id)); } catch { /* usa a NF da moto */ }
+    }
+
     const linhas: any[] = [];
     for (const peca of pecas) {
       const moto: any = motoById.get(peca.motoId) || {};
+      const nfDev = nfDevolucaoPorPeca.get(peca.id) || null;
       for (const etq of splitEtiquetas(peca.detranEtiqueta)) {
         // Só etiquetas avulsas: nem cadastradas na cartela (MotoDetranPosicao),
         // nem cuja base bate com a cartela da moto (detranCartelaId) + posição 001-034.
@@ -1115,8 +1124,9 @@ etiquetasDetranRouter.get('/pendencias-ativacao', async (req, res, next) => {
           renavam: moto.renavam || null,
           placa: moto.placa || null,
           chassi: moto.chassi || null,
-          notaFiscalEntrada: moto.notaFiscalEntrada || null,
-          notaFiscalEntradaData: moto.notaFiscalEntradaData || null,
+          notaFiscalEntrada: nfDev ? nfDev.numero : (moto.notaFiscalEntrada || null),
+          notaFiscalEntradaData: nfDev ? nfDev.data : (moto.notaFiscalEntradaData || null),
+          nfEntradaOrigem: nfDev ? 'devolucao' : 'moto',
           motoLabel: [moto.marca, moto.modelo].filter(Boolean).join(' ') || null,
           cadastro: peca.cadastro,
           disponivel: peca.disponivel,
