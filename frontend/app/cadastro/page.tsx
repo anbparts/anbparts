@@ -2299,7 +2299,7 @@ export default function CadastroPage() {
       const ok = await removerVinculoAnuncio(l.sku, 'mercado-livre', 'sistema_bling', true, true);
       if (!ok) falhas.push(l.sku);
     }
-    alert(falhas.length ? `Liberados: ${alvos.length - falhas.length}. Falharam: ${falhas.join(', ')}.` : `${alvos.length} SKU(s) liberado(s) no Mercado Livre. Agora marque "criar" e clique em "Criar selecionados".`);
+    if (falhas.length) alert(`Liberados: ${alvos.length - falhas.length}. Falharam: ${falhas.join(', ')}.`);
   }
 
   async function removerVinculoAnuncio(sku: string, mk: AnuncioMarketplaceId, alvo: 'sistema' | 'sistema_bling' | 'sistema_bling_marketplace', semConfirmar?: boolean, silencioso?: boolean): Promise<boolean> {

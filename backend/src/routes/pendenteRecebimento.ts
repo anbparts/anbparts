@@ -147,6 +147,7 @@ pendenteRecebimentoRouter.get('/anuncio', async (req, res, next) => {
       `SELECT r."pecaId", r."revisadaEm", r."revisadaPor", r."anuncioEm", r."anuncioRevisadoEm", r."anuncioRevisadoPor", r."anuncioObs",
               p."idPeca", p."descricao", p."localizacao", p."detranEtiqueta", p."precoML", p."disponivel",
               p."mercadoLivreLink", p."shopeeLink", p."magaluLink", p."nuvemshopProdutoId",
+              p."mercadoLivreItemId", p."shopeeItemId", p."magaluItemId",
               m."marca", m."modelo", m."ano", dr."nfDevolucao" AS "nfEntrada", dr."canal" AS "canal", dm."nome" AS "motivoNome"
        FROM "PecaEmRevisao" r
        JOIN "Peca" p ON p."id" = r."pecaId"
@@ -161,6 +162,8 @@ pendenteRecebimentoRouter.get('/anuncio', async (req, res, next) => {
         pecaId: Number(r.pecaId), idPeca: r.idPeca, descricao: r.descricao, localizacao: r.localizacao, etiquetaAtual: r.detranEtiqueta || null,
         moto: [r.marca, r.modelo, r.ano].filter(Boolean).join(' '), preco: Number(r.precoML || 0), disponivel: !!r.disponivel,
         links: { ml: r.mercadoLivreLink || null, shopee: r.shopeeLink || null, magalu: r.magaluLink || null, nuvemshop: !!r.nuvemshopProdutoId },
+        // ID gravado no sistema (mesmo sem link): indica que o anuncio existe
+        ids: { ml: r.mercadoLivreItemId || null, shopee: r.shopeeItemId || null, magalu: r.magaluItemId || null },
         devolucao: { motivo: r.motivoNome || null, nfEntrada: r.nfEntrada || null, canal: r.canal || null, revisadaEm: r.revisadaEm, revisadaPor: r.revisadaPor },
         anuncio: { enviadoEm: r.anuncioEm, revisadoEm: r.anuncioRevisadoEm, revisadoPor: r.anuncioRevisadoPor, observacao: r.anuncioObs || null },
       })),

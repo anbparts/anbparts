@@ -474,6 +474,7 @@ function DevolucoesTab() {
 type ItemAnuncio = {
   pecaId: number; idPeca: string; descricao: string; localizacao: string | null; etiquetaAtual: string | null; moto: string; preco: number; disponivel: boolean;
   links: { ml: string | null; shopee: string | null; magalu: string | null; nuvemshop: boolean };
+  ids?: { ml: string | null; shopee: string | null; magalu: string | null };
   devolucao: { motivo: string | null; nfEntrada: string | null; canal: string | null; revisadaEm: string | null; revisadaPor: string | null };
   anuncio: { enviadoEm: string | null; revisadoEm: string | null; revisadoPor: string | null; observacao: string | null };
 };
@@ -514,9 +515,12 @@ function AnuncioTab({ onMudou }: { onMudou: () => void }) {
     setSalvando(false);
   }
 
-  const link = (rot: string, url: string | null) => url
+  // com link: abre o anuncio; sem link mas com ID gravado: anuncio ok; sem nada: sem anuncio
+  const link = (rot: string, url: string | null, id?: string | null) => url
     ? <a href={url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 10px', borderRadius: 99, background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', textDecoration: 'none' }}>{rot} ↗</a>
-    : <span style={{ fontSize: 11.5, fontWeight: 600, padding: '3px 10px', borderRadius: 99, background: 'var(--white)', color: 'var(--gray-400)', border: '1px dashed var(--border)' }}>{rot}: sem link</span>;
+    : id
+      ? <span title={`ID ${id}`} style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 10px', borderRadius: 99, background: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0' }}>{rot}: anúncio ok</span>
+      : <span style={{ fontSize: 11.5, fontWeight: 600, padding: '3px 10px', borderRadius: 99, background: 'var(--white)', color: 'var(--gray-400)', border: '1px dashed var(--border)' }}>{rot}: sem anúncio</span>;
 
   return (
     <>
@@ -552,10 +556,10 @@ function AnuncioTab({ onMudou }: { onMudou: () => void }) {
                 <div style={{ fontSize: 13.5, color: 'var(--gray-800)', marginTop: 6 }}>{it.descricao}</div>
                 <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 3 }}>{it.moto || '-'}{it.localizacao ? ` · ${it.localizacao}` : ''}{it.etiquetaAtual ? ` · etiqueta ${it.etiquetaAtual}` : ''}</div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
-                  {link('Mercado Livre', it.links.ml)}
-                  {link('Shopee', it.links.shopee)}
-                  {link('Magalu', it.links.magalu)}
-                  <span style={{ fontSize: 11.5, fontWeight: 600, padding: '3px 10px', borderRadius: 99, background: it.links.nuvemshop ? '#f5f3ff' : 'var(--white)', color: it.links.nuvemshop ? '#5b21b6' : 'var(--gray-400)', border: it.links.nuvemshop ? '1px solid #c4b5fd' : '1px dashed var(--border)' }}>{it.links.nuvemshop ? 'Nuvemshop: publicado' : 'Nuvemshop: sem anúncio'}</span>
+                  {link('Mercado Livre', it.links.ml, it.ids?.ml)}
+                  {link('Shopee', it.links.shopee, it.ids?.shopee)}
+                  {link('Magalu', it.links.magalu, it.ids?.magalu)}
+                  <span style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 10px', borderRadius: 99, background: it.links.nuvemshop ? '#f0fdf4' : 'var(--white)', color: it.links.nuvemshop ? '#15803d' : 'var(--gray-400)', border: it.links.nuvemshop ? '1px solid #bbf7d0' : '1px dashed var(--border)' }}>{it.links.nuvemshop ? 'Nuvemshop: anúncio ok' : 'Nuvemshop: sem anúncio'}</span>
                 </div>
               </div>
               <div style={{ fontSize: 12, color: 'var(--gray-500)', textAlign: isPhone ? 'left' : 'right' }}>
