@@ -2946,10 +2946,12 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
                                         <label key={campo.nome} style={{ display: 'grid', gap: 2, fontSize: 11.5, color: 'var(--gray-700)' }}>
                                           <span>{campo.nome}</span>
                                           {campo.escolhas && campo.escolhas.length ? (
-                                            <select value={(mp.fichaValores || {})[campo.nome] || ''} onChange={(e: any) => atualizarFichaCampo(linha.sku, mk, campo.nome, e.target.value)} style={{ ...s.input, padding: '4px 6px', fontSize: 12 }}>
-                                              <option value="">Selecione…</option>
-                                              {campo.escolhas.map((o) => <option key={o} value={o}>{o}</option>)}
-                                            </select>
+                                            <>
+                                              <input list={`dl-${linha.sku}-${mk}-${campo.nome}`.replace(/[^A-Za-z0-9_-]/g, '_')} value={(mp.fichaValores || {})[campo.nome] || ''} onChange={(e: any) => atualizarFichaCampo(linha.sku, mk, campo.nome, e.target.value)} placeholder="Digite ou escolha da lista…" style={{ ...s.input, padding: '4px 6px', fontSize: 12 }} />
+                                              <datalist id={`dl-${linha.sku}-${mk}-${campo.nome}`.replace(/[^A-Za-z0-9_-]/g, '_')}>
+                                                {campo.escolhas.map((o) => <option key={o} value={o} />)}
+                                              </datalist>
+                                            </>
                                           ) : (
                                             <input value={(mp.fichaValores || {})[campo.nome] || ''} onChange={(e: any) => atualizarFichaCampo(linha.sku, mk, campo.nome, e.target.value)} placeholder={String(campo.exemplo || '').slice(0, 70)} style={{ ...s.input, padding: '4px 6px', fontSize: 12 }} />
                                           )}
@@ -2981,10 +2983,12 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
                                         <label key={campo.nome} style={{ display: 'grid', gap: 2, fontSize: 11.5, color: 'var(--gray-700)' }}>
                                           <span>{campo.nome}</span>
                                           {campo.escolhas && campo.escolhas.length ? (
-                                            <select value={(mp.fichaValores || {})[campo.nome] || ''} onChange={(e: any) => atualizarFichaCampo(linha.sku, mk, campo.nome, e.target.value)} style={{ ...s.input, padding: '4px 6px', fontSize: 12 }}>
-                                              <option value="">Selecione…</option>
-                                              {campo.escolhas.map((o) => <option key={o} value={o}>{o}</option>)}
-                                            </select>
+                                            <>
+                                              <input list={`dl-${linha.sku}-${mk}-${campo.nome}`.replace(/[^A-Za-z0-9_-]/g, '_')} value={(mp.fichaValores || {})[campo.nome] || ''} onChange={(e: any) => atualizarFichaCampo(linha.sku, mk, campo.nome, e.target.value)} placeholder="Digite ou escolha da lista…" style={{ ...s.input, padding: '4px 6px', fontSize: 12 }} />
+                                              <datalist id={`dl-${linha.sku}-${mk}-${campo.nome}`.replace(/[^A-Za-z0-9_-]/g, '_')}>
+                                                {campo.escolhas.map((o) => <option key={o} value={o} />)}
+                                              </datalist>
+                                            </>
                                           ) : (
                                             <input value={(mp.fichaValores || {})[campo.nome] || ''} onChange={(e: any) => atualizarFichaCampo(linha.sku, mk, campo.nome, e.target.value)} placeholder={String(campo.exemplo || '').slice(0, 70)} style={{ ...s.input, padding: '4px 6px', fontSize: 12 }} />
                                           )}
