@@ -1069,7 +1069,7 @@ etiquetasDetranRouter.get('/pendencias-ativacao', async (req, res, next) => {
       select: {
         id: true, idPeca: true, descricao: true, detranEtiqueta: true,
         tipoPecaAvulsa: true, cadastro: true, motoId: true,
-        disponivel: true, blingPedidoNum: true,
+        disponivel: true, blingPedidoNum: true, etiquetaAtribuidaEm: true,
       },
       orderBy: { cadastro: 'desc' },
     });
