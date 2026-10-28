@@ -2282,12 +2282,32 @@ export default function CadastroPage() {
     }
   }
 
-  async function removerVinculoAnuncio(sku: string, mk: AnuncioMarketplaceId, alvo: 'sistema' | 'sistema_bling' | 'sistema_bling_marketplace', semConfirmar?: boolean) {
+  // ML com anuncio encerrado/com problema (ex.: o ML finalizou e, ao voltar o estoque no Bling, ele nao subiu de novo):
+  // apaga o ID no sistema + o vinculo/anuncio do ML no Bling e recarrega a linha, que volta como "criar" (fluxo normal de criacao).
+  const situacaoMl = (l: AnuncioCriarLinha) => anuncioVinculos[l.sku]?.mercados?.['mercado-livre']?.situacao || anuncioStatusRapido[l.sku]?.['mercado-livre'] || null;
+  const elegivelRecriarMl = (l: AnuncioCriarLinha) => {
+    const sit = situacaoMl(l);
+    return !!(l.encontrado && l.marketplaces['mercado-livre']?.disponivel && l.marketplaces['mercado-livre'].jaTemAnuncio && sit && !sit.ok);
+  };
+  async function liberarMlParaRecriar(skus: string[]) {
+    const alvos = anuncioCriarLinhas.filter((l) => skus.includes(l.sku) && elegivelRecriarMl(l));
+    if (!alvos.length) return;
+    const lista = alvos.map((l) => `${l.sku} (${(situacaoMl(l)?.texto || '').toLowerCase()})`).join('\n');
+    if (!confirm(`Liberar ${alvos.length} SKU(s) para recriar o anúncio no Mercado Livre?\n\n${lista}\n\nApaga o ID no nosso sistema, o vínculo com a loja e o anúncio do ML dentro do Bling. NÃO mexe no anúncio dentro do Mercado Livre.\nDepois, o SKU volta como "criar" e você cria o novo pelo fluxo normal (Criar selecionados).`)) return;
+    const falhas: string[] = [];
+    for (const l of alvos) {
+      const ok = await removerVinculoAnuncio(l.sku, 'mercado-livre', 'sistema_bling', true, true);
+      if (!ok) falhas.push(l.sku);
+    }
+    alert(falhas.length ? `Liberados: ${alvos.length - falhas.length}. Falharam: ${falhas.join(', ')}.` : `${alvos.length} SKU(s) liberado(s) no Mercado Livre. Agora marque "criar" e clique em "Criar selecionados".`);
+  }
+
+  async function removerVinculoAnuncio(sku: string, mk: AnuncioMarketplaceId, alvo: 'sistema' | 'sistema_bling' | 'sistema_bling_marketplace', semConfirmar?: boolean, silencioso?: boolean): Promise<boolean> {
     const nome = ANUNCIO_MARKETPLACES.find((m) => m.id === mk)?.label || mk;
     const aviso = alvo === 'sistema'
       ? `Remover o ID do anúncio do ${nome} do SKU ${sku} SÓ do nosso sistema?\n\nO SKU fica liberado para criar de novo.\nIsso NÃO apaga o anúncio dentro do ${nome} nem o vínculo no Bling.${mk === 'mercado-livre' ? '\n\nAtenção: no Mercado Livre a auditoria automática do Bling pode preencher o ID de volta; para liberar de verdade use "sistema + Bling".' : ''}`
       : `Remover o anúncio do ${nome} do SKU ${sku} do nosso sistema E do Bling?\n\nO vínculo do produto com a loja no Bling será apagado${mk === 'mercado-livre' ? ' e o anúncio do Bling (anúncios do ML) também, senão ele volta a bloquear' : ''}, e o SKU fica liberado para criar de novo.\nIsso NÃO apaga o produto/anúncio dentro do ${nome}.`;
-    if (!semConfirmar && !confirm(aviso)) return;
+    if (!semConfirmar && !confirm(aviso)) return false;
     const chave = `${sku}|${mk}`;
     setAnuncioVinculoOcupado(chave);
     try {
@@ -2296,10 +2316,13 @@ export default function CadastroPage() {
       await recarregarMarketplaceDaLinha(sku, mk);
       setAnuncioStatusRapido((prev) => ({ ...prev, [sku]: { ...(prev[sku] || {}), [mk]: null } }));
       await consultarVinculos([sku]);
+      if (silencioso) return true;
       alert(`SKU ${sku} liberado no ${nome}.${data.marketplace_acao ? `
 No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoBling) && data.removidoNoBling.length ? `\nRemovido no Bling: ${data.removidoNoBling.join(', ')}.` : ''}${mk === 'nuvemshop' ? '\n\nSe o produto ainda existir na loja da Nuvemshop, apague-o lá também, senão a criação continua bloqueada.' : ''}`);
+      return true;
     } catch (e: any) {
-      alert(e?.message || 'Erro ao remover o vínculo.');
+      if (!silencioso) alert(e?.message || 'Erro ao remover o vínculo.');
+      return false;
     } finally {
       setAnuncioVinculoOcupado('');
     }
@@ -2783,6 +2806,7 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
           if (mp.jaTemAnuncio) {
             const sit = anuncioVinculos[linha.sku]?.mercados?.[mk]?.situacao || anuncioStatusRapido[linha.sku]?.[mk];
             if (mk === 'magalu' && sit && !sit.ok) return { chave: 'atualizar', texto: `${magaluDesmarcados.has(linha.sku) ? '☐' : '☑'} atualizar · ${sit.texto.toLowerCase()}`, cor: '#b91c1c', fundo: '#fee2e2', clicavel: true };
+            if (mk === 'mercado-livre' && sit && !sit.ok) return { chave: 'recriar', texto: `♻ liberar p/ recriar · ${sit.texto.toLowerCase()}`, cor: '#b91c1c', fundo: '#fee2e2', clicavel: true };
             if (sit && !sit.ok) return { chave: 'tem', texto: `já tem ID · ${sit.texto.toLowerCase()}`, cor: '#b91c1c', fundo: '#fee2e2', clicavel: false };
             if (sit && sit.ok) return { chave: 'tem', texto: `já tem ID · ${sit.texto.toLowerCase()}`, cor: '#92400e', fundo: '#fef3c7', clicavel: false };
             return { chave: 'tem', texto: anuncioVerificando ? 'já tem ID · verificando…' : 'já tem ID', cor: '#92400e', fundo: '#fef3c7', clicavel: false };
@@ -2800,7 +2824,7 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
           const cs = ANUNCIO_MARKETPLACES.filter(({ id }) => linha.marketplaces[id].disponivel).map(({ id }) => celula(linha, id).chave);
           if (cs.some((c) => c === 'erro' || c === 'restr' || c === 'semcat' || c === 'ficha')) return 'problema';
           if (cs.some((c) => c === 'pronto' || c === 'sel')) return 'pronto';
-          if (cs.some((c) => c === 'tem' || c === 'atualizar')) return 'tem';
+          if (cs.some((c) => c === 'tem' || c === 'atualizar' || c === 'recriar')) return 'tem';
           return 'ok';
         };
         const contagem = { pronto: 0, problema: 0, tem: 0 };
@@ -2835,6 +2859,9 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
               <button type="button" onClick={alternarTodos} style={{ ...miniBtn('#475569'), padding: '4px 10px', fontSize: 12 }}>{todosExpandidos ? '▾ Recolher todos' : '▸ Expandir todos'}</button>
               {anuncioCriarLinhas.some(elegivelAtualizarMagalu) && (
                 <button type="button" onClick={atualizarMagaluEmMassa} disabled={!!massaMagalu || anuncioCriarProcessando || !anuncioCriarLinhas.some(marcadoAtualizarMagalu)} title="Reenvia título (sem USADO), descrição, condição e ficha dos anúncios que já existem no Magalu e NÃO estão publicados (marcados). Os publicados são ignorados." style={{ ...miniBtn('#1d4ed8'), padding: '4px 10px', fontSize: 12, opacity: massaMagalu ? 0.7 : 1 }}>{massaMagalu || `Atualizar Magalu (${anuncioCriarLinhas.filter(marcadoAtualizarMagalu).length} marcado${anuncioCriarLinhas.filter(marcadoAtualizarMagalu).length === 1 ? '' : 's'})`}</button>
+              )}
+              {anuncioCriarLinhas.some(elegivelRecriarMl) && (
+                <button type="button" onClick={() => liberarMlParaRecriar(anuncioCriarLinhas.filter(elegivelRecriarMl).map((l) => l.sku))} disabled={anuncioCriarProcessando || !!anuncioVinculoOcupado} title="Mercado Livre com anúncio encerrado/com problema: apaga o ID no sistema e o anúncio do ML no Bling, liberando a criação de um novo." style={{ ...miniBtn('#b91c1c'), padding: '4px 10px', fontSize: 12 }}>{`Liberar ML p/ recriar (${anuncioCriarLinhas.filter(elegivelRecriarMl).length})`}</button>
               )}
               <button type="button" onClick={marcarTodosProntos} disabled={anuncioCriarProcessando} style={{ ...miniBtn('#475569'), padding: '4px 10px', fontSize: 12 }}>Marcar todos prontos</button>
               <button
@@ -2881,7 +2908,7 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
                         <span key={id} style={{ fontSize: 11.5, display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'flex-start', minWidth: 0, gridColumn: isPhone ? '2' : undefined }}>
                           <span style={{ color: 'var(--gray-500)', fontSize: 10.5 }}>{id === 'mercado-livre' ? 'ML' : ANUNCIO_MARKETPLACES.find((m) => m.id === id)?.label}</span>
                           <span
-                            onClick={(e) => { if (c.clicavel && !anuncioCriarProcessando) { e.stopPropagation(); if (c.chave === 'atualizar') alternarAtualizarMagalu(linha.sku); else toggleAnuncioCriarSelecionado(linha.sku, id); } }}
+                            onClick={(e) => { if (c.clicavel && !anuncioCriarProcessando) { e.stopPropagation(); if (c.chave === 'atualizar') alternarAtualizarMagalu(linha.sku); else if (c.chave === 'recriar') liberarMlParaRecriar([linha.sku]); else toggleAnuncioCriarSelecionado(linha.sku, id); } }}
                             style={{ color: c.cor, background: c.fundo, borderRadius: 5, padding: '2px 7px', fontWeight: 600, cursor: c.clicavel ? 'pointer' : 'inherit', maxWidth: '100%', lineHeight: 1.3 }}
                           >{c.texto}</span>
                         </span>
@@ -2907,7 +2934,7 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
                         return (
                           <div key={mk} style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '20px 105px minmax(0, 1fr) 230px 120px', gap: isPhone ? 2 : 10, alignItems: 'start', padding: '5px 0', borderTop: '1px dashed var(--gray-200)', fontSize: 12 }}>
                             <span>
-                              {c.clicavel && <input type="checkbox" checked={mp.selecionado} disabled={anuncioCriarProcessando} onChange={() => toggleAnuncioCriarSelecionado(linha.sku, mk)} />}
+                              {c.clicavel && c.chave !== 'recriar' && c.chave !== 'atualizar' && <input type="checkbox" checked={mp.selecionado} disabled={anuncioCriarProcessando} onChange={() => toggleAnuncioCriarSelecionado(linha.sku, mk)} />}
                             </span>
                             <span style={{ fontWeight: 600, color: 'var(--gray-700)' }}>{label}</span>
                             <div style={{ color: 'var(--gray-800)', lineHeight: 1.4 }}>
