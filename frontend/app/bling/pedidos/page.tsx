@@ -296,11 +296,26 @@ export default function BlingPedidosPage() {
         <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(3, minmax(0, 1fr))', gap: 14, fontSize: 12.5 }}>
           <div>
             <div style={{ fontWeight: 700, marginBottom: 4 }}>Valores</div>
-            <div>Produtos: {brl(d.totalProdutos)}</div>
-            <div>Frete: {brl(d.frete)}</div>
-            {d.desconto ? <div>Desconto: {brl(d.desconto)}</div> : null}
-            {d.taxaComissao ? <div>Comissão do canal: {brl(d.taxaComissao)}</div> : null}
-            <div style={{ fontWeight: 700 }}>Total: {brl(d.total)}</div>
+            {(() => {
+              const prod = Number(d.totalProdutos || 0); const fr = Number(d.frete || 0); const desc = Number(d.desconto || 0); const com = Number(d.taxaComissao || 0);
+              // total = itens - desconto + frete => o cliente pagou o frete (nao e custo seu)
+              const clientePagouFrete = fr > 0 && Math.abs(Number(d.total || 0) - (prod - desc + fr)) < 0.05;
+              const liquido = prod - desc - com;
+              return (
+                <>
+                  <div>Produtos: {brl(prod)}</div>
+                  {desc ? <div>Desconto: {brl(desc)}</div> : null}
+                  <div>Frete{clientePagouFrete ? ' (pago pelo cliente)' : ''}: {brl(fr)}</div>
+                  <div style={{ fontWeight: 700 }}>Total {clientePagouFrete ? 'pago pelo cliente' : 'do pedido'}: {brl(d.total)}</div>
+                  {com ? (
+                    <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid var(--border)' }}>
+                      <div>Comissão do canal: {brl(com)}</div>
+                      <div style={{ fontWeight: 700, color: 'var(--green-600, #15803d)' }}>Líquido a receber: {brl(liquido)}</div>
+                    </div>
+                  ) : null}
+                </>
+              );
+            })()}
           </div>
           <div>
             <div style={{ fontWeight: 700, marginBottom: 4 }}>Cliente</div>
