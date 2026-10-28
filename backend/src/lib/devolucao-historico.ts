@@ -154,7 +154,7 @@ export async function nfEntradaDaPeca(pecaId: number): Promise<string | null> {
 export async function nfEntradaDevolucaoParaAtivacao(pecaId: number): Promise<{ numero: string; data: string | null } | null> {
   await garantirTabelasDevolucao();
   const [r] = await prisma.$queryRawUnsafe<any[]>(
-    `SELECT "id", "nfDevolucao", "nfDevolucaoData"::text AS "data" FROM "DevolucaoRegistro" WHERE "pecaId" = $1::int AND NULLIF(trim("nfDevolucao"), '') IS NOT NULL ORDER BY "dataDevolucao" DESC, "id" DESC LIMIT 1`, pecaId);
+    `SELECT "id", "nfDevolucao", "nfDevolucaoData"::text AS "data", "dataDevolucao"::text AS "dia" FROM "DevolucaoRegistro" WHERE "pecaId" = $1::int AND NULLIF(trim("nfDevolucao"), '') IS NOT NULL ORDER BY "dataDevolucao" DESC, "id" DESC LIMIT 1`, pecaId);
   if (!r) return null;
   const numero = String(r.nfDevolucao).trim();
   if (r.data) return { numero, data: r.data };
@@ -162,15 +162,35 @@ export async function nfEntradaDevolucaoParaAtivacao(pecaId: number): Promise<{ 
   try {
     const { blingReq } = await import('../routes/bling');
     const igual = (a: any) => { const x = String(a ?? '').trim(); return x === numero || (/^\d+$/.test(x) && /^\d+$/.test(numero) && Number(x) === Number(numero)); };
+    const diaDe = (nota: any) => { const d = String(nota?.dataEmissao || '').slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null; };
+    // o filtro por numero nem sempre e aceito pelo Bling: tenta, mas o caminho garantido e listar as notas por periodo e achar o numero aqui.
     for (const filtro of [`numero=${encodeURIComponent(numero)}`, `numeroNota=${encodeURIComponent(numero)}`]) {
       let linhas: any[] = [];
       try { linhas = ((await blingReq(`/nfe?pagina=1&limite=20&${filtro}`)) as any)?.data || []; } catch { continue; }
       const achadas = linhas.filter((l) => igual(l?.numero));
-      // varias notas podem ter o mesmo numero (series/saida): prefere a de entrada (tipo 0)
       const nota = achadas.find((l) => Number(l?.tipo) === 0) || achadas[0];
-      const dia10 = String(nota?.dataEmissao || '').slice(0, 10);
-      if (/^\d{4}-\d{2}-\d{2}$/.test(dia10)) { data = dia10; break; }
+      if (diaDe(nota)) { data = diaDe(nota); break; }
     }
+    if (!data) {
+      // notas de ENTRADA (tipo 0) emitidas de ~4 meses antes ate ~1 mes depois da devolucao
+      const base = r.dia ? new Date(`${r.dia}T12:00:00Z`) : new Date();
+      const ini = new Date(base.getTime() - 120 * 86400000).toISOString().slice(0, 10);
+      const fim = new Date(Math.min(base.getTime() + 30 * 86400000, Date.now() + 86400000)).toISOString().slice(0, 10);
+      for (const tipo of ['&tipo=0', '']) {
+        for (let pagina = 1; pagina <= 6 && !data; pagina++) {
+          let linhas: any[] = [];
+          try {
+            linhas = ((await blingReq(`/nfe?pagina=${pagina}&limite=100${tipo}&dataEmissaoInicial=${encodeURIComponent(`${ini} 00:00:00`)}&dataEmissaoFinal=${encodeURIComponent(`${fim} 23:59:59`)}`)) as any)?.data || [];
+          } catch { break; }
+          const achadas = linhas.filter((l) => igual(l?.numero));
+          const nota = achadas.find((l) => Number(l?.tipo) === 0) || achadas[0];
+          if (diaDe(nota)) data = diaDe(nota);
+          if (linhas.length < 100) break;
+        }
+        if (data) break;
+      }
+    }
+    if (!data) console.warn(`[nf-entrada-devolucao] Bling nao retornou a data de emissao da NF ${numero} (peca ${pecaId})`);
   } catch { /* Bling indisponivel: mostra so o numero e tenta de novo na proxima */ }
   if (data) {
     try { await prisma.$executeRawUnsafe(`UPDATE "DevolucaoRegistro" SET "nfDevolucaoData" = $2::date WHERE "id" = $1::int`, r.id, data); } catch { /* sem cache */ }
