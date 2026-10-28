@@ -295,85 +295,131 @@ function garantirTabelaCacheCategoria() {
   return tabelaCacheCategoriaPronta;
 }
 
-export type SugestaoCategoriaML = { id: string; nome: string; caminho: string; origem: 'ia' | 'palavras' | 'ml'; confianca: string; alternativas: FolhaML[] };
+export type SugestaoCategoriaML = { id: string; nome: string; caminho: string; origem: 'ia' | 'palavras' | 'ml' | 'pre'; confianca: string; alternativas: FolhaML[] };
 
-export async function sugerirCategoriaML(input: { titulo: string; marca?: string | null; modelo?: string | null; condicao: 'usado' | 'novo'; usuario?: string | null }): Promise<SugestaoCategoriaML | null> {
+// ---------- qualquer categoria do ML (arvore completa) ----------
+// A API publica do ML devolve a arvore inteira; usada pra sugerir/escolher categorias FORA das raizes de moto
+// (ex.: "Pneus para Motos" fica em Pneus e Rodas) — o ML as vezes derruba o anuncio se a categoria nao for a que ele forca.
+export type DetalheCategoriaML = { id: string; nome: string; caminho: string; folha: boolean; filhos: Array<{ id: string; nome: string }> };
+const cacheDetalheCat = new Map<string, { d: DetalheCategoriaML; expira: number }>();
+
+export async function detalheCategoriaML(id: string): Promise<DetalheCategoriaML> {
+  const chave = String(id).trim();
+  const hit = cacheDetalheCat.get(chave);
+  if (hit && hit.expira > Date.now()) return hit.d;
+  const cat = await mlGet(`/categories/${encodeURIComponent(chave)}`);
+  const filhos = (Array.isArray(cat.children_categories) ? cat.children_categories : []).map((c: any) => ({ id: String(c.id), nome: String(c.name) }));
+  const d: DetalheCategoriaML = {
+    id: String(cat.id), nome: String(cat.name),
+    caminho: (Array.isArray(cat.path_from_root) ? cat.path_from_root : []).map((p: any) => p.name).join(' > '),
+    folha: filhos.length === 0, filhos,
+  };
+  cacheDetalheCat.set(chave, { d, expira: Date.now() + 12 * 60 * 60 * 1000 });
+  if (cacheDetalheCat.size > 3000) cacheDetalheCat.delete(cacheDetalheCat.keys().next().value as string);
+  return d;
+}
+
+export async function raizesML(): Promise<Array<{ id: string; nome: string }>> {
+  const r = await mlGet('/sites/MLB/categories');
+  return (Array.isArray(r) ? r : []).map((c: any) => ({ id: String(c.id), nome: String(c.name) }));
+}
+
+// Categoria-folha (a unica que aceita anuncio) a partir do ID; null se nao existir ou nao for folha.
+export async function folhaMLPorId(id: string | null | undefined): Promise<FolhaML | null> {
+  if (!id) return null;
+  try {
+    const d = await detalheCategoriaML(String(id));
+    return d.folha ? { id: d.id, nome: d.nome, caminho: d.caminho } : null;
+  } catch { return null; }
+}
+
+// Busca na API do ML (domain_discovery) as categorias-folha mais provaveis pro texto, em qualquer lugar da arvore.
+export async function buscarCategoriasML(q: string, limite = 8): Promise<FolhaML[]> {
+  const ids = (await candidatosDomainDiscovery(q)).filter((v, i, a) => a.indexOf(v) === i).slice(0, limite);
+  const folhas = await Promise.all(ids.map((id) => folhaMLPorId(id)));
+  return folhas.filter((f): f is FolhaML => !!f);
+}
+
+// modo 'auto' (padrao, SEM gastar IA): categoria do pre-cadastro -> sugestao do proprio ML -> escolha da IA ja guardada -> palavras (so se forte).
+//   Se nada servir devolve null (a tela deixa "sem categoria" e voce escolhe a mao ou clica em "Sugerir com IA").
+// modo 'ia' (clique explicito do usuario): a IA da Claude escolhe entre as categorias de moto + as candidatas do ML.
+export async function sugerirCategoriaML(input: { titulo: string; marca?: string | null; modelo?: string | null; condicao: 'usado' | 'novo'; usuario?: string | null; modo?: 'auto' | 'ia'; preCadastroId?: string | null }): Promise<SugestaoCategoriaML | null> {
+  const modo = input.modo === 'ia' ? 'ia' : 'auto';
   const chaveCache = norm(`${input.titulo}|${input.condicao}`);
-  const hit = cacheSugestao.get(chaveCache);
+  const chaveMem = `${modo}|${input.preCadastroId || ''}|${chaveCache}`;
+  const hit = cacheSugestao.get(chaveMem);
   if (hit && hit.expira > Date.now()) return hit.r;
+  const guardar = (r: SugestaoCategoriaML) => { cacheSugestao.set(chaveMem, { r, expira: Date.now() + 60 * 60 * 1000 }); return r; };
 
   const folhas = await carregarFolhasMoto();
-  if (!folhas.length) return null;
   const porId = new Map(folhas.map((f) => [f.id, f] as [string, FolhaML]));
 
   const ignorar = new Set([...tokens(input.marca || ''), ...tokens(input.modelo || '')]);
   const titTokens = tokens(input.titulo, ignorar);
-
-  // A IA escolhe entre TODAS as categorias-folha de moto (~230, uns 5 mil tokens): filtrar antes por
-  // palavras deixava de fora a categoria certa quando o nome dela nao parece com o titulo (ex: "bolha"
-  // -> "Plasticos de Motos"). A pontuacao por palavras fica so como plano B se a IA estiver fora.
   const pontuados = folhas.map((f) => ({ f, s: pontuar(titTokens, f) })).sort((a, b) => b.s - a.s);
-  const candidatos = folhas;
 
-  // 1) API do proprio Mercado Livre (domain_discovery): se o 1o resultado ja e' uma categoria de MOTO, usa direto, sem IA.
+  // candidatas do proprio ML (qualquer lugar da arvore), na ordem de relevancia
+  const candidatasML: FolhaML[] = [];
   for (const q of [`${input.titulo} moto`, input.titulo]) {
     try {
       const resp = await mlGet(`/sites/MLB/domain_discovery/search?q=${encodeURIComponent(q)}&limit=8`, 1);
-      const lista: any[] = Array.isArray(resp) ? resp : [];
-      const topo = lista[0]?.category_id ? porId.get(String(lista[0].category_id)) : undefined;
-      if (topo) {
-        const alt = lista.slice(1).map((x) => porId.get(String(x?.category_id))).filter((f): f is FolhaML => !!f && f.id !== topo.id);
-        const rml: SugestaoCategoriaML = { id: topo.id, nome: topo.nome, caminho: topo.caminho, origem: 'ml', confianca: 'alta', alternativas: alt.slice(0, 3) };
-        registrarEvitadaAnthropic('ml_categoria', input.usuario, input.titulo);
-        cacheSugestao.set(chaveCache, { r: rml, expira: Date.now() + 60 * 60 * 1000 });
-        return rml;
+      for (const x of (Array.isArray(resp) ? resp : [])) {
+        const id = String(x?.category_id || '');
+        if (!id || candidatasML.some((c) => c.id === id)) continue;
+        const f = porId.get(id) || await folhaMLPorId(id);
+        if (f) candidatasML.push(f);
       }
-    } catch { /* ML fora do ar nessa consulta: tenta a proxima ou cai na IA */ }
+    } catch { /* ML fora do ar nessa consulta: segue */ }
+    if (candidatasML.length) break;
   }
 
-  // 2) Escolha da IA ja feita antes para o mesmo titulo (guardada em banco): nao gasta IA de novo
-  try {
-    await garantirTabelaCacheCategoria();
-    const rows = await prisma.$queryRawUnsafe<Array<{ categoriaId: string; confianca: string | null; alternativas: string | null }>>(
-      `SELECT "categoriaId","confianca","alternativas" FROM "MlCategoriaSugestaoIA" WHERE "chave" = $1 AND "criadoEm" > now() - interval '60 days'`, chaveCache,
-    );
-    const f = rows[0] ? porId.get(rows[0].categoriaId) : undefined;
-    if (f) {
-      const alts = String(rows[0].alternativas || '').split(',').map((a) => porId.get(a.trim())).filter((x): x is FolhaML => !!x && x.id !== f.id);
-      const rc: SugestaoCategoriaML = { id: f.id, nome: f.nome, caminho: f.caminho, origem: 'ia', confianca: rows[0].confianca || 'media', alternativas: alts.slice(0, 3) };
-      registrarEvitadaAnthropic('ml_categoria_cache', input.usuario, input.titulo);
-      cacheSugestao.set(chaveCache, { r: rc, expira: Date.now() + 60 * 60 * 1000 });
-      return rc;
+  if (modo === 'auto') {
+    // 1) categoria que o pre-cadastro ja trouxe
+    const pre = await folhaMLPorId(input.preCadastroId);
+    if (pre) {
+      registrarEvitadaAnthropic('ml_categoria', input.usuario, input.titulo);
+      return guardar({ id: pre.id, nome: pre.nome, caminho: pre.caminho, origem: 'pre', confianca: 'media', alternativas: candidatasML.filter((c) => c.id !== pre.id).slice(0, 3) });
     }
-  } catch { /* sem cache em banco: segue para a IA */ }
-
-  const moto = [input.marca, input.modelo].filter(Boolean).join(' ');
-  let escolhida: FolhaML | null = null;
-  let origem: 'ia' | 'palavras' = 'palavras';
-  let confianca = 'baixa';
-  let alternativas: FolhaML[] = [];
-
-  try {
-    const r = await escolherComIA(input.titulo, moto, input.condicao, candidatos, input.usuario);
-    const f = porId.get(r.id);
-    if (f) {
-      escolhida = f; origem = 'ia'; confianca = r.confianca;
-      alternativas = r.alternativas.map((a: string) => porId.get(a)).filter(Boolean) as FolhaML[];
-      prisma.$executeRawUnsafe(`INSERT INTO "MlCategoriaSugestaoIA" ("chave","categoriaId","confianca","alternativas","criadoEm") VALUES ($1,$2,$3,$4,now()) ON CONFLICT ("chave") DO UPDATE SET "categoriaId"=EXCLUDED."categoriaId","confianca"=EXCLUDED."confianca","alternativas"=EXCLUDED."alternativas","criadoEm"=now()`, chaveCache, f.id, r.confianca, alternativas.map((a) => a.id).join(',')).catch(() => undefined);
+    // 2) a sugestao do proprio ML (1o resultado)
+    if (candidatasML[0]) {
+      const topo = candidatasML[0];
+      registrarEvitadaAnthropic('ml_categoria', input.usuario, input.titulo);
+      return guardar({ id: topo.id, nome: topo.nome, caminho: topo.caminho, origem: 'ml', confianca: 'alta', alternativas: candidatasML.slice(1, 4) });
     }
-  } catch (e: any) {
-    console.warn(`[mlCategorias] IA indisponivel (${e?.message || e}) — usando palavras pro "${input.titulo}"`);
-  }
-
-  if (!escolhida) {
+    // 3) escolha da IA ja feita antes para o mesmo titulo (guardada em banco): nao gasta IA de novo
+    try {
+      await garantirTabelaCacheCategoria();
+      const rows = await prisma.$queryRawUnsafe<Array<{ categoriaId: string; confianca: string | null; alternativas: string | null }>>(
+        `SELECT "categoriaId","confianca","alternativas" FROM "MlCategoriaSugestaoIA" WHERE "chave" = $1 AND "criadoEm" > now() - interval '60 days'`, chaveCache,
+      );
+      const f = rows[0] ? (porId.get(rows[0].categoriaId) || await folhaMLPorId(rows[0].categoriaId)) : null;
+      if (f) {
+        const alts = String(rows[0].alternativas || '').split(',').map((a) => porId.get(a.trim())).filter((x): x is FolhaML => !!x && x.id !== f.id);
+        registrarEvitadaAnthropic('ml_categoria_cache', input.usuario, input.titulo);
+        return guardar({ id: f.id, nome: f.nome, caminho: f.caminho, origem: 'ia', confianca: rows[0].confianca || 'media', alternativas: alts.slice(0, 3) });
+      }
+    } catch { /* sem cache em banco */ }
+    // 4) palavras: so quando a correspondencia e' forte; senao fica sem categoria (nunca cai em "Outros" sozinho)
     const melhor = pontuados[0];
-    if (melhor && melhor.s > 0) { escolhida = melhor.f; confianca = melhor.s >= 6 ? 'media' : 'baixa'; }
-    else escolhida = porId.get(RAIZES_OUTROS[0]) || null;
-    alternativas = pontuados.slice(1, 4).map((x) => x.f);
+    if (melhor && melhor.s >= 6) {
+      return guardar({ id: melhor.f.id, nome: melhor.f.nome, caminho: melhor.f.caminho, origem: 'palavras', confianca: 'media', alternativas: pontuados.slice(1, 4).map((x) => x.f) });
+    }
+    return null;
   }
-  if (!escolhida) return null;
 
-  const r: SugestaoCategoriaML = { id: escolhida.id, nome: escolhida.nome, caminho: escolhida.caminho, origem, confianca, alternativas: alternativas.filter((a) => a.id !== escolhida!.id).slice(0, 3) };
-  cacheSugestao.set(chaveCache, { r, expira: Date.now() + 60 * 60 * 1000 });
-  return r;
+  // modo 'ia': candidatas = todas as folhas de moto + as do ML + a do pre-cadastro (pode estar fora das raizes de moto)
+  const extras = [...candidatasML];
+  const pre = await folhaMLPorId(input.preCadastroId);
+  if (pre) extras.push(pre);
+  const vistos = new Set(folhas.map((f) => f.id));
+  const candidatos = [...folhas];
+  for (const e of extras) if (!vistos.has(e.id)) { vistos.add(e.id); candidatos.push(e); }
+  const porIdTodas = new Map(candidatos.map((f) => [f.id, f] as [string, FolhaML]));
+  const moto = [input.marca, input.modelo].filter(Boolean).join(' ');
+  const r = await escolherComIA(input.titulo, moto, input.condicao, candidatos, input.usuario);
+  const f = porIdTodas.get(r.id);
+  if (!f) throw new Error('A IA devolveu uma categoria fora da lista. Escolha manualmente.');
+  const alternativas = r.alternativas.map((a: string) => porIdTodas.get(a)).filter((x: FolhaML | undefined): x is FolhaML => !!x && x.id !== f.id).slice(0, 3);
+  prisma.$executeRawUnsafe(`INSERT INTO "MlCategoriaSugestaoIA" ("chave","categoriaId","confianca","alternativas","criadoEm") VALUES ($1,$2,$3,$4,now()) ON CONFLICT ("chave") DO UPDATE SET "categoriaId"=EXCLUDED."categoriaId","confianca"=EXCLUDED."confianca","alternativas"=EXCLUDED."alternativas","criadoEm"=now()`, chaveCache, f.id, r.confianca, alternativas.map((a: FolhaML) => a.id).join(',')).catch(() => undefined);
+  return guardar({ id: f.id, nome: f.nome, caminho: f.caminho, origem: 'ia', confianca: r.confianca, alternativas });
 }

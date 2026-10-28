@@ -527,6 +527,15 @@ export default function CadastroPage() {
   const [categoriaModalSku, setCategoriaModalSku] = useState<string | null>(null);
   const [categoriaModalMarketplace, setCategoriaModalMarketplace] = useState<AnuncioMarketplaceId>('shopee');
   const [categoriaModalBusca, setCategoriaModalBusca] = useState('');
+  // Mercado Livre: alem da lista de motos, o modal navega/busca em TODAS as categorias do ML (as vezes ele forca uma de fora de moto)
+  const [mlModo, setMlModo] = useState<'motos' | 'todas'>('motos');
+  const [mlArv, setMlArv] = useState<{ caminho: string; filhos: { id: string; nome: string }[] }>({ caminho: '', filhos: [] });
+  const [mlArvPilha, setMlArvPilha] = useState<string[]>([]); // ids ja abertos ('' = raiz); o ultimo e' o nivel atual
+  const [mlArvCarregando, setMlArvCarregando] = useState(false);
+  const [mlBuscaRes, setMlBuscaRes] = useState<ShopeeCategoriaOpcao[] | null>(null);
+  const [mlBuscando, setMlBuscando] = useState(false);
+  const [iaSugerindo, setIaSugerindo] = useState('');
+  useEffect(() => { if (!categoriaModalSku) { setMlModo('motos'); setMlBuscaRes(null); setMlArvPilha([]); } }, [categoriaModalSku]);
   // Fotos - Manutencao: substitui as fotos de anuncios ja publicados (ML/Nuvemshop) pelas fotos
   // ja tratadas na pasta oficial da moto (rodar Fotos Drive antes e' obrigatorio). Processa 1 SKU
   // por vez, etapa por etapa, pra mostrar o avanco na tela (igual a aba Fotos Anúncios).
@@ -2553,8 +2562,60 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
     }));
   }
 
-  async function escolherCategoriaParaLinha(sku: string, mk: AnuncioMarketplaceId, categoriaId: number | string) {
-    const escolhida = categoriasDoMarketplace(mk).find((c) => c.id === categoriaId) || null;
+  // ---- Mercado Livre: arvore completa de categorias (qualquer lugar do ML) ----
+  async function abrirArvoreMl(id: string, voltar?: boolean) {
+    setMlArvCarregando(true);
+    try {
+      const resp = await fetch(`${API}/mercado-livre/anuncio/categorias-arvore${id ? `?id=${encodeURIComponent(id)}` : ''}`, { credentials: 'include' });
+      const data = await readApiResponse(resp, 'Erro ao consultar as categorias do Mercado Livre');
+      if (data.folha && id && !voltar && categoriaModalSku) {
+        // chegou numa categoria-folha: e' essa
+        await escolherCategoriaParaLinha(categoriaModalSku, 'mercado-livre', id, { id, nivel4: data.nome, caminho: data.caminho, permitido: true, generica: /^outros$/i.test(String(data.nome || '')) });
+        return;
+      }
+      setMlArv({ caminho: data.caminho || '', filhos: Array.isArray(data.filhos) ? data.filhos : [] });
+      if (!voltar) setMlArvPilha((p) => [...p, id]);
+    } catch (e: any) {
+      alert(e?.message || 'Erro ao consultar as categorias do Mercado Livre.');
+    } finally { setMlArvCarregando(false); }
+  }
+  function voltarArvoreMl() {
+    const pilha = mlArvPilha.slice(0, -1);
+    setMlArvPilha(pilha);
+    abrirArvoreMl(pilha[pilha.length - 1] || '', true);
+  }
+  async function buscarCategoriaMl() {
+    const q = categoriaModalBusca.trim();
+    if (q.length < 2) { setMlBuscaRes(null); return; }
+    setMlBuscando(true);
+    try {
+      const resp = await fetch(`${API}/mercado-livre/anuncio/categorias-busca?q=${encodeURIComponent(q)}`, { credentials: 'include' });
+      const data = await readApiResponse(resp, 'Erro ao buscar categorias no Mercado Livre');
+      setMlBuscaRes(Array.isArray(data.categorias) ? data.categorias : []);
+    } catch (e: any) {
+      alert(e?.message || 'Erro ao buscar categorias no Mercado Livre.');
+    } finally { setMlBuscando(false); }
+  }
+
+  // Botao "Sugerir com IA": unico ponto em que a IA da Claude escolhe a categoria do ML (a busca normal nao gasta IA).
+  async function sugerirCategoriaMlComIa(sku: string) {
+    setIaSugerindo(sku);
+    try {
+      const resp = await fetch(`${API}/mercado-livre/anuncio/sugerir-ia`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sku }) });
+      const data = await readApiResponse(resp, 'Erro ao sugerir a categoria com IA');
+      setAnuncioCriarLinhas((prev) => prev.map((linha) => {
+        if (linha.sku !== sku) return linha;
+        const atual = linha.marketplaces['mercado-livre'];
+        const nova = montarMarketplaceDaLinha({ ...data, encontrado: true, fotosProcessadas: linha.fotosOk, jaTemAnuncio: false });
+        return { ...linha, marketplaces: { ...linha.marketplaces, 'mercado-livre': { ...atual, ...nova, selecionado: nova.selecionado && !linha.semEstoque, status: atual.status, resultado: atual.resultado, erroProcessamento: '' } } };
+      }));
+    } catch (e: any) {
+      alert(e?.message || 'Erro ao sugerir a categoria com IA.');
+    } finally { setIaSugerindo(''); }
+  }
+
+  async function escolherCategoriaParaLinha(sku: string, mk: AnuncioMarketplaceId, categoriaId: number | string, extra?: ShopeeCategoriaOpcao) {
+    const escolhida = extra || categoriasDoMarketplace(mk).find((c) => c.id === categoriaId) || null;
     // Mercado Livre: confere as restricoes da categoria escolhida (condicao aceita, atributos obrigatorios...).
     let restricoes: string[] = [];
     let fichaML: { nome: string; exemplo: string; escolhas: string[] | null }[] = [];
@@ -2961,13 +3022,21 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
                                   )}
 </>) : (
                                 <>
-                                  {mp.categoriaPendente ? <span style={{ color: '#b45309' }}>⏳ Categoria pendente</span>
+                                  {mp.categoriaPendente ? <span style={{ color: '#b45309' }}>{mk === 'mercado-livre' ? '⚠ Sem categoria sugerida — escolha em “trocar” ou use a IA' : '⏳ Categoria pendente'}</span>
                                     : !cat ? <span style={{ color: '#dc2626' }}>Sem categoria</span>
                                     : <span style={{ color: cat.permitido ? 'var(--gray-800)' : '#991b1b' }}>
                                         {cat.generica ? <span style={{ color: '#b45309' }}>⚠ </span> : ''}{!cat.permitido ? '🚫 ' : ''}{crumb(cat.caminho || [cat.categoria, cat.subcategoria, cat.nivel3, cat.nivel4].filter(Boolean).join(' > '))}
                                       </span>}
                                   {' '}
                                   <button type="button" onClick={() => { carregarCategoriasDoMarketplace(mk); setCategoriaModalMarketplace(mk); setCategoriaModalSku(linha.sku); setCategoriaModalBusca(''); }} style={{ fontSize: 11, color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}>trocar</button>
+                                  {mk === 'mercado-livre' && (
+                                    <button type="button" disabled={iaSugerindo === linha.sku || anuncioCriarProcessando} onClick={() => sugerirCategoriaMlComIa(linha.sku)} title="A IA da Claude escolhe a categoria (gasta uma chamada de IA)" style={{ marginLeft: 8, fontSize: 11, color: '#6d28d9', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}>{iaSugerindo === linha.sku ? 'consultando IA…' : 'sugerir com IA'}</button>
+                                  )}
+                                  {mk === 'mercado-livre' && !mp.categoriaPendente && mp.sugestaoOrigem && (
+                                    <div style={{ fontSize: 11, color: 'var(--gray-500)' }}>
+                                      {mp.sugestaoOrigem === 'pre' ? 'Categoria do pré-cadastro' : mp.sugestaoOrigem === 'ml' ? 'Sugestão do Mercado Livre' : mp.sugestaoOrigem === 'ia' ? 'Sugestão da IA' : 'Sugestão por palavras — confira'}
+                                    </div>
+                                  )}
                                   {mk === 'mercado-livre' && mp.categoriaPreCadastro && String(mp.categoriaPreCadastro.id) !== String(mp.categoriaEscolhidaId) && (
                                     <div style={{ fontSize: 11, color: 'var(--gray-500)' }}>
                                       Pré-cadastro: {mp.categoriaPreCadastro.nome} ({mp.categoriaPreCadastro.id}){mp.sugestaoOrigem === 'ml' ? ' · sugestão do Mercado Livre' : mp.sugestaoOrigem === 'ia' ? ' · sugestão da IA' : mp.sugestaoOrigem === 'palavras' ? ' · por palavras (IA indisponível — confira)' : ''}
@@ -3160,16 +3229,52 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
                   Atual: {renderCategoriaBadge(categoriaModalLinha.marketplaces[categoriaModalMarketplace].categoriaAtual)}
                 </div>
               )}
-              <input
-                autoFocus
-                value={categoriaModalBusca}
-                onChange={(e: any) => setCategoriaModalBusca(e.target.value)}
-                placeholder="Buscar categoria (ex: bengala, farol, cabeçote...)"
-                style={{ ...s.input, marginTop: 10 }}
-              />
+              {categoriaModalMarketplace === 'mercado-livre' && (
+                <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+                  {([['motos', 'Peças de moto'], ['todas', 'Todas as categorias do ML']] as Array<['motos' | 'todas', string]>).map(([id, rot]) => (
+                    <button key={id} type="button" onClick={() => { setMlModo(id); if (id === 'todas' && !mlArvPilha.length) abrirArvoreMl(''); }} style={{ fontSize: 11.5, padding: '3px 10px', borderRadius: 14, cursor: 'pointer', border: `1px solid ${mlModo === id ? '#7c3aed' : 'var(--border)'}`, background: mlModo === id ? '#f5f3ff' : 'var(--white)', color: mlModo === id ? '#6d28d9' : 'var(--gray-600)', fontWeight: 700 }}>{rot}</button>
+                  ))}
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+                <input
+                  autoFocus
+                  value={categoriaModalBusca}
+                  onChange={(e: any) => { setCategoriaModalBusca(e.target.value); if (categoriaModalMarketplace === 'mercado-livre' && mlModo === 'todas' && !e.target.value.trim()) setMlBuscaRes(null); }}
+                  onKeyDown={(e: any) => { if (e.key === 'Enter' && categoriaModalMarketplace === 'mercado-livre' && mlModo === 'todas') buscarCategoriaMl(); }}
+                  placeholder={categoriaModalMarketplace === 'mercado-livre' && mlModo === 'todas' ? 'Buscar em todo o ML (ex: pneu moto) e Enter — ou navegue pela lista' : 'Buscar categoria (ex: bengala, farol, cabeçote...)'}
+                  style={{ ...s.input, flex: 1 }}
+                />
+                {categoriaModalMarketplace === 'mercado-livre' && mlModo === 'todas' && (
+                  <button type="button" onClick={buscarCategoriaMl} disabled={mlBuscando} style={{ ...s.btn, background: '#7c3aed', color: '#fff', padding: '0 14px', opacity: mlBuscando ? 0.6 : 1 }}>{mlBuscando ? '...' : 'Buscar'}</button>
+                )}
+              </div>
             </div>
             <div style={{ overflowY: 'auto', padding: '6px 10px' }}>
-              {!categoriaModalLista.length ? (
+              {categoriaModalMarketplace === 'mercado-livre' && mlModo === 'todas' ? (
+                mlBuscaRes ? (
+                  mlBuscaRes.length === 0 ? <div style={{ padding: 20, textAlign: 'center' as const, fontSize: 12, color: 'var(--gray-400)' }}>O Mercado Livre não sugeriu categorias para "{categoriaModalBusca}". Navegue pela lista (limpe a busca).</div>
+                  : mlBuscaRes.map((cat) => (
+                    <button key={cat.id} onClick={() => categoriaModalSku && escolherCategoriaParaLinha(categoriaModalSku, 'mercado-livre', cat.id, cat)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left' as const, padding: '9px 10px', border: 'none', borderBottom: '1px solid var(--gray-100)', background: 'transparent', cursor: 'pointer' }}>
+                      <span style={{ fontSize: 12.5, color: 'var(--gray-700)' }}>{cat.caminho}</span>
+                      {cat.generica && <span style={{ fontSize: 10, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 4, padding: '1px 5px', fontWeight: 700, whiteSpace: 'nowrap' }}>Genérica</span>}
+                    </button>
+                  ))
+                ) : (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 4px', fontSize: 11.5, color: 'var(--gray-500)' }}>
+                      {mlArvPilha.length > 1 && <button type="button" onClick={voltarArvoreMl} style={{ border: '1px solid var(--border)', background: 'var(--white)', borderRadius: 6, padding: '2px 8px', cursor: 'pointer', fontSize: 11.5 }}>← Voltar</button>}
+                      <span>{mlArv.caminho || 'Categorias do Mercado Livre'}</span>
+                    </div>
+                    {mlArvCarregando ? <div style={{ padding: 20, textAlign: 'center' as const, fontSize: 12, color: 'var(--gray-400)' }}>Carregando...</div>
+                      : mlArv.filhos.map((f) => (
+                        <button key={f.id} onClick={() => abrirArvoreMl(f.id)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', textAlign: 'left' as const, padding: '9px 10px', border: 'none', borderBottom: '1px solid var(--gray-100)', background: 'transparent', cursor: 'pointer', fontSize: 12.5, color: 'var(--gray-700)' }}>
+                          <span>{f.nome}</span><span style={{ color: 'var(--gray-400)' }}>›</span>
+                        </button>
+                      ))}
+                  </>
+                )
+              ) : !categoriaModalLista.length ? (
                 <div style={{ padding: 20, textAlign: 'center' as const, fontSize: 12, color: 'var(--gray-400)' }}>Carregando categorias...</div>
               ) : categoriaModalFiltradas.length === 0 ? (
                 <div style={{ padding: 20, textAlign: 'center' as const, fontSize: 12, color: 'var(--gray-400)' }}>Nenhuma categoria encontrada pra "{categoriaModalBusca}".</div>

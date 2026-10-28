@@ -9,7 +9,7 @@ import { blingReq } from './bling';
 import { buscarFotosDriveSku } from '../lib/fotos-cadastro';
 import { carregarAnuncioBase, skuBaseAnuncio, type AnuncioBase } from '../lib/anuncioBase';
 import { exigirFotosOficiais, garantirProdutoAtivoNoBling, lerDadosBlingSku, resolverBlingProdutoId } from '../lib/anuncioPreparar';
-import { atributosExtrasML, carregarFolhasMoto, sugerirCategoriaML, verificarCategoriaML, ML_LOJA_BLING_ID } from '../lib/mlCategorias';
+import { atributosExtrasML, buscarCategoriasML, carregarFolhasMoto, detalheCategoriaML, raizesML, sugerirCategoriaML, verificarCategoriaML, ML_LOJA_BLING_ID } from '../lib/mlCategorias';
 
 export const mlAnuncioRouter = Router();
 
@@ -99,6 +99,74 @@ mlAnuncioRouter.get('/anuncio/verificar-categoria', async (req, res) => {
   }
 });
 
+// Categoria sugerida + restricoes/ficha dela, no formato que a linha da tela usa.
+async function categoriaDaLinha(base: AnuncioBase, sku: string, condicao: 'usado' | 'novo', usuario: string | null, modo: 'auto' | 'ia') {
+  const pre = await categoriaDoPreCadastro(sku);
+  const out: any = { categoriaPreCadastro: pre };
+  try {
+    const sug = await sugerirCategoriaML({ usuario, titulo: base.descricao, marca: base.moto?.marca, modelo: base.moto?.modelo, condicao, modo, preCadastroId: pre?.id || null });
+    if (sug) {
+      const ver = await verificarCategoriaML(sug.id, condicao, { modelo: base.moto?.modelo || null });
+      out.fichaFaltando = ver.fichaFaltando;
+      out.categoriaAtual = { id: sug.id, nivel4: sug.nome, caminho: sug.caminho, permitido: ver.ok, generica: /^outros$/i.test(sug.nome) };
+      out.restricoes = ver.restricoes;
+      out.avisos = ver.avisos;
+      out.sugestaoOrigem = sug.origem;
+      out.sugestaoConfianca = sug.confianca;
+      out.alternativas = sug.alternativas;
+      out.categoriaPendente = false;
+    } else {
+      out.categoriaAtual = null;
+      out.categoriaPendente = true;
+    }
+  } catch (e: any) {
+    if (modo === 'ia') throw e;
+    out.categoriaAtual = null;
+    out.categoriaPendente = true;
+    out.erroCategoria = e?.message || 'Falha ao sugerir categoria';
+  }
+  return out;
+}
+
+// POST /mercado-livre/anuncio/sugerir-ia — body: { sku }. Chamado so quando o usuario clica em "Sugerir com IA": aqui (e so aqui) gasta a IA da Claude.
+mlAnuncioRouter.post('/anuncio/sugerir-ia', async (req, res) => {
+  try {
+    const sku = skuBaseAnuncio(req.body?.sku);
+    if (!sku) return res.status(400).json({ error: 'sku obrigatorio' });
+    const base = await carregarAnuncioBase(sku);
+    if (!base) return res.status(404).json({ error: 'SKU nao encontrado no ANB (nem em Pecas, nem no pre-cadastro).' });
+    const condicao: 'usado' | 'novo' = String(base.condicao || '').toLowerCase() === 'novo' ? 'novo' : 'usado';
+    const dados = await categoriaDaLinha(base, sku, condicao, String((req as any).authUser?.username || '').trim() || null, 'ia');
+    res.json({ ok: true, ...dados });
+  } catch (e: any) {
+    res.status(502).json({ error: e?.message || 'Erro ao sugerir a categoria com IA' });
+  }
+});
+
+// GET /mercado-livre/anuncio/categorias-arvore?id= — filhos de uma categoria (sem id: as raizes do ML). Qualquer categoria do ML.
+mlAnuncioRouter.get('/anuncio/categorias-arvore', async (req, res) => {
+  try {
+    const id = String(req.query.id || '').trim();
+    if (!id) return res.json({ ok: true, id: null, caminho: '', folha: false, filhos: await raizesML() });
+    const d = await detalheCategoriaML(id);
+    res.json({ ok: true, id: d.id, nome: d.nome, caminho: d.caminho, folha: d.folha, filhos: d.filhos });
+  } catch (e: any) {
+    res.status(502).json({ error: e?.message || 'Erro ao consultar a arvore do Mercado Livre' });
+  }
+});
+
+// GET /mercado-livre/anuncio/categorias-busca?q= — categorias-folha do ML (qualquer lugar da arvore) que combinam com o texto.
+mlAnuncioRouter.get('/anuncio/categorias-busca', async (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim();
+    if (q.length < 2) return res.json({ ok: true, categorias: [] });
+    const folhas = await buscarCategoriasML(q, 12);
+    res.json({ ok: true, categorias: folhas.map((f) => ({ id: f.id, nivel4: f.nome, caminho: f.caminho, permitido: true, generica: /^outros$/i.test(f.nome) })) });
+  } catch (e: any) {
+    res.status(502).json({ error: e?.message || 'Erro ao buscar categorias no Mercado Livre' });
+  }
+});
+
 // POST /mercado-livre/anuncio/buscar — body: { skus }. Sugere a categoria (IA entre as categorias de
 // moto) e ja devolve as RESTRICOES dela, pra tela avisar e o Bruno ajustar antes de criar.
 mlAnuncioRouter.post('/anuncio/buscar', async (req, res, next) => {
@@ -144,29 +212,8 @@ mlAnuncioRouter.post('/anuncio/buscar', async (req, res, next) => {
         linha.mercadoLivreItemId = existente?.mlId || existente?.blingAnuncioId || null;
         if (existente) { linha.categoriaAtual = null; linha.categoriaPendente = false; linhas[i] = linha; continue; }
 
-        const pre = await categoriaDoPreCadastro(sku);
-        linha.categoriaPreCadastro = pre;
-        try {
-          const sug = await sugerirCategoriaML({ usuario: String((req as any).authUser?.username || '').trim() || null, titulo: base.descricao, marca: base.moto?.marca, modelo: base.moto?.modelo, condicao });
-          if (sug) {
-            const ver = await verificarCategoriaML(sug.id, condicao, { modelo: base.moto?.modelo || null });
-            linha.fichaFaltando = ver.fichaFaltando;
-            linha.categoriaAtual = { id: sug.id, nivel4: sug.nome, caminho: sug.caminho, permitido: ver.ok, generica: /^outros$/i.test(sug.nome) };
-            linha.restricoes = ver.restricoes;
-            linha.avisos = ver.avisos;
-            linha.sugestaoOrigem = sug.origem;
-            linha.sugestaoConfianca = sug.confianca;
-            linha.alternativas = sug.alternativas;
-            linha.categoriaPendente = false;
-          } else {
-            linha.categoriaAtual = null;
-            linha.categoriaPendente = true;
-          }
-        } catch (e: any) {
-          linha.categoriaAtual = null;
-          linha.categoriaPendente = true;
-          linha.erroCategoria = e?.message || 'Falha ao sugerir categoria';
-        }
+        // SEM IA da Claude: pre-cadastro -> sugestao do proprio ML -> IA ja guardada -> palavras fortes; senao fica sem categoria.
+        Object.assign(linha, await categoriaDaLinha(base, sku, condicao, String((req as any).authUser?.username || '').trim() || null, 'auto'));
         linhas[i] = linha;
       }
     };
