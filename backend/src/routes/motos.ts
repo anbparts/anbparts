@@ -1915,7 +1915,13 @@ motosRouter.get('/contratos', requireMotosAction('contratos'), async (_req, res,
       orderBy: { criadoEm: 'desc' },
       select: { id: true, titulo: true, dados: true, criadoEm: true, atualizadoEm: true },
     });
-    res.json({ ok: true, contratos });
+    let assinados = new Map<number, { nome: string | null; enviadoEm: Date }>();
+    try {
+      await garantirTabelaContratoAssinado();
+      const rows = await prisma.$queryRawUnsafe<Array<{ contratoId: number; nome: string | null; enviadoEm: Date }>>(`SELECT "contratoId","nome","enviadoEm" FROM "ContratoAssinado"`);
+      assinados = new Map(rows.map((r) => [Number(r.contratoId), { nome: r.nome, enviadoEm: r.enviadoEm }]));
+    } catch { /* sem a tabela: lista sem o marcador de assinado */ }
+    res.json({ ok: true, contratos: contratos.map((c) => ({ ...c, assinadoEm: assinados.get(c.id)?.enviadoEm || null, assinadoNome: assinados.get(c.id)?.nome || null })) });
   } catch (e) { next(e); }
 });
 
@@ -1950,11 +1956,70 @@ motosRouter.put('/contratos/:id', requireMotosAction('contratos'), async (req, r
   } catch (e) { next(e); }
 });
 
+// Contrato ASSINADO (PDF escaneado/assinado, importado pelo usuario). Fica numa tabela propria (criada sob demanda)
+// pra nao pesar a listagem de contratos: a lista so le nome/data, o arquivo so e lido ao abrir.
+let tabelaContratoAssinadoPronta: Promise<void> | null = null;
+function garantirTabelaContratoAssinado(): Promise<void> {
+  if (!tabelaContratoAssinadoPronta) {
+    tabelaContratoAssinadoPronta = prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "ContratoAssinado" (
+      "contratoId" INTEGER PRIMARY KEY, "nome" TEXT, "arquivo" TEXT NOT NULL, "enviadoEm" TIMESTAMP NOT NULL DEFAULT now())`)
+      .then(() => undefined)
+      .catch((e) => { tabelaContratoAssinadoPronta = null; throw e; });
+  }
+  return tabelaContratoAssinadoPronta;
+}
+
+const PREFIXO_PDF_DATA_URL = /^data:application\/pdf;base64,/i;
+
+// Importar (ou trocar) o PDF assinado de um contrato
+motosRouter.post('/contratos/:id/assinado', requireMotosAction('contratos'), async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const contrato = await prisma.contrato.findUnique({ where: { id }, select: { id: true } });
+    if (!contrato) { res.status(404).json({ ok: false, error: 'Contrato não encontrado' }); return; }
+    const arquivo = String(req.body?.arquivo || '');
+    const nome = String(req.body?.nome || '').trim().slice(0, 200) || `contrato-${id}-assinado.pdf`;
+    if (!PREFIXO_PDF_DATA_URL.test(arquivo)) { res.status(400).json({ ok: false, error: 'Envie um arquivo PDF.' }); return; }
+    if (arquivo.length > 28 * 1024 * 1024) { res.status(413).json({ ok: false, error: 'PDF muito grande (limite de ~20 MB).' }); return; }
+    await garantirTabelaContratoAssinado();
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "ContratoAssinado" ("contratoId","nome","arquivo","enviadoEm") VALUES ($1,$2,$3,now())
+       ON CONFLICT ("contratoId") DO UPDATE SET "nome"=EXCLUDED."nome","arquivo"=EXCLUDED."arquivo","enviadoEm"=now()`, id, nome, arquivo);
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+// Abrir o PDF assinado
+motosRouter.get('/contratos/:id/assinado', requireMotosAction('contratos'), async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    await garantirTabelaContratoAssinado();
+    const [r] = await prisma.$queryRawUnsafe<Array<{ nome: string | null; arquivo: string }>>(`SELECT "nome","arquivo" FROM "ContratoAssinado" WHERE "contratoId" = $1::int`, id);
+    if (!r) { res.status(404).json({ ok: false, error: 'Este contrato ainda não tem PDF assinado.' }); return; }
+    const pdf = Buffer.from(r.arquivo.replace(PREFIXO_PDF_DATA_URL, ''), 'base64');
+    const nome = String(r.nome || `contrato-${id}-assinado.pdf`).replace(/[^\w.\- ]+/g, '_');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${nome}"`);
+    res.send(pdf);
+  } catch (e) { next(e); }
+});
+
+// Remover o PDF assinado
+motosRouter.delete('/contratos/:id/assinado', requireMotosAction('contratos'), async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    await garantirTabelaContratoAssinado();
+    await prisma.$executeRawUnsafe(`DELETE FROM "ContratoAssinado" WHERE "contratoId" = $1::int`, id);
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
 // Deletar contrato
 motosRouter.delete('/contratos/:id', requireMotosAction('contratos'), async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     await prisma.contrato.delete({ where: { id } });
+    try { await garantirTabelaContratoAssinado(); await prisma.$executeRawUnsafe(`DELETE FROM "ContratoAssinado" WHERE "contratoId" = $1::int`, id); } catch { /* sem assinado */ }
     res.json({ ok: true });
   } catch (e) { next(e); }
 });

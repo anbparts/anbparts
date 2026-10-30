@@ -1804,6 +1804,93 @@ function ContratosTab({ viewportMode }: { viewportMode: MotosViewportMode }) {
     setDeletando(null);
   }
 
+  // PDF assinado: importar/trocar, abrir e remover
+  const inputAssinadoRef = useRef<HTMLInputElement | null>(null);
+  const alvoAssinadoRef = useRef<number | null>(null);
+  const [assinadoBusyId, setAssinadoBusyId] = useState<number | null>(null);
+
+  function escolherAssinado(id: number) {
+    if (!canContratosMoto) return alert('Seu usuario nao tem permissao para contratos.');
+    alvoAssinadoRef.current = id;
+    inputAssinadoRef.current?.click();
+  }
+
+  async function handleArquivoAssinado(event: any) {
+    const arquivo: File | undefined = event.target.files?.[0];
+    event.target.value = '';
+    const id = alvoAssinadoRef.current;
+    if (!arquivo || !id) return;
+    if (!/\.pdf$/i.test(arquivo.name) && arquivo.type !== 'application/pdf') return alert('Selecione um arquivo PDF.');
+    if (arquivo.size > 20 * 1024 * 1024) return alert('O PDF passa de 20 MB. Reduza o arquivo e tente de novo.');
+    setAssinadoBusyId(id);
+    try {
+      const dataUrl: string = await new Promise((resolve, reject) => {
+        const leitor = new FileReader();
+        leitor.onload = () => resolve(String(leitor.result || ''));
+        leitor.onerror = () => reject(new Error('Não foi possível ler o arquivo.'));
+        leitor.readAsDataURL(arquivo);
+      });
+      const resp = await fetch(`${API}/motos/contratos/${id}/assinado`, {
+        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nome: arquivo.name, arquivo: dataUrl }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || data?.ok === false) throw new Error(data?.error || 'Erro ao importar o PDF assinado');
+      await loadContratos();
+    } catch (err: any) { alert(err.message || 'Erro ao importar o PDF assinado'); }
+    setAssinadoBusyId(null);
+  }
+
+  async function abrirAssinado(id: number) {
+    setAssinadoBusyId(id);
+    try {
+      const resp = await fetch(`${API}/motos/contratos/${id}/assinado`, { credentials: 'include' });
+      if (!resp.ok) throw new Error('Não foi possível abrir o PDF assinado');
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (err: any) { alert(err.message || 'Erro ao abrir o PDF assinado'); }
+    setAssinadoBusyId(null);
+  }
+
+  async function removerAssinado(id: number) {
+    if (!canContratosMoto) return alert('Seu usuario nao tem permissao para contratos.');
+    if (!confirm('Remover o PDF assinado deste contrato?')) return;
+    setAssinadoBusyId(id);
+    try {
+      const resp = await fetch(`${API}/motos/contratos/${id}/assinado`, { method: 'DELETE', credentials: 'include' });
+      if (!resp.ok) throw new Error('Erro ao remover o PDF assinado');
+      await loadContratos();
+    } catch (err: any) { alert(err.message || 'Erro ao remover o PDF assinado'); }
+    setAssinadoBusyId(null);
+  }
+
+  function botoesAssinado(c: any, compacto: boolean) {
+    const ocupado = assinadoBusyId === c.id;
+    const estilo = { ...cs.btn, padding: compacto ? '7px 8px' : '5px 10px', fontSize: 11, justifyContent: 'center', opacity: ocupado ? 0.7 : 1 };
+    if (!c.assinadoEm) {
+      return (
+        <button onClick={() => escolherAssinado(c.id)} disabled={ocupado} title="Importar o contrato assinado (PDF)" style={{ ...estilo, background: '#fffbeb', color: '#b45309', borderColor: '#fcd34d' }}>
+          {ocupado ? '...' : '⬆ Importar assinado'}
+        </button>
+      );
+    }
+    return (
+      <>
+        <button onClick={() => abrirAssinado(c.id)} disabled={ocupado} title={`Assinado em ${new Date(c.assinadoEm).toLocaleDateString('pt-BR')}${c.assinadoNome ? ` — ${c.assinadoNome}` : ''}`} style={{ ...estilo, background: '#ecfdf5', color: '#047857', borderColor: '#6ee7b7' }}>
+          {ocupado ? '...' : '✓ Assinado'}
+        </button>
+        <button onClick={() => escolherAssinado(c.id)} disabled={ocupado} title="Trocar o PDF assinado" style={{ ...estilo, background: 'var(--white)', color: 'var(--ink-soft)', borderColor: 'var(--border)' }}>
+          Trocar
+        </button>
+        <button onClick={() => removerAssinado(c.id)} disabled={ocupado} title="Remover o PDF assinado" style={{ ...estilo, background: 'var(--white)', color: 'var(--red-light)', borderColor: '#fecdd3' }}>
+          ✕
+        </button>
+      </>
+    );
+  }
+
   async function handleGerarPdf(contrato: any) {
     if (!canContratosMoto) return alert('Seu usuario nao tem permissao para contratos.');
     setGerandoId(contrato.id);
@@ -1858,6 +1945,7 @@ function ContratosTab({ viewportMode }: { viewportMode: MotosViewportMode }) {
 
   return (
     <div style={{ padding: pagePadding }}>
+      <input ref={inputAssinadoRef} type="file" accept=".pdf,application/pdf" onChange={handleArquivoAssinado} style={{ display: 'none' }} />
       <div style={cs.card}>
         {/* Cabeçalho da listagem */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: isPhone ? '14px' : '14px 18px', borderBottom: '1px solid var(--border)', gap: 12, flexWrap: 'wrap' }}>
@@ -1910,6 +1998,7 @@ function ContratosTab({ viewportMode }: { viewportMode: MotosViewportMode }) {
                   <button onClick={() => handleDelete(c.id, c.titulo || String(c.id))} disabled={deletando === c.id} style={{ ...cs.btn, fontSize: 11, padding: '7px 8px', justifyContent: 'center', background: '#fff1f2', color: 'var(--red-light)', borderColor: '#fecdd3', opacity: deletando === c.id ? 0.7 : 1 }}>
                     Excluir
                   </button>
+                  <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 6, flexWrap: 'wrap' }}>{botoesAssinado(c, true)}</div>
                 </div>
               </div>
             ))}
@@ -1948,7 +2037,7 @@ function ContratosTab({ viewportMode }: { viewportMode: MotosViewportMode }) {
                         {new Date(c.criadoEm).toLocaleDateString('pt-BR')}
                       </td>
                       <td style={{ ...cs.td }}>
-                        <div style={{ display: 'flex', gap: 6 }}>
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                           <button onClick={() => handleGerarPdf(c)} disabled={gerandoId === c.id} title="Gerar PDF" style={{ ...cs.btn, padding: '5px 10px', fontSize: 11, background: '#eff6ff', color: '#2563eb', borderColor: '#93c5fd', opacity: gerandoId === c.id ? 0.7 : 1 }}>
                             {gerandoId === c.id ? '...' : '📄 PDF'}
                           </button>
@@ -1961,6 +2050,7 @@ function ContratosTab({ viewportMode }: { viewportMode: MotosViewportMode }) {
                           <button onClick={() => handleDelete(c.id, c.titulo || String(c.id))} disabled={deletando === c.id} title="Excluir" style={{ ...cs.btn, padding: '5px 10px', fontSize: 11, background: '#fff1f2', color: 'var(--red-light)', borderColor: '#fecdd3', opacity: deletando === c.id ? 0.7 : 1 }}>
                             Excluir
                           </button>
+                          {botoesAssinado(c, false)}
                         </div>
                       </td>
                     </tr>
