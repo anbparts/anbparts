@@ -1,5 +1,5 @@
-// E-mail de "venda efetivada" para pedidos de marketplaces que nao avisam sozinhos (Magalu, Shopee, Nuvemshop...).
-// O Mercado Livre ja manda o proprio e-mail e a OLX tem o seu; pedido manual (balcao) nao e marketplace, entao ficam de fora.
+// E-mail de "venda efetivada" para pedidos de marketplaces (Mercado Livre, Magalu, Shopee, Nuvemshop...).
+// O e-mail proprio do ML vinha falhando, entao o ML tambem entra aqui. A OLX tem o seu; pedido manual (balcao) nao e marketplace, entao ficam de fora.
 // Disparado quando a baixa da venda e gravada (importacao automatica de vendas ou manual) — ver baixarPecasVenda em routes/bling.ts.
 // Cada pedido avisa uma unica vez; vendas antigas (importacao de historico) nao disparam e-mail.
 import { prisma } from './prisma';
@@ -63,7 +63,6 @@ export async function avisarVendaMarketplace(p: { pedidoId?: any; pedidoNum?: an
     ))[0];
     if (!ped) { await marcar(pedidoId, 'erro', null, 'Pedido nao encontrado apos sincronizar'); return; }
     const canal = txt(ped.canal);
-    if (/mercado\s*livre/i.test(canal)) { await marcar(pedidoId, 'ignorado', canal); return; } // o ML ja manda o e-mail dele
     if (!canal || /^manual$/i.test(canal)) { await marcar(pedidoId, 'ignorado', canal || 'Manual'); return; } // balcao/OLX: nao e marketplace integrado
     if (ped.cancelado) { await marcar(pedidoId, 'ignorado', canal); return; }
 
