@@ -74,6 +74,31 @@ faturamentoRouter.get('/geral', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// GET /faturamento/vendas-por-dia — quantidade de vendas por dia (calendario). Mesma contagem do /geral:
+// brinde (valor 0) nao conta e sucata de um mesmo pedido no mesmo dia conta 1 so.
+faturamentoRouter.get('/vendas-por-dia', async (req, res, next) => {
+  try {
+    const pecas: any[] = await (prisma as any).peca.findMany({
+      where: { disponivel: false, emPrejuizo: false, dataVenda: { not: null }, precoML: { gt: 0 } },
+      select: { dataVenda: true, sucata: true, blingPedidoNum: true },
+    });
+    const sucataContada = new Set<string>();
+    const dias: Record<string, number> = {};
+    for (const p of pecas) {
+      if (!p.dataVenda) continue;
+      const dia = new Date(p.dataVenda).toISOString().slice(0, 10);
+      const pedidoNum = String(p.blingPedidoNum || '').trim();
+      if (p.sucata && pedidoNum) {
+        const chave = `${dia}::${pedidoNum}`;
+        if (sucataContada.has(chave)) continue;
+        sucataContada.add(chave);
+      }
+      dias[dia] = (dias[dia] || 0) + 1;
+    }
+    res.json({ ok: true, dias });
+  } catch (e) { next(e); }
+});
+
 // GET /faturamento/por-moto — receita por moto/mês
 faturamentoRouter.get('/por-moto', async (req, res, next) => {
   try {

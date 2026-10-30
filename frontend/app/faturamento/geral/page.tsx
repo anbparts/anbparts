@@ -173,11 +173,69 @@ const cs: any = {
   },
 };
 
+const DIAS_SEMANA = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
+
+// Card de um mes: verde nos dias com venda (com a quantidade), branco nos dias sem venda.
+function CalendarioMes({ ano, mes, dias, hoje, compacto }: { ano: number; mes: number; dias: Record<string, number>; hoje: string; compacto: boolean }) {
+  const diasNoMes = new Date(ano, mes, 0).getDate();
+  const offset = new Date(ano, mes - 1, 1).getDay();
+  const chave = (d: number) => `${ano}-${String(mes).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  let diasComVenda = 0;
+  let totalVendas = 0;
+  for (let d = 1; d <= diasNoMes; d++) {
+    const q = dias[chave(d)] || 0;
+    if (q > 0) { diasComVenda += 1; totalVendas += q; }
+  }
+  const celulas: (number | null)[] = [...Array(offset).fill(null), ...Array.from({ length: diasNoMes }, (_, i) => i + 1)];
+  while (celulas.length % 7 !== 0) celulas.push(null);
+
+  return (
+    <div style={{ ...cs.card, padding: compacto ? 12 : 18 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+        <div style={{ fontFamily: 'Fraunces, serif', fontSize: 16, fontWeight: 600 }}>{MESES_FULL[mes - 1]} {ano}</div>
+        <div style={{ fontSize: 12, color: 'var(--ink-muted)' }}>{diasComVenda} {diasComVenda === 1 ? 'dia' : 'dias'} · {totalVendas} {totalVendas === 1 ? 'venda' : 'vendas'}</div>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
+        {DIAS_SEMANA.map((d, i) => (
+          <div key={`h${i}`} style={{ textAlign: 'center', fontSize: 10.5, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', padding: '2px 0 6px' }}>{d}</div>
+        ))}
+        {celulas.map((d, i) => {
+          if (d == null) return <div key={`v${i}`} />;
+          const k = chave(d);
+          const qtd = dias[k] || 0;
+          const ehHoje = k === hoje;
+          return (
+            <div
+              key={k}
+              title={qtd ? `${d}/${mes}/${ano}: ${qtd} ${qtd === 1 ? 'venda' : 'vendas'}` : `${d}/${mes}/${ano}: sem vendas`}
+              style={{
+                textAlign: 'center',
+                borderRadius: 6,
+                padding: compacto ? '4px 0' : '6px 0',
+                minHeight: compacto ? 38 : 46,
+                background: qtd ? 'rgba(34, 197, 94, 0.16)' : 'var(--white)',
+                color: qtd ? '#15803d' : 'var(--ink-muted)',
+                border: ehHoje ? '1.5px solid #2563eb' : '1px solid transparent',
+              }}
+            >
+              <div style={{ fontSize: 13, fontWeight: qtd ? 700 : 500 }}>{d}</div>
+              {qtd > 0 && <div style={{ fontSize: 10.5, fontWeight: 600, marginTop: 1 }}>{qtd} {qtd === 1 ? 'venda' : 'vendas'}</div>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function FaturamentoGeralPage() {
+  const [calPeriodo, setCalPeriodo] = useState<string>('trimestre');
+  const [calDias, setCalDias] = useState<Record<string, number> | null>(null);
+  const [calLoading, setCalLoading] = useState(false);
   const [data, setData] = useState<any[]>([]);
   const [filtAno, setFiltAno] = useState(currentYear());
   const [loading, setLoading] = useState(true);
-  const [modo, setModo] = usePersistentTab<ViewMode>('aba', 'grafico', ['grafico', 'relatorio', 'estoque', 'giro', 'valor', 'provisao']);
+  const [modo, setModo] = usePersistentTab<ViewMode>('aba', 'grafico', ['grafico', 'relatorio', 'calendario', 'estoque', 'giro', 'valor', 'provisao']);
   const [giroData, setGiroData] = useState<any[] | null>(null);
   const [giroLoading, setGiroLoading] = useState(false);
   const [giroAno, setGiroAno] = useState('');
@@ -246,6 +304,21 @@ export default function FaturamentoGeralPage() {
       .then((d) => setMapaCategorias(d?.mapa && typeof d.mapa === 'object' ? d.mapa : {}))
       .catch(() => setMapaCategorias({}));
   }, [modo, mapaCategoriasCarregado]);
+
+  // Calendario: busca as vendas por dia toda vez que entra na aba (venda nova aparece sem recarregar a pagina).
+  const estavaEmCalendario = useRef(false);
+  useEffect(() => {
+    const agora = modo === 'calendario';
+    if (agora && !estavaEmCalendario.current) {
+      setCalLoading(true);
+      fetch(`${API}/faturamento/vendas-por-dia`, { credentials: 'include' })
+        .then((r) => r.json())
+        .then((d) => setCalDias(d?.dias && typeof d.dias === 'object' ? d.dias : {}))
+        .catch(() => setCalDias({}))
+        .finally(() => setCalLoading(false));
+    }
+    estavaEmCalendario.current = agora;
+  }, [modo]);
 
   // Mesmo motivo do efeito acima: sem isso, a Provisao ficava com o retrato de quando a tela
   // foi aberta pela primeira vez, mesmo depois de vendas novas.
@@ -672,10 +745,10 @@ export default function FaturamentoGeralPage() {
           <div style={cs.sub}>Receita total consolidada</div>
         </div>
       </div>
-      <ViewModeSwitch value={modo} onChange={setModo} modes={['grafico', 'relatorio', 'giro', 'valor', 'provisao']} />
+      <ViewModeSwitch value={modo} onChange={setModo} modes={['grafico', 'relatorio', 'calendario', 'giro', 'valor', 'provisao']} />
 
       <div style={{ padding: isCompact ? 16 : 28 }}>
-        {modo !== 'giro' && modo !== 'valor' && modo !== 'provisao' && (
+        {modo !== 'giro' && modo !== 'valor' && modo !== 'provisao' && modo !== 'calendario' && (
           <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 20 }}>
             {[
               { label: 'Receita total', value: fmt(totalReceita), color: 'var(--sage)' },
@@ -698,7 +771,20 @@ export default function FaturamentoGeralPage() {
           </div>
         )}
 
-        {modo !== 'giro' && modo !== 'valor' && modo !== 'provisao' && (
+        {modo === 'calendario' && (
+          <div style={{ ...cs.card, marginBottom: 20 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: isCompact ? '14px 16px' : '14px 18px', flexWrap: 'wrap', gap: 10 }}>
+              <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>Filtros</div>
+              <select style={{ ...cs.sel, width: isCompact ? '100%' : undefined }} value={calPeriodo} onChange={(e) => setCalPeriodo(e.target.value)}>
+                <option value="trimestre">Trimestre (últimos 3 meses)</option>
+                <option value="mes">Mês atual</option>
+                {Array.from(new Set([...anos.map(String), currentYear()])).sort((a, b) => Number(b) - Number(a)).map((ano) => <option key={ano} value={ano}>{ano}</option>)}
+              </select>
+            </div>
+          </div>
+        )}
+
+        {modo !== 'giro' && modo !== 'valor' && modo !== 'provisao' && modo !== 'calendario' && (
           <div style={{ ...cs.card, marginBottom: 20 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: isCompact ? '14px 16px' : '14px 18px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', gap: 10 }}>
               <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>Filtros</div>
@@ -945,6 +1031,31 @@ export default function FaturamentoGeralPage() {
               </div>
             </div>
           )
+        ) : modo === 'calendario' ? (
+          calLoading || calDias == null ? (
+            <div style={{ ...cs.card, padding: 28, color: 'var(--ink-muted)' }}>Carregando calendario...</div>
+          ) : (() => {
+            const agora = new Date();
+            const hojeKey = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, '0')}-${String(agora.getDate()).padStart(2, '0')}`;
+            const meses: { ano: number; mes: number }[] = [];
+            if (calPeriodo === 'mes') {
+              meses.push({ ano: agora.getFullYear(), mes: agora.getMonth() + 1 });
+            } else if (calPeriodo === 'trimestre') {
+              for (let i = 2; i >= 0; i--) {
+                const d = new Date(agora.getFullYear(), agora.getMonth() - i, 1);
+                meses.push({ ano: d.getFullYear(), mes: d.getMonth() + 1 });
+              }
+            } else {
+              for (let m = 1; m <= 12; m++) meses.push({ ano: Number(calPeriodo), mes: m });
+            }
+            return (
+              <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : isTabletPortrait ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)', gap: 14, alignItems: 'start' }}>
+                {meses.map(({ ano, mes }) => (
+                  <CalendarioMes key={`${ano}-${mes}`} ano={ano} mes={mes} dias={calDias} hoje={hojeKey} compacto={isCompact} />
+                ))}
+              </div>
+            );
+          })()
         ) : modo === 'grafico' ? (
           loading ? (
             <div style={{ ...cs.card, padding: 28, color: 'var(--ink-muted)' }}>Carregando visualizacao...</div>

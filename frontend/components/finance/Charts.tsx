@@ -4,7 +4,7 @@ import { type CSSProperties, type ReactNode } from 'react';
 import { sensitiveMaskStyle, sensitiveText, useCompanyValueVisibility } from '@/lib/company-values';
 import TabsBar from '@/components/ui/TabsBar';
 
-export type ViewMode = 'grafico' | 'relatorio' | 'estoque' | 'giro' | 'valor' | 'provisao';
+export type ViewMode = 'grafico' | 'relatorio' | 'calendario' | 'estoque' | 'giro' | 'valor' | 'provisao';
 
 export type ChartItem = {
   label: string;
@@ -68,12 +68,13 @@ export function ViewModeSwitch({
   const allButtons: { mode: ViewMode; label: string }[] = [
     { mode: 'grafico',   label: 'Gráfico' },
     { mode: 'relatorio', label: 'Relatório' },
+    { mode: 'calendario', label: 'Calendário' },
     { mode: 'estoque',   label: '% Estoque' },
     { mode: 'giro',      label: 'Tempo de Giro' },
     { mode: 'valor',     label: 'Por Valor' },
     { mode: 'provisao',  label: 'Provisão' },
   ];
-  const modosExtras: ViewMode[] = ['estoque', 'giro', 'valor', 'provisao'];
+  const modosExtras: ViewMode[] = ['calendario', 'estoque', 'giro', 'valor', 'provisao'];
   const buttons = modes
     ? modes.map(m => allButtons.find(b => b.mode === m)!).filter(Boolean)
     : allButtons.filter(b => !modosExtras.includes(b.mode));
