@@ -180,7 +180,8 @@ export async function criarContextoDivergencias() {
     prisma.historicoDevolucao.findMany({ where: { etiquetasDetran: { not: null } }, select: { idPeca: true, etiquetasDetran: true } }),
   ]);
   for (const p of pecas) add(p.detranEtiqueta, p.idPeca);
-  for (const p of cadastros as any[]) add(p.detranEtiqueta, p.idPeca);
+  const skusComPeca = new Set((await prisma.peca.findMany({ select: { idPeca: true } })).map((p) => String(p.idPeca))); // SKU ja virou peca: a etiqueta da peca manda, pre-cadastro antigo e ignorado
+  for (const p of cadastros as any[]) if (!skusComPeca.has(String(p.idPeca))) add(p.detranEtiqueta, p.idPeca);
   for (const h of historico) add(h.etiquetasDetran, h.idPeca);
 
   return (sku: any, motoId: any, texto: any): string[] => {
