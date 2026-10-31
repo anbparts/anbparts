@@ -1165,6 +1165,10 @@ pecasRouter.put('/:id', requireEstoqueAction('editar'), async (req, res, next) =
           : undefined,
       }
     });
+    // mantem o pre-cadastro do SKU alinhado com a etiqueta editada aqui
+    if (data.detranEtiqueta !== undefined) {
+      await (prisma as any).cadastroPeca.updateMany({ where: { idPeca: current.idPeca }, data: { detranEtiqueta: data.detranEtiqueta || null } }).catch(() => null);
+    }
     res.json(peca);
   } catch (e) { next(e); }
 });

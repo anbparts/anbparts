@@ -246,7 +246,9 @@ export async function validarEtiquetasParaSku(o: { etiquetas: any[]; skuBase: st
       prisma.historicoDevolucao.findMany({ where: { etiquetasDetran: { contains: e, mode: 'insensitive' } }, select: { idPeca: true, etiquetasDetran: true } }),
     ]);
     for (const p of pecas) if (etiquetasDoTexto(p.detranEtiqueta).includes(e) && skuBase(p.idPeca) !== meuSku) return `A etiqueta ${e} ja esta no SKU ${p.idPeca}. Uma etiqueta nao pode estar em dois SKUs.`;
-    for (const p of cadastros as any[]) if (etiquetasDoTexto(p.detranEtiqueta).includes(e) && skuBase(p.idPeca) !== meuSku) return `A etiqueta ${e} ja esta no pre-cadastro do SKU ${p.idPeca}. Uma etiqueta nao pode estar em dois SKUs.`;
+    // pre-cadastro so vale enquanto o SKU nao virou peca: se a peca ja existe, a etiqueta dela (tabela Peca) manda e o pre-cadastro antigo e ignorado
+    const skusComPeca = new Set((await prisma.peca.findMany({ where: { idPeca: { in: (cadastros as any[]).map((p) => String(p.idPeca)) } }, select: { idPeca: true } })).map((p) => p.idPeca));
+    for (const p of cadastros as any[]) if (!skusComPeca.has(String(p.idPeca)) && etiquetasDoTexto(p.detranEtiqueta).includes(e) && skuBase(p.idPeca) !== meuSku) return `A etiqueta ${e} ja esta no pre-cadastro do SKU ${p.idPeca}. Uma etiqueta nao pode estar em dois SKUs.`;
     for (const h of historico) if (etiquetasDoTexto(h.etiquetasDetran).includes(e) && skuBase(h.idPeca) !== meuSku) return `A etiqueta ${e} ja foi usada no SKU ${h.idPeca} (historico de devolucao). Uma etiqueta nao pode estar em dois SKUs.`;
   }
   return null;
