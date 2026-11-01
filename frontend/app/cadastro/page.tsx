@@ -2192,6 +2192,33 @@ export default function CadastroPage() {
       atualizarAjuste(sku, { carregando: false, erro: e?.message || 'Erro ao ler os dados do SKU.' });
     }
   }
+  // Reconfere a categoria ja escolhida do Mercado Livre com a condicao nova e atualiza restricoes/ficha/selecao da linha.
+  async function reverificarCategoriaMLDoSku(sku: string, condicao: 'usado' | 'novo') {
+    const linha = anuncioCriarLinhas.find((l) => l.sku === sku);
+    const ml = linha?.marketplaces?.['mercado-livre'];
+    const categoriaId = ml?.categoriaEscolhidaId ?? ml?.categoriaAtual?.id;
+    if (!linha || !ml || !ml.disponivel || ml.jaTemAnuncio || categoriaId == null || categoriaId === '') return;
+    try {
+      const resp = await fetch(`${API}/mercado-livre/anuncio/verificar-categoria?id=${encodeURIComponent(String(categoriaId))}&condicao=${condicao}&sku=${encodeURIComponent(sku)}`, { credentials: 'include' });
+      const data = await readApiResponse(resp, 'Erro ao verificar a categoria');
+      const restricoes: string[] = Array.isArray(data.restricoes) ? data.restricoes : [];
+      const fichaFaltando = Array.isArray(data.fichaFaltando) ? data.fichaFaltando : [];
+      setAnuncioCriarLinhas((prev) => prev.map((l) => {
+        if (l.sku !== sku) return l;
+        const atual = l.marketplaces['mercado-livre'];
+        const liberada = l.fotosOk && !l.semEstoque && !atual.jaTemAnuncio && !atual.categoriaPendente && restricoes.length === 0 && fichaFaltando.length === 0;
+        return { ...l, marketplaces: { ...l.marketplaces, 'mercado-livre': {
+          ...atual,
+          restricoes,
+          fichaFaltando,
+          categoriaAtual: atual.categoriaAtual ? { ...atual.categoriaAtual, permitido: restricoes.length === 0 } : atual.categoriaAtual,
+          selecionado: liberada ? true : (restricoes.length || fichaFaltando.length ? false : atual.selecionado),
+        } } };
+      }));
+    } catch (e: any) {
+      console.warn('[anuncio] reverificar categoria ML:', e?.message || e);
+    }
+  }
   async function salvarAjusteSku(sku: string) {
     const aj = anuncioAjustes[sku];
     if (!aj || !aj.original) return;
@@ -2207,6 +2234,8 @@ export default function CadastroPage() {
       atualizarAjuste(sku, { salvando: false, msg: 'Salvo no Bling e no cadastro.', original: { titulo: aj.titulo, descricao: aj.descricao, condicao: aj.condicao } });
       // Titulo na linha e condicao (muda categoria/atributos do ML): atualiza a linha na tela.
       setAnuncioCriarLinhas((prev) => prev.map((l) => l.sku === sku ? { ...l, descricao: aj.titulo } : l));
+      // Condicao mudou: as restricoes da categoria do Mercado Livre (ex.: "nao aceita USADO") precisam ser revistas com a nova condicao.
+      if (aj.condicao !== aj.original.condicao) await reverificarCategoriaMLDoSku(sku, aj.condicao);
     } catch (e: any) {
       atualizarAjuste(sku, { salvando: false, erro: e?.message || 'Erro ao salvar.' });
     }
