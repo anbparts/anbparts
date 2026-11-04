@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
+import { sugerirCategoriasSemIA } from '../lib/sugestaoCategoria';
 
 export const curvaAbcRouter = Router();
 
@@ -435,6 +436,18 @@ curvaAbcRouter.post('/pecas/categorias', async (req, res, next) => {
     }
 
     res.json({ ok: true, sku, categorias: nomes });
+  } catch (e) { next(e); }
+});
+
+// POST /curva-abc/pecas/sugerir-categorias — body { motoId }. Sugestao SEM IA (sem tokens) pras pecas da moto sem categoria:
+// categoria da Nuvemshop ja mapeada, codigo igual em outros marketplaces, pecas parecidas ja categorizadas e regras de palavra-chave.
+// Nao grava nada: a tela mostra as candidatas e o Bruno ajusta/salva (POST /pecas/categorias).
+curvaAbcRouter.post('/pecas/sugerir-categorias', async (req, res, next) => {
+  try {
+    const motoId = Number(req.body?.motoId) || 0;
+    if (!motoId) return res.status(400).json({ ok: false, error: 'motoId obrigatorio' });
+    const r = await sugerirCategoriasSemIA(motoId);
+    res.json({ ok: true, ...r });
   } catch (e) { next(e); }
 });
 

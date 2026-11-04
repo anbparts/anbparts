@@ -54,6 +54,13 @@ type PecaItem = {
   categorias: { nome: string; origem: string }[];
 };
 
+type CandidataCat = { nome: string; fonte: string; detalhe: string; confianca: 'alta' | 'media' | 'baixa' };
+const COR_CONFIANCA: Record<string, { bg: string; cor: string; rotulo: string }> = {
+  alta: { bg: '#ecfdf3', cor: '#047857', rotulo: 'alta' },
+  media: { bg: '#eff6ff', cor: '#1d4ed8', rotulo: 'média' },
+  baixa: { bg: '#fffbeb', cor: '#b45309', rotulo: 'baixa' },
+};
+
 export default function CurvaAbcPage() {
   const { user } = useAuth();
   const podeSugerirIA = canProcessAction(user as any, 'curva_abc', 'sugerir_ia');
@@ -85,6 +92,10 @@ export default function CurvaAbcPage() {
   const [catTree, setCatTree] = useState<any[]>([]);
   const [sugerindoIA, setSugerindoIA] = useState(false);
   const [statusIA, setStatusIA] = useState('');
+  // Sugestao SEM IA (dados do proprio sistema): candidatas por SKU, ajustaveis antes de salvar
+  const [sugestoes, setSugestoes] = useState<Record<string, CandidataCat[]>>({});
+  const [sugerindoSemIA, setSugerindoSemIA] = useState(false);
+  const [statusSug, setStatusSug] = useState('');
 
   // Aba Conf. Categorias (unificação)
   const [confItens, setConfItens] = useState<{ origem: string; skus: number; destino: string }[]>([]);
@@ -259,8 +270,68 @@ export default function CurvaAbcPage() {
     setSugerindoIA(false);
   }
 
+  // Sugere categorias pras pecas sem categoria da moto usando so o que o sistema ja sabe (sem gastar tokens de IA).
+  // Preenche a 1a candidata como proposta (ainda NAO salva): da pra trocar pela alternativa, editar os chips e salvar.
+  async function sugerirSemIA() {
+    if (!manualMotoId) return;
+    setSugerindoSemIA(true); setStatusSug('Analisando...');
+    try {
+      const r = await fetch(`${API}/curva-abc/pecas/sugerir-categorias`, {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ motoId: Number(manualMotoId) }),
+      }).then(x => x.json());
+      if (!r?.ok) { alert(r?.error || 'Erro ao sugerir'); setStatusSug(''); setSugerindoSemIA(false); return; }
+      const sug: Record<string, CandidataCat[]> = r.sugestoes || {};
+      setSugestoes(sug);
+      const sel = new Set<string>();
+      const nomesNovos: string[] = [];
+      setEdits(prev => {
+        const n = { ...prev };
+        Object.keys(sug).forEach(sku => {
+          const top = sug[sku][0];
+          if (!top) return;
+          if (!(n[sku] || []).length) n[sku] = [top.nome];
+          nomesNovos.push(top.nome);
+          if (top.confianca !== 'baixa') sel.add(sku); // confianca baixa fica desmarcada pra voce olhar com calma
+        });
+        return n;
+      });
+      setSelecionados(sel);
+      setNomesCategorias(prev => Array.from(new Set([...prev, ...nomesNovos])).sort((a, b) => a.localeCompare(b, 'pt-BR')));
+      setStatusSug(`✓ ${r.comSugestao} de ${r.total} peça(s) com sugestão — revise e salve.`);
+    } catch (e: any) {
+      alert(e?.message || 'Erro ao sugerir');
+      setStatusSug('');
+    }
+    setSugerindoSemIA(false);
+  }
+
+  // Troca a proposta do SKU por outra candidata (remove as demais candidatas dos chips, mantendo as manuais que voce adicionou).
+  function usarCandidata(sku: string, nome: string) {
+    const nomesCand = (sugestoes[sku] || []).map(c => c.nome);
+    setEdits(prev => ({ ...prev, [sku]: [...(prev[sku] || []).filter(n => !nomesCand.includes(n)), nome] }));
+  }
+
+  async function salvarSugeridasSelecionadas() {
+    const alvos = Object.keys(sugestoes).filter(sku => selecionados.has(sku) && (edits[sku] || []).length);
+    if (!alvos.length) { alert('Nenhuma peça selecionada com sugestão. Marque as peças que quer salvar.'); return; }
+    if (!confirm(`Salvar a categoria de ${alvos.length} peça(s) como manual?`)) return;
+    setSugerindoSemIA(true);
+    let ok = 0;
+    for (const sku of alvos) {
+      setStatusSug(`Salvando ${ok + 1} de ${alvos.length}...`);
+      await salvarCategorias(sku);
+      ok += 1;
+    }
+    setStatusSug(`✓ ${ok} peça(s) salvas.`);
+    setSelecionados(new Set());
+    setSugerindoSemIA(false);
+  }
+
   async function carregarManual() {
     if (!manualMotoId) { setManualItens([]); setManualBuscou(false); return; }
+    setSugestoes({}); setStatusSug('');
     setManualLoading(true);
     try {
       const params = new URLSearchParams({ motoId: manualMotoId });
@@ -311,6 +382,7 @@ export default function CurvaAbcPage() {
         ? { ...it, categorias: [...it.categorias.filter(c => c.origem !== 'manual'), ...categorias.map(n => ({ nome: n, origem: 'manual' }))] }
         : it));
       setNomesCategorias(prev => Array.from(new Set([...prev, ...categorias])).sort((a, b) => a.localeCompare(b, 'pt-BR')));
+      setSugestoes(prev => { const n = { ...prev }; delete n[sku]; return n; });
       setSalvoSku(sku);
       setTimeout(() => setSalvoSku(s => (s === sku ? '' : s)), 2000);
     } catch (e: any) {
@@ -742,6 +814,19 @@ export default function CurvaAbcPage() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 14px', borderBottom: '1px solid var(--border)', fontSize: 12, color: 'var(--gray-500)' }}>
                 <span><b style={{ color: 'var(--gray-700)' }}>{manualView.length}</b>{manualView.length !== manualItens.length ? ` de ${manualItens.length}` : ''} peça(s){soSemCat ? ' sem categoria' : ''}{selecionados.size ? ` · ${selecionados.size} selecionada(s)` : ''}</span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  {statusSug && <span style={{ fontSize: 12, fontWeight: 700, color: statusSug.startsWith('✓') ? '#16a34a' : '#0369a1' }}>{statusSug}</span>}
+                  <button onClick={sugerirSemIA} disabled={sugerindoSemIA}
+                    style={{ ...s.btn, padding: '6px 14px', fontSize: 12.5, background: '#0369a1', color: '#fff', opacity: sugerindoSemIA ? .55 : 1 }}
+                    title="Sugere categorias com o que o sistema já sabe (Nuvemshop mapeada, outros marketplaces, peças parecidas e regras). Não usa IA nem gasta tokens.">
+                    {sugerindoSemIA ? '🔎 Analisando...' : '🔎 Sugerir (sem IA)'}
+                  </button>
+                  {Object.keys(sugestoes).length > 0 && (
+                    <button onClick={salvarSugeridasSelecionadas} disabled={sugerindoSemIA}
+                      style={{ ...s.btn, padding: '6px 14px', fontSize: 12.5, background: '#16a34a', color: '#fff', opacity: sugerindoSemIA ? .55 : 1 }}
+                      title="Salva as categorias propostas das peças marcadas (confiança baixa vem desmarcada)">
+                      Salvar sugeridas ({Object.keys(sugestoes).filter(k => selecionados.has(k)).length})
+                    </button>
+                  )}
                   {statusIA && <span style={{ fontSize: 12, fontWeight: 700, color: statusIA.startsWith('✓') ? '#16a34a' : '#7c3aed' }}>{statusIA}</span>}
                   {podeSugerirIA && (
                     <button onClick={selecionarProximos10} disabled={sugerindoIA}
@@ -799,15 +884,37 @@ export default function CurvaAbcPage() {
                                   {c.nome}
                                 </span>
                               ))}
-                              {manuais.map(nome => (
-                                <span key={'m' + nome} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 999, fontSize: 12, background: '#f3e8ff', color: '#7c3aed' }}>
+                              {manuais.map(nome => {
+                                const ehSugestao = (sugestoes[it.sku] || []).some(c => c.nome === nome);
+                                return (
+                                <span key={'m' + nome} title={ehSugestao ? 'Sugestão ainda não salva' : undefined} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 999, fontSize: 12, background: ehSugestao ? '#e0f2fe' : '#f3e8ff', color: ehSugestao ? '#0369a1' : '#7c3aed', border: ehSugestao ? '1px dashed #0369a1' : undefined }}>
                                   {nome}
                                   <button onClick={() => removeCategoria(it.sku, nome)} title="Remover"
-                                    style={{ border: 'none', background: 'transparent', color: '#7c3aed', cursor: 'pointer', fontWeight: 800, fontSize: 13, lineHeight: 1, padding: 0 }}>×</button>
+                                    style={{ border: 'none', background: 'transparent', color: ehSugestao ? '#0369a1' : '#7c3aed', cursor: 'pointer', fontWeight: 800, fontSize: 13, lineHeight: 1, padding: 0 }}>×</button>
                                 </span>
-                              ))}
+                                );
+                              })}
                               {nuvem.length === 0 && manuais.length === 0 && <span style={{ fontSize: 12, color: '#dc2626' }}>Sem categoria</span>}
                             </div>
+                            {(sugestoes[it.sku] || []).length > 0 && (
+                              <div style={{ display: 'grid', gap: 4, marginBottom: 6 }}>
+                                {(sugestoes[it.sku] || []).map(c => {
+                                  const cf = COR_CONFIANCA[c.confianca] || COR_CONFIANCA.baixa;
+                                  const ativa = manuais.includes(c.nome);
+                                  return (
+                                    <div key={c.nome} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: 'var(--gray-500)', flexWrap: 'wrap' }}>
+                                      <span style={{ padding: '1px 7px', borderRadius: 999, fontWeight: 700, background: cf.bg, color: cf.cor }}>{cf.rotulo}</span>
+                                      <b style={{ color: 'var(--gray-700)' }}>{c.nome}</b>
+                                      <span>· {c.detalhe}</span>
+                                      {!ativa && (
+                                        <button onClick={() => usarCandidata(it.sku, c.nome)}
+                                          style={{ border: '1px solid var(--border)', background: 'var(--white)', borderRadius: 6, padding: '1px 8px', fontSize: 11.5, cursor: 'pointer', color: '#0369a1', fontWeight: 700 }}>Usar esta</button>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
                             <div style={{ display: 'flex', gap: 6 }}>
                               <input list="dl-categorias" placeholder="Adicionar categoria..." value={drafts[it.sku] || ''}
                                 onChange={e => setDrafts(prev => ({ ...prev, [it.sku]: e.target.value }))}

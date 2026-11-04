@@ -214,6 +214,18 @@ export async function nuvemshopCategoriasDoProduto(categoriaFilhaId: string | nu
   return filha.parentId ? [filha.parentId, filha.id] : [filha.id];
 }
 
+// Nome da categoria filha pela REGRA de palavra-chave, ou null quando nenhuma regra casa (sem o balde generico).
+// Usado na sugestao em lote da Curva ABC: o que nao casa fica sem categoria pra revisao, em vez de cair na Carroceria.
+export async function nomeCategoriaNuvemshopPorRegra(descricao?: string | null): Promise<string | null> {
+  const texto = normalizar(descricao);
+  if (!texto) return null;
+  const regra = REGRAS.find(([regex]) => regex.test(texto));
+  if (!regra) return null;
+  const { porNome } = await carregarArvoreNuvemshop();
+  const no = porNome.get(normalizar(regra[1]));
+  return no ? no.nome : null;
+}
+
 // ID (string) da categoria filha sugerida pra descricao, ou null quando nenhuma regra casa.
 export async function sugerirNuvemshopCategoriaId(descricao?: string | null, _tipoPeca?: string | null): Promise<string | null> {
   const texto = normalizar(descricao);
