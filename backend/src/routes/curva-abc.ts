@@ -273,6 +273,69 @@ curvaAbcRouter.get('/relatorio', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// GET /curva-abc/markup?motoId= — Estoque > Markup (so o Bruno). Custo = precoCompra da moto (nao existe custo por peca/segmento),
+// entao cada segmento mostra quanto vende/liquida e quanto do CUSTO DA MOTO ele "paga". Segmentos = mesmas categorias (com
+// unificacao e modo) da Curva ABC. Vendidas e estoque sao separados; pecas em prejuizo e sucata ficam de fora.
+// Sem motoId devolve so o resumo das motos (comparativo); com motoId devolve tambem os segmentos com as pecas.
+curvaAbcRouter.get('/markup', async (req: any, res, next) => {
+  try {
+    if (String(req.authUser?.username || '').trim().toLowerCase() !== 'bruno') {
+      return res.status(403).json({ ok: false, error: 'Aba disponivel somente para o Bruno.' });
+    }
+    const motoId = Number(req.query?.motoId) || 0;
+    const num = (v: any) => Number(v) || 0;
+    type Lado = { qtd: number; bruto: number; liq: number };
+    const lado = (): Lado => ({ qtd: 0, bruto: 0, liq: 0 });
+
+    const motos = await prisma.moto.findMany({ select: { id: true, marca: true, modelo: true, ano: true, cor: true, precoCompra: true }, orderBy: { id: 'desc' } });
+    const pecas = await prisma.peca.findMany({
+      where: { emPrejuizo: false, sucata: false } as any, // cast: client Prisma local pode estar desatualizado (sucata existe no schema)
+      select: { id: true, idPeca: true, motoId: true, descricao: true, disponivel: true, dataVenda: true, precoML: true, valorLiq: true },
+    });
+
+    const resumo = new Map<number, { vendidas: Lado; estoque: Lado }>();
+    for (const m of motos) resumo.set(m.id, { vendidas: lado(), estoque: lado() });
+    for (const p of pecas) {
+      const r = resumo.get(p.motoId);
+      if (!r) continue;
+      const l = p.disponivel ? r.estoque : r.vendidas;
+      l.qtd += 1; l.bruto += num(p.precoML); l.liq += num(p.valorLiq);
+    }
+    const lista = motos.map((m) => {
+      const r = resumo.get(m.id)!;
+      return {
+        id: m.id,
+        nome: `${m.marca} ${m.modelo}${m.ano ? ` ${m.ano}` : ''}${m.cor ? ` · ${m.cor}` : ''}`,
+        custo: num(m.precoCompra),
+        vendidas: r.vendidas,
+        estoque: r.estoque,
+      };
+    }).filter((m) => m.vendidas.qtd + m.estoque.qtd > 0);
+
+    if (!motoId) return res.json({ ok: true, motos: lista });
+
+    const moto = lista.find((m) => m.id === motoId);
+    if (!moto) return res.json({ ok: true, motos: lista, moto: null, segmentos: [] });
+
+    const categoriasPorSku = await carregarCategoriasEfetivasPorSku();
+    type PecaDet = { id: number; sku: string; descricao: string; vendida: boolean; precoML: number; valorLiq: number; dataVenda: string | null };
+    const porSegmento = new Map<string, { nome: string; vendidas: Lado; estoque: Lado; pecas: PecaDet[] }>();
+    for (const p of pecas) {
+      if (p.motoId !== motoId) continue;
+      const nomes = categoriasPorSku.get(baseSku(p.idPeca)) || ['Sem categoria'];
+      for (const nome of nomes) {
+        if (!porSegmento.has(nome)) porSegmento.set(nome, { nome, vendidas: lado(), estoque: lado(), pecas: [] });
+        const seg = porSegmento.get(nome)!;
+        const l = p.disponivel ? seg.estoque : seg.vendidas;
+        l.qtd += 1; l.bruto += num(p.precoML); l.liq += num(p.valorLiq);
+        seg.pecas.push({ id: p.id, sku: p.idPeca, descricao: p.descricao, vendida: !p.disponivel, precoML: num(p.precoML), valorLiq: num(p.valorLiq), dataVenda: p.dataVenda ? new Date(p.dataVenda).toISOString().slice(0, 10) : null });
+      }
+    }
+    const segmentos = Array.from(porSegmento.values()).sort((a, b) => (b.vendidas.bruto + b.estoque.bruto) - (a.vendidas.bruto + a.estoque.bruto));
+    res.json({ ok: true, motos: lista, moto, segmentos });
+  } catch (e) { next(e); }
+});
+
 // GET /curva-abc/categorias-nomes — nomes de categorias distintos (autocomplete da categorização manual)
 curvaAbcRouter.get('/categorias-nomes', async (_req, res, next) => {
   try {
