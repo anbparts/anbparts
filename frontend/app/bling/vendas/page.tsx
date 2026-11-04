@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { API_BASE } from '@/lib/api-base';
 import CanalBadge from '@/components/ui/CanalBadge';
 import { useAuth } from '@/lib/auth';
@@ -143,6 +143,7 @@ type SeparacaoManualPedido = {
   pedidoNum: string;
   dataVenda: string;
   quantidadeItens: number;
+  itens?: { sku: string; descricao: string }[]; // SKU e descricao das pecas do pedido (linha expansivel)
   nomeCliente?: string | null;
   envioPrevisto?: string | null; // YYYY-MM-DD: separado agora, enviado so nessa data
   canal?: string | null; // marketplace do pedido (so aparece na tela, nao vai pro PDF)
@@ -536,6 +537,10 @@ export default function VendasBlingPage() {
   const [pedidosManuais, setPedidosManuais] = useState<SeparacaoManualPedido[]>([]);
   const [pedidosManuaisSelecionados, setPedidosManuaisSelecionados] = useState<number[]>([]);
   const [filtroPedidoManual, setFiltroPedidoManual] = useState('');
+  const [pedidosManuaisExpandidos, setPedidosManuaisExpandidos] = useState<number[]>([]);
+  function toggleExpandirPedidoManual(pedidoId: number) {
+    setPedidosManuaisExpandidos((prev) => (prev.includes(pedidoId) ? prev.filter((id) => id !== pedidoId) : [...prev, pedidoId]));
+  }
   const [erroPedidosManuais, setErroPedidosManuais] = useState('');
   const [pedidosManuaisPeriodoKey, setPedidosManuaisPeriodoKey] = useState('');
   const [separacoesGeradas, setSeparacoesGeradas] = useState<Record<string, string>>({});
@@ -1295,6 +1300,25 @@ export default function VendasBlingPage() {
                               <div style={{ fontSize: 12, color: 'var(--gray-800)', fontWeight: 700 }}>{pedido.quantidadeItens}</div>
                             </div>
                           </div>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleExpandirPedidoManual(pedido.pedidoId); }}
+                            style={{ marginTop: 10, border: '1px solid #cbd5e1', background: 'var(--white)', color: 'var(--gray-700)', borderRadius: 8, padding: '6px 10px', fontSize: 12, fontWeight: 700 }}
+                          >
+                            {pedidosManuaisExpandidos.includes(pedido.pedidoId) ? '▾ Ocultar itens' : '▸ Ver itens (SKU e descrição)'}
+                          </button>
+                          {pedidosManuaisExpandidos.includes(pedido.pedidoId) && (
+                            <div style={{ display: 'grid', gap: 6, marginTop: 8 }}>
+                              {(pedido.itens || []).length === 0 ? (
+                                <span style={{ fontSize: 12, color: 'var(--gray-500)' }}>Sem itens registrados.</span>
+                              ) : (pedido.itens || []).map((item, idx) => (
+                                <div key={`${item.sku}-${idx}`} style={{ fontSize: 12 }}>
+                                  <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: 'var(--blue-500)' }}>{item.sku}</span>
+                                  <span style={{ color: 'var(--gray-700)' }}> — {item.descricao}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </label>
                     );
@@ -1327,8 +1351,10 @@ export default function VendasBlingPage() {
                       {pedidosManuaisFiltrados.map((pedido) => {
                         const checked = pedidosManuaisSelecionadosSet.has(pedido.pedidoId);
                         const separadoEm = pedidoSeparadoEm(pedido.pedidoId);
+                        const expandido = pedidosManuaisExpandidos.includes(pedido.pedidoId);
                         return (
-                          <tr key={pedido.pedidoId} style={{ borderTop: '1px solid var(--gray-100)', background: checked ? '#eff6ff' : 'var(--white)' }}>
+                          <Fragment key={pedido.pedidoId}>
+                          <tr style={{ borderTop: '1px solid var(--gray-100)', background: checked ? '#eff6ff' : 'var(--white)' }}>
                             <td style={{ padding: '8px 10px', textAlign: 'center' }}>
                               <input type="checkbox" checked={checked} onChange={() => togglePedidoManual(pedido.pedidoId)} />
                             </td>
@@ -1343,8 +1369,35 @@ export default function VendasBlingPage() {
                               </span>
                               {pedido.canal ? <span style={{ marginLeft: 6 }}><CanalBadge canal={pedido.canal} /></span> : null}
                             </td>
-                            <td style={{ padding: '8px 10px', color: 'var(--gray-800)' }}>{pedido.quantidadeItens}</td>
+                            <td style={{ padding: '8px 10px', color: 'var(--gray-800)' }}>
+                              <button
+                                type="button"
+                                onClick={() => toggleExpandirPedidoManual(pedido.pedidoId)}
+                                title={expandido ? 'Ocultar SKUs do pedido' : 'Ver SKU e descricao dos itens'}
+                                style={{ border: '1px solid #cbd5e1', background: 'var(--white)', color: 'var(--gray-700)', borderRadius: 8, padding: '2px 8px', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                              >
+                                {expandido ? '▾' : '▸'} {pedido.quantidadeItens}
+                              </button>
+                            </td>
                           </tr>
+                          {expandido && (
+                            <tr style={{ background: '#f8fafc' }}>
+                              <td />
+                              <td colSpan={6} style={{ padding: '6px 10px 10px' }}>
+                                <div style={{ display: 'grid', gap: 4 }}>
+                                  {(pedido.itens || []).length === 0 ? (
+                                    <span style={{ fontSize: 12, color: 'var(--gray-500)' }}>Sem itens registrados.</span>
+                                  ) : (pedido.itens || []).map((item, idx) => (
+                                    <div key={`${item.sku}-${idx}`} style={{ display: 'flex', gap: 10, fontSize: 12.5 }}>
+                                      <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: 'var(--blue-500)', whiteSpace: 'nowrap' }}>{item.sku}</span>
+                                      <span style={{ color: 'var(--gray-700)' }}>{item.descricao}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                          </Fragment>
                         );
                       })}
                     </tbody>

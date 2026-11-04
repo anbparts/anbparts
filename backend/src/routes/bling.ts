@@ -7283,6 +7283,8 @@ blingRouter.get('/relatorio-separacao-manual/pedidos', async (req, res, next) =>
         blingPedidoId: true,
         blingPedidoNum: true,
         dataVenda: true,
+        idPeca: true,
+        descricao: true,
       },
       orderBy: [
         { dataVenda: 'desc' },
@@ -7296,6 +7298,7 @@ blingRouter.get('/relatorio-separacao-manual/pedidos', async (req, res, next) =>
       pedidoNum: string;
       dataVenda: string;
       quantidadeItens: number;
+      itens: { sku: string; descricao: string }[];
     }>();
 
     for (const peca of pecas) {
@@ -7312,12 +7315,14 @@ blingRouter.get('/relatorio-separacao-manual/pedidos', async (req, res, next) =>
           pedidoNum,
           dataVenda,
           quantidadeItens: 1,
+          itens: [{ sku: peca.idPeca, descricao: peca.descricao }],
         });
         continue;
       }
 
       const current = pedidosMap.get(key)!;
       current.quantidadeItens += 1;
+      current.itens.push({ sku: peca.idPeca, descricao: peca.descricao });
       if (!current.dataVenda && dataVenda) current.dataVenda = dataVenda;
     }
 
