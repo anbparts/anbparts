@@ -73,7 +73,7 @@ const fmtDateTime = (value?: string | null) => {
 const statusLabel = (status?: string) => status === 'sucesso' ? 'Sucesso' : status === 'sucesso_parcial' ? 'Sucesso parcial' : status === 'erro' ? 'Erro' : status === 'executando' ? 'Executando' : status || 'Nao informado';
 const statusColor = (status?: string) => status === 'sucesso' ? 'var(--green)' : status === 'sucesso_parcial' ? 'var(--amber)' : status === 'erro' ? 'var(--red)' : status === 'executando' ? 'var(--blue-500)' : 'var(--gray-500)';
 const borderColor = (tipo: string) => tipo === 'nao_encontrado_bling' ? 'var(--amber)' : tipo === 'nao_encontrado_anb' ? 'var(--blue-500)' : tipo === 'peca_em_prejuizo' ? '#b91c1c' : 'var(--red)';
-const origemLabel = (o: string) => o === 'auto' ? 'Automatica' : o === 'rapida_auto' ? 'Conferencia rapida' : o === 'rapida_manual' ? 'Conferencia rapida (manual)' : o === 'mes_manual' ? 'Conferencia do mes atual' : o === 'cancelamento_auto' ? 'Verificacao automatica (cancelamento)' : 'Manual';
+const origemLabel = (o: string) => o === 'auto' ? 'Automatica' : o === 'rapida_auto' ? 'Conferencia rapida' : o === 'rapida_manual' ? 'Conferencia rapida (manual)' : o === 'mes_manual' ? 'Conferencia do mes atual' : o === 'cancelamento_auto' ? 'Verificacao automatica (cancelamento)' : o === 'separacao_auto' ? 'Verificacao automatica (separacao)' : 'Manual';
 const tipoLabel = (tipo: string) => String(tipo || '').replaceAll('_', ' ').replace(/\bml\b/gi, 'ML');
 const escopoLabel = (value?: AuditoriaEscopo | string | null) => ESCOPOS.find((item) => item.value === value)?.label || 'Full';
 const infoValue = (value?: string | null) => String(value || '').trim() || 'Nao configurado';

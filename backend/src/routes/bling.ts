@@ -5054,19 +5054,42 @@ async function agendarVerificacaoPosCancelamento(pecaIds: number[]) {
   );
 }
 
-async function executeVerificacaoPosCancelamento(skus: string[], pedidos: string[]) {
+// Agenda (no banco) a verificacao dos SKUs dos pedidos que acabaram de ser separados (PDF do Relatorio de Separacao ou "Marcar como Separado").
+// Mesmo mecanismo do pos-cancelamento; nao duplica se ja ha uma verificacao de separacao pendente com os mesmos SKUs.
+async function agendarVerificacaoPosSeparacao(pedidoIds: bigint[]) {
+  if (!pedidoIds.length) return;
+  await garantirTabelaVerificacaoAgendada();
+  const pecas = await prisma.peca.findMany({
+    where: { blingPedidoId: { in: pedidoIds.map((id) => String(id)) } },
+    select: { idPeca: true, blingPedidoNum: true },
+  });
+  const skus = Array.from(new Set(pecas.map((p) => getBaseSku(p.idPeca)).filter(Boolean))).sort();
+  if (!skus.length) return;
+  const pedidos = Array.from(new Set(pecas.map((p) => String(p.blingPedidoNum || '').trim()).filter(Boolean)));
+  const jaPendente = await prisma.$queryRawUnsafe<any[]>(`SELECT "id" FROM "VerificacaoAgendada" WHERE "origem" = 'separacao' AND "status" = 'pendente' AND "skus" = $1`, skus.join(','));
+  if (jaPendente.length) return;
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "VerificacaoAgendada" ("origem","skus","pedidos","executarEm") VALUES ('separacao',$1,$2, now() + ($3 || ' milliseconds')::interval)`,
+    skus.join(','), pedidos.join(','), String(ATRASO_VERIFICACAO_POS_CANCELAMENTO_MS),
+  );
+}
+
+async function executeVerificacaoPosCancelamento(skus: string[], pedidos: string[], origemVerificacao: 'cancelamento' | 'separacao' = 'cancelamento') {
   const cfg = await getConfig();
   const emailConfig = await getConfiguracaoGeral();
   const executedAt = new Date();
   const verificar: any = VERIFICAR_POS_CANCELAMENTO;
   const rotuloPedidos = pedidos.length ? pedidos.map((p) => `#${p}`).join(', ') : '';
-  const motivo = `Verificacao automatica devido a importacao do cancelamento${pedidos.length > 1 ? ' dos pedidos' : ' do pedido'} ${rotuloPedidos || '(sem numero)'}.`;
-  const tituloEmail = `ALERTA ANB Parts - Verificacao automatica pos-cancelamento ${rotuloPedidos} - Verifique`.replace(/\s+/g, ' ').trim();
+  const ehSeparacao = origemVerificacao === 'separacao';
+  const motivo = ehSeparacao
+    ? `Verificacao automatica apos a separacao ${pedidos.length > 1 ? 'dos pedidos' : 'do pedido'} ${rotuloPedidos || '(sem numero)'}.`
+    : `Verificacao automatica devido a importacao do cancelamento${pedidos.length > 1 ? ' dos pedidos' : ' do pedido'} ${rotuloPedidos || '(sem numero)'}.`;
+  const tituloEmail = `ALERTA ANB Parts - Verificacao automatica ${ehSeparacao ? 'pos-separacao' : 'pos-cancelamento'} ${rotuloPedidos} - Verifique`.replace(/\s+/g, ' ').trim();
   const execution = await prisma.auditoriaAutomaticaExecucao.create({
     data: {
-      origem: 'cancelamento_auto', status: 'executando', emailDestinatario: emailConfig.auditoriaEmailDestinatario || null,
+      origem: ehSeparacao ? 'separacao_auto' : 'cancelamento_auto', status: 'executando', emailDestinatario: emailConfig.auditoriaEmailDestinatario || null,
       emailAssunto: buildDatedEmailSubject(tituloEmail, DEFAULT_AUDITORIA_EMAIL_TITULO, executedAt), totalSkus: skus.length,
-      resumo: JSON.parse(JSON.stringify({ progresso: { totalParaProcessar: skus.length, totalProcessados: 0, fase: 'Verificacao pos-cancelamento', atualizadoEm: new Date().toISOString() }, verificacaoAutomatica: { motivo, pedidos, skus } })),
+      resumo: JSON.parse(JSON.stringify({ progresso: { totalParaProcessar: skus.length, totalProcessados: 0, fase: ehSeparacao ? 'Verificacao pos-separacao' : 'Verificacao pos-cancelamento', atualizadoEm: new Date().toISOString() }, verificacaoAutomatica: { motivo, pedidos, skus } })),
     },
   });
   try {
@@ -5108,14 +5131,14 @@ async function executeVerificacaoPosCancelamento(skus: string[], pedidos: string
 async function tickVerificacoesAgendadas() {
   if (auditoriaSchedulerState.running) return;
   await garantirTabelaVerificacaoAgendada();
-  const vencidas = await prisma.$queryRawUnsafe<any[]>(`SELECT "id","skus","pedidos" FROM "VerificacaoAgendada" WHERE "status" = 'pendente' AND "executarEm" <= now() ORDER BY "id" LIMIT 1`);
+  const vencidas = await prisma.$queryRawUnsafe<any[]>(`SELECT "id","origem","skus","pedidos" FROM "VerificacaoAgendada" WHERE "status" = 'pendente' AND "executarEm" <= now() ORDER BY "id" LIMIT 1`);
   if (!vencidas.length) return;
   const v = vencidas[0];
   const reservou = await prisma.$executeRawUnsafe(`UPDATE "VerificacaoAgendada" SET "status" = 'executando' WHERE "id" = $1 AND "status" = 'pendente'`, Number(v.id));
   if (!reservou) return;
   auditoriaSchedulerState.running = true;
   try {
-    const exec: any = await executeVerificacaoPosCancelamento(String(v.skus).split(',').filter(Boolean), String(v.pedidos || '').split(',').filter(Boolean));
+    const exec: any = await executeVerificacaoPosCancelamento(String(v.skus).split(',').filter(Boolean), String(v.pedidos || '').split(',').filter(Boolean), v.origem === 'separacao' ? 'separacao' : 'cancelamento');
     await prisma.$executeRawUnsafe(`UPDATE "VerificacaoAgendada" SET "status" = 'concluida', "execucaoId" = $2 WHERE "id" = $1`, Number(v.id), Number(exec?.id || 0) || null);
   } catch (e) {
     await prisma.$executeRawUnsafe(`UPDATE "VerificacaoAgendada" SET "status" = 'erro' WHERE "id" = $1`, Number(v.id)).catch(() => undefined);
@@ -7437,6 +7460,9 @@ blingRouter.post('/pedido-separacao', async (req, res, next) => {
         })
       )
     );
+
+    // Separou (PDF gerado ou marcado como separado): agenda a conferencia de estoque dos SKUs desses pedidos em todos os canais.
+    try { await agendarVerificacaoPosSeparacao(pedidoIds); } catch (e: any) { console.error('[separacao] nao foi possivel agendar a verificacao:', e?.message || e); }
 
     res.json({ ok: true });
   } catch (e) {
