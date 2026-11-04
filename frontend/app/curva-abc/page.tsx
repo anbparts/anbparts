@@ -68,6 +68,7 @@ export default function CurvaAbcPage() {
   const [loading, setLoading] = useState(true);
   const [rel, setRel] = useState<Relatorio | null>(null);
   const [motos, setMotos] = useState<any[]>([]);
+  const [prefixoMotos, setPrefixoMotos] = useState<Record<number, string>>({});
   const [motoId, setMotoId] = useState('');
   const [dataDe, setDataDe] = useState('');
   const [dataAte, setDataAte] = useState('');
@@ -410,6 +411,12 @@ export default function CurvaAbcPage() {
   useEffect(() => {
     carregar();
     fetch(`${API}/motos`, { credentials: 'include' }).then(r => r.json()).then((d) => setMotos(Array.isArray(d) ? d : (d?.data || []))).catch(() => {});
+    // codigo (prefixo do SKU) de cada moto, igual a 1a coluna da pagina Motos
+    fetch(`${API}/bling/config`, { credentials: 'include' }).then(r => r.ok ? r.json() : { prefixos: [] }).then((d) => {
+      const map: Record<number, string> = {};
+      for (const p of (d?.prefixos || [])) if (p?.motoId && p?.prefixo) map[Number(p.motoId)] = String(p.prefixo).toUpperCase();
+      setPrefixoMotos(map);
+    }).catch(() => {});
     fetch(`${API}/curva-abc/categorias-nomes`, { credentials: 'include' }).then(r => r.json()).then((d) => setNomesCategorias(d?.nomes || [])).catch(() => {});
     fetch(`${API}/nuvemshop/categorias`, { credentials: 'include' }).then(r => r.json()).then((d) => {
       const cats = d?.categorias || [];
@@ -562,7 +569,7 @@ export default function CurvaAbcPage() {
             <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--gray-500)', marginBottom: 4 }}>Moto</div>
             <select style={{ ...s.input, minWidth: 220 }} value={motoId} onChange={e => setMotoId(e.target.value)}>
               <option value="">Todas as motos</option>
-              {motos.map((m: any) => <option key={m.id} value={m.id}>#{m.id} — {m.marca} {m.modelo}</option>)}
+              {motos.map((m: any) => <option key={m.id} value={m.id}>#{m.id}{prefixoMotos[m.id] ? ` · ${prefixoMotos[m.id]}` : ''} — {m.marca} {m.modelo}</option>)}
             </select>
           </div>
           <div>
@@ -751,7 +758,7 @@ export default function CurvaAbcPage() {
               <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--gray-500)', marginBottom: 4 }}>Moto (ID completo — inclui vendidas)</div>
               <select style={{ ...s.input, minWidth: 260 }} value={manualMotoId} onChange={e => setManualMotoId(e.target.value)}>
                 <option value="">Selecione a moto...</option>
-                {motos.map((m: any) => <option key={m.id} value={m.id}>ID {m.id} — {m.marca} {m.modelo} {m.ano || ''}</option>)}
+                {motos.map((m: any) => <option key={m.id} value={m.id}>#{m.id}{prefixoMotos[m.id] ? ` · ${prefixoMotos[m.id]}` : ''} — {m.marca} {m.modelo} {m.ano || ''}</option>)}
               </select>
             </div>
             <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: 'var(--gray-600)', cursor: 'pointer', paddingBottom: 8 }}>

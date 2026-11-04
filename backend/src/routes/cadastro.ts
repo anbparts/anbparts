@@ -17,6 +17,7 @@ import { shopeeReq } from '../lib/shopee-api';
 import { magaluSetPrice, magaluAtualizarConteudoSku, prepararTituloMagalu, trocarTermosSensiveisMagalu } from '../lib/magalu-api';
 import { carregarAnuncioBase } from '../lib/anuncioBase';
 import { validarEtiquetasParaSku, etiquetasDoTexto, criarContextoDivergencias } from '../lib/detranEtiquetasCompradas';
+import { aplicarCategoriaAoFinalizar } from '../lib/sugestaoCategoria';
 
 const CAMPOS_COMPLETOS_WHERE = {
   peso: { not: null as null },
@@ -1382,6 +1383,7 @@ cadastroRouter.post('/:id/finalizar', requireCadastroAction('criar_bling'), asyn
       }
 
       await prisma.cadastroPeca.update({ where: { id }, data: { status: 'cadastrado' } });
+      await aplicarCategoriaAoFinalizar(cadastro); // categoria da Curva ABC automatica (sem IA); nunca trava a finalizacao
       return res.json({ ok: true, restrita: true, pecasCriadas });
     }
 
@@ -1443,6 +1445,7 @@ cadastroRouter.post('/:id/finalizar', requireCadastroAction('criar_bling'), asyn
       }
 
       await prisma.cadastroPeca.update({ where: { id }, data: { status: 'cadastrado' } });
+      await aplicarCategoriaAoFinalizar(cadastro); // categoria da Curva ABC automatica (sem IA); nunca trava a finalizacao
       return res.json({ ok: true, sucata: true, pecasCriadas });
     }
 
@@ -1572,6 +1575,7 @@ cadastroRouter.post('/:id/finalizar', requireCadastroAction('criar_bling'), asyn
       }
 
       await prisma.cadastroPeca.update({ where: { id }, data: { status: 'cadastrado' } });
+      await aplicarCategoriaAoFinalizar(cadastro); // categoria da Curva ABC automatica (sem IA); nunca trava a finalizacao
 
       // Etiqueta avulsa recém-criada precisa de ativação no DETRAN → dispara o e-mail (best-effort).
       const tiposCadastroEtq = await lerTiposEtiqueta(id, true);

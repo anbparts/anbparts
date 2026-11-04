@@ -9,7 +9,9 @@ import { useIsPhone } from '@/lib/use-is-phone';
 type Lado = { qtd: number; bruto: number; liq: number };
 type PecaDet = { id: number; sku: string; descricao: string; vendida: boolean; precoML: number; valorLiq: number; dataVenda: string | null };
 type Segmento = { nome: string; vendidas: Lado; estoque: Lado; pecas: PecaDet[] };
-type MotoResumo = { id: number; nome: string; custo: number; vendidas: Lado; estoque: Lado };
+type MotoResumo = { id: number; prefixo?: string | null; nome: string; custo: number; vendidas: Lado; estoque: Lado };
+// "#12 · KY01 · KYMCO DOWNTOWN 300i 2020": ID + codigo configurado, como na 1a coluna da pagina Motos
+const rotuloMoto = (m: MotoResumo) => `#${m.id}${m.prefixo ? ` · ${m.prefixo}` : ''} · ${m.nome}`;
 type Base = 'vendidas' | 'estoque' | 'total';
 type Metrica = 'bruto' | 'liq';
 type Visao = 'mapa' | 'ranking' | 'comparar';
@@ -228,7 +230,7 @@ export default function MarkupTab({ padding }: { padding: number }) {
           <div style={{ minWidth: isPhone ? '100%' : 280 }}>
             <label style={rotulo}>Moto</label>
             <select style={{ ...entrada, width: '100%' }} value={motoId} onChange={(e) => setMotoId(Number(e.target.value) || 0)}>
-              {motos.map((m) => <option key={m.id} value={m.id}>{m.nome}</option>)}
+              {motos.map((m) => <option key={m.id} value={m.id}>{rotuloMoto(m)}</option>)}
             </select>
           </div>
         )}
@@ -257,7 +259,11 @@ export default function MarkupTab({ padding }: { padding: number }) {
                 const ml = m.custo > 0 ? l.liq / m.custo : null;
                 return (
                   <tr key={m.id} style={{ cursor: 'pointer' }} onClick={() => { setMotoId(m.id); setVisao('mapa'); }} title="Abrir no mapa">
-                    <td style={{ ...td, fontWeight: 700 }}>{m.nome}</td>
+                    <td style={{ ...td, fontWeight: 700 }}>
+                      <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11.5, color: 'var(--gray-500)', fontWeight: 400 }}>#{m.id}</span>
+                      {m.prefixo ? <span style={{ marginLeft: 6, fontFamily: 'JetBrains Mono, monospace', fontSize: 10.5, fontWeight: 700, color: 'var(--blue-600)', background: 'var(--blue-50)', border: '1px solid var(--blue-200)', borderRadius: 4, padding: '1px 5px' }}>{m.prefixo}</span> : null}
+                      <span style={{ marginLeft: 8 }}>{m.nome}</span>
+                    </td>
                     <td style={{ ...td, textAlign: 'right' }}>{brl(m.custo)}</td>
                     <td style={{ ...td, textAlign: 'right' }}>{l.qtd}</td>
                     <td style={{ ...td, textAlign: 'right' }}>{brl(l.bruto)}</td>

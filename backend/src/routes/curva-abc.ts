@@ -302,10 +302,16 @@ curvaAbcRouter.get('/markup', async (req: any, res, next) => {
       const l = p.disponivel ? r.estoque : r.vendidas;
       l.qtd += 1; l.bruto += num(p.precoML); l.liq += num(p.valorLiq);
     }
+    // codigo (prefixo do SKU) configurado pra cada moto, o mesmo que aparece na 1a coluna da pagina Motos
+    const cfgPrefixos: any = await prisma.blingConfig.findFirst({ select: { prefixos: true } }).catch(() => null);
+    const prefixoPorMoto = new Map<number, string>(
+      (Array.isArray(cfgPrefixos?.prefixos) ? cfgPrefixos.prefixos : []).filter((p: any) => p?.motoId && p?.prefixo).map((p: any) => [Number(p.motoId), String(p.prefixo).toUpperCase()] as [number, string]),
+    );
     const lista = motos.map((m) => {
       const r = resumo.get(m.id)!;
       return {
         id: m.id,
+        prefixo: prefixoPorMoto.get(m.id) || null,
         nome: `${m.marca} ${m.modelo}${m.ano ? ` ${m.ano}` : ''}${m.cor ? ` · ${m.cor}` : ''}`,
         custo: num(m.precoCompra),
         vendidas: r.vendidas,
