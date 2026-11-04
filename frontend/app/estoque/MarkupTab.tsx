@@ -140,7 +140,7 @@ export default function MarkupTab({ padding }: { padding: number }) {
     const esquerda = porX.slice(0, metade).sort((a, b) => a.a.y - b.a.y);
     const direita = porX.slice(metade).sort((a, b) => a.a.y - b.a.y);
     const linhas = Math.max(esquerda.length, direita.length, 1);
-    const alturaCard = 66, passo = 78;
+    const alturaCard = 110, passo = 122;
     const altura = Math.max(420, linhas * passo + 24);
     return { esquerda, direita, altura, alturaCard, passo, oy: (altura - 300) / 2 };
   }, [segsVisiveis]);
@@ -152,6 +152,10 @@ export default function MarkupTab({ padding }: { padding: number }) {
     const l = ladoDaBase(s, base);
     const v = valorDe(l, metrica);
     const paga = custo > 0 ? v / custo : 0;
+    // vendido x estoque do segmento (sempre os dois, independente do filtro "Peças"); % sobre o total do segmento
+    const vVend = valorDe(s.vendidas, metrica), vEst = valorDe(s.estoque, metrica);
+    const vSeg = vVend + vEst;
+    const pVend = vSeg > 0 ? vVend / vSeg : 0, pEst = vSeg > 0 ? vEst / vSeg : 0;
     const x = lado === 'e' ? 0 : LARG - LARG_CARD;
     const y = 12 + idx * mapa.passo;
     const sel = s.nome === segSel;
@@ -169,8 +173,14 @@ export default function MarkupTab({ padding }: { padding: number }) {
         <text x={x + 12} y={y + 43} fontSize={18} fontWeight={800} fill="#0f172a">{brl(v)}</text>
         <text x={x + LARG_CARD - 12} y={y + 43} fontSize={12} fontWeight={700} textAnchor="end" fill={corMarkup(paga)}>{custo > 0 ? `paga ${pct(paga)}` : ''}</text>
         <text x={x + 12} y={y + 58} fontSize={11} fill="#64748b">{l.qtd} peça(s) · {totalMetrica > 0 ? pct(v / totalMetrica) : '0%'} da moto</text>
-        <rect x={x + 12} y={y + mapa.alturaCard - 5} width={LARG_CARD - 24} height={3} rx={1.5} fill="#e2e8f0" />
-        <rect x={x + 12} y={y + mapa.alturaCard - 5} width={Math.max(0, Math.min(1, totalMetrica > 0 ? v / totalMetrica : 0)) * (LARG_CARD - 24)} height={3} rx={1.5} fill="#2563eb" />
+        <rect x={x + 12} y={y + 64} width={LARG_CARD - 24} height={3} rx={1.5} fill="#e2e8f0" />
+        <rect x={x + 12} y={y + 64} width={Math.max(0, Math.min(1, totalMetrica > 0 ? v / totalMetrica : 0)) * (LARG_CARD - 24)} height={3} rx={1.5} fill="#2563eb" />
+        <circle cx={x + 16} cy={y + 80} r={3.5} fill="#16a34a" />
+        <text x={x + 24} y={y + 84} fontSize={11} fontWeight={700} fill="#15803d">Vendido {brl(vVend)}</text>
+        <text x={x + LARG_CARD - 12} y={y + 84} fontSize={11} textAnchor="end" fill="#475569">{pct(pVend)} · {s.vendidas.qtd} peça(s)</text>
+        <circle cx={x + 16} cy={y + 98} r={3.5} fill="#2563eb" />
+        <text x={x + 24} y={y + 102} fontSize={11} fontWeight={700} fill="#1d4ed8">Estoque {brl(vEst)}</text>
+        <text x={x + LARG_CARD - 12} y={y + 102} fontSize={11} textAnchor="end" fill="#475569">{pct(pEst)} · {s.estoque.qtd} peça(s)</text>
       </g>
     );
   }
