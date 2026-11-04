@@ -140,7 +140,7 @@ export default function MarkupTab({ padding }: { padding: number }) {
     const esquerda = porX.slice(0, metade).sort((a, b) => a.a.y - b.a.y);
     const direita = porX.slice(metade).sort((a, b) => a.a.y - b.a.y);
     const linhas = Math.max(esquerda.length, direita.length, 1);
-    const alturaCard = 110, passo = 122;
+    const alturaCard = 92, passo = 102;
     const altura = Math.max(420, linhas * passo + 24);
     return { esquerda, direita, altura, alturaCard, passo, oy: (altura - 300) / 2 };
   }, [segsVisiveis]);
@@ -169,18 +169,18 @@ export default function MarkupTab({ padding }: { padding: number }) {
         <path d={`M ${bx} ${by} C ${meio} ${by}, ${meio} ${ay}, ${ax} ${ay}`} fill="none" stroke={cor} strokeWidth={sel ? 2.4 : 1.4} strokeDasharray={sel ? '' : '5 4'} opacity={sel ? 1 : 0.55} markerEnd="url(#ponta)" />
         <circle cx={ax} cy={ay} r={sel ? 6 : 4.5} fill={cor} />
         <rect x={x} y={y} width={LARG_CARD} height={mapa.alturaCard} rx={12} fill={sel ? '#eff6ff' : '#ffffff'} stroke={sel ? '#0f172a' : '#cbd5e1'} strokeWidth={sel ? 2 : 1} />
-        <text x={x + 12} y={y + 20} fontSize={13} fontWeight={700} fill="#0f172a">{s.nome.length > 27 ? s.nome.slice(0, 26) + '…' : s.nome}</text>
-        <text x={x + 12} y={y + 43} fontSize={18} fontWeight={800} fill="#0f172a">{brl(v)}</text>
-        <text x={x + LARG_CARD - 12} y={y + 43} fontSize={12} fontWeight={700} textAnchor="end" fill={corMarkup(paga)}>{custo > 0 ? `paga ${pct(paga)}` : ''}</text>
-        <text x={x + 12} y={y + 58} fontSize={11} fill="#64748b">{l.qtd} peça(s) · {totalMetrica > 0 ? pct(v / totalMetrica) : '0%'} da moto</text>
-        <rect x={x + 12} y={y + 64} width={LARG_CARD - 24} height={3} rx={1.5} fill="#e2e8f0" />
-        <rect x={x + 12} y={y + 64} width={Math.max(0, Math.min(1, totalMetrica > 0 ? v / totalMetrica : 0)) * (LARG_CARD - 24)} height={3} rx={1.5} fill="#2563eb" />
-        <circle cx={x + 16} cy={y + 80} r={3.5} fill="#16a34a" />
-        <text x={x + 24} y={y + 84} fontSize={11} fontWeight={700} fill="#15803d">Vendido {brl(vVend)}</text>
-        <text x={x + LARG_CARD - 12} y={y + 84} fontSize={11} textAnchor="end" fill="#475569">{pct(pVend)} · {s.vendidas.qtd} peça(s)</text>
-        <circle cx={x + 16} cy={y + 98} r={3.5} fill="#2563eb" />
-        <text x={x + 24} y={y + 102} fontSize={11} fontWeight={700} fill="#1d4ed8">Estoque {brl(vEst)}</text>
-        <text x={x + LARG_CARD - 12} y={y + 102} fontSize={11} textAnchor="end" fill="#475569">{pct(pEst)} · {s.estoque.qtd} peça(s)</text>
+        <text x={x + 12} y={y + 16} fontSize={12} fontWeight={700} fill="#0f172a">{s.nome.length > 27 ? s.nome.slice(0, 26) + '…' : s.nome}</text>
+        <text x={x + 12} y={y + 35} fontSize={16} fontWeight={800} fill="#0f172a">{brl(v)}</text>
+        <text x={x + LARG_CARD - 12} y={y + 35} fontSize={11} fontWeight={700} textAnchor="end" fill={corMarkup(paga)}>{custo > 0 ? `paga ${pct(paga)}` : ''}</text>
+        <text x={x + 12} y={y + 48} fontSize={10} fill="#64748b">{l.qtd} peça(s) · {totalMetrica > 0 ? pct(v / totalMetrica) : '0%'} da moto</text>
+        <rect x={x + 12} y={y + 54} width={LARG_CARD - 24} height={3} rx={1.5} fill="#e2e8f0" />
+        <rect x={x + 12} y={y + 54} width={Math.max(0, Math.min(1, totalMetrica > 0 ? v / totalMetrica : 0)) * (LARG_CARD - 24)} height={3} rx={1.5} fill="#2563eb" />
+        <circle cx={x + 16} cy={y + 68} r={3.5} fill="#16a34a" />
+        <text x={x + 24} y={y + 72} fontSize={10} fontWeight={700} fill="#15803d">Vendido {brl(vVend)}</text>
+        <text x={x + LARG_CARD - 12} y={y + 72} fontSize={10} textAnchor="end" fill="#475569">{pct(pVend)} · {s.vendidas.qtd} peça(s)</text>
+        <circle cx={x + 16} cy={y + 82} r={3.5} fill="#2563eb" />
+        <text x={x + 24} y={y + 86} fontSize={10} fontWeight={700} fill="#1d4ed8">Estoque {brl(vEst)}</text>
+        <text x={x + LARG_CARD - 12} y={y + 86} fontSize={10} textAnchor="end" fill="#475569">{pct(pEst)} · {s.estoque.qtd} peça(s)</text>
       </g>
     );
   }
