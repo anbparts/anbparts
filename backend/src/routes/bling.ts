@@ -7481,6 +7481,10 @@ blingRouter.post('/pedido-separacao', async (req, res, next) => {
       : [];
     if (!pedidoIds.length) return res.status(400).json({ ok: false, error: 'pedidoIds obrigatorio' });
 
+    const jaSeparados = await prisma.blingPedidoSeparacao.findMany({ where: { pedidoId: { in: pedidoIds } }, select: { pedidoId: true } });
+    const jaSet = new Set(jaSeparados.map((r) => String(r.pedidoId)));
+    const pedidoIdsNovos = pedidoIds.filter((id) => !jaSet.has(String(id)));
+
     await prisma.$transaction(
       pedidoIds.map((pedidoId: bigint) =>
         prisma.blingPedidoSeparacao.upsert({
@@ -7492,7 +7496,9 @@ blingRouter.post('/pedido-separacao', async (req, res, next) => {
     );
 
     // Separou (PDF gerado ou marcado como separado): agenda a conferencia de estoque dos SKUs desses pedidos em todos os canais.
-    try { await agendarVerificacaoPosSeparacao(pedidoIds); } catch (e: any) { console.error('[separacao] nao foi possivel agendar a verificacao:', e?.message || e); }
+    // "migracao" = frontend reenviando status antigo do localStorage: so registra, nao audita.
+    // Tambem so audita pedidos que ainda nao estavam separados (nao reagenda quem ja tinha separadoEm).
+    try { if (!req.body?.migracao && pedidoIdsNovos.length) await agendarVerificacaoPosSeparacao(pedidoIdsNovos); } catch (e: any) { console.error('[separacao] nao foi possivel agendar a verificacao:', e?.message || e); }
 
     res.json({ ok: true });
   } catch (e) {

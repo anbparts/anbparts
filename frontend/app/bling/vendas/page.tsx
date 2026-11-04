@@ -775,7 +775,7 @@ export default function VendasBlingPage() {
                     method: 'POST',
                     credentials: 'include',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ pedidoIds: idsNoLocalStorage.map(Number) }),
+                    body: JSON.stringify({ pedidoIds: idsNoLocalStorage.map(Number), migracao: true }),
                   }).catch(() => {});
                 }
 
