@@ -280,9 +280,10 @@ curvaAbcRouter.get('/relatorio', async (req, res, next) => {
 // Sem motoId devolve so o resumo das motos (comparativo); com motoId devolve tambem os segmentos com as pecas.
 curvaAbcRouter.get('/markup', async (req: any, res, next) => {
   try {
-    if (String(req.authUser?.username || '').trim().toLowerCase() !== 'bruno') {
-      return res.status(403).json({ ok: false, error: 'Aba disponivel somente para o Bruno.' });
-    }
+    const u = req.authUser || {};
+    const permEstoque = u.permissions?.estoque;
+    const liberado = String(u.username || '').trim().toLowerCase() === 'bruno' || Boolean(u.isAdmin) || (Array.isArray(permEstoque) && permEstoque.includes('markup'));
+    if (!liberado) return res.status(403).json({ ok: false, error: 'Seu usuario nao tem permissao para a aba Markup.' });
     const motoId = Number(req.query?.motoId) || 0;
     const num = (v: any) => Number(v) || 0;
     type Lado = { qtd: number; bruto: number; liq: number };

@@ -3192,6 +3192,7 @@ export default function EstoquePage() {
   const canTrocarFotoCapa = canProcessAction(user, 'estoque', 'trocar_foto');
   const canImpressaoCaixa = canProcessAction(user, 'estoque', 'impressao_caixa');
   const canDevolucoes = canProcessAction(user, 'estoque', 'devolucoes');
+  const canMarkup = canProcessAction(user, 'estoque', 'markup'); // Bruno/admin sempre; os demais pela permissao "Markup" do perfil
   const [abaEstoque, setAbaEstoque] = usePersistentTab<'estoque' | 'devolucoes' | 'historico_preco' | 'markup'>('aba', 'estoque', ['estoque', 'devolucoes', 'historico_preco', 'markup'] as const);
   const colStorageKey = getColumnStorageKey(user?.username);
   const [data, setData] = useState<any>({ total: 0, totalDisp: 0, totalVend: 0, totalEtiquetas: 0, data: [] });
@@ -4207,8 +4208,8 @@ export default function EstoquePage() {
           </button>}
         </div>
       </div>
-      <TabsBar tabs={[{ id: 'estoque', label: 'Estoque' }, ...(canDevolucoes || canEditarPeca ? [{ id: 'devolucoes', label: 'Devoluções' }] : []), ...(canEditarPeca ? [{ id: 'historico_preco', label: 'Histórico Preço' }] : []), ...(isBruno ? [{ id: 'markup', label: 'Markup' }] : [])]} active={abaEstoque} onChange={(id) => setAbaEstoque(id as 'estoque' | 'devolucoes' | 'historico_preco' | 'markup')} />
-      {abaEstoque === 'devolucoes' && (canDevolucoes || canEditarPeca) ? <DevolucoesTab padding={pagePadding} /> : abaEstoque === 'historico_preco' && canEditarPeca ? <HistoricoPrecoTab padding={pagePadding} skuInicial={historicoPrecoSkuInicial} /> : abaEstoque === 'markup' && isBruno ? <MarkupTab padding={pagePadding} /> : (
+      <TabsBar tabs={[{ id: 'estoque', label: 'Estoque' }, ...(canDevolucoes || canEditarPeca ? [{ id: 'devolucoes', label: 'Devoluções' }] : []), ...(canEditarPeca ? [{ id: 'historico_preco', label: 'Histórico Preço' }] : []), ...(canMarkup ? [{ id: 'markup', label: 'Markup' }] : [])]} active={abaEstoque} onChange={(id) => setAbaEstoque(id as 'estoque' | 'devolucoes' | 'historico_preco' | 'markup')} />
+      {abaEstoque === 'devolucoes' && (canDevolucoes || canEditarPeca) ? <DevolucoesTab padding={pagePadding} /> : abaEstoque === 'historico_preco' && canEditarPeca ? <HistoricoPrecoTab padding={pagePadding} skuInicial={historicoPrecoSkuInicial} /> : abaEstoque === 'markup' && canMarkup ? <MarkupTab padding={pagePadding} /> : (
       <div style={{ padding: pagePadding }}>
         {/* Seletor de colunas */}
         {colSelectorOpen && (

@@ -87,9 +87,9 @@ export default function MarkupTab({ padding }: { padding: number }) {
   const [segmentos, setSegmentos] = useState<Segmento[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
-  const [base, setBase] = useState<Base>('vendidas');
+  const [base, setBase] = useState<Base>('total');
   const [metrica, setMetrica] = useState<Metrica>('bruto');
-  const [visao, setVisao] = useState<Visao>('mapa');
+  const [visao, setVisao] = useState<Visao>('comparar');
   const [segSel, setSegSel] = useState('');
 
   useEffect(() => {

@@ -87,6 +87,7 @@ const PAGE_HELP: Record<string, string> = {
     'Trocar foto capa: libera importar/trocar foto capa da peca.',
     'Impressao caixa: libera imprimir etiquetas termicas das caixas.',
     'Devolucoes: libera historico e registro de devolucoes.',
+    'Markup: libera a aba Markup (custo de compra das motos e markup por segmento).',
   ].join('\n'),
 };
 

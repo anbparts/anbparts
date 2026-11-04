@@ -35,6 +35,7 @@ export const APP_PERMISSION_CATALOG: AppPagePermission[] = [
     { key: 'trocar_foto', label: 'Trocar foto capa', description: 'Libera importar ou trocar a foto capa da peca.' },
     { key: 'impressao_caixa', label: 'Impressao caixa', description: 'Libera o botao Impressao Caixa para imprimir etiquetas termicas das caixas.' },
     { key: 'devolucoes', label: 'Devolucoes', description: 'Libera historico e registro de devolucoes de venda.' },
+    { key: 'markup', label: 'Markup', description: 'Libera a aba Markup (markup por moto e segmento, com custo de compra e valores de venda).' },
   ] },
   { key: 'inventario', label: 'Inventario', href: '/inventario', actions: [
     { key: 'criar', label: 'Criar inventario' },
