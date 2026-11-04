@@ -22,6 +22,7 @@ import { cancelarVendaComDevolucaoEtiqueta } from '../lib/cancelamento-venda';
 import { getMercadoLivreItemPermalink } from '../lib/mercado-livre';
 import { getNuvemshopStatusBySkus, buildNuvemshopCatalogMap, NuvemshopAnuncioStatus } from '../lib/nuvemshop';
 import { buscarEstoqueShopee, consultarEstoqueMagalu, skusComAnuncioMagalu, AnuncioEstoque } from '../lib/auditoria-marketplaces';
+import { magaluSetStock } from '../lib/magalu-api';
 import { Conferencia, carregarAgendamentos, salvarAgendamentos, aplicarVerificar, intervaloDoPeriodo, descreverPeriodo, descreverVerificar, proximaExecucao } from '../lib/auditoria-agendamentos';
 import { spDayStart, spDayEnd } from '../lib/timezone';
 
@@ -3371,6 +3372,7 @@ async function compareProdutosBlingCodes(
     suppressMarketplaceErrors?: boolean;
     auditarShopee?: boolean;
     auditarMagalu?: boolean;
+    corrigirMagalu?: boolean; // zera o estoque do anuncio Magalu quando essa e a unica divergencia do SKU (so auditorias automaticas)
     traceSkus?: Set<string> | string[];
     onProgress?: (payload: { totalParaProcessar: number; totalProcessados: number; fase: string }) => Promise<void> | void;
   },
@@ -3900,6 +3902,32 @@ async function compareProdutosBlingCodes(
 
     await emitProgress({ totalProcessados: totalParaProcessar, fase: 'Concluido' });
 
+    // Correcao automatica (so auditorias automaticas): SKU cuja UNICA divergencia e "anuncio Magalu ativo sem estoque" (ANB e Bling zerados,
+    // o Bling nao baixou o Magalu) tem o estoque do anuncio zerado direto na API do Magalu. So zera, nunca aumenta. A divergencia continua
+    // na lista, marcada como corrigida, pra aparecer no e-mail/tela. Qualquer outra divergencia no SKU = nao mexe.
+    if (options?.corrigirMagalu) {
+      const porSku = new Map<string, any[]>();
+      for (const d of divergencias) { const k = String(d.sku || ''); if (!porSku.has(k)) porSku.set(k, []); porSku.get(k)!.push(d); }
+      let tentativas = 0;
+      for (const [sku, lista] of Array.from(porSku.entries())) {
+        if (lista.length !== 1 || lista[0].tipo !== 'magalu_anuncio_ativo_sem_estoque' || tentativas >= 50) continue;
+        tentativas += 1;
+        const d = lista[0];
+        const antes = Number(d.estoqueMarketplace || 0);
+        try {
+          await magaluSetStock(sku, 0);
+          d.corrigidoAutomaticamente = true;
+          d.titulo = `${d.titulo} — corrigido automaticamente`;
+          d.detalhe = `${d.detalhe} O estoque do anúncio no Magalu foi zerado automaticamente (tinha ${antes}).`;
+          console.log(`[auditoria] Magalu ${sku}: estoque ${antes} -> 0 (corrigido automaticamente)`);
+        } catch (e: any) {
+          d.detalhe = `${d.detalhe} Tentativa de zerar automaticamente no Magalu falhou: ${String(e?.message || e).slice(0, 160)}`;
+          console.error(`[auditoria] falha ao zerar estoque Magalu ${sku}:`, e?.message || e);
+        }
+        await new Promise((r) => setTimeout(r, 400));
+      }
+    }
+
     // Injeta dados Nuvemshop em todas as divergências para exibição no email/tela
     if (options?.nuvemshopAtiva) {
       for (const div of divergencias) {
@@ -3974,7 +4002,7 @@ function buildAuditoriaTraceResumo(
   );
 }
 
-async function runTraceSkuComparison(rawSkus: any, rawMotoId: any, onProgress?: (payload: { totalParaProcessar: number; totalProcessados: number; fase: string }) => Promise<void> | void, canais?: { nuvemshop?: boolean; shopee?: boolean; magalu?: boolean }) {
+async function runTraceSkuComparison(rawSkus: any, rawMotoId: any, onProgress?: (payload: { totalParaProcessar: number; totalProcessados: number; fase: string }) => Promise<void> | void, canais?: { nuvemshop?: boolean; shopee?: boolean; magalu?: boolean; corrigirMagalu?: boolean }) {
   const cfg = await getConfig();
   const traceSkuSet = buildAuditoriaTraceSkuSet(rawSkus);
   const motoId = Number(rawMotoId) || 0;
@@ -4051,6 +4079,7 @@ async function runTraceSkuComparison(rawSkus: any, rawMotoId: any, onProgress?: 
     nuvemshopLojaId: cfg.nuvemshopLojaId,
     auditarShopee: canais?.shopee,
     auditarMagalu: canais?.magalu,
+    corrigirMagalu: canais?.corrigirMagalu,
     suppressMarketplaceErrors: true,
     batchSize: Math.max(10, Math.min(cfg.consultaManualTamanhoLote, codigosParaComparar.length || 1)),
     pauseMs: cfg.consultaManualPausaMs,
@@ -4881,6 +4910,7 @@ async function executeAuditoriaAutomatica(origem: 'manual' | 'auto' = 'manual') 
       nuvemshopLojaId: cfg.nuvemshopLojaId,
       auditarShopee: verificarMadrugada.shopee !== 'desligado',
       auditarMagalu: verificarMadrugada.magalu !== 'desligado',
+      corrigirMagalu: verificarMadrugada.magalu !== 'desligado',
       batchSize: cfg.auditoriaTamanhoLote,
       pauseMs: cfg.auditoriaPausaMs,
       traceSkus: traceSkuSet,
@@ -4994,7 +5024,7 @@ async function executeAuditoriaRapida(origem: 'manual' | 'auto' | 'mes' = 'manua
     };
     await salvarProgresso({ totalParaProcessar: skus.length, totalProcessados: 0, fase: `Conferindo ${skus.length} SKU(s) vendidos` });
     const bruto: any = skus.length
-      ? (await runTraceSkuComparison(skus, null, salvarProgresso, { nuvemshop: cfg.nuvemshopAtiva && verificar.nuvemshop !== 'desligado', shopee: verificar.shopee !== 'desligado', magalu: verificar.magalu !== 'desligado' })).resultado
+      ? (await runTraceSkuComparison(skus, null, salvarProgresso, { nuvemshop: cfg.nuvemshopAtiva && verificar.nuvemshop !== 'desligado', shopee: verificar.shopee !== 'desligado', magalu: verificar.magalu !== 'desligado', corrigirMagalu: verificar.magalu !== 'desligado' })).resultado
       : null;
     const base = aplicarVerificar(bruto || { ok: true, totalConsultados: 0, totalDivergencias: 0, totalSemDivergencia: 0, divergencias: [], warnings: [] }, verificar);
     const { resultado, resumoPedidosAbertos } = await aplicarFiltroPedidosAbertosAuditoria(base);
@@ -5102,7 +5132,7 @@ async function executeVerificacaoPosCancelamento(skus: string[], pedidos: string
         data: { resumo: JSON.parse(JSON.stringify({ progresso: { totalParaProcessar: Math.max(skus.length, Number(p.totalParaProcessar) || 0), totalProcessados: Number(p.totalProcessados) || 0, fase: p.fase, atualizadoEm: new Date().toISOString() }, verificacaoAutomatica: { motivo, pedidos, skus } })) },
       }).catch(() => undefined);
     };
-    const bruto: any = (await runTraceSkuComparison(skus, null, salvarProgresso, { nuvemshop: cfg.nuvemshopAtiva, shopee: true, magalu: true })).resultado;
+    const bruto: any = (await runTraceSkuComparison(skus, null, salvarProgresso, { nuvemshop: cfg.nuvemshopAtiva, shopee: true, magalu: true, corrigirMagalu: true })).resultado;
     const base = aplicarVerificar(bruto || { ok: true, totalConsultados: 0, totalDivergencias: 0, totalSemDivergencia: 0, divergencias: [], warnings: [] }, verificar);
     const { resultado, resumoPedidosAbertos } = await aplicarFiltroPedidosAbertosAuditoria(base);
     const resumo: any = JSON.parse(JSON.stringify({
