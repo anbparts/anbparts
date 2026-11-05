@@ -2,7 +2,7 @@
 
 import type { ComponentType } from 'react';
 import { useAuth } from '@/lib/auth';
-import { canAccessPage } from '@/lib/permissions';
+import { canAccessPage, canProcessAction } from '@/lib/permissions';
 import { useIsPhone } from '@/lib/use-is-phone';
 import { usePersistentTab } from '@/lib/use-persistent-tab';
 import TabsBar from '@/components/ui/TabsBar';
@@ -12,6 +12,7 @@ import FaturamentoGeralPage from '../faturamento/geral/page';
 import DREPage from '../dre/page';
 import CurvaAbcPage from '../curva-abc/page';
 import RelatorioVendasPage from '../bling/relatorio-vendas/page';
+import MarkupTab from '../estoque/MarkupTab';
 
 // Relatorios (Financeiro): reune, em abas, os relatorios financeiros. Cada aba e' a pagina original inteira (com as abas e botoes que ela ja tem).
 // O acesso de cada aba segue o perfil da pagina original.
@@ -24,12 +25,20 @@ const ABAS: Aba[] = [
   { id: 'dre', label: 'DRE', href: '/dre', Pagina: DREPage },
   { id: 'curva-abc', label: 'Curva ABC', href: '/curva-abc', Pagina: CurvaAbcPage },
   { id: 'relatorio-vendas', label: 'Relatório de Vendas', href: '/bling/relatorio-vendas', Pagina: RelatorioVendasPage },
+  { id: 'markup', label: 'Markup', href: '', Pagina: MarkupAba },
 ];
+
+function MarkupAba() {
+  const isPhone = useIsPhone();
+  return <MarkupTab padding={isPhone ? 14 : 28} />;
+}
 
 export default function RelatoriosPage() {
   const { user } = useAuth();
   const isPhone = useIsPhone();
-  const visiveis = ABAS.filter((a) => canAccessPage(user as any, a.href));
+  // Markup nao e' pagina propria: segue a permissao "Markup" (em Estoque) do perfil; Bruno/admin sempre
+  const canMarkup = canProcessAction(user as any, 'estoque', 'markup');
+  const visiveis = ABAS.filter((a) => (a.id === 'markup' ? canMarkup : canAccessPage(user as any, a.href)));
   // chave "rel": as paginas de dentro usam "aba" para as proprias abas internas
   const [rel, setRel] = usePersistentTab<string>('rel', ABAS[0].id, ABAS.map((a) => a.id));
   const atual = visiveis.find((a) => a.id === rel) || visiveis[0];
@@ -58,7 +67,7 @@ export default function RelatoriosPage() {
       <div style={{ minHeight: 'var(--topbar-h)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: isPhone ? '12px 14px' : '10px 28px', background: 'var(--white)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, zIndex: 60, gap: 12, flexWrap: 'wrap' }}>
         <div>
           <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)', letterSpacing: '-0.3px' }}>Relatórios</div>
-          <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>Despesas x receita, faturamento, DRE, curva ABC e vendas</div>
+          <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>Despesas x receita, faturamento, DRE, curva ABC, vendas e markup</div>
         </div>
       </div>
       {visiveis.length ? (
