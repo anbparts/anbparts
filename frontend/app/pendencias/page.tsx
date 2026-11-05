@@ -78,19 +78,39 @@ function RecebimentosTab() {
 
   const pagePadding = isPhone ? 14 : 28;
 
+  // Filtro por cliente: lista so os clientes que aparecem na aba atual; o resumo (pedidos / valor) acompanha o filtro
+  const [clienteFiltro, setClienteFiltro] = useState('');
+  const nomeDoCliente = (l: Linha) => String(l.pedido.nomeCliente || '').trim() || '(sem nome)';
+  const clientesLista = Array.from(new Set<string>(linhas.map(nomeDoCliente))).sort((a: string, b: string) => a.localeCompare(b, 'pt-BR'));
+  const filtroAtivo = !!clienteFiltro && clientesLista.includes(clienteFiltro);
+  const linhasVis = filtroAtivo ? linhas.filter((l) => nomeDoCliente(l) === clienteFiltro) : linhas;
+  const resumoVis = filtroAtivo
+    ? { pedidos: linhasVis.length, valorLiq: linhasVis.reduce((acc, l) => acc + Number(l.pedido.subtotalValorLiq || 0), 0) }
+    : resumo;
+
   return (
     <>
       <div style={{ padding: isPhone ? '12px 14px 0' : '16px 28px 0', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         {([['pendente', 'Pendentes'], ['baixado', 'Baixados']] as Array<['pendente' | 'baixado', string]>).map(([id, rotulo]) => (
           <button key={id} type="button" onClick={() => setAba(id)} style={{ border: '1px solid ' + (aba === id ? 'var(--gray-800)' : 'var(--border)'), background: aba === id ? 'var(--gray-800)' : 'var(--white)', color: aba === id ? '#fff' : 'var(--gray-600)', borderRadius: 999, padding: '6px 14px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>{rotulo}</button>
         ))}
+        <select
+          value={filtroAtivo ? clienteFiltro : ''}
+          onChange={(e) => setClienteFiltro(e.target.value)}
+          title="Filtrar pelos clientes listados"
+          style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '6px 10px', fontSize: 12.5, background: 'var(--white)', color: 'var(--gray-700)', maxWidth: isPhone ? '100%' : 280 }}
+        >
+          <option value="">Todos os clientes ({clientesLista.length})</option>
+          {clientesLista.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+        {filtroAtivo ? <button type="button" onClick={() => setClienteFiltro('')} style={{ border: '1px solid var(--border)', background: 'var(--white)', color: 'var(--gray-600)', borderRadius: 8, padding: '6px 10px', fontSize: 12.5, cursor: 'pointer' }}>Limpar filtro</button> : null}
         <span style={{ fontSize: 12, color: 'var(--gray-400)', alignSelf: 'center' }}>Pedidos marcados no Relatório de Vendas que aguardam o recebimento</span>
       </div>
 
       <div style={{ padding: pagePadding, maxWidth: 1250 }}>
         <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr 1fr' : 'repeat(auto-fit, minmax(190px, 240px))', gap: 12, marginBottom: 14 }}>
-          <div style={{ ...s.card, padding: '12px 16px', marginBottom: 0 }}><div style={{ fontSize: 11.5, color: 'var(--gray-500)' }}>{aba === 'pendente' ? 'Pedidos pendentes' : 'Pedidos baixados'}</div><div style={{ fontSize: 22, fontWeight: 700 }}>{resumo.pedidos}</div></div>
-          <div style={{ ...s.card, padding: '12px 16px', marginBottom: 0 }}><div style={{ fontSize: 11.5, color: 'var(--gray-500)' }}>{aba === 'pendente' ? 'A receber (líquido)' : 'Recebido (líquido)'}</div><div style={{ fontSize: 22, fontWeight: 700, color: aba === 'pendente' ? '#c2410c' : 'var(--green)' }}>{fmtMoney(resumo.valorLiq)}</div></div>
+          <div style={{ ...s.card, padding: '12px 16px', marginBottom: 0 }}><div style={{ fontSize: 11.5, color: 'var(--gray-500)' }}>{aba === 'pendente' ? 'Pedidos pendentes' : 'Pedidos baixados'}</div><div style={{ fontSize: 22, fontWeight: 700 }}>{resumoVis.pedidos}</div></div>
+          <div style={{ ...s.card, padding: '12px 16px', marginBottom: 0 }}><div style={{ fontSize: 11.5, color: 'var(--gray-500)' }}>{aba === 'pendente' ? 'A receber (líquido)' : 'Recebido (líquido)'}</div><div style={{ fontSize: 22, fontWeight: 700, color: aba === 'pendente' ? '#c2410c' : 'var(--green)' }}>{fmtMoney(resumoVis.valorLiq)}</div></div>
         </div>
 
         {carregando ? <div style={{ fontSize: 13, color: 'var(--gray-400)', padding: 12 }}>Carregando...</div> : null}
@@ -101,7 +121,7 @@ function RecebimentosTab() {
           </div>
         ) : null}
 
-        {linhas.map((l) => {
+        {linhasVis.map((l) => {
           const p = l.pedido;
           const m = l.marcacao;
           return (

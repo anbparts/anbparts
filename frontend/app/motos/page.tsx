@@ -1933,6 +1933,51 @@ function ContratosTab({ viewportMode }: { viewportMode: MotosViewportMode }) {
 
   const pagePadding = isPhone ? 14 : 28;
 
+  // Copia (memoria/area de transferencia) o texto pronto p/ mandar ao vendedor: dados que o contrato precisa + documentos a enviar.
+  const [infoCopiada, setInfoCopiada] = useState(false);
+  async function copiarInformacoesContrato() {
+    const texto = [
+      'Para redigirmos o contrato de compra e venda, precisamos das informações abaixo:',
+      '',
+      'DADOS DO VENDEDOR',
+      '- Nome completo:',
+      '- CPF:',
+      '- RG:',
+      '- Órgão emissor:',
+      '- Data de nascimento:',
+      '- Estado civil:',
+      '- Profissão:',
+      '- Telefone:',
+      '- E-mail:',
+      '- Endereço completo (rua, número, complemento):',
+      '- Bairro:',
+      '- CEP:',
+      '- Cidade / UF:',
+      '',
+      'DOCUMENTOS (enviar foto legível ou PDF)',
+      '- Documento do Veículo (CRLV / CRV)',
+      '- CNH',
+    ].join('\n');
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(texto);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = texto;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        textarea.remove();
+      }
+      setInfoCopiada(true);
+      setTimeout(() => setInfoCopiada(false), 2000);
+    } catch {
+      alert('Nao foi possivel copiar as informacoes.');
+    }
+  }
+
   if (!canContratosMoto) {
     return (
       <div style={{ padding: pagePadding }}>
@@ -1955,12 +2000,21 @@ function ContratosTab({ viewportMode }: { viewportMode: MotosViewportMode }) {
               — {contratos.length} registro{contratos.length !== 1 ? 's' : ''}
             </span>
           </div>
-          <button
-            onClick={() => { setEditando(null); setModalOpen(true); }}
-            style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)', justifyContent: 'center' }}
-          >
-            + Novo Contrato
-          </button>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button
+              onClick={copiarInformacoesContrato}
+              title="Copia para a area de transferencia o texto com os dados necessarios para redigir o contrato e a solicitacao de documentos"
+              style={{ ...cs.btn, background: 'var(--white)', color: 'var(--ink)', border: '1px solid var(--border)', justifyContent: 'center' }}
+            >
+              {infoCopiada ? '✓ Copiado!' : 'Informações'}
+            </button>
+            <button
+              onClick={() => { setEditando(null); setModalOpen(true); }}
+              style={{ ...cs.btn, background: 'var(--ink)', color: 'var(--white)', justifyContent: 'center' }}
+            >
+              + Novo Contrato
+            </button>
+          </div>
         </div>
 
         {/* Listagem */}
