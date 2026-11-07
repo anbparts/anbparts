@@ -7906,6 +7906,7 @@ export async function montarItensSyncVendas(dataInicio: string, dataFim: string,
               valorLiq: valorLiqUnitario[unitIndex] || roundMoney(precoVenda),
               encontrada: !!pecaCancelada,
               baixaVinculada: !!pecaCancelada,
+              semNotaSaida: pedidoSemNotaSaida(pedido),
               jaVendida: false,
               jaEstornada: false,
               pecaId: pecaCancelada?.id || null,
@@ -8125,6 +8126,15 @@ export function startImportacaoVendasAutomatica() {
 
 blingRouter.get('/importacao-automatica/status', (_req, res) => { res.json({ ok: true, ...importacaoVendasAutoStatus }); });
 
+// Cancelamento SEM nota fiscal de saida emitida = cancelamento normal (a peca nunca saiu): nao e devolucao.
+// O pedido de venda do Bling traz notaFiscal.id quando ha NF vinculada; sem NF o id vem 0/ausente.
+function pedidoSemNotaSaida(pedido: any): boolean {
+  if (!pedido || typeof pedido !== 'object') return false;
+  const nf: any = pedido.notaFiscal;
+  const idNf = Number(nf?.id ?? nf ?? 0);
+  return !(Number.isFinite(idNf) && idNf > 0);
+}
+
 blingRouter.post('/aprovar-cancelamento', async (req, res, next) => {
   try {
     const { pecaId, pecaIds } = req.body;
@@ -8137,13 +8147,44 @@ blingRouter.post('/aprovar-cancelamento', async (req, res, next) => {
     const defaults = getProdutoDefaults(cfg);
     const peca = await prisma.peca.findFirst({
       where: { id: { in: ids } },
-      select: { id: true, precoML: true },
+      select: { id: true, precoML: true, blingPedidoId: true },
     });
 
     if (!peca) return res.status(404).json({ error: 'Peca nao encontrada' });
 
     const precoML = toNumber(peca.precoML);
     const financials = calculateFinancials(precoML, defaults.fretePadrao, defaults.taxaPadraoPct);
+
+    // Confere no Bling (nao confia so na tela) se o pedido tem NF de saida. Sem NF = cancelamento normal. Se a consulta falhar, segue o fluxo antigo (devolucao).
+    let semNotaSaida = false;
+    try {
+      if (peca.blingPedidoId) {
+        const det = await blingReq(`/pedidos/vendas/${peca.blingPedidoId}`) as any;
+        semNotaSaida = pedidoSemNotaSaida(det?.data);
+      }
+    } catch (e: any) { console.error('[cancelamento] nao foi possivel conferir a NF de saida:', e?.message || e); }
+
+    if (semNotaSaida) {
+      // Cancelamento normal: a peca volta ao estoque na hora, sem passar por Pendencias > Devolucoes e sem mexer no estoque do Bling
+      // (o proprio Bling ja devolveu a unidade ao saldo ao cancelar o pedido; saldo do Bling e do sistema continuam iguais).
+      const resultSimples = await cancelarVendaComDevolucaoEtiqueta(ids, {
+        observacoes: 'Cancelamento de venda sem nota fiscal de saida (nao e devolucao).',
+        cancelamentoSimples: true,
+        resolveFinancials: () => ({
+          valorFrete: defaults.fretePadrao,
+          valorTaxas: financials.taxaValor,
+          valorLiq: financials.valorLiq,
+        }),
+      });
+      try { await agendarVerificacaoPosCancelamento(ids); } catch (e: any) { console.error('[cancelamento] nao foi possivel agendar a verificacao:', e?.message || e); }
+      return res.json({
+        ok: true, ids, defaults, semNotaSaida: true,
+        devolucoesCriadas: resultSimples.devolucoesCriadas,
+        etiquetasPendentes: resultSimples.etiquetasPendentes,
+        avisoBling: null,
+        ajusteBling: null,
+      });
+    }
 
     const result = await cancelarVendaComDevolucaoEtiqueta(ids, {
       observacoes: 'Cancelamento de venda aprovado pela tela Vendas Bling.',

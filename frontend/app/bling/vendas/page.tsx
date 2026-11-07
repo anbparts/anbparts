@@ -62,6 +62,7 @@ type Item = {
   valorLiq: number;
   encontrada: boolean;
   baixaVinculada?: boolean;
+  semNotaSaida?: boolean;
   jaVendida: boolean;
   jaEstornada: boolean;
   pecaId: number | null;
@@ -1655,12 +1656,14 @@ export default function VendasBlingPage() {
                     {item.quantidade > 1 && <span style={{ fontSize: 11, background: '#fee2e2', color: '#b91c1c', padding: '2px 8px', borderRadius: 5, fontWeight: 600 }}>{item.quantidade}x</span>}
                     <span style={{ fontSize: 11, background: '#fee2e2', color: '#b91c1c', padding: '2px 8px', borderRadius: 5 }}>{item.statusLabel}</span>
                     {item.moto && <span style={{ color: 'var(--gray-500)', fontSize: 12 }}>{item.moto}</span>}
+                    {item.semNotaSaida && <span style={{ fontSize: 11, background: '#ecfdf5', color: '#047857', padding: '2px 8px', borderRadius: 5, fontWeight: 700 }}>Sem NF de saída</span>}
                   </div>
 
                   <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--gray-800)', marginBottom: 10 }}>{item.descricao}</div>
                   <div style={{ fontSize: 12, color: 'var(--gray-500)', lineHeight: 1.7, marginBottom: 12 }}>
-                    Ao aprovar o cancelamento, a peca volta para o estoque, a data da venda e removida e os valores
-                    financeiros voltam para os padroes configurados em Config. Produtos.
+                    {item.semNotaSaida
+                      ? 'Pedido sem nota fiscal de saida: cancelamento normal (nao e devolucao). Ao aprovar, a peca volta direto para o estoque, sem passar por Pendencias > Devolucoes, e o estoque do Bling nao e alterado. A data da venda e removida e os valores voltam para os padroes de Config. Produtos.'
+                      : 'Ao aprovar o cancelamento, a peca fica em revisao (Pendencias > Devolucoes) ate ser liberada, a data da venda e removida e os valores financeiros voltam para os padroes configurados em Config. Produtos.'}
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 14 }}>

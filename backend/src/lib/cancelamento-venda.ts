@@ -13,6 +13,8 @@ type CancelamentoOptions = {
   observacoes?: string;
   // Cancelamento importado do Bling: os valores da venda sao estornados, mas a peca NAO volta ao estoque; fica "Em Revisao" ate ser liberada em Pendencias > Devolucoes
   enviarParaRevisao?: boolean;
+  // Cancelamento normal (pedido sem NF de saida): a peca nunca saiu; volta ao estoque, sem devolucao. A etiqueta DETRAN so e reposta se ja tinha sido baixada.
+  cancelamentoSimples?: boolean;
   resolveFinancials?: (peca: any) => FinancialUpdate;
 };
 
@@ -90,7 +92,9 @@ export async function cancelarVendaComDevolucaoEtiqueta(ids: number[], options: 
     let etiquetasPendentes = 0;
 
     for (const peca of pecas) {
-      const precisaReporEtiqueta = hasDetranParaRepor(peca);
+      const precisaReporEtiqueta = options.cancelamentoSimples
+        ? Boolean(peca?.detranBaixada || peca?.detranBaixadaAt)
+        : hasDetranParaRepor(peca);
       const vendaCancelavel = hasVendaParaCancelar(peca);
       const deveReporEtiqueta = vendaCancelavel && precisaReporEtiqueta;
 
