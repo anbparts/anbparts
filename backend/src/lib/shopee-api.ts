@@ -448,12 +448,68 @@ export type ShopeeAtributoObrigatorio = {
 export type ShopeeAtributoEscolhido = { attribute_id: number; value_id: number; original_value_name: string };
 
 // Resposta CRUA de get_attributes (lanca erro se a Shopee recusar). Sem "language": nomes em ingles, os mesmos das mensagens de erro do add_item.
-export async function shopeeListaAtributosBrutos(categoryId: number): Promise<any[]> {
-  const payload = await shopeeReq(`/api/v2/product/get_attributes?category_id=${categoryId}`);
-  return payload?.response?.attribute_list || [];
+// Confirmado em producao: o atributo "Contains Bluetooth, Wireless and/or RF Technology" (categoria 102466) NAO aparece em
+// get_attributes. Os atributos novos vem pela arvore (v2.product.get_attribute_tree), entao junta as duas fontes
+// (get_attributes + get_attribute_tree) no mesmo formato, sem duplicar por attribute_id.
+export async function shopeeArvoreAtributosBruta(categoryId: number): Promise<any[]> {
+  let payload: any;
+  try {
+    payload = await shopeeReq(`/api/v2/product/get_attribute_tree?category_id_list=${categoryId}&language=en`);
+  } catch {
+    payload = await shopeeReq(`/api/v2/product/get_attribute_tree?category_id_list=${categoryId}`);
+  }
+  const itens: any[] = payload?.response?.list || [];
+  const doCategoria = itens.find((i: any) => Number(i?.category_id) === categoryId) || itens[0];
+  return doCategoria?.attribute_tree || [];
 }
 
-function mapearAtributoShopee(attr: any): ShopeeAtributoObrigatorio {
+function nomesDoNo(no: any): string[] {
+  const multi: any[] = Array.isArray(no?.multi_lang) ? no.multi_lang : [];
+  return [no?.name, no?.original_attribute_name, no?.display_attribute_name, ...multi.map((m: any) => m?.value)].filter(Boolean).map(String);
+}
+
+export function normalizarNoDaArvore(no: any) {
+  const nomes = nomesDoNo(no);
+  const en = (Array.isArray(no?.multi_lang) ? no.multi_lang : []).find((m: any) => String(m?.language || '').toLowerCase() === 'en')?.value;
+  const valores: any[] = (no?.attribute_value_list || []).map((v: any) => {
+    const vm: any[] = Array.isArray(v?.multi_lang) ? v.multi_lang : [];
+    const ven = vm.find((m: any) => String(m?.language || '').toLowerCase() === 'en')?.value;
+    return { value_id: v.value_id, original_value_name: ven || v.original_value_name || v.name, display_value_name: v.name || v.display_value_name || ven };
+  });
+  return {
+    attribute_id: no.attribute_id,
+    original_attribute_name: en || no.original_attribute_name || no.name,
+    display_attribute_name: no.name || no.display_attribute_name,
+    nomes_alternativos: nomes,
+    is_mandatory: no.mandatory === true || no.is_mandatory === true || no.mandatory === 1,
+    input_type: no?.attribute_info?.input_type,
+    attribute_value_list: valores,
+  };
+}
+
+export async function shopeeListaAtributosBrutos(categoryId: number): Promise<any[]> {
+  const porId = new Map<number, any>();
+  let erroLista: any = null;
+  try {
+    const payload = await shopeeReq(`/api/v2/product/get_attributes?category_id=${categoryId}`);
+    for (const a of (payload?.response?.attribute_list || [])) porId.set(Number(a.attribute_id), a);
+  } catch (e: any) { erroLista = e; }
+  try {
+    for (const no of await shopeeArvoreAtributosBruta(categoryId)) {
+      const norm = normalizarNoDaArvore(no);
+      const existente = porId.get(Number(norm.attribute_id));
+      // a arvore e' a fonte mais nova: se marca como obrigatorio, vale; senao mantem o que get_attributes disse
+      if (existente) { if (norm.is_mandatory) existente.is_mandatory = true; existente.nomes_alternativos = norm.nomes_alternativos; }
+      else porId.set(Number(norm.attribute_id), norm);
+    }
+  } catch (e: any) {
+    if (erroLista) throw erroLista; // as duas fontes falharam
+    console.error('[shopee] get_attribute_tree falhou (categoria', categoryId, '):', e?.message || e);
+  }
+  return Array.from(porId.values());
+}
+
+export function mapearAtributoShopee(attr: any): ShopeeAtributoObrigatorio {
   const valores: any[] = attr.attribute_value_list || [];
   const nome = String(attr.original_attribute_name || attr.display_attribute_name || attr.attribute_id);
   if (valores.length) {
@@ -521,7 +577,8 @@ export async function shopeeAddItem(input: ShopeeAddItemInput) {
       if (!m) throw e;
       if (!todosAtributos) todosAtributos = await shopeeListaAtributosBrutos(input.categoryId).catch(() => []);
       const alvoNome = normalizarNomeMarca(m[1]);
-      const alvo = todosAtributos.find((a: any) => normalizarNomeMarca(a.original_attribute_name) === alvoNome || normalizarNomeMarca(a.display_attribute_name) === alvoNome);
+      const alvo = todosAtributos.find((a: any) => normalizarNomeMarca(a.original_attribute_name) === alvoNome || normalizarNomeMarca(a.display_attribute_name) === alvoNome
+        || (Array.isArray(a.nomes_alternativos) && a.nomes_alternativos.some((n: string) => normalizarNomeMarca(n) === alvoNome)));
       if (!alvo || atributos.some((a) => a.attribute_id === Number(alvo.attribute_id))) {
         throw new Error(`${msg} [atributo "${m[1]}" ${alvo ? 'ja enviado e recusado' : 'nao encontrado em get_attributes da categoria ' + input.categoryId}]`);
       }
