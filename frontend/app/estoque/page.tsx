@@ -3452,7 +3452,7 @@ export default function EstoquePage() {
   }, []);
 
   useEffect(() => {
-    const visibleSelectedPecas = (data.data || []).filter((p: any) => selectedPecaIds.includes(p.id) && !isPrejuizoPeca(p));
+    const visibleSelectedPecas = (data.data || []).filter((p: any) => selectedPecaIds.includes(p.id));
     if (!visibleSelectedPecas.length) return;
 
     setSelectedPecasById((current) => {
@@ -3675,11 +3675,13 @@ export default function EstoquePage() {
       alert('Apenas o usuario Bruno pode deletar pecas em massa.');
       return;
     }
-    if (!selectedPecaIds.length) return;
-    if (!confirm(`Excluir ${selectedPecaIds.length} peca(s) selecionada(s)?`)) return;
-    if (!confirm(`Tem certeza que deseja excluir ${selectedPecaIds.length} peca(s) selecionada(s)? Essa acao nao pode ser desfeita.`)) return;
+    // pecas em prejuizo so podem ser selecionadas para impressao de etiqueta; nunca entram em exclusao
+    const idsExcluir = selectedPecaIds.filter((id) => !isPrejuizoPeca(selectedPecasById[id] || (data.data || []).find((p: any) => p.id === id)));
+    if (!idsExcluir.length) return;
+    if (!confirm(`Excluir ${idsExcluir.length} peca(s) selecionada(s)?`)) return;
+    if (!confirm(`Tem certeza que deseja excluir ${idsExcluir.length} peca(s) selecionada(s)? Essa acao nao pode ser desfeita.`)) return;
     try {
-      await api.pecas.bulkDelete(selectedPecaIds);
+      await api.pecas.bulkDelete(idsExcluir);
       setSelectedPecaIds([]);
       setSelectedPecasById({});
       load();
@@ -3702,14 +3704,14 @@ export default function EstoquePage() {
       return;
     }
 
-    if (!peca || isPrejuizoPeca(peca)) return;
+    if (!peca) return;
 
     setSelectedPecaIds((current) => (current.includes(id) ? current : [...current, id]));
     setSelectedPecasById((current) => ({ ...current, [id]: peca }));
   }
 
   function toggleSelectAllVisible() {
-    const visiblePecas = (data.data || []).filter((p: any) => !isPrejuizoPeca(p));
+    const visiblePecas = data.data || [];
     const visibleIds = visiblePecas.map((p: any) => p.id);
     const allSelected = visibleIds.length > 0 && visibleIds.every((id: number) => selectedPecaIds.includes(id));
 
@@ -3872,7 +3874,7 @@ export default function EstoquePage() {
     setSelecionandoTudo(true);
     try {
       const result = await api.pecas.list(buildPecaListParams({ page: 1, per: 99999 }));
-      const pecas = (result?.data || []).filter((peca: any) => !isPrejuizoPeca(peca));
+      const pecas = result?.data || [];
       setSelectedPecaIds(pecas.map((peca: any) => peca.id));
       setSelectedPecasById(Object.fromEntries(pecas.map((peca: any) => [peca.id, peca])));
     } catch (e: any) {
@@ -3884,7 +3886,7 @@ export default function EstoquePage() {
   const totalPages = Math.max(1, Math.ceil((data.total || 0) / filters.perPage));
   const hasPrevPage = filters.page > 1;
   const hasNextPage = filters.page < totalPages;
-  const visiblePecaIds = (data.data || []).filter((p: any) => !isPrejuizoPeca(p)).map((p: any) => p.id);
+  const visiblePecaIds = (data.data || []).map((p: any) => p.id);
   const allVisibleSelected = visiblePecaIds.length > 0 && visiblePecaIds.every((id: number) => selectedPecaIds.includes(id));
   const isPhone = viewportMode === 'phone';
   const isTabletPortrait = viewportMode === 'tablet-portrait';
@@ -3922,8 +3924,10 @@ export default function EstoquePage() {
   const displayedPecas = data.data || [];
   const selectedPecas = selectedPecaIds
     .map((id) => selectedPecasById[id] || displayedPecas.find((peca: any) => peca.id === id))
-    .filter((peca: any) => Boolean(peca) && !isPrejuizoPeca(peca));
-  const copySkuSelecionada = selectedPecaIds.length === 1 ? selectedPecas[0] : null;
+    .filter((peca: any) => Boolean(peca));
+  // pecas em prejuizo: so impressao de etiqueta (SKU/A4); as demais acoes em massa ignoram elas
+  const selectedPecasAcao = selectedPecas.filter((peca: any) => !isPrejuizoPeca(peca));
+  const copySkuSelecionada = selectedPecaIds.length === 1 ? selectedPecasAcao[0] || null : null;
 
   function toggleCaixaFilter(caixa: string) {
     setFilters((current) => ({
@@ -4036,14 +4040,14 @@ export default function EstoquePage() {
   }
 
   async function handleAtualizarLinkMl() {
-    if (!selectedPecas.length) {
-      alert('Selecione as pecas desejadas para atualizar o link ML.');
+    if (!selectedPecasAcao.length) {
+      alert('Selecione as pecas desejadas para atualizar o link ML (pecas em prejuizo nao entram).');
       return;
     }
 
     const vistos = new Set<string>();
     const skus: string[] = [];
-    for (const peca of selectedPecas) {
+    for (const peca of selectedPecasAcao) {
       const base = String(peca.idPeca || '').replace(/-\d+$/, '').trim().toUpperCase();
       if (base && !vistos.has(base)) { vistos.add(base); skus.push(base); }
     }
@@ -4544,11 +4548,10 @@ export default function EstoquePage() {
                         <div style={{ display: 'flex', gap: 10, minWidth: 0 }}>
                           <input
                             type="checkbox"
-                            disabled={bloqueadaPrejuizo}
                             checked={selectedPecaIds.includes(p.id)}
                             onChange={() => toggleSelectedPeca(p.id)}
                             aria-label={`Selecionar peca ${p.idPeca}`}
-                            style={{ width: 14, height: 14, cursor: bloqueadaPrejuizo ? 'not-allowed' : 'pointer', marginTop: 4 }}
+                            style={{ width: 14, height: 14, cursor: 'pointer', marginTop: 4 }}
                           />
                           <div style={{ minWidth: 0 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -4692,11 +4695,10 @@ export default function EstoquePage() {
                         <tr style={{ background: isPrejuizoPeca(p) ? '#fff7f7' : 'transparent' }}>
                           <td style={{ ...cs.td, padding: denseTablePadding }}>                            <input
                               type="checkbox"
-                              disabled={isPrejuizoPeca(p)}
                               checked={selectedPecaIds.includes(p.id)}
                               onChange={() => toggleSelectedPeca(p.id)}
                               aria-label={`Selecionar peca ${p.idPeca}`}
-                              style={{ width: 14, height: 14, cursor: isPrejuizoPeca(p) ? 'not-allowed' : 'pointer' }}
+                              style={{ width: 14, height: 14, cursor: 'pointer' }}
                             />
                           </td>
                           {colsVisiveis.includes('motoId') && <td style={{ ...cs.td, padding: denseTablePadding }}><span style={{ fontFamily: 'Geist Mono, monospace', fontSize: 11.5, color: 'var(--ink-muted)' }}>#{p.motoId}</span></td>}
