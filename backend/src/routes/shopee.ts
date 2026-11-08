@@ -1,6 +1,6 @@
 import { tituloShopeePadrao } from '../lib/shopeeTitulo';
 import { Router } from 'express';
-import { getShopeeConfig, saveShopeeConfig, shopeeExchangeCodeForToken, shopeeExchangeResendCode, shopeeLinkReenviarCodigo, shopeeDiagnostico, shopeeReq, shopeeAddItem, shopeeGetAtributosObrigatorios, shopeeGetLogisticChannel, shopeePacoteExcedeCanal } from '../lib/shopee-api';
+import { getShopeeConfig, saveShopeeConfig, shopeeExchangeCodeForToken, shopeeExchangeResendCode, shopeeLinkReenviarCodigo, shopeeDiagnostico, shopeeReq, shopeeAddItem, shopeeGetAtributosObrigatorios, shopeeListaAtributosBrutos, shopeeGetLogisticChannel, shopeePacoteExcedeCanal } from '../lib/shopee-api';
 import { prepararImagensShopeeParaNovoItem } from '../lib/fotos-cadastro';
 import { informarAnuncioShopeeNoBling, findBlingProductsByCodes, fetchBlingProductDetailById } from './bling';
 import { prisma } from '../lib/prisma';
@@ -201,6 +201,21 @@ shopeeRouter.get('/anuncio/atributos', async (req, res, next) => {
     if (!categoriaId) return res.status(400).json({ error: 'categoriaId obrigatorio' });
     res.json({ ok: true, atributos: await shopeeGetAtributosObrigatorios(categoriaId) });
   } catch (e) { next(e); }
+});
+
+// GET /shopee/anuncio/atributos-diagnostico?categoriaId= — resposta CRUA de get_attributes da Shopee (ou o erro),
+// pra ver exatamente o que a Shopee manda (nomes, is_mandatory, opcoes).
+shopeeRouter.get('/anuncio/atributos-diagnostico', async (req, res) => {
+  try {
+    const categoriaId = Number(req.query.categoriaId);
+    if (!categoriaId) return res.status(400).json({ error: 'categoriaId obrigatorio' });
+    const bruto = await shopeeListaAtributosBrutos(categoriaId);
+    res.json({
+      ok: true, categoriaId, total: bruto.length,
+      obrigatorios: bruto.filter((a: any) => a?.is_mandatory).map((a: any) => a.original_attribute_name),
+      atributos: bruto.map((a: any) => ({ id: a.attribute_id, nome: a.original_attribute_name, is_mandatory: a.is_mandatory, input_type: a.input_type, opcoes: (a.attribute_value_list || []).slice(0, 8).map((v: any) => `${v.value_id}:${v.original_value_name}`) })),
+    });
+  } catch (e: any) { res.status(400).json({ error: e?.message || String(e) }); }
 });
 
 // POST /shopee/anuncio/buscar — body: { skus: string[] }. Pra cada SKU base informado, devolve os

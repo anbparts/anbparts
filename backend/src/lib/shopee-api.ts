@@ -447,31 +447,34 @@ export type ShopeeAtributoObrigatorio = {
 };
 export type ShopeeAtributoEscolhido = { attribute_id: number; value_id: number; original_value_name: string };
 
+// Resposta CRUA de get_attributes (lanca erro se a Shopee recusar). Sem "language": nomes em ingles, os mesmos das mensagens de erro do add_item.
+export async function shopeeListaAtributosBrutos(categoryId: number): Promise<any[]> {
+  const payload = await shopeeReq(`/api/v2/product/get_attributes?category_id=${categoryId}`);
+  return payload?.response?.attribute_list || [];
+}
+
+function mapearAtributoShopee(attr: any): ShopeeAtributoObrigatorio {
+  const valores: any[] = attr.attribute_value_list || [];
+  const nome = String(attr.original_attribute_name || attr.display_attribute_name || attr.attribute_id);
+  if (valores.length) {
+    const opcoes = valores.map((v: any) => ({ value_id: Number(v.value_id), nome: String(v.original_value_name || v.display_value_name || v.value_id) }));
+    const neutro = valores.find((v: any) => ATRIBUTO_NEUTRO.test(normalizarNomeMarca(v.original_value_name))
+      || ATRIBUTO_NEUTRO.test(normalizarNomeMarca(v.display_value_name)));
+    const escolhido = neutro || valores[0];
+    return {
+      attribute_id: Number(attr.attribute_id), nome, opcoes,
+      padrao: { value_id: Number(escolhido.value_id), nome: String(escolhido.original_value_name || escolhido.display_value_name || '') },
+    };
+  }
+  return { attribute_id: Number(attr.attribute_id), nome, opcoes: [], padrao: { value_id: 0, nome: 'N/A' } };
+}
+
 export async function shopeeGetAtributosObrigatorios(categoryId: number): Promise<ShopeeAtributoObrigatorio[]> {
   try {
-    const payload = await shopeeReq(`/api/v2/product/get_attributes?category_id=${categoryId}&language=pt-BR`);
-    const lista: any[] = payload?.response?.attribute_list || [];
-    const resultado: ShopeeAtributoObrigatorio[] = [];
-    for (const attr of lista) {
-      if (!attr?.is_mandatory) continue;
-      const valores: any[] = attr.attribute_value_list || [];
-      const nome = String(attr.display_attribute_name || attr.original_attribute_name || attr.attribute_id);
-      if (valores.length) {
-        const opcoes = valores.map((v: any) => ({ value_id: Number(v.value_id), nome: String(v.display_value_name || v.original_value_name || v.value_id) }));
-        const neutro = valores.find((v: any) => ATRIBUTO_NEUTRO.test(normalizarNomeMarca(v.original_value_name))
-          || ATRIBUTO_NEUTRO.test(normalizarNomeMarca(v.display_value_name)));
-        const escolhido = neutro || valores[0];
-        resultado.push({
-          attribute_id: Number(attr.attribute_id), nome, opcoes,
-          padrao: { value_id: Number(escolhido.value_id), nome: String(escolhido.original_value_name || escolhido.display_value_name || '') },
-        });
-      } else {
-        resultado.push({ attribute_id: Number(attr.attribute_id), nome, opcoes: [], padrao: { value_id: 0, nome: 'Nao se aplica' } });
-      }
-    }
-    return resultado;
+    const lista = await shopeeListaAtributosBrutos(categoryId);
+    return lista.filter((attr) => attr?.is_mandatory === true || attr?.is_mandatory === 1 || attr?.mandatory === true).map(mapearAtributoShopee);
   } catch (e: any) {
-    console.error('[shopee] falha ao buscar atributos obrigatorios:', e?.message || e);
+    console.error('[shopee] falha ao buscar atributos obrigatorios (categoria', categoryId, '):', e?.message || e);
     return [];
   }
 }
@@ -484,9 +487,7 @@ export async function shopeeAddItem(input: ShopeeAddItemInput) {
     const v = esc ? { value_id: Number(esc.value_id), nome: String(esc.original_value_name || o.padrao.nome) } : o.padrao;
     return { attribute_id: o.attribute_id, attribute_value_list: [{ value_id: v.value_id, original_value_name: v.nome }] };
   });
-  const payload = await shopeeReq('/api/v2/product/add_item', {
-    method: 'POST',
-    body: {
+  const montarBody = () => ({
       original_price: input.price,
       description: input.description,
       weight: input.weightKg,
@@ -504,8 +505,32 @@ export async function shopeeAddItem(input: ShopeeAddItemInput) {
       seller_stock: [{ stock: Math.max(1, Math.round(input.stock)) }],
       ...(atributos.length ? { attribute_list: atributos } : {}),
       ...(brand ? { brand: { brand_id: brand.brand_id, original_brand_name: brand.original_brand_name } } : {}),
-    },
   });
+  // A Shopee diz no proprio erro qual atributo falta ('Attribute "X" is mandatory required'). Se get_attributes nao marcou
+  // esse atributo como obrigatorio (ou falhou), o erro vira a fonte da verdade: acha o atributo pelo nome, usa o valor padrao
+  // (ex: "No") e repete a criacao — ate 8 atributos por anuncio.
+  let todosAtributos: any[] | null = null;
+  let payload: any = null;
+  for (let tentativa = 0; tentativa < 8; tentativa += 1) {
+    try {
+      payload = await shopeeReq('/api/v2/product/add_item', { method: 'POST', body: montarBody() });
+      break;
+    } catch (e: any) {
+      const msg = String(e?.message || e);
+      const m = /Attribute\s+"([^"]+)"\s+is\s+mandatory/i.exec(msg);
+      if (!m) throw e;
+      if (!todosAtributos) todosAtributos = await shopeeListaAtributosBrutos(input.categoryId).catch(() => []);
+      const alvoNome = normalizarNomeMarca(m[1]);
+      const alvo = todosAtributos.find((a: any) => normalizarNomeMarca(a.original_attribute_name) === alvoNome || normalizarNomeMarca(a.display_attribute_name) === alvoNome);
+      if (!alvo || atributos.some((a) => a.attribute_id === Number(alvo.attribute_id))) {
+        throw new Error(`${msg} [atributo "${m[1]}" ${alvo ? 'ja enviado e recusado' : 'nao encontrado em get_attributes da categoria ' + input.categoryId}]`);
+      }
+      const o = mapearAtributoShopee(alvo);
+      atributos.push({ attribute_id: o.attribute_id, attribute_value_list: [{ value_id: o.padrao.value_id, original_value_name: o.padrao.nome }] });
+      console.warn(`[shopee] atributo obrigatorio nao marcado como tal em get_attributes: "${o.nome}" -> "${o.padrao.nome}" (categoria ${input.categoryId})`);
+    }
+  }
+  if (!payload) throw new Error('Shopee nao aceitou os atributos obrigatorios da categoria.');
   const itemId = payload?.response?.item_id;
   if (!itemId) throw new Error('Shopee nao retornou item_id na criacao do anuncio.');
   return { itemId: String(itemId), raw: payload?.response };
