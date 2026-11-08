@@ -1,6 +1,6 @@
 import { tituloShopeePadrao } from '../lib/shopeeTitulo';
 import { Router } from 'express';
-import { getShopeeConfig, saveShopeeConfig, shopeeExchangeCodeForToken, shopeeExchangeResendCode, shopeeLinkReenviarCodigo, shopeeDiagnostico, shopeeReq, shopeeAddItem, shopeeGetLogisticChannel, shopeePacoteExcedeCanal } from '../lib/shopee-api';
+import { getShopeeConfig, saveShopeeConfig, shopeeExchangeCodeForToken, shopeeExchangeResendCode, shopeeLinkReenviarCodigo, shopeeDiagnostico, shopeeReq, shopeeAddItem, shopeeGetAtributosObrigatorios, shopeeGetLogisticChannel, shopeePacoteExcedeCanal } from '../lib/shopee-api';
 import { prepararImagensShopeeParaNovoItem } from '../lib/fotos-cadastro';
 import { informarAnuncioShopeeNoBling, findBlingProductsByCodes, fetchBlingProductDetailById } from './bling';
 import { prisma } from '../lib/prisma';
@@ -193,6 +193,16 @@ shopeeRouter.get('/categorias', async (_req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// GET /shopee/anuncio/atributos?categoriaId= — atributos obrigatorios da categoria Shopee (com opcoes e valor padrao,
+// normalmente "Nao"), pra tela mostrar ja preenchido e o usuario poder trocar.
+shopeeRouter.get('/anuncio/atributos', async (req, res, next) => {
+  try {
+    const categoriaId = Number(req.query.categoriaId);
+    if (!categoriaId) return res.status(400).json({ error: 'categoriaId obrigatorio' });
+    res.json({ ok: true, atributos: await shopeeGetAtributosObrigatorios(categoriaId) });
+  } catch (e) { next(e); }
+});
+
 // POST /shopee/anuncio/buscar — body: { skus: string[] }. Pra cada SKU base informado, devolve os
 // dados pra montar a linha da aba Anuncio: descricao/preco/peso/categoria atual (com detalhe se
 // ela e' bloqueada ou generica) e se o SKU ja tem anuncio Shopee (pra vir desmarcado/destacado).
@@ -206,6 +216,7 @@ shopeeRouter.post('/anuncio/buscar', async (req, res, next) => {
     const categoriaPorId = new Map(categorias.map((c: any) => [String(c.id), c]));
 
     const linhas = [];
+    const atributosPorCategoria = new Map<number, any[]>();
     for (const sku of skus) {
       // Peca (ja finalizada) OU pre-cadastro — ver lib/anuncioBase.ts.
       const peca = await carregarAnuncioBase(sku);
@@ -220,7 +231,14 @@ shopeeRouter.post('/anuncio/buscar', async (req, res, next) => {
         ? await shopeePacoteExcedeCanal({ pesoKg: pesoPacote, larguraCm: Number(peca.largura), alturaCm: Number(peca.altura), profundidadeCm: Number(peca.profundidade) })
         : null;
       const cat = peca.shopeeCategoriaId ? categoriaPorId.get(peca.shopeeCategoriaId) : null;
+      let atributos: any[] = [];
+      if (cat && !peca.shopeeItemId) {
+        const cid = Number((cat as any).id);
+        if (!atributosPorCategoria.has(cid)) atributosPorCategoria.set(cid, await shopeeGetAtributosObrigatorios(cid));
+        atributos = atributosPorCategoria.get(cid) || [];
+      }
       linhas.push({
+        atributos,
         sku,
         origem: peca.origem,
         fotosProcessadas: peca.fotosOficiais > 0,
@@ -338,6 +356,7 @@ shopeeRouter.post('/anuncio/criar', async (req, res, next) => {
       condition: condicaoBling || 'USED',
       logisticId: canal.logistic_id,
       marcaMoto: (peca as any).moto?.marca || null,
+      atributos: Array.isArray(req.body?.atributos) ? req.body.atributos : [],
     });
 
     // O anuncio ja foi criado na Shopee — grava o item_id (pre-cadastro e pecas) ANTES de avisar o

@@ -456,6 +456,9 @@ export default function CadastroPage() {
     // Campos obrigatorios da categoria que o sistema nao sabe preencher (ex: Magalu/Pneu): a tela pede o valor.
     fichaFaltando?: { nome: string; exemplo: string; escolhas: string[] | null }[];
     fichaValores?: Record<string, string>;
+    // Shopee: atributos obrigatorios da categoria, ja com o padrao (ex: "Nao"); atributosShopeeEscolha guarda so o que o usuario trocou (attribute_id -> value_id).
+    atributosShopee?: { attribute_id: number; nome: string; opcoes: { value_id: number; nome: string }[]; padrao: { value_id: number; nome: string } }[];
+    atributosShopeeEscolha?: Record<number, number>;
   };
   type AnuncioAjuste = { aberto: boolean; carregando: boolean; salvando: boolean; titulo: string; descricao: string; condicao: 'usado' | 'novo'; original: { titulo: string; descricao: string; condicao: string } | null; msg: string; erro: string };
   type AnuncioCriarLinha = {
@@ -2087,6 +2090,8 @@ export default function CadastroPage() {
       sugestaoOrigem: linha.sugestaoOrigem,
       fichaFaltando: Array.isArray(linha.fichaFaltando) ? linha.fichaFaltando : [],
       fichaValores: {},
+      atributosShopee: Array.isArray(linha.atributos) ? linha.atributos : [],
+      atributosShopeeEscolha: {},
     };
   }
 
@@ -2579,6 +2584,15 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
     consultarStatusRapido(lista.map((l) => l.sku));
   }
 
+  // Shopee: troca o valor de um atributo obrigatorio (o padrao ja vem preenchido, nao bloqueia a criacao).
+  function atualizarAtributoShopee(sku: string, attributeId: number, valueId: number) {
+    setAnuncioCriarLinhas((prev) => prev.map((linha) => {
+      if (linha.sku !== sku) return linha;
+      const atual = linha.marketplaces.shopee;
+      return { ...linha, marketplaces: { ...linha.marketplaces, shopee: { ...atual, atributosShopeeEscolha: { ...(atual.atributosShopeeEscolha || {}), [attributeId]: valueId } } } };
+    }));
+  }
+
   // Preenchimento dos campos obrigatorios da categoria (ex: pneu no Magalu). Ao completar todos, o marketplace fica marcado.
   function atualizarFichaCampo(sku: string, mk: AnuncioMarketplaceId, nome: string, valor: string) {
     setAnuncioCriarLinhas((prev) => prev.map((linha) => {
@@ -2670,6 +2684,17 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
         console.warn('[anuncio] ficha da categoria:', e?.message || e);
       }
     }
+    // Shopee: a nova categoria pode ter outros atributos obrigatorios — busca pra mostrar na tela ja com o padrao.
+    let atributosShopee: NonNullable<AnuncioLinhaMarketplace['atributosShopee']> = [];
+    if (mk === 'shopee') {
+      try {
+        const resp = await fetch(`${API}/shopee/anuncio/atributos?categoriaId=${encodeURIComponent(String(categoriaId))}`, { credentials: 'include' });
+        const data = await readApiResponse(resp, 'Erro ao consultar os atributos da categoria');
+        atributosShopee = Array.isArray(data.atributos) ? data.atributos : [];
+      } catch (e: any) {
+        console.warn('[anuncio] atributos Shopee:', e?.message || e);
+      }
+    }
     setAnuncioCriarLinhas((prev) => prev.map((linha) => {
       if (linha.sku !== sku) return linha;
       const atual = linha.marketplaces[mk];
@@ -2683,6 +2708,7 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
         restricoes,
         fichaFaltando,
         fichaValores: {},
+        ...(mk === 'shopee' ? { atributosShopee, atributosShopeeEscolha: {} } : {}),
         selecionado: liberada,
       } } };
     }));
@@ -2719,7 +2745,11 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sku, categoriaId, ...((mk === 'magalu' || mk === 'mercado-livre') && linhaAtual?.marketplaces[mk].fichaValores && Object.keys(linhaAtual.marketplaces[mk].fichaValores || {}).length ? { ficha: linhaAtual.marketplaces[mk].fichaValores } : {}) }),
+        body: JSON.stringify({ sku, categoriaId, ...((mk === 'magalu' || mk === 'mercado-livre') && linhaAtual?.marketplaces[mk].fichaValores && Object.keys(linhaAtual.marketplaces[mk].fichaValores || {}).length ? { ficha: linhaAtual.marketplaces[mk].fichaValores } : {}), ...(mk === 'shopee' ? { atributos: (linhaAtual?.marketplaces.shopee.atributosShopee || []).map((a) => {
+          const vid = (linhaAtual?.marketplaces.shopee.atributosShopeeEscolha || {})[a.attribute_id] ?? a.padrao.value_id;
+          const op = a.opcoes.find((o) => o.value_id === vid);
+          return { attribute_id: a.attribute_id, value_id: vid, original_value_name: op ? op.nome : a.padrao.nome };
+        }) } : {}) }),
       });
       return readApiResponse(resp, `Erro ao criar anuncio ${mk} do SKU ${sku}`);
     };
@@ -3089,6 +3119,23 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
                                             </>
                                           ) : (
                                             <input value={(mp.fichaValores || {})[campo.nome] || ''} onChange={(e: any) => atualizarFichaCampo(linha.sku, mk, campo.nome, e.target.value)} placeholder={String(campo.exemplo || '').slice(0, 70)} style={{ ...s.input, padding: '4px 6px', fontSize: 12 }} />
+                                          )}
+                                        </label>
+                                      ))}
+                                    </div>
+                                  )}
+                                  {mk === 'shopee' && (mp.atributosShopee || []).length > 0 && (
+                                    <div style={{ marginTop: 6, display: 'grid', gap: 4, background: '#f8fafc', border: '1px solid var(--border)', borderRadius: 6, padding: 8 }}>
+                                      <div style={{ fontSize: 11.5, color: 'var(--gray-600)', fontWeight: 600 }}>Atributos obrigatórios da Shopee (já preenchidos — troque se precisar):</div>
+                                      {(mp.atributosShopee || []).map((a) => (
+                                        <label key={a.attribute_id} style={{ display: 'grid', gap: 2, fontSize: 11.5, color: 'var(--gray-700)' }}>
+                                          <span>{a.nome}</span>
+                                          {a.opcoes.length ? (
+                                            <select disabled={anuncioCriarProcessando} value={(mp.atributosShopeeEscolha || {})[a.attribute_id] ?? a.padrao.value_id} onChange={(e: any) => atualizarAtributoShopee(linha.sku, a.attribute_id, Number(e.target.value))} style={{ ...s.input, padding: '4px 6px', fontSize: 12 }}>
+                                              {a.opcoes.map((o) => <option key={o.value_id} value={o.value_id}>{o.nome}</option>)}
+                                            </select>
+                                          ) : (
+                                            <span style={{ color: 'var(--gray-500)' }}>{a.padrao.nome}</span>
                                           )}
                                         </label>
                                       ))}

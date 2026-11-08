@@ -425,6 +425,8 @@ export type ShopeeAddItemInput = {
   logisticId: number;
   marcaMoto?: string | null;
   condition?: 'NEW' | 'USED';
+  // valores escolhidos na tela (atributos obrigatorios da categoria); o que nao vier usa o padrao
+  atributos?: { attribute_id: number; value_id: number; original_value_name: string }[];
 };
 
 // POST /api/v2/product/add_item — cria o anuncio. So os campos que a doc oficial confirma como
@@ -433,8 +435,55 @@ export type ShopeeAddItemInput = {
 // attribute_list/compatibility_info alem disso — nesses casos a Shopee retorna um erro claro
 // (error_invalid_category_attribute etc.) que a gente repassa pro usuario, em vez de tentar
 // adivinhar de antemao quais atributos cada uma das ~90 categorias exige.
+// Atributos obrigatorios da categoria (a Shopee passou a exigir, ex: "Contains Bluetooth, Wireless and/or RF
+// Technology"). Pra cada obrigatorio escolhe o valor "neutro" (Nao/No/Nenhum/Nao se aplica); se nao houver, o 1o da lista.
+// Campo de texto livre recebe "Nao se aplica". Falha ao consultar nao trava a criacao (a Shopee devolve o erro claro).
+const ATRIBUTO_NEUTRO = /^(nao|no|none|nenhum|nenhuma|n\/a|na|not applicable|nao se aplica|sem)\b/;
+export type ShopeeAtributoObrigatorio = {
+  attribute_id: number;
+  nome: string;
+  opcoes: { value_id: number; nome: string }[]; // vazio = texto livre
+  padrao: { value_id: number; nome: string };
+};
+export type ShopeeAtributoEscolhido = { attribute_id: number; value_id: number; original_value_name: string };
+
+export async function shopeeGetAtributosObrigatorios(categoryId: number): Promise<ShopeeAtributoObrigatorio[]> {
+  try {
+    const payload = await shopeeReq(`/api/v2/product/get_attributes?category_id=${categoryId}&language=pt-BR`);
+    const lista: any[] = payload?.response?.attribute_list || [];
+    const resultado: ShopeeAtributoObrigatorio[] = [];
+    for (const attr of lista) {
+      if (!attr?.is_mandatory) continue;
+      const valores: any[] = attr.attribute_value_list || [];
+      const nome = String(attr.display_attribute_name || attr.original_attribute_name || attr.attribute_id);
+      if (valores.length) {
+        const opcoes = valores.map((v: any) => ({ value_id: Number(v.value_id), nome: String(v.display_value_name || v.original_value_name || v.value_id) }));
+        const neutro = valores.find((v: any) => ATRIBUTO_NEUTRO.test(normalizarNomeMarca(v.original_value_name))
+          || ATRIBUTO_NEUTRO.test(normalizarNomeMarca(v.display_value_name)));
+        const escolhido = neutro || valores[0];
+        resultado.push({
+          attribute_id: Number(attr.attribute_id), nome, opcoes,
+          padrao: { value_id: Number(escolhido.value_id), nome: String(escolhido.original_value_name || escolhido.display_value_name || '') },
+        });
+      } else {
+        resultado.push({ attribute_id: Number(attr.attribute_id), nome, opcoes: [], padrao: { value_id: 0, nome: 'Nao se aplica' } });
+      }
+    }
+    return resultado;
+  } catch (e: any) {
+    console.error('[shopee] falha ao buscar atributos obrigatorios:', e?.message || e);
+    return [];
+  }
+}
+
 export async function shopeeAddItem(input: ShopeeAddItemInput) {
   const brand = await shopeeGetBrandForCategory(input.categoryId, input.marcaMoto);
+  const obrigatorios = await shopeeGetAtributosObrigatorios(input.categoryId);
+  const atributos = obrigatorios.map((o) => {
+    const esc = (input.atributos || []).find((x) => Number(x.attribute_id) === o.attribute_id);
+    const v = esc ? { value_id: Number(esc.value_id), nome: String(esc.original_value_name || o.padrao.nome) } : o.padrao;
+    return { attribute_id: o.attribute_id, attribute_value_list: [{ value_id: v.value_id, original_value_name: v.nome }] };
+  });
   const payload = await shopeeReq('/api/v2/product/add_item', {
     method: 'POST',
     body: {
@@ -453,6 +502,7 @@ export async function shopeeAddItem(input: ShopeeAddItemInput) {
       item_sku: input.itemSku,
       condition: input.condition || 'USED',
       seller_stock: [{ stock: Math.max(1, Math.round(input.stock)) }],
+      ...(atributos.length ? { attribute_list: atributos } : {}),
       ...(brand ? { brand: { brand_id: brand.brand_id, original_brand_name: brand.original_brand_name } } : {}),
     },
   });
