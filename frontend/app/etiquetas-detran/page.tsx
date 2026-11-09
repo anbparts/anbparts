@@ -1121,6 +1121,18 @@ export default function EtiquetasDetranPage() {
                   <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 6 }}>
                     {v ? `${v.total} compradas · ${v.emUso} em uso · ${v.descartadas} danificadas` : 'Importe a listagem para ver o resumo.'}
                   </div>
+                  {tipo === 'MOTO' && v && (() => {
+                    // Previsão: cada moto cadastrada sem cartela vai consumir 1 cartela do saldo
+                    const pendentes: Array<{ id: number; nome: string }> = Array.isArray(compradasLista?.motosSemCartela) ? compradasLista.motosSemCartela : [];
+                    if (!pendentes.length) return <div style={{ fontSize: 12, color: '#15803d', marginTop: 6 }}>Todas as motos cadastradas já têm cartela atribuída.</div>;
+                    const saldoReal = v.disponiveis - pendentes.length;
+                    return (
+                      <div style={{ fontSize: 12, marginTop: 6, color: saldoReal < 0 ? '#b91c1c' : '#a16207', lineHeight: 1.5 }} title={pendentes.map((m) => `#${m.id} ${m.nome}`).join('\n')}>
+                        Você tem {v.disponiveis} de saldo, mas {pendentes.length} {pendentes.length === 1 ? 'moto cadastrada sem cartela' : 'motos cadastradas sem cartela'} → <strong>saldo real {saldoReal}</strong>{saldoReal < 0 ? ` (faltam ${-saldoReal} cartela(s))` : ''}
+                        <div style={{ fontSize: 11, color: 'var(--gray-500)' }}>{pendentes.map((m) => `#${m.id} ${m.nome}`).join(' · ')}</div>
+                      </div>
+                    );
+                  })()}
                 </div>
               );
             })}

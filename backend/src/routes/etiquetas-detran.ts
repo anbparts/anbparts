@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { blingReq } from './bling';
-import { importarCompradas, resumoCompradas, listarCompradas, descartarComprada, restaurarComprada } from '../lib/detranEtiquetasCompradas';
+import { importarCompradas, resumoCompradas, listarCompradas, motosSemCartela, descartarComprada, restaurarComprada } from '../lib/detranEtiquetasCompradas';
 
 export const etiquetasDetranRouter = Router();
 const prisma = new PrismaClient();
@@ -720,7 +720,7 @@ etiquetasDetranRouter.get('/compradas/resumo', async (_req, res, next) => {
 etiquetasDetranRouter.get('/compradas/lista', async (req, res, next) => {
   try {
     const r = await listarCompradas({ situacao: String(req.query.situacao || 'disponivel'), tipo: String(req.query.tipo || 'todas'), busca: String(req.query.busca || '') });
-    res.json({ ok: true, ...r });
+    res.json({ ok: true, ...r, motosSemCartela: await motosSemCartela() });
   } catch (e) { next(e); }
 });
 

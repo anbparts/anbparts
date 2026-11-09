@@ -140,6 +140,18 @@ export async function listarCompradas(f: { situacao?: string; tipo?: string; bus
   return { resumo, itens, total: todas.length };
 }
 
+// Motos cadastradas que ainda nao tem cartela atribuida (sem ID de cartela no cadastro e sem Cartela ativa):
+// cada uma vai consumir 1 cartela de moto do saldo disponivel.
+export async function motosSemCartela() {
+  const rows = await prisma.$queryRawUnsafe<any[]>(
+    `SELECT m."id", m."marca", m."modelo", m."ano" FROM "Moto" m
+     WHERE COALESCE(TRIM(m."detranCartelaId"), '') = ''
+       AND NOT EXISTS (SELECT 1 FROM "Cartela" c WHERE c."motoId" = m."id" AND c."ativa" = true)
+     ORDER BY m."id" ASC`,
+  ).catch(() => [] as any[]);
+  return rows.map((m) => ({ id: Number(m.id), nome: [m.marca, m.modelo, m.ano].filter(Boolean).join(' ') }));
+}
+
 export async function resumoCompradas() {
   const { resumo, total } = await listarCompradas();
   const ultima = await prisma.$queryRawUnsafe<any[]>(`SELECT MAX("importadoEm") AS d FROM "DetranEtiquetaComprada"`);
