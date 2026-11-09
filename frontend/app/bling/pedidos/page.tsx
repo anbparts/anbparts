@@ -5,7 +5,7 @@ import { API_BASE } from '@/lib/api-base';
 import { useAuth } from '@/lib/auth';
 import { canProcessAction } from '@/lib/permissions';
 import { useIsPhone } from '@/lib/use-is-phone';
-import CanalBadge from '@/components/ui/CanalBadge';
+import CanalBadge, { canalEtiqueta } from '@/components/ui/CanalBadge';
 
 const API = API_BASE;
 
@@ -184,6 +184,21 @@ export default function BlingPedidosPage() {
           <div style={{ ...s.card, padding: '12px 16px' }}><div style={{ fontSize: 11.5, color: 'var(--ink-muted)' }}>Ticket médio</div><div style={{ fontSize: 22, fontWeight: 700 }}>{dados && dados.ativos ? brl(dados.soma / dados.ativos) : '—'}</div></div>
           <div style={{ ...s.card, padding: '12px 16px' }}><div style={{ fontSize: 11.5, color: 'var(--ink-muted)' }}>Canais</div><div style={{ fontSize: 22, fontWeight: 700 }}>{dados?.canais?.length ?? '—'}</div></div>
         </div>
+
+        {/* Um card por marketplace/canal, com a contagem de pedidos do filtro atual */}
+        {dados?.porCanal?.length ? (
+          <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr 1fr' : 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12 }}>
+            {dados.porCanal.map((c: any) => {
+              const e = canalEtiqueta(c.canal);
+              return (
+                <div key={c.canal || '_sem'} style={{ ...s.card, padding: '12px 16px', borderLeft: `4px solid ${e ? e.borda : '#cbd5e1'}` }}>
+                  <div style={{ fontSize: 11.5, color: e ? e.cor : 'var(--ink-muted)', fontWeight: 700 }}>{e ? e.texto : 'Sem canal'}</div>
+                  <div style={{ fontSize: 22, fontWeight: 700 }}>{c.n}</div>
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
 
         <div style={{ ...s.card, padding: 14, display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'minmax(220px, 1.6fr) 1fr 1fr 150px 150px auto', gap: 10, alignItems: 'end' }}>
           <div><div style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-muted)', marginBottom: 4 }}>Buscar</div>

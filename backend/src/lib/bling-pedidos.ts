@@ -375,6 +375,10 @@ export async function listarPedidos(f: { busca?: string; situacao?: string; cana
   const resumo = await prisma.$queryRawUnsafe<any[]>(
     `SELECT COUNT(*)::int AS n, COUNT(*) FILTER (WHERE p."cancelado" = false)::int AS ativos, COALESCE(SUM(CASE WHEN p."cancelado" THEN 0 ELSE p."total" END),0) AS soma FROM "BlingPedido" p ${where}`, ...params,
   );
+  // Contagem de pedidos por canal dentro do mesmo filtro (a soma bate com "Pedidos no filtro")
+  const porCanal = await prisma.$queryRawUnsafe<any[]>(
+    `SELECT p."canal" AS canal, COUNT(*)::int AS n FROM "BlingPedido" p ${where} GROUP BY p."canal" ORDER BY n DESC, p."canal" ASC`, ...params,
+  );
   const itens = await prisma.$queryRawUnsafe<any[]>(
     `SELECT p."id"::text AS id, p."numero", p."numeroLoja", p."data"::text AS data, p."situacao", p."cancelado", p."canal", p."clienteId"::text AS "clienteId", p."clienteNome",
             p."total", p."frete", p."entregaCidade", p."entregaUf",
@@ -387,6 +391,7 @@ export async function listarPedidos(f: { busca?: string; situacao?: string; cana
   return {
     total: Number(resumo[0]?.n || 0), ativos: Number(resumo[0]?.ativos || 0), soma: num(resumo[0]?.soma), pagina: Math.max(1, Number(f.pagina) || 1), limite,
     itens: itens.map((r) => ({ ...r, total: num(r.total), frete: num(r.frete), pecas: num(r.pecas) })),
+    porCanal: porCanal.map((c) => ({ canal: c.canal ? String(c.canal) : null, n: Number(c.n || 0) })),
     canais: canais.map((c) => String(c.canal)), situacoes: situacoes.map((s) => String(s.situacao)),
   };
 }
