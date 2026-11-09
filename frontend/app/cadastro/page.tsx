@@ -425,6 +425,13 @@ export default function CadastroPage() {
   const [loading, setLoading] = useState(true);
   const [somentePendentes, setSomentePendentes] = useState(true);
   const [soPreCadPendente, setSoPreCadPendente] = useState(false);
+  const [imagensMap, setImagensMap] = useState<Record<string, string>>({});
+  // Pendências do Pré-Cadastro = dados faltando + (se já carregou) SKU sem fotos disponíveis
+  const pendPre = (item: any): string[] => {
+    const out = pendenciasPreCadastro(item);
+    if (imagensMap[String(item.idPeca)] === 'sem_fotos') out.push('fotos');
+    return out;
+  };
   const [filtroSalvoTem, setFiltroSalvoTem] = useState(false);
   const filtroRestauradoRef = useRef(false);
   const [filters, setFilters] = useState({ motoId: '', search: '', skus: '', semDimensoes: '', comDimensoes: '', preCadastroCompleto: '' });
@@ -918,6 +925,15 @@ export default function CadastroPage() {
         return dataB - dataA;
       }) : [];
       setData({ total: Number(d?.total || linhas.length), data: linhas });
+      // Situação das fotos (mesmo critério do Resumo) em segundo plano: SKU sem fotos disponíveis
+      // deixa o Pré-Cadastro como "Pendente". Não trava a lista.
+      params.delete('per');
+      fetch(`${API}/cadastro/resumo?${params}`, { credentials: 'include' }).then(r => r.json()).then((r) => {
+        if (!r?.ok || !Array.isArray(r.itens)) return;
+        const mapa: Record<string, string> = {};
+        for (const it of r.itens) mapa[String(it.idPeca)] = String(it.imagens || '');
+        setImagensMap(mapa);
+      }).catch(() => { });
     } catch { }
     setLoading(false);
   }
@@ -1143,7 +1159,7 @@ export default function CadastroPage() {
 
   const linhasOrdenadasCadastro = (() => {
     const k = sortCadastro.key;
-    const base = soPreCadPendente ? data.data.filter((i) => i.status !== 'cadastrado' && pendenciasPreCadastro(i).length > 0) : data.data;
+    const base = soPreCadPendente ? data.data.filter((i) => i.status !== 'cadastrado' && pendPre(i).length > 0) : data.data;
     if (!k) return base;
     const factor = sortCadastro.dir === 'asc' ? 1 : -1;
     return [...base].sort((a, b) => {
@@ -4198,8 +4214,8 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
                         {cadastOk
                           ? <span style={s.badge('#2563eb', '#eff6ff', '#bfdbfe')}>OK</span>
                           : canEditarPreCadastro
-                            ? <button onClick={() => openEditar(item)} title={pendenciasPreCadastro(item).length ? `Falta: ${pendenciasPreCadastro(item).join(', ')}` : undefined} style={{ ...(pendenciasPreCadastro(item).length ? s.badge('#a16207', '#fef9c3', '#fde047') : s.badge('var(--green)', '#f0fdf4', '#86efac')), cursor: 'pointer', width: '100%', justifyContent: 'center' }}>{pendenciasPreCadastro(item).length ? 'Pendente' : 'OK'}</button>
-                            : <span style={{ ...(pendenciasPreCadastro(item).length ? s.badge('#a16207', '#fef9c3', '#fde047') : s.badge('var(--green)', '#f0fdf4', '#86efac')), width: '100%', justifyContent: 'center' }}>{pendenciasPreCadastro(item).length ? 'Pendente' : 'OK'}</span>}
+                            ? <button onClick={() => openEditar(item)} title={pendPre(item).length ? `Falta: ${pendPre(item).join(', ')}` : undefined} style={{ ...(pendPre(item).length ? s.badge('#a16207', '#fef9c3', '#fde047') : s.badge('var(--green)', '#f0fdf4', '#86efac')), cursor: 'pointer', width: '100%', justifyContent: 'center' }}>{pendPre(item).length ? 'Pendente' : 'OK'}</button>
+                            : <span style={{ ...(pendPre(item).length ? s.badge('#a16207', '#fef9c3', '#fde047') : s.badge('var(--green)', '#f0fdf4', '#86efac')), width: '100%', justifyContent: 'center' }}>{pendPre(item).length ? 'Pendente' : 'OK'}</span>}
                       </div>
                       <div>
                         <div style={{ fontSize: 10, color: 'var(--gray-500)', marginBottom: 4 }}>Cadastro</div>
@@ -4286,11 +4302,11 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
                           {cadastOk
                             ? <span style={s.badge('#2563eb', '#eff6ff', '#bfdbfe')}>✓ OK</span>
                             : canEditarPreCadastro
-                              ? (pendenciasPreCadastro(item).length > 0
-                                ? <button onClick={() => openEditar(item)} title={`Falta: ${pendenciasPreCadastro(item).join(', ')}`} style={{ ...s.badge('#a16207', '#fef9c3', '#fde047'), cursor: 'pointer' }}>Pendente</button>
+                              ? (pendPre(item).length > 0
+                                ? <button onClick={() => openEditar(item)} title={`Falta: ${pendPre(item).join(', ')}`} style={{ ...s.badge('#a16207', '#fef9c3', '#fde047'), cursor: 'pointer' }}>Pendente</button>
                                 : <button onClick={() => openEditar(item)} style={{ ...s.badge('var(--green)', '#f0fdf4', '#86efac'), cursor: 'pointer' }}>✓ OK</button>)
-                              : (pendenciasPreCadastro(item).length > 0
-                                ? <span title={`Falta: ${pendenciasPreCadastro(item).join(', ')}`} style={s.badge('#a16207', '#fef9c3', '#fde047')}>Pendente</span>
+                              : (pendPre(item).length > 0
+                                ? <span title={`Falta: ${pendPre(item).join(', ')}`} style={s.badge('#a16207', '#fef9c3', '#fde047')}>Pendente</span>
                                 : <span style={s.badge('var(--green)', '#f0fdf4', '#86efac')}>✓ OK</span>)}
                         </td>
                         <td style={{ ...s.td, padding: '10px 6px' }}>
