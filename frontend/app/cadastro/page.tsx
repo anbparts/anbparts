@@ -423,6 +423,7 @@ export default function CadastroPage() {
   const [resumoData, setResumoData] = useState<any>(null);
   const [resumoFiltro, setResumoFiltro] = useState<'' | 'liberadas' | 'pendentes' | 'pendente_imagens' | 'sem_fotos'>('');
   const [resumoFiltroSku, setResumoFiltroSku] = useState('');
+  const [resumoSub, setResumoSub] = useState('');
   const [skusCopiados, setSkusCopiados] = useState(false);
   const [paginaCadastro, setPaginaCadastro] = usePersistentTab<'sku' | 'fotos-drive' | 'anuncio' | 'fotos' | 'categoria' | 'fotos-manutencao'>('aba', 'sku', ['sku', 'fotos-drive', 'anuncio', 'fotos', 'categoria', 'fotos-manutencao']);
   // Aba Anuncio: cria anuncios de verdade em varios marketplaces (busca SKUs, categoria com ajuste
@@ -884,6 +885,7 @@ export default function CadastroPage() {
     setResumoLoading(true);
     setResumoData(null);
     setResumoFiltro('');
+    setResumoSub('');
     setResumoFiltroSku('');
     try {
       const params = new URLSearchParams();
@@ -904,6 +906,27 @@ export default function CadastroPage() {
     setResumoLoading(false);
   }
 
+  // Tipos de pendência de um SKU (chave do sub-filtro + rótulo): cada campo de dados faltando e o estado das imagens
+  function pendenciasDoItem(it: any): Array<{ chave: string; label: string }> {
+    const out: Array<{ chave: string; label: string }> = [];
+    (it.dadosFaltando || []).forEach((d: string) => out.push({ chave: `dado:${d}`, label: `Falta ${d}` }));
+    if (it.imagens === 'pendente_tratamento') out.push({ chave: 'img:pendente_tratamento', label: 'Imagens: pendente tratamento' });
+    else if (it.imagens === 'sem_fotos') out.push({ chave: 'img:sem_fotos', label: 'Imagens: sem fotos disponíveis' });
+    return out;
+  }
+
+  // Sub-filtro dinâmico: só vale enquanto o card "Com pendências" está ativo
+  function subCardsPendencias() {
+    const contagem = new Map<string, { label: string; n: number }>();
+    (resumoData?.itens || []).filter((it: any) => !it.liberada).forEach((it: any) => {
+      pendenciasDoItem(it).forEach((p) => {
+        const atual = contagem.get(p.chave);
+        if (atual) atual.n += 1; else contagem.set(p.chave, { label: p.label, n: 1 });
+      });
+    });
+    return Array.from(contagem.entries()).map(([chave, v]) => ({ chave, label: v.label, n: v.n })).sort((a, b) => b.n - a.n || a.label.localeCompare(b.label));
+  }
+
   function itensResumoFiltrados() {
     const itens = resumoData?.itens || [];
     return itens.filter((it: any) =>
@@ -912,6 +935,7 @@ export default function CadastroPage() {
         || (resumoFiltro === 'pendentes' && !it.liberada)
         || (resumoFiltro === 'pendente_imagens' && it.imagens === 'pendente_tratamento')
         || (resumoFiltro === 'sem_fotos' && it.imagens === 'sem_fotos'))
+      && (resumoFiltro !== 'pendentes' || !resumoSub || pendenciasDoItem(it).some((p) => p.chave === resumoSub))
       && (!resumoFiltroSku || String(it.sku).toUpperCase().includes(resumoFiltroSku.toUpperCase())));
   }
 
@@ -5022,7 +5046,7 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
                       const clicavel = ehTotal || val > 0;
                       return (
                         <button key={label} disabled={!clicavel}
-                          onClick={() => setResumoFiltro(ehTotal ? '' : (resumoFiltro === chave ? '' : chave))}
+                          onClick={() => { setResumoSub(''); setResumoFiltro(ehTotal ? '' : (resumoFiltro === chave ? '' : chave)); }}
                           title={ehTotal ? 'Mostrar todas' : (val > 0 ? 'Filtrar por este status' : 'Sem itens')}
                           style={{ flex: isPhone ? '1 1 44%' : '1 1 150px', textAlign: 'left', background: bg, borderRadius: 10, padding: '10px 14px', cursor: clicavel ? 'pointer' : 'default', opacity: clicavel ? 1 : 0.5, border: ativo ? `2px solid ${cor}` : '2px solid transparent', fontFamily: 'inherit' }}>
                           <div style={{ fontSize: 20, fontWeight: 800, color: cor }}>{val}</div>
@@ -5032,12 +5056,32 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
                     })}
                   </div>
 
+                  {/* Sub-filtro dinâmico: aparece ao ativar "Com pendências" e conta cada tipo de pendência */}
+                  {resumoFiltro === 'pendentes' && subCardsPendencias().length > 0 && (
+                    <div style={{ marginBottom: 12 }}>
+                      <div style={{ fontSize: 11.5, color: 'var(--gray-400)', fontWeight: 600, marginBottom: 6 }}>Tipos de pendência (um SKU pode ter mais de uma)</div>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        {subCardsPendencias().map((sc) => {
+                          const ativoSub = resumoSub === sc.chave;
+                          return (
+                            <button key={sc.chave} onClick={() => setResumoSub(ativoSub ? '' : sc.chave)}
+                              title="Filtrar por este tipo de pendência"
+                              style={{ flex: isPhone ? '1 1 44%' : '0 1 auto', minWidth: isPhone ? undefined : 130, textAlign: 'left', background: '#fff7ed', borderRadius: 10, padding: '8px 12px', cursor: 'pointer', border: ativoSub ? '2px solid #c2410c' : '2px solid transparent', fontFamily: 'inherit' }}>
+                              <div style={{ fontSize: 18, fontWeight: 800, color: '#c2410c' }}>{sc.n}</div>
+                              <div style={{ fontSize: 11.5, color: 'var(--gray-500)', fontWeight: 600 }}>{sc.label}{ativoSub ? ' ●' : ''}</div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Filtro por SKU + limpar */}
                   <div style={{ display: 'flex', gap: 10, alignItems: isPhone ? 'stretch' : 'center', flexWrap: 'wrap', flexDirection: isPhone ? 'column' : 'row', marginBottom: 12 }}>
                     <input value={resumoFiltroSku} placeholder="Filtrar por SKU..." onChange={e => setResumoFiltroSku(e.target.value)}
                       style={{ ...s.input, width: isPhone ? '100%' : 200, textTransform: 'uppercase' }} />
                     {(resumoFiltro || resumoFiltroSku) && (
-                      <button onClick={() => { setResumoFiltro(''); setResumoFiltroSku(''); }}
+                      <button onClick={() => { setResumoFiltro(''); setResumoSub(''); setResumoFiltroSku(''); }}
                         style={{ ...s.btn, fontSize: 12, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', width: isPhone ? '100%' : undefined, justifyContent: 'center' }}>
                         ✕ Limpar filtro
                       </button>
