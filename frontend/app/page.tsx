@@ -535,12 +535,14 @@ export default function DashboardPage() {
       value: fmt(totaisVendasMes.valorTaxas),
       color: 'var(--amber)',
       percentageText: `% Preco Venda: ${fmtShareOfPriceML(totaisVendasMes.valorTaxas, totaisVendasMes.precoML)}`,
+      subTexto: `Ticket medio por peca: ${ticketPorPeca(totaisVendasMes.valorTaxas)}`,
     },
     {
       label: 'Frete',
       value: fmt(totaisVendasMes.valorFrete),
       color: 'var(--ink)',
       percentageText: `% Preco Venda: ${fmtShareOfPriceML(totaisVendasMes.valorFrete, totaisVendasMes.precoML)}`,
+      subTexto: `Ticket medio por peca: ${ticketPorPeca(totaisVendasMes.valorFrete)}`,
     },
     {
       label: 'Receita liquida',
