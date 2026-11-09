@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/auth';
 import { canAccessPage, canProcessAction } from '@/lib/permissions';
 import FornecedoresTab from './FornecedoresTab';
 import OficinasTab from './OficinasTab';
+import SolicitacoesTab from './SolicitacoesTab';
 import BlingClientesPage from '../bling/clientes/page';
 import AcessosTab from './AcessosTab';
 import { usePersistentTab } from '@/lib/use-persistent-tab';
@@ -162,7 +163,7 @@ export default function EmpresaPage() {
   const [feedback, setFeedback] = useState('');
   const [localError, setLocalError] = useState('');
   const [isPhone, setIsPhone] = useState(false);
-  const [aba, setAba] = usePersistentTab<'dados' | 'anexos' | 'acessos' | 'fornecedores' | 'oficinas' | 'clientes'>('aba', 'dados', ['dados', 'anexos', 'acessos', 'fornecedores', 'oficinas', 'clientes']);
+  const [aba, setAba] = usePersistentTab<'dados' | 'anexos' | 'acessos' | 'fornecedores' | 'oficinas' | 'solicitacoes' | 'clientes'>('aba', 'dados', ['dados', 'anexos', 'acessos', 'fornecedores', 'oficinas', 'solicitacoes', 'clientes']);
   const [snapshotDados, setSnapshotDados] = useState('');
   const [extras, setExtras] = useState<Array<{ id: string; name: string; dataUrl?: string } | null>>([]);
   const [contasBancarias, setContasBancarias] = useState<ContaBancaria[]>([]);
@@ -368,8 +369,9 @@ export default function EmpresaPage() {
           { id: 'acessos', label: 'Acessos e Senhas', sujo: false },
           { id: 'fornecedores', label: 'Fornecedores', sujo: false },
           { id: 'oficinas', label: 'Oficinas', sujo: false },
+          { id: 'solicitacoes', label: 'Solicitações', sujo: false },
           ...(canAccessPage(user as any, '/bling/clientes') ? [{ id: 'clientes', label: 'Clientes', sujo: false }] : []),
-        ] as Array<{ id: 'dados' | 'anexos' | 'acessos' | 'fornecedores' | 'oficinas' | 'clientes'; label: string; sujo: boolean }>).map((tab) => {
+        ] as Array<{ id: 'dados' | 'anexos' | 'acessos' | 'fornecedores' | 'oficinas' | 'solicitacoes' | 'clientes'; label: string; sujo: boolean }>).map((tab) => {
           const ativa = aba === tab.id;
           return (
             <button key={tab.id} type="button" onClick={() => setAba(tab.id)}
@@ -383,6 +385,7 @@ export default function EmpresaPage() {
       <div style={{ padding: isPhone ? 14 : 28, display: 'grid', gap: 18 }}>
         {aba === 'fornecedores' && <FornecedoresTab canEdit isPhone={isPhone} />}
         {aba === 'oficinas' && <OficinasTab canEdit isPhone={isPhone} />}
+        {aba === 'solicitacoes' && <SolicitacoesTab canEdit isPhone={isPhone} />}
         {aba === 'clientes' && canAccessPage(user as any, '/bling/clientes') && (
           <div className="empresa-clientes-aba" style={{ margin: isPhone ? -14 : -28 }}>
             {/* a pagina de Clientes traz o proprio cabecalho: o titulo (repete o nome da aba) some e fica so o botao dela */}
