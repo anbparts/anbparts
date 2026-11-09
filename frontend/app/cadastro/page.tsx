@@ -404,6 +404,16 @@ function buildCadastroSkuEtiquetas(item: CadastroPeca) {
   }));
 }
 
+// Dados do pré-cadastro que ainda faltam preencher (mesmos critérios do Resumo de status)
+function pendenciasPreCadastro(item: any): string[] {
+  const out: string[] = [];
+  if (item.peso == null || item.largura == null || item.altura == null || item.profundidade == null) out.push('dimensões');
+  if (item.numeroPeca == null || String(item.numeroPeca).trim() === '') out.push('nº peça');
+  if (item.localizacao == null || String(item.localizacao).trim() === '') out.push('localização');
+  if (!(Number(item.precoVenda) > 0)) out.push('preço');
+  return out;
+}
+
 export default function CadastroPage() {
   const { user } = useAuth();
   const [motos, setMotos] = useState<any[]>([]);
@@ -414,6 +424,9 @@ export default function CadastroPage() {
   const [modalA4Open, setModalA4Open] = useState(false);
   const [loading, setLoading] = useState(true);
   const [somentePendentes, setSomentePendentes] = useState(true);
+  const [soPreCadPendente, setSoPreCadPendente] = useState(false);
+  const [filtroSalvoTem, setFiltroSalvoTem] = useState(false);
+  const filtroRestauradoRef = useRef(false);
   const [filters, setFilters] = useState({ motoId: '', search: '', skus: '', semDimensoes: '', comDimensoes: '', preCadastroCompleto: '' });
   const [searchInput, setSearchInput] = useState('');
   const [skusListaAberta, setSkusListaAberta] = useState(false);
@@ -815,6 +828,35 @@ export default function CadastroPage() {
   const [refSkuError, setRefSkuError] = useState('');
   const [refSkuResultado, setRefSkuResultado] = useState<any>(null);
 
+  // Filtro salvo por usuário (guardado neste navegador, separado por login)
+  const filtroSalvoKey = user?.username ? `anb:cadastro:filtro:${String(user.username).trim().toLowerCase()}` : '';
+  useEffect(() => {
+    if (!filtroSalvoKey || filtroRestauradoRef.current) return;
+    filtroRestauradoRef.current = true;
+    try {
+      const raw = window.localStorage.getItem(filtroSalvoKey);
+      if (!raw) return;
+      const f = JSON.parse(raw);
+      setFiltroSalvoTem(true);
+      setSomentePendentes(f.somentePendentes !== false);
+      setSoPreCadPendente(!!f.soPreCadPendente);
+      if (f.motoId) setFilters((prev) => ({ ...prev, motoId: String(f.motoId) }));
+      if (f.search) setSearchInput(String(f.search));
+    } catch { /* sem armazenamento: segue com o padrão */ }
+  }, [filtroSalvoKey]);
+  function salvarFiltroPadrao() {
+    if (!filtroSalvoKey) return;
+    try {
+      window.localStorage.setItem(filtroSalvoKey, JSON.stringify({ somentePendentes, soPreCadPendente, motoId: filters.motoId, search: filters.search }));
+      setFiltroSalvoTem(true);
+    } catch { alert('Não foi possível salvar o filtro neste navegador.'); }
+  }
+  function removerFiltroPadrao() {
+    if (!filtroSalvoKey) return;
+    try { window.localStorage.removeItem(filtroSalvoKey); } catch { /* ignore */ }
+    setFiltroSalvoTem(false);
+  }
+
   useEffect(() => { loadSupportData(); }, []);
   useEffect(() => { loadCadastros(); }, [filters, somentePendentes]);
   useEffect(() => {
@@ -1101,9 +1143,10 @@ export default function CadastroPage() {
 
   const linhasOrdenadasCadastro = (() => {
     const k = sortCadastro.key;
-    if (!k) return data.data;
+    const base = soPreCadPendente ? data.data.filter((i) => i.status !== 'cadastrado' && pendenciasPreCadastro(i).length > 0) : data.data;
+    if (!k) return base;
     const factor = sortCadastro.dir === 'asc' ? 1 : -1;
-    return [...data.data].sort((a, b) => {
+    return [...base].sort((a, b) => {
       const va = valorOrdenacaoCadastro(a, k);
       const vb = valorOrdenacaoCadastro(b, k);
       if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * factor;
@@ -4041,6 +4084,11 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
               style={{ ...s.btn, fontSize: 12, background: somentePendentes ? 'var(--gray-800)' : 'var(--white)', color: somentePendentes ? '#fff' : 'var(--gray-600)', border: '1px solid var(--border)', width: isPhone ? '100%' : undefined }}
               onClick={() => setSomentePendentes(!somentePendentes)}
             >{somentePendentes ? '📋 Só Pendentes' : '📋 Todos'}</button>
+            <button
+              title="Mostra só os SKUs com dados do pré-cadastro faltando (dimensões, nº peça, localização ou preço)"
+              style={{ ...s.btn, fontSize: 12, background: soPreCadPendente ? '#a16207' : 'var(--white)', color: soPreCadPendente ? '#fff' : 'var(--gray-600)', border: '1px solid var(--border)', width: isPhone ? '100%' : undefined }}
+              onClick={() => setSoPreCadPendente(!soPreCadPendente)}
+            >⚠ Pré-Cadastro Pendente</button>
             <select style={{ ...s.input, width: isPhone ? '100%' : 200 }} value={filters.motoId} onChange={(e) => setFilters((prev) => ({ ...prev, motoId: e.target.value }))}>
               <option value="">Todas as motos</option>
               {motos.map((m) => <option key={m.id} value={m.id}>ID {m.id} - {m.marca} {m.modelo}</option>)}
@@ -4050,7 +4098,23 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
               style={{ ...s.btn, fontSize: 12, background: filters.skus ? 'var(--blue-600)' : 'var(--white)', color: filters.skus ? '#fff' : 'var(--gray-600)', border: '1px solid var(--border)', width: isPhone ? '100%' : undefined }}
               onClick={() => { setSkusListaTexto(filters.skus); setSkusListaAberta(!skusListaAberta); }}
             >📋 Lista de SKUs{filters.skus ? ` (${filters.skus.split(/[\n,]+/).filter(Boolean).length})` : ''}</button>
-            <button style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', fontSize: 12, width: isPhone ? '100%' : undefined }} onClick={() => { setSearchInput(''); setSkusListaTexto(''); setSkusListaAberta(false); setFilters({ motoId: '', search: '', skus: '', semDimensoes: '', comDimensoes: '', preCadastroCompleto: '' }); }}>Limpar</button>
+            <button style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', fontSize: 12, width: isPhone ? '100%' : undefined }} onClick={() => { setSearchInput(''); setSkusListaTexto(''); setSkusListaAberta(false); setSoPreCadPendente(false); setFilters({ motoId: '', search: '', skus: '', semDimensoes: '', comDimensoes: '', preCadastroCompleto: '' }); }}>Limpar</button>
+            {filtroSalvoKey && (
+              <>
+                <button
+                  title="Salva o filtro atual (Só Pendentes/Todos, Pré-Cadastro Pendente, moto e busca) como o seu padrão ao abrir esta tela"
+                  style={{ ...s.btn, background: 'var(--white)', border: '1px solid var(--border)', color: 'var(--gray-600)', fontSize: 12, width: isPhone ? '100%' : undefined }}
+                  onClick={salvarFiltroPadrao}
+                >💾 Salvar filtro</button>
+                {filtroSalvoTem && (
+                  <button
+                    title="Remover o filtro padrão salvo"
+                    style={{ ...s.btn, background: '#f0fdf4', border: '1px solid #86efac', color: '#15803d', fontSize: 12, width: isPhone ? '100%' : undefined }}
+                    onClick={removerFiltroPadrao}
+                  >✓ Filtro salvo ✕</button>
+                )}
+              </>
+            )}
           </div>
           {skusListaAberta && (
             <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
@@ -4079,7 +4143,7 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
         <div style={{ ...s.card, overflow: 'hidden', maxWidth: '100%' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
             <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>
-              {data.total} registro(s){somentePendentes ? ' (pendentes)' : ''}
+              {soPreCadPendente ? linhasOrdenadasCadastro.length : data.total} registro(s){somentePendentes ? ' (pendentes)' : ''}{soPreCadPendente ? ' · pré-cadastro pendente' : ''}
               {filters.skus && <span style={{ color: 'var(--blue-600)', fontWeight: 600 }}> · filtrado por lista de SKUs</span>}
               {a4Sel.size > 0 && <span style={{ color: 'var(--blue-600)', fontWeight: 600 }}> · {a4Sel.size} selecionado(s)</span>}
             </div>
@@ -4134,8 +4198,8 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
                         {cadastOk
                           ? <span style={s.badge('#2563eb', '#eff6ff', '#bfdbfe')}>OK</span>
                           : canEditarPreCadastro
-                            ? <button onClick={() => openEditar(item)} style={{ ...s.badge('var(--green)', '#f0fdf4', '#86efac'), cursor: 'pointer', width: '100%', justifyContent: 'center' }}>OK</button>
-                            : <span style={{ ...s.badge('var(--green)', '#f0fdf4', '#86efac'), width: '100%', justifyContent: 'center' }}>OK</span>}
+                            ? <button onClick={() => openEditar(item)} title={pendenciasPreCadastro(item).length ? `Falta: ${pendenciasPreCadastro(item).join(', ')}` : undefined} style={{ ...(pendenciasPreCadastro(item).length ? s.badge('#a16207', '#fef9c3', '#fde047') : s.badge('var(--green)', '#f0fdf4', '#86efac')), cursor: 'pointer', width: '100%', justifyContent: 'center' }}>{pendenciasPreCadastro(item).length ? 'Pendente' : 'OK'}</button>
+                            : <span style={{ ...(pendenciasPreCadastro(item).length ? s.badge('#a16207', '#fef9c3', '#fde047') : s.badge('var(--green)', '#f0fdf4', '#86efac')), width: '100%', justifyContent: 'center' }}>{pendenciasPreCadastro(item).length ? 'Pendente' : 'OK'}</span>}
                       </div>
                       <div>
                         <div style={{ fontSize: 10, color: 'var(--gray-500)', marginBottom: 4 }}>Cadastro</div>
@@ -4222,8 +4286,12 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
                           {cadastOk
                             ? <span style={s.badge('#2563eb', '#eff6ff', '#bfdbfe')}>✓ OK</span>
                             : canEditarPreCadastro
-                              ? <button onClick={() => openEditar(item)} style={{ ...s.badge('var(--green)', '#f0fdf4', '#86efac'), cursor: 'pointer' }}>✓ OK</button>
-                              : <span style={s.badge('var(--green)', '#f0fdf4', '#86efac')}>✓ OK</span>}
+                              ? (pendenciasPreCadastro(item).length > 0
+                                ? <button onClick={() => openEditar(item)} title={`Falta: ${pendenciasPreCadastro(item).join(', ')}`} style={{ ...s.badge('#a16207', '#fef9c3', '#fde047'), cursor: 'pointer' }}>Pendente</button>
+                                : <button onClick={() => openEditar(item)} style={{ ...s.badge('var(--green)', '#f0fdf4', '#86efac'), cursor: 'pointer' }}>✓ OK</button>)
+                              : (pendenciasPreCadastro(item).length > 0
+                                ? <span title={`Falta: ${pendenciasPreCadastro(item).join(', ')}`} style={s.badge('#a16207', '#fef9c3', '#fde047')}>Pendente</span>
+                                : <span style={s.badge('var(--green)', '#f0fdf4', '#86efac')}>✓ OK</span>)}
                         </td>
                         <td style={{ ...s.td, padding: '10px 6px' }}>
                           {cadastOk ? (
