@@ -1005,7 +1005,7 @@ cadastroRouter.get('/resumo', async (req, res, next) => {
     const pecas = await prisma.cadastroPeca.findMany({
       where,
       select: {
-        idPeca: true, descricao: true, motoId: true, status: true,
+        id: true, idPeca: true, descricao: true, motoId: true, status: true,
         peso: true, largura: true, altura: true, profundidade: true,
         numeroPeca: true, localizacao: true, precoVenda: true, fotoCadastroVerificada: true,
         detranEtiqueta: true,
@@ -1063,6 +1063,8 @@ cadastroRouter.get('/resumo', async (req, res, next) => {
         const cadastrado = p.status === 'cadastrado';
         const liberada = dadosFaltando.length === 0 && imagens === 'completo';
         itens[idx] = {
+          id: p.id,
+          idPeca: p.idPeca,
           sku: base,
           descricao: p.descricao || '',
           moto: p.moto ? `${p.moto.marca} ${p.moto.modelo}` : '',

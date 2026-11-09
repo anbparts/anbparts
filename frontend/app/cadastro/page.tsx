@@ -906,6 +906,23 @@ export default function CadastroPage() {
     setResumoLoading(false);
   }
 
+  // Clique no SKU do Resumo: fecha o resumo e abre o mesmo "Editar Pré-Cadastro" da 1ª coluna da lista
+  async function editarDoResumo(it: any) {
+    if (!canEditarPreCadastro) return alert('Seu usuario nao tem permissao para editar pre-cadastro.');
+    let item: CadastroPeca | undefined = data.data.find((x) => x.id === it.id);
+    if (!item) {
+      // fora da página carregada da lista: busca a peça pelo SKU
+      try {
+        const d = await fetch(`${API}/cadastro?skus=${encodeURIComponent(String(it.idPeca || it.sku))}`, { credentials: 'include' }).then((r) => r.json());
+        item = (d?.data || []).find((x: any) => x.id === it.id) || (d?.data || [])[0];
+      } catch { /* cai no alerta abaixo */ }
+    }
+    if (!item) return alert('Não consegui abrir este SKU para edição.');
+    if (item.status === 'cadastrado') return alert('Este SKU já foi cadastrado, não dá para editar o pré-cadastro.');
+    setResumoOpen(false);
+    await openEditar(item);
+  }
+
   // Tipos de pendência de um SKU (chave do sub-filtro + rótulo): cada campo de dados faltando e o estado das imagens
   function pendenciasDoItem(it: any): Array<{ chave: string; label: string }> {
     const out: Array<{ chave: string; label: string }> = [];
@@ -5102,7 +5119,7 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
                           <div key={it.sku + i} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 12, background: it.liberada ? '#fbfffe' : 'var(--white)' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
                               <div style={{ minWidth: 0 }}>
-                                <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 12, color: 'var(--gray-800)' }}>{it.sku}</div>
+                                <div onClick={() => editarDoResumo(it)} title="Abrir edição do pré-cadastro" style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 12, color: 'var(--blue-600)', cursor: 'pointer', textDecoration: 'underline' }}>{it.sku}</div>
                                 <div style={{ fontSize: 12.5, color: 'var(--gray-700)', marginTop: 2 }}>{it.descricao}</div>
                               </div>
                               <span style={{ flexShrink: 0, display: 'inline-block', padding: '2px 10px', borderRadius: 999, fontSize: 11, fontWeight: 700, background: it.liberada ? '#ecfdf3' : '#fff7ed', color: it.liberada ? '#047857' : '#c2410c' }}>
@@ -5142,7 +5159,7 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
                             <tr><td colSpan={5} style={{ padding: 24, textAlign: 'center', color: 'var(--gray-400)' }}>Nenhuma peça com esse filtro.</td></tr>
                           ) : itensResumoFiltrados().map((it: any, i: number) => (
                             <tr key={it.sku + i} style={{ borderTop: '1px solid #f1f5f9', background: it.liberada ? '#fbfffe' : 'var(--white)' }}>
-                              <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 700, fontSize: 12 }}>{it.sku}</td>
+                              <td onClick={() => editarDoResumo(it)} title="Abrir edição do pré-cadastro" style={{ padding: '9px 12px', fontFamily: 'monospace', fontWeight: 700, fontSize: 12, color: 'var(--blue-600)', cursor: 'pointer', textDecoration: 'underline' }}>{it.sku}</td>
                               <td style={{ padding: '9px 12px', color: 'var(--gray-700)' }}>{it.descricao}</td>
                               <td style={{ padding: '9px 12px' }}>
                                 {it.dadosFaltando.length === 0
