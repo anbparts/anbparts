@@ -525,10 +525,11 @@ export default function DashboardPage() {
     valorLiq: 0,
   };
 
-  const cardsVendasMes: Array<{ label: string; value: string; color: string; percentageText?: string | null }> = [
+  const ticketPorPeca = (valor: number) => (Number(totaisVendasMes.totalItens) > 0 ? fmt(Number(valor) / Number(totaisVendasMes.totalItens)) : fmt(0));
+  const cardsVendasMes: Array<{ label: string; value: string; color: string; percentageText?: string | null; subTexto?: string }> = [
     { label: 'Pedidos', value: String(totaisVendasMes.totalPedidos), color: 'var(--ink)', percentageText: null },
     { label: 'Itens', value: String(totaisVendasMes.totalItens), color: 'var(--ink)', percentageText: null },
-    { label: 'Preco ML', value: fmt(totaisVendasMes.precoML), color: 'var(--blue-500)', percentageText: null },
+    { label: 'Preco ML', value: fmt(totaisVendasMes.precoML), color: 'var(--blue-500)', percentageText: null, subTexto: `Ticket medio por peca: ${ticketPorPeca(totaisVendasMes.precoML)}` },
     {
       label: 'Taxas',
       value: fmt(totaisVendasMes.valorTaxas),
@@ -546,6 +547,7 @@ export default function DashboardPage() {
       value: fmt(totaisVendasMes.valorLiq),
       color: 'var(--sage)',
       percentageText: `% Preco Venda: ${fmtShareOfPriceML(totaisVendasMes.valorLiq, totaisVendasMes.precoML)}`,
+      subTexto: `Ticket medio por peca: ${ticketPorPeca(totaisVendasMes.valorLiq)}`,
     },
   ];
 
@@ -707,7 +709,11 @@ export default function DashboardPage() {
                 {card.percentageText ? (
                   <div style={{ ...s.meta, fontSize: isTabletLandscape ? 9.5 : s.meta.fontSize, marginTop: isTabletLandscape ? 4 : s.meta.marginTop, ...sensitiveMaskStyle(ocultarValores) }}>{card.percentageText}</div>
                 ) : null}
-                <div style={getSubStyle()}>Periodo automatico do mes corrente.</div>
+                {card.subTexto ? (
+                  <div style={{ ...getSubStyle(), ...sensitiveMaskStyle(ocultarValores) }}>{card.subTexto}</div>
+                ) : (
+                  <div style={getSubStyle()}>Periodo automatico do mes corrente.</div>
+                )}
               </div>
             ))}
           </div>
