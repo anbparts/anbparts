@@ -1,7 +1,21 @@
 import { Router } from 'express';
-import { lerEstadoConexoes, registrarResultados, verificarConexoes } from '../lib/monitor-conexoes';
+import { LIMITES_MONITOR, lerConfigMonitor, lerEstadoConexoes, registrarResultados, salvarConfigMonitor, verificarConexoes } from '../lib/monitor-conexoes';
 
 export const monitorConexoesRouter = Router();
+
+// GET /monitor-conexoes/config — regras dos alertas por e-mail (tentativas antes de avisar, intervalo, reaviso).
+monitorConexoesRouter.get('/config', async (_req, res, next) => {
+  try {
+    res.json({ ok: true, config: await lerConfigMonitor(), limites: LIMITES_MONITOR });
+  } catch (e) { next(e); }
+});
+
+// PUT /monitor-conexoes/config — salva as regras (valores fora do limite sao ajustados).
+monitorConexoesRouter.put('/config', async (req, res, next) => {
+  try {
+    res.json({ ok: true, config: await salvarConfigMonitor(req.body || {}), limites: LIMITES_MONITOR });
+  } catch (e) { next(e); }
+});
 
 // GET /monitor-conexoes — testa todas as integracoes agora (chamada real a cada API) e devolve o estado.
 monitorConexoesRouter.get('/', async (_req, res, next) => {

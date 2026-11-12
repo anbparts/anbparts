@@ -20,11 +20,61 @@ export type ResultadoConexao = {
   aviso?: string;
   telaConfig: string;
   verificadoEm: string;
+  tentativas?: number; // quantas tentativas seguidas falharam (so preenchido na rotina automatica)
 };
 
 const TICK_MS = 30 * 60 * 1000;
-const REAVISO_MS = 24 * 60 * 60 * 1000;
 const TIMEOUT_MS = 25_000;
+
+// ---- configuracao dos alertas (editavel na tela do Monitor de Conexoes) ----
+export type ConfigMonitor = { tentativas: number; intervaloSeg: number; reavisoHoras: number };
+export const CONFIG_MONITOR_PADRAO: ConfigMonitor = { tentativas: 5, intervaloSeg: 60, reavisoHoras: 24 };
+// Limites: tentativas x intervalo precisa caber dentro do ciclo de 30 min da rotina.
+export const LIMITES_MONITOR = { tentativas: [1, 10], intervaloSeg: [10, 120], reavisoHoras: [1, 168] } as const;
+
+function limitar(v: any, [min, max]: readonly [number, number], padrao: number) {
+  const n = Math.round(Number(v));
+  if (!Number.isFinite(n)) return padrao;
+  return Math.min(max, Math.max(min, n));
+}
+
+export function normalizarConfigMonitor(raw: any): ConfigMonitor {
+  return {
+    tentativas: limitar(raw?.tentativas, LIMITES_MONITOR.tentativas, CONFIG_MONITOR_PADRAO.tentativas),
+    intervaloSeg: limitar(raw?.intervaloSeg, LIMITES_MONITOR.intervaloSeg, CONFIG_MONITOR_PADRAO.intervaloSeg),
+    reavisoHoras: limitar(raw?.reavisoHoras, LIMITES_MONITOR.reavisoHoras, CONFIG_MONITOR_PADRAO.reavisoHoras),
+  };
+}
+
+let tabelaConfigPronta = false;
+async function garantirTabelaConfig() {
+  if (tabelaConfigPronta) return;
+  await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "MonitorConexaoConfig" (
+    "id" INTEGER PRIMARY KEY, "tentativas" INTEGER NOT NULL DEFAULT 5, "intervaloSeg" INTEGER NOT NULL DEFAULT 60,
+    "reavisoHoras" INTEGER NOT NULL DEFAULT 24, "atualizadoEm" TIMESTAMPTZ)`);
+  tabelaConfigPronta = true;
+}
+
+export async function lerConfigMonitor(): Promise<ConfigMonitor> {
+  try {
+    await garantirTabelaConfig();
+    const rows = await prisma.$queryRawUnsafe<any[]>(`SELECT "tentativas","intervaloSeg","reavisoHoras" FROM "MonitorConexaoConfig" WHERE "id" = 1`);
+    return rows[0] ? normalizarConfigMonitor(rows[0]) : { ...CONFIG_MONITOR_PADRAO };
+  } catch {
+    return { ...CONFIG_MONITOR_PADRAO };
+  }
+}
+
+export async function salvarConfigMonitor(raw: any): Promise<ConfigMonitor> {
+  await garantirTabelaConfig();
+  const c = normalizarConfigMonitor(raw);
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "MonitorConexaoConfig" ("id","tentativas","intervaloSeg","reavisoHoras","atualizadoEm") VALUES (1,$1,$2,$3,now())
+     ON CONFLICT ("id") DO UPDATE SET "tentativas"=$1,"intervaloSeg"=$2,"reavisoHoras"=$3,"atualizadoEm"=now()`,
+    c.tentativas, c.intervaloSeg, c.reavisoHoras,
+  );
+  return c;
+}
 
 const txt = (v: any) => String(v ?? '').trim();
 const msg = (e: any) => txt(e?.message || e).slice(0, 300) || 'Falha desconhecida';
@@ -152,8 +202,9 @@ const CHECAGENS: Checagem[] = [
   },
 ];
 
-export async function verificarConexoes(): Promise<ResultadoConexao[]> {
-  return Promise.all(CHECAGENS.map(async (c): Promise<ResultadoConexao> => {
+export async function verificarConexoes(chaves?: string[]): Promise<ResultadoConexao[]> {
+  const lista = chaves ? CHECAGENS.filter((c) => chaves.includes(c.chave)) : CHECAGENS;
+  return Promise.all(lista.map(async (c): Promise<ResultadoConexao> => {
     const base = { chave: c.chave, nome: c.nome, telaConfig: c.telaConfig, verificadoEm: new Date().toISOString() };
     try {
       const r = await comTimeout(c.rodar());
@@ -188,6 +239,7 @@ export async function lerEstadoConexoes(): Promise<Record<string, { caiuEm: Date
 export async function registrarResultados(resultados: ResultadoConexao[]) {
   await garantirTabela();
   const estado = await lerEstadoConexoes();
+  const reavisoMs = (await lerConfigMonitor()).reavisoHoras * 60 * 60 * 1000;
   const avisar: ResultadoConexao[] = [];
   for (const r of resultados) {
     const ant = estado[r.chave];
@@ -198,7 +250,7 @@ export async function registrarResultados(resultados: ResultadoConexao[]) {
          ON CONFLICT ("chave") DO UPDATE SET "status"='erro',"mensagem"=$2,"verificadoEm"=now(),"caiuEm"=COALESCE("MonitorConexaoEstado"."caiuEm",$3)`,
         r.chave, r.detalhe, caiuEm,
       );
-      if (!ant?.notificadoEm || Date.now() - ant.notificadoEm.getTime() > REAVISO_MS) avisar.push(r);
+      if (!ant?.notificadoEm || Date.now() - ant.notificadoEm.getTime() > reavisoMs) avisar.push(r);
     } else {
       await prisma.$executeRawUnsafe(
         `INSERT INTO "MonitorConexaoEstado" ("chave","status","mensagem","verificadoEm","caiuEm","notificadoEm") VALUES ($1,$2,$3,now(),NULL,NULL)
@@ -223,14 +275,14 @@ async function enviarAviso(caidas: ResultadoConexao[]) {
   }
   const linhas = caidas.map((c) => `<tr>
     <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-weight:700;">${esc(c.nome)}</td>
-    <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;color:#b91c1c;">${esc(c.detalhe)}</td></tr>`).join('');
+    <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;color:#b91c1c;">${esc(c.detalhe)}${c.tentativas && c.tentativas > 1 ? `<div style="color:#64748b;font-size:12px;margin-top:2px;">Falhou ${c.tentativas} tentativas seguidas</div>` : ''}</td></tr>`).join('');
   const html = renderAlertEmailLayout({
     eyebrow: 'ALERTA ANB Parts',
     title: caidas.length > 1 ? 'Conexões com problema' : 'Conexão com problema',
     subtitle: 'Reconecte em Configurações → Monitor de Conexões.',
     contentHtml: renderEmailPanel(`<table style="width:100%;border-collapse:collapse;font-size:14px;"><tbody>${linhas}</tbody></table>`, { accentColor: '#dc2626' }),
   });
-  const text = ['Conexões com problema:', '', ...caidas.map((c) => `- ${c.nome}: ${c.detalhe}`), '', 'Reconecte em Configurações → Monitor de Conexões.'].join('\n');
+  const text = ['Conexões com problema:', '', ...caidas.map((c) => `- ${c.nome}: ${c.detalhe}${c.tentativas && c.tentativas > 1 ? ` (falhou ${c.tentativas} tentativas seguidas)` : ''}`), '', 'Reconecte em Configurações → Monitor de Conexões.'].join('\n');
   await sendResendEmail({
     apiKey: geral.resendApiKey,
     from: geral.emailRemetente || DEFAULT_RESEND_FROM,
@@ -242,12 +294,37 @@ async function enviarAviso(caidas: ResultadoConexao[]) {
   return true;
 }
 
+// Rotina automatica: quem falha e' testado de novo (ate "tentativas" no total, com "intervaloSeg" entre elas).
+// So continua como 'erro' (e gera e-mail) se falhar em todas; se alguma tentativa passar, conta como ok.
+async function verificarComTentativas(): Promise<ResultadoConexao[]> {
+  const cfg = await lerConfigMonitor();
+  const final = new Map<string, ResultadoConexao>();
+  let pendentes: string[] = [];
+  for (const r of await verificarConexoes()) {
+    final.set(r.chave, r);
+    if (r.status === 'erro') pendentes.push(r.chave);
+  }
+  let tentativa = 1;
+  for (const chave of pendentes) final.set(chave, { ...final.get(chave)!, tentativas: 1 });
+  while (pendentes.length && tentativa < cfg.tentativas) {
+    await new Promise((resolve) => setTimeout(resolve, cfg.intervaloSeg * 1000));
+    tentativa += 1;
+    const proximos: string[] = [];
+    for (const r of await verificarConexoes(pendentes)) {
+      if (r.status === 'erro') { final.set(r.chave, { ...r, tentativas: tentativa }); proximos.push(r.chave); }
+      else final.set(r.chave, r);
+    }
+    pendentes = proximos;
+  }
+  return Array.from(final.values());
+}
+
 let rodando = false;
 async function tick() {
   if (rodando) return;
   rodando = true;
   try {
-    const resultados = await verificarConexoes();
+    const resultados = await verificarComTentativas();
     const avisar = await registrarResultados(resultados);
     if (avisar.length && await enviarAviso(avisar)) {
       for (const r of avisar) {
