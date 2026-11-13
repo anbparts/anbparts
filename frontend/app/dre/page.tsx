@@ -99,7 +99,8 @@ export default function DREPage() {
       { tipo: 'linha', cod: '4.C2', desc: 'Fretes de envio (e-commerce) · variável', get: (p) => -p.frete, indent: 1, drill: 'frete' },
       ...linhasCategoria('comercial', '4.C').map((l, i) => ({ ...l, cod: '4.C' + (i + 3) })),
       { tipo: 'linha', cod: '4.A', desc: 'Despesas administrativas e de estrutura', get: (p) => -p.despAdm, bold: true },
-      ...linhasCategoria('adm', '4.A'),      { tipo: 'linha', cod: '4.P', desc: 'Despesas com pessoal', get: (p) => -p.despPessoal, bold: true },
+      ...linhasCategoria('adm', '4.A'),
+      { tipo: 'linha', cod: '4.AD', desc: 'Depreciação de ativos (Estrutura) · fixa', get: (p) => -(p.depreciacao || 0), indent: 1, drill: 'depreciacao' },      { tipo: 'linha', cod: '4.P', desc: 'Despesas com pessoal', get: (p) => -p.despPessoal, bold: true },
       ...linhasCategoria('pessoal', '4.P'),
       { tipo: 'linha', cod: '4.T', desc: 'Total das despesas operacionais', get: (p) => -p.despesasOp, bold: true, destaque: 'vermelho' },
 
