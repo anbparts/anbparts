@@ -13,6 +13,7 @@
 // (clique no valor, na tela). Os dois usam o mesmo carregarBase(), entao o pop-up sempre soma o valor da celula.
 import { prisma } from './prisma';
 import { mapaCategoriasDespesa, semAcento, type GrupoDespesa, type TipoCusto } from './despesa-categorias';
+import { ativosParaDre, depreciacaoAcumuladaAte, planoDepreciacao } from '../routes/ativos';
 
 const TIMEZONE = 'America/Sao_Paulo';
 const n = (v: any) => Number(v) || 0;
@@ -35,6 +36,14 @@ type InfoCategoria = { nome: string; grupo: GrupoDespesa; tipo: TipoCusto };
 const MESCLADAS: Record<string, 'comissoes' | 'frete'> = { 'comissoes de marketplaces': 'comissoes', 'fretes de envio': 'frete' };
 
 const zeros = () => Array.from({ length: 12 }, () => 0);
+
+// Depreciacao de um ativo reconhecida em um mes (despesa administrativa e de estrutura, fixa): variacao da depreciacao
+// acumulada entre o fim do mes anterior e o fim do mes (limitado a hoje; meses futuros ficam zerados).
+function depreciacaoDoMes(a: any, ano: number, mes: number) {
+  const hoje = hojeKey();
+  const fimDe = (m: number) => { const d = new Date(Date.UTC(ano, m, 0)).toISOString().slice(0, 10); return d < hoje ? d : hoje; };
+  return Math.max(0, depreciacaoAcumuladaAte(a, fimDe(mes)) - depreciacaoAcumuladaAte(a, fimDe(mes - 1)));
+}
 const somar = (arr: number[]) => arr.reduce((s, v) => s + v, 0);
 const r2 = (v: number) => Math.round(v * 100) / 100;
 
@@ -178,6 +187,11 @@ export async function calcularDre(anoParam: number | null) {
     if (i >= 0 && i <= 11) perdas[i] += n(p.valor) + n(p.frete);
   }
 
+  // depreciacao dos ativos (aba Estrutura da Empresa): despesa administrativa e de estrutura, fixa
+  const ativosDep = await ativosParaDre();
+  const depreciacao = zeros();
+  for (const a of ativosDep) for (let m = 1; m <= 12; m++) depreciacao[m - 1] += depreciacaoDoMes(a, ano, m);
+
   const catLinhas = Array.from(porCateg.values())
     .map(({ info, valores }) => ({ categoria: info.nome, grupo: info.grupo, tipo: info.tipo, valores: valores.map(r2), total: r2(somar(valores)) }))
     .filter((l) => l.total !== 0)
@@ -191,18 +205,18 @@ export async function calcularDre(anoParam: number | null) {
     const cmv = b.cmvPecasMes[i] + aquisicao[i] + insumos[i] + perdas[i];
     const lucroBruto = receitaLiquida - cmv;
     const despComercial = comissoes[i] + frete[i] + somaCats(i, (l) => l.grupo === 'comercial');
-    const despAdm = somaCats(i, (l) => l.grupo === 'adm');
+    const despAdm = somaCats(i, (l) => l.grupo === 'adm') + depreciacao[i];
     const despPessoal = somaCats(i, (l) => l.grupo === 'pessoal');
     const despesasOp = despComercial + despAdm + despPessoal;
     // fixa x variavel (comissoes e fretes vindos das vendas sao sempre variaveis)
-    const despFixas = somaCats(i, (l) => l.tipo === 'fixa');
+    const despFixas = somaCats(i, (l) => l.tipo === 'fixa') + depreciacao[i];
     const despVariaveis = despesasOp - despFixas;
     const ebit = lucroBruto - despesasOp;
     return {
       receitaPecas: receitaPecas[i], receitaSucata: receitaSucata[i], receitaBruta: rbruta,
       impostos: impostos[i], receitaLiquida,
       cmvPecas: b.cmvPecasMes[i], aquisicao: aquisicao[i], insumos: insumos[i], perdas: perdas[i], cmv, lucroBruto,
-      comissoes: comissoes[i], frete: frete[i], despComercial, despAdm, despPessoal, despesasOp,
+      comissoes: comissoes[i], frete: frete[i], despComercial, despAdm, depreciacao: depreciacao[i], despPessoal, despesasOp,
       despFixas, despVariaveis, margemContribuicao: receitaLiquida - cmv - despVariaveis,
       ebit, lucroLiquido: ebit, qtdVendidas: qtdVendidas[i],
     };
@@ -292,6 +306,33 @@ export async function lancamentosDre(anoParam: number | null, mesParam: number, 
     titulo = 'Custos de aquisição das motos (leilão, pátio, guincho)';
     tabelas.push(tabelaDespesas('', despesasDo((d) => b.infoDe(d.categoria).grupo === 'cmv_aquisicao')));
     notas.push('Custos pagos além do valor da moto. Não entram no rateio por peça: são reconhecidos no mês em que foram pagos.');
+  } else if (linha === 'depreciacao') {
+    titulo = 'Depreciação de ativos (Estrutura)';
+    const ativosDep = await ativosParaDre();
+    const meses = mes ? [mes] : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+    const itens = ativosDep
+      .map((a) => {
+        const p = planoDepreciacao(a as any);
+        return {
+          codigo: a.codigo, ativo: a.nome,
+          valorAtivo: r2(a.valor),
+          taxa: p.anos > 0 ? `${(100 / p.anos).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}% a.a. · ${p.anos.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} anos` : '',
+          valor: r2(meses.reduce((s, m) => s + depreciacaoDoMes(a, ano, m), 0)),
+        };
+      })
+      .filter((x) => x.valor !== 0);
+    tabelas.push({
+      colunas: [
+        { k: 'codigo', rotulo: 'Código', tipo: 'texto' },
+        { k: 'ativo', rotulo: 'Ativo', tipo: 'texto' },
+        { k: 'valorAtivo', rotulo: 'Valor do ativo', tipo: 'moeda' },
+        { k: 'taxa', rotulo: 'Taxa / vida útil', tipo: 'texto' },
+        { k: 'valor', rotulo: 'Depreciação no período', tipo: 'moeda' },
+      ],
+      itens,
+      total: r2(itens.reduce((s, x) => s + x.valor, 0)),
+    });
+    notas.push('Depreciação linear mensal = (valor − residual) ÷ (vida útil × 12), cadastrada em Empresa > Estrutura. O mês de início conta como o 1º mês; ativos baixados deixam de depreciar na data da baixa.');
   } else if (linha === 'insumos') {
     titulo = 'Insumos diretos de desmonte e legalização';
     tabelas.push(tabelaDespesas('', despesasDo((d) => b.infoDe(d.categoria).grupo === 'cmv_insumo')));

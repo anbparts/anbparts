@@ -65,14 +65,16 @@ function garantirTabela(): Promise<void> {
 
 // ---- depreciacao linear ----
 // Vida util em anos (informada, ou 100 / % ao ano). Base depreciavel = valor - valor residual.
-// Meses decorridos = meses completos entre o inicio da depreciacao e hoje (ou a data da baixa).
-function mesesEntre(inicio: string, fim: string) {
-  if (!inicio || !fim || fim < inicio) return 0;
-  const [a1, m1, d1] = inicio.split('-').map(Number);
-  const [a2, m2, d2] = fim.split('-').map(Number);
-  let meses = (a2 - a1) * 12 + (m2 - m1);
-  if (d2 < d1) meses -= 1;
-  return Math.max(0, meses);
+// A depreciacao e' mensal e comeca no MES do inicio (mes de inicio conta como o 1o mes); para na baixa ou ao atingir a base.
+// O DRE usa as mesmas funcoes (lib/dre.ts), entao tela de Estrutura e DRE sempre batem.
+type DepEntrada = { valor: number; valorResidual: number; depMetodo: string; depAnos: number | null; depPct: number | null; depInicio: string; dataAquisicao: string; status: string; dataBaixa: string };
+
+// meses de calendario entre o mes de "inicio" e o mes de "ate", contando os dois (0 se ate < inicio)
+export function mesesCalendario(inicio: string, ate: string) {
+  if (!inicio || !ate || ate < inicio) return 0;
+  const [a1, m1] = inicio.split('-').map(Number);
+  const [a2, m2] = ate.split('-').map(Number);
+  return (a2 - a1) * 12 + (m2 - m1) + 1;
 }
 function somarMeses(iso: string, meses: number) {
   const [a, m, d] = iso.split('-').map(Number);
@@ -80,35 +82,42 @@ function somarMeses(iso: string, meses: number) {
   return dt.toISOString().slice(0, 10);
 }
 
-function calcularDepreciacao(a: { valor: number; valorResidual: number; depMetodo: string; depAnos: number | null; depPct: number | null; depInicio: string; dataAquisicao: string; status: string; dataBaixa: string }) {
-  const valor = a.valor;
-  const base = { metodo: a.depMetodo, vidaUtilAnos: null as number | null, taxaAnualPct: null as number | null, mensal: 0, acumulada: 0, valorAtual: valor, pctDepreciado: 0, mesesDecorridos: 0, fimPrevisto: '', totalmenteDepreciado: false };
-  if (a.depMetodo === 'nenhuma') return base;
-
+export function planoDepreciacao(a: DepEntrada) {
   let anos = 0;
   if (a.depMetodo === 'linear_anos') anos = a.depAnos || 0;
   else if (a.depMetodo === 'linear_pct') anos = a.depPct && a.depPct > 0 ? 100 / a.depPct : 0;
-  if (!(anos > 0)) return base;
-
   const inicio = a.depInicio || a.dataAquisicao;
-  if (!inicio) return { ...base, vidaUtilAnos: Number(anos.toFixed(2)), taxaAnualPct: Number((100 / anos).toFixed(2)) };
+  const depreciavel = Math.max(0, a.valor - Math.min(a.valorResidual, a.valor));
+  const ativa = a.depMetodo !== 'nenhuma' && anos > 0 && !!inicio;
+  return { ativa, anos, inicio, depreciavel, mensal: ativa ? depreciavel / (anos * 12) : 0 };
+}
 
-  const depreciavel = Math.max(0, valor - Math.min(a.valorResidual, valor));
-  const mensal = depreciavel / (anos * 12);
+// depreciacao acumulada ate uma data (YYYY-MM-DD), respeitando a baixa
+export function depreciacaoAcumuladaAte(a: DepEntrada, ate: string) {
+  const p = planoDepreciacao(a);
+  if (!p.ativa) return 0;
+  const limite = a.status === 'baixado' && a.dataBaixa && a.dataBaixa < ate ? a.dataBaixa : ate;
+  return Math.min(p.depreciavel, p.mensal * mesesCalendario(p.inicio, limite));
+}
+
+function calcularDepreciacao(a: DepEntrada) {
+  const valor = a.valor;
+  const vazio = { metodo: a.depMetodo, vidaUtilAnos: null as number | null, taxaAnualPct: null as number | null, mensal: 0, acumulada: 0, valorAtual: valor, pctDepreciado: 0, mesesDecorridos: 0, fimPrevisto: '', totalmenteDepreciado: false };
+  const p = planoDepreciacao(a);
+  if (a.depMetodo === 'nenhuma' || !(p.anos > 0)) return vazio;
+  const base = { ...vazio, vidaUtilAnos: Number(p.anos.toFixed(2)), taxaAnualPct: Number((100 / p.anos).toFixed(2)) };
+  if (!p.inicio) return base;
   const fimCalculo = a.status === 'baixado' && a.dataBaixa ? a.dataBaixa : hojeISO();
-  const meses = mesesEntre(inicio, fimCalculo);
-  const acumulada = Math.min(depreciavel, mensal * meses);
+  const acumulada = depreciacaoAcumuladaAte(a, fimCalculo);
   return {
-    metodo: a.depMetodo,
-    vidaUtilAnos: Number(anos.toFixed(2)),
-    taxaAnualPct: Number((100 / anos).toFixed(2)),
-    mensal: r2(mensal),
+    ...base,
+    mensal: r2(p.mensal),
     acumulada: r2(acumulada),
     valorAtual: r2(valor - acumulada),
-    pctDepreciado: depreciavel > 0 ? Number(((acumulada / depreciavel) * 100).toFixed(1)) : 0,
-    mesesDecorridos: meses,
-    fimPrevisto: somarMeses(inicio, Math.round(anos * 12)),
-    totalmenteDepreciado: depreciavel > 0 && acumulada >= depreciavel - 0.005,
+    pctDepreciado: p.depreciavel > 0 ? Number(((acumulada / p.depreciavel) * 100).toFixed(1)) : 0,
+    mesesDecorridos: Math.min(Math.round(p.anos * 12), mesesCalendario(p.inicio, fimCalculo)),
+    fimPrevisto: somarMeses(p.inicio, Math.round(p.anos * 12) - 1),
+    totalmenteDepreciado: p.depreciavel > 0 && acumulada >= p.depreciavel - 0.005,
   };
 }
 
@@ -385,3 +394,10 @@ ativosRouter.post('/:id/lancar-despesa', async (req, res, next) => {
     res.json({ ok: true, despesa: { id: despesa.id, data: dia(despesa.data), detalhes: despesa.detalhes, categoria: despesa.categoria, valor: num(despesa.valor), statusPagamento: despesa.statusPagamento } });
   } catch (e) { next(e); }
 });
+
+// Ativos para o DRE (depreciacao mensal): so os que depreciam
+export async function ativosParaDre() {
+  await garantirTabela();
+  const rows = await prisma.$queryRawUnsafe<any[]>(`SELECT * FROM "Ativo" WHERE "depMetodo" <> 'nenhuma' ORDER BY "codigo" ASC`);
+  return rows.map(paraRegistro);
+}
