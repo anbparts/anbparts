@@ -115,6 +115,9 @@ export const api = {
       const qs = params ? '?' + new URLSearchParams(params).toString() : '';
       return req<any>(`/financeiro/dre${qs}`);
     },
+    dreLancamentos: (params: Record<string, any>) => {
+      return req<any>(`/financeiro/dre/lancamentos?${new URLSearchParams(params).toString()}`);
+    },
     despesasReceita: (params?: Record<string, any>) => {
       const qs = params ? '?' + new URLSearchParams(params).toString() : '';
       return req<any>(`/financeiro/despesas-receita${qs}`);

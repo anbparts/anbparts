@@ -1,3 +1,4 @@
+import { calcularDre, lancamentosDre } from '../lib/dre';
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { getConfiguracaoGeral, saveConfiguracaoGeral } from '../lib/configuracoes-gerais';
@@ -1095,79 +1096,23 @@ financeiroRouter.post('/despesas-receita/painel-config', async (req, res, next) 
   }
 });
 
-// DRE
+// DRE (estrutura detalhada, mes a mes; calculo em lib/dre.ts)
 financeiroRouter.get('/dre', async (req, res, next) => {
   try {
-    const ano = Number(req.query.ano) || null;
-    const [pecasVendidas, despesas, prejuizos, motos] = await Promise.all([
-      prisma.peca.findMany({
-        where: { disponivel: false, emPrejuizo: false, dataVenda: { not: null } },
-        select: { precoML: true, valorLiq: true, valorFrete: true, valorTaxas: true, dataVenda: true },
-      }),
-      prisma.despesa.findMany({
-        select: { valor: true, categoria: true, statusPagamento: true, data: true },
-      }),
-      prisma.prejuizo.findMany({ select: { valor: true, frete: true, data: true } }),
-      prisma.moto.findMany({ select: { precoCompra: true, dataCompra: true } }),
-    ]);
+    res.json(await calcularDre(Number(req.query.ano) || null));
+  } catch (e) {
+    next(e);
+  }
+});
 
-    const pecasVendidasFiltradas = pecasVendidas.filter((item) => matchesYearMonth(item.dataVenda, ano));
-    const despesasElegiveis = despesas.filter((item) => (
-      item.statusPagamento === 'pago' &&
-      isPastOrToday(item.data) &&
-      matchesYearMonth(item.data, ano)
-    ));
-    const prejuizosFiltrados = prejuizos.filter((item) => matchesYearMonth(item.data, ano));
-    const motosFiltradas = ano
-      ? motos.filter((item) => matchesYearMonth(item.dataCompra, ano))
-      : motos;
-
-    const receitaBruta = pecasVendidasFiltradas.reduce((sum, item) => sum + toNumber(item.precoML), 0);
-    const comissaoML = pecasVendidasFiltradas.reduce((sum, item) => sum + toNumber(item.valorTaxas), 0);
-    const frete = pecasVendidasFiltradas.reduce((sum, item) => sum + toNumber(item.valorFrete), 0);
-    const receitaLiq = pecasVendidasFiltradas.reduce((sum, item) => sum + toNumber(item.valorLiq), 0);
-
-    const investido = motosFiltradas.reduce((sum, item) => sum + toNumber(item.precoCompra), 0);
-    const comprasMoto = despesasElegiveis
-      .filter((item) => String(item.categoria || '').trim() === 'Moto')
-      .reduce((sum, item) => sum + toNumber(item.valor), 0);
-    const cmv = investido + comprasMoto;
-    const lucroBruto = receitaLiq - cmv;
-
-    const despOp = despesasElegiveis.filter((item) => String(item.categoria || '').trim() !== 'Moto');
-    const totalDesp = despOp.reduce((sum, item) => sum + toNumber(item.valor), 0);
-    const totalPrej = prejuizosFiltrados.reduce((sum, item) => sum + toNumber(item.valor) + toNumber(item.frete), 0);
-    const lucroOp = lucroBruto - totalDesp - totalPrej;
-
-    const despPorCateg: Record<string, number> = {};
-    despOp.forEach((item) => {
-      despPorCateg[item.categoria] = (despPorCateg[item.categoria] || 0) + toNumber(item.valor);
-    });
-
-    const anosDisponiveis = Array.from(new Set([
-      ...pecasVendidas.map((item) => extractYear(item.dataVenda)),
-      ...despesas.map((item) => extractYear(item.data)),
-      ...prejuizos.map((item) => extractYear(item.data)),
-      ...motos.map((item) => extractYear(item.dataCompra)),
-    ].filter(Boolean) as number[])).sort((a, b) => b - a);
-
-    res.json({
-      ano,
-      anosDisponiveis,
-      receitaBruta,
-      comissaoML,
-      frete,
-      receitaLiq,
-      investido,
-      comprasMoto,
-      cmv,
-      lucroBruto,
-      totalDesp,
-      totalPrej,
-      lucroOp,
-      despPorCateg,
-      qtdVendidas: pecasVendidasFiltradas.length,
-    });
+// Lancamentos que compoem uma linha do DRE (pop-up ao clicar no valor). mes=0 -> ano inteiro.
+financeiroRouter.get('/dre/lancamentos', async (req, res, next) => {
+  try {
+    const linha = String(req.query.linha || '').trim();
+    if (!linha) return res.status(400).json({ error: 'Informe a linha do DRE' });
+    const resultado = await lancamentosDre(Number(req.query.ano) || null, Number(req.query.mes) || 0, linha);
+    if (!resultado) return res.status(400).json({ error: 'Esta linha nao possui lancamentos detalhados' });
+    res.json(resultado);
   } catch (e) {
     next(e);
   }
