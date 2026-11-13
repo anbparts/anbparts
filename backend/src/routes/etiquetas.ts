@@ -120,11 +120,12 @@ etiquetasRouter.post('/caixa', async (req, res, next) => {
 // body: { items: [{ motoLabel, sku, descricao }] }
 etiquetasRouter.post('/sku', async (req, res, next) => {
   try {
-    const items: { motoLabel: string; sku: string; descricao: string }[] = (req.body?.items || [])
+    const items: { motoLabel: string; sku: string; descricao: string; rotulo?: string }[] = (req.body?.items || [])
       .map((i: any) => ({
         motoLabel: String(i.motoLabel || '').trim().toUpperCase(),
         sku:       String(i.sku || '').trim().toUpperCase(),
         descricao: String(i.descricao || '').trim(),
+        rotulo:    String(i.rotulo || '').trim().slice(0, 20) || 'Moto',
       }))
       .filter((i: any) => i.sku);
 
@@ -162,8 +163,9 @@ etiquetasRouter.post('/sku', async (req, res, next) => {
 
       // "Moto:" + valor colados (sem gap grande)
       doc.font('Helvetica').fontSize(MM(2.0));
-      doc.text('Moto:', ML, MM(3.5), { lineBreak: false });
-      const motoLabelW = doc.widthOfString('Moto:');
+      const rotuloTxt = (item.rotulo || 'Moto') + ':';
+      doc.text(rotuloTxt, ML, MM(3.5), { lineBreak: false });
+      const motoLabelW = doc.widthOfString(rotuloTxt);
 
       const motoFontSize = fitFontSize(doc, item.motoLabel, TEXT_W - motoLabelW - MM(1.5), MM(2.2), MM(1.5));
       doc.font('Helvetica-Bold').fontSize(motoFontSize);
@@ -202,7 +204,7 @@ async function desenharEtiquetaCelulaA4(
   doc: InstanceType<typeof PDFDocument>,
   ox: number,
   oy: number,
-  item: { motoLabel: string; sku: string; descricao: string },
+  item: { motoLabel: string; sku: string; descricao: string; rotulo?: string },
 ) {
   const ML = MM(5);
   const MR = MM(3);
@@ -215,8 +217,9 @@ async function desenharEtiquetaCelulaA4(
   doc.image(qrPng, QR_X, QR_Y, { width: QR, height: QR });
 
   doc.fillColor('#000000').font('Helvetica').fontSize(MM(2.2));
-  doc.text('Moto:', ox + ML, oy + MM(4.5), { lineBreak: false });
-  const motoLabelW = doc.widthOfString('Moto:');
+  const rotuloTxt = (item.rotulo || 'Moto') + ':';
+  doc.text(rotuloTxt, ox + ML, oy + MM(4.5), { lineBreak: false });
+  const motoLabelW = doc.widthOfString(rotuloTxt);
   const motoFontSize = fitFontSize(doc, item.motoLabel || '-', TEXT_W - motoLabelW - MM(1.5), MM(2.6), MM(1.6));
   doc.font('Helvetica-Bold').fontSize(motoFontSize);
   doc.text(item.motoLabel || '-', ox + ML + motoLabelW + MM(1.5), oy + MM(4.5), { lineBreak: false });
@@ -239,11 +242,12 @@ async function desenharEtiquetaCelulaA4(
 // Preenche coluna a coluna (toda a coluna 1, depois a 2, depois a 3) a partir de `start`; excedente vai para novas folhas.
 etiquetasRouter.post('/sku-a4', async (req, res, next) => {
   try {
-    const items: { motoLabel: string; sku: string; descricao: string }[] = (req.body?.items || [])
+    const items: { motoLabel: string; sku: string; descricao: string; rotulo?: string }[] = (req.body?.items || [])
       .map((i: any) => ({
         motoLabel: String(i.motoLabel || '').trim().toUpperCase(),
         sku:       String(i.sku || '').trim().toUpperCase(),
         descricao: String(i.descricao || '').trim(),
+        rotulo:    String(i.rotulo || '').trim().slice(0, 20) || 'Moto',
       }))
       .filter((i: any) => i.sku);
 

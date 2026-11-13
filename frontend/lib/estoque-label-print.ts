@@ -10,6 +10,7 @@ export type SkuEtiquetaPrintItem = {
   motoLabel: string;
   sku: string;
   descricao: string;
+  rotulo?: string; // texto antes do valor da 1a linha (padrao "Moto"; os ativos usam "Ativo")
 };
 
 function normalizeFilterText(value: unknown) {
@@ -68,6 +69,7 @@ export async function printSkuLabels(items: SkuEtiquetaPrintItem[]) {
       motoLabel: String(i.motoLabel || '').trim(),
       sku:       String(i.sku || '').trim().toUpperCase(),
       descricao: String(i.descricao || '').trim(),
+      rotulo:    String(i.rotulo || '').trim() || undefined,
     }))
     .filter((i) => i.sku);
 
@@ -84,6 +86,7 @@ export async function printSkuLabelsA4(items: SkuEtiquetaPrintItem[], start: num
       motoLabel: String(i.motoLabel || '').trim(),
       sku:       String(i.sku || '').trim().toUpperCase(),
       descricao: String(i.descricao || '').trim(),
+      rotulo:    String(i.rotulo || '').trim() || undefined,
     }))
     .filter((i) => i.sku);
 
