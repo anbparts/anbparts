@@ -64,7 +64,17 @@ export default function DREPage() {
 
   const linhas = useMemo<Linha[]>(() => {
     if (!dre) return [];
-    const adm: any[] = Array.isArray(dre.admLinhas) ? dre.admLinhas : [];
+    const cats: any[] = Array.isArray(dre.catLinhas) ? dre.catLinhas : [];
+    const doGrupo = (grupo: string) => cats.filter((l) => l.grupo === grupo);
+    // uma linha por categoria; o rotulo mostra se e' fixa ou variavel
+    const linhasCategoria = (grupo: string, prefixo: string): Linha[] => doGrupo(grupo).map((l: any, i: number): Linha => ({
+      tipo: 'linha',
+      cod: prefixo + (i + 1),
+      desc: l.categoria + (l.tipo === 'fixa' ? ' · fixa' : ' · variável'),
+      indent: 1,
+      drill: 'cat:' + l.categoria,
+      get: (_p, idx) => -(idx < 0 ? l.total : l.valores[idx] || 0),
+    }));
     const out: Linha[] = [
       { tipo: 'secao', desc: '1. Receita operacional bruta' },
       { tipo: 'linha', cod: '1.0', desc: '(+) Receita operacional bruta', get: (p) => p.receitaBruta, bold: true, destaque: 'azul', drill: 'receitaBruta' },
@@ -84,22 +94,23 @@ export default function DREPage() {
 
       { tipo: 'secao', desc: '4. Despesas operacionais' },
       { tipo: 'linha', cod: '4.C', desc: 'Despesas comerciais e de vendas', get: (p) => -p.despComercial, bold: true },
-      { tipo: 'linha', cod: '4.C1', desc: 'Comissões de marketplaces', get: (p) => -p.comissoes, indent: 1, drill: 'comissoes' },
-      { tipo: 'linha', cod: '4.C2', desc: 'Fretes de envio (e-commerce)', get: (p) => -p.frete, indent: 1, drill: 'frete' },
+      { tipo: 'linha', cod: '4.C1', desc: 'Comissões de marketplaces · variável', get: (p) => -p.comissoes, indent: 1, drill: 'comissoes' },
+      { tipo: 'linha', cod: '4.C2', desc: 'Fretes de envio (e-commerce) · variável', get: (p) => -p.frete, indent: 1, drill: 'frete' },
+      ...linhasCategoria('comercial', '4.C').map((l, i) => ({ ...l, cod: '4.C' + (i + 3) })),
       { tipo: 'linha', cod: '4.A', desc: 'Despesas administrativas e de estrutura', get: (p) => -p.despAdm, bold: true },
-      ...adm.map((l: any, i: number): Linha => ({
-        tipo: 'linha',
-        cod: `4.A${i + 1}`,
-        desc: l.categoria,
-        indent: 1,
-        drill: 'adm:' + l.categoria,
-        get: (_p, idx) => -(idx < 0 ? l.total : l.valores[idx] || 0),
-      })),
+      ...linhasCategoria('adm', '4.A'),
+      { tipo: 'linha', cod: '4.P', desc: 'Despesas com pessoal', get: (p) => -p.despPessoal, bold: true },
+      ...linhasCategoria('pessoal', '4.P'),
       { tipo: 'linha', cod: '4.T', desc: 'Total das despesas operacionais', get: (p) => -p.despesasOp, bold: true, destaque: 'vermelho' },
 
       { tipo: 'secao', desc: '5. Resultado' },
       { tipo: 'linha', cod: '5.1', desc: '(=) Resultado operacional (EBIT)', get: (p) => p.ebit, bold: true, destaque: 'verde-vermelho' },
       { tipo: 'linha', cod: '5.2', desc: '(=) Lucro líquido do período', get: (p) => p.lucroLiquido, bold: true, destaque: 'verde-vermelho' },
+
+      { tipo: 'secao', desc: '6. Análise de custos (fixas × variáveis)' },
+      { tipo: 'linha', cod: '6.1', desc: 'Despesas fixas', get: (p) => -p.despFixas, indent: 1 },
+      { tipo: 'linha', cod: '6.2', desc: 'Despesas variáveis', get: (p) => -p.despVariaveis, indent: 1 },
+      { tipo: 'linha', cod: '6.3', desc: '(=) Margem de contribuição (receita líquida − CMV − despesas variáveis)', get: (p) => p.margemContribuicao, bold: true, destaque: 'verde-vermelho' },
     ];
     return out;
   }, [dre]);

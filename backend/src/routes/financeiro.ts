@@ -1,4 +1,5 @@
 import { calcularDre, lancamentosDre } from '../lib/dre';
+import { GRUPOS_DESPESA, atualizarCategoriaDespesa, contarDespesasPorCategoria, criarCategoriaDespesa, listarCategoriasDespesa } from '../lib/despesa-categorias';
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { getConfiguracaoGeral, saveConfiguracaoGeral } from '../lib/configuracoes-gerais';
@@ -587,6 +588,56 @@ financeiroRouter.post('/despesas/bulk-delete', async (req, res, next) => {
     });
 
     res.json({ ok: true, deleted: deleted.count, ids: uniqueIds });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// Reclassifica varias despesas de uma vez (usado para corrigir o passado e refletir no DRE). Nao mexe em data/valor,
+// entao o cruzamento Investimento x Despesa (match por data+valor) continua valendo.
+financeiroRouter.post('/despesas/bulk-categoria', async (req, res, next) => {
+  try {
+    const ids = Array.from(new Set((Array.isArray(req.body?.ids) ? req.body.ids : []).map((id: any) => Number(id)).filter((id: number) => Number.isFinite(id) && id > 0)));
+    const categoria = String(req.body?.categoria || '').trim();
+    if (!ids.length) return res.status(400).json({ error: 'Nenhuma despesa informada.' });
+    if (!categoria) return res.status(400).json({ error: 'Informe a categoria.' });
+    const catalogo = await listarCategoriasDespesa();
+    const alvo = catalogo.find((c) => c.nome === categoria);
+    if (!alvo) return res.status(400).json({ error: 'Categoria nao encontrada no catalogo.' });
+    const atualizadas = await prisma.despesa.updateMany({ where: { id: { in: ids as number[] } }, data: { categoria: alvo.nome } });
+    res.json({ ok: true, atualizadas: atualizadas.count, categoria: alvo.nome });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// Catalogo de categorias (grupo do DRE + fixa/variavel)
+financeiroRouter.get('/categorias-despesa', async (_req, res, next) => {
+  try {
+    const [categorias, contagem] = await Promise.all([listarCategoriasDespesa(), contarDespesasPorCategoria()]);
+    res.json({
+      ok: true,
+      grupos: GRUPOS_DESPESA,
+      categorias: categorias.map((c) => ({ ...c, qtdDespesas: contagem[c.nome] || 0 })),
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+financeiroRouter.post('/categorias-despesa', async (req, res, next) => {
+  try {
+    await criarCategoriaDespesa(req.body?.nome, req.body?.grupo, req.body?.tipo);
+    res.json({ ok: true });
+  } catch (e) {
+    next(e);
+  }
+});
+
+financeiroRouter.put('/categorias-despesa', async (req, res, next) => {
+  try {
+    await atualizarCategoriaDespesa(req.body?.nome, { grupo: req.body?.grupo, tipo: req.body?.tipo, ativa: req.body?.ativa });
+    res.json({ ok: true });
   } catch (e) {
     next(e);
   }

@@ -4,8 +4,8 @@ import { useEffect, useState } from 'react';
 import { ChartPanel, DonutChart, HeatmapChart, HorizontalBarChart, ViewModeSwitch, type ViewMode } from '@/components/finance/Charts';
 import { api } from '@/lib/api';
 import { usePersistentTab } from '@/lib/use-persistent-tab';
+import { opcoesCategoria, useCategoriasDespesa } from '@/lib/despesa-categorias';
 const SOCIOS = ['Bruno', 'Nelson', 'Alex'];
-const DESPESA_CATEGORIAS = ['Insumo', 'Servicos', 'Taxas', 'Aluguel', 'Sistemas', 'Imposto', 'Moto', 'Outros'];
 const SOCIO_COLORS: Record<string, string> = {
   Bruno: '#2563eb',
   Nelson: '#16a34a',
@@ -162,6 +162,7 @@ function MonthlyAportesCards({
 }
 
 export default function InvestimentosPage() {
+  const { categorias: categoriasDespesa, grupos: gruposDespesa } = useCategoriasDespesa();
   const [viewportMode, setViewportMode] = useState<InvestimentosViewportMode>('desktop');
   const [rows, setRows] = useState<any[]>([]);
   const [motos, setMotos] = useState<any[]>([]);
@@ -884,7 +885,7 @@ export default function InvestimentosPage() {
                   onChange={(e) => setReplicarDespesaForm((value) => ({ ...value, categoria: e.target.value }))}
                 >
                   <option value="">Selecione</option>
-                  {DESPESA_CATEGORIAS.map((categoria) => <option key={categoria} value={categoria}>{categoria}</option>)}
+                  {opcoesCategoria(categoriasDespesa, gruposDespesa, replicarDespesaForm.categoria)}
                 </select>
               </div>
               <div>

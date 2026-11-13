@@ -6,8 +6,9 @@ import { api } from '@/lib/api';
 import { useFinancialViewportMode } from '@/lib/company-values';
 import { compressFotoCapaFile } from '@/lib/image-compression';
 import { usePersistentTab } from '@/lib/use-persistent-tab';
+import { opcoesCategoria, useCategoriasDespesa, type CategoriaDespesa } from '@/lib/despesa-categorias';
+import CategoriasModal from './CategoriasModal';
 
-const CATEGORIAS = ['Insumo', 'Servicos', 'Taxas', 'Aluguel', 'Sistemas', 'Imposto', 'Moto', 'Outros'];
 const RECORRENCIAS = [
   { value: 'nenhuma', label: 'Nao repetir' },
   { value: 'semanal', label: 'Semanalmente' },
@@ -132,8 +133,12 @@ function recurrenceLabel(tipo: string) {
   return '';
 }
 
-function CategBadge({ categoria }: { categoria: string }) {
-  const color = CATEG_COLORS[categoria] || '#64748b';
+const GRUPO_COLORS: Record<string, string> = {
+  adm: '#64748b', pessoal: '#0ea5e9', comercial: '#f59e0b', cmv_insumo: '#2563eb', cmv_aquisicao: '#16a34a', deducao: '#7c3aed',
+};
+
+function CategBadge({ categoria, info }: { categoria: string; info?: CategoriaDespesa }) {
+  const color = CATEG_COLORS[categoria] || (info ? GRUPO_COLORS[info.grupo] : '') || '#64748b';
   return (
     <span
       style={{
@@ -147,6 +152,7 @@ function CategBadge({ categoria }: { categoria: string }) {
       }}
     >
       {categoria}
+      {info ? <span style={{ opacity: 0.7 }}>{' · '}{info.tipo === 'fixa' ? 'fixa' : 'variável'}</span> : null}
     </span>
   );
 }
@@ -481,6 +487,9 @@ export default function DespesasPage() {
   const [arquivoMercadoPago, setArquivoMercadoPago] = useState<{ name: string; dataUrl: string } | null>(null);
   const [previewMercadoPagoInfo, setPreviewMercadoPagoInfo] = useState<any | null>(null);
   const [previewMercadoPagoRows, setPreviewMercadoPagoRows] = useState<any[]>([]);
+  const { categorias, grupos, porNome, recarregar: recarregarCategorias } = useCategoriasDespesa();
+  const [showCategorias, setShowCategorias] = useState(false);
+  const [reclassificar, setReclassificar] = useState<{ categoria: string; saving: boolean } | null>(null);
   const viewportMode = useFinancialViewportMode();
   const isPhone = viewportMode === 'phone';
   const isTabletPortrait = viewportMode === 'tablet-portrait';
@@ -855,6 +864,21 @@ export default function DespesasPage() {
     await load();
   }
 
+  async function aplicarReclassificacao() {
+    if (!reclassificar?.categoria) { alert('Escolha a categoria.'); return; }
+    if (!selectedFilteredIds.length) { alert('Selecione pelo menos uma despesa no filtro atual.'); return; }
+    setReclassificar({ ...reclassificar, saving: true });
+    try {
+      await api.financeiro.despesas.bulkCategoria(selectedFilteredIds, reclassificar.categoria);
+      setReclassificar(null);
+      await load();
+      await recarregarCategorias();
+    } catch (e: any) {
+      alert(e?.message || 'Erro ao reclassificar as despesas');
+      setReclassificar((v) => (v ? { ...v, saving: false } : v));
+    }
+  }
+
   async function solicitarExclusao(item: any) {
     const futureCount = futureSeriesCount(item);
     if (futureCount > 0 && item.recorrenciaSerieId) {
@@ -896,6 +920,12 @@ export default function DespesasPage() {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, width: isCompact ? '100%' : 'auto', flexWrap: 'wrap' }}>
           <button
+            onClick={() => setShowCategorias(true)}
+            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px 16px', borderRadius: 7, background: 'var(--white)', color: 'var(--gray-700)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 500, cursor: 'pointer', width: isPhone ? '100%' : 'auto' }}
+          >
+            Categorias
+          </button>
+          <button
             onClick={toggleFormVisibility}
             style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px 18px', borderRadius: 7, background: 'var(--blue-500)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 500, cursor: 'pointer', width: isPhone ? '100%' : 'auto' }}
           >
@@ -904,6 +934,36 @@ export default function DespesasPage() {
         </div>
       </div>
       <ViewModeSwitch value={modo} onChange={setModo} modes={['relatorio', 'grafico']} />
+
+      {showCategorias && (
+        <CategoriasModal categorias={categorias} grupos={grupos} onClose={() => setShowCategorias(false)} onChanged={recarregarCategorias} />
+      )}
+
+      {reclassificar && (
+        <div onClick={() => !reclassificar.saving && setReclassificar(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,.55)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--white)', borderRadius: 12, width: '100%', maxWidth: 460, padding: 20, boxShadow: '0 20px 60px rgba(0,0,0,.35)' }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)' }}>Reclassificar despesas</div>
+            <div style={{ fontSize: 12.5, color: 'var(--ink-muted)', marginTop: 6, lineHeight: 1.5 }}>
+              {selectedFilteredIds.length} despesa(s) selecionada(s) vão para a categoria escolhida. Data, valor e o vínculo com investimentos replicados não mudam; o DRE passa a refletir a nova categoria na hora.
+            </div>
+            <select
+              style={{ ...inputStyle, width: '100%', cursor: 'pointer', marginTop: 14 }}
+              value={reclassificar.categoria}
+              onChange={(e) => setReclassificar({ ...reclassificar, categoria: e.target.value })}
+            >
+              <option value="">Selecione a categoria</option>
+              {opcoesCategoria(categorias, grupos)}
+            </select>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
+              <button type="button" onClick={() => setReclassificar(null)} disabled={reclassificar.saving} style={{ ...inputStyle, cursor: 'pointer', padding: '8px 14px', background: 'var(--white)' }}>Cancelar</button>
+              <button type="button" onClick={aplicarReclassificacao} disabled={reclassificar.saving || !reclassificar.categoria} style={{ padding: '8px 16px', borderRadius: 7, border: 'none', background: 'var(--blue-500)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: reclassificar.saving || !reclassificar.categoria ? 'not-allowed' : 'pointer', opacity: reclassificar.saving || !reclassificar.categoria ? 0.6 : 1 }}>
+                {reclassificar.saving ? 'Aplicando...' : 'Aplicar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
 
       <div style={{ padding: isCompact ? 16 : 28 }}>
         <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fit, minmax(170px, 1fr))', gap: 14, marginBottom: 20 }}>
@@ -1001,7 +1061,7 @@ export default function DespesasPage() {
                   <div>
                     <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-muted)', marginBottom: 5 }}>Categoria</div>
                     <select style={{ ...inputStyle, width: '100%', cursor: 'pointer' }} value={form.categoria} onChange={(e) => setForm((value) => ({ ...value, categoria: e.target.value }))}>
-                      {CATEGORIAS.map((categoria) => <option key={categoria}>{categoria}</option>)}
+                      {opcoesCategoria(categorias, grupos, form.categoria)}
                     </select>
                   </div>
                   <div>
@@ -1226,7 +1286,7 @@ export default function DespesasPage() {
                                   onChange={(e) => atualizarLinhaMercadoPago(item.importKey, { categoria: e.target.value })}
                                 >
                                   <option value="">Selecione</option>
-                                  {CATEGORIAS.map((categoria) => <option key={categoria} value={categoria}>{categoria}</option>)}
+                                  {opcoesCategoria(categorias, grupos, item.categoria)}
                                 </select>
                               </td>
                               <td style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', fontSize: 12 }}>
@@ -1288,6 +1348,14 @@ export default function DespesasPage() {
                   </button>
                   <button
                     type="button"
+                    onClick={() => setReclassificar({ categoria: '', saving: false })}
+                    disabled={!selectedFilteredIds.length}
+                    style={{ padding: '8px 14px', borderRadius: 7, border: '1px solid #bfdbfe', background: '#eff6ff', color: '#1d4ed8', fontSize: 13, fontWeight: 700, cursor: selectedFilteredIds.length ? 'pointer' : 'not-allowed' }}
+                  >
+                    Reclassificar selecionadas{selectedFilteredIds.length ? ` (${selectedFilteredIds.length})` : ''}
+                  </button>
+                  <button
+                    type="button"
                     onClick={excluirSelecionadas}
                     disabled={!selectedFilteredIds.length}
                     style={{
@@ -1321,7 +1389,7 @@ export default function DespesasPage() {
               </select>
               <select style={{ ...inputStyle, cursor: 'pointer' }} value={filtroCategoria} onChange={(e) => setFiltroCategoria(e.target.value)}>
                 <option value="">Todas categorias</option>
-                {CATEGORIAS.map((categoria) => <option key={categoria}>{categoria}</option>)}
+                {opcoesCategoria(categorias, grupos, filtroCategoria)}
               </select>
               <select style={{ ...inputStyle, cursor: 'pointer' }} value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value)}>
                 <option value="">Todos os status</option>
@@ -1365,7 +1433,7 @@ export default function DespesasPage() {
                       <div style={{ minWidth: 0 }}>
                         <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', lineHeight: 1.4, marginBottom: 4 }}>{item.detalhes}</div>
                         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                          <CategBadge categoria={item.categoria} />
+                          <CategBadge categoria={item.categoria} info={porNome[item.categoria]} />
                           <span style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)' }}>{formatDateBr(item.data)}</span>
                         </div>
                       </div>
@@ -1436,7 +1504,7 @@ export default function DespesasPage() {
                         </td>
                         <td style={{ padding: '9px 16px', fontFamily: 'Geist Mono, monospace', fontSize: 12, color: 'var(--ink-muted)' }}>{formatDateBr(item.data)}</td>
                         <td style={{ padding: '9px 16px', color: 'var(--ink)' }}>{item.detalhes}</td>
-                        <td style={{ padding: '9px 16px' }}><CategBadge categoria={item.categoria} /></td>
+                        <td style={{ padding: '9px 16px' }}><CategBadge categoria={item.categoria} info={porNome[item.categoria]} /></td>
                         <td style={{ padding: '9px 16px', textAlign: 'right', fontFamily: 'Geist Mono, monospace', fontSize: 13, color: 'var(--red)', fontWeight: 500 }}>{fmt(Number(item.valor || 0))}</td>
                         <td style={{ padding: '9px 16px' }}>
                           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>

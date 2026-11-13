@@ -13,6 +13,7 @@
 // calcularDre() monta a demonstracao; lancamentosDre() devolve os lancamentos que compoem cada celula
 // (clique no valor, na tela). Os dois usam o mesmo carregarBase(), entao o pop-up sempre soma o valor da celula.
 import { prisma } from './prisma';
+import { mapaCategoriasDespesa, semAcento, type GrupoDespesa, type TipoCusto } from './despesa-categorias';
 
 const TIMEZONE = 'America/Sao_Paulo';
 const n = (v: any) => Number(v) || 0;
@@ -27,17 +28,12 @@ const anoDe = (d: any) => { const k = dateKey(d); return k ? Number(k.slice(0, 4
 const mesDe = (d: any) => { const k = dateKey(d); return k ? Number(k.slice(5, 7)) : 0; };
 const hojeKey = () => new Intl.DateTimeFormat('en-CA', { timeZone: TIMEZONE }).format(new Date());
 
-const semAcento = (v: any) => String(v ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase();
-
-// Categoria da despesa -> bloco do DRE. Para mudar o enquadramento, e' so editar aqui.
-type Bloco = 'imposto' | 'moto' | 'insumo' | 'adm';
-function blocoDaCategoria(categoria: any): Bloco {
-  const c = semAcento(categoria);
-  if (c === 'imposto' || c === 'impostos') return 'imposto';
-  if (c === 'moto') return 'moto';
-  if (c === 'insumo' || c === 'insumos') return 'insumo';
-  return 'adm';
-}
+// Cada categoria de despesa tem um grupo do DRE e um tipo (fixa/variavel), cadastrados em lib/despesa-categorias.ts
+// (editaveis na tela de Despesas). Categorias sem cadastro caem em administrativa/variavel.
+type InfoCategoria = { nome: string; grupo: GrupoDespesa; tipo: TipoCusto };
+// Comissoes de marketplaces e fretes de envio ja vem das proprias vendas (taxas/frete do pedido): despesas lancadas
+// nessas duas categorias se somam as mesmas linhas do DRE, em vez de criar linha duplicada.
+const MESCLADAS: Record<string, 'comissoes' | 'frete'> = { 'comissoes de marketplaces': 'comissoes', 'fretes de envio': 'frete' };
 
 const zeros = () => Array.from({ length: 12 }, () => 0);
 const somar = (arr: number[]) => arr.reduce((s, v) => s + v, 0);
@@ -61,13 +57,19 @@ async function carregarBase(anoParam: number | null) {
     prisma.moto.findMany({ select: { id: true, marca: true, modelo: true, ano: true, placa: true, precoCompra: true, dataCompra: true } }),
   ]);
 
+  const catalogo = await mapaCategoriasDespesa();
+  const infoDe = (categoria: any): InfoCategoria => {
+    const c = catalogo.get(semAcento(categoria));
+    return c ? { nome: c.nome, grupo: c.grupo, tipo: c.tipo } : { nome: String(categoria || 'Outros').trim() || 'Outros', grupo: 'adm', tipo: 'variavel' };
+  };
+
   const hoje = hojeKey();
   const despesasPagas = despesas.filter((d) => d.statusPagamento === 'pago' && dateKey(d.data) && dateKey(d.data) <= hoje);
 
   // ---- F(ano): custos agregados de aquisicao proporcionais ao valor de compra ----
   const agregadoPorAno: Record<number, number> = {};
   for (const d of despesasPagas) {
-    if (blocoDaCategoria(d.categoria) !== 'moto') continue;
+    if (infoDe(d.categoria).grupo !== 'cmv_aquisicao') continue;
     const y = anoDe(d.data);
     if (y) agregadoPorAno[y] = (agregadoPorAno[y] || 0) + n(d.valor);
   }
@@ -139,7 +141,7 @@ async function carregarBase(anoParam: number | null) {
   const pecasVendidasAno = pecas.filter((p) => !p.disponivel && !p.emPrejuizo && !!p.dataVenda && anoDe(p.dataVenda) === ano);
 
   return {
-    ano, pecas, despesas, prejuizos, motos, despesasPagas, pecasVendidasAno,
+    ano, pecas, despesas, prejuizos, motos, despesasPagas, pecasVendidasAno, infoDe,
     agregadoPorAno, compraPorAno, fatorAno, motoDesc, custoPecaVendida, cmvPecasMes, detalhe, motosSemCusto, pecasVendidasSemPreco,
   };
 }
@@ -165,20 +167,24 @@ export async function calcularDre(anoParam: number | null) {
 
   const impostos = zeros();
   const insumos = zeros();
-  const admPorCateg = new Map<string, number[]>();
+  // categorias das despesas operacionais (adm / pessoal / comercial), uma linha por categoria
+  const porCateg = new Map<string, { info: InfoCategoria; valores: number[] }>();
   for (const d of b.despesasPagas) {
     if (anoDe(d.data) !== ano) continue;
     const i = mesDe(d.data) - 1;
     if (i < 0 || i > 11) continue;
-    const bloco = blocoDaCategoria(d.categoria);
-    if (bloco === 'imposto') impostos[i] += n(d.valor);
-    else if (bloco === 'insumo') insumos[i] += n(d.valor);
-    else if (bloco === 'adm') {
-      const nome = String(d.categoria || 'Outros').trim() || 'Outros';
-      if (!admPorCateg.has(nome)) admPorCateg.set(nome, zeros());
-      admPorCateg.get(nome)![i] += n(d.valor);
+    const info = b.infoDe(d.categoria);
+    const valor = n(d.valor);
+    if (info.grupo === 'deducao') impostos[i] += valor;
+    else if (info.grupo === 'cmv_insumo') insumos[i] += valor;
+    else if (info.grupo === 'cmv_aquisicao') continue; // ja entra no CMV via fator F (nao contar duas vezes)
+    else {
+      const mesclada = MESCLADAS[semAcento(info.nome)];
+      if (mesclada === 'comissoes') { comissoes[i] += valor; continue; }
+      if (mesclada === 'frete') { frete[i] += valor; continue; }
+      if (!porCateg.has(info.nome)) porCateg.set(info.nome, { info, valores: zeros() });
+      porCateg.get(info.nome)!.valores[i] += valor;
     }
-    // bloco 'moto' ja entra no CMV via fator F (nao entra aqui para nao contar duas vezes)
   }
 
   const perdas = zeros();
@@ -188,10 +194,11 @@ export async function calcularDre(anoParam: number | null) {
     if (i >= 0 && i <= 11) perdas[i] += n(p.valor) + n(p.frete);
   }
 
-  const admLinhas = Array.from(admPorCateg.entries())
-    .map(([categoria, valores]) => ({ categoria, valores: valores.map(r2), total: r2(somar(valores)) }))
+  const catLinhas = Array.from(porCateg.values())
+    .map(({ info, valores }) => ({ categoria: info.nome, grupo: info.grupo, tipo: info.tipo, valores: valores.map(r2), total: r2(somar(valores)) }))
     .filter((l) => l.total !== 0)
     .sort((a, b2) => b2.total - a.total);
+  const somaCats = (i: number, filtro: (l: (typeof catLinhas)[number]) => boolean) => catLinhas.filter(filtro).reduce((s, l) => s + (l.valores[i] || 0), 0);
 
   // ---- totais por mes ----
   const montar = (i: number) => {
@@ -199,15 +206,20 @@ export async function calcularDre(anoParam: number | null) {
     const receitaLiquida = rbruta - impostos[i];
     const cmv = b.cmvPecasMes[i] + insumos[i] + perdas[i];
     const lucroBruto = receitaLiquida - cmv;
-    const despComercial = comissoes[i] + frete[i];
-    const despAdm = admLinhas.reduce((s, l) => s + (l.valores[i] || 0), 0);
-    const despesasOp = despComercial + despAdm;
+    const despComercial = comissoes[i] + frete[i] + somaCats(i, (l) => l.grupo === 'comercial');
+    const despAdm = somaCats(i, (l) => l.grupo === 'adm');
+    const despPessoal = somaCats(i, (l) => l.grupo === 'pessoal');
+    const despesasOp = despComercial + despAdm + despPessoal;
+    // fixa x variavel (comissoes e fretes vindos das vendas sao sempre variaveis)
+    const despFixas = somaCats(i, (l) => l.tipo === 'fixa');
+    const despVariaveis = despesasOp - despFixas;
     const ebit = lucroBruto - despesasOp;
     return {
       receitaPecas: receitaPecas[i], receitaSucata: receitaSucata[i], receitaBruta: rbruta,
       impostos: impostos[i], receitaLiquida,
       cmvPecas: b.cmvPecasMes[i], insumos: insumos[i], perdas: perdas[i], cmv, lucroBruto,
-      comissoes: comissoes[i], frete: frete[i], despComercial, despAdm, despesasOp,
+      comissoes: comissoes[i], frete: frete[i], despComercial, despAdm, despPessoal, despesasOp,
+      despFixas, despVariaveis, margemContribuicao: receitaLiquida - cmv - despVariaveis,
       ebit, lucroLiquido: ebit, qtdVendidas: qtdVendidas[i],
     };
   };
@@ -229,7 +241,7 @@ export async function calcularDre(anoParam: number | null) {
     anosDisponiveis,
     meses: meses.map(arred),
     total: arred(total),
-    admLinhas,
+    catLinhas,
     cmvDetalhe: b.detalhe,
     premissas: {
       fatorAgregadoPorAno: Object.keys(b.compraPorAno).map((y) => ({
@@ -297,10 +309,10 @@ export async function lancamentosDre(anoParam: number | null, mesParam: number, 
     });
   } else if (linha === 'impostos') {
     titulo = 'Impostos sobre vendas (DAS)';
-    tabelas.push(tabelaDespesas('', despesasDo((d) => blocoDaCategoria(d.categoria) === 'imposto')));
+    tabelas.push(tabelaDespesas('', despesasDo((d) => b.infoDe(d.categoria).grupo === 'deducao')));
   } else if (linha === 'insumos') {
     titulo = 'Insumos diretos de desmonte e legalização';
-    tabelas.push(tabelaDespesas('', despesasDo((d) => blocoDaCategoria(d.categoria) === 'insumo')));
+    tabelas.push(tabelaDespesas('', despesasDo((d) => b.infoDe(d.categoria).grupo === 'cmv_insumo')));
   } else if (linha === 'cmvPecas') {
     titulo = 'Custo das peças vendidas (rateio das motos)';
     tabelas.push({
@@ -310,8 +322,8 @@ export async function lancamentosDre(anoParam: number | null, mesParam: number, 
     });
     const fatorAnoAtual = b.fatorAno(ano);
     notas.push('Custo da peça = (preço de compra da moto + custos agregados) × preço da peça ÷ soma dos preços das peças da moto.');
-    notas.push(`Custos agregados de ${ano}: despesas da categoria “Moto” ÷ compras de motos no ano = +${(fatorAnoAtual * 100).toFixed(1)}% sobre o preço de compra. As despesas abaixo compõem esse fator.`);
-    tabelas.push(tabelaDespesas(`Custos de aquisição (categoria Moto) pagos em ${ano}`, b.despesasPagas.filter((d) => anoDe(d.data) === ano && blocoDaCategoria(d.categoria) === 'moto')));
+    notas.push(`Custos agregados de ${ano}: despesas do grupo “CMV · custos de aquisição” ÷ compras de motos no ano = +${(fatorAnoAtual * 100).toFixed(1)}% sobre o preço de compra. As despesas abaixo compõem esse fator.`);
+    tabelas.push(tabelaDespesas(`Custos de aquisição da moto (leiloeiro, pátio, guincho) pagos em ${ano}`, b.despesasPagas.filter((d) => anoDe(d.data) === ano && b.infoDe(d.categoria).grupo === 'cmv_aquisicao')));
   } else if (linha === 'perdas') {
     titulo = 'Perdas e quebras de estoque';
     const lista = b.prejuizos.filter((p) => noPeriodo(p.data));
@@ -335,10 +347,16 @@ export async function lancamentosDre(anoParam: number | null, mesParam: number, 
       itens: lista.map((p) => ({ ...itemPeca(p), valor: r2(n((p as any)[campo])) })).sort(porData),
       total: r2(lista.reduce((s, p) => s + n((p as any)[campo]), 0)),
     });
-  } else if (linha.startsWith('adm:')) {
+    const nomeCat = linha === 'comissoes' ? 'comissoes de marketplaces' : 'fretes de envio';
+    const lancadas = despesasDo((d) => semAcento(b.infoDe(d.categoria).nome) === nomeCat);
+    if (lancadas.length) {
+      tabelas.push(tabelaDespesas('Lançado em Despesas (somado à mesma linha do DRE)', lancadas));
+      notas.push('O valor da linha no DRE é a soma das duas tabelas: o que veio das vendas mais o que foi lançado manualmente em Despesas.');
+    }
+  } else if (linha.startsWith('cat:')) {
     const categoria = linha.slice(4);
-    titulo = `Despesas administrativas · ${categoria}`;
-    tabelas.push(tabelaDespesas('', despesasDo((d) => blocoDaCategoria(d.categoria) === 'adm' && (String(d.categoria || 'Outros').trim() || 'Outros') === categoria)));
+    titulo = `Despesas · ${categoria}`;
+    tabelas.push(tabelaDespesas('', despesasDo((d) => b.infoDe(d.categoria).nome === categoria)));
   } else {
     return null;
   }
