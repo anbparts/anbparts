@@ -86,9 +86,10 @@ export default function DREPage() {
       { tipo: 'linha', cod: '2.R', desc: '(=) Receita operacional líquida', get: (p) => p.receitaLiquida, bold: true },
 
       { tipo: 'secao', desc: '3. Custo das mercadorias vendidas (CMV)' },
-      { tipo: 'linha', cod: '3.1', desc: '(-) Custo das peças vendidas (rateio das motos + custos de aquisição)', get: (p) => -p.cmvPecas, indent: 1, drill: 'cmvPecas' },
-      { tipo: 'linha', cod: '3.2', desc: '(-) Insumos diretos de desmonte e legalização', get: (p) => -p.insumos, indent: 1, drill: 'insumos' },
-      { tipo: 'linha', cod: '3.3', desc: '(-) Perdas e quebras de estoque', get: (p) => -p.perdas, indent: 1, drill: 'perdas' },
+      { tipo: 'linha', cod: '3.1', desc: '(-) Custo das peças vendidas (rateio do valor pago na moto)', get: (p) => -p.cmvPecas, indent: 1, drill: 'cmvPecas' },
+      { tipo: 'linha', cod: '3.2', desc: '(-) Custos de aquisição das motos (leilão, pátio, guincho)', get: (p) => -p.aquisicao, indent: 1, drill: 'aquisicao' },
+      { tipo: 'linha', cod: '3.3', desc: '(-) Insumos diretos de desmonte e legalização', get: (p) => -p.insumos, indent: 1, drill: 'insumos' },
+      { tipo: 'linha', cod: '3.4', desc: '(-) Perdas e quebras de estoque', get: (p) => -p.perdas, indent: 1, drill: 'perdas' },
       { tipo: 'linha', cod: '3.T', desc: 'CMV total', get: (p) => -p.cmv, bold: true, destaque: 'ambar' },
       { tipo: 'linha', cod: '3.R', desc: '(=) Lucro bruto', get: (p) => p.lucroBruto, bold: true, destaque: 'verde-vermelho' },
 
@@ -268,7 +269,6 @@ const tdBase: any = { padding: '8px 14px', borderBottom: '1px solid var(--gray-1
 function CmvDetalhe({ dre, hidden, isCompact }: { dre: any; hidden: boolean; isCompact: boolean }) {
   const detalhe: any[] = Array.isArray(dre.cmvDetalhe) ? dre.cmvDetalhe : [];
   const prem = dre.premissas || {};
-  const fatores: any[] = Array.isArray(prem.fatorAgregadoPorAno) ? prem.fatorAgregadoPorAno : [];
   const mask = sensitiveMaskStyle(hidden);
 
   return (
@@ -278,31 +278,9 @@ function CmvDetalhe({ dre, hidden, isCompact }: { dre: any; hidden: boolean; isC
       </summary>
       <div style={{ padding: '4px 18px 18px', display: 'grid', gap: 14 }}>
         <div style={{ fontSize: 12.5, color: 'var(--gray-600)', lineHeight: 1.7 }}>
-          <div><b>1) Custo da moto</b> = preço de compra × (1 + fator de custos agregados do ano da compra).</div>
-          <div><b>2) Fator do ano</b> = despesas pagas da categoria “Moto” (leiloeiro, pátio, guincho) lançadas no ano ÷ soma do preço de compra das motos compradas no ano.</div>
-          <div><b>3) Custo de cada peça</b> = custo da moto × (preço da peça ÷ soma dos preços de todas as peças da moto). Se nenhuma peça tem preço, divide igual.</div>
-          <div><b>4) CMV do mês</b> = custo das peças vendidas no mês + insumos pagos no mês + perdas (prejuízos) do mês.</div>
+          <div><b>Custo da peça</b> = (valor de venda da peça ÷ soma do valor de venda de todas as peças da moto) × valor pago na moto. A soma considera todas as peças da moto, vendidas ou em estoque. Se nenhuma peça tem preço, divide igual.</div>
+          <div><b>CMV do mês</b> = custo das peças vendidas no mês + custos de aquisição das motos pagos no mês + insumos pagos no mês + perdas (prejuízos) do mês.</div>
         </div>
-
-        {fatores.length > 0 && (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ borderCollapse: 'collapse', fontSize: 12.5, minWidth: 460 }}>
-              <thead>
-                <tr>{['Ano da compra', 'Motos compradas', 'Custos agregados', 'Fator'].map((h) => <th key={h} style={{ ...thBase, textAlign: 'left' }}>{h}</th>)}</tr>
-              </thead>
-              <tbody>
-                {fatores.map((f) => (
-                  <tr key={f.ano}>
-                    <td style={tdBase}>{f.ano}</td>
-                    <td style={{ ...tdBase, ...mask }}>{sensitiveText(fmt(f.comprasMotos), hidden)}</td>
-                    <td style={{ ...tdBase, ...mask }}>{sensitiveText(fmt(f.custosAgregados), hidden)}</td>
-                    <td style={{ ...tdBase, ...mask }}>{sensitiveText(`+${(f.fator * 100).toFixed(1)}%`, hidden)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
 
         {(prem.motosSemCusto > 0 || prem.pecasVendidasSemPreco > 0) && (
           <div style={{ padding: '10px 12px', borderRadius: 8, background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', fontSize: 12.5, lineHeight: 1.5 }}>
@@ -319,7 +297,7 @@ function CmvDetalhe({ dre, hidden, isCompact }: { dre: any; hidden: boolean; isC
               <div key={d.motoId} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 12 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-800)' }}>{d.moto}</div>
                 <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 4, ...mask }}>
-                  {sensitiveText(`Custo ${fmt(d.custoTotal)} · ${d.pecasVendidasAno}/${d.pecasTotal} peças vendidas · Receita ${fmt(d.receitaVendidaAno)} · CMV ${fmt(d.cmvAno)}`, hidden)}
+                  {sensitiveText(`Valor pago ${fmt(d.custoTotal)} · ${d.pecasVendidasAno}/${d.pecasTotal} peças vendidas · Receita ${fmt(d.receitaVendidaAno)} · CMV ${fmt(d.cmvAno)}`, hidden)}
                 </div>
               </div>
             ))}
@@ -329,7 +307,7 @@ function CmvDetalhe({ dre, hidden, isCompact }: { dre: any; hidden: boolean; isC
             <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: 12.5, minWidth: 880 }}>
               <thead>
                 <tr>
-                  {['Moto', 'Compra', 'Fator', 'Custo total', 'Peças vend./total', 'Receita vendida', 'CMV reconhecido', 'Margem'].map((h, i) => (
+                  {['Moto', 'Valor pago', 'Peças vend./total', 'Receita vendida', 'CMV reconhecido', 'Margem'].map((h, i) => (
                     <th key={h} style={{ ...thBase, textAlign: i === 0 ? 'left' : 'right', position: 'sticky', top: 0, background: 'var(--gray-50)' }}>{h}</th>
                   ))}
                 </tr>
@@ -339,8 +317,6 @@ function CmvDetalhe({ dre, hidden, isCompact }: { dre: any; hidden: boolean; isC
                   <tr key={d.motoId}>
                     <td style={{ ...tdBase, color: 'var(--gray-800)', fontWeight: 600 }}>{d.moto}</td>
                     <td style={{ ...tdBase, textAlign: 'right', ...mask }}>{sensitiveText(fmt(d.custoCompra), hidden)}</td>
-                    <td style={{ ...tdBase, textAlign: 'right', ...mask }}>{sensitiveText(`+${(d.fatorAgregado * 100).toFixed(1)}%`, hidden)}</td>
-                    <td style={{ ...tdBase, textAlign: 'right', ...mask }}>{sensitiveText(fmt(d.custoTotal), hidden)}</td>
                     <td style={{ ...tdBase, textAlign: 'right', ...mask }}>{sensitiveText(`${d.pecasVendidasAno}/${d.pecasTotal}`, hidden)}</td>
                     <td style={{ ...tdBase, textAlign: 'right', ...mask }}>{sensitiveText(fmt(d.receitaVendidaAno), hidden)}</td>
                     <td style={{ ...tdBase, textAlign: 'right', fontWeight: 700, ...mask }}>{sensitiveText(fmt(d.cmvAno), hidden)}</td>

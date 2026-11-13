@@ -1,12 +1,11 @@
 // DRE de desmonte (estrutura detalhada): receita bruta -> deducoes -> CMV (rateio das motos) -> despesas -> resultado.
 //
 // FORMULA DO CMV (custo das pecas vendidas):
-//   1) Custo da moto      = precoCompra x (1 + F(anoCompra))
-//      F(ano)             = despesas pagas da categoria "Moto" (leiloeiro, patio, guincho...) lancadas no ano
-//                           / soma do precoCompra das motos compradas nesse ano   (0 se nao houver compras no ano)
-//   2) Peso de cada peca  = precoML da peca (se a soma dos precoML da moto for > 0); senao 1 (divisao igual)
-//   3) Custo da peca      = Custo da moto x peso da peca / soma dos pesos de TODAS as pecas da moto
-//   4) CMV do mes         = soma do custo das pecas VENDIDAS no mes
+//   Custo da peca = (valor de venda bruto da peca / soma do valor de venda bruto de TODAS as pecas da moto) x valor pago na moto
+//   - valor pago na moto = precoCompra (cadastro da moto); a soma considera TODAS as pecas da moto (vendidas ou em estoque)
+//   - se nenhuma peca da moto tem preco, divide igual entre as pecas
+//   CMV do mes = soma do custo das pecas VENDIDAS no mes
+//                           + custos de aquisicao das motos (grupo cmv_aquisicao: leilao, patio, guincho; pagos no mes)
 //                           + insumos diretos (categoria "Insumo", pagos no mes)
 //                           + perdas e quebras (tabela Prejuizo, valor + frete, no mes)
 //
@@ -66,20 +65,6 @@ async function carregarBase(anoParam: number | null) {
   const hoje = hojeKey();
   const despesasPagas = despesas.filter((d) => d.statusPagamento === 'pago' && dateKey(d.data) && dateKey(d.data) <= hoje);
 
-  // ---- F(ano): custos agregados de aquisicao proporcionais ao valor de compra ----
-  const agregadoPorAno: Record<number, number> = {};
-  for (const d of despesasPagas) {
-    if (infoDe(d.categoria).grupo !== 'cmv_aquisicao') continue;
-    const y = anoDe(d.data);
-    if (y) agregadoPorAno[y] = (agregadoPorAno[y] || 0) + n(d.valor);
-  }
-  const compraPorAno: Record<number, number> = {};
-  for (const m of motos) {
-    const y = anoDe(m.dataCompra);
-    if (y) compraPorAno[y] = (compraPorAno[y] || 0) + n(m.precoCompra);
-  }
-  const fatorAno = (y: number) => (y && compraPorAno[y] > 0 ? (agregadoPorAno[y] || 0) / compraPorAno[y] : 0);
-
   // ---- rateio por peca ----
   const pecasPorMoto = new Map<number, PecaRow[]>();
   for (const p of pecas) {
@@ -98,9 +83,8 @@ async function carregarBase(anoParam: number | null) {
     motoDesc.set(m.id, [m.marca, m.modelo, m.ano].filter(Boolean).join(' ') + (m.placa ? ` · ${m.placa}` : ''));
     const lista = pecasPorMoto.get(m.id) || [];
     if (!lista.length) continue;
-    const F = fatorAno(anoDe(m.dataCompra));
     const custoCompra = n(m.precoCompra);
-    const custoTotal = custoCompra * (1 + F);
+    const custoTotal = custoCompra; // valor pago na moto
     const somaPreco = lista.reduce((s, p) => s + n(p.precoML), 0);
     const peso = (p: PecaRow) => (somaPreco > 0 ? n(p.precoML) : 1);
     const somaPesos = lista.reduce((s, p) => s + peso(p), 0) || 1;
@@ -126,7 +110,6 @@ async function carregarBase(anoParam: number | null) {
         motoId: m.id,
         moto: motoDesc.get(m.id),
         custoCompra: r2(custoCompra),
-        fatorAgregado: Number(F.toFixed(4)),
         custoTotal: r2(custoTotal),
         pecasTotal: lista.length,
         pecasVendidasAno: vendidasAno,
@@ -142,7 +125,7 @@ async function carregarBase(anoParam: number | null) {
 
   return {
     ano, pecas, despesas, prejuizos, motos, despesasPagas, pecasVendidasAno, infoDe,
-    agregadoPorAno, compraPorAno, fatorAno, motoDesc, custoPecaVendida, cmvPecasMes, detalhe, motosSemCusto, pecasVendidasSemPreco,
+    motoDesc, custoPecaVendida, cmvPecasMes, detalhe, motosSemCusto, pecasVendidasSemPreco,
   };
 }
 
@@ -167,6 +150,7 @@ export async function calcularDre(anoParam: number | null) {
 
   const impostos = zeros();
   const insumos = zeros();
+  const aquisicao = zeros();
   // categorias das despesas operacionais (adm / pessoal / comercial), uma linha por categoria
   const porCateg = new Map<string, { info: InfoCategoria; valores: number[] }>();
   for (const d of b.despesasPagas) {
@@ -177,7 +161,7 @@ export async function calcularDre(anoParam: number | null) {
     const valor = n(d.valor);
     if (info.grupo === 'deducao') impostos[i] += valor;
     else if (info.grupo === 'cmv_insumo') insumos[i] += valor;
-    else if (info.grupo === 'cmv_aquisicao') continue; // ja entra no CMV via fator F (nao contar duas vezes)
+    else if (info.grupo === 'cmv_aquisicao') aquisicao[i] += valor;
     else {
       const mesclada = MESCLADAS[semAcento(info.nome)];
       if (mesclada === 'comissoes') { comissoes[i] += valor; continue; }
@@ -204,7 +188,7 @@ export async function calcularDre(anoParam: number | null) {
   const montar = (i: number) => {
     const rbruta = receitaPecas[i] + receitaSucata[i];
     const receitaLiquida = rbruta - impostos[i];
-    const cmv = b.cmvPecasMes[i] + insumos[i] + perdas[i];
+    const cmv = b.cmvPecasMes[i] + aquisicao[i] + insumos[i] + perdas[i];
     const lucroBruto = receitaLiquida - cmv;
     const despComercial = comissoes[i] + frete[i] + somaCats(i, (l) => l.grupo === 'comercial');
     const despAdm = somaCats(i, (l) => l.grupo === 'adm');
@@ -217,7 +201,7 @@ export async function calcularDre(anoParam: number | null) {
     return {
       receitaPecas: receitaPecas[i], receitaSucata: receitaSucata[i], receitaBruta: rbruta,
       impostos: impostos[i], receitaLiquida,
-      cmvPecas: b.cmvPecasMes[i], insumos: insumos[i], perdas: perdas[i], cmv, lucroBruto,
+      cmvPecas: b.cmvPecasMes[i], aquisicao: aquisicao[i], insumos: insumos[i], perdas: perdas[i], cmv, lucroBruto,
       comissoes: comissoes[i], frete: frete[i], despComercial, despAdm, despPessoal, despesasOp,
       despFixas, despVariaveis, margemContribuicao: receitaLiquida - cmv - despVariaveis,
       ebit, lucroLiquido: ebit, qtdVendidas: qtdVendidas[i],
@@ -244,12 +228,6 @@ export async function calcularDre(anoParam: number | null) {
     catLinhas,
     cmvDetalhe: b.detalhe,
     premissas: {
-      fatorAgregadoPorAno: Object.keys(b.compraPorAno).map((y) => ({
-        ano: Number(y),
-        comprasMotos: r2(b.compraPorAno[Number(y)]),
-        custosAgregados: r2(b.agregadoPorAno[Number(y)] || 0),
-        fator: Number(b.fatorAno(Number(y)).toFixed(4)),
-      })).sort((a, b2) => b2.ano - a.ano),
       motosSemCusto: b.motosSemCusto,
       pecasVendidasSemPreco: b.pecasVendidasSemPreco,
     },
@@ -310,6 +288,10 @@ export async function lancamentosDre(anoParam: number | null, mesParam: number, 
   } else if (linha === 'impostos') {
     titulo = 'Impostos sobre vendas (DAS)';
     tabelas.push(tabelaDespesas('', despesasDo((d) => b.infoDe(d.categoria).grupo === 'deducao')));
+  } else if (linha === 'aquisicao') {
+    titulo = 'Custos de aquisição das motos (leilão, pátio, guincho)';
+    tabelas.push(tabelaDespesas('', despesasDo((d) => b.infoDe(d.categoria).grupo === 'cmv_aquisicao')));
+    notas.push('Custos pagos além do valor da moto. Não entram no rateio por peça: são reconhecidos no mês em que foram pagos.');
   } else if (linha === 'insumos') {
     titulo = 'Insumos diretos de desmonte e legalização';
     tabelas.push(tabelaDespesas('', despesasDo((d) => b.infoDe(d.categoria).grupo === 'cmv_insumo')));
@@ -320,10 +302,7 @@ export async function lancamentosDre(anoParam: number | null, mesParam: number, 
       itens: vendidas.map((p) => ({ ...itemPeca(p), preco: r2(n(p.precoML)), valor: r2(b.custoPecaVendida.get(p.id) || 0) })).sort(porData),
       total: r2(vendidas.reduce((s, p) => s + (b.custoPecaVendida.get(p.id) || 0), 0)),
     });
-    const fatorAnoAtual = b.fatorAno(ano);
-    notas.push('Custo da peça = (preço de compra da moto + custos agregados) × preço da peça ÷ soma dos preços das peças da moto.');
-    notas.push(`Custos agregados de ${ano}: despesas do grupo “CMV · custos de aquisição” ÷ compras de motos no ano = +${(fatorAnoAtual * 100).toFixed(1)}% sobre o preço de compra. As despesas abaixo compõem esse fator.`);
-    tabelas.push(tabelaDespesas(`Custos de aquisição da moto (leiloeiro, pátio, guincho) pagos em ${ano}`, b.despesasPagas.filter((d) => anoDe(d.data) === ano && b.infoDe(d.categoria).grupo === 'cmv_aquisicao')));
+    notas.push('Custo da peça = (valor de venda da peça ÷ soma do valor de venda de todas as peças da moto) × valor pago na moto.');
   } else if (linha === 'perdas') {
     titulo = 'Perdas e quebras de estoque';
     const lista = b.prejuizos.filter((p) => noPeriodo(p.data));
