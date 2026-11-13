@@ -970,7 +970,8 @@ financeiroRouter.get('/despesas-receita', async (req, res, next) => {
     const monthIndexes = mes ? [mes] : Array.from({ length: 12 }, (_, index) => index + 1);
 
     // Coleta somente despesas operacionais: "Moto" é investimento e não entra nesta tela.
-    const CATEGORIAS_EXCLUIDAS = ['contador', 'moto'];
+    const imobilizadas = (await listarCategoriasDespesa()).filter((c) => c.grupo === 'imobilizado').map((c) => c.nome.toLowerCase());
+    const CATEGORIAS_EXCLUIDAS = ['contador', 'moto', ...imobilizadas];
     const isDespesaOperacional = (despesa: { categoria?: string | null }) => {
       const categoria = String(despesa.categoria || 'Outros').trim().toLowerCase();
       return !CATEGORIAS_EXCLUIDAS.includes(categoria);

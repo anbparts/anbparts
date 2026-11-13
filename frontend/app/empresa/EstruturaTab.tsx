@@ -517,7 +517,7 @@ export default function EstruturaTab({ canEdit, isPhone }: { canEdit: boolean; i
               <label style={{ ...cs.fl, display: 'block', marginTop: 14 }}>Categoria da despesa
                 <select style={cs.fi} value={despesaModal.categoria} onChange={(e) => setDespesaModal({ ...despesaModal, categoria: e.target.value })}>
                   <option value="">Selecione a categoria</option>
-                  {opcoesCategoria(catDespesa, gruposDespesa)}
+                  {opcoesCategoria(catDespesa, [...gruposDespesa].sort((x, y) => (y.valor === 'imobilizado' ? 1 : 0) - (x.valor === 'imobilizado' ? 1 : 0)))}
                 </select>
               </label>
               <label style={{ ...cs.fl, display: 'block', marginTop: 12 }}>Detalhes

@@ -134,7 +134,7 @@ function recurrenceLabel(tipo: string) {
 }
 
 const GRUPO_COLORS: Record<string, string> = {
-  adm: '#64748b', pessoal: '#0ea5e9', comercial: '#f59e0b', cmv_insumo: '#2563eb', cmv_aquisicao: '#16a34a', deducao: '#7c3aed',
+  adm: '#64748b', imobilizado: '#0f766e', pessoal: '#0ea5e9', comercial: '#f59e0b', cmv_insumo: '#2563eb', cmv_aquisicao: '#16a34a', deducao: '#7c3aed',
 };
 
 function CategBadge({ categoria, info }: { categoria: string; info?: CategoriaDespesa }) {

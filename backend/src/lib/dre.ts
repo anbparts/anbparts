@@ -171,6 +171,7 @@ export async function calcularDre(anoParam: number | null) {
     if (info.grupo === 'deducao') impostos[i] += valor;
     else if (info.grupo === 'cmv_insumo') insumos[i] += valor;
     else if (info.grupo === 'cmv_aquisicao') aquisicao[i] += valor;
+    else if (info.grupo === 'imobilizado') continue; // compra de ativo: nao e' despesa do periodo (a depreciacao do ativo entra nas administrativas)
     else {
       const mesclada = MESCLADAS[semAcento(info.nome)];
       if (mesclada === 'comissoes') { comissoes[i] += valor; continue; }

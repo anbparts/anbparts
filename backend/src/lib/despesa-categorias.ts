@@ -3,11 +3,12 @@
 // onde cada categoria entra. Tabela criada sob demanda (sem migration), com carga inicial na primeira leitura.
 import { prisma } from './prisma';
 
-export type GrupoDespesa = 'deducao' | 'cmv_aquisicao' | 'cmv_insumo' | 'adm' | 'pessoal' | 'comercial';
+export type GrupoDespesa = 'deducao' | 'cmv_aquisicao' | 'cmv_insumo' | 'adm' | 'pessoal' | 'comercial' | 'imobilizado';
 export type TipoCusto = 'fixa' | 'variavel';
 
 export const GRUPOS_DESPESA: { valor: GrupoDespesa; rotulo: string; ajuda: string }[] = [
   { valor: 'adm', rotulo: 'Administrativas e de estrutura', ajuda: 'Despesas operacionais (aluguel, energia, sistemas, contador...)' },
+  { valor: 'imobilizado', rotulo: 'Investimento em ativos', ajuda: 'Compra de ativos da empresa (Empresa > Estrutura): NÃO entra como despesa no DRE; o custo aparece pela depreciação do ativo' },
   { valor: 'pessoal', rotulo: 'Pessoal', ajuda: 'Despesas operacionais com equipe (salários, encargos, benefícios)' },
   { valor: 'comercial', rotulo: 'Comerciais e de vendas', ajuda: 'Despesas operacionais de venda (comissões, fretes, embalagens, marketing)' },
   { valor: 'cmv_insumo', rotulo: 'CMV · Insumos diretos', ajuda: 'Entra no custo das mercadorias vendidas (etiquetas, lacres, químicos)' },
@@ -45,6 +46,12 @@ const SEED: { nome: string; grupo: GrupoDespesa; tipo: TipoCusto; legado?: boole
   { nome: 'Embalagens de Envio', grupo: 'comercial', tipo: 'variavel' },
   { nome: 'Marketing e Anúncios', grupo: 'comercial', tipo: 'variavel' },
   { nome: 'Comissões de Vendedores', grupo: 'comercial', tipo: 'variavel' },
+  // Investimento em ativos (compras de ativos da Estrutura; fora do DRE, depreciacao entra nas administrativas)
+  { nome: 'Equipamentos e Ferramentas', grupo: 'imobilizado', tipo: 'fixa' },
+  { nome: 'Móveis e Utensílios', grupo: 'imobilizado', tipo: 'fixa' },
+  { nome: 'Informática e Eletrônicos', grupo: 'imobilizado', tipo: 'fixa' },
+  { nome: 'Obras e Instalações', grupo: 'imobilizado', tipo: 'fixa' },
+  { nome: 'Veículos', grupo: 'imobilizado', tipo: 'fixa' },
   // Categorias que ja existiam (mantidas para nao perder o historico; reclassifique para as novas)
   { nome: 'Imposto', grupo: 'deducao', tipo: 'variavel' },
   { nome: 'Moto', grupo: 'cmv_aquisicao', tipo: 'variavel' },
@@ -74,6 +81,15 @@ async function garantirTabela() {
         s.nome, s.grupo, s.tipo, i + 1, !!s.legado,
       );
     }
+  }
+  // categorias novas do catalogo entram tambem em instalacoes que ja tinham o catalogo carregado (nao mexe nas existentes)
+  for (let i = 0; i < SEED.length; i++) {
+    const s = SEED[i];
+    if (s.grupo !== 'imobilizado') continue;
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "DespesaCategoria" ("nome","grupo","tipo","ordem","legado") VALUES ($1,$2,$3,$4,FALSE) ON CONFLICT ("nome") DO NOTHING`,
+      s.nome, s.grupo, s.tipo, 500 + i,
+    );
   }
   tabelaPronta = true;
 }
