@@ -838,6 +838,49 @@ export default function VendasBlingPage() {
     setPedidosManuaisSelecionados(Array.from(new Set(pedidoIds)));
   }
 
+  // Etiqueta de transporte (PDF 100x150 mm p/ impressora termica) dos pedidos selecionados. Fase 1: so Shopee.
+  const [gerandoEtiquetaTransporte, setGerandoEtiquetaTransporte] = useState(false);
+  async function gerarEtiquetaTransporte() {
+    if (!pedidosManuaisSelecionados.length) {
+      alert('Selecione ao menos um pedido para gerar a etiqueta de transporte.');
+      return;
+    }
+    setGerandoEtiquetaTransporte(true);
+    try {
+      const response = await fetch(`${API}/etiquetas-transporte/pedidos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pedidoIds: pedidosManuaisSelecionados }),
+      });
+      const data = await parseJsonResponse(response);
+      const detalhes = (lista: any[] | undefined, rotulo: string) => (lista && lista.length
+        ? `\n\n${rotulo}:\n` + lista.map((x: any) => `- #${x.pedidoNum || x.orderSn || '?'}: ${x.motivo}`).join('\n')
+        : '');
+      if (!response.ok || !data.ok) {
+        alert(`${data.error || 'Erro ao gerar a etiqueta de transporte'}${detalhes(data.falhas, 'Falhas')}${detalhes(data.ignorados, 'Ignorados')}`);
+        return;
+      }
+      const bin = atob(String(data.pdfBase64 || ''));
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+      const aba = window.open(url, '_blank');
+      if (!aba) {
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'etiqueta-transporte.pdf';
+        a.click();
+      }
+      const avisos = [...(data.avisos || [])].map((t: string) => `- ${t}`).join('\n');
+      const extra = `${detalhes(data.falhas, 'Nao geradas')}${detalhes(data.ignorados, 'Ignorados (outro canal ou sem numero da loja)')}${avisos ? `\n\n${avisos}` : ''}`;
+      if (extra) alert(`Etiquetas geradas: ${data.total}.${extra}`);
+    } catch (e: any) {
+      alert(`Erro: ${e.message}`);
+    } finally {
+      setGerandoEtiquetaTransporte(false);
+    }
+  }
+
   async function buscarRelatorioSeparacaoManual() {
     if (!canRelatorioSeparacao) {
       alert('Seu usuario nao tem permissao para gerar relatorio de separacao.');
@@ -1224,6 +1267,15 @@ export default function VendasBlingPage() {
                   style={{ ...s.btn, ...phoneButtonStyle, background: '#0f172a', color: '#fff', opacity: (!pedidosManuaisSelecionados.length || carregandoSeparacao) ? 0.5 : 1 }}
                 >
                   {carregandoSeparacao ? 'Montando relatorio...' : `Gerar manual (${pedidosManuaisSelecionados.length})`}
+                </button>
+                <button
+                  type="button"
+                  onClick={gerarEtiquetaTransporte}
+                  disabled={!pedidosManuaisSelecionados.length || gerandoEtiquetaTransporte}
+                  title="Gera o PDF 100x150 mm da etiqueta de transporte dos pedidos selecionados (por enquanto so Shopee)"
+                  style={{ ...s.btn, ...phoneButtonStyle, background: '#ee4d2d', color: '#fff', opacity: (!pedidosManuaisSelecionados.length || gerandoEtiquetaTransporte) ? 0.5 : 1 }}
+                >
+                  {gerandoEtiquetaTransporte ? 'Gerando etiqueta...' : `Etiqueta Transporte (${pedidosManuaisSelecionados.length})`}
                 </button>
               </div>
             </div>

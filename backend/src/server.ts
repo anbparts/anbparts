@@ -45,6 +45,7 @@ import { mlAnuncioRouter } from './routes/mlAnuncio';import { aquecerFolhasMoto 
 import { pecasRouter, startLimpezaFotosPecaScheduler } from './routes/pecas';
 import { sucataRouter } from './routes/sucata';
 import { shopeeRouter } from './routes/shopee';
+import { etiquetasTransporteRouter } from './routes/etiquetas-transporte';
 import { olxRouter, startOlxScheduler } from './routes/olx';
 import { blingPedidosRouter } from './routes/blingPedidos';
 import { startBlingPedidosScheduler } from './lib/bling-pedidos';
@@ -102,6 +103,7 @@ app.use('/devolucoes-historico', devolucaoHistoricoRouter);
 app.use('/empresa', empresaRouter);
 app.use('/etiquetas-detran', etiquetasDetranRouter);
 app.use('/etiquetas', etiquetasRouter);
+app.use('/etiquetas-transporte', etiquetasTransporteRouter);
 app.use('/ativos', ativosRouter);
 app.use('/faturamento', faturamentoRouter);
 app.use('/financeiro', financeiroRouter);

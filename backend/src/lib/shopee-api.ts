@@ -259,6 +259,39 @@ export async function shopeeReq(path: string, init?: { method?: string; body?: a
   return payload;
 }
 
+// POST que pode devolver ARQUIVO em vez de JSON (ex.: v2.logistics.download_shipping_document). Mesma assinatura/renovacao
+// de token do shopeeReq. Resposta JSON (erro da Shopee) vira excecao; qualquer outra coisa volta como Buffer.
+export async function shopeeReqArquivo(path: string, body: any): Promise<{ buffer: Buffer; contentType: string }> {
+  let config = await getShopeeConfig();
+  if (!config.accessToken || !config.shopId) throw new Error('Shopee nao autorizada. Conecte a loja em Configuracao.');
+  const precisaRenovar = config.expiresAt ? new Date(config.expiresAt).getTime() < Date.now() + 60_000 : false;
+  if (precisaRenovar) {
+    await shopeeRefreshToken();
+    config = await getShopeeConfig();
+  }
+
+  async function doRequest(accessToken: string) {
+    const url = buildShopUrl(config.environment, path, accessToken, config.shopId);
+    const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const buffer = Buffer.from(await response.arrayBuffer());
+    const contentType = response.headers.get('content-type') || '';
+    let json: any = null;
+    if (/json/i.test(contentType) || buffer[0] === 0x7b) {
+      try { json = JSON.parse(buffer.toString('utf8')); } catch { json = null; }
+    }
+    return { response, buffer, contentType, json };
+  }
+
+  let r = await doRequest(config.accessToken);
+  if (r.json?.error && /token/i.test(String(r.json.error))) r = await doRequest(await shopeeRefreshToken());
+  if (r.json) {
+    if (r.json.error || !r.response.ok) throw new Error(r.json.message || r.json.error || `Shopee ${r.response.status}`);
+    throw new Error(`Shopee devolveu JSON em vez de arquivo: ${JSON.stringify(r.json).slice(0, 300)}`);
+  }
+  if (!r.response.ok) throw new Error(`Shopee ${r.response.status}`);
+  return { buffer: r.buffer, contentType: r.contentType };
+}
+
 // POST /api/v2/media_space/upload_image — multipart/form-data (campo "image" = arquivo). Ate 10MB,
 // JPG/JPEG/PNG. Retorna response.image_info.image_id (usado no update_item depois). Confirmado na
 // doc oficial (v2.media_space.upload_image, Request Parameters).
