@@ -2,6 +2,7 @@
 // Relatorio de Separacao - PDF. Shopee (API da Shopee, ZPL -> PDF) e Mercado Livre (/shipment_labels, PDF do proprio ML).
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
+import { listarEtiquetaTransporteLog, lerEtiquetaTransporteLog } from '../lib/etiqueta-transporte-log';
 import { diagnosticoEtiquetaShopee, etiquetaMercadoLivre, etiquetaShopee } from '../lib/etiqueta-transporte';
 
 export const etiquetasTransporteRouter = Router();
@@ -104,4 +105,28 @@ etiquetasTransporteRouter.post('/shopee/diagnostico', async (req, res) => {
   } catch (e: any) {
     res.status(502).json({ ok: false, error: String(e?.message || e) });
   }
+});
+
+// Registro interno do que os marketplaces devolveram (para analise posterior)
+// GET /etiquetas-transporte/log                -> lista (sem os arquivos)
+// GET /etiquetas-transporte/log/:id/bruto      -> arquivo original devolvido pelo marketplace (.txt/.zip/.pdf)
+// GET /etiquetas-transporte/log/:id/pdf        -> PDF gerado pelo sistema
+// GET /etiquetas-transporte/log/:id/detalhes   -> respostas/parametros registrados (JSON)
+etiquetasTransporteRouter.get('/log', async (_req, res) => {
+  try { res.json({ ok: true, itens: await listarEtiquetaTransporteLog() }); }
+  catch (e: any) { res.status(500).json({ ok: false, error: String(e?.message || e) }); }
+});
+etiquetasTransporteRouter.get('/log/:id/:parte', async (req, res) => {
+  try {
+    const r = await lerEtiquetaTransporteLog(Number(req.params.id));
+    if (!r) return res.status(404).json({ ok: false, error: 'Registro nao encontrado.' });
+    const parte = req.params.parte;
+    if (parte === 'detalhes') return res.json({ ok: true, canal: r.canal, referencias: r.referencias, tipoDocumento: r.tipoDocumento, formatoOrigem: r.formatoOrigem, detalhes: r.detalhes ? JSON.parse(r.detalhes) : null });
+    const b64 = parte === 'pdf' ? r.pdfBase64 : parte === 'bruto' ? r.brutoBase64 : null;
+    if (!b64) return res.status(404).json({ ok: false, error: 'Esse registro nao tem essa parte.' });
+    const nome = parte === 'pdf' ? `etiqueta-${r.id}.pdf` : (r.brutoNome || `bruto-${r.id}.bin`);
+    res.setHeader('Content-Type', /\.pdf$/i.test(nome) ? 'application/pdf' : 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${nome}"`);
+    res.send(Buffer.from(b64, 'base64'));
+  } catch (e: any) { res.status(500).json({ ok: false, error: String(e?.message || e) }); }
 });

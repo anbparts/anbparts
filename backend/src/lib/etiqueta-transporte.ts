@@ -6,6 +6,7 @@
 import zlib from 'zlib';
 import PDFDocument from 'pdfkit';
 import { shopeeReq, shopeeReqArquivo } from './shopee-api';
+import { registrarEtiquetaTransporte } from './etiqueta-transporte-log';
 import { mercadoLivreReq, mercadoLivreReqArquivo } from './mercado-livre';
 
 const MM = (mm: number) => mm * (72 / 25.4);
@@ -244,7 +245,18 @@ export async function etiquetaShopee(orderSns: string[], opts?: { tipo?: string 
 
   // 3) tudo vira PDF 100x150. ZPL de varios arquivos junta; PDFs nao da pra juntar aqui: usa o 1o e avisa
   const normalizados: ResultadoEtiqueta[] = [];
-  for (const a of arquivos) normalizados.push(await normalizarArquivo(a.buf, a.tipo));
+  const refsTodas = sns;
+  for (const a of arquivos) {
+    const nomeBruto = ehZip(a.buf) ? 'shopee.zip' : pareceZpl(a.buf) ? 'shopee.txt' : ehPdf(a.buf) ? 'shopee.pdf' : 'shopee.bin';
+    try {
+      const n = await normalizarArquivo(a.buf, a.tipo);
+      normalizados.push(n);
+      await registrarEtiquetaTransporte({ canal: 'Shopee', referencias: refsTodas, tipoDocumento: a.tipo, formatoOrigem: n.formatoOrigem, bruto: a.buf, brutoNome: nomeBruto, pdf: n.pdf, detalhes: { parametros: lista, falhas } });
+    } catch (e: any) {
+      await registrarEtiquetaTransporte({ canal: 'Shopee', referencias: refsTodas, tipoDocumento: a.tipo, formatoOrigem: 'erro', bruto: a.buf, brutoNome: nomeBruto, detalhes: { erro: String(e?.message || e), parametros: lista, falhas } });
+      throw e;
+    }
+  }
   const todosZpl = normalizados.every((n) => n.formatoOrigem === 'zpl');
   if (normalizados.length === 1) return { resultado: normalizados[0], falhas, ignorados: [] };
   if (todosZpl) {
@@ -334,5 +346,6 @@ export async function etiquetaMercadoLivre(refs: string[]): Promise<{ resultado:
     falhas.push(...ids.map((id) => ({ orderSn: envios.get(id)!, motivo: 'O Mercado Livre devolveu um arquivo que nao e PDF.' })));
     return { resultado: null, falhas };
   }
+  await registrarEtiquetaTransporte({ canal: 'Mercado Livre', referencias: Array.from(envios.values()), tipoDocumento: 'ML_PDF', formatoOrigem: 'pdf', bruto: arq.buffer, brutoNome: 'ml.pdf', pdf: arq.buffer, detalhes: { envios: Array.from(envios.entries()), avisos, falhas } });
   return { resultado: { pdf: arq.buffer, formatoOrigem: 'pdf', tipoDocumento: 'ML_PDF', avisos }, falhas };
 }
