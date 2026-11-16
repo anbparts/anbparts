@@ -5,7 +5,7 @@ import { sensitiveMaskStyle, sensitiveText } from '@/lib/company-values';
 
 // Grafico de LINHA do fluxo de caixa (modelo pedido pelo Nelson): as duas linhas de cima sao Receita e Despesas,
 // a de baixo e' o Saldo do mes. Passar o mouse mostra os valores do mes; clicar no mes abre os registros que compoem a apuracao.
-type Mes = { mes: number; receita: number; despesas: number; saldo: number };
+type Mes = { mes: number; receita: number; despesas: number; saldo: number; recPrevista?: number; despPrevista?: number; receitaProjetada?: number; despesasProjetadas?: number; saldoProjetado?: number };
 
 const MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 const COR = { receita: '#16a34a', despesas: '#dc2626', saldo: '#4f46e5' };
@@ -36,11 +36,17 @@ export default function FluxoCaixaChart({ meses, ano, ultimoMes, hidden, onSelec
 }) {
   const [hover, setHover] = useState<number | null>(null);
   const ref = useRef<HTMLDivElement>(null);
-  const visiveis = meses.slice(0, ultimoMes);
+  // previsto: ultimo mes com lancamento futuro; o trecho tracejado vai do ultimo mes realizado ate ele
+  let ultimoPrev = -1;
+  meses.forEach((m, i) => { if ((m.recPrevista || 0) > 0 || (m.despPrevista || 0) > 0) ultimoPrev = i; });
+  const visiveis = meses.slice(0, Math.max(ultimoMes, ultimoPrev + 1));
+  const iniProj = ultimoPrev >= 0 ? Math.max(0, ultimoMes - 1) : -1;
+  const proj = (m: Mes, k: 'receita' | 'despesas' | 'saldo') =>
+    (k === 'receita' ? m.receitaProjetada : k === 'despesas' ? m.despesasProjetadas : m.saldoProjetado) ?? m[k];
 
   const { yMin, yMax, ticks } = useMemo(() => {
     const valores: number[] = [0];
-    visiveis.forEach((m) => { valores.push(m.receita, m.despesas, m.saldo); });
+    visiveis.forEach((m) => { valores.push(m.receita, m.despesas, m.saldo, proj(m, 'receita'), proj(m, 'despesas'), proj(m, 'saldo')); });
     let min = Math.min(...valores, 0);
     let max = Math.max(...valores, 1);
     const passo = passoBonito(max - min, 5);
@@ -55,7 +61,10 @@ export default function FluxoCaixaChart({ meses, ano, ultimoMes, hidden, onSelec
   const ih = H - PAD.t - PAD.b;
   const x = (i: number) => PAD.l + (iw * i) / 11;
   const y = (v: number) => PAD.t + ih * (1 - (v - yMin) / ((yMax - yMin) || 1));
-  const caminho = (k: 'receita' | 'despesas' | 'saldo') => visiveis.map((m, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(m[k]).toFixed(1)}`).join(' ');
+  const caminho = (k: 'receita' | 'despesas' | 'saldo') => visiveis.slice(0, ultimoMes).map((m, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(m[k]).toFixed(1)}`).join(' ');
+  const tracejado = (k: 'receita' | 'despesas' | 'saldo') => iniProj < 0 ? '' : visiveis
+    .map((m, i) => ({ m, i })).filter((p) => p.i >= iniProj)
+    .map((p, j) => `${j ? 'L' : 'M'}${x(p.i).toFixed(1)},${y(proj(p.m, k)).toFixed(1)}`).join(' ');
   const area = (k: 'receita' | 'despesas') => visiveis.length > 1
     ? `${caminho(k)} L${x(visiveis.length - 1).toFixed(1)},${y(0).toFixed(1)} L${x(0).toFixed(1)},${y(0).toFixed(1)} Z`
     : '';
@@ -82,7 +91,7 @@ export default function FluxoCaixaChart({ meses, ano, ultimoMes, hidden, onSelec
   return (
     <div>
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 12, color: 'var(--gray-600)', marginBottom: 6 }}>
-        {([['Receitas', COR.receita], ['Despesas', COR.despesas], ['Saldo do mês', COR.saldo]] as const).map(([rotulo, cor]) => (
+        {([['Receitas', COR.receita], ['Despesas', COR.despesas], ['Saldo do mês', COR.saldo], ...(ultimoPrev >= 0 ? [['Tracejado = previsto', 'var(--gray-400)'] as const] : [])] as ReadonlyArray<readonly [string, string]>).map(([rotulo, cor]) => (
           <span key={rotulo} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             <span style={{ width: 18, height: 3, borderRadius: 2, background: cor, display: 'inline-block' }} />{rotulo}
           </span>
@@ -109,11 +118,12 @@ export default function FluxoCaixaChart({ meses, ano, ultimoMes, hidden, onSelec
 
           <path d={area('receita')} fill={COR.receita} opacity={0.08} />
           <path d={area('despesas')} fill={COR.despesas} opacity={0.06} />
+          {iniProj >= 0 && (['receita', 'despesas', 'saldo'] as const).map((k) => <path key={k} d={tracejado(k)} fill="none" stroke={COR[k]} strokeWidth={2} strokeDasharray="6 5" opacity={0.75} />)}
           <path d={caminho('receita')} fill="none" stroke={COR.receita} strokeWidth={2.4} strokeLinejoin="round" />
           <path d={caminho('despesas')} fill="none" stroke={COR.despesas} strokeWidth={2.4} strokeLinejoin="round" />
           <path d={caminho('saldo')} fill="none" stroke={COR.saldo} strokeWidth={2.4} strokeLinejoin="round" />
 
-          {visiveis.map((m, i) => (
+          {visiveis.slice(0, ultimoMes).map((m, i) => (
             <g key={m.mes}>
               <circle cx={x(i)} cy={y(m.receita)} r={hover === i ? 5 : 3} fill="var(--white)" stroke={COR.receita} strokeWidth={2} />
               <circle cx={x(i)} cy={y(m.despesas)} r={hover === i ? 5 : 3} fill="var(--white)" stroke={COR.despesas} strokeWidth={2} />
@@ -135,6 +145,14 @@ export default function FluxoCaixaChart({ meses, ano, ultimoMes, hidden, onSelec
             {linhaTooltip('Receitas', atual.receita, COR.receita, '#dcfce7')}
             {linhaTooltip('Despesas', atual.despesas, COR.despesas, '#fee2e2')}
             {linhaTooltip('Saldo', atual.saldo, COR.saldo, '#e0e7ff')}
+            {((atual.recPrevista || 0) > 0 || (atual.despPrevista || 0) > 0) && (
+              <div style={{ marginTop: 8, paddingTop: 6, borderTop: '1px dashed var(--gray-200)' }}>
+                <div style={{ fontSize: 11, color: 'var(--gray-500)', fontWeight: 700 }}>Previsto (futuro)</div>
+                {(atual.recPrevista || 0) > 0 && linhaTooltip('A receber', atual.recPrevista || 0, COR.receita, '#dcfce7')}
+                {(atual.despPrevista || 0) > 0 && linhaTooltip('A pagar', atual.despPrevista || 0, COR.despesas, '#fee2e2')}
+                {linhaTooltip('Saldo projetado', atual.saldoProjetado || 0, COR.saldo, '#e0e7ff')}
+              </div>
+            )}
             <div style={{ fontSize: 11, color: 'var(--gray-400)', textAlign: 'center', marginTop: 8 }}>Clique para ver os registros do mês</div>
           </div>
         )}

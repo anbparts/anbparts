@@ -52,10 +52,13 @@ export default function DespesasReceitaPage() {
   }, [ano]);
 
   const meses: any[] = Array.isArray(dados?.meses) ? dados.meses : [];
-  const total = dados?.total || { receita: 0, despesas: 0, saldo: 0, despLancadas: 0, comissoes: 0, frete: 0, motos: 0, ativos: 0 };
+  const total = dados?.total || { recPrevista: 0, despPrevista: 0, saldoProjetado: 0, receita: 0, despesas: 0, saldo: 0, despLancadas: 0, comissoes: 0, frete: 0, motos: 0, ativos: 0 };
   const anos: number[] = useMemo(() => Array.from(new Set<number>([ano, ...(Array.isArray(dados?.anosDisponiveis) ? dados.anosDisponiveis : [])])).sort((a, b) => b - a), [ano, dados?.anosDisponiveis]);
   const ultimoMes = ano === anoAtual ? new Date().getMonth() + 1 : ano > anoAtual ? 0 : 12;
 
+  const temPrev = (m: any) => (m.recPrevista || 0) > 0 || (m.despPrevista || 0) > 0;
+  const ativo = (m: any, i: number) => i < ultimoMes || temPrev(m);
+  const mostraPrev = (total.recPrevista || 0) > 0 || (total.despPrevista || 0) > 0;
   const valor = (v: number, cor?: string) => <span style={{ ...mask, color: cor }}>{sensitiveText(fmt(v), hidden)}</span>;
   const corSaldo = (v: number) => (v >= 0 ? 'var(--green)' : 'var(--red)');
 
@@ -68,10 +71,17 @@ export default function DespesasReceitaPage() {
     { k: 'despesas', rotulo: 'Despesas' },
     { k: 'saldo', rotulo: 'Saldo do mês' },
     { k: 'acumulado', rotulo: 'Saldo acumulado' },
+    ...(mostraPrev ? [
+      { k: 'recPrevista', rotulo: 'A receber (previsto)' },
+      { k: 'despPrevista', rotulo: 'A pagar (previsto)' },
+      { k: 'acumuladoProjetado', rotulo: 'Saldo projetado' },
+    ] : []),
   ];
   const celula = (m: any, k: string) => {
     if (k === 'taxas') return valor(m.comissoes + m.frete);
-    if (k === 'saldo' || k === 'acumulado') return valor(m[k], corSaldo(m[k]));
+    if (k === 'saldo' || k === 'acumulado' || k === 'acumuladoProjetado') return valor(m[k] || 0, corSaldo(m[k] || 0));
+    if (k === 'recPrevista') return valor(m.recPrevista || 0, 'var(--green)');
+    if (k === 'despPrevista') return valor(m.despPrevista || 0, 'var(--red)');
     if (k === 'receita') return valor(m.receita, 'var(--green)');
     if (k === 'despesas') return valor(m.despesas, 'var(--red)');
     return valor(m[k]);
@@ -123,13 +133,15 @@ export default function DespesasReceitaPage() {
           {carregando ? null : isCompact ? (
             <div style={{ padding: 12, display: 'grid', gap: 10 }}>
               {meses.map((m, i) => (
-                <button key={m.mes} type="button" onClick={() => setPopupMes(m.mes)} disabled={i >= ultimoMes} style={{ textAlign: 'left', border: '1px solid var(--border)', borderRadius: 12, padding: 14, background: 'var(--white)', cursor: i >= ultimoMes ? 'default' : 'pointer', opacity: i >= ultimoMes ? 0.5 : 1 }}>
+                <button key={m.mes} type="button" onClick={() => setPopupMes(m.mes)} disabled={!ativo(m, i)} style={{ textAlign: 'left', border: '1px solid var(--border)', borderRadius: 12, padding: 14, background: 'var(--white)', cursor: ativo(m, i) ? 'pointer' : 'default', opacity: ativo(m, i) ? 1 : 0.5 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>{MESES_LONGO[i]}/{ano}</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginTop: 8, fontSize: 12.5 }}>
                     <span>Receita<br />{valor(m.receita, 'var(--green)')}</span>
                     <span>Despesas<br />{valor(m.despesas, 'var(--red)')}</span>
                     <span>Saldo<br />{valor(m.saldo, corSaldo(m.saldo))}</span>
                     <span>Acumulado<br />{valor(m.acumulado, corSaldo(m.acumulado))}</span>
+                    {temPrev(m) && <span>A receber (prev.)<br />{valor(m.recPrevista || 0, 'var(--green)')}</span>}
+                    {temPrev(m) && <span>A pagar (prev.)<br />{valor(m.despPrevista || 0, 'var(--red)')}</span>}
                   </div>
                 </button>
               ))}
@@ -139,7 +151,7 @@ export default function DespesasReceitaPage() {
             </div>
           ) : (
             <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1020 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: mostraPrev ? 1400 : 1020 }}>
                 <thead>
                   <tr>
                     <th style={{ ...cs.th, textAlign: 'left' }}>Mês</th>
@@ -148,7 +160,7 @@ export default function DespesasReceitaPage() {
                 </thead>
                 <tbody>
                   {meses.map((m, i) => (
-                    <tr key={m.mes} onClick={() => i < ultimoMes && setPopupMes(m.mes)} style={{ cursor: i < ultimoMes ? 'pointer' : 'default', opacity: i < ultimoMes ? 1 : 0.45 }}>
+                    <tr key={m.mes} onClick={() => ativo(m, i) && setPopupMes(m.mes)} style={{ cursor: ativo(m, i) ? 'pointer' : 'default', opacity: ativo(m, i) ? 1 : 0.45 }}>
                       <td style={{ ...cs.td, textAlign: 'left', fontFamily: 'Geist, sans-serif', fontWeight: 600 }}>{MESES[i]}/{ano}</td>
                       {colunas.map((c) => <td key={c.k} style={cs.td}>{celula(m, c.k)}</td>)}
                     </tr>
@@ -157,7 +169,7 @@ export default function DespesasReceitaPage() {
                     <td style={{ ...cs.td, textAlign: 'left', fontFamily: 'Geist, sans-serif', fontWeight: 700 }}>Total {ano}</td>
                     {colunas.map((c) => (
                       <td key={c.k} style={{ ...cs.td, fontWeight: 700 }}>
-                        {c.k === 'acumulado' ? valor(total.saldo, corSaldo(total.saldo)) : celula({ ...total, acumulado: total.saldo }, c.k)}
+                        {c.k === 'acumulado' ? valor(total.saldo, corSaldo(total.saldo)) : c.k === 'acumuladoProjetado' ? valor(total.saldoProjetado || 0, corSaldo(total.saldoProjetado || 0)) : celula({ ...total, acumulado: total.saldo }, c.k)}
                       </td>
                     ))}
                   </tr>
@@ -168,6 +180,7 @@ export default function DespesasReceitaPage() {
           <div style={{ padding: '10px 18px 14px', fontSize: 12, color: 'var(--ink-muted)', lineHeight: 1.6 }}>
             Receita = vendas de peças (todas as categorias, inclusive sucata). Despesas = despesas pagas (mês do pagamento) + comissões e fretes dos pedidos + compras de motos e de ativos.
             * Compras de motos e de ativos só entram nessas colunas quando ainda não estão lançadas em Despesas; contam no mês da compra.
+            {mostraPrev ? ' Previsto = lançamentos futuros, separados do realizado: despesas a pagar (pendentes e recorrentes, pelo vencimento; as vencidas e não pagas contam no mês atual) e o saldo a liberar do Mercado Pago (mês atual). O saldo a liberar vem de vendas já contadas na Receita; o Saldo projetado é a soma do saldo realizado com o previsto, como referência.' : ''}
           </div>
         </div>
       </div>
@@ -222,6 +235,9 @@ function RegistrosModal({ ano, mes, hidden, onClose }: { ano: number; mes: numbe
                 <span>Receita <b style={{ color: 'var(--green)', ...mask }}>{sensitiveText(fmt(dados.totalReceita), hidden)}</b></span>
                 <span>Despesas <b style={{ color: 'var(--red)', ...mask }}>{sensitiveText(fmt(dados.totalDespesas), hidden)}</b></span>
                 <span>Saldo <b style={{ color: dados.saldo >= 0 ? 'var(--green)' : 'var(--red)', ...mask }}>{sensitiveText(fmt(dados.saldo), hidden)}</b></span>
+                {(dados.totalReceitaPrevista > 0 || dados.totalDespesasPrevistas > 0) && (
+                  <span style={{ color: 'var(--gray-500)' }}>Previsto: a receber <b style={mask}>{sensitiveText(fmt(dados.totalReceitaPrevista || 0), hidden)}</b> · a pagar <b style={mask}>{sensitiveText(fmt(dados.totalDespesasPrevistas || 0), hidden)}</b></span>
+                )}
               </div>
             ) : null}
           </div>

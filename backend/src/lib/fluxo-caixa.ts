@@ -10,6 +10,11 @@
 // calcularFluxoCaixa() monta o consolidado; lancamentosFluxo() devolve os registros de um mes (clique no mes).
 import { prisma } from './prisma';
 import { listarAtivosComVinculos } from '../routes/ativos';
+import { getSaldoMercadoPagoPersistido } from '../routes/mercado-livre';
+
+// PREVISTO (lancamentos futuros, pedido do Nelson): ficam separados do realizado.
+//   Despesas futuras  = despesas NAO pagas (pendentes e recorrentes ja geradas), pelo vencimento; as vencidas e ainda nao pagas caem no mes atual.
+//   Recebiveis futuros = saldo "a liberar" do Mercado Pago (persistido pelo job diario), lancado no mes atual.
 
 const TIMEZONE = 'America/Sao_Paulo';
 const n = (v: any) => Number(v) || 0;
@@ -89,7 +94,18 @@ async function carregarBase() {
     motosFora.push({ data, moto: motoDesc.get(m.id) || '', valor });
   }
 
-  return { pecas, vendidas, despesas, despesasPagas, motos, ativos, motoDesc, motosFora, ativosFora };
+  // previsto: despesas ainda nao pagas (vencidas contam no mes atual) + saldo a liberar do Mercado Pago (mes atual)
+  const despesasPrevistas = despesas
+    .filter((d) => d.statusPagamento !== 'pago' && dateKey(d.data) && n(d.valor) > 0)
+    .map((d) => ({ id: d.id, detalhes: d.detalhes, categoria: d.categoria, valor: n(d.valor), vencimento: dateKey(d.data), dataPrevista: dateKey(d.data) > hoje ? dateKey(d.data) : hoje }));
+  let recebivelMP = { valor: 0, atualizadoEm: '' };
+  try {
+    const mp = await getSaldoMercadoPagoPersistido();
+    const v = n(mp?.resumo?.saldoALiberar);
+    if (v > 0) recebivelMP = { valor: v, atualizadoEm: mp?.atualizadoEm ? new Date(mp.atualizadoEm).toISOString() : '' };
+  } catch { /* sem saldo persistido: sem recebivel previsto */ }
+
+  return { pecas, vendidas, despesas, despesasPagas, motos, ativos, motoDesc, motosFora, ativosFora, despesasPrevistas, recebivelMP, hoje };
 }
 
 export async function calcularFluxoCaixa(anoParam: number | null) {
@@ -119,12 +135,26 @@ export async function calcularFluxoCaixa(anoParam: number | null) {
   const ativos = zeros();
   for (const a of b.ativosFora) if (anoDe(a.data) === ano) ativos[mesDe(a.data) - 1] += a.valor;
 
+  const despPrevista = zeros();
+  for (const d of b.despesasPrevistas) if (anoDe(d.dataPrevista) === ano) despPrevista[mesDe(d.dataPrevista) - 1] += d.valor;
+  const recPrevista = zeros();
+  if (b.recebivelMP.valor > 0 && anoDe(b.hoje) === ano) recPrevista[mesDe(b.hoje) - 1] += b.recebivelMP.valor;
+
   let acumulado = 0;
+  let acumuladoProj = 0;
   const meses = Array.from({ length: 12 }, (_, i) => {
     const despesas = despLancadas[i] + comissoes[i] + frete[i] + motos[i] + ativos[i];
     const saldo = receita[i] - despesas;
     acumulado += saldo;
+    const saldoProjetado = saldo + recPrevista[i] - despPrevista[i];
+    acumuladoProj += saldoProjetado;
     return {
+      recPrevista: r2(recPrevista[i]),
+      despPrevista: r2(despPrevista[i]),
+      receitaProjetada: r2(receita[i] + recPrevista[i]),
+      despesasProjetadas: r2(despesas + despPrevista[i]),
+      saldoProjetado: r2(saldoProjetado),
+      acumuladoProjetado: r2(acumuladoProj),
       mes: i + 1,
       receita: r2(receita[i]),
       despLancadas: r2(despLancadas[i]),
@@ -143,6 +173,9 @@ export async function calcularFluxoCaixa(anoParam: number | null) {
     receita: soma('receita'), despLancadas: soma('despLancadas'), comissoes: soma('comissoes'), frete: soma('frete'),
     motos: soma('motos'), ativos: soma('ativos'), despesas: soma('despesas'), saldo: soma('saldo'),
     qtdVendas: meses.reduce((s, m) => s + m.qtdVendas, 0),
+    recPrevista: r2(recPrevista.reduce((s, v) => s + v, 0)),
+    despPrevista: r2(despPrevista.reduce((s, v) => s + v, 0)),
+    saldoProjetado: r2(acumuladoProj),
   };
 
   const anosDisponiveis = Array.from(new Set([
@@ -150,6 +183,7 @@ export async function calcularFluxoCaixa(anoParam: number | null) {
     ...b.despesasPagas.map((d) => anoDe(d.dataEfetiva)),
     ...b.motosFora.map((m) => anoDe(m.data)),
     ...b.ativosFora.map((a) => anoDe(a.data)),
+    ...b.despesasPrevistas.map((d) => anoDe(d.dataPrevista)),
     new Date().getFullYear(),
   ].filter(Boolean) as number[])).sort((x, y) => y - x);
 
@@ -215,12 +249,33 @@ export async function lancamentosFluxo(anoParam: number | null, mesParam: number
     itens: ativos, total: soma(ativos),
   });
 
+  // previsto (futuro): despesas a pagar e recebivel do Mercado Pago
+  const aPagar = b.despesasPrevistas.filter((d) => noPeriodo(d.dataPrevista))
+    .map((d) => ({ data: d.vencimento, detalhes: d.detalhes, categoria: d.categoria, previsao: d.dataPrevista, valor: r2(d.valor) }))
+    .sort(porData);
+  tabelas.push({
+    titulo: 'Previsto · despesas a pagar (pendentes e recorrentes; vencidas contam no mês atual)',
+    colunas: [{ k: 'data', rotulo: 'Vencimento', tipo: 'data' }, { k: 'detalhes', rotulo: 'Detalhes', tipo: 'texto' }, { k: 'categoria', rotulo: 'Categoria', tipo: 'texto' }, { k: 'valor', rotulo: 'Valor', tipo: 'moeda' }],
+    itens: aPagar, total: soma(aPagar),
+  });
+  const recebiveis = b.recebivelMP.valor > 0 && anoDe(b.hoje) === ano && (!mes || mesDe(b.hoje) === mes)
+    ? [{ data: b.hoje, descricao: 'Saldo a liberar do Mercado Pago', atualizado: b.recebivelMP.atualizadoEm ? dateKey(b.recebivelMP.atualizadoEm) : '', valor: r2(b.recebivelMP.valor) }]
+    : [];
+  tabelas.push({
+    titulo: 'Previsto · recebíveis (saldo a liberar do Mercado Pago)',
+    colunas: [{ k: 'data', rotulo: 'Mês de referência', tipo: 'data' }, { k: 'descricao', rotulo: 'Descrição', tipo: 'texto' }, { k: 'atualizado', rotulo: 'Saldo atualizado em', tipo: 'data' }, { k: 'valor', rotulo: 'Valor', tipo: 'moeda' }],
+    itens: recebiveis, total: soma(recebiveis),
+  });
+  const totalReceitaPrevista = soma(recebiveis);
+  const totalDespesasPrevistas = soma(aPagar);
+
   const totalReceita = soma(itensReceita);
   const totalDespesas = r2(soma(lancadas) + soma(taxasFrete) + soma(motos) + soma(ativos));
   const notas = [
+    'Os itens "Previsto" não entram em Receita, Despesas nem Saldo do período: formam a previsão. O saldo a liberar do Mercado Pago vem de vendas que já estão na Receita (contadas na data da venda); por isso, some-o ao saldo projetado só como referência de caixa a entrar.',
     `Saldo do período = receita ${totalReceita.toFixed(2)} − despesas ${totalDespesas.toFixed(2)} = ${r2(totalReceita - totalDespesas).toFixed(2)}.`,
     'Compras de motos e de ativos só aparecem nas tabelas acima quando ainda não estão em Despesas (ativo ligado a uma despesa, ou despesa paga com o mesmo valor no mesmo mês); nesse caso entram pelo mês da compra.',
   ];
 
-  return { ok: true, titulo: 'Fluxo de caixa', periodo, ano, mes, totalReceita, totalDespesas, saldo: r2(totalReceita - totalDespesas), tabelas, notas };
+  return { ok: true, titulo: 'Fluxo de caixa', periodo, ano, mes, totalReceita, totalDespesas, saldo: r2(totalReceita - totalDespesas), totalReceitaPrevista, totalDespesasPrevistas, tabelas, notas };
 }
