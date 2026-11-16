@@ -148,6 +148,15 @@ async function chamarShopee(path: string, body: any, etapa: string): Promise<any
 }
 const motivoItem = (it: any, etapa: string) => `${etapa}: ${[it.fail_error, it.fail_message].filter(Boolean).join(' - ') || 'sem detalhe da Shopee'}`;
 
+// Codigo de rastreio do pacote (a Shopee exige no create_shipping_document de varios canais; sem ele: logistics.tracking_number_invalid)
+async function rastreioShopee(ref: { order_sn: string; package_number?: string }): Promise<string> {
+  try {
+    const q = `order_sn=${encodeURIComponent(ref.order_sn)}${ref.package_number ? `&package_number=${encodeURIComponent(ref.package_number)}` : ''}`;
+    const p: any = await shopeeReq(`/api/v2/logistics/get_tracking_number?${q}`);
+    return String(p?.response?.tracking_number || p?.response?.first_mile_tracking_number || '').trim();
+  } catch { return ''; }
+}
+
 const dormir = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const TIPO_PREFERIDO = 'THERMAL_AIR_WAYBILL';
 
@@ -178,7 +187,11 @@ export async function etiquetaShopee(orderSns: string[], opts?: { tipo?: string 
   // 2) cria, espera ficar pronto e baixa (um arquivo por tipo de documento)
   const arquivos: { buf: Buffer; tipo: string }[] = [];
   for (const [tipo, refs] of Array.from(porTipo.entries())) {
-    const orderList = refs.map((r) => ({ ...r, shipping_document_type: tipo }));
+    const orderList: any[] = [];
+    for (const r of refs) {
+      const tracking_number = await rastreioShopee(r);
+      orderList.push({ ...r, ...(tracking_number ? { tracking_number } : {}), shipping_document_type: tipo });
+    }
     const criado: any = await chamarShopee('/api/v2/logistics/create_shipping_document', { order_list: orderList }, 'Criacao do documento');
     const prontos: { order_sn: string; package_number?: string }[] = [];
     for (const it of criado?.response?.result_list || []) {
