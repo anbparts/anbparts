@@ -100,7 +100,7 @@ export async function sincronizarPedido(pedidoId: number | string) {
        "clienteNome"=EXCLUDED."clienteNome","totalProdutos"=EXCLUDED."totalProdutos","total"=EXCLUDED."total","frete"=EXCLUDED."frete","desconto"=EXCLUDED."desconto",
        "taxaComissao"=EXCLUDED."taxaComissao","entregaCidade"=EXCLUDED."entregaCidade","entregaUf"=EXCLUDED."entregaUf","entregaCep"=EXCLUDED."entregaCep",
        "entregaEndereco"=EXCLUDED."entregaEndereco","observacoes"=EXCLUDED."observacoes","sincronizadoEm"=now()`,
-    String(d.id), txt(d.numero) || String(d.id), txt(d.numeroLoja) || null, (txt(d.data) || '').slice(0, 10) || null,
+    String(d.id), txt(d.numero) || String(d.id), txt(d.numeroLoja) || txt(d.numeroPedidoLoja) || null, (txt(d.data) || '').slice(0, 10) || null,
     situacaoId, sit.label, !!sit.isCancelado, lojaId ? String(lojaId) : null, canal, clienteId ? String(clienteId) : null, txt(contato?.nome) || null,
     totalProdutos, num(d?.total), num(d?.transporte?.frete), desconto, num(d?.taxas?.taxaComissao),
     txt(etq?.municipio) || null, txt(etq?.uf) || null, txt(etq?.cep) || null, enderecoEntrega || null, txt(d?.observacoes) || null,
@@ -329,13 +329,32 @@ export async function iniciarPorNumeros(numeros: string[]) {
   return { ok: true, total: numeros.length };
 }
 
-export async function sincronizarRecentes(dias = 3) {
-  const fmt = (d: Date) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+const fmtDataSP = (d: Date) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+
+// Pedidos ANTIGOS ainda pendentes (ex.: "Em aberto" de ha 5 dias): a janela dos ultimos dias nao os alcanca, entao a situacao
+// (atendido apos emitir a nota, cancelado...) nunca atualizava. Consulta a lista do periodo desses pedidos e atualiza os que mudaram.
+export async function reconsultarPendentesAntigos(diasJanela = 3, diasMax = 60) {
+  await garantirTabelasPedidos();
   const hoje = new Date();
-  const de = fmt(new Date(hoje.getTime() - dias * 86400000));
-  const r = await sincronizarPeriodo(de, fmt(hoje));
+  const corte = fmtDataSP(new Date(hoje.getTime() - diasJanela * 86400000));
+  const limite = fmtDataSP(new Date(hoje.getTime() - diasMax * 86400000));
+  const [r] = await prisma.$queryRawUnsafe<any[]>(
+    `SELECT MIN("data")::text AS minima, MAX("data")::text AS maxima, COUNT(*)::int AS qtd FROM "BlingPedido"
+      WHERE "cancelado" = false AND "data" >= $2::date AND "data" < $1::date
+        AND COALESCE("situacao",'') !~* '(atendid|conclu|finaliz|entregue|cancel)'`, corte, limite);
+  if (!r?.qtd || !r.minima) return { pendentes: 0, encontrados: 0, novos: 0, atualizados: 0 };
+  const res = await sincronizarPeriodo(r.minima, r.maxima);
+  return { pendentes: Number(r.qtd), ...res };
+}
+
+export async function sincronizarRecentes(dias = 3) {
+  const hoje = new Date();
+  const de = fmtDataSP(new Date(hoje.getTime() - dias * 86400000));
+  const r = await sincronizarPeriodo(de, fmtDataSP(hoje));
   const enriquecidos = await enriquecerPendentes(15);
-  return { ...r, enriquecidos };
+  let antigos: any = null;
+  try { antigos = await reconsultarPendentesAntigos(dias); } catch (e: any) { console.error('[bling-pedidos] reconsulta de pendentes antigos falhou:', e?.message || e); }
+  return { ...r, enriquecidos, antigos };
 }
 
 let schedulerRodando = false;
