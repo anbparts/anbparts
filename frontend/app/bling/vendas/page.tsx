@@ -838,7 +838,7 @@ export default function VendasBlingPage() {
     setPedidosManuaisSelecionados(Array.from(new Set(pedidoIds)));
   }
 
-  // Etiqueta de transporte (PDF 100x150 mm p/ impressora termica) dos pedidos selecionados. Fase 1: so Shopee.
+  // Etiqueta de transporte (PDF 100x150 mm p/ impressora termica) dos pedidos selecionados. Shopee e Mercado Livre (1 PDF por marketplace).
   const [gerandoEtiquetaTransporte, setGerandoEtiquetaTransporte] = useState(false);
   async function gerarEtiquetaTransporte() {
     if (!pedidosManuaisSelecionados.length) {
@@ -860,17 +860,22 @@ export default function VendasBlingPage() {
         alert(`${data.error || 'Erro ao gerar a etiqueta de transporte'}${detalhes(data.falhas, 'Falhas')}${detalhes(data.ignorados, 'Ignorados')}`);
         return;
       }
-      const bin = atob(String(data.pdfBase64 || ''));
-      const bytes = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-      const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
-      const aba = window.open(url, '_blank');
-      if (!aba) {
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'etiqueta-transporte.pdf';
-        a.click();
-      }
+      const arquivos: { canal: string; pdfBase64: string }[] = Array.isArray(data.arquivos) && data.arquivos.length
+        ? data.arquivos
+        : [{ canal: 'transporte', pdfBase64: String(data.pdfBase64 || '') }];
+      arquivos.forEach((arq, idx) => {
+        const bin = atob(String(arq.pdfBase64 || ''));
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+        const aba = idx === 0 ? window.open(url, '_blank') : null; // so a primeira abre em aba; as demais baixam (evita bloqueio de pop-up)
+        if (!aba) {
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `etiqueta-${String(arq.canal || 'transporte').toLowerCase().replace(/\s+/g, '-')}.pdf`;
+          a.click();
+        }
+      });
       const avisos = [...(data.avisos || [])].map((t: string) => `- ${t}`).join('\n');
       const extra = `${detalhes(data.falhas, 'Nao geradas')}${detalhes(data.ignorados, 'Ignorados (outro canal ou sem numero da loja)')}${avisos ? `\n\n${avisos}` : ''}`;
       if (extra) alert(`Etiquetas geradas: ${data.total}.${extra}`);
@@ -1272,8 +1277,8 @@ export default function VendasBlingPage() {
                   type="button"
                   onClick={gerarEtiquetaTransporte}
                   disabled={!pedidosManuaisSelecionados.length || gerandoEtiquetaTransporte}
-                  title="Gera o PDF 100x150 mm da etiqueta de transporte dos pedidos selecionados (por enquanto so Shopee)"
-                  style={{ ...s.btn, ...phoneButtonStyle, background: '#ee4d2d', color: '#fff', opacity: (!pedidosManuaisSelecionados.length || gerandoEtiquetaTransporte) ? 0.5 : 1 }}
+                  title="Gera o PDF 100x150 mm da etiqueta de transporte dos pedidos selecionados"
+                  style={{ ...s.btn, ...phoneButtonStyle, background: '#1f2937', color: '#fff', opacity: (!pedidosManuaisSelecionados.length || gerandoEtiquetaTransporte) ? 0.5 : 1 }}
                 >
                   {gerandoEtiquetaTransporte ? 'Gerando etiqueta...' : `Etiqueta Transporte (${pedidosManuaisSelecionados.length})`}
                 </button>

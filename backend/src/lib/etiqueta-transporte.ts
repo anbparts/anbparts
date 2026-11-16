@@ -6,6 +6,7 @@
 import zlib from 'zlib';
 import PDFDocument from 'pdfkit';
 import { shopeeReq, shopeeReqArquivo } from './shopee-api';
+import { mercadoLivreReq, mercadoLivreReqArquivo } from './mercado-livre';
 
 const MM = (mm: number) => mm * (72 / 25.4);
 const PAGE_W = MM(100);
@@ -28,15 +29,29 @@ function pngChunk(tipo: string, dados: Buffer) {
   return Buffer.concat([len, td, crc]);
 }
 // bitmap 1 bit (bit 1 = preto na ZPL) -> PNG 1 bit em escala de cinza (0 = preto)
+// Ampliado em ESCALA x (vizinho mais proximo): cada pixel da ZPL vira ESCALA x ESCALA pixels. Nao cria detalhe novo,
+// mas evita que o leitor de PDF suavize/borre os pixels (bordas das letras e dos QR ficam nitidas ao dar zoom/imprimir).
+const ESCALA = 4;
 function bitmapParaPng(raw: Buffer, bytesPorLinha: number, altura: number) {
+  const larguraSrc = bytesPorLinha * 8;
+  const larguraDst = larguraSrc * ESCALA;
+  const bplDst = Math.ceil(larguraDst / 8);
   const linhas: Buffer[] = [];
   for (let y = 0; y < altura; y++) {
-    const l = Buffer.alloc(bytesPorLinha + 1);
-    for (let i = 0; i < bytesPorLinha; i++) l[i + 1] = (~(raw[y * bytesPorLinha + i] || 0)) & 0xff;
-    linhas.push(l);
+    const l = Buffer.alloc(bplDst + 1, 0xff); // PNG: 1 = branco; filtro 0 no primeiro byte
+    l[0] = 0;
+    for (let x = 0; x < larguraSrc; x++) {
+      const preto = ((raw[y * bytesPorLinha + (x >> 3)] || 0) >> (7 - (x & 7))) & 1; // ZPL: 1 = preto
+      if (!preto) continue;
+      for (let k = 0; k < ESCALA; k++) {
+        const bx = x * ESCALA + k;
+        l[1 + (bx >> 3)] &= ~(0x80 >> (bx & 7));
+      }
+    }
+    for (let k = 0; k < ESCALA; k++) linhas.push(l);
   }
   const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(bytesPorLinha * 8, 0); ihdr.writeUInt32BE(altura, 4); ihdr[8] = 1; ihdr[9] = 0;
+  ihdr.writeUInt32BE(larguraDst, 0); ihdr.writeUInt32BE(altura * ESCALA, 4); ihdr[8] = 1; ihdr[9] = 0;
   return Buffer.concat([
     Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
     pngChunk('IHDR', ihdr), pngChunk('IDAT', zlib.deflateSync(Buffer.concat(linhas))), pngChunk('IEND', Buffer.alloc(0)),
@@ -258,4 +273,66 @@ export async function diagnosticoEtiquetaShopee(orderSn: string) {
     catch (e: any) { return { erro: String(e?.message || e), payload: e?.payload || null }; }
   })();
   return { orderSn: sn, documento: await resposta, pedido: await detalhe };
+}
+
+// ---------- Mercado Livre ----------
+// "Numero loja virtual" do pedido no Bling = id do pedido (ou do pacote/carrinho) no ML. Caminho: pedido -> envio (shipping.id)
+// -> GET /shipment_labels (PDF do proprio ML, ja no formato 100x150 com a pagina da DANFE simplificada).
+async function envioDoPedidoML(ref: string): Promise<{ shipmentId: string; status: string; substatus: string }> {
+  let pedido: any;
+  try { pedido = await mercadoLivreReq(`/orders/${encodeURIComponent(ref)}`); }
+  catch {
+    // pode ser o id do pacote (carrinho com varios itens): pega o primeiro pedido do pacote
+    const pack: any = await mercadoLivreReq(`/packs/${encodeURIComponent(ref)}`);
+    const oid = pack?.orders?.[0]?.id;
+    if (!oid) throw new Error('pedido/pacote nao encontrado no Mercado Livre');
+    pedido = await mercadoLivreReq(`/orders/${oid}`);
+  }
+  if (String(pedido?.status || '') === 'cancelled') throw new Error('pedido cancelado no Mercado Livre');
+  const shipmentId = String(pedido?.shipping?.id || '').trim();
+  if (!shipmentId) throw new Error('pedido sem envio do Mercado Livre (retirada/combinar com o comprador)');
+  const envio: any = await mercadoLivreReq(`/shipments/${shipmentId}`);
+  return { shipmentId, status: String(envio?.status || ''), substatus: String(envio?.substatus || '') };
+}
+
+const baixarEtiquetasML = (ids: string[]) =>
+  mercadoLivreReqArquivo(`/shipment_labels?shipment_ids=${ids.map(encodeURIComponent).join(',')}&response_type=pdf`);
+
+// refs: ids dos pedidos no ML (numeroLoja do Bling). Devolve UM PDF com todas as etiquetas (o ML junta no mesmo arquivo).
+export async function etiquetaMercadoLivre(refs: string[]): Promise<{ resultado: ResultadoEtiqueta | null; falhas: { orderSn: string; motivo: string }[] }> {
+  const falhas: { orderSn: string; motivo: string }[] = [];
+  const avisos: string[] = [];
+  const envios = new Map<string, string>(); // shipmentId -> ref
+  for (const ref of refs) {
+    try {
+      const e = await envioDoPedidoML(ref);
+      if (e.status !== 'ready_to_ship') {
+        // ainda assim tenta: algumas etiquetas ja impressas continuam disponiveis em handling/shipped; o ML diz se nao der
+        avisos.push(`Pedido ${ref}: envio ${e.status}${e.substatus ? '/' + e.substatus : ''} (o ML so libera etiqueta nova em ready_to_ship).`);
+      }
+      envios.set(e.shipmentId, ref);
+    } catch (e: any) { falhas.push({ orderSn: ref, motivo: String(e?.message || e) }); }
+  }
+  if (!envios.size) return { resultado: null, falhas };
+
+  let ids = Array.from(envios.keys());
+  let arq: { buffer: Buffer; contentType: string } | null = null;
+  try { arq = await baixarEtiquetasML(ids); }
+  catch (e: any) {
+    if (ids.length === 1) { falhas.push({ orderSn: envios.get(ids[0])!, motivo: `Etiqueta ML: ${e?.message || e}` }); return { resultado: null, falhas }; }
+    // varios: descobre qual envio nao tem etiqueta e refaz com os demais
+    const bons: string[] = [];
+    for (const id of ids) {
+      try { await baixarEtiquetasML([id]); bons.push(id); }
+      catch (e2: any) { falhas.push({ orderSn: envios.get(id)!, motivo: `Etiqueta ML: ${e2?.message || e2}` }); }
+    }
+    if (!bons.length) return { resultado: null, falhas };
+    ids = bons;
+    arq = await baixarEtiquetasML(ids);
+  }
+  if (!arq || !ehPdf(arq.buffer)) {
+    falhas.push(...ids.map((id) => ({ orderSn: envios.get(id)!, motivo: 'O Mercado Livre devolveu um arquivo que nao e PDF.' })));
+    return { resultado: null, falhas };
+  }
+  return { resultado: { pdf: arq.buffer, formatoOrigem: 'pdf', tipoDocumento: 'ML_PDF', avisos }, falhas };
 }

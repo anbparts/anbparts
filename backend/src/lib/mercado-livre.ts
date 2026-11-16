@@ -160,6 +160,28 @@ export async function mercadoLivreReq(path: string, init?: RequestInit, retry = 
   return payload;
 }
 
+// Como mercadoLivreReq, mas para respostas binarias (ex.: PDF da etiqueta de envio). Resposta JSON = erro do ML.
+export async function mercadoLivreReqArquivo(path: string, retry = true): Promise<{ buffer: Buffer; contentType: string }> {
+  const config = await getMercadoLivreConfig();
+  if (!config.accessToken) throw new Error('Mercado Livre nao conectado');
+  const doRequest = (token: string) => fetch(`${MELI_API}${path}`, { headers: { Authorization: `Bearer ${token}` } });
+
+  let response = await doRequest(config.accessToken);
+  if (response.status === 401 && retry && config.refreshToken) {
+    response = await doRequest(await refreshMercadoLivreAccessToken());
+  }
+  const contentType = String(response.headers.get('content-type') || '');
+  const buffer = Buffer.from(await response.arrayBuffer());
+  if (!response.ok || /json/i.test(contentType)) {
+    let p: any = {};
+    try { p = JSON.parse(buffer.toString('utf8')); } catch { /* corpo nao-JSON */ }
+    const causas = Array.isArray(p?.cause) ? p.cause.map((c: any) => String(c?.message || c?.code || '')).filter(Boolean).join('; ') : '';
+    const base = p?.message || p?.error || `Mercado Livre ${response.status}`;
+    throw new Error(causas && causas !== base ? `${base} — ${causas}` : base);
+  }
+  return { buffer, contentType };
+}
+
 export async function loadMercadoLivreUserProfile() {
   const data = await mercadoLivreReq('/users/me');
   return {

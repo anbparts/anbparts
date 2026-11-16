@@ -1,15 +1,34 @@
 // Etiqueta de transporte (PDF 100x150 mm para a impressora termica), gerada a partir dos pedidos selecionados no
-// Relatorio de Separacao - PDF. Fase 1: Shopee (API da Shopee). Mercado Livre entra na fase 2 (mesmo formato 100x150).
+// Relatorio de Separacao - PDF. Shopee (API da Shopee, ZPL -> PDF) e Mercado Livre (/shipment_labels, PDF do proprio ML).
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
-import { diagnosticoEtiquetaShopee, etiquetaShopee } from '../lib/etiqueta-transporte';
+import { diagnosticoEtiquetaShopee, etiquetaMercadoLivre, etiquetaShopee } from '../lib/etiqueta-transporte';
 
 export const etiquetasTransporteRouter = Router();
 
+// "Numero loja virtual" do pedido no Bling = order_sn da Shopee. Se a base local nao tem, le o detalhe do pedido (local, depois Bling).
+async function numeroLojaDoPedido(id: string, gravado: string | null): Promise<string> {
+  const direto = String(gravado || '').trim();
+  if (direto) return direto;
+  try {
+    const lib: any = await import('../lib/bling-pedidos');
+    const d = await lib.lerDetalheLocal(id);
+    const v = String(d?.numeroLoja || d?.numeroPedidoLoja || '').trim();
+    if (v) return v;
+  } catch { /* segue para o Bling */ }
+  try {
+    const bling: any = await import('./bling');
+    const r = await bling.blingReq(`/pedidos/vendas/${id}`);
+    return String(r?.data?.numeroLoja || r?.data?.numeroPedidoLoja || '').trim();
+  } catch { return ''; }
+}
+
 const ehShopee = (canal: any) => /shopee|shoppe/i.test(String(canal || ''));
+const ehML = (canal: any) => /mercado\s*livre|mercadolivre|meli/i.test(String(canal || ''));
 
 // POST /etiquetas-transporte/pedidos { pedidoIds: number[] }
-// -> { ok, pdfBase64, total, ignorados:[{pedidoNum,motivo}], falhas:[{pedidoNum,orderSn,motivo}], avisos:[] }
+// Cada pedido e' resolvido pelo seu marketplace (Shopee / Mercado Livre); sai 1 PDF por marketplace.
+// -> { ok, arquivos:[{canal,pdfBase64,total}], pdfBase64 (1o arquivo), total, ignorados:[{pedidoNum,motivo}], falhas:[{pedidoNum,orderSn,motivo}], avisos:[] }
 etiquetasTransporteRouter.post('/pedidos', async (req, res, next) => {
   try {
     const ids: string[] = Array.isArray(req.body?.pedidoIds) ? req.body.pedidoIds.map((x: any) => String(Number(x) || '')).filter(Boolean) : [];
@@ -22,35 +41,57 @@ etiquetasTransporteRouter.post('/pedidos', async (req, res, next) => {
 
     const ignorados: { pedidoNum: string; motivo: string }[] = [];
     const shopeePorSn = new Map<string, string>(); // order_sn -> numero do pedido no sistema
+    const mlPorRef = new Map<string, string>();    // id do pedido no ML -> numero do pedido no sistema
     for (const id of ids) {
       const r = porId.get(id);
       const num = r?.numero || id;
       if (!r) { ignorados.push({ pedidoNum: num, motivo: 'Pedido nao encontrado na base local (atualize a lista).' }); continue; }
-      if (!ehShopee(r.canal)) { ignorados.push({ pedidoNum: num, motivo: `Canal ${r.canal || 'desconhecido'}: por enquanto so a etiqueta da Shopee esta disponivel.` }); continue; }
-      const sn = String(r.numeroLoja || '').trim();
-      if (!sn) { ignorados.push({ pedidoNum: num, motivo: 'Pedido sem o numero da loja (order_sn da Shopee).' }); continue; }
-      shopeePorSn.set(sn, num);
+      const shopee = ehShopee(r.canal);
+      const ml = ehML(r.canal);
+      if (!shopee && !ml) { ignorados.push({ pedidoNum: num, motivo: `Canal ${r.canal || 'desconhecido'}: etiqueta disponivel so para Shopee e Mercado Livre.` }); continue; }
+      const sn = await numeroLojaDoPedido(id, r.numeroLoja);
+      if (!sn) { ignorados.push({ pedidoNum: num, motivo: 'Pedido sem o numero da loja (id do pedido no marketplace).' }); continue; }
+      (shopee ? shopeePorSn : mlPorRef).set(sn, num);
     }
-    if (!shopeePorSn.size) {
-      return res.status(400).json({ ok: false, error: 'Nenhum dos pedidos selecionados e da Shopee (ou falta o numero da loja).', ignorados });
+    if (!shopeePorSn.size && !mlPorRef.size) {
+      return res.status(400).json({ ok: false, error: 'Nenhum dos pedidos selecionados e da Shopee ou do Mercado Livre (ou falta o numero da loja).', ignorados });
     }
 
-    const r = await etiquetaShopee(Array.from(shopeePorSn.keys()));
-    const falhas = r.falhas.map((f) => ({ pedidoNum: shopeePorSn.get(f.orderSn) || '', orderSn: f.orderSn, motivo: f.motivo }));
-    if (!r.resultado) {
-      return res.status(502).json({ ok: false, error: 'A Shopee nao gerou nenhuma etiqueta.', falhas, ignorados });
+    const arquivos: { canal: string; pdfBase64: string; total: number }[] = [];
+    const falhas: { pedidoNum: string; orderSn: string; motivo: string }[] = [];
+    const avisos: string[] = [];
+    const erros: string[] = [];
+
+    if (shopeePorSn.size) {
+      try {
+        const r = await etiquetaShopee(Array.from(shopeePorSn.keys()));
+        const f = r.falhas.map((x) => ({ pedidoNum: shopeePorSn.get(x.orderSn) || '', orderSn: x.orderSn, motivo: `Shopee: ${x.motivo}` }));
+        falhas.push(...f);
+        if (r.resultado) { arquivos.push({ canal: 'Shopee', pdfBase64: r.resultado.pdf.toString('base64'), total: shopeePorSn.size - f.length }); avisos.push(...r.resultado.avisos); }
+      } catch (e: any) { erros.push(`Shopee: ${e?.message || e}`); }
     }
+    if (mlPorRef.size) {
+      try {
+        const r = await etiquetaMercadoLivre(Array.from(mlPorRef.keys()));
+        const f = r.falhas.map((x) => ({ pedidoNum: mlPorRef.get(x.orderSn) || '', orderSn: x.orderSn, motivo: `Mercado Livre: ${x.motivo}` }));
+        falhas.push(...f);
+        if (r.resultado) { arquivos.push({ canal: 'Mercado Livre', pdfBase64: r.resultado.pdf.toString('base64'), total: mlPorRef.size - f.length }); avisos.push(...r.resultado.avisos); }
+      } catch (e: any) { erros.push(`Mercado Livre: ${e?.message || e}`); }
+    }
+
+    if (!arquivos.length) {
+      return res.status(502).json({ ok: false, error: erros.join(' | ') || 'Nenhuma etiqueta foi gerada.', falhas, ignorados });
+    }
+    for (const e of erros) avisos.push(`Nao gerado - ${e}`);
     res.json({
       ok: true,
-      pdfBase64: r.resultado.pdf.toString('base64'),
-      total: shopeePorSn.size - falhas.length,
-      formatoOrigem: r.resultado.formatoOrigem,
-      tipoDocumento: r.resultado.tipoDocumento,
-      ignorados, falhas, avisos: r.resultado.avisos,
+      arquivos,
+      pdfBase64: arquivos[0].pdfBase64,
+      total: arquivos.reduce((t, a) => t + a.total, 0),
+      ignorados, falhas, avisos,
     });
   } catch (e: any) {
-    // erro da Shopee (token, permissao, status do pedido...) com mensagem legivel para a tela
-    res.status(502).json({ ok: false, error: `Shopee: ${e?.message || e}` });
+    res.status(502).json({ ok: false, error: String(e?.message || e) });
   }
 });
 
