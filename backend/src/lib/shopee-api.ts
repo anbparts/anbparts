@@ -253,7 +253,9 @@ export async function shopeeReq(path: string, init?: { method?: string; body?: a
   }
 
   if (!response.ok || payload?.error) {
-    throw new Error(payload?.message || payload?.error || `Shopee ${response.status}`);
+    const err: any = new Error(payload?.message || payload?.error || `Shopee ${response.status}`);
+    err.payload = payload; // ex.: "All failed, please check result_list for detail" -> motivo real em response.result_list
+    throw err;
   }
 
   return payload;

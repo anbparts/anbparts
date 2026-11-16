@@ -59,7 +59,7 @@ etiquetasTransporteRouter.post('/shopee/diagnostico', async (req, res) => {
   try {
     const sn = String(req.body?.orderSn || '').trim();
     if (!sn) return res.status(400).json({ ok: false, error: 'Informe o orderSn.' });
-    res.json({ ok: true, resposta: await diagnosticoEtiquetaShopee(sn) });
+    res.json({ ok: true, ...(await diagnosticoEtiquetaShopee(sn)) });
   } catch (e: any) {
     res.status(502).json({ ok: false, error: String(e?.message || e) });
   }

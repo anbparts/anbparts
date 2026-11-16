@@ -134,6 +134,20 @@ export async function normalizarArquivo(arquivo: Buffer, tipoDocumento: string):
   throw new Error('A Shopee devolveu um arquivo em formato nao reconhecido (nem PDF nem ZPL).');
 }
 
+// Chamada Shopee que nao perde o result_list quando a Shopee responde erro geral ("All failed...")
+async function chamarShopee(path: string, body: any, etapa: string): Promise<any> {
+  try {
+    return await shopeeReq(path, { method: 'POST', body });
+  } catch (e: any) {
+    const p = e?.payload;
+    if (p?.response?.result_list) return p;
+    const lista: any[] = p?.response?.result_list || [];
+    const det = lista.map((it) => it.fail_message || it.fail_error).filter(Boolean).join('; ');
+    throw new Error(`${etapa}: ${e?.message || e}${det ? ` (${det})` : ''}`);
+  }
+}
+const motivoItem = (it: any, etapa: string) => `${etapa}: ${[it.fail_error, it.fail_message].filter(Boolean).join(' - ') || 'sem detalhe da Shopee'}`;
+
 const dormir = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const TIPO_PREFERIDO = 'THERMAL_AIR_WAYBILL';
 
@@ -144,11 +158,11 @@ export async function etiquetaShopee(orderSns: string[], opts?: { tipo?: string 
   if (!sns.length) return { resultado: null, falhas, ignorados: [] };
 
   // 1) tipos de documento disponiveis por pedido
-  const param: any = await shopeeReq('/api/v2/logistics/get_shipping_document_parameter', { method: 'POST', body: { order_list: sns.map((order_sn) => ({ order_sn })) } });
+  const param: any = await chamarShopee('/api/v2/logistics/get_shipping_document_parameter', { order_list: sns.map((order_sn) => ({ order_sn })) }, 'Consulta do documento');
   const lista: any[] = param?.response?.result_list || [];
   const porTipo = new Map<string, { order_sn: string; package_number?: string }[]>();
   for (const it of lista) {
-    if (it.fail_error || it.fail_message) { falhas.push({ orderSn: it.order_sn, motivo: String(it.fail_message || it.fail_error) }); continue; }
+    if (it.fail_error || it.fail_message) { falhas.push({ orderSn: it.order_sn, motivo: motivoItem(it, 'Consulta do documento') }); continue; }
     const selecionaveis: string[] = it.selectable_shipping_document_type || [];
     const tipo = opts?.tipo && selecionaveis.includes(opts.tipo) ? opts.tipo
       : selecionaveis.includes(TIPO_PREFERIDO) ? TIPO_PREFERIDO
@@ -165,10 +179,10 @@ export async function etiquetaShopee(orderSns: string[], opts?: { tipo?: string 
   const arquivos: { buf: Buffer; tipo: string }[] = [];
   for (const [tipo, refs] of Array.from(porTipo.entries())) {
     const orderList = refs.map((r) => ({ ...r, shipping_document_type: tipo }));
-    const criado: any = await shopeeReq('/api/v2/logistics/create_shipping_document', { method: 'POST', body: { order_list: orderList } });
+    const criado: any = await chamarShopee('/api/v2/logistics/create_shipping_document', { order_list: orderList }, 'Criacao do documento');
     const prontos: { order_sn: string; package_number?: string }[] = [];
     for (const it of criado?.response?.result_list || []) {
-      if (it.fail_error || it.fail_message) falhas.push({ orderSn: it.order_sn, motivo: String(it.fail_message || it.fail_error) });
+      if (it.fail_error || it.fail_message) falhas.push({ orderSn: it.order_sn, motivo: motivoItem(it, 'Criacao do documento') });
     }
     const falhouSn = new Set(falhas.map((f) => f.orderSn));
     for (const r of refs) if (!falhouSn.has(r.order_sn)) prontos.push(r);
@@ -177,13 +191,13 @@ export async function etiquetaShopee(orderSns: string[], opts?: { tipo?: string 
     let pendentes = prontos.slice();
     const liberados: typeof prontos = [];
     for (let tentativa = 0; tentativa < 12 && pendentes.length; tentativa++) {
-      const res: any = await shopeeReq('/api/v2/logistics/get_shipping_document_result', { method: 'POST', body: { order_list: pendentes.map((r) => ({ ...r, shipping_document_type: tipo })) } });
+      const res: any = await chamarShopee('/api/v2/logistics/get_shipping_document_result', { order_list: pendentes.map((r) => ({ ...r, shipping_document_type: tipo })) }, 'Resultado do documento');
       const proximos: typeof prontos = [];
       for (const it of res?.response?.result_list || []) {
         const ref = pendentes.find((r) => r.order_sn === it.order_sn);
         if (!ref) continue;
         if (it.status === 'READY') liberados.push(ref);
-        else if (it.status === 'FAILED') falhas.push({ orderSn: it.order_sn, motivo: String(it.fail_message || it.fail_error || 'A Shopee nao conseguiu gerar o documento.') });
+        else if (it.status === 'FAILED') falhas.push({ orderSn: it.order_sn, motivo: motivoItem(it, 'Geracao do documento') });
         else proximos.push(ref);
       }
       pendentes = proximos;
@@ -218,7 +232,17 @@ export async function etiquetaShopee(orderSns: string[], opts?: { tipo?: string 
   return { resultado: primeiro, falhas, ignorados: [] };
 }
 
-// Diagnostico: mostra o que a Shopee responde (tipos de documento disponiveis) sem gerar nada
+// Diagnostico: devolve a resposta CRUA da Shopee (inclusive o result_list de erro) sem gerar nada
 export async function diagnosticoEtiquetaShopee(orderSn: string) {
-  return shopeeReq('/api/v2/logistics/get_shipping_document_parameter', { method: 'POST', body: { order_list: [{ order_sn: String(orderSn).trim() }] } });
+  const sn = String(orderSn).trim();
+  const resposta = (async () => {
+    try { return { ok: true, resposta: await shopeeReq('/api/v2/logistics/get_shipping_document_parameter', { method: 'POST', body: { order_list: [{ order_sn: sn }] } }) }; }
+    catch (e: any) { return { ok: false, erro: String(e?.message || e), resposta: e?.payload || null }; }
+  })();
+  // dados do pedido na Shopee (status e pacotes) ajudam a entender por que o documento nao sai
+  const detalhe = (async () => {
+    try { return await shopeeReq(`/api/v2/order/get_order_detail?order_sn_list=${encodeURIComponent(sn)}&response_optional_fields=order_status,package_list,shipping_carrier`); }
+    catch (e: any) { return { erro: String(e?.message || e), payload: e?.payload || null }; }
+  })();
+  return { orderSn: sn, documento: await resposta, pedido: await detalhe };
 }
