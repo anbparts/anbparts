@@ -1,0 +1,551 @@
+// ===== VERSAO ANTIGA DE "DESPESAS X RECEITA" (mantida so para referencia futura ou desativacao) =====
+// Sem uso: a pasta _old nao vira rota no Next.js e nenhuma tela importa este arquivo.
+// A tela atual (fluxo de caixa, conforme especificacao do Nelson) esta em ../page.tsx. A API antiga (/financeiro/despesas-receita) continua no backend.
+'use client';
+
+import { useEffect, useMemo, useState } from 'react';
+import { ChartPanel, HeatmapChart, ViewModeSwitch, type ViewMode } from '@/components/finance/Charts';
+import { api } from '@/lib/api';
+import { sensitiveMaskStyle, sensitiveText, useCompanyValueVisibility, useFinancialViewportMode } from '@/lib/company-values';
+import { usePersistentTab } from '@/lib/use-persistent-tab';
+
+const MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+const currentYear = String(new Date().getFullYear());
+const currentMonth = String(new Date().getMonth() + 1);
+
+function fmt(value: number) {
+  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+const cs: any = {
+  topbar: {
+    minHeight: 'var(--topbar-h)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '0 28px',
+    background: 'var(--white)',
+    borderBottom: '1px solid var(--border)',
+    position: 'sticky' as const,
+    top: 0,
+    zIndex: 50,
+  },
+  title: { fontFamily: 'Fraunces, serif', fontSize: 17, fontWeight: 600, letterSpacing: '-0.3px' },
+  sub: { fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 },
+  card: { background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden', boxShadow: 'var(--shadow-sm)' },
+  sCard: { background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, padding: '18px 20px' },
+  th: {
+    padding: '10px 14px',
+    textAlign: 'left' as const,
+    fontFamily: 'Geist Mono, monospace',
+    fontSize: 10.5,
+    letterSpacing: '0.7px',
+    textTransform: 'uppercase' as const,
+    color: 'var(--ink-muted)',
+    whiteSpace: 'nowrap' as const,
+  },
+  td: {
+    padding: '11px 14px',
+    verticalAlign: 'middle' as const,
+    borderBottom: '1px solid var(--border)',
+    fontSize: 13,
+  },
+  sel: {
+    background: 'var(--gray-50)',
+    border: '1px solid var(--border)',
+    borderRadius: 6,
+    padding: '7px 11px',
+    fontSize: 13,
+    fontFamily: 'Geist, sans-serif',
+    outline: 'none',
+    height: 32,
+    cursor: 'pointer',
+  },
+};
+
+export default function DespesasReceitaPage() {
+  const [loading, setLoading] = useState(true);
+  const [modo, setModo] = usePersistentTab<ViewMode>('aba', 'grafico', ['grafico', 'relatorio', 'estoque', 'giro', 'valor', 'provisao']);
+  const [filtroAno, setFiltroAno] = useState(currentYear);
+  const [filtroMes, setFiltroMes] = useState(currentMonth);
+  const [payload, setPayload] = useState<any>(null);
+  const [painelSelecionadas, setPainelSelecionadas] = useState<string[]>([]);
+  const [painelCarregando, setPainelCarregando] = useState(true);
+  const [painelSalvando, setPainelSalvando] = useState(false);
+  const [painelSalvo, setPainelSalvo] = useState(false);
+  const { hidden } = useCompanyValueVisibility();
+  const viewportMode = useFinancialViewportMode();
+  const isPhone = viewportMode === 'phone';
+  const isTabletPortrait = viewportMode === 'tablet-portrait';
+  const isCompact = isPhone || isTabletPortrait;
+
+  useEffect(() => {
+    setLoading(true);
+    api.financeiro.despesasReceita({
+      ano: filtroAno,
+      ...(filtroMes ? { mes: filtroMes } : {}),
+    })
+      .then(setPayload)
+      .finally(() => setLoading(false));
+  }, [filtroAno, filtroMes]);
+
+  // Carrega a ultima variante salva do painel personalizado (uma unica vez, ao abrir a tela).
+  useEffect(() => {
+    api.financeiro.painelDespesasReceita.get()
+      .then((res: { ok: boolean; linhas: string[] }) => setPainelSelecionadas(Array.isArray(res?.linhas) ? res.linhas : []))
+      .catch(() => setPainelSelecionadas([]))
+      .finally(() => setPainelCarregando(false));
+  }, []);
+
+  function togglePainelLinha(key: string) {
+    setPainelSalvo(false);
+    setPainelSelecionadas((atual: string[]) => (atual.includes(key) ? atual.filter((k: string) => k !== key) : [...atual, key]));
+  }
+
+  async function salvarPainelVariante() {
+    setPainelSalvando(true);
+    try {
+      await api.financeiro.painelDespesasReceita.save(painelSelecionadas);
+      setPainelSalvo(true);
+      setTimeout(() => setPainelSalvo(false), 2500);
+    } catch (e: any) {
+      alert(e?.message || 'Erro ao salvar a variante do painel.');
+    }
+    setPainelSalvando(false);
+  }
+
+  const months = Array.isArray(payload?.months) ? payload.months : [];
+  const categorias: string[] = Array.isArray(payload?.categorias) ? payload.categorias : [];
+  const totals = payload?.totals || {
+    receitaBruta: 0,
+    taxasMl: 0,
+    fretePago: 0,
+    despesasGerais: 0,
+    totalSaidas: 0,
+    resultadoBruto: 0,
+    porCategoria: {},
+  };
+  const investimentos = payload?.investimentos || {
+    total: 0,
+    totalReplicado: 0,
+    totalNaoReplicado: 0,
+    qtdTotal: 0,
+    qtdNaoReplicados: 0,
+    itensNaoReplicados: [] as any[],
+  };
+
+  function pctReceita(value: number) {
+    if (!totals.receitaBruta || value === 0) return '';
+    return ` (${((value / totals.receitaBruta) * 100).toFixed(1)}%)`;
+  }
+
+  const heatmapRows = useMemo(() => {
+    const receitaTotal = months.reduce((s: number, m: any) => s + Number(m.receitaBruta || 0), 0);
+
+    const buildRow = (label: string, field: string, note?: string) => ({
+      label,
+      note,
+      cells: months.map((item: any) => {
+        const val = Number(item[field] || 0);
+        const pct = receitaTotal > 0 && val !== 0 ? ` (${((val / receitaTotal) * 100).toFixed(1)}%)` : '';
+        return {
+          label: MESES[(item.mes || 1) - 1] || item.label,
+          value: val,
+          displayValue: fmt(val) + pct,
+        };
+      }),
+    });
+
+    // Linhas de categoria — só inclui se tiver valor > 0 no período
+    const categoriaRows = categorias
+      .filter((cat) => (totals.porCategoria?.[cat] || 0) > 0)
+      .map((cat) => ({
+        label: `↳ ${cat}`,
+        note: `Despesas da categoria ${cat}`,
+        cells: months.map((item: any) => {
+          const val = Number(item.despesasPorCategoria?.[cat] || 0);
+          const pct = receitaTotal > 0 && val !== 0 ? ` (${((val / receitaTotal) * 100).toFixed(1)}%)` : '';
+          return {
+            label: MESES[(item.mes || 1) - 1] || item.label,
+            value: val,
+            displayValue: fmt(val) + pct,
+          };
+        }),
+      }));
+
+    return [
+      buildRow('Receita bruta', 'receitaBruta', 'Base bruta das vendas por mes'),
+      buildRow('Taxas ML', 'taxasMl', 'Taxas cobradas pelo Mercado Livre'),
+      buildRow('Frete pago', 'fretePago', 'Frete vinculado as vendas do periodo'),
+      buildRow('Despesas gerais', 'despesasGerais', 'Despesas cadastradas no periodo'),
+      ...categoriaRows,
+      buildRow('Saidas totais', 'totalSaidas', 'Taxas + frete + despesas gerais'),
+      buildRow('Resultado bruto', 'resultadoBruto', 'Receita bruta menos as saidas do periodo'),
+    ];
+  }, [months, categorias, totals]);
+
+  // Diferencas disponiveis pro painel personalizado: cada investimento sem despesa replicada
+  // (do quadro "Investimentos x Despesas" acima) vira uma linha propria e selecionavel — o valor
+  // so aparece no mes daquele lancamento.
+  const diferencasDisponiveis = useMemo(() => (investimentos.itensNaoReplicados || []).map((item: any) => {
+    const dataItem = new Date(item.data);
+    const mesItem = dataItem.getMonth() + 1;
+    const anoItem = dataItem.getFullYear();
+    const valor = Number(item.valor || 0);
+    return {
+      key: `diferenca:${item.id}`,
+      label: `⚠ ${dataItem.toLocaleDateString('pt-BR')} · ${item.socio} · ${item.tipo}${item.moto ? ` · ${item.moto}` : ''}`,
+      note: `Investimento sem despesa replicada — ${fmt(valor)}`,
+      cells: months.map((m: any) => {
+        const bate = Number(m.ano) === anoItem && Number(m.mes) === mesItem;
+        const val = bate ? valor : 0;
+        return {
+          label: MESES[(m.mes || 1) - 1] || m.label,
+          value: val,
+          displayValue: fmt(val),
+        };
+      }),
+    };
+  }), [months, investimentos]);
+
+  // Painel personalizado = o mesmo painel padrao de cima, com as diferencas escolhidas entrando
+  // negativas logo antes do resultado — e o resultado recalculado descontando elas.
+  const painelPersonalizadoRows = useMemo(() => {
+    if (!heatmapRows.length) return [];
+    const diferencasSelecionadas = diferencasDisponiveis.filter((linha: any) => painelSelecionadas.includes(linha.key));
+    const linhasSemResultado = heatmapRows.slice(0, -1);
+    const linhaResultado = heatmapRows[heatmapRows.length - 1];
+
+    const diferencasNegativas = diferencasSelecionadas.map((linha: any) => ({
+      label: linha.label,
+      note: linha.note,
+      cells: linha.cells.map((c: any) => ({
+        label: c.label,
+        value: -c.value,
+        displayValue: c.value !== 0 ? `- ${fmt(c.value)}` : fmt(0),
+      })),
+    }));
+
+    const resultadoAjustado = {
+      label: diferencasSelecionadas.length ? 'Resultado final (com diferencas)' : linhaResultado.label,
+      note: diferencasSelecionadas.length ? 'Resultado bruto menos as diferencas selecionadas' : linhaResultado.note,
+      cells: linhaResultado.cells.map((c: any, idx: number) => {
+        const diffMes = diferencasSelecionadas.reduce((sum: number, linha: any) => sum + Number(linha.cells[idx]?.value || 0), 0);
+        const val = c.value - diffMes;
+        return { label: c.label, value: val, displayValue: fmt(val) };
+      }),
+    };
+
+    return [...linhasSemResultado, ...diferencasNegativas, resultadoAjustado];
+  }, [heatmapRows, diferencasDisponiveis, painelSelecionadas]);
+
+  const anosDisponiveis = useMemo(() => {
+    const current = Number(filtroAno) || new Date().getFullYear();
+    return Array.from({ length: 6 }, (_, index) => current - index);
+  }, [filtroAno]);
+
+  return (
+    <>
+      <div
+        style={{
+          ...cs.topbar,
+          alignItems: isCompact ? 'flex-start' : 'center',
+          flexDirection: isCompact ? 'column' : 'row',
+          gap: 10,
+          padding: isCompact ? '14px 16px' : cs.topbar.padding,
+        }}
+      >
+        <div>
+          <div style={cs.title}>Despesas x Receita</div>
+          <div style={cs.sub}>Comparativo mensal entre receita bruta, taxas, frete e despesas gerais</div>
+        </div>
+      </div>
+      <ViewModeSwitch value={modo} onChange={setModo} />
+
+      <div style={{ padding: isCompact ? 16 : 28 }}>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fit, minmax(190px, 1fr))',
+            gap: 14,
+            marginBottom: 20,
+          }}
+        >
+          {[
+            { label: 'Receita bruta', value: totals.receitaBruta, color: 'var(--blue-500)' },
+            { label: 'Taxas + frete', value: totals.taxasMl + totals.fretePago, color: 'var(--amber)' },
+            { label: 'Despesas gerais', value: totals.despesasGerais, color: 'var(--red)' },
+            { label: 'Resultado bruto', value: totals.resultadoBruto, color: totals.resultadoBruto >= 0 ? 'var(--green)' : 'var(--red)' },
+          ].map((card) => (
+            <div key={card.label} style={cs.sCard}>
+              <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '.6px', textTransform: 'uppercase', marginBottom: 8 }}>
+                {card.label}
+              </div>
+              <div style={{ fontFamily: 'Fraunces, serif', fontSize: 22, fontWeight: 500, color: card.color, ...sensitiveMaskStyle(hidden) }}>
+                {sensitiveText(fmt(card.value), hidden)}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ ...cs.card, marginBottom: 20 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: isCompact ? '14px 16px' : '14px 18px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', gap: 10 }}>
+            <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>Filtros</div>
+            <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(2, minmax(150px, 1fr))', gap: 8, width: isCompact ? '100%' : 'auto' }}>
+              <select style={{ ...cs.sel, width: isCompact ? '100%' : undefined }} value={filtroAno} onChange={(event) => setFiltroAno(event.target.value)}>
+                {anosDisponiveis.map((ano) => <option key={ano} value={String(ano)}>{ano}</option>)}
+              </select>
+              <select style={{ ...cs.sel, width: isCompact ? '100%' : undefined }} value={filtroMes} onChange={(event) => setFiltroMes(event.target.value)}>
+                <option value="">Todos os meses</option>
+                {MESES.map((mes, index) => <option key={mes} value={String(index + 1)}>{mes}</option>)}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {modo === 'grafico' ? (
+          loading ? (
+            <div style={{ ...cs.card, padding: 24, color: 'var(--ink-muted)' }}>Carregando comparativo...</div>
+          ) : (
+            <ChartPanel
+              title="Painel mensal de despesas x receita"
+              subtitle="Os valores de receita consideram o bruto; taxas do ML e frete ficam destacados na composicao das saidas."
+              accent="#2563eb"
+            >
+              <HeatmapChart rows={heatmapRows} rowHeaderLabel="Indicador" valueFormatter={fmt} emptyText="Sem dados para o periodo selecionado." />
+            </ChartPanel>
+          )
+        ) : (
+          <div style={cs.card}>
+            <div style={{ padding: isCompact ? '14px 16px' : '14px 18px', borderBottom: '1px solid var(--border)', fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>
+              Relatorio mensal
+            </div>
+
+            {isCompact ? (
+              <div style={{ display: 'grid', gap: 12, padding: 14 }}>
+                {loading ? (
+                  <div style={{ color: 'var(--ink-muted)', fontSize: 13 }}>Carregando...</div>
+                ) : !months.length ? (
+                  <div style={{ color: 'var(--ink-muted)', fontSize: 13 }}>Sem dados para o periodo selecionado.</div>
+                ) : months.map((item: any) => (
+                  <div key={`${item.ano}-${item.mes}`} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>{MESES[(item.mes || 1) - 1]}/{item.ano}</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
+                      {[
+                        ['Receita bruta', Number(item.receitaBruta || 0), 'var(--blue-500)'],
+                        ['Taxas ML', Number(item.taxasMl || 0), 'var(--amber)'],
+                        ['Frete pago', Number(item.fretePago || 0), 'var(--amber)'],
+                        ['Despesas gerais', Number(item.despesasGerais || 0), 'var(--red)'],
+                        ['Saidas totais', Number(item.totalSaidas || 0), 'var(--ink)'],
+                        ['Resultado bruto', Number(item.resultadoBruto || 0), Number(item.resultadoBruto || 0) >= 0 ? 'var(--green)' : 'var(--red)'],
+                      ].map(([label, value, color]) => (
+                        <div key={String(label)}>
+                          <div style={{ fontSize: 11, color: 'var(--ink-muted)', fontFamily: 'Geist Mono, monospace' }}>{label}</div>
+                          <div style={{ fontSize: 12, color: String(color), fontFamily: 'Geist Mono, monospace', marginTop: 4, ...sensitiveMaskStyle(hidden) }}>
+                            {sensitiveText(fmt(Number(value)), hidden)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
+                    <tr>
+                      {['Mes', 'Receita bruta', 'Taxas ML', 'Frete pago', 'Despesas gerais', 'Saidas totais', 'Resultado bruto'].map((header) => (
+                        <th key={header} style={cs.th}>{header}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loading ? (
+                      <tr><td colSpan={7} style={{ ...cs.td, textAlign: 'center', color: 'var(--ink-muted)' }}>Carregando...</td></tr>
+                    ) : !months.length ? (
+                      <tr><td colSpan={7} style={{ ...cs.td, textAlign: 'center', color: 'var(--ink-muted)' }}>Sem dados para o periodo selecionado.</td></tr>
+                    ) : months.map((item: any) => (
+                      <tr key={`${item.ano}-${item.mes}`}>
+                        <td style={{ ...cs.td, fontWeight: 600 }}>{MESES[(item.mes || 1) - 1]}/{item.ano}</td>
+                        <td style={{ ...cs.td, color: 'var(--blue-500)', fontFamily: 'Geist Mono, monospace', ...sensitiveMaskStyle(hidden) }}>{sensitiveText(fmt(Number(item.receitaBruta || 0)), hidden)}</td>
+                        <td style={{ ...cs.td, color: 'var(--amber)', fontFamily: 'Geist Mono, monospace', ...sensitiveMaskStyle(hidden) }}>{sensitiveText(fmt(Number(item.taxasMl || 0)), hidden)}</td>
+                        <td style={{ ...cs.td, color: 'var(--amber)', fontFamily: 'Geist Mono, monospace', ...sensitiveMaskStyle(hidden) }}>{sensitiveText(fmt(Number(item.fretePago || 0)), hidden)}</td>
+                        <td style={{ ...cs.td, color: 'var(--red)', fontFamily: 'Geist Mono, monospace', ...sensitiveMaskStyle(hidden) }}>{sensitiveText(fmt(Number(item.despesasGerais || 0)), hidden)}</td>
+                        <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', ...sensitiveMaskStyle(hidden) }}>{sensitiveText(fmt(Number(item.totalSaidas || 0)), hidden)}</td>
+                        <td style={{ ...cs.td, color: Number(item.resultadoBruto || 0) >= 0 ? 'var(--green)' : 'var(--red)', fontFamily: 'Geist Mono, monospace', fontWeight: 700, ...sensitiveMaskStyle(hidden) }}>
+                          {sensitiveText(fmt(Number(item.resultadoBruto || 0)), hidden)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        <div style={{ ...cs.card, marginTop: 20 }}>
+          <div style={{ padding: isCompact ? '14px 16px' : '14px 18px', borderBottom: '1px solid var(--border)' }}>
+            <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>Investimentos x Despesas</div>
+            <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>
+              Cruzamento entre os investimentos lancados e as despesas replicadas (mesma data e mesmo valor). Destaca o que ainda nao foi replicado como despesa no periodo filtrado.
+            </div>
+          </div>
+
+          {loading ? (
+            <div style={{ padding: 24, color: 'var(--ink-muted)', fontSize: 13 }}>Carregando...</div>
+          ) : (
+            <>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fit, minmax(190px, 1fr))',
+                  gap: 14,
+                  padding: isCompact ? 16 : 18,
+                }}
+              >
+                {[
+                  { label: 'Total investido no periodo', value: investimentos.total, color: 'var(--ink)' },
+                  { label: 'Ja replicado como despesa', value: investimentos.totalReplicado, color: 'var(--green)' },
+                  {
+                    label: 'Nao replicado',
+                    value: investimentos.totalNaoReplicado,
+                    color: investimentos.totalNaoReplicado > 0 ? 'var(--red)' : 'var(--green)',
+                  },
+                ].map((card) => (
+                  <div
+                    key={card.label}
+                    style={{
+                      ...cs.sCard,
+                      border: card.label === 'Nao replicado' && investimentos.totalNaoReplicado > 0 ? '1px solid var(--red)' : cs.sCard.border,
+                    }}
+                  >
+                    <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '.6px', textTransform: 'uppercase', marginBottom: 8 }}>
+                      {card.label}
+                    </div>
+                    <div style={{ fontFamily: 'Fraunces, serif', fontSize: 22, fontWeight: 500, color: card.color, ...sensitiveMaskStyle(hidden) }}>
+                      {sensitiveText(fmt(card.value), hidden)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {investimentos.qtdNaoReplicados === 0 ? (
+                <div style={{ padding: '0 18px 18px', fontSize: 13, color: 'var(--green)' }}>
+                  Tudo certo — todos os investimentos do periodo ja tem despesa replicada.
+                </div>
+              ) : (
+                <div style={{ padding: '0 18px 18px' }}>
+                  <div style={{ fontSize: 12.5, color: 'var(--ink-muted)', marginBottom: 10 }}>
+                    {investimentos.qtdNaoReplicados} investimento(s) sem despesa replicada. Va em <strong>Investimentos</strong> e use o botao "Replicar Despesa" pra corrigir.
+                  </div>
+                  {isCompact ? (
+                    <div style={{ display: 'grid', gap: 10 }}>
+                      {investimentos.itensNaoReplicados.map((item: any) => (
+                        <div key={item.id} style={{ border: '1px solid var(--red)', borderRadius: 10, padding: 12, background: '#fef2f2' }}>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>{new Date(item.data).toLocaleDateString('pt-BR')} — {item.socio}</div>
+                          <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 4 }}>{item.tipo}{item.moto ? ` · ${item.moto}` : ''}</div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--red)', marginTop: 6, ...sensitiveMaskStyle(hidden) }}>
+                            {sensitiveText(fmt(Number(item.valor || 0)), hidden)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
+                          <tr>{['Data', 'Socio', 'Tipo', 'Moto/Item', 'Valor'].map((h) => <th key={h} style={cs.th}>{h}</th>)}</tr>
+                        </thead>
+                        <tbody>
+                          {investimentos.itensNaoReplicados.map((item: any) => (
+                            <tr key={item.id} style={{ background: '#fef2f2' }}>
+                              <td style={{ ...cs.td, fontWeight: 600 }}>{new Date(item.data).toLocaleDateString('pt-BR')}</td>
+                              <td style={cs.td}>{item.socio}</td>
+                              <td style={cs.td}>{item.tipo}</td>
+                              <td style={cs.td}>{item.moto || '—'}</td>
+                              <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontWeight: 700, color: 'var(--red)', ...sensitiveMaskStyle(hidden) }}>
+                                {sensitiveText(fmt(Number(item.valor || 0)), hidden)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        <div style={{ ...cs.card, marginTop: 20 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, padding: isCompact ? '14px 16px' : '14px 18px', borderBottom: '1px solid var(--border)' }}>
+            <div>
+              <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>Painel personalizado</div>
+              <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>
+                Mesmo painel padrao de cima, com as diferencas (investimentos sem despesa replicada) que voce escolher entrando negativas antes do resultado final. Salve como variante — a ultima variante salva e sempre a que carrega ao abrir esta tela.
+              </div>
+            </div>
+            <button
+              onClick={salvarPainelVariante}
+              disabled={painelSalvando}
+              style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: painelSalvo ? 'var(--green)' : 'var(--blue-500)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: painelSalvando ? 0.7 : 1, whiteSpace: 'nowrap' }}
+            >
+              {painelSalvando ? 'Salvando...' : painelSalvo ? 'Variante salva!' : 'Salvar variante'}
+            </button>
+          </div>
+
+          <div style={{ padding: isCompact ? 16 : 18 }}>
+            {painelCarregando ? (
+              <div style={{ color: 'var(--ink-muted)', fontSize: 13 }}>Carregando variante salva...</div>
+            ) : diferencasDisponiveis.length === 0 ? (
+              <div style={{ color: 'var(--ink-muted)', fontSize: 13, marginBottom: 18 }}>
+                Nenhuma diferenca (investimento sem despesa replicada) no periodo filtrado.
+              </div>
+            ) : (
+              <div style={{ marginBottom: 18 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--red)', marginBottom: 8 }}>
+                  Diferencas (investimentos sem despesa replicada no periodo filtrado)
+                </div>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fill, minmax(280px, 1fr))',
+                    gap: 8,
+                  }}
+                >
+                  {diferencasDisponiveis.map((linha: any) => {
+                    const marcada = painelSelecionadas.includes(linha.key);
+                    return (
+                      <label
+                        key={linha.key}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          padding: '8px 10px',
+                          border: `1px solid ${marcada ? 'var(--red)' : '#fecaca'}`,
+                          borderRadius: 8,
+                          background: marcada ? '#fef2f2' : 'var(--white)',
+                          cursor: 'pointer',
+                          fontSize: 12.5,
+                        }}
+                      >
+                        <input type="checkbox" checked={marcada} onChange={() => togglePainelLinha(linha.key)} />
+                        {linha.label}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <HeatmapChart rows={painelPersonalizadoRows} rowHeaderLabel="Linha" valueFormatter={fmt} emptyText="Sem periodos para exibir." />
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}

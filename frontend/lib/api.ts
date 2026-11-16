@@ -118,6 +118,13 @@ export const api = {
     dreLancamentos: (params: Record<string, any>) => {
       return req<any>(`/financeiro/dre/lancamentos?${new URLSearchParams(params).toString()}`);
     },
+    fluxoCaixa: (params?: Record<string, any>) => {
+      const qs = params ? '?' + new URLSearchParams(params).toString() : '';
+      return req<any>(`/financeiro/fluxo-caixa${qs}`);
+    },
+    fluxoCaixaLancamentos: (params: Record<string, any>) => {
+      return req<any>(`/financeiro/fluxo-caixa/lancamentos?${new URLSearchParams(params).toString()}`);
+    },
     despesasReceita: (params?: Record<string, any>) => {
       const qs = params ? '?' + new URLSearchParams(params).toString() : '';
       return req<any>(`/financeiro/despesas-receita${qs}`);

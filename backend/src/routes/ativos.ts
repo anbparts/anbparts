@@ -203,7 +203,7 @@ async function carregarVinculos(ativos: any[]) {
   return { investimentos, invMap, despesaDoInv, formatarDespesa };
 }
 
-async function listarCompleto() {
+export async function listarAtivosComVinculos() {
   await garantirTabela();
   const rows = await prisma.$queryRawUnsafe<any[]>(`SELECT * FROM "Ativo" ORDER BY "codigo" ASC`);
   const ativos = rows.map(paraRegistro);
@@ -268,7 +268,7 @@ const CASTS: Record<string, string> = {
 // GET /ativos — lista completa (com investimento, despesa e depreciacao de cada ativo)
 ativosRouter.get('/', async (_req, res, next) => {
   try {
-    res.json({ ok: true, itens: await listarCompleto() });
+    res.json({ ok: true, itens: await listarAtivosComVinculos() });
   } catch (e) { next(e); }
 });
 

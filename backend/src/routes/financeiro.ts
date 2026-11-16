@@ -1,4 +1,5 @@
 import { calcularDre, lancamentosDre } from '../lib/dre';
+import { calcularFluxoCaixa, lancamentosFluxo } from '../lib/fluxo-caixa';
 import { GRUPOS_DESPESA, atualizarCategoriaDespesa, contarDespesasPorCategoria, criarCategoriaDespesa, listarCategoriasDespesa } from '../lib/despesa-categorias';
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
@@ -1143,6 +1144,24 @@ financeiroRouter.post('/despesas-receita/painel-config', async (req, res, next) 
       UPDATE "ConfiguracaoGeral" SET "painelDespesasReceitaLinhas" = ${JSON.stringify(linhas)}::jsonb WHERE "id" = ${existe.id}
     `;
     res.json({ ok: true, linhas });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// Despesas x Receita em fluxo de caixa (calculo em lib/fluxo-caixa.ts); a rota antiga /despesas-receita segue disponivel (tela _old)
+financeiroRouter.get('/fluxo-caixa', async (req, res, next) => {
+  try {
+    res.json(await calcularFluxoCaixa(Number(req.query.ano) || null));
+  } catch (e) {
+    next(e);
+  }
+});
+
+// Registros que compoem um mes do fluxo de caixa (clique no mes). mes=0 -> ano inteiro.
+financeiroRouter.get('/fluxo-caixa/lancamentos', async (req, res, next) => {
+  try {
+    res.json(await lancamentosFluxo(Number(req.query.ano) || null, Number(req.query.mes) || 0));
   } catch (e) {
     next(e);
   }

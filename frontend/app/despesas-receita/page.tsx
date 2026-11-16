@@ -1,548 +1,284 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { ChartPanel, HeatmapChart, ViewModeSwitch, type ViewMode } from '@/components/finance/Charts';
 import { api } from '@/lib/api';
 import { sensitiveMaskStyle, sensitiveText, useCompanyValueVisibility, useFinancialViewportMode } from '@/lib/company-values';
-import { usePersistentTab } from '@/lib/use-persistent-tab';
+import FluxoCaixaChart from './FluxoCaixaChart';
 
+// Despesas x Receita = FLUXO DE CAIXA (especificacao do Nelson):
+//   Receita  = todas as entradas financeiras (vendas); Despesas = todos os gastos efetuados (inclui compra de motos e de ativos
+//   mesmo que nao estejam lancadas em Despesas, no mes da compra); Saldo = Receita - Despesas; visao de 12 meses do ano escolhido.
+//   Clicar em um mes abre os registros considerados na apuracao. A versao antiga da tela esta em ./_old/page.tsx (sem uso).
 const MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
-const currentYear = String(new Date().getFullYear());
-const currentMonth = String(new Date().getMonth() + 1);
+const MESES_LONGO = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+const anoAtual = new Date().getFullYear();
 
-function fmt(value: number) {
-  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
+const fmt = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const fmtData = (iso: string) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''));
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : '';
+};
 
 const cs: any = {
-  topbar: {
-    minHeight: 'var(--topbar-h)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '0 28px',
-    background: 'var(--white)',
-    borderBottom: '1px solid var(--border)',
-    position: 'sticky' as const,
-    top: 0,
-    zIndex: 50,
-  },
+  topbar: { minHeight: 'var(--topbar-h)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 28px', background: 'var(--white)', borderBottom: '1px solid var(--border)', position: 'sticky' as const, top: 0, zIndex: 50 },
   title: { fontFamily: 'Fraunces, serif', fontSize: 17, fontWeight: 600, letterSpacing: '-0.3px' },
   sub: { fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 },
   card: { background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden', boxShadow: 'var(--shadow-sm)' },
   sCard: { background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, padding: '18px 20px' },
-  th: {
-    padding: '10px 14px',
-    textAlign: 'left' as const,
-    fontFamily: 'Geist Mono, monospace',
-    fontSize: 10.5,
-    letterSpacing: '0.7px',
-    textTransform: 'uppercase' as const,
-    color: 'var(--ink-muted)',
-    whiteSpace: 'nowrap' as const,
-  },
-  td: {
-    padding: '11px 14px',
-    verticalAlign: 'middle' as const,
-    borderBottom: '1px solid var(--border)',
-    fontSize: 13,
-  },
-  sel: {
-    background: 'var(--gray-50)',
-    border: '1px solid var(--border)',
-    borderRadius: 6,
-    padding: '7px 11px',
-    fontSize: 13,
-    fontFamily: 'Geist, sans-serif',
-    outline: 'none',
-    height: 32,
-    cursor: 'pointer',
-  },
+  th: { padding: '10px 14px', textAlign: 'right' as const, fontFamily: 'Geist Mono, monospace', fontSize: 10.5, letterSpacing: '0.7px', textTransform: 'uppercase' as const, color: 'var(--ink-muted)', whiteSpace: 'nowrap' as const, background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' },
+  td: { padding: '10px 14px', textAlign: 'right' as const, borderBottom: '1px solid var(--gray-100)', fontSize: 13, fontFamily: 'JetBrains Mono, monospace', whiteSpace: 'nowrap' as const },
+  sel: { background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 6, padding: '7px 11px', fontSize: 13, fontFamily: 'Geist, sans-serif', outline: 'none', height: 32, cursor: 'pointer' },
 };
 
 export default function DespesasReceitaPage() {
-  const [loading, setLoading] = useState(true);
-  const [modo, setModo] = usePersistentTab<ViewMode>('aba', 'grafico', ['grafico', 'relatorio', 'estoque', 'giro', 'valor', 'provisao']);
-  const [filtroAno, setFiltroAno] = useState(currentYear);
-  const [filtroMes, setFiltroMes] = useState(currentMonth);
-  const [payload, setPayload] = useState<any>(null);
-  const [painelSelecionadas, setPainelSelecionadas] = useState<string[]>([]);
-  const [painelCarregando, setPainelCarregando] = useState(true);
-  const [painelSalvando, setPainelSalvando] = useState(false);
-  const [painelSalvo, setPainelSalvo] = useState(false);
+  const [ano, setAno] = useState(anoAtual);
+  const [dados, setDados] = useState<any>(null);
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState('');
+  const [popupMes, setPopupMes] = useState<number | null>(null); // 0 = ano inteiro
   const { hidden } = useCompanyValueVisibility();
   const viewportMode = useFinancialViewportMode();
   const isPhone = viewportMode === 'phone';
-  const isTabletPortrait = viewportMode === 'tablet-portrait';
-  const isCompact = isPhone || isTabletPortrait;
+  const isCompact = isPhone || viewportMode === 'tablet-portrait';
+  const mask = sensitiveMaskStyle(hidden);
 
   useEffect(() => {
-    setLoading(true);
-    api.financeiro.despesasReceita({
-      ano: filtroAno,
-      ...(filtroMes ? { mes: filtroMes } : {}),
-    })
-      .then(setPayload)
-      .finally(() => setLoading(false));
-  }, [filtroAno, filtroMes]);
+    setCarregando(true);
+    setErro('');
+    api.financeiro.fluxoCaixa({ ano: String(ano) })
+      .then(setDados)
+      .catch((e: any) => setErro(e?.message || 'Erro ao carregar o fluxo de caixa'))
+      .finally(() => setCarregando(false));
+  }, [ano]);
 
-  // Carrega a ultima variante salva do painel personalizado (uma unica vez, ao abrir a tela).
-  useEffect(() => {
-    api.financeiro.painelDespesasReceita.get()
-      .then((res: { ok: boolean; linhas: string[] }) => setPainelSelecionadas(Array.isArray(res?.linhas) ? res.linhas : []))
-      .catch(() => setPainelSelecionadas([]))
-      .finally(() => setPainelCarregando(false));
-  }, []);
+  const meses: any[] = Array.isArray(dados?.meses) ? dados.meses : [];
+  const total = dados?.total || { receita: 0, despesas: 0, saldo: 0, despLancadas: 0, comissoes: 0, frete: 0, motos: 0, ativos: 0 };
+  const anos: number[] = useMemo(() => Array.from(new Set<number>([ano, ...(Array.isArray(dados?.anosDisponiveis) ? dados.anosDisponiveis : [])])).sort((a, b) => b - a), [ano, dados?.anosDisponiveis]);
+  const ultimoMes = ano === anoAtual ? new Date().getMonth() + 1 : ano > anoAtual ? 0 : 12;
 
-  function togglePainelLinha(key: string) {
-    setPainelSalvo(false);
-    setPainelSelecionadas((atual: string[]) => (atual.includes(key) ? atual.filter((k: string) => k !== key) : [...atual, key]));
-  }
+  const valor = (v: number, cor?: string) => <span style={{ ...mask, color: cor }}>{sensitiveText(fmt(v), hidden)}</span>;
+  const corSaldo = (v: number) => (v >= 0 ? 'var(--green)' : 'var(--red)');
 
-  async function salvarPainelVariante() {
-    setPainelSalvando(true);
-    try {
-      await api.financeiro.painelDespesasReceita.save(painelSelecionadas);
-      setPainelSalvo(true);
-      setTimeout(() => setPainelSalvo(false), 2500);
-    } catch (e: any) {
-      alert(e?.message || 'Erro ao salvar a variante do painel.');
-    }
-    setPainelSalvando(false);
-  }
-
-  const months = Array.isArray(payload?.months) ? payload.months : [];
-  const categorias: string[] = Array.isArray(payload?.categorias) ? payload.categorias : [];
-  const totals = payload?.totals || {
-    receitaBruta: 0,
-    taxasMl: 0,
-    fretePago: 0,
-    despesasGerais: 0,
-    totalSaidas: 0,
-    resultadoBruto: 0,
-    porCategoria: {},
+  const colunas = [
+    { k: 'receita', rotulo: 'Receita' },
+    { k: 'despLancadas', rotulo: 'Despesas lançadas' },
+    { k: 'taxas', rotulo: 'Comissões + fretes' },
+    { k: 'motos', rotulo: 'Compra de motos*' },
+    { k: 'ativos', rotulo: 'Compra de ativos*' },
+    { k: 'despesas', rotulo: 'Despesas' },
+    { k: 'saldo', rotulo: 'Saldo do mês' },
+    { k: 'acumulado', rotulo: 'Saldo acumulado' },
+  ];
+  const celula = (m: any, k: string) => {
+    if (k === 'taxas') return valor(m.comissoes + m.frete);
+    if (k === 'saldo' || k === 'acumulado') return valor(m[k], corSaldo(m[k]));
+    if (k === 'receita') return valor(m.receita, 'var(--green)');
+    if (k === 'despesas') return valor(m.despesas, 'var(--red)');
+    return valor(m[k]);
   };
-  const investimentos = payload?.investimentos || {
-    total: 0,
-    totalReplicado: 0,
-    totalNaoReplicado: 0,
-    qtdTotal: 0,
-    qtdNaoReplicados: 0,
-    itensNaoReplicados: [] as any[],
-  };
-
-  function pctReceita(value: number) {
-    if (!totals.receitaBruta || value === 0) return '';
-    return ` (${((value / totals.receitaBruta) * 100).toFixed(1)}%)`;
-  }
-
-  const heatmapRows = useMemo(() => {
-    const receitaTotal = months.reduce((s: number, m: any) => s + Number(m.receitaBruta || 0), 0);
-
-    const buildRow = (label: string, field: string, note?: string) => ({
-      label,
-      note,
-      cells: months.map((item: any) => {
-        const val = Number(item[field] || 0);
-        const pct = receitaTotal > 0 && val !== 0 ? ` (${((val / receitaTotal) * 100).toFixed(1)}%)` : '';
-        return {
-          label: MESES[(item.mes || 1) - 1] || item.label,
-          value: val,
-          displayValue: fmt(val) + pct,
-        };
-      }),
-    });
-
-    // Linhas de categoria — só inclui se tiver valor > 0 no período
-    const categoriaRows = categorias
-      .filter((cat) => (totals.porCategoria?.[cat] || 0) > 0)
-      .map((cat) => ({
-        label: `↳ ${cat}`,
-        note: `Despesas da categoria ${cat}`,
-        cells: months.map((item: any) => {
-          const val = Number(item.despesasPorCategoria?.[cat] || 0);
-          const pct = receitaTotal > 0 && val !== 0 ? ` (${((val / receitaTotal) * 100).toFixed(1)}%)` : '';
-          return {
-            label: MESES[(item.mes || 1) - 1] || item.label,
-            value: val,
-            displayValue: fmt(val) + pct,
-          };
-        }),
-      }));
-
-    return [
-      buildRow('Receita bruta', 'receitaBruta', 'Base bruta das vendas por mes'),
-      buildRow('Taxas ML', 'taxasMl', 'Taxas cobradas pelo Mercado Livre'),
-      buildRow('Frete pago', 'fretePago', 'Frete vinculado as vendas do periodo'),
-      buildRow('Despesas gerais', 'despesasGerais', 'Despesas cadastradas no periodo'),
-      ...categoriaRows,
-      buildRow('Saidas totais', 'totalSaidas', 'Taxas + frete + despesas gerais'),
-      buildRow('Resultado bruto', 'resultadoBruto', 'Receita bruta menos as saidas do periodo'),
-    ];
-  }, [months, categorias, totals]);
-
-  // Diferencas disponiveis pro painel personalizado: cada investimento sem despesa replicada
-  // (do quadro "Investimentos x Despesas" acima) vira uma linha propria e selecionavel — o valor
-  // so aparece no mes daquele lancamento.
-  const diferencasDisponiveis = useMemo(() => (investimentos.itensNaoReplicados || []).map((item: any) => {
-    const dataItem = new Date(item.data);
-    const mesItem = dataItem.getMonth() + 1;
-    const anoItem = dataItem.getFullYear();
-    const valor = Number(item.valor || 0);
-    return {
-      key: `diferenca:${item.id}`,
-      label: `⚠ ${dataItem.toLocaleDateString('pt-BR')} · ${item.socio} · ${item.tipo}${item.moto ? ` · ${item.moto}` : ''}`,
-      note: `Investimento sem despesa replicada — ${fmt(valor)}`,
-      cells: months.map((m: any) => {
-        const bate = Number(m.ano) === anoItem && Number(m.mes) === mesItem;
-        const val = bate ? valor : 0;
-        return {
-          label: MESES[(m.mes || 1) - 1] || m.label,
-          value: val,
-          displayValue: fmt(val),
-        };
-      }),
-    };
-  }), [months, investimentos]);
-
-  // Painel personalizado = o mesmo painel padrao de cima, com as diferencas escolhidas entrando
-  // negativas logo antes do resultado — e o resultado recalculado descontando elas.
-  const painelPersonalizadoRows = useMemo(() => {
-    if (!heatmapRows.length) return [];
-    const diferencasSelecionadas = diferencasDisponiveis.filter((linha: any) => painelSelecionadas.includes(linha.key));
-    const linhasSemResultado = heatmapRows.slice(0, -1);
-    const linhaResultado = heatmapRows[heatmapRows.length - 1];
-
-    const diferencasNegativas = diferencasSelecionadas.map((linha: any) => ({
-      label: linha.label,
-      note: linha.note,
-      cells: linha.cells.map((c: any) => ({
-        label: c.label,
-        value: -c.value,
-        displayValue: c.value !== 0 ? `- ${fmt(c.value)}` : fmt(0),
-      })),
-    }));
-
-    const resultadoAjustado = {
-      label: diferencasSelecionadas.length ? 'Resultado final (com diferencas)' : linhaResultado.label,
-      note: diferencasSelecionadas.length ? 'Resultado bruto menos as diferencas selecionadas' : linhaResultado.note,
-      cells: linhaResultado.cells.map((c: any, idx: number) => {
-        const diffMes = diferencasSelecionadas.reduce((sum: number, linha: any) => sum + Number(linha.cells[idx]?.value || 0), 0);
-        const val = c.value - diffMes;
-        return { label: c.label, value: val, displayValue: fmt(val) };
-      }),
-    };
-
-    return [...linhasSemResultado, ...diferencasNegativas, resultadoAjustado];
-  }, [heatmapRows, diferencasDisponiveis, painelSelecionadas]);
-
-  const anosDisponiveis = useMemo(() => {
-    const current = Number(filtroAno) || new Date().getFullYear();
-    return Array.from({ length: 6 }, (_, index) => current - index);
-  }, [filtroAno]);
 
   return (
     <>
-      <div
-        style={{
-          ...cs.topbar,
-          alignItems: isCompact ? 'flex-start' : 'center',
-          flexDirection: isCompact ? 'column' : 'row',
-          gap: 10,
-          padding: isCompact ? '14px 16px' : cs.topbar.padding,
-        }}
-      >
+      <div style={{ ...cs.topbar, alignItems: isCompact ? 'flex-start' : 'center', flexDirection: isCompact ? 'column' : 'row', gap: 10, padding: isCompact ? '14px 16px' : cs.topbar.padding }}>
         <div>
           <div style={cs.title}>Despesas x Receita</div>
-          <div style={cs.sub}>Comparativo mensal entre receita bruta, taxas, frete e despesas gerais</div>
+          <div style={cs.sub}>Fluxo de caixa: receitas, despesas efetuadas e saldo, mês a mês</div>
         </div>
+        <select style={{ ...cs.sel, width: isCompact ? '100%' : undefined }} value={ano} onChange={(e) => setAno(Number(e.target.value))} aria-label="Ano">
+          {anos.map((a) => <option key={a} value={a}>{a}</option>)}
+        </select>
       </div>
-      <ViewModeSwitch value={modo} onChange={setModo} />
 
-      <div style={{ padding: isCompact ? 16 : 28 }}>
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fit, minmax(190px, 1fr))',
-            gap: 14,
-            marginBottom: 20,
-          }}
-        >
+      <div style={{ padding: isCompact ? 16 : 28, display: 'grid', gap: 20 }}>
+        {erro && <div style={{ padding: '10px 14px', borderRadius: 8, background: 'var(--red-light)', color: 'var(--red)', border: '1px solid #fca5a5', fontSize: 13 }}>{erro}</div>}
+
+        <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }}>
           {[
-            { label: 'Receita bruta', value: totals.receitaBruta, color: 'var(--blue-500)' },
-            { label: 'Taxas + frete', value: totals.taxasMl + totals.fretePago, color: 'var(--amber)' },
-            { label: 'Despesas gerais', value: totals.despesasGerais, color: 'var(--red)' },
-            { label: 'Resultado bruto', value: totals.resultadoBruto, color: totals.resultadoBruto >= 0 ? 'var(--green)' : 'var(--red)' },
-          ].map((card) => (
-            <div key={card.label} style={cs.sCard}>
-              <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '.6px', textTransform: 'uppercase', marginBottom: 8 }}>
-                {card.label}
-              </div>
-              <div style={{ fontFamily: 'Fraunces, serif', fontSize: 22, fontWeight: 500, color: card.color, ...sensitiveMaskStyle(hidden) }}>
-                {sensitiveText(fmt(card.value), hidden)}
-              </div>
+            { label: `Receita ${ano}`, value: total.receita, color: 'var(--green)' },
+            { label: `Despesas ${ano}`, value: total.despesas, color: 'var(--red)' },
+            { label: `Saldo ${ano}`, value: total.saldo, color: corSaldo(total.saldo) },
+          ].map((c) => (
+            <div key={c.label} style={cs.sCard}>
+              <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '.6px', textTransform: 'uppercase', marginBottom: 8 }}>{c.label}</div>
+              <div style={{ fontFamily: 'Fraunces, serif', fontSize: 22, fontWeight: 500, color: c.color, ...mask }}>{sensitiveText(fmt(c.value), hidden)}</div>
             </div>
           ))}
         </div>
 
-        <div style={{ ...cs.card, marginBottom: 20 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: isCompact ? '14px 16px' : '14px 18px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', gap: 10 }}>
-            <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>Filtros</div>
-            <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(2, minmax(150px, 1fr))', gap: 8, width: isCompact ? '100%' : 'auto' }}>
-              <select style={{ ...cs.sel, width: isCompact ? '100%' : undefined }} value={filtroAno} onChange={(event) => setFiltroAno(event.target.value)}>
-                {anosDisponiveis.map((ano) => <option key={ano} value={String(ano)}>{ano}</option>)}
-              </select>
-              <select style={{ ...cs.sel, width: isCompact ? '100%' : undefined }} value={filtroMes} onChange={(event) => setFiltroMes(event.target.value)}>
-                <option value="">Todos os meses</option>
-                {MESES.map((mes, index) => <option key={mes} value={String(index + 1)}>{mes}</option>)}
-              </select>
-            </div>
-          </div>
-        </div>
-
-        {modo === 'grafico' ? (
-          loading ? (
-            <div style={{ ...cs.card, padding: 24, color: 'var(--ink-muted)' }}>Carregando comparativo...</div>
+        <div style={{ ...cs.card, padding: isCompact ? 14 : 20 }}>
+          <div style={{ fontFamily: 'Fraunces, serif', fontSize: 17, fontWeight: 600 }}>Receitas vs Despesas · {ano}</div>
+          <div style={{ fontSize: 12.5, color: 'var(--ink-muted)', margin: '4px 0 12px' }}>As duas linhas de cima são Receitas e Despesas; a linha de baixo é o Saldo do mês. Clique em um mês para ver os registros.</div>
+          {carregando ? (
+            <div style={{ padding: 24, color: 'var(--ink-muted)', fontSize: 13 }}>Carregando fluxo de caixa...</div>
           ) : (
-            <ChartPanel
-              title="Painel mensal de despesas x receita"
-              subtitle="Os valores de receita consideram o bruto; taxas do ML e frete ficam destacados na composicao das saidas."
-              accent="#2563eb"
-            >
-              <HeatmapChart rows={heatmapRows} rowHeaderLabel="Indicador" valueFormatter={fmt} emptyText="Sem dados para o periodo selecionado." />
-            </ChartPanel>
-          )
-        ) : (
-          <div style={cs.card}>
-            <div style={{ padding: isCompact ? '14px 16px' : '14px 18px', borderBottom: '1px solid var(--border)', fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>
-              Relatorio mensal
-            </div>
-
-            {isCompact ? (
-              <div style={{ display: 'grid', gap: 12, padding: 14 }}>
-                {loading ? (
-                  <div style={{ color: 'var(--ink-muted)', fontSize: 13 }}>Carregando...</div>
-                ) : !months.length ? (
-                  <div style={{ color: 'var(--ink-muted)', fontSize: 13 }}>Sem dados para o periodo selecionado.</div>
-                ) : months.map((item: any) => (
-                  <div key={`${item.ano}-${item.mes}`} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>{MESES[(item.mes || 1) - 1]}/{item.ano}</div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
-                      {[
-                        ['Receita bruta', Number(item.receitaBruta || 0), 'var(--blue-500)'],
-                        ['Taxas ML', Number(item.taxasMl || 0), 'var(--amber)'],
-                        ['Frete pago', Number(item.fretePago || 0), 'var(--amber)'],
-                        ['Despesas gerais', Number(item.despesasGerais || 0), 'var(--red)'],
-                        ['Saidas totais', Number(item.totalSaidas || 0), 'var(--ink)'],
-                        ['Resultado bruto', Number(item.resultadoBruto || 0), Number(item.resultadoBruto || 0) >= 0 ? 'var(--green)' : 'var(--red)'],
-                      ].map(([label, value, color]) => (
-                        <div key={String(label)}>
-                          <div style={{ fontSize: 11, color: 'var(--ink-muted)', fontFamily: 'Geist Mono, monospace' }}>{label}</div>
-                          <div style={{ fontSize: 12, color: String(color), fontFamily: 'Geist Mono, monospace', marginTop: 4, ...sensitiveMaskStyle(hidden) }}>
-                            {sensitiveText(fmt(Number(value)), hidden)}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
-                    <tr>
-                      {['Mes', 'Receita bruta', 'Taxas ML', 'Frete pago', 'Despesas gerais', 'Saidas totais', 'Resultado bruto'].map((header) => (
-                        <th key={header} style={cs.th}>{header}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {loading ? (
-                      <tr><td colSpan={7} style={{ ...cs.td, textAlign: 'center', color: 'var(--ink-muted)' }}>Carregando...</td></tr>
-                    ) : !months.length ? (
-                      <tr><td colSpan={7} style={{ ...cs.td, textAlign: 'center', color: 'var(--ink-muted)' }}>Sem dados para o periodo selecionado.</td></tr>
-                    ) : months.map((item: any) => (
-                      <tr key={`${item.ano}-${item.mes}`}>
-                        <td style={{ ...cs.td, fontWeight: 600 }}>{MESES[(item.mes || 1) - 1]}/{item.ano}</td>
-                        <td style={{ ...cs.td, color: 'var(--blue-500)', fontFamily: 'Geist Mono, monospace', ...sensitiveMaskStyle(hidden) }}>{sensitiveText(fmt(Number(item.receitaBruta || 0)), hidden)}</td>
-                        <td style={{ ...cs.td, color: 'var(--amber)', fontFamily: 'Geist Mono, monospace', ...sensitiveMaskStyle(hidden) }}>{sensitiveText(fmt(Number(item.taxasMl || 0)), hidden)}</td>
-                        <td style={{ ...cs.td, color: 'var(--amber)', fontFamily: 'Geist Mono, monospace', ...sensitiveMaskStyle(hidden) }}>{sensitiveText(fmt(Number(item.fretePago || 0)), hidden)}</td>
-                        <td style={{ ...cs.td, color: 'var(--red)', fontFamily: 'Geist Mono, monospace', ...sensitiveMaskStyle(hidden) }}>{sensitiveText(fmt(Number(item.despesasGerais || 0)), hidden)}</td>
-                        <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', ...sensitiveMaskStyle(hidden) }}>{sensitiveText(fmt(Number(item.totalSaidas || 0)), hidden)}</td>
-                        <td style={{ ...cs.td, color: Number(item.resultadoBruto || 0) >= 0 ? 'var(--green)' : 'var(--red)', fontFamily: 'Geist Mono, monospace', fontWeight: 700, ...sensitiveMaskStyle(hidden) }}>
-                          {sensitiveText(fmt(Number(item.resultadoBruto || 0)), hidden)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
-
-        <div style={{ ...cs.card, marginTop: 20 }}>
-          <div style={{ padding: isCompact ? '14px 16px' : '14px 18px', borderBottom: '1px solid var(--border)' }}>
-            <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>Investimentos x Despesas</div>
-            <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>
-              Cruzamento entre os investimentos lancados e as despesas replicadas (mesma data e mesmo valor). Destaca o que ainda nao foi replicado como despesa no periodo filtrado.
-            </div>
-          </div>
-
-          {loading ? (
-            <div style={{ padding: 24, color: 'var(--ink-muted)', fontSize: 13 }}>Carregando...</div>
-          ) : (
-            <>
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fit, minmax(190px, 1fr))',
-                  gap: 14,
-                  padding: isCompact ? 16 : 18,
-                }}
-              >
-                {[
-                  { label: 'Total investido no periodo', value: investimentos.total, color: 'var(--ink)' },
-                  { label: 'Ja replicado como despesa', value: investimentos.totalReplicado, color: 'var(--green)' },
-                  {
-                    label: 'Nao replicado',
-                    value: investimentos.totalNaoReplicado,
-                    color: investimentos.totalNaoReplicado > 0 ? 'var(--red)' : 'var(--green)',
-                  },
-                ].map((card) => (
-                  <div
-                    key={card.label}
-                    style={{
-                      ...cs.sCard,
-                      border: card.label === 'Nao replicado' && investimentos.totalNaoReplicado > 0 ? '1px solid var(--red)' : cs.sCard.border,
-                    }}
-                  >
-                    <div style={{ fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '.6px', textTransform: 'uppercase', marginBottom: 8 }}>
-                      {card.label}
-                    </div>
-                    <div style={{ fontFamily: 'Fraunces, serif', fontSize: 22, fontWeight: 500, color: card.color, ...sensitiveMaskStyle(hidden) }}>
-                      {sensitiveText(fmt(card.value), hidden)}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {investimentos.qtdNaoReplicados === 0 ? (
-                <div style={{ padding: '0 18px 18px', fontSize: 13, color: 'var(--green)' }}>
-                  Tudo certo — todos os investimentos do periodo ja tem despesa replicada.
-                </div>
-              ) : (
-                <div style={{ padding: '0 18px 18px' }}>
-                  <div style={{ fontSize: 12.5, color: 'var(--ink-muted)', marginBottom: 10 }}>
-                    {investimentos.qtdNaoReplicados} investimento(s) sem despesa replicada. Va em <strong>Investimentos</strong> e use o botao "Replicar Despesa" pra corrigir.
-                  </div>
-                  {isCompact ? (
-                    <div style={{ display: 'grid', gap: 10 }}>
-                      {investimentos.itensNaoReplicados.map((item: any) => (
-                        <div key={item.id} style={{ border: '1px solid var(--red)', borderRadius: 10, padding: 12, background: '#fef2f2' }}>
-                          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>{new Date(item.data).toLocaleDateString('pt-BR')} — {item.socio}</div>
-                          <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 4 }}>{item.tipo}{item.moto ? ` · ${item.moto}` : ''}</div>
-                          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--red)', marginTop: 6, ...sensitiveMaskStyle(hidden) }}>
-                            {sensitiveText(fmt(Number(item.valor || 0)), hidden)}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
-                      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                        <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
-                          <tr>{['Data', 'Socio', 'Tipo', 'Moto/Item', 'Valor'].map((h) => <th key={h} style={cs.th}>{h}</th>)}</tr>
-                        </thead>
-                        <tbody>
-                          {investimentos.itensNaoReplicados.map((item: any) => (
-                            <tr key={item.id} style={{ background: '#fef2f2' }}>
-                              <td style={{ ...cs.td, fontWeight: 600 }}>{new Date(item.data).toLocaleDateString('pt-BR')}</td>
-                              <td style={cs.td}>{item.socio}</td>
-                              <td style={cs.td}>{item.tipo}</td>
-                              <td style={cs.td}>{item.moto || '—'}</td>
-                              <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontWeight: 700, color: 'var(--red)', ...sensitiveMaskStyle(hidden) }}>
-                                {sensitiveText(fmt(Number(item.valor || 0)), hidden)}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-              )}
-            </>
+            <FluxoCaixaChart meses={meses} ano={ano} ultimoMes={ultimoMes} hidden={hidden} onSelect={setPopupMes} />
           )}
         </div>
 
-        <div style={{ ...cs.card, marginTop: 20 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, padding: isCompact ? '14px 16px' : '14px 18px', borderBottom: '1px solid var(--border)' }}>
-            <div>
-              <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>Painel personalizado</div>
-              <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 }}>
-                Mesmo painel padrao de cima, com as diferencas (investimentos sem despesa replicada) que voce escolher entrando negativas antes do resultado final. Salve como variante — a ultima variante salva e sempre a que carrega ao abrir esta tela.
-              </div>
-            </div>
-            <button
-              onClick={salvarPainelVariante}
-              disabled={painelSalvando}
-              style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: painelSalvo ? 'var(--green)' : 'var(--blue-500)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: painelSalvando ? 0.7 : 1, whiteSpace: 'nowrap' }}
-            >
-              {painelSalvando ? 'Salvando...' : painelSalvo ? 'Variante salva!' : 'Salvar variante'}
-            </button>
+        <div style={cs.card}>
+          <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
+            <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>Consolidado dos 12 meses</div>
+            <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 4 }}>Clique em um mês para detalhar os registros considerados na apuração.</div>
           </div>
-
-          <div style={{ padding: isCompact ? 16 : 18 }}>
-            {painelCarregando ? (
-              <div style={{ color: 'var(--ink-muted)', fontSize: 13 }}>Carregando variante salva...</div>
-            ) : diferencasDisponiveis.length === 0 ? (
-              <div style={{ color: 'var(--ink-muted)', fontSize: 13, marginBottom: 18 }}>
-                Nenhuma diferenca (investimento sem despesa replicada) no periodo filtrado.
-              </div>
-            ) : (
-              <div style={{ marginBottom: 18 }}>
-                <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--red)', marginBottom: 8 }}>
-                  Diferencas (investimentos sem despesa replicada no periodo filtrado)
-                </div>
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fill, minmax(280px, 1fr))',
-                    gap: 8,
-                  }}
-                >
-                  {diferencasDisponiveis.map((linha: any) => {
-                    const marcada = painelSelecionadas.includes(linha.key);
-                    return (
-                      <label
-                        key={linha.key}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 8,
-                          padding: '8px 10px',
-                          border: `1px solid ${marcada ? 'var(--red)' : '#fecaca'}`,
-                          borderRadius: 8,
-                          background: marcada ? '#fef2f2' : 'var(--white)',
-                          cursor: 'pointer',
-                          fontSize: 12.5,
-                        }}
-                      >
-                        <input type="checkbox" checked={marcada} onChange={() => togglePainelLinha(linha.key)} />
-                        {linha.label}
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            <HeatmapChart rows={painelPersonalizadoRows} rowHeaderLabel="Linha" valueFormatter={fmt} emptyText="Sem periodos para exibir." />
+          {carregando ? null : isCompact ? (
+            <div style={{ padding: 12, display: 'grid', gap: 10 }}>
+              {meses.map((m, i) => (
+                <button key={m.mes} type="button" onClick={() => setPopupMes(m.mes)} disabled={i >= ultimoMes} style={{ textAlign: 'left', border: '1px solid var(--border)', borderRadius: 12, padding: 14, background: 'var(--white)', cursor: i >= ultimoMes ? 'default' : 'pointer', opacity: i >= ultimoMes ? 0.5 : 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>{MESES_LONGO[i]}/{ano}</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginTop: 8, fontSize: 12.5 }}>
+                    <span>Receita<br />{valor(m.receita, 'var(--green)')}</span>
+                    <span>Despesas<br />{valor(m.despesas, 'var(--red)')}</span>
+                    <span>Saldo<br />{valor(m.saldo, corSaldo(m.saldo))}</span>
+                    <span>Acumulado<br />{valor(m.acumulado, corSaldo(m.acumulado))}</span>
+                  </div>
+                </button>
+              ))}
+              <button type="button" onClick={() => setPopupMes(0)} style={{ textAlign: 'left', border: '1px solid var(--border)', borderRadius: 12, padding: 14, background: 'var(--gray-50)', cursor: 'pointer', fontSize: 13, fontWeight: 700 }}>
+                Total {ano}: {valor(total.saldo, corSaldo(total.saldo))}
+              </button>
+            </div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1020 }}>
+                <thead>
+                  <tr>
+                    <th style={{ ...cs.th, textAlign: 'left' }}>Mês</th>
+                    {colunas.map((c) => <th key={c.k} style={cs.th}>{c.rotulo}</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {meses.map((m, i) => (
+                    <tr key={m.mes} onClick={() => i < ultimoMes && setPopupMes(m.mes)} style={{ cursor: i < ultimoMes ? 'pointer' : 'default', opacity: i < ultimoMes ? 1 : 0.45 }}>
+                      <td style={{ ...cs.td, textAlign: 'left', fontFamily: 'Geist, sans-serif', fontWeight: 600 }}>{MESES[i]}/{ano}</td>
+                      {colunas.map((c) => <td key={c.k} style={cs.td}>{celula(m, c.k)}</td>)}
+                    </tr>
+                  ))}
+                  <tr onClick={() => setPopupMes(0)} style={{ cursor: 'pointer', background: 'var(--gray-50)' }}>
+                    <td style={{ ...cs.td, textAlign: 'left', fontFamily: 'Geist, sans-serif', fontWeight: 700 }}>Total {ano}</td>
+                    {colunas.map((c) => (
+                      <td key={c.k} style={{ ...cs.td, fontWeight: 700 }}>
+                        {c.k === 'acumulado' ? valor(total.saldo, corSaldo(total.saldo)) : celula({ ...total, acumulado: total.saldo }, c.k)}
+                      </td>
+                    ))}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div style={{ padding: '10px 18px 14px', fontSize: 12, color: 'var(--ink-muted)', lineHeight: 1.6 }}>
+            Receita = vendas de peças (todas as categorias, inclusive sucata). Despesas = despesas pagas (mês do pagamento) + comissões e fretes dos pedidos + compras de motos e de ativos.
+            * Compras de motos e de ativos só entram nessas colunas quando ainda não estão lançadas em Despesas; contam no mês da compra.
           </div>
         </div>
       </div>
+
+      {popupMes !== null && <RegistrosModal ano={ano} mes={popupMes} hidden={hidden} onClose={() => setPopupMes(null)} />}
     </>
+  );
+}
+
+const thBase: any = { padding: '9px 14px', fontFamily: 'JetBrains Mono, monospace', fontSize: 10, letterSpacing: '.7px', textTransform: 'uppercase', color: 'var(--gray-400)', fontWeight: 500, borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' };
+const tdBase: any = { padding: '8px 14px', borderBottom: '1px solid var(--gray-100)' };
+
+// Registros que compoem a apuracao de um mes (receitas, despesas lancadas, comissoes e fretes, compras de motos e de ativos)
+function RegistrosModal({ ano, mes, hidden, onClose }: { ano: number; mes: number; hidden: boolean; onClose: () => void }) {
+  const [dados, setDados] = useState<any>(null);
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState('');
+  const mask = sensitiveMaskStyle(hidden);
+
+  useEffect(() => {
+    setCarregando(true);
+    setErro('');
+    api.financeiro.fluxoCaixaLancamentos({ ano: String(ano), mes: String(mes) })
+      .then(setDados)
+      .catch((e: any) => setErro(e?.message || 'Erro ao carregar os registros'))
+      .finally(() => setCarregando(false));
+  }, [ano, mes]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const tabelas: any[] = Array.isArray(dados?.tabelas) ? dados.tabelas : [];
+  const notas: string[] = Array.isArray(dados?.notas) ? dados.notas : [];
+  const celula = (col: any, item: any) => {
+    const v = item[col.k];
+    if (col.tipo === 'moeda') return <span style={mask}>{sensitiveText(fmt(Number(v) || 0), hidden)}</span>;
+    if (col.tipo === 'data') return fmtData(v);
+    return v === undefined || v === null || v === '' ? <span style={{ color: 'var(--gray-300)' }}>-</span> : String(v);
+  };
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,.55)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--white)', borderRadius: 12, width: '100%', maxWidth: 1040, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,.35)', overflow: 'hidden' }}>
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--gray-800)' }}>Registros considerados · {mes ? `${MESES_LONGO[mes - 1]} de ${ano}` : `ano de ${ano}`}</div>
+            {dados ? (
+              <div style={{ fontSize: 12.5, color: 'var(--gray-500)', marginTop: 4, display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+                <span>Receita <b style={{ color: 'var(--green)', ...mask }}>{sensitiveText(fmt(dados.totalReceita), hidden)}</b></span>
+                <span>Despesas <b style={{ color: 'var(--red)', ...mask }}>{sensitiveText(fmt(dados.totalDespesas), hidden)}</b></span>
+                <span>Saldo <b style={{ color: dados.saldo >= 0 ? 'var(--green)' : 'var(--red)', ...mask }}>{sensitiveText(fmt(dados.saldo), hidden)}</b></span>
+              </div>
+            ) : null}
+          </div>
+          <button onClick={onClose} aria-label="Fechar" style={{ border: '1px solid var(--border)', background: 'var(--white)', borderRadius: 8, width: 34, height: 34, cursor: 'pointer', fontSize: 18, lineHeight: 1, color: 'var(--gray-600)', flexShrink: 0 }}>×</button>
+        </div>
+
+        <div style={{ padding: 20, overflow: 'auto', display: 'grid', gap: 20 }}>
+          {carregando && <div style={{ fontSize: 13, color: 'var(--gray-400)' }}>Carregando os registros...</div>}
+          {erro && <div style={{ padding: '10px 14px', borderRadius: 8, background: 'var(--red-light)', color: 'var(--red)', border: '1px solid #fca5a5', fontSize: 13 }}>{erro}</div>}
+
+          {tabelas.map((t, ti) => {
+            const colTotal = t.colunas.filter((c: any) => c.tipo === 'moeda').slice(-1)[0];
+            return (
+              <div key={ti}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-700)', marginBottom: 6 }}>{t.titulo}</div>
+                {t.itens.length === 0 ? (
+                  <div style={{ fontSize: 13, color: 'var(--gray-400)' }}>Nenhum registro neste período.</div>
+                ) : (
+                  <div style={{ overflow: 'auto', maxHeight: 340, border: '1px solid var(--border)', borderRadius: 8 }}>
+                    <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: 12.5 }}>
+                      <thead>
+                        <tr>
+                          {t.colunas.map((c: any) => (
+                            <th key={c.k} style={{ ...thBase, textAlign: c.tipo === 'moeda' ? 'right' : 'left', background: 'var(--gray-50)', position: 'sticky', top: 0 }}>{c.rotulo}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {t.itens.map((item: any, ii: number) => (
+                          <tr key={ii}>
+                            {t.colunas.map((c: any) => (
+                              <td key={c.k} style={{ ...tdBase, whiteSpace: c.tipo === 'texto' ? 'normal' : 'nowrap', textAlign: c.tipo === 'moeda' ? 'right' : 'left', fontFamily: c.tipo === 'moeda' ? 'JetBrains Mono, monospace' : undefined, color: 'var(--gray-700)', maxWidth: 320 }}>{celula(c, item)}</td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                      {t.total !== null && colTotal ? (
+                        <tfoot>
+                          <tr>
+                            {t.colunas.map((c: any, ci: number) => (
+                              <td key={c.k} style={{ ...tdBase, background: 'var(--gray-50)', fontWeight: 700, textAlign: c.tipo === 'moeda' ? 'right' : 'left', fontFamily: c.tipo === 'moeda' ? 'JetBrains Mono, monospace' : undefined, color: 'var(--gray-800)', position: 'sticky', bottom: 0 }}>
+                                {c.k === colTotal.k ? <span style={mask}>{sensitiveText(fmt(t.total), hidden)}</span> : ci === 0 ? `Total · ${t.itens.length} registro${t.itens.length === 1 ? '' : 's'}` : ''}
+                              </td>
+                            ))}
+                          </tr>
+                        </tfoot>
+                      ) : null}
+                    </table>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {notas.map((nota, i) => <div key={i} style={{ fontSize: 12, color: 'var(--gray-500)', lineHeight: 1.5 }}>{nota}</div>)}
+        </div>
+      </div>
+    </div>
   );
 }
