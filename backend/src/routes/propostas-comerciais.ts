@@ -65,7 +65,13 @@ propostasComerciaisRouter.patch('/:id/cliente', async (req, res) => {
 
 // GET /propostas-comerciais/:id/bling-bruto — o que o Bling devolve para essa proposta (diagnostico)
 propostasComerciaisRouter.get('/:id/bling-bruto', async (req, res) => {
-  try { res.json({ ok: true, bling: await propostaBrutaDoBling(String(req.params.id).replace(/\D/g, '')) }); }
+  try {
+    const r: any = await propostaBrutaDoBling(String(req.params.id).replace(/\D/g, ''));
+    const d = r?.data || {};
+    // resumo: campos de topo + tudo que o Bling mandou sobre o cliente (sem os itens, que sao longos)
+    const { itens, parcelas, ...resto } = d;
+    res.json({ ok: true, camposDoTopo: Object.keys(d), contato: d.contato ?? null, resto });
+  }
   catch (e: any) { res.status(502).json({ ok: false, error: String(e?.message || e) }); }
 });
 

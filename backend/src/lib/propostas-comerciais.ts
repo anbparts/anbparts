@@ -52,7 +52,8 @@ async function nomeDoContato(contatoId: string, nomeNoDetalhe: string): Promise<
         `INSERT INTO "BlingCliente" ("id","nome") VALUES ($1::bigint,$2) ON CONFLICT ("id") DO NOTHING`, contatoId, nome).catch(() => null);
       return nome;
     }
-  } catch (e: any) { console.error(`[propostas] nao foi possivel ler o contato ${contatoId} no Bling:`, e?.message || e); }
+  } catch (e: any) { jobPropostas.ultimoErroCliente = `contato ${contatoId}: ${String(e?.message || e)}`; console.error(`[propostas] nao foi possivel ler o contato ${contatoId} no Bling:`, e?.message || e); }
+  jobPropostas.semNomeCliente += 1;
   return '';
 }
 
@@ -102,13 +103,13 @@ export async function gravarPropostaDoBling(d: any, extra?: { criadoAqui?: boole
   return id;
 }
 
-export const jobPropostas: any = { rodando: false, total: 0, feitos: 0, erros: 0, ultimoErro: '', finalizadoEm: null as string | null };
+export const jobPropostas: any = { rodando: false, total: 0, feitos: 0, erros: 0, ultimoErro: '', ultimoErroCliente: '', semNomeCliente: 0, finalizadoEm: null as string | null };
 
 // Traz TODAS as propostas do Bling (lista paginada) e le o detalhe das novas ou que mudaram de situacao/total.
 export async function sincronizarPropostas(opcoes: { tudo?: boolean } = {}) {
   await garantirTabelasPropostas();
   if (jobPropostas.rodando) return { ok: false, motivo: 'Ja existe uma sincronizacao em andamento.' };
-  jobPropostas.rodando = true; Object.assign(jobPropostas, { total: 0, feitos: 0, erros: 0, ultimoErro: '' });
+  jobPropostas.rodando = true; Object.assign(jobPropostas, { total: 0, feitos: 0, erros: 0, ultimoErro: '', ultimoErroCliente: '', semNomeCliente: 0 });
   try {
     const lista: any[] = [];
     for (let pagina = 1; pagina <= 200; pagina++) {

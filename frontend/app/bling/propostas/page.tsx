@@ -132,6 +132,8 @@ export default function PropostasComerciaisPage() {
       </div>
 
       {sinc?.rodando && <div style={{ ...s.card, padding: 12, fontSize: 13 }}>Sincronizando com o Bling… {sinc.feitos}/{sinc.total}{sinc.erros ? ` · ${sinc.erros} erro(s)` : ''}</div>}
+      {sinc && !sinc.rodando && sinc.ultimoErroCliente && <div style={{ ...s.card, padding: 12, fontSize: 13, color: '#991b1b' }}>Não foi possível ler o nome do cliente no Bling ({sinc.semNomeCliente} propostas sem nome). Motivo: {sinc.ultimoErroCliente}</div>}
+      {sinc && !sinc.rodando && sinc.semNomeCliente > 0 && !sinc.ultimoErroCliente && <div style={{ ...s.card, padding: 12, fontSize: 13, color: '#92400e' }}>{sinc.semNomeCliente} proposta(s) vieram do Bling sem nome de cliente (o Bling não informou nome nem id de contato). Use “Ver dados do Bling” no detalhe da proposta.</div>}
       {sinc && !sinc.rodando && sinc.ultimoErro && <div style={{ ...s.card, padding: 12, fontSize: 13, color: '#991b1b' }}>Último erro da sincronização: {sinc.ultimoErro}</div>}
 
       {dados && (
@@ -212,6 +214,7 @@ function DetalheModal({ p, onClose, onSituacao, onCliente, onEditar }: { p: any;
           </select>
         </label>
         <div style={{ flex: 1 }} />
+        <button style={s.btn} onClick={async () => { try { const d = await chamar(`/propostas-comerciais/${p.id}/bling-bruto`); alert(JSON.stringify({ contato: d.contato, camposDoTopo: d.camposDoTopo }, null, 2)); } catch (e: any) { alert(e?.message || 'Erro'); } }}>Ver dados do Bling</button>
         {rascunho && <button style={s.btn} onClick={() => onEditar(p)}>Editar</button>}
         {rascunho && <button style={{ ...s.btn, background: '#166534', color: '#fff', border: '1px solid #166534' }} onClick={() => { if (confirm(`Aprovar a proposta Nº ${p.numero ?? ''}? A situação muda de Rascunho para Aprovado no Bling.`)) onSituacao(p.id, 'Aprovado'); }}>Aprovar</button>}
         <button style={{ ...s.btn, ...s.btnPri }} onClick={() => abrirPdf(p.id).catch((er) => alert(er.message))}>Gerar PDF</button>
