@@ -211,7 +211,7 @@ export async function listarPropostas(f: { busca?: string; situacao?: string; de
   const pagina = Math.max(1, Math.floor(f.pagina || 1));
   const [tot] = await prisma.$queryRawUnsafe<any[]>(`SELECT COUNT(*)::int AS n, COALESCE(SUM(p."total"),0)::float AS soma FROM "PropostaComercial" p ${where}`, ...par);
   const itens = await prisma.$queryRawUnsafe<any[]>(
-    `SELECT p."id"::text AS id, p."numero", p."blingNumero", p."data"::text AS data, p."situacao", COALESCE(NULLIF(p."clienteNomeManual",''), p."clienteNome") AS "clienteNome", p."total"::float AS total, p."criadoAqui", p."integracao", p."integracaoMotivo", p."pedidoNumero",
+    `SELECT p."id"::text AS id, p."numero", p."blingNumero", p."data"::text AS data, p."situacao", COALESCE(NULLIF(p."clienteNomeManual",''), p."clienteNome") AS "clienteNome", p."total"::float AS total, p."criadoAqui", p."integracao", p."integracaoMotivo", p."pedidoNumero", p."clienteId"::text AS "clienteId",
             (SELECT COUNT(*)::int FROM "PropostaComercialItem" i WHERE i."propostaId"=p."id") AS "qtdItens"
        FROM "PropostaComercial" p ${where} ORDER BY p."numero" DESC NULLS LAST, p."id" DESC
        OFFSET ${(pagina - 1) * limite} LIMIT ${limite}`, ...par);

@@ -73,6 +73,7 @@ export default function PropostasComerciaisPage() {
   const isPhone = useIsPhone();
   const [dados, setDados] = useState<any>(null);
   const [pedidoAberto, setPedidoAberto] = useState<any>(null);
+  const [clienteAberto, setClienteAberto] = useState<any>(null);
   const [carregando, setCarregando] = useState(true);
   const [busca, setBusca] = useState('');
   const [situacao, setSituacao] = useState('todas');
@@ -230,7 +231,7 @@ export default function PropostasComerciaisPage() {
                 <td style={{ ...s.td, fontWeight: 700 }}>{p.numero ?? '—'}</td>
                 <td style={{ ...s.td, color: 'var(--ink-muted)' }}>{p.blingNumero ? p.blingNumero : '—'}</td>
                 <td style={s.td}>{fmtData(p.data)}</td>
-                <td style={s.td}>{p.clienteNome || '—'}</td>
+                <td style={s.td} onClick={(e) => e.stopPropagation()}>{p.clienteNome ? <a href="#" style={{ color: 'inherit', textDecoration: 'underline dotted' }} title="Ver dados do cliente" onClick={(e) => { e.preventDefault(); setClienteAberto(p); }}>{p.clienteNome}</a> : '—'}</td>
                 <td style={s.td}>{p.qtdItens}</td>
                 <td style={{ ...s.td, fontWeight: 700 }}>{brl(p.total)}</td>
                 <td style={s.td}>
@@ -257,7 +258,7 @@ export default function PropostasComerciaisPage() {
                 <strong style={{ fontSize: 17 }}>Nº {p.numero ?? '—'}</strong>
                 <strong style={{ fontSize: 16 }}>{brl(p.total)}</strong>
               </div>
-              <div style={{ fontSize: 14, marginTop: 2 }}>{p.clienteNome || '—'}</div>
+              <div style={{ fontSize: 14, marginTop: 2 }} onClick={(e) => e.stopPropagation()}>{p.clienteNome ? <a href="#" style={{ color: 'inherit', textDecoration: 'underline dotted' }} onClick={(e) => { e.preventDefault(); setClienteAberto(p); }}>{p.clienteNome}</a> : '—'}</div>
               <div style={{ fontSize: 12.5, color: 'var(--ink-muted)', marginTop: 2 }}>{fmtData(p.data)} · {p.qtdItens} {p.qtdItens === 1 ? 'item' : 'itens'}{p.blingNumero ? ` · Bling Nº ${p.blingNumero}` : ''}</div>
               <div style={{ marginTop: 8 }}>{pill(p.situacao)}{selo(p)}{p.situacao === 'Concluído' && p.pedidoNumero ? <span style={{ fontSize: 13, marginLeft: 8 }} onClick={(e) => e.stopPropagation()}>Pedido Bling <a href="#" style={{ color: '#1e40af', textDecoration: 'underline', fontWeight: 700 }} onClick={(e) => { e.preventDefault(); setPedidoAberto(p); }}>{p.pedidoNumero}</a></span> : null}</div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }} onClick={(e) => e.stopPropagation()}>{acoes(p)}</div>
@@ -276,6 +277,7 @@ export default function PropostasComerciaisPage() {
 
       {detalhe && <DetalheModal key={detalhe.id} p={detalhe} onClose={() => setDetalhe(null)} onSituacao={mudarSituacao} onCliente={salvarCliente} onEditar={(x: any) => { setDetalhe(null); setEditando(x); }} />}
       {pedidoAberto && <PedidoModal p={pedidoAberto} onClose={() => setPedidoAberto(null)} />}
+      {clienteAberto && <ClienteModal p={clienteAberto} onClose={() => setClienteAberto(null)} />}
       {copiando && <NovaPropostaModal inicial={copiando} onClose={() => setCopiando(null)} onCriada={(r: any) => { setCopiando(null); aposSalvar(r); }} />}
       {excluindo && <ExcluirModal p={excluindo} onClose={() => setExcluindo(null)} onExcluida={() => { setExcluindo(null); carregar(pagina); }} />}
       {editando && <NovaPropostaModal inicial={editando} onClose={() => setEditando(null)} onCriada={(r: any) => { setEditando(null); aposSalvar(r); }} />}
@@ -358,6 +360,75 @@ function PedidoModal({ p, onClose }: { p: any; onClose: () => void }) {
             <span style={{ fontSize: 15 }}>Total: <strong>{brl(ped.total)}</strong></span>
           </div>
           {ped.observacoes && <div style={{ fontSize: 13, background: 'var(--gray-50)', padding: 10, borderRadius: 8, whiteSpace: 'pre-wrap' }}>{ped.observacoes}</div>}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+// Dados do cliente que temos na base (cadastro + historico de vendas importadas)
+function ClienteModal({ p, onClose }: { p: any; onClose: () => void }) {
+  const isPhone = useIsPhone();
+  const [r, setR] = useState<any>(null);
+  const [carregando, setCarregando] = useState(!!p.clienteId);
+  const [erro, setErro] = useState('');
+  useEffect(() => {
+    if (!p.clienteId) return;
+    let vivo = true;
+    fetch(`${API}/bling-pedidos/clientes/${p.clienteId}`, { credentials: 'include' })
+      .then(async (resp) => {
+        const d = await resp.json().catch(() => ({}));
+        if (!vivo) return;
+        if (resp.status === 404) setR(null);
+        else if (!resp.ok || d?.ok === false) setErro(d?.error || `Erro ${resp.status}`);
+        else setR(d);
+        setCarregando(false);
+      })
+      .catch((e) => { if (vivo) { setErro(e?.message || 'Erro ao carregar o cliente'); setCarregando(false); } });
+    return () => { vivo = false; };
+  }, [p.clienteId]);
+  const c = r?.cliente;
+  const pedidos: any[] = r?.pedidos || [];
+  const validos = pedidos.filter((x) => !x.cancelado);
+  const campo = (rotulo: string, valor: any) => valor ? <div style={{ fontSize: 13 }}><span style={{ color: 'var(--ink-muted)' }}>{rotulo}: </span><strong>{valor}</strong></div> : null;
+  const doc = String(c?.documento || '').replace(/\D/g, '');
+  const docFmt = doc.length === 11 ? doc.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4') : doc.length === 14 ? doc.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5') : doc;
+  return (
+    <Modal titulo={`Cliente · ${p.clienteNome || ''}`} onClose={onClose} largo>
+      {carregando && <div style={{ fontSize: 14 }}>Carregando…</div>}
+      {erro && <div style={{ color: '#991b1b', fontSize: 13 }}>{erro}</div>}
+      {!carregando && !erro && !c && <div style={{ fontSize: 14, padding: '8px 0' }}>Este cliente não possui cadastro ou histórico de venda no sistema.</div>}
+      {c && (
+        <div style={{ display: 'grid', gap: 12 }}>
+          <div style={{ ...s.card, padding: 10, display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '1fr 1fr', gap: 4 }}>
+            {campo('Nome', c.nome)}
+            {campo(doc.length === 14 ? 'CNPJ' : 'CPF', docFmt)}
+            {campo('E-mail', c.email)}
+            {campo('Telefone', c.celular || c.telefone)}
+            {campo('Endereço', [c.endereco, c.bairro].filter(Boolean).join(', '))}
+            {campo('Cidade/UF', [c.cidade, c.uf].filter(Boolean).join(' / '))}
+            {campo('CEP', c.cep)}
+          </div>
+          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 13 }}>
+            <span>Compras: <strong>{validos.length}</strong></span>
+            <span>Total comprado: <strong>{brl(validos.reduce((t, x) => t + Number(x.total || 0), 0))}</strong></span>
+            {validos[0] && <span>Última compra: <strong>{fmtData(validos[0].data)}</strong></span>}
+          </div>
+          {!pedidos.length
+            ? <div style={{ fontSize: 14 }}>Cliente cadastrado, mas sem histórico de venda importado.</div>
+            : <div style={{ display: 'grid', gap: 8 }}>
+                {pedidos.map((x: any) => (
+                  <div key={x.id} style={{ ...s.card, padding: 10, opacity: x.cancelado ? 0.6 : 1 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', fontSize: 13 }}>
+                      <span><strong>Pedido {x.numero}</strong> · {fmtData(x.data)} · {x.canal || '—'}{x.cancelado ? ' · cancelado' : x.situacao ? ` · ${x.situacao}` : ''}</span>
+                      <strong>{brl(x.total)}</strong>
+                    </div>
+                    <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', marginTop: 4 }}>
+                      {(x.itens || []).map((i: any) => `${i.quantidade}× ${i.sku || ''} ${i.descricao || ''}`.trim()).join(' · ') || 'Sem itens'}
+                    </div>
+                  </div>
+                ))}
+              </div>}
         </div>
       )}
     </Modal>
