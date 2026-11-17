@@ -24,6 +24,8 @@ export function garantirTabelasPropostas(): Promise<void> {
         "criadoAqui" BOOLEAN NOT NULL DEFAULT false, "criadoPor" TEXT,
         "sincronizadoEm" TIMESTAMPTZ NOT NULL DEFAULT now())`);
       await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "PropostaComercial_numero_idx" ON "PropostaComercial" ("numero")`);
+      // versao 2 = itens gravados com o preco de lista correto (o "valor" do Bling e' o unitario JA com desconto)
+      await prisma.$executeRawUnsafe(`ALTER TABLE "PropostaComercial" ADD COLUMN IF NOT EXISTS "itensVersao" INTEGER NOT NULL DEFAULT 1`);
       await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "PropostaComercialItem" (
         "id" SERIAL PRIMARY KEY, "propostaId" BIGINT NOT NULL, "ordem" INTEGER, "produtoId" BIGINT, "codigo" TEXT, "descricao" TEXT, "descricaoDetalhada" TEXT,
         "unidade" TEXT, "quantidade" NUMERIC(14,3), "valorLista" NUMERIC(14,2), "descontoPct" NUMERIC(8,3))`);
@@ -74,15 +76,20 @@ export async function gravarPropostaDoBling(d: any, extra?: { criadoAqui?: boole
   );
   // itens (so se o detalhe trouxe a lista)
   if (Array.isArray(d?.itens)) {
+    await prisma.$executeRawUnsafe(`UPDATE "PropostaComercial" SET "itensVersao" = 2 WHERE "id" = $1::bigint`, id);
     await prisma.$executeRawUnsafe(`DELETE FROM "PropostaComercialItem" WHERE "propostaId" = $1::bigint`, id);
     let ordem = 0;
     for (const it of d.itens) {
       ordem += 1;
+      // O "valor" que o Bling guarda no item e' o preco unitario JA com desconto (ex.: lista 2.800, 5% -> valor 2.660).
+      const pct = num(it?.desconto);
+      const unit = num(it?.valor);
+      const lista = pct > 0 && pct < 100 ? r2(unit / (1 - pct / 100)) : unit;
       await prisma.$executeRawUnsafe(
         `INSERT INTO "PropostaComercialItem" ("propostaId","ordem","produtoId","codigo","descricao","descricaoDetalhada","unidade","quantidade","valorLista","descontoPct")
          VALUES ($1::bigint,$2,$3::bigint,$4,$5,$6,$7,$8,$9,$10)`,
         id, ordem, it?.produto?.id ? txt(it.produto.id) : null, txt(it?.codigo) || null, txt(it?.produto?.descricao || it?.descricao) || null,
-        txt(it?.descricaoDetalhada) || null, txt(it?.unidade) || 'UN', num(it?.quantidade), num(it?.valor), num(it?.desconto),
+        txt(it?.descricaoDetalhada) || null, txt(it?.unidade) || 'UN', num(it?.quantidade), lista, pct,
       );
     }
   }
@@ -104,12 +111,12 @@ export async function sincronizarPropostas(opcoes: { tudo?: boolean } = {}) {
       lista.push(...itens);
       if (itens.length < 100) break;
     }
-    const existentes = new Map<string, { situacao: string; total: number }>(
-      (await prisma.$queryRawUnsafe<any[]>(`SELECT "id"::text AS id, "situacao", "total" FROM "PropostaComercial"`)).map((r) => [String(r.id), { situacao: txt(r.situacao), total: num(r.total) }]));
+    const existentes = new Map<string, { situacao: string; total: number; versao: number }>(
+      (await prisma.$queryRawUnsafe<any[]>(`SELECT "id"::text AS id, "situacao", "total", "itensVersao" FROM "PropostaComercial"`)).map((r) => [String(r.id), { situacao: txt(r.situacao), total: num(r.total), versao: num(r.itensVersao) }]));
     const alvo = lista.filter((p) => {
       const e = existentes.get(txt(p.id));
       const sit = txt(typeof p?.situacao === 'object' ? (p.situacao?.valor ?? p.situacao?.nome) : p?.situacao);
-      return opcoes.tudo || !e || (sit && e.situacao !== sit) || Math.abs(e.total - num(p.total)) > 0.009;
+      return opcoes.tudo || !e || e.versao < 2 || (sit && e.situacao !== sit) || Math.abs(e.total - num(p.total)) > 0.009;
     });
     jobPropostas.total = alvo.length;
     for (const p of alvo) {
@@ -164,6 +171,10 @@ export async function lerProposta(id: string) {
             p."introducao", p."observacoes", p."observacaoInterna", p."prazoEntrega", p."criadoAqui", p."sincronizadoEm"
        FROM "PropostaComercial" p WHERE p."id" = $1::bigint`, id);
   if (!p) return null;
+  if (!txt(p.clienteNome) && txt(p.clienteId)) {
+    p.clienteNome = await nomeDoContato(txt(p.clienteId), '');
+    if (p.clienteNome) await prisma.$executeRawUnsafe(`UPDATE "PropostaComercial" SET "clienteNome" = $2 WHERE "id" = $1::bigint`, id, p.clienteNome).catch(() => null);
+  }
   const itens = await prisma.$queryRawUnsafe<any[]>(
     `SELECT "ordem","produtoId"::text AS "produtoId","codigo","descricao","descricaoDetalhada","unidade","quantidade"::float AS quantidade,"valorLista"::float AS "valorLista","descontoPct"::float AS "descontoPct"
        FROM "PropostaComercialItem" WHERE "propostaId" = $1::bigint ORDER BY "ordem"`, id);
@@ -255,9 +266,11 @@ export async function criarProposta(dados: NovaProposta, usuario?: string) {
     if (qtd > v.item.saldoBling) throw new Error(`${sku}: quantidade ${qtd} maior que o saldo do Bling (${v.item.saldoBling}).`);
     const lista = num(it.valorLista) > 0 ? num(it.valorLista) : v.item.valorLista;
     if (!(lista > 0)) throw new Error(`${sku}: informe o valor da peca.`);
+    const pct = Math.min(100, Math.max(0, num(it.descontoPct)));
     itensBling.push({
       produto: { id: Number(v.item.produtoId), descricao: v.item.descricao }, codigo: v.item.codigo, unidade: 'UN',
-      quantidade: qtd, valor: r2(lista), desconto: Math.min(100, Math.max(0, num(it.descontoPct))),
+      // mesmo formato que o Bling devolve na leitura: "valor" = unitario JA com desconto; "desconto" = percentual aplicado
+      quantidade: qtd, valor: r2(lista * (1 - pct / 100)), desconto: pct,
     });
   }
 
@@ -289,7 +302,7 @@ export async function criarProposta(dados: NovaProposta, usuario?: string) {
   } catch (e: any) {
     // O schema do Bling marca "parcelas" como obrigatorio: se recusar a lista vazia, manda 1 parcela unica (a vista) com o total.
     if (!/parcela/i.test(String(e?.message || ''))) throw e;
-    const totalItens = itensBling.reduce((t, i) => t + i.quantidade * i.valor * (1 - i.desconto / 100), 0);
+    const totalItens = itensBling.reduce((t, i) => t + i.quantidade * i.valor, 0);
     const total = r2(totalItens - num(dados.desconto) + num(dados.outrasDespesas) + num(dados.frete));
     criado = await blingReq('/propostas-comerciais', { method: 'POST', body: JSON.stringify({ ...base, parcelas: [{ numeroDias: 0, valor: total }] }) });
   }
@@ -302,7 +315,7 @@ export async function criarProposta(dados: NovaProposta, usuario?: string) {
   await gravarPropostaDoBling(det?.data || { id, ...base }, { criadoAqui: true, criadoPor: usuario });
 
   // confere se o total do Bling bate com o nosso calculo (descontos por item em %)
-  const totalItensNosso = itensBling.reduce((t, i) => t + i.quantidade * i.valor * (1 - i.desconto / 100), 0);
+  const totalItensNosso = itensBling.reduce((t, i) => t + i.quantidade * i.valor, 0);
   const totalNosso = r2(totalItensNosso - num(dados.desconto) + num(dados.outrasDespesas) + num(dados.frete));
   const totalBling = num(det?.data?.total);
   const avisos: string[] = [];

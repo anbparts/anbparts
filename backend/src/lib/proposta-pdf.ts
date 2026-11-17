@@ -1,6 +1,7 @@
 // PDF da proposta comercial (A4), no mesmo conteudo do PDF do Bling mas com texto vetorial (nitido), imagem da peca e layout mais limpo.
 import PDFDocument from 'pdfkit';
 import { prisma } from './prisma';
+import { LOGO_BASE64 } from '../assets/logo-base64';
 
 const EMPRESA = {
   nome: 'ANB PARTS LTDA',
@@ -9,7 +10,9 @@ const EMPRESA = {
 const COR = '#1f2937';
 const COR_SUAVE = '#6b7280';
 const COR_LINHA = '#d1d5db';
-const COR_DESTAQUE = '#0f766e';
+// azul do logotipo da ANB Parts (amostrado do logo.jpg)
+const COR_DESTAQUE = '#0060c0';
+const COR_ESCURO = '#003048';
 
 const brl = (n: number) => Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const qtdFmt = (n: number) => Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
@@ -43,22 +46,24 @@ export async function gerarPropostaPdf(p: any, opts: { documentoCliente?: string
 
     const L = doc.page.margins.left;
     const W = doc.page.width - L - doc.page.margins.right;
-    const fundoCinza = '#f3f4f6';
-
+    
     // ── cabecalho ──
-    doc.fillColor(COR).font('Helvetica-Bold').fontSize(15).text(EMPRESA.nome, L, 36);
+    const LOGO = 62;
+    let xTexto = L;
+    try { doc.image(Buffer.from(LOGO_BASE64, 'base64'), L, 34, { fit: [LOGO, LOGO] }); xTexto = L + LOGO + 12; } catch { /* sem logo: segue so com o texto */ }
+    doc.fillColor(COR_ESCURO).font('Helvetica-Bold').fontSize(15).text(EMPRESA.nome, xTexto, 36, { width: W * 0.6 });
     doc.font('Helvetica').fontSize(8.5).fillColor(COR_SUAVE);
-    for (const l of EMPRESA.linhas) doc.text(l, L, doc.y + 1);
+    for (const l of EMPRESA.linhas) doc.text(l, xTexto, doc.y + 1, { width: W * 0.6 });
     doc.fillColor(COR_DESTAQUE).font('Helvetica-Bold').fontSize(20).text(`Proposta Nº ${p.numero ?? ''}`, L, 36, { width: W, align: 'right' });
     doc.fillColor(COR_SUAVE).font('Helvetica').fontSize(9).text(`Data: ${dataBR(p.data)}`, L, 62, { width: W, align: 'right' });
     if (p.situacao) doc.text(`Situação: ${p.situacao}`, L, 75, { width: W, align: 'right' });
-    let y = Math.max(doc.y, 92) + 8;
+    let y = Math.max(doc.y, 36 + LOGO) + 8;
     doc.moveTo(L, y).lineTo(L + W, y).lineWidth(1.2).strokeColor(COR_DESTAQUE).stroke();
     y += 12;
 
     // ── Para ──
     doc.fillColor(COR_SUAVE).font('Helvetica-Bold').fontSize(8).text('PARA', L, y);
-    doc.fillColor(COR).font('Helvetica-Bold').fontSize(12).text(p.clienteNome || '—', L, y + 11, { width: W * 0.7 });
+    doc.fillColor(COR_ESCURO).font('Helvetica-Bold').fontSize(12).text(p.clienteNome || '—', L, y + 11, { width: W * 0.7 });
     let yy = doc.y;
     if (opts.documentoCliente) { doc.font('Helvetica').fontSize(9).fillColor(COR_SUAVE).text(opts.documentoCliente, L, yy + 1); yy = doc.y; }
     if (p.aosCuidadosDe) { doc.font('Helvetica').fontSize(9).fillColor(COR_SUAVE).text(`Aos cuidados de: ${p.aosCuidadosDe}`, L, yy + 1); yy = doc.y; }
@@ -77,8 +82,8 @@ export async function gerarPropostaPdf(p: any, opts: { documentoCliente?: string
     const xs: number[] = []; col.reduce((x, c) => { xs.push(x); return x + c.w; }, L);
 
     const cabecalhoTabela = (yTop: number) => {
-      doc.rect(L, yTop, W, 20).fill(fundoCinza);
-      doc.fillColor(COR).font('Helvetica-Bold').fontSize(7.5);
+      doc.rect(L, yTop, W, 20).fill(COR_ESCURO);
+      doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(7.5);
       col.forEach((c, i) => doc.text(c.t, xs[i] + 3, yTop + 6.5, { width: c.w - 6, align: c.a, lineBreak: false }));
       return yTop + 20;
     };
@@ -109,11 +114,13 @@ export async function gerarPropostaPdf(p: any, opts: { documentoCliente?: string
     // ── totais ──
     const descItens = Math.round((somaLista - somaLiquido) * 100) / 100;
     const descontoGeral = Number(p.desconto) || 0, outras = Number(p.outrasDespesas) || 0, frete = Number(p.frete) || 0;
-    const totalProposta = p.total != null && Number(p.total) > 0 ? Number(p.total) : Math.round((somaLiquido - descontoGeral + outras + frete) * 100) / 100;
+    // total sempre calculado a partir dos itens (sem lista - desconto = com desconto), para a tela e o PDF baterem
+    const totalProposta = Math.round((somaLiquido - descontoGeral + outras + frete) * 100) / 100;
     const linhas: Array<[string, string, boolean?]> = [
-      ['Nº de itens', String(itens.length)], ['Soma das qtdes', qtdFmt(somaQtd)], ['Desconto total dos itens', brl(descItens)], ['Total dos itens', brl(somaLiquido)],
+      ['Nº de itens', String(itens.length)], ['Soma das qtdes', qtdFmt(somaQtd)],
+      ['Total sem desconto', brl(somaLista)], ['Total do desconto', `- ${brl(descItens)}`], ['Total com desconto', brl(somaLiquido)],
     ];
-    if (descontoGeral) linhas.push(['Desconto', brl(descontoGeral)]);
+    if (descontoGeral) linhas.push(['Desconto adicional', `- ${brl(descontoGeral)}`]);
     if (outras) linhas.push(['Outras despesas', brl(outras)]);
     linhas.push(['Frete', brl(frete)], ['Total da proposta', `R$ ${brl(totalProposta)}`, true]);
 
