@@ -103,6 +103,14 @@ export default function PropostasComerciaisPage() {
     } catch (e: any) { alert(e?.message || 'Erro ao mudar a situação'); }
   }
 
+  async function salvarCliente(id: string, nome: string) {
+    try {
+      await chamar(`/propostas-comerciais/${id}/cliente`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nome }) });
+      setDetalhe((d: any) => (d ? { ...d, clienteNome: nome } : d));
+      carregar(pagina);
+    } catch (e: any) { alert(e?.message || 'Erro ao salvar o cliente'); }
+  }
+
   const totalPaginas = dados ? Math.max(1, Math.ceil((dados.total || 0) / (dados.limite || 50))) : 1;
 
   return (
@@ -160,7 +168,7 @@ export default function PropostasComerciaisPage() {
         </div>
       )}
 
-      {detalhe && <DetalheModal p={detalhe} onClose={() => setDetalhe(null)} onSituacao={mudarSituacao} />}
+      {detalhe && <DetalheModal key={detalhe.id} p={detalhe} onClose={() => setDetalhe(null)} onSituacao={mudarSituacao} onCliente={salvarCliente} />}
       {novaAberta && <NovaPropostaModal onClose={() => setNovaAberta(false)} onCriada={(r: any) => { setNovaAberta(false); carregar(1); if (r?.avisos?.length) alert(r.avisos.join('\n')); abrirDetalhe(r.id); }} />}
     </div>
   );
@@ -180,10 +188,18 @@ function Modal({ titulo, onClose, children, largo }: { titulo: string; onClose: 
   );
 }
 
-function DetalheModal({ p, onClose, onSituacao }: { p: any; onClose: () => void; onSituacao: (id: string, s: string) => void }) {
+function DetalheModal({ p, onClose, onSituacao, onCliente }: { p: any; onClose: () => void; onSituacao: (id: string, s: string) => void; onCliente: (id: string, nome: string) => Promise<void> }) {
   const itens: any[] = p.itens || [];
+  const [cliente, setCliente] = useState<string>(p.clienteNome || '');
+  const [salvandoCli, setSalvandoCli] = useState(false);
   return (
     <Modal titulo={`Proposta Nº ${p.numero ?? ''} · ${p.clienteNome || 'sem cliente'}`} onClose={onClose}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12 }}>
+        <label style={{ fontSize: 13, display: 'flex', gap: 6, alignItems: 'center', flex: 1 }}>Cliente
+          <input style={s.input} placeholder="Nome do cliente (aparece na lista e no PDF)" value={cliente} onChange={(e) => setCliente(e.target.value)} />
+        </label>
+        <button style={s.btn} disabled={salvandoCli || cliente.trim() === String(p.clienteNome || '').trim()} onClick={async () => { setSalvandoCli(true); try { await onCliente(p.id, cliente.trim()); } finally { setSalvandoCli(false); } }}>Salvar cliente</button>
+      </div>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
         <span style={{ fontSize: 13 }}>Data: <strong>{fmtData(p.data)}</strong></span>
         <label style={{ fontSize: 13, display: 'flex', gap: 6, alignItems: 'center' }}>Situação

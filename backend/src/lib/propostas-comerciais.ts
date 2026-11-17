@@ -26,6 +26,10 @@ export function garantirTabelasPropostas(): Promise<void> {
       await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "PropostaComercial_numero_idx" ON "PropostaComercial" ("numero")`);
       // versao 2 = itens gravados com o preco de lista correto (o "valor" do Bling e' o unitario JA com desconto)
       await prisma.$executeRawUnsafe(`ALTER TABLE "PropostaComercial" ADD COLUMN IF NOT EXISTS "itensVersao" INTEGER NOT NULL DEFAULT 1`);
+      // JSON do detalhe como o Bling devolveu (diagnostico: ver quais campos de cliente existem)
+      await prisma.$executeRawUnsafe(`ALTER TABLE "PropostaComercial" ADD COLUMN IF NOT EXISTS "raw" TEXT`);
+      // nome do cliente digitado/corrigido aqui na proposta: tem prioridade sobre o que vier do Bling
+      await prisma.$executeRawUnsafe(`ALTER TABLE "PropostaComercial" ADD COLUMN IF NOT EXISTS "clienteNomeManual" TEXT`);
       await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "PropostaComercialItem" (
         "id" SERIAL PRIMARY KEY, "propostaId" BIGINT NOT NULL, "ordem" INTEGER, "produtoId" BIGINT, "codigo" TEXT, "descricao" TEXT, "descricaoDetalhada" TEXT,
         "unidade" TEXT, "quantidade" NUMERIC(14,3), "valorLista" NUMERIC(14,2), "descontoPct" NUMERIC(8,3))`);
@@ -48,7 +52,7 @@ async function nomeDoContato(contatoId: string, nomeNoDetalhe: string): Promise<
         `INSERT INTO "BlingCliente" ("id","nome") VALUES ($1::bigint,$2) ON CONFLICT ("id") DO NOTHING`, contatoId, nome).catch(() => null);
       return nome;
     }
-  } catch { /* sem nome: mostra so o id */ }
+  } catch (e: any) { console.error(`[propostas] nao foi possivel ler o contato ${contatoId} no Bling:`, e?.message || e); }
   return '';
 }
 
@@ -57,22 +61,24 @@ export async function gravarPropostaDoBling(d: any, extra?: { criadoAqui?: boole
   await garantirTabelasPropostas();
   const id = txt(d?.id);
   if (!id) throw new Error('Proposta sem id');
-  const contatoId = txt(d?.contato?.id);
-  const clienteNome = contatoId ? await nomeDoContato(contatoId, txt(d?.contato?.nome)) : '';
+  const contatoId = txt(d?.contato?.id ?? d?.cliente?.id);
+  const nomeNoDetalhe = txt(d?.contato?.nome || d?.contato?.fantasia || d?.cliente?.nome || d?.nomeContato || d?.nomeCliente);
+  const clienteNome = contatoId ? await nomeDoContato(contatoId, nomeNoDetalhe) : nomeNoDetalhe;
   const situacao = txt(typeof d?.situacao === 'object' ? (d.situacao?.valor ?? d.situacao?.nome ?? d.situacao?.descricao) : d?.situacao);
   await prisma.$executeRawUnsafe(
     `INSERT INTO "PropostaComercial" ("id","numero","data","situacao","clienteId","clienteNome","aosCuidadosDe","totalProdutos","total","desconto","outrasDespesas","frete",
-        "introducao","observacoes","observacaoInterna","prazoEntrega","criadoAqui","criadoPor","sincronizadoEm")
-     VALUES ($1::bigint,$2,$3::date,$4,$5::bigint,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,now())
+        "introducao","observacoes","observacaoInterna","prazoEntrega","criadoAqui","criadoPor","raw","sincronizadoEm")
+     VALUES ($1::bigint,$2,$3::date,$4,$5::bigint,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,now())
      ON CONFLICT ("id") DO UPDATE SET "numero"=EXCLUDED."numero","data"=EXCLUDED."data","situacao"=EXCLUDED."situacao","clienteId"=EXCLUDED."clienteId",
        "clienteNome"=COALESCE(NULLIF(EXCLUDED."clienteNome",''),"PropostaComercial"."clienteNome"),"aosCuidadosDe"=EXCLUDED."aosCuidadosDe",
        "totalProdutos"=EXCLUDED."totalProdutos","total"=EXCLUDED."total","desconto"=EXCLUDED."desconto","outrasDespesas"=EXCLUDED."outrasDespesas","frete"=EXCLUDED."frete",
        "introducao"=EXCLUDED."introducao","observacoes"=EXCLUDED."observacoes","observacaoInterna"=EXCLUDED."observacaoInterna","prazoEntrega"=EXCLUDED."prazoEntrega",
-       "criadoAqui"="PropostaComercial"."criadoAqui" OR EXCLUDED."criadoAqui","criadoPor"=COALESCE("PropostaComercial"."criadoPor",EXCLUDED."criadoPor"),"sincronizadoEm"=now()`,
+       "criadoAqui"="PropostaComercial"."criadoAqui" OR EXCLUDED."criadoAqui","criadoPor"=COALESCE("PropostaComercial"."criadoPor",EXCLUDED."criadoPor"),
+       "raw"=COALESCE(EXCLUDED."raw","PropostaComercial"."raw"),"sincronizadoEm"=now()`,
     id, d?.numero ? Math.round(num(d.numero)) : null, dataIso(d?.data), situacao || null, contatoId || null, clienteNome || null, txt(d?.aosCuidadosDe) || null,
     num(d?.totalProdutos), num(d?.total), num(d?.desconto), num(d?.outrasDespesas), num(d?.transporte?.frete),
     txt(d?.introducao) || null, txt(d?.observacoes) || null, txt(d?.observacaoInterna) || null, txt(d?.prazoEntrega) || null,
-    !!extra?.criadoAqui, extra?.criadoPor || null,
+    !!extra?.criadoAqui, extra?.criadoPor || null, JSON.stringify(d).slice(0, 60000),
   );
   // itens (so se o detalhe trouxe a lista)
   if (Array.isArray(d?.itens)) {
@@ -111,12 +117,12 @@ export async function sincronizarPropostas(opcoes: { tudo?: boolean } = {}) {
       lista.push(...itens);
       if (itens.length < 100) break;
     }
-    const existentes = new Map<string, { situacao: string; total: number; versao: number }>(
-      (await prisma.$queryRawUnsafe<any[]>(`SELECT "id"::text AS id, "situacao", "total", "itensVersao" FROM "PropostaComercial"`)).map((r) => [String(r.id), { situacao: txt(r.situacao), total: num(r.total), versao: num(r.itensVersao) }]));
+    const existentes = new Map<string, { situacao: string; total: number; versao: number; semCliente: boolean }>(
+      (await prisma.$queryRawUnsafe<any[]>(`SELECT "id"::text AS id, "situacao", "total", "itensVersao", ("clienteNome" IS NULL OR "clienteNome" = '') AS "semCliente" FROM "PropostaComercial"`)).map((r) => [String(r.id), { situacao: txt(r.situacao), total: num(r.total), versao: num(r.itensVersao), semCliente: !!r.semCliente }]));
     const alvo = lista.filter((p) => {
       const e = existentes.get(txt(p.id));
       const sit = txt(typeof p?.situacao === 'object' ? (p.situacao?.valor ?? p.situacao?.nome) : p?.situacao);
-      return opcoes.tudo || !e || e.versao < 2 || (sit && e.situacao !== sit) || Math.abs(e.total - num(p.total)) > 0.009;
+      return opcoes.tudo || !e || e.versao < 2 || e.semCliente || (sit && e.situacao !== sit) || Math.abs(e.total - num(p.total)) > 0.009;
     });
     jobPropostas.total = alvo.length;
     for (const p of alvo) {
@@ -146,7 +152,7 @@ export async function listarPropostas(f: { busca?: string; situacao?: string; de
   await garantirTabelasPropostas();
   const cond: string[] = []; const par: any[] = [];
   const add = (v: any) => { par.push(v); return `$${par.length}`; };
-  if (txt(f.busca)) { const p = add(`%${txt(f.busca)}%`); cond.push(`(p."numero"::text ILIKE ${p} OR p."clienteNome" ILIKE ${p} OR EXISTS (SELECT 1 FROM "PropostaComercialItem" i WHERE i."propostaId"=p."id" AND (i."codigo" ILIKE ${p} OR i."descricao" ILIKE ${p})))`); }
+  if (txt(f.busca)) { const p = add(`%${txt(f.busca)}%`); cond.push(`(p."numero"::text ILIKE ${p} OR p."clienteNome" ILIKE ${p} OR p."clienteNomeManual" ILIKE ${p} OR EXISTS (SELECT 1 FROM "PropostaComercialItem" i WHERE i."propostaId"=p."id" AND (i."codigo" ILIKE ${p} OR i."descricao" ILIKE ${p})))`); }
   if (txt(f.situacao) && f.situacao !== 'todas') cond.push(`p."situacao" = ${add(txt(f.situacao))}`);
   if (dataIso(f.de)) cond.push(`p."data" >= ${add(dataIso(f.de))}::date`);
   if (dataIso(f.ate)) cond.push(`p."data" <= ${add(dataIso(f.ate))}::date`);
@@ -155,7 +161,7 @@ export async function listarPropostas(f: { busca?: string; situacao?: string; de
   const pagina = Math.max(1, Math.floor(f.pagina || 1));
   const [tot] = await prisma.$queryRawUnsafe<any[]>(`SELECT COUNT(*)::int AS n, COALESCE(SUM(p."total"),0)::float AS soma FROM "PropostaComercial" p ${where}`, ...par);
   const itens = await prisma.$queryRawUnsafe<any[]>(
-    `SELECT p."id"::text AS id, p."numero", p."data"::text AS data, p."situacao", p."clienteNome", p."total"::float AS total, p."criadoAqui",
+    `SELECT p."id"::text AS id, p."numero", p."data"::text AS data, p."situacao", COALESCE(NULLIF(p."clienteNomeManual",''), p."clienteNome") AS "clienteNome", p."total"::float AS total, p."criadoAqui",
             (SELECT COUNT(*)::int FROM "PropostaComercialItem" i WHERE i."propostaId"=p."id") AS "qtdItens"
        FROM "PropostaComercial" p ${where} ORDER BY p."numero" DESC NULLS LAST, p."id" DESC
        OFFSET ${(pagina - 1) * limite} LIMIT ${limite}`, ...par);
@@ -168,9 +174,10 @@ export async function lerProposta(id: string) {
   const [p] = await prisma.$queryRawUnsafe<any[]>(
     `SELECT p."id"::text AS id, p."numero", p."data"::text AS data, p."situacao", p."clienteId"::text AS "clienteId", p."clienteNome", p."aosCuidadosDe",
             p."totalProdutos"::float AS "totalProdutos", p."total"::float AS total, p."desconto"::float AS desconto, p."outrasDespesas"::float AS "outrasDespesas", p."frete"::float AS frete,
-            p."introducao", p."observacoes", p."observacaoInterna", p."prazoEntrega", p."criadoAqui", p."sincronizadoEm"
+            p."introducao", p."observacoes", p."observacaoInterna", p."prazoEntrega", p."criadoAqui", p."sincronizadoEm", p."clienteNomeManual"
        FROM "PropostaComercial" p WHERE p."id" = $1::bigint`, id);
   if (!p) return null;
+  if (txt(p.clienteNomeManual)) p.clienteNome = txt(p.clienteNomeManual);
   if (!txt(p.clienteNome) && txt(p.clienteId)) {
     p.clienteNome = await nomeDoContato(txt(p.clienteId), '');
     if (p.clienteNome) await prisma.$executeRawUnsafe(`UPDATE "PropostaComercial" SET "clienteNome" = $2 WHERE "id" = $1::bigint`, id, p.clienteNome).catch(() => null);
@@ -322,6 +329,15 @@ export async function criarProposta(dados: NovaProposta, usuario?: string) {
   if (totalBling && Math.abs(totalBling - totalNosso) > 0.05) avisos.push(`O total no Bling (${totalBling.toFixed(2)}) difere do calculado aqui (${totalNosso.toFixed(2)}). Confira a proposta no Bling.`);
   return { id, numero: det?.data?.numero ?? null, total: totalBling || totalNosso, avisos };
 }
+
+// Cliente preenchido/corrigido aqui na proposta (vale mesmo sem cadastro no Bling ou na base); aparece na lista e no PDF.
+export async function definirClienteProposta(id: string, nome: string) {
+  await garantirTabelasPropostas();
+  await prisma.$executeRawUnsafe(`UPDATE "PropostaComercial" SET "clienteNomeManual" = NULLIF($2,'') WHERE "id" = $1::bigint`, id, txt(nome));
+}
+
+// JSON cru do Bling (diagnostico) - le direto do Bling, sem gravar
+export async function propostaBrutaDoBling(id: string) { return blingReq(`/propostas-comerciais/${id}`); }
 
 export async function alterarSituacaoProposta(id: string, situacao: string) {
   if (!SITUACOES_PROPOSTA.includes(situacao)) throw new Error('Situacao invalida.');
