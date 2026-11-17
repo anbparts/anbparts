@@ -16,6 +16,7 @@ const s: any = {
   label: { fontSize: 11, fontWeight: 700, color: 'var(--ink-muted)', textTransform: 'uppercase' as const, letterSpacing: '.05em', marginBottom: 4, display: 'block' },
 };
 
+const OBS_PADRAO = 'Proposta válida por 3 dias ou enquanto durarem os estoques.';
 const SITUACOES = ['Rascunho', 'Pendente', 'Aguardando', 'Aprovado', 'Não aprovado', 'Concluído'];
 const brl = (v: any) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -64,6 +65,7 @@ export default function PropostasComerciaisPage() {
   const [sinc, setSinc] = useState<any>(null);
   const [detalhe, setDetalhe] = useState<any>(null);
   const [novaAberta, setNovaAberta] = useState(false);
+  const [editando, setEditando] = useState<any>(null);
 
   async function carregar(p = pagina) {
     setCarregando(true);
@@ -168,7 +170,8 @@ export default function PropostasComerciaisPage() {
         </div>
       )}
 
-      {detalhe && <DetalheModal key={detalhe.id} p={detalhe} onClose={() => setDetalhe(null)} onSituacao={mudarSituacao} onCliente={salvarCliente} />}
+      {detalhe && <DetalheModal key={detalhe.id} p={detalhe} onClose={() => setDetalhe(null)} onSituacao={mudarSituacao} onCliente={salvarCliente} onEditar={(x: any) => { setDetalhe(null); setEditando(x); }} />}
+      {editando && <NovaPropostaModal inicial={editando} onClose={() => setEditando(null)} onCriada={(r: any) => { setEditando(null); carregar(pagina); if (r?.avisos?.length) alert(r.avisos.join('\n')); abrirDetalhe(r.id); }} />}
       {novaAberta && <NovaPropostaModal onClose={() => setNovaAberta(false)} onCriada={(r: any) => { setNovaAberta(false); carregar(1); if (r?.avisos?.length) alert(r.avisos.join('\n')); abrirDetalhe(r.id); }} />}
     </div>
   );
@@ -188,8 +191,9 @@ function Modal({ titulo, onClose, children, largo }: { titulo: string; onClose: 
   );
 }
 
-function DetalheModal({ p, onClose, onSituacao, onCliente }: { p: any; onClose: () => void; onSituacao: (id: string, s: string) => void; onCliente: (id: string, nome: string) => Promise<void> }) {
+function DetalheModal({ p, onClose, onSituacao, onCliente, onEditar }: { p: any; onClose: () => void; onSituacao: (id: string, s: string) => void; onCliente: (id: string, nome: string) => Promise<void>; onEditar: (p: any) => void }) {
   const itens: any[] = p.itens || [];
+  const rascunho = String(p.situacao || '') === 'Rascunho';
   const [cliente, setCliente] = useState<string>(p.clienteNome || '');
   const [salvandoCli, setSalvandoCli] = useState(false);
   return (
@@ -208,6 +212,8 @@ function DetalheModal({ p, onClose, onSituacao, onCliente }: { p: any; onClose: 
           </select>
         </label>
         <div style={{ flex: 1 }} />
+        {rascunho && <button style={s.btn} onClick={() => onEditar(p)}>Editar</button>}
+        {rascunho && <button style={{ ...s.btn, background: '#166534', color: '#fff', border: '1px solid #166534' }} onClick={() => { if (confirm(`Aprovar a proposta Nº ${p.numero ?? ''}? A situação muda de Rascunho para Aprovado no Bling.`)) onSituacao(p.id, 'Aprovado'); }}>Aprovar</button>}
         <button style={{ ...s.btn, ...s.btnPri }} onClick={() => abrirPdf(p.id).catch((er) => alert(er.message))}>Gerar PDF</button>
       </div>
       <div style={{ overflowX: 'auto' }}>
@@ -243,19 +249,24 @@ function DetalheModal({ p, onClose, onSituacao, onCliente }: { p: any; onClose: 
   );
 }
 
-function NovaPropostaModal({ onClose, onCriada }: { onClose: () => void; onCriada: (r: any) => void }) {
+const baseSkuFront = (v: any) => String(v || '').trim().toUpperCase().replace(/-\d+$/, '');
+function NovaPropostaModal({ onClose, onCriada, inicial }: { onClose: () => void; onCriada: (r: any) => void; inicial?: any }) {
+  const edicao = !!inicial;
   const [cliBusca, setCliBusca] = useState('');
   const [cliLista, setCliLista] = useState<any[]>([]);
-  const [cliSel, setCliSel] = useState<{ id: string; nome: string } | null>(null);
-  const [cliNome, setCliNome] = useState('');
+  const [cliSel, setCliSel] = useState<{ id: string; nome: string } | null>(inicial && inicial.clienteId ? { id: String(inicial.clienteId), nome: String(inicial.clienteNome || `Contato ${inicial.clienteId}`) } : null);
+  const [cliNome, setCliNome] = useState(inicial && !inicial.clienteId ? String(inicial.clienteNome || '') : '');
   const [sku, setSku] = useState('');
   const [validando, setValidando] = useState(false);
-  const [itens, setItens] = useState<ItemForm[]>([]);
-  const [descGeral, setDescGeral] = useState('');
-  const [outras, setOutras] = useState('');
-  const [frete, setFrete] = useState('');
+  const [itens, setItens] = useState<ItemForm[]>(inicial ? (inicial.itens || []).map((i: any) => ({
+    idPeca: baseSkuFront(i.codigo), codigo: String(i.codigo || ''), produtoId: String(i.produtoId || ''), descricao: String(i.descricao || ''),
+    valorLista: Number(i.valorLista) || 0, quantidade: Number(i.quantidade) || 1, descontoPct: Number(i.descontoPct) || 0, saldoBling: 9999,
+  })) : []);
+  const [descGeral, setDescGeral] = useState(inicial && inicial.desconto ? String(inicial.desconto) : '');
+  const [outras, setOutras] = useState(inicial && inicial.outrasDespesas ? String(inicial.outrasDespesas) : '');
+  const [frete, setFrete] = useState(inicial && inicial.frete ? String(inicial.frete) : '');
   const [descPadrao, setDescPadrao] = useState('');
-  const [f, setF] = useState({ data: '', aosCuidadosDe: '', introducao: '', observacoes: '', prazoEntrega: '', observacaoInterna: '' });
+  const [f, setF] = useState({ data: inicial ? String(inicial.data || '').slice(0, 10) : '', aosCuidadosDe: inicial?.aosCuidadosDe || '', introducao: inicial?.introducao || '', observacoes: inicial ? (inicial.observacoes || '') : OBS_PADRAO, prazoEntrega: inicial?.prazoEntrega || '', observacaoInterna: inicial?.observacaoInterna || '' });
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState('');
 
@@ -296,14 +307,16 @@ function NovaPropostaModal({ onClose, onCriada }: { onClose: () => void; onCriad
         desconto: Number(descGeral) || 0, outrasDespesas: Number(outras) || 0, frete: Number(frete) || 0,
         itens: itens.map((i) => ({ codigo: i.codigo, quantidade: i.quantidade, descontoPct: i.descontoPct, valorLista: i.valorLista })),
       };
-      const r = await chamar('/propostas-comerciais', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) });
+      const r = edicao
+        ? await chamar(`/propostas-comerciais/${inicial.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) })
+        : await chamar('/propostas-comerciais', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) });
       onCriada(r);
     } catch (e: any) { setErro(e?.message || 'Erro ao salvar'); }
     setSalvando(false);
   }
 
   return (
-    <Modal titulo="Nova proposta comercial" onClose={onClose} largo>
+    <Modal titulo={edicao ? `Editar proposta Nº ${inicial.numero ?? ''} (Rascunho)` : 'Nova proposta comercial'} onClose={onClose} largo>
       <div style={{ display: 'grid', gap: 14 }}>
         <div>
           <span style={s.label}>Cliente</span>
@@ -377,9 +390,9 @@ function NovaPropostaModal({ onClose, onCriada }: { onClose: () => void; onCriad
         <label><span style={s.label}>Observação interna (só no Bling)</span><textarea style={{ ...s.input, minHeight: 44 }} value={f.observacaoInterna} onChange={(e) => setF({ ...f, observacaoInterna: e.target.value })} /></label>
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'center' }}>
-          <span style={{ fontSize: 12, color: 'var(--ink-muted)' }}>Ao salvar, a proposta é criada no Bling como Rascunho e recebe o número do Bling.</span>
+          <span style={{ fontSize: 12, color: 'var(--ink-muted)' }}>{edicao ? 'Ao salvar, a edição também é gravada no Bling.' : 'Ao salvar, a proposta é criada no Bling como Rascunho e recebe o número do Bling.'}</span>
           <button style={s.btn} onClick={onClose}>Cancelar</button>
-          <button style={{ ...s.btn, ...s.btnPri }} disabled={salvando} onClick={salvar}>{salvando ? 'Salvando…' : 'Salvar proposta'}</button>
+          <button style={{ ...s.btn, ...s.btnPri }} disabled={salvando} onClick={salvar}>{salvando ? 'Salvando…' : edicao ? 'Salvar alterações' : 'Salvar proposta'}</button>
         </div>
       </div>
     </Modal>

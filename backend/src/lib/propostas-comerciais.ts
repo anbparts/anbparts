@@ -258,9 +258,10 @@ export type NovaProposta = {
   itens: Array<{ codigo: string; quantidade?: number; descontoPct?: number; valorLista?: number }>;
 };
 
-export async function criarProposta(dados: NovaProposta, usuario?: string) {
+// Valida os itens (estoque na base + saldo no Bling), resolve o cliente e monta o corpo que o Bling espera.
+async function montarCorpoProposta(dados: NovaProposta, contatoExistente?: string) {
   if (!Array.isArray(dados.itens) || !dados.itens.length) throw new Error('Inclua ao menos um item.');
-  // valida de novo no servidor (estoque pode ter mudado desde que o item foi adicionado na tela)
+  // valida no servidor (estoque pode ter mudado desde que o item foi adicionado na tela)
   const itensBling: any[] = [];
   const vistos = new Set<string>();
   for (const it of dados.itens) {
@@ -281,7 +282,7 @@ export async function criarProposta(dados: NovaProposta, usuario?: string) {
     });
   }
 
-  let contatoId = txt(dados.clienteId);
+  let contatoId = txt(dados.clienteId) || txt(contatoExistente);
   if (!contatoId) {
     const nome = txt(dados.clienteNome);
     if (!nome) throw new Error('Informe o cliente (da base ou digite o nome).');
@@ -302,17 +303,29 @@ export async function criarProposta(dados: NovaProposta, usuario?: string) {
   if (txt(dados.observacoes)) base.observacoes = txt(dados.observacoes);
   if (txt(dados.observacaoInterna)) base.observacaoInterna = txt(dados.observacaoInterna);
   if (txt(dados.prazoEntrega)) base.prazoEntrega = txt(dados.prazoEntrega);
+  const totalItensNosso = itensBling.reduce((t, i) => t + i.quantidade * i.valor, 0);
+  const totalNosso = r2(totalItensNosso - num(dados.desconto) + num(dados.outrasDespesas) + num(dados.frete));
+  return { base, totalNosso, contatoId };
+}
 
-  let criado: any;
+// POST/PUT no Bling. O schema marca "parcelas" como obrigatorio: se recusar a lista vazia, manda 1 parcela unica (a vista) com o total.
+async function enviarAoBling(metodo: 'POST' | 'PUT', path: string, base: any, totalNosso: number) {
   try {
-    criado = await blingReq('/propostas-comerciais', { method: 'POST', body: JSON.stringify(base) });
+    return await blingReq(path, { method: metodo, body: JSON.stringify(base) });
   } catch (e: any) {
-    // O schema do Bling marca "parcelas" como obrigatorio: se recusar a lista vazia, manda 1 parcela unica (a vista) com o total.
     if (!/parcela/i.test(String(e?.message || ''))) throw e;
-    const totalItens = itensBling.reduce((t, i) => t + i.quantidade * i.valor, 0);
-    const total = r2(totalItens - num(dados.desconto) + num(dados.outrasDespesas) + num(dados.frete));
-    criado = await blingReq('/propostas-comerciais', { method: 'POST', body: JSON.stringify({ ...base, parcelas: [{ numeroDias: 0, valor: total }] }) });
+    return blingReq(path, { method: metodo, body: JSON.stringify({ ...base, parcelas: [{ numeroDias: 0, valor: totalNosso }] }) });
   }
+}
+
+function avisoDeTotal(totalBling: number, totalNosso: number): string[] {
+  return totalBling && Math.abs(totalBling - totalNosso) > 0.05
+    ? [`O total no Bling (${totalBling.toFixed(2)}) difere do calculado aqui (${totalNosso.toFixed(2)}). Confira a proposta no Bling.`] : [];
+}
+
+export async function criarProposta(dados: NovaProposta, usuario?: string) {
+  const { base, totalNosso } = await montarCorpoProposta(dados);
+  const criado: any = await enviarAoBling('POST', '/propostas-comerciais', base, totalNosso);
   const id = txt(criado?.data?.id);
   if (!id) throw new Error('O Bling nao devolveu o id da proposta criada.');
 
@@ -320,14 +333,24 @@ export async function criarProposta(dados: NovaProposta, usuario?: string) {
   try { await blingReq(`/propostas-comerciais/${id}/situacoes`, { method: 'PATCH', body: JSON.stringify({ situacao: 'Rascunho' }) }); } catch { /* ja nasce nessa situacao ou o Bling recusou: segue */ }
   const det: any = await blingReq(`/propostas-comerciais/${id}`);
   await gravarPropostaDoBling(det?.data || { id, ...base }, { criadoAqui: true, criadoPor: usuario });
-
-  // confere se o total do Bling bate com o nosso calculo (descontos por item em %)
-  const totalItensNosso = itensBling.reduce((t, i) => t + i.quantidade * i.valor, 0);
-  const totalNosso = r2(totalItensNosso - num(dados.desconto) + num(dados.outrasDespesas) + num(dados.frete));
   const totalBling = num(det?.data?.total);
-  const avisos: string[] = [];
-  if (totalBling && Math.abs(totalBling - totalNosso) > 0.05) avisos.push(`O total no Bling (${totalBling.toFixed(2)}) difere do calculado aqui (${totalNosso.toFixed(2)}). Confira a proposta no Bling.`);
-  return { id, numero: det?.data?.numero ?? null, total: totalBling || totalNosso, avisos };
+  return { id, numero: det?.data?.numero ?? null, total: totalBling || totalNosso, avisos: avisoDeTotal(totalBling, totalNosso) };
+}
+
+// Edita uma proposta que esta em Rascunho: replica a edicao no Bling (PUT) e atualiza a copia local.
+export async function atualizarProposta(id: string, dados: NovaProposta) {
+  await garantirTabelasPropostas();
+  const [atual] = await prisma.$queryRawUnsafe<any[]>(`SELECT "situacao","clienteId"::text AS "clienteId","clienteNomeManual" FROM "PropostaComercial" WHERE "id" = $1::bigint`, id);
+  if (!atual) throw new Error('Proposta nao encontrada.');
+  if (txt(atual.situacao) !== 'Rascunho') throw new Error(`So da para editar proposta em Rascunho (esta em "${txt(atual.situacao) || 'sem situacao'}").`);
+  const { base, totalNosso } = await montarCorpoProposta(dados, txt(atual.clienteId));
+  await enviarAoBling('PUT', `/propostas-comerciais/${id}`, base, totalNosso);
+  const det: any = await blingReq(`/propostas-comerciais/${id}`);
+  await gravarPropostaDoBling(det?.data || { id, ...base });
+  // cliente digitado na edicao (sem cadastro): guarda o nome na proposta
+  if (!txt(dados.clienteId) && txt(dados.clienteNome)) await definirClienteProposta(id, txt(dados.clienteNome));
+  const totalBling = num(det?.data?.total);
+  return { id, numero: det?.data?.numero ?? null, total: totalBling || totalNosso, avisos: avisoDeTotal(totalBling, totalNosso) };
 }
 
 // Cliente preenchido/corrigido aqui na proposta (vale mesmo sem cadastro no Bling ou na base); aparece na lista e no PDF.

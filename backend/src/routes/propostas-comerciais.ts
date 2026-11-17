@@ -1,7 +1,7 @@
 // Propostas Comerciais (Bling por tras): lista/detalhe locais, sincronizacao, validacao de item, criacao e PDF.
 import { Router } from 'express';
 import {
-  alterarSituacaoProposta, buscarClientes, criarProposta, definirClienteProposta, jobPropostas, propostaBrutaDoBling, lerProposta, listarPropostas, sincronizarPropostas, validarItemProposta,
+  alterarSituacaoProposta, atualizarProposta, buscarClientes, criarProposta, definirClienteProposta, jobPropostas, propostaBrutaDoBling, lerProposta, listarPropostas, sincronizarPropostas, validarItemProposta,
 } from '../lib/propostas-comerciais';
 import { gerarPropostaPdf } from '../lib/proposta-pdf';
 import { prisma } from '../lib/prisma';
@@ -49,6 +49,12 @@ propostasComerciaisRouter.get('/:id', async (req, res, next) => {
     if (!p) return res.status(404).json({ ok: false, error: 'Proposta nao encontrada.' });
     res.json({ ok: true, proposta: p });
   } catch (e) { next(e); }
+});
+
+// PUT /propostas-comerciais/:id — edita proposta em Rascunho (replica no Bling)
+propostasComerciaisRouter.put('/:id', async (req, res) => {
+  try { res.json({ ok: true, ...(await atualizarProposta(String(req.params.id).replace(/\D/g, ''), req.body || {})) }); }
+  catch (e: any) { res.status(400).json({ ok: false, error: String(e?.message || e) }); }
 });
 
 // PATCH /propostas-comerciais/:id/cliente { nome } — preenche/corrige o cliente na proposta (local; aparece na lista e no PDF)
