@@ -243,7 +243,9 @@ async function garantirTabelasPedidos2() { await (await import('./bling-pedidos'
 
 // Cliente nao cadastrado: o Bling exige um contato (so aceita o id), entao cria um contato minimo so com o nome.
 async function criarContatoMinimo(nome: string): Promise<string> {
-  const r: any = await blingReq('/contatos', { method: 'POST', body: JSON.stringify({ nome, tipo: 'F', situacao: 'A' }) });
+  let r: any;
+  try { r = await blingReq('/contatos', { method: 'POST', body: JSON.stringify({ nome, tipo: 'F', situacao: 'A' }) }); }
+  catch (e: any) { throw erroBling('Bling recusou criar o contato do cliente (POST /contatos)', e); }
   const id = txt(r?.data?.id);
   if (!id) throw new Error('O Bling nao devolveu o id do contato criado.');
   await garantirTabelasPedidos2();
@@ -310,12 +312,21 @@ async function montarCorpoProposta(dados: NovaProposta, contatoExistente?: strin
 }
 
 // POST/PUT no Bling. O schema marca "parcelas" como obrigatorio: se recusar a lista vazia, manda 1 parcela unica (a vista) com o total.
+// Erro do Bling com a etapa e, se for falta de permissao, a dica do escopo (assim a tela mostra QUAL chamada foi recusada).
+function erroBling(etapa: string, e: any): Error {
+  const m = String(e?.message || e);
+  const dica = /insufficient_scope|403/.test(m) ? ' — o aplicativo do Bling nao tem permissao para isso (habilite o escopo e reautorize a conexao).' : '';
+  return new Error(`${etapa}: ${m}${dica}`);
+}
+
 async function enviarAoBling(metodo: 'POST' | 'PUT', path: string, base: any, totalNosso: number) {
+  const etapa = `Bling recusou ${metodo === 'PUT' ? 'gravar a edicao da proposta' : 'criar a proposta'} (${metodo} ${path})`;
   try {
     return await blingReq(path, { method: metodo, body: JSON.stringify(base) });
   } catch (e: any) {
-    if (!/parcela/i.test(String(e?.message || ''))) throw e;
-    return blingReq(path, { method: metodo, body: JSON.stringify({ ...base, parcelas: [{ numeroDias: 0, valor: totalNosso }] }) });
+    if (!/parcela/i.test(String(e?.message || ''))) throw erroBling(etapa, e);
+    try { return await blingReq(path, { method: metodo, body: JSON.stringify({ ...base, parcelas: [{ numeroDias: 0, valor: totalNosso }] }) }); }
+    catch (e2: any) { throw erroBling(etapa, e2); }
   }
 }
 
@@ -365,6 +376,7 @@ export async function propostaBrutaDoBling(id: string) { return blingReq(`/propo
 
 export async function alterarSituacaoProposta(id: string, situacao: string) {
   if (!SITUACOES_PROPOSTA.includes(situacao)) throw new Error('Situacao invalida.');
-  await blingReq(`/propostas-comerciais/${id}/situacoes`, { method: 'PATCH', body: JSON.stringify({ situacao }) });
+  try { await blingReq(`/propostas-comerciais/${id}/situacoes`, { method: 'PATCH', body: JSON.stringify({ situacao }) }); }
+  catch (e: any) { throw erroBling(`Bling recusou mudar a situacao (PATCH /propostas-comerciais/${id}/situacoes)`, e); }
   await prisma.$executeRawUnsafe(`UPDATE "PropostaComercial" SET "situacao" = $2, "sincronizadoEm" = now() WHERE "id" = $1::bigint`, id, situacao);
 }

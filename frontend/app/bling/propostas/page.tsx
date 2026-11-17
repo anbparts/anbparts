@@ -11,8 +11,8 @@ const s: any = {
   input: { background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px', fontSize: 13, outline: 'none', color: 'var(--ink)', fontFamily: 'inherit', boxSizing: 'border-box' as const, width: '100%' },
   btn: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', border: '1px solid var(--border)', background: 'var(--white)', color: 'var(--ink-soft)', fontFamily: 'inherit', whiteSpace: 'nowrap' as const },
   btnPri: { background: 'var(--ink)', color: '#fff', border: '1px solid var(--ink)' },
-  th: { padding: '9px 12px', fontSize: 11, fontWeight: 700, color: 'var(--ink-muted)', textTransform: 'uppercase' as const, letterSpacing: '.05em', borderBottom: '1px solid var(--border)', background: 'var(--gray-50)', whiteSpace: 'nowrap' as const, textAlign: 'left' as const },
-  td: { padding: '10px 12px', fontSize: 13, color: 'var(--ink)', borderBottom: '1px solid var(--border)', verticalAlign: 'middle' as const },
+  th: { padding: '8px 10px', fontSize: 10.5, fontWeight: 700, color: 'var(--ink-muted)', textTransform: 'uppercase' as const, letterSpacing: '.05em', borderBottom: '1px solid var(--border)', background: 'var(--gray-50)', whiteSpace: 'nowrap' as const, textAlign: 'left' as const },
+  td: { padding: '7px 10px', fontSize: 12, color: 'var(--ink)', borderBottom: '1px solid var(--border)', verticalAlign: 'middle' as const },
   label: { fontSize: 11, fontWeight: 700, color: 'var(--ink-muted)', textTransform: 'uppercase' as const, letterSpacing: '.05em', marginBottom: 4, display: 'block' },
 };
 
@@ -105,6 +105,14 @@ export default function PropostasComerciaisPage() {
     } catch (e: any) { alert(e?.message || 'Erro ao mudar a situação'); }
   }
 
+  async function editarDaLinha(id: string) {
+    try { setEditando((await chamar(`/propostas-comerciais/${id}`)).proposta); } catch (e: any) { alert(e?.message || 'Erro ao abrir a proposta'); }
+  }
+  async function aprovarDaLinha(p: any) {
+    if (!confirm(`Aprovar a proposta Nº ${p.numero ?? ''}? A situação muda de Rascunho para Aprovado no Bling.`)) return;
+    await mudarSituacao(p.id, 'Aprovado');
+  }
+
   async function salvarCliente(id: string, nome: string) {
     try {
       await chamar(`/propostas-comerciais/${id}/cliente`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nome }) });
@@ -157,7 +165,13 @@ export default function PropostasComerciaisPage() {
                 <td style={s.td}>{p.qtdItens}</td>
                 <td style={{ ...s.td, fontWeight: 700 }}>{brl(p.total)}</td>
                 <td style={s.td}>{pill(p.situacao)}</td>
-                <td style={s.td}><button style={s.btn} onClick={(e) => { e.stopPropagation(); abrirPdf(p.id).catch((er) => alert(er.message)); }}>PDF</button></td>
+                <td style={{ ...s.td, whiteSpace: 'nowrap' }}>
+                  <span style={{ display: 'inline-flex', gap: 6 }}>
+                    <button style={{ ...s.btn, padding: '5px 10px', fontSize: 12 }} onClick={(e) => { e.stopPropagation(); abrirPdf(p.id).catch((er) => alert(er.message)); }}>PDF</button>
+                    {p.situacao === 'Rascunho' && <button style={{ ...s.btn, padding: '5px 10px', fontSize: 12 }} onClick={(e) => { e.stopPropagation(); editarDaLinha(p.id); }}>Editar</button>}
+                    {p.situacao === 'Rascunho' && <button style={{ ...s.btn, padding: '5px 10px', fontSize: 12, background: '#166534', color: '#fff', border: '1px solid #166534' }} onClick={(e) => { e.stopPropagation(); aprovarDaLinha(p); }}>Aprovar</button>}
+                  </span>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -230,8 +244,6 @@ function DetalheModal({ p, onClose, onSituacao, onCliente, onEditar }: { p: any;
         </label>
         <div style={{ flex: 1 }} />
         <button style={s.btn} onClick={async () => { try { const d = await chamar(`/propostas-comerciais/${p.id}/bling-bruto`); setJsonBling(JSON.stringify(d.bling, null, 2)); } catch (e: any) { alert(e?.message || 'Erro'); } }}>Ver dados do Bling</button>
-        {rascunho && <button style={s.btn} onClick={() => onEditar(p)}>Editar</button>}
-        {rascunho && <button style={{ ...s.btn, background: '#166534', color: '#fff', border: '1px solid #166534' }} onClick={() => { if (confirm(`Aprovar a proposta Nº ${p.numero ?? ''}? A situação muda de Rascunho para Aprovado no Bling.`)) onSituacao(p.id, 'Aprovado'); }}>Aprovar</button>}
         <button style={{ ...s.btn, ...s.btnPri }} onClick={() => abrirPdf(p.id).catch((er) => alert(er.message))}>Gerar PDF</button>
       </div>
       <div style={{ overflowX: 'auto' }}>
