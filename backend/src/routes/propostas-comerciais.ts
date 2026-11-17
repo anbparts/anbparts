@@ -1,7 +1,7 @@
 // Propostas Comerciais (Bling por tras): lista/detalhe locais, sincronizacao, validacao de item, criacao e PDF.
 import { Router } from 'express';
 import {
-  alterarSituacaoProposta, atualizarProposta, buscarClientes, criarProposta, definirClienteProposta, excluirProposta, jobPropostas, propostaBrutaDoBling, lerProposta, listarPropostas, sincronizarPropostas, validarItemProposta,
+  alterarSituacaoProposta, atualizarProposta, enviarPropostaPendente, filaIntegracao, buscarClientes, criarProposta, definirClienteProposta, excluirProposta, jobPropostas, propostaBrutaDoBling, lerProposta, listarPropostas, sincronizarPropostas, validarItemProposta,
 } from '../lib/propostas-comerciais';
 import { gerarPropostaPdf } from '../lib/proposta-pdf';
 import { prisma } from '../lib/prisma';
@@ -43,12 +43,23 @@ propostasComerciaisRouter.post('/', async (req, res) => {
   } catch (e: any) { res.status(400).json({ ok: false, error: String(e?.message || e) }); }
 });
 
+// GET /propostas-comerciais/fila — propostas pendentes de envio ao Bling
+propostasComerciaisRouter.get('/fila', async (_req, res, next) => {
+  try { res.json({ ok: true, ...(await filaIntegracao()) }); } catch (e) { next(e); }
+});
+
 propostasComerciaisRouter.get('/:id', async (req, res, next) => {
   try {
     const p = await lerProposta(String(req.params.id).replace(/\D/g, ''));
     if (!p) return res.status(404).json({ ok: false, error: 'Proposta nao encontrada.' });
     res.json({ ok: true, proposta: p });
   } catch (e) { next(e); }
+});
+
+// POST /propostas-comerciais/:id/enviar-bling — envia ao Bling uma proposta pendente (sem ordem obrigatoria)
+propostasComerciaisRouter.post('/:id/enviar-bling', async (req, res) => {
+  try { res.json({ ok: true, ...(await enviarPropostaPendente(String(req.params.id).replace(/\D/g, ''), String((req as any).authUser?.username || ''))) }); }
+  catch (e: any) { res.status(400).json({ ok: false, error: String(e?.message || e) }); }
 });
 
 // DELETE /propostas-comerciais/:id?modo=local|bling — exclui so daqui ou aqui + no Bling

@@ -66,7 +66,7 @@ async function abrirPdf(p: any) {
   setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
-type ItemForm = { idPeca: string; codigo: string; produtoId: string; descricao: string; valorLista: number; quantidade: number; descontoPct: number; saldoBling: number };
+type ItemForm = { preCadastro?: boolean; idPeca: string; codigo: string; produtoId: string; descricao: string; valorLista: number; quantidade: number; descontoPct: number; saldoBling: number };
 
 export default function PropostasComerciaisPage() {
   const isPhone = useIsPhone();
@@ -83,6 +83,8 @@ export default function PropostasComerciaisPage() {
   const [editando, setEditando] = useState<any>(null);
   const [excluindo, setExcluindo] = useState<any>(null);
   const [copiando, setCopiando] = useState<any>(null);
+  const [fila, setFila] = useState<{ pendentes: any[] }>({ pendentes: [] });
+  const [enviando, setEnviando] = useState<string | null>(null);
 
   async function carregar(p = pagina) {
     setCarregando(true);
@@ -92,7 +94,29 @@ export default function PropostasComerciaisPage() {
     } catch (e: any) { alert(e?.message || 'Erro ao carregar as propostas'); }
     setCarregando(false);
   }
-  useEffect(() => { carregar(1); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  async function carregarFila() {
+    try { const d = await chamar('/propostas-comerciais/fila'); setFila({ pendentes: d.pendentes || [] }); } catch { /* sem fila: segue */ }
+  }
+  useEffect(() => { carregar(1); carregarFila(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // depois de salvar (nova, copia ou edicao): recarrega, avisa se ficou pendente de envio ao Bling e abre o detalhe
+  function aposSalvar(r: any) {
+    carregar(1); carregarFila();
+    const msgs: string[] = [];
+    if (r?.pendente) msgs.push(`Proposta Nº ${r.numero} criada SÓ no sistema (pendente de envio ao Bling).${r.motivo ? ` ${r.motivo}` : ''}`);
+    if (r?.avisos?.length) msgs.push(r.avisos.join('\n'));
+    if (msgs.length) alert(msgs.join('\n\n'));
+    if (r?.id) abrirDetalhe(r.id);
+  }
+  async function enviarAoBling(p: any) {
+    if (!confirm(`Enviar a proposta Nº ${p.numero} ao Bling agora?`)) return;
+    setEnviando(p.id);
+    try {
+      const r = await chamar(`/propostas-comerciais/${p.id}/enviar-bling`, { method: 'POST' });
+      if (r.avisos?.length) alert(r.avisos.join('\n'));
+    } catch (e: any) { alert(e?.message || 'Erro ao enviar ao Bling'); }
+    setEnviando(null); carregar(pagina); carregarFila();
+  }
 
   // acompanha a sincronizacao com o Bling
   const timer = useRef<any>(null);
@@ -164,6 +188,12 @@ export default function PropostasComerciaisPage() {
       {sinc && !sinc.rodando && sinc.semNomeCliente > 0 && !sinc.ultimoErroCliente && <div style={{ ...s.card, padding: 12, fontSize: 13, color: '#92400e' }}>{sinc.semNomeCliente} proposta(s) vieram do Bling sem nome de cliente (o Bling não informou nome nem id de contato). Use “Ver dados do Bling” no detalhe da proposta.</div>}
       {sinc && !sinc.rodando && sinc.ultimoErro && <div style={{ ...s.card, padding: 12, fontSize: 13, color: '#991b1b' }}>Último erro da sincronização: {sinc.ultimoErro}</div>}
 
+      {fila.pendentes.length > 0 && (
+        <div style={{ ...s.card, padding: 12, fontSize: 13, background: '#fffbeb', borderColor: '#fde68a' }}>
+          <strong>{fila.pendentes.length} proposta(s) aguardando envio ao Bling</strong> (Nº {fila.pendentes.map((x: any) => x.numero).join(', ')}). Use “Enviar ao Bling” na linha quando as peças já existirem lá. O número da proposta é nosso; o número que o Bling der fica gravado na coluna “Nº Bling”.
+        </div>
+      )}
+
       {dados && (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', fontSize: 12.5, color: 'var(--ink-soft)' }}>
           <span><strong>{dados.total}</strong> propostas · soma {brl(dados.somaTotal)}</span>
@@ -173,25 +203,30 @@ export default function PropostasComerciaisPage() {
 
       <div style={{ ...s.card, overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead><tr>{['Nº', 'Data', 'Cliente', 'Itens', 'Total', 'Situação', ''].map((h) => <th key={h} style={s.th}>{h}</th>)}</tr></thead>
+          <thead><tr>{['Nº', 'Nº Bling', 'Data', 'Cliente', 'Itens', 'Total', 'Situação', ''].map((h) => <th key={h} style={s.th}>{h}</th>)}</tr></thead>
           <tbody>
-            {carregando && <tr><td style={s.td} colSpan={7}>Carregando…</td></tr>}
-            {!carregando && dados && !dados.itens.length && <tr><td style={s.td} colSpan={7}>Nenhuma proposta. Use “Sincronizar com o Bling” para trazer as que já existem lá.</td></tr>}
+            {carregando && <tr><td style={s.td} colSpan={8}>Carregando…</td></tr>}
+            {!carregando && dados && !dados.itens.length && <tr><td style={s.td} colSpan={8}>Nenhuma proposta. Use “Sincronizar com o Bling” para trazer as que já existem lá.</td></tr>}
             {!carregando && (dados?.itens || []).map((p: any) => (
               <tr key={p.id} style={{ cursor: 'pointer' }} onClick={() => abrirDetalhe(p.id)}>
                 <td style={{ ...s.td, fontWeight: 700 }}>{p.numero ?? '—'}</td>
+                <td style={{ ...s.td, color: 'var(--ink-muted)' }}>{p.blingNumero ? p.blingNumero : '—'}</td>
                 <td style={s.td}>{fmtData(p.data)}</td>
                 <td style={s.td}>{p.clienteNome || '—'}</td>
                 <td style={s.td}>{p.qtdItens}</td>
                 <td style={{ ...s.td, fontWeight: 700 }}>{brl(p.total)}</td>
-                <td style={s.td}>{pill(p.situacao)}</td>
+                <td style={s.td}>
+                  {pill(p.situacao)}
+                  {p.integracao === 'pendente' && <span title={p.integracaoMotivo || ''} style={{ marginLeft: 6, display: 'inline-block', padding: '2px 9px', borderRadius: 999, fontSize: 11, fontWeight: 700, background: '#fef3c7', color: '#92400e', whiteSpace: 'nowrap' }}>Pendente de envio ao Bling</span>}
+                </td>
                 <td style={{ ...s.td, whiteSpace: 'nowrap' }}>
                   <span style={{ display: 'inline-flex', gap: 6 }}>
                     <button style={{ ...s.btn, padding: '5px 10px', fontSize: 12 }} onClick={(e) => { e.stopPropagation(); abrirPdf(p).catch((er) => alert(er.message)); }}>PDF</button>
                     {p.situacao === 'Rascunho' && <button style={{ ...s.btn, padding: '5px 10px', fontSize: 12 }} onClick={(e) => { e.stopPropagation(); editarDaLinha(p.id); }}>Editar</button>}
                     <button style={{ ...s.btn, padding: '5px 10px', fontSize: 12 }} title="Cria uma nova proposta já com os itens desta" onClick={(e) => { e.stopPropagation(); copiarDaLinha(p.id); }}>Copiar</button>
                     <button style={{ ...s.btn, padding: '5px 10px', fontSize: 12, color: '#991b1b' }} onClick={(e) => { e.stopPropagation(); setExcluindo(p); }}>Excluir</button>
-                    {p.situacao === 'Rascunho' && <button style={{ ...s.btn, padding: '5px 10px', fontSize: 12, background: '#166534', color: '#fff', border: '1px solid #166534' }} onClick={(e) => { e.stopPropagation(); aprovarDaLinha(p); }}>Aprovar</button>}
+                    {p.integracao === 'pendente' && <button disabled={enviando === p.id} title="Envia esta proposta ao Bling" style={{ ...s.btn, padding: '5px 10px', fontSize: 12, background: '#1d4ed8', color: '#fff', border: '1px solid #1d4ed8' }} onClick={(e) => { e.stopPropagation(); enviarAoBling(p); }}>{enviando === p.id ? 'Enviando…' : 'Enviar ao Bling'}</button>}
+                    {p.situacao === 'Rascunho' && (!p.integracao || p.integracao === 'ok') && <button style={{ ...s.btn, padding: '5px 10px', fontSize: 12, background: '#166534', color: '#fff', border: '1px solid #166534' }} onClick={(e) => { e.stopPropagation(); aprovarDaLinha(p); }}>Aprovar</button>}
                   </span>
                 </td>
               </tr>
@@ -209,10 +244,10 @@ export default function PropostasComerciaisPage() {
       )}
 
       {detalhe && <DetalheModal key={detalhe.id} p={detalhe} onClose={() => setDetalhe(null)} onSituacao={mudarSituacao} onCliente={salvarCliente} onEditar={(x: any) => { setDetalhe(null); setEditando(x); }} />}
-      {copiando && <NovaPropostaModal inicial={copiando} onClose={() => setCopiando(null)} onCriada={(r: any) => { setCopiando(null); carregar(1); if (r?.avisos?.length) alert(r.avisos.join('\n')); abrirDetalhe(r.id); }} />}
+      {copiando && <NovaPropostaModal inicial={copiando} onClose={() => setCopiando(null)} onCriada={(r: any) => { setCopiando(null); aposSalvar(r); }} />}
       {excluindo && <ExcluirModal p={excluindo} onClose={() => setExcluindo(null)} onExcluida={() => { setExcluindo(null); carregar(pagina); }} />}
-      {editando && <NovaPropostaModal inicial={editando} onClose={() => setEditando(null)} onCriada={(r: any) => { setEditando(null); carregar(pagina); if (r?.avisos?.length) alert(r.avisos.join('\n')); abrirDetalhe(r.id); }} />}
-      {novaAberta && <NovaPropostaModal onClose={() => setNovaAberta(false)} onCriada={(r: any) => { setNovaAberta(false); carregar(1); if (r?.avisos?.length) alert(r.avisos.join('\n')); abrirDetalhe(r.id); }} />}
+      {editando && <NovaPropostaModal inicial={editando} onClose={() => setEditando(null)} onCriada={(r: any) => { setEditando(null); aposSalvar(r); }} />}
+      {novaAberta && <NovaPropostaModal onClose={() => setNovaAberta(false)} onCriada={(r: any) => { setNovaAberta(false); aposSalvar(r); }} />}
     </div>
   );
 }
@@ -250,8 +285,10 @@ function ExcluirModal({ p, onClose, onExcluida }: { p: any; onClose: () => void;
   return (
     <Modal titulo={`Excluir proposta Nº ${p.numero ?? ''} · ${p.clienteNome || 'sem cliente'}`} onClose={onClose}>
       <div style={{ display: 'grid', gap: 10 }}>
-        {opcao('local', 'Excluir só aqui no sistema', 'A proposta continua no Bling. A sincronização passa a ignorá-la, então ela não volta para a lista.')}
-        {opcao('bling', 'Excluir aqui e no Bling', 'Apaga a proposta também no Bling. Não dá para desfazer.')}
+        {opcao('local', p.integracao === 'pendente' ? 'Excluir esta proposta pendente' : 'Excluir só aqui no sistema', p.integracao === 'pendente' ? 'Remove a proposta que só existe aqui.' : 'A proposta continua no Bling. A sincronização passa a ignorá-la, então ela não volta para a lista.')}
+        {p.integracao === 'pendente'
+          ? <div style={{ fontSize: 12.5, color: 'var(--ink-soft)' }}>Esta proposta ainda não existe no Bling (pendente de envio). O número reservado só volta para a sequência se for o maior; caso contrário fica um buraco na numeração.</div>
+          : opcao('bling', 'Excluir aqui e no Bling', 'Apaga a proposta também no Bling. Não dá para desfazer.')}
         {erro && <div style={{ color: '#991b1b', fontSize: 13 }}>{erro}</div>}
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <button style={s.btn} onClick={onClose}>Cancelar</button>
@@ -292,8 +329,10 @@ function DetalheModal({ p, onClose, onSituacao, onCliente, onEditar }: { p: any;
       </div>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
         <span style={{ fontSize: 13 }}>Data: <strong>{fmtData(p.data)}</strong></span>
+        <span style={{ fontSize: 13 }}>Nº no Bling: <strong>{p.blingNumero ? p.blingNumero : '—'}</strong></span>
+        {p.integracao === 'pendente' && <span style={{ fontSize: 12.5, color: '#92400e' }}>Pendente de envio ao Bling. {p.integracaoMotivo || ''}</span>}
         <label style={{ fontSize: 13, display: 'flex', gap: 6, alignItems: 'center' }}>Situação
-          <select style={{ ...s.input, width: 'auto' }} value={p.situacao || ''} onChange={(e) => onSituacao(p.id, e.target.value)}>
+          <select disabled={!!p.integracao && p.integracao !== 'ok'} title={p.integracao && p.integracao !== 'ok' ? 'Envie a proposta ao Bling antes de mudar a situação' : ''} style={{ ...s.input, width: 'auto' }} value={p.situacao || ''} onChange={(e) => onSituacao(p.id, e.target.value)}>
             {SITUACOES.concat(SITUACOES.indexOf(p.situacao) < 0 && p.situacao ? [p.situacao] : []).map((x) => <option key={x} value={x}>{x}</option>)}
           </select>
         </label>
@@ -362,7 +401,7 @@ function NovaPropostaModal({ onClose, onCriada, inicial }: { onClose: () => void
   const [f, setF] = useState({ data: inicial && !copia ? String(inicial.data || '').slice(0, 10) : hojeSP(), aosCuidadosDe: copia ? '' : (inicial?.aosCuidadosDe || ''), introducao: inicial?.introducao || '', observacoes: inicial && !copia ? (inicial.observacoes || '') : OBS_PADRAO, prazoEntrega: inicial?.prazoEntrega || '', observacaoInterna: copia ? '' : (inicial?.observacaoInterna || '') });
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState('');
-  const [numeroProp, setNumeroProp] = useState(inicial && !copia && inicial.numero ? String(inicial.numero) : '');
+  const [numeroProp, setNumeroProp] = useState(inicial && !copia && inicial.blingNumero ? String(inicial.blingNumero) : '');
 
   useEffect(() => {
     if (cliBusca.trim().length < 2 || cliSel) { setCliLista([]); return; }
@@ -378,7 +417,7 @@ function NovaPropostaModal({ onClose, onCriada, inicial }: { onClose: () => void
     try {
       const d = await chamar(`/propostas-comerciais/item/validar?sku=${encodeURIComponent(cod)}`);
       const it = d.item;
-      setItens((prev) => prev.concat([{ idPeca: it.idPeca, codigo: it.codigo, produtoId: it.produtoId, descricao: it.descricao, valorLista: it.valorLista, quantidade: 1, descontoPct: Number(descPadrao) || 0, saldoBling: it.saldoBling }]));
+      setItens((prev) => prev.concat([{ preCadastro: !!it.preCadastro, idPeca: it.idPeca, codigo: it.codigo, produtoId: it.produtoId, descricao: it.descricao, valorLista: it.valorLista, quantidade: 1, descontoPct: Number(descPadrao) || 0, saldoBling: it.saldoBling }]));
       setSku('');
       if (d.avisos?.length) setErro(d.avisos.join(' '));
     } catch (e: any) { setErro(e?.message || 'SKU não pôde ser adicionado'); }
@@ -455,7 +494,7 @@ function NovaPropostaModal({ onClose, onCriada, inicial }: { onClose: () => void
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 10 }}>
-          {edicao && <label><span style={s.label}>Nº da proposta (Bling)</span><input style={s.input} inputMode="numeric" value={numeroProp} onChange={(e) => setNumeroProp(e.target.value.replace(/\D/g, ''))} /></label>}
+          {edicao && <label><span style={s.label}>Nº no Bling (reenviado ao salvar)</span><input style={s.input} inputMode="numeric" value={numeroProp} onChange={(e) => setNumeroProp(e.target.value.replace(/\D/g, ''))} /></label>}
           <label><span style={s.label}>Data</span><input type="date" style={s.input} value={f.data} onChange={(e) => setF({ ...f, data: e.target.value })} /></label>
           <label><span style={s.label}>Aos cuidados de</span><input style={s.input} value={f.aosCuidadosDe} onChange={(e) => setF({ ...f, aosCuidadosDe: e.target.value })} /></label>
           <label><span style={s.label}>Prazo de entrega</span><input style={s.input} value={f.prazoEntrega} onChange={(e) => setF({ ...f, prazoEntrega: e.target.value })} /></label>
@@ -480,7 +519,7 @@ function NovaPropostaModal({ onClose, onCriada, inicial }: { onClose: () => void
                     const un = r2(i.valorLista * (1 - i.descontoPct / 100));
                     return (
                       <tr key={i.idPeca}>
-                        <td style={s.td}>{i.codigo}</td><td style={s.td}>{i.descricao}</td>
+                        <td style={s.td}>{i.codigo}</td><td style={s.td}>{i.descricao}{i.preCadastro && <span style={{ marginLeft: 6, padding: '1px 7px', borderRadius: 999, fontSize: 10.5, fontWeight: 700, background: '#fef3c7', color: '#92400e' }}>pré-cadastro</span>}</td>
                         <td style={s.td}><input style={{ ...s.input, width: 60 }} inputMode="numeric" value={i.quantidade} onChange={(e) => mudar(idx, 'quantidade', Math.min(i.saldoBling, Math.max(1, Number(e.target.value) || 1)))} /></td>
                         <td style={s.td}><input style={{ ...s.input, width: 100 }} inputMode="decimal" value={i.valorLista} onChange={(e) => mudar(idx, 'valorLista', Number(e.target.value.replace(',', '.')) || 0)} /></td>
                         <td style={s.td}><input style={{ ...s.input, width: 70 }} inputMode="decimal" value={i.descontoPct} onChange={(e) => mudar(idx, 'descontoPct', Math.min(100, Math.max(0, Number(e.target.value.replace(',', '.')) || 0)))} /></td>
@@ -505,6 +544,7 @@ function NovaPropostaModal({ onClose, onCriada, inicial }: { onClose: () => void
         <label><span style={s.label}>Observação interna (só no Bling)</span><textarea style={{ ...s.input, minHeight: 44 }} value={f.observacaoInterna} onChange={(e) => setF({ ...f, observacaoInterna: e.target.value })} /></label>
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'center' }}>
+          {!edicao && itens.some((i) => i.preCadastro) && <span style={{ fontSize: 12, color: '#92400e', fontWeight: 600 }}>Há peça em pré-cadastro: a proposta será criada só aqui (pendente de envio ao Bling), com o número já reservado.</span>}
           <span style={{ fontSize: 12, color: 'var(--ink-muted)' }}>{edicao ? 'Ao salvar, a edição também é gravada no Bling.' : 'Ao salvar, a proposta é criada no Bling como Rascunho e recebe o número do Bling.'}</span>
           <button style={s.btn} onClick={onClose}>Cancelar</button>
           <button style={{ ...s.btn, ...s.btnPri }} disabled={salvando} onClick={salvar}>{salvando ? 'Salvando…' : edicao ? 'Salvar alterações' : 'Salvar proposta'}</button>
