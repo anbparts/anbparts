@@ -44,11 +44,26 @@ async function chamar(path: string, init?: RequestInit) {
   if (!resp.ok || d?.ok === false) throw new Error(d?.error || `Erro ${resp.status}`);
   return d;
 }
-async function abrirPdf(id: string) {
-  const resp = await fetch(`${API}/propostas-comerciais/${id}/pdf`, { credentials: 'include' });
+// Nome: "Proposta Comercial - DDMMAA - Nº da proposta - Primeiro nome do cliente.pdf" (data = data da proposta)
+function nomeArquivoProposta(p: any) {
+  const [a, m, d] = String(p?.data || '').slice(0, 10).split('-');
+  const ddmmaa = d && m && a ? `${d}${m}${a.slice(2)}` : '';
+  const primeiro = String(p?.clienteNome || '').trim().split(/\s+/)[0] || '';
+  const partes = ['Proposta Comercial', ddmmaa, p?.numero != null ? String(p.numero) : '', primeiro].filter(Boolean);
+  return `${partes.join(' - ').replace(/[\\/:*?"<>|]/g, '')}.pdf`;
+}
+// Baixa o PDF direto para a pasta Downloads (sem abrir aba)
+async function abrirPdf(p: any) {
+  const resp = await fetch(`${API}/propostas-comerciais/${p.id}/pdf`, { credentials: 'include' });
   if (!resp.ok) { const d = await resp.json().catch(() => ({})); throw new Error(d?.error || `Erro ${resp.status}`); }
   const url = URL.createObjectURL(await resp.blob());
-  if (!window.open(url, '_blank')) { const a = document.createElement('a'); a.href = url; a.download = `proposta-${id}.pdf`; a.click(); }
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = nomeArquivoProposta(p);
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
 type ItemForm = { idPeca: string; codigo: string; produtoId: string; descricao: string; valorLista: number; quantidade: number; descontoPct: number; saldoBling: number };
@@ -168,7 +183,7 @@ export default function PropostasComerciaisPage() {
                 <td style={s.td}>{pill(p.situacao)}</td>
                 <td style={{ ...s.td, whiteSpace: 'nowrap' }}>
                   <span style={{ display: 'inline-flex', gap: 6 }}>
-                    <button style={{ ...s.btn, padding: '5px 10px', fontSize: 12 }} onClick={(e) => { e.stopPropagation(); abrirPdf(p.id).catch((er) => alert(er.message)); }}>PDF</button>
+                    <button style={{ ...s.btn, padding: '5px 10px', fontSize: 12 }} onClick={(e) => { e.stopPropagation(); abrirPdf(p).catch((er) => alert(er.message)); }}>PDF</button>
                     {p.situacao === 'Rascunho' && <button style={{ ...s.btn, padding: '5px 10px', fontSize: 12 }} onClick={(e) => { e.stopPropagation(); editarDaLinha(p.id); }}>Editar</button>}
                     <button style={{ ...s.btn, padding: '5px 10px', fontSize: 12, color: '#991b1b' }} onClick={(e) => { e.stopPropagation(); setExcluindo(p); }}>Excluir</button>
                     {p.situacao === 'Rascunho' && <button style={{ ...s.btn, padding: '5px 10px', fontSize: 12, background: '#166534', color: '#fff', border: '1px solid #166534' }} onClick={(e) => { e.stopPropagation(); aprovarDaLinha(p); }}>Aprovar</button>}
@@ -278,7 +293,7 @@ function DetalheModal({ p, onClose, onSituacao, onCliente, onEditar }: { p: any;
         </label>
         <div style={{ flex: 1 }} />
         <button style={s.btn} onClick={async () => { try { const d = await chamar(`/propostas-comerciais/${p.id}/bling-bruto`); setJsonBling(JSON.stringify(d.bling, null, 2)); } catch (e: any) { alert(e?.message || 'Erro'); } }}>Ver dados do Bling</button>
-        <button style={{ ...s.btn, ...s.btnPri }} onClick={() => abrirPdf(p.id).catch((er) => alert(er.message))}>Gerar PDF</button>
+        <button style={{ ...s.btn, ...s.btnPri }} onClick={() => abrirPdf(p).catch((er) => alert(er.message))}>Gerar PDF</button>
       </div>
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
