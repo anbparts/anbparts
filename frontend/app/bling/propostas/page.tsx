@@ -82,6 +82,7 @@ export default function PropostasComerciaisPage() {
   const [novaAberta, setNovaAberta] = useState(false);
   const [editando, setEditando] = useState<any>(null);
   const [excluindo, setExcluindo] = useState<any>(null);
+  const [copiando, setCopiando] = useState<any>(null);
 
   async function carregar(p = pagina) {
     setCarregando(true);
@@ -123,6 +124,9 @@ export default function PropostasComerciaisPage() {
 
   async function editarDaLinha(id: string) {
     try { setEditando((await chamar(`/propostas-comerciais/${id}`)).proposta); } catch (e: any) { alert(e?.message || 'Erro ao abrir a proposta'); }
+  }
+  async function copiarDaLinha(id: string) {
+    try { setCopiando({ ...(await chamar(`/propostas-comerciais/${id}`)).proposta, copia: true }); } catch (e: any) { alert(e?.message || 'Erro ao abrir a proposta'); }
   }
   async function aprovarDaLinha(p: any) {
     if (!confirm(`Aprovar a proposta Nº ${p.numero ?? ''}? A situação muda de Rascunho para Aprovado no Bling.`)) return;
@@ -185,6 +189,7 @@ export default function PropostasComerciaisPage() {
                   <span style={{ display: 'inline-flex', gap: 6 }}>
                     <button style={{ ...s.btn, padding: '5px 10px', fontSize: 12 }} onClick={(e) => { e.stopPropagation(); abrirPdf(p).catch((er) => alert(er.message)); }}>PDF</button>
                     {p.situacao === 'Rascunho' && <button style={{ ...s.btn, padding: '5px 10px', fontSize: 12 }} onClick={(e) => { e.stopPropagation(); editarDaLinha(p.id); }}>Editar</button>}
+                    <button style={{ ...s.btn, padding: '5px 10px', fontSize: 12 }} title="Cria uma nova proposta já com os itens desta" onClick={(e) => { e.stopPropagation(); copiarDaLinha(p.id); }}>Copiar</button>
                     <button style={{ ...s.btn, padding: '5px 10px', fontSize: 12, color: '#991b1b' }} onClick={(e) => { e.stopPropagation(); setExcluindo(p); }}>Excluir</button>
                     {p.situacao === 'Rascunho' && <button style={{ ...s.btn, padding: '5px 10px', fontSize: 12, background: '#166534', color: '#fff', border: '1px solid #166534' }} onClick={(e) => { e.stopPropagation(); aprovarDaLinha(p); }}>Aprovar</button>}
                   </span>
@@ -204,6 +209,7 @@ export default function PropostasComerciaisPage() {
       )}
 
       {detalhe && <DetalheModal key={detalhe.id} p={detalhe} onClose={() => setDetalhe(null)} onSituacao={mudarSituacao} onCliente={salvarCliente} onEditar={(x: any) => { setDetalhe(null); setEditando(x); }} />}
+      {copiando && <NovaPropostaModal inicial={copiando} onClose={() => setCopiando(null)} onCriada={(r: any) => { setCopiando(null); carregar(1); if (r?.avisos?.length) alert(r.avisos.join('\n')); abrirDetalhe(r.id); }} />}
       {excluindo && <ExcluirModal p={excluindo} onClose={() => setExcluindo(null)} onExcluida={() => { setExcluindo(null); carregar(pagina); }} />}
       {editando && <NovaPropostaModal inicial={editando} onClose={() => setEditando(null)} onCriada={(r: any) => { setEditando(null); carregar(pagina); if (r?.avisos?.length) alert(r.avisos.join('\n')); abrirDetalhe(r.id); }} />}
       {novaAberta && <NovaPropostaModal onClose={() => setNovaAberta(false)} onCriada={(r: any) => { setNovaAberta(false); carregar(1); if (r?.avisos?.length) alert(r.avisos.join('\n')); abrirDetalhe(r.id); }} />}
@@ -330,25 +336,31 @@ function DetalheModal({ p, onClose, onSituacao, onCliente, onEditar }: { p: any;
 
 const baseSkuFront = (v: any) => String(v || '').trim().toUpperCase().replace(/-\d+$/, '');
 function NovaPropostaModal({ onClose, onCriada, inicial }: { onClose: () => void; onCriada: (r: any) => void; inicial?: any }) {
-  const edicao = !!inicial;
+  const copia = !!inicial?.copia;
+  const edicao = !!inicial && !copia;
   const [cliBusca, setCliBusca] = useState('');
   const [cliLista, setCliLista] = useState<any[]>([]);
-  const [cliSel, setCliSel] = useState<{ id: string; nome: string } | null>(inicial && inicial.clienteId ? { id: String(inicial.clienteId), nome: String(inicial.clienteNome || `Contato ${inicial.clienteId}`) } : null);
-  const [cliNome, setCliNome] = useState(inicial && !inicial.clienteId ? String(inicial.clienteNome || '') : '');
+  const [cliSel, setCliSel] = useState<{ id: string; nome: string } | null>(inicial && !copia && inicial.clienteId ? { id: String(inicial.clienteId), nome: String(inicial.clienteNome || `Contato ${inicial.clienteId}`) } : null);
+  const [cliNome, setCliNome] = useState(inicial && !copia && !inicial.clienteId ? String(inicial.clienteNome || '') : '');
   const [sku, setSku] = useState('');
   const [validando, setValidando] = useState(false);
   const [itens, setItens] = useState<ItemForm[]>(inicial ? (inicial.itens || []).map((i: any) => ({
     idPeca: baseSkuFront(i.codigo), codigo: String(i.codigo || ''), produtoId: String(i.produtoId || ''), descricao: String(i.descricao || ''),
     valorLista: Number(i.valorLista) || 0, quantidade: Number(i.quantidade) || 1, descontoPct: Number(i.descontoPct) || 0, saldoBling: 9999,
   })) : []);
-  const [descGeral, setDescGeral] = useState(inicial && inicial.desconto ? String(inicial.desconto) : '');
-  const [outras, setOutras] = useState(inicial && inicial.outrasDespesas ? String(inicial.outrasDespesas) : '');
-  const [frete, setFrete] = useState(inicial && inicial.frete ? String(inicial.frete) : '');
-  const [descPadrao, setDescPadrao] = useState('');
-  const [f, setF] = useState({ data: inicial ? String(inicial.data || '').slice(0, 10) : '', aosCuidadosDe: inicial?.aosCuidadosDe || '', introducao: inicial?.introducao || '', observacoes: inicial ? (inicial.observacoes || '') : OBS_PADRAO, prazoEntrega: inicial?.prazoEntrega || '', observacaoInterna: inicial?.observacaoInterna || '' });
+  const [descGeral, setDescGeral] = useState(inicial && !copia && inicial.desconto ? String(inicial.desconto) : '');
+  const [outras, setOutras] = useState(inicial && !copia && inicial.outrasDespesas ? String(inicial.outrasDespesas) : '');
+  const [frete, setFrete] = useState(inicial && !copia && inicial.frete ? String(inicial.frete) : '');
+  // campo "Desconto %" de cima: se todos os itens ja tem o mesmo desconto, ele comeca mostrando esse valor
+  const [descPadrao, setDescPadrao] = useState(() => {
+    const lista: any[] = inicial && inicial.itens ? inicial.itens : [];
+    const d0 = lista.length ? Number(lista[0].descontoPct) || 0 : 0;
+    return lista.length && d0 > 0 && lista.every((i: any) => (Number(i.descontoPct) || 0) === d0) ? String(d0) : '';
+  });
+  const [f, setF] = useState({ data: inicial && !copia ? String(inicial.data || '').slice(0, 10) : '', aosCuidadosDe: copia ? '' : (inicial?.aosCuidadosDe || ''), introducao: inicial?.introducao || '', observacoes: inicial && !copia ? (inicial.observacoes || '') : OBS_PADRAO, prazoEntrega: inicial?.prazoEntrega || '', observacaoInterna: copia ? '' : (inicial?.observacaoInterna || '') });
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState('');
-  const [numeroProp, setNumeroProp] = useState(inicial && inicial.numero ? String(inicial.numero) : '');
+  const [numeroProp, setNumeroProp] = useState(inicial && !copia && inicial.numero ? String(inicial.numero) : '');
 
   useEffect(() => {
     if (cliBusca.trim().length < 2 || cliSel) { setCliLista([]); return; }
@@ -410,7 +422,7 @@ function NovaPropostaModal({ onClose, onCriada, inicial }: { onClose: () => void
   }
 
   return (
-    <Modal titulo={edicao ? `Editar proposta Nº ${inicial.numero ?? ''} (Rascunho)` : 'Nova proposta comercial'} onClose={onClose} largo>
+    <Modal titulo={edicao ? `Editar proposta Nº ${inicial.numero ?? ''} (Rascunho)` : copia ? `Nova proposta (cópia da Nº ${inicial.numero ?? ''})` : 'Nova proposta comercial'} onClose={onClose} largo>
       <div style={{ display: 'grid', gap: 14 }}>
         <div>
           <span style={s.label}>Cliente</span>
@@ -440,7 +452,7 @@ function NovaPropostaModal({ onClose, onCriada, inicial }: { onClose: () => void
           <label><span style={s.label}>Data</span><input type="date" style={s.input} value={f.data} onChange={(e) => setF({ ...f, data: e.target.value })} /></label>
           <label><span style={s.label}>Aos cuidados de</span><input style={s.input} value={f.aosCuidadosDe} onChange={(e) => setF({ ...f, aosCuidadosDe: e.target.value })} /></label>
           <label><span style={s.label}>Prazo de entrega</span><input style={s.input} value={f.prazoEntrega} onChange={(e) => setF({ ...f, prazoEntrega: e.target.value })} /></label>
-          <label><span style={s.label}>Desconto % padrão (novos itens)</span><input style={s.input} inputMode="decimal" value={descPadrao} onChange={(e) => setDescPadrao(e.target.value.replace(',', '.'))} /></label>
+          <label><span style={s.label}>Desconto % (todos os itens)</span><input style={s.input} inputMode="decimal" value={descPadrao} onChange={(e) => { const v = e.target.value.replace(',', '.'); setDescPadrao(v); const pct = Math.min(100, Math.max(0, Number(v) || 0)); setItens((prev) => prev.map((it) => ({ ...it, descontoPct: pct }))); }} /></label>
         </div>
         <label><span style={s.label}>Introdução</span><textarea style={{ ...s.input, minHeight: 56 }} value={f.introducao} onChange={(e) => setF({ ...f, introducao: e.target.value })} /></label>
 
