@@ -1,7 +1,7 @@
 // Propostas Comerciais (Bling por tras): lista/detalhe locais, sincronizacao, validacao de item, criacao e PDF.
 import { Router } from 'express';
 import {
-  alterarSituacaoProposta, atualizarProposta, enviarPropostaPendente, filaIntegracao, buscarClientes, buscarItensProposta, filtrosItensProposta, criarProposta, definirClienteProposta, excluirProposta, jobPropostas, propostaBrutaDoBling, lerProposta, listarPropostas, sincronizarPropostas, validarItemProposta,
+  alterarSituacaoProposta, atualizarProposta, enviarPropostaPendente, filaIntegracao, buscarClientes, buscarItensProposta, filtrosItensProposta, criarProposta, definirClienteProposta, excluirProposta, jobPropostas, pedidoDaProposta, propostaBrutaDoBling, lerProposta, listarPropostas, sincronizarPropostas, validarItemProposta,
 } from '../lib/propostas-comerciais';
 import { gerarPropostaPdf } from '../lib/proposta-pdf';
 import { prisma } from '../lib/prisma';
@@ -68,7 +68,12 @@ propostasComerciaisRouter.get('/:id', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// POST /propostas-comerciais/:id/enviar-bling — envia ao Bling uma proposta pendente (sem ordem obrigatoria)
+// GET /propostas-comerciais/:id/pedido — dados do pedido de venda (ja importado) ligado a proposta
+propostasComerciaisRouter.get('/:id/pedido', async (req, res, next) => {
+  try { res.json({ ok: true, ...(await pedidoDaProposta(String(req.params.id).replace(/\D/g, ''))) }); } catch (e) { next(e); }
+});
+
+// POST /propostas-comerciais/:id/enviar-bling— envia ao Bling uma proposta pendente (sem ordem obrigatoria)
 propostasComerciaisRouter.post('/:id/enviar-bling', async (req, res) => {
   try { res.json({ ok: true, ...(await enviarPropostaPendente(String(req.params.id).replace(/\D/g, ''), String((req as any).authUser?.username || ''))) }); }
   catch (e: any) { res.status(400).json({ ok: false, error: String(e?.message || e) }); }

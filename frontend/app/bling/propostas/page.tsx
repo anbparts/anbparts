@@ -72,6 +72,7 @@ type ItemForm = { preCadastro?: boolean; idPeca: string; codigo: string; produto
 export default function PropostasComerciaisPage() {
   const isPhone = useIsPhone();
   const [dados, setDados] = useState<any>(null);
+  const [pedidoAberto, setPedidoAberto] = useState<any>(null);
   const [carregando, setCarregando] = useState(true);
   const [busca, setBusca] = useState('');
   const [situacao, setSituacao] = useState('todas');
@@ -236,7 +237,7 @@ export default function PropostasComerciaisPage() {
                   {pill(p.situacao)}
                   {selo(p)}
                 </td>
-                <td style={{ ...s.td, fontWeight: 700 }}>{p.situacao === 'Concluído' && p.pedidoNumero ? p.pedidoNumero : ''}</td>
+                <td style={{ ...s.td, fontWeight: 700 }} onClick={(e) => e.stopPropagation()}>{p.situacao === 'Concluído' && p.pedidoNumero ? <a href="#" style={{ color: '#1e40af', textDecoration: 'underline' }} title="Ver dados do pedido" onClick={(e) => { e.preventDefault(); setPedidoAberto(p); }}>{p.pedidoNumero}</a> : ''}</td>
                 <td style={{ ...s.td, whiteSpace: 'nowrap' }}>
                   <span style={{ display: 'inline-flex', gap: 6 }}>{acoes(p)}</span>
                 </td>
@@ -258,7 +259,7 @@ export default function PropostasComerciaisPage() {
               </div>
               <div style={{ fontSize: 14, marginTop: 2 }}>{p.clienteNome || '—'}</div>
               <div style={{ fontSize: 12.5, color: 'var(--ink-muted)', marginTop: 2 }}>{fmtData(p.data)} · {p.qtdItens} {p.qtdItens === 1 ? 'item' : 'itens'}{p.blingNumero ? ` · Bling Nº ${p.blingNumero}` : ''}</div>
-              <div style={{ marginTop: 8 }}>{pill(p.situacao)}{selo(p)}{p.situacao === 'Concluído' && p.pedidoNumero ? <span style={{ fontSize: 13, marginLeft: 8 }}>Pedido Bling <strong>{p.pedidoNumero}</strong></span> : null}</div>
+              <div style={{ marginTop: 8 }}>{pill(p.situacao)}{selo(p)}{p.situacao === 'Concluído' && p.pedidoNumero ? <span style={{ fontSize: 13, marginLeft: 8 }} onClick={(e) => e.stopPropagation()}>Pedido Bling <a href="#" style={{ color: '#1e40af', textDecoration: 'underline', fontWeight: 700 }} onClick={(e) => { e.preventDefault(); setPedidoAberto(p); }}>{p.pedidoNumero}</a></span> : null}</div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }} onClick={(e) => e.stopPropagation()}>{acoes(p)}</div>
             </div>
           ))}
@@ -274,6 +275,7 @@ export default function PropostasComerciaisPage() {
       )}
 
       {detalhe && <DetalheModal key={detalhe.id} p={detalhe} onClose={() => setDetalhe(null)} onSituacao={mudarSituacao} onCliente={salvarCliente} onEditar={(x: any) => { setDetalhe(null); setEditando(x); }} />}
+      {pedidoAberto && <PedidoModal p={pedidoAberto} onClose={() => setPedidoAberto(null)} />}
       {copiando && <NovaPropostaModal inicial={copiando} onClose={() => setCopiando(null)} onCriada={(r: any) => { setCopiando(null); aposSalvar(r); }} />}
       {excluindo && <ExcluirModal p={excluindo} onClose={() => setExcluindo(null)} onExcluida={() => { setExcluindo(null); carregar(pagina); }} />}
       {editando && <NovaPropostaModal inicial={editando} onClose={() => setEditando(null)} onCriada={(r: any) => { setEditando(null); aposSalvar(r); }} />}
@@ -294,6 +296,71 @@ function Modal({ titulo, onClose, children, largo }: { titulo: string; onClose: 
         {children}
       </div>
     </div>
+  );
+}
+
+// Dados do pedido de venda (do Bling, ja importado no nosso sistema) ligado a proposta
+function PedidoModal({ p, onClose }: { p: any; onClose: () => void }) {
+  const isPhone = useIsPhone();
+  const [r, setR] = useState<any>(null);
+  const [erro, setErro] = useState('');
+  useEffect(() => {
+    let vivo = true;
+    chamar(`/propostas-comerciais/${p.id}/pedido`).then((d) => { if (vivo) setR(d); }).catch((e) => { if (vivo) setErro(e?.message || 'Erro ao carregar o pedido'); });
+    return () => { vivo = false; };
+  }, [p.id]);
+  const ped = r?.pedido;
+  const cli = ped?.cliente;
+  const campo = (rotulo: string, valor: any) => (valor || valor === 0) ? <div style={{ fontSize: 13 }}><span style={{ color: 'var(--ink-muted)' }}>{rotulo}: </span><strong>{valor}</strong></div> : null;
+  return (
+    <Modal titulo={`Pedido Bling Nº ${p.pedidoNumero || ''} · Proposta Nº ${p.numero ?? ''}`} onClose={onClose} largo>
+      {!r && !erro && <div style={{ fontSize: 14 }}>Carregando…</div>}
+      {erro && <div style={{ color: '#991b1b', fontSize: 13 }}>{erro}</div>}
+      {r && !ped && <div style={{ fontSize: 14 }}>O pedido {r.pedidoNumero || p.pedidoNumero} ainda não foi importado para o sistema. Importe-o em Pedidos - Vendas (sincronizar por número) e abra de novo.</div>}
+      {ped && (
+        <div style={{ display: 'grid', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '1fr 1fr 1fr', gap: 6 }}>
+            {campo('Pedido', ped.numero)}
+            {campo('Data', fmtData(ped.data))}
+            {campo('Situação', ped.cancelado ? `${ped.situacao || ''} (cancelado)` : ped.situacao)}
+            {campo('Canal', ped.canal)}
+            {campo('Nº na loja', ped.numeroLoja)}
+            {campo('Comissão/taxa', ped.taxaComissao ? brl(ped.taxaComissao) : '')}
+          </div>
+          <div style={{ ...s.card, padding: 10, display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '1fr 1fr', gap: 4 }}>
+            {campo('Cliente', ped.clienteNome || cli?.nome)}
+            {campo('Documento', cli?.documento)}
+            {campo('E-mail', cli?.email)}
+            {campo('Telefone', cli?.celular || cli?.telefone)}
+            {campo('Cidade/UF', [cli?.cidade, cli?.uf].filter(Boolean).join(' / '))}
+            {campo('Entrega', [ped.entrega?.endereco, ped.entrega?.cidade, ped.entrega?.uf, ped.entrega?.cep].filter(Boolean).join(' · '))}
+          </div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead><tr>{['SKU', 'Descrição', 'Qtd', 'Valor un.', 'Total'].map((h) => <th key={h} style={s.th}>{h}</th>)}</tr></thead>
+              <tbody>
+                {(ped.itens || []).map((i: any, k: number) => (
+                  <tr key={k}>
+                    <td style={s.td}>{i.sku || '—'}</td>
+                    <td style={s.td}>{i.descricao || '—'}</td>
+                    <td style={s.td}>{i.quantidade}</td>
+                    <td style={s.td}>{brl(i.valor)}</td>
+                    <td style={{ ...s.td, fontWeight: 700 }}>{brl(i.total)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', justifyContent: 'flex-end', fontSize: 13 }}>
+            <span>Produtos: <strong>{brl(ped.totalProdutos)}</strong></span>
+            {ped.desconto ? <span>Desconto: <strong>{brl(ped.desconto)}</strong></span> : null}
+            {ped.frete ? <span>Frete: <strong>{brl(ped.frete)}</strong></span> : null}
+            <span style={{ fontSize: 15 }}>Total: <strong>{brl(ped.total)}</strong></span>
+          </div>
+          {ped.observacoes && <div style={{ fontSize: 13, background: 'var(--gray-50)', padding: 10, borderRadius: 8, whiteSpace: 'pre-wrap' }}>{ped.observacoes}</div>}
+        </div>
+      )}
+    </Modal>
   );
 }
 

@@ -263,6 +263,22 @@ export async function vincularPropostaAoPedido(p: { id: string; numero: string; 
   return { propostaId: achada.id, propostaNumero: achada.numero };
 }
 
+// Dados do pedido (ja importado aqui) ligado a proposta: acha por pedidoId ou, se so o numero foi gravado (UPDATE manual), pelo numero do pedido.
+export async function pedidoDaProposta(id: string) {
+  await garantirTabelasPropostas();
+  const [p] = await prisma.$queryRawUnsafe<any[]>(`SELECT "pedidoId"::text AS "pedidoId", "pedidoNumero" FROM "PropostaComercial" WHERE "id" = $1::bigint`, id);
+  if (!p || (!p.pedidoId && !txt(p.pedidoNumero))) return { vinculado: false as const };
+  let pedidoId = txt(p.pedidoId);
+  if (!pedidoId) {
+    const [b] = await prisma.$queryRawUnsafe<any[]>(`SELECT MIN("id")::text AS id FROM "BlingPedido" WHERE "numero" = $1`, txt(p.pedidoNumero));
+    pedidoId = txt(b?.id);
+    // guarda o id para as proximas consultas
+    if (pedidoId) await prisma.$executeRawUnsafe(`UPDATE "PropostaComercial" SET "pedidoId" = $2::bigint WHERE "id" = $1::bigint`, id, pedidoId);
+  }
+  const pedido = pedidoId ? await (await import('./bling-pedidos')).detalhePedido(pedidoId) : null;
+  return { vinculado: true as const, pedidoNumero: txt(p.pedidoNumero), pedido };
+}
+
 // ───────────── Item: valida na NOSSA base e depois no Bling (considera variacoes de SKU: SKU, SKU-1, SKU-2...) ─────────────
 const baseSku = (v: any) => txt(v).toUpperCase().replace(/-\d+$/, '');
 
