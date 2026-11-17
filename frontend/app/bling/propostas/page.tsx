@@ -375,6 +375,115 @@ function DetalheModal({ p, onClose, onSituacao, onCliente, onEditar }: { p: any;
 
 // data de hoje (fuso de Sao Paulo) no formato do campo de data: AAAA-MM-DD
 const hojeSP = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+function BuscaPecasModal({ onClose, onAdicionar, jaNaProposta }: { onClose: () => void; onAdicionar: (sku: string) => Promise<boolean>; jaNaProposta: string[] }) {
+  const [q, setQ] = useState('');
+  const [origem, setOrigem] = useState('');
+  const [marca, setMarca] = useState('');
+  const [modelo, setModelo] = useState('');
+  const [ano, setAno] = useState('');
+  const [precoMin, setPrecoMin] = useState('');
+  const [precoMax, setPrecoMax] = useState('');
+  const [pagina, setPagina] = useState(1);
+  const [res, setRes] = useState<any>({ itens: [], total: 0, limite: 30 });
+  const [filtros, setFiltros] = useState<any>({ marcas: [], modelos: [], anos: [] });
+  const [carregando, setCarregando] = useState(false);
+  const [marcados, setMarcados] = useState<string[]>([]);
+  const [adicionando, setAdicionando] = useState(false);
+  const [ja, setJa] = useState<string[]>(jaNaProposta);
+
+  // opcoes dos filtros em cascata: marca -> modelo -> ano (so o que tem peca)
+  useEffect(() => {
+    chamar(`/propostas-comerciais/item/filtros?${new URLSearchParams({ marca, modelo, origem }).toString()}`).then((d) => setFiltros(d)).catch(() => undefined);
+  }, [marca, modelo, origem]);
+
+  useEffect(() => {
+    setCarregando(true);
+    const h = setTimeout(() => {
+      const qs = new URLSearchParams({ q, origem, marca, modelo, ano, precoMin, precoMax, pagina: String(pagina), limite: '30' });
+      chamar(`/propostas-comerciais/item/buscar?${qs.toString()}`).then((d) => { setRes(d); setCarregando(false); }).catch((e) => { setCarregando(false); alert(e?.message || 'Erro na busca'); });
+    }, 300);
+    return () => clearTimeout(h);
+  }, [q, origem, marca, modelo, ano, precoMin, precoMax, pagina]);
+
+  const mudaFiltro = (fn: () => void) => { fn(); setPagina(1); };
+  const alternar = (sku: string) => setMarcados((prev) => (prev.indexOf(sku) >= 0 ? prev.filter((x) => x !== sku) : prev.concat([sku])));
+  async function adicionarMarcados() {
+    setAdicionando(true);
+    const feitos: string[] = [];
+    for (const sku of marcados) { if (await onAdicionar(sku)) feitos.push(sku.toUpperCase()); }
+    setJa((prev) => prev.concat(feitos));
+    setMarcados((prev) => prev.filter((x) => feitos.indexOf(x.toUpperCase()) < 0));
+    setAdicionando(false);
+  }
+  const totalPag = Math.max(1, Math.ceil((res.total || 0) / (res.limite || 30)));
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,.55)', zIndex: 400, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 16, overflowY: 'auto' }} onClick={onClose}>
+      <div style={{ ...s.card, width: '100%', maxWidth: 1000, padding: 16, marginTop: 10 }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <div style={{ fontSize: 16, fontWeight: 800 }}>Buscar peças</div>
+          <button style={s.btn} onClick={onClose}>Fechar</button>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 8, marginBottom: 10 }}>
+          <input style={{ ...s.input, gridColumn: 'span 2' }} placeholder="SKU, descrição, marca ou modelo" value={q} onChange={(e) => mudaFiltro(() => setQ(e.target.value))} autoFocus />
+          <select style={s.input} value={origem} onChange={(e) => mudaFiltro(() => { setOrigem(e.target.value); setMarca(''); setModelo(''); setAno(''); })}>
+            <option value="">Estoque e pré-cadastro</option><option value="estoque">Só em estoque</option><option value="pre_cadastro">Só pré-cadastro</option>
+          </select>
+          <select style={s.input} value={marca} onChange={(e) => mudaFiltro(() => { setMarca(e.target.value); setModelo(''); setAno(''); })}>
+            <option value="">Todas as marcas</option>
+            {(filtros.marcas || []).map((m: any) => <option key={m.marca} value={m.marca}>{m.marca} ({m.n})</option>)}
+          </select>
+          <select style={s.input} value={modelo} disabled={!marca} onChange={(e) => mudaFiltro(() => { setModelo(e.target.value); setAno(''); })}>
+            <option value="">{marca ? 'Todos os modelos' : 'Modelo (escolha a marca)'}</option>
+            {(filtros.modelos || []).map((m: any) => <option key={m.modelo} value={m.modelo}>{m.modelo} ({m.n})</option>)}
+          </select>
+          <select style={s.input} value={ano} disabled={!modelo} onChange={(e) => mudaFiltro(() => setAno(e.target.value))}>
+            <option value="">{modelo ? 'Todos os anos' : 'Ano (escolha o modelo)'}</option>
+            {(filtros.anos || []).map((a: any) => <option key={String(a.ano)} value={a.ano ?? ''}>{a.ano ?? 's/ ano'} ({a.n})</option>)}
+          </select>
+          <input style={s.input} inputMode="decimal" placeholder="Preço mín." value={precoMin} onChange={(e) => mudaFiltro(() => setPrecoMin(e.target.value.replace(',', '.')))} />
+          <input style={s.input} inputMode="decimal" placeholder="Preço máx." value={precoMax} onChange={(e) => mudaFiltro(() => setPrecoMax(e.target.value.replace(',', '.')))} />
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8, fontSize: 12.5, color: 'var(--ink-soft)' }}>
+          <span>{carregando ? 'Buscando…' : `${res.total} peça(s)`}</span>
+          <div style={{ flex: 1 }} />
+          <button style={s.btn} onClick={() => { setQ(''); setOrigem(''); setMarca(''); setModelo(''); setAno(''); setPrecoMin(''); setPrecoMax(''); setPagina(1); }}>Limpar filtros</button>
+          <button style={{ ...s.btn, ...s.btnPri }} disabled={!marcados.length || adicionando} onClick={adicionarMarcados}>{adicionando ? 'Adicionando…' : `Adicionar selecionadas (${marcados.length})`}</button>
+        </div>
+        <div style={{ overflowX: 'auto', maxHeight: '52vh', overflowY: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead><tr>{['', 'SKU', 'Descrição', 'Moto', 'Origem', 'Preço', ''].map((h, i) => <th key={i} style={s.th}>{h}</th>)}</tr></thead>
+            <tbody>
+              {(res.itens || []).map((x: any) => {
+                const naProposta = ja.indexOf(String(x.sku).toUpperCase()) >= 0;
+                return (
+                  <tr key={x.sku} style={{ opacity: naProposta ? 0.5 : 1 }}>
+                    <td style={s.td}><input type="checkbox" disabled={naProposta} checked={marcados.indexOf(x.sku) >= 0} onChange={() => alternar(x.sku)} /></td>
+                    <td style={{ ...s.td, fontWeight: 700 }}>{x.sku}</td>
+                    <td style={s.td}>{x.descricao}</td>
+                    <td style={s.td}>{x.marca} {x.modelo}{x.ano ? ` ${x.ano}` : ''}</td>
+                    <td style={s.td}>{x.origem === 'pre_cadastro' ? <span style={{ padding: '1px 7px', borderRadius: 999, fontSize: 10.5, fontWeight: 700, background: '#fef3c7', color: '#92400e' }}>pré-cadastro</span> : 'Estoque'}</td>
+                    <td style={{ ...s.td, fontWeight: 700 }}>{brl(x.preco)}</td>
+                    <td style={s.td}>{naProposta ? <span style={{ fontSize: 12 }}>na proposta</span> : <button style={{ ...s.btn, padding: '4px 10px', fontSize: 12 }} disabled={adicionando} onClick={async () => { setAdicionando(true); if (await onAdicionar(x.sku)) setJa((prev) => prev.concat([String(x.sku).toUpperCase()])); setAdicionando(false); }}>Adicionar</button>}</td>
+                  </tr>
+                );
+              })}
+              {!carregando && !(res.itens || []).length && <tr><td style={s.td} colSpan={7}>Nenhuma peça com esses filtros.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+        {totalPag > 1 && (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'center', marginTop: 8 }}>
+            <button style={s.btn} disabled={pagina <= 1} onClick={() => setPagina(pagina - 1)}>←</button>
+            <span style={{ fontSize: 13 }}>Página {pagina} de {totalPag}</span>
+            <button style={s.btn} disabled={pagina >= totalPag} onClick={() => setPagina(pagina + 1)}>→</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 const baseSkuFront = (v: any) => String(v || '').trim().toUpperCase().replace(/-\d+$/, '');
 function NovaPropostaModal({ onClose, onCriada, inicial }: { onClose: () => void; onCriada: (r: any) => void; inicial?: any }) {
   const copia = !!inicial?.copia;
@@ -409,20 +518,49 @@ function NovaPropostaModal({ onClose, onCriada, inicial }: { onClose: () => void
     return () => clearTimeout(t);
   }, [cliBusca, cliSel]);
 
-  async function adicionarItem() {
-    const cod = sku.trim();
-    if (!cod) return;
-    if (itens.some((i) => i.idPeca.toUpperCase() === cod.toUpperCase().replace(/-\d+$/, ''))) { setErro(`SKU ${cod} já está na proposta.`); return; }
+  const itensRef = useRef<ItemForm[]>(itens);
+  itensRef.current = itens;
+  const descPadraoRef = useRef(descPadrao);
+  descPadraoRef.current = descPadrao;
+
+  // Valida o SKU no servidor (estoque na base + Bling, ou limite do pre-cadastro) e inclui na proposta.
+  async function adicionarPorSku(codEntrada: string): Promise<boolean> {
+    const cod = String(codEntrada || '').trim();
+    if (!cod) return false;
+    const base = cod.toUpperCase().replace(/-\d+$/, '');
+    if (itensRef.current.some((i) => i.idPeca.toUpperCase() === base)) { setErro(`SKU ${cod} já está na proposta.`); return false; }
     setValidando(true); setErro('');
     try {
       const d = await chamar(`/propostas-comerciais/item/validar?sku=${encodeURIComponent(cod)}`);
       const it = d.item;
-      setItens((prev) => prev.concat([{ preCadastro: !!it.preCadastro, idPeca: it.idPeca, codigo: it.codigo, produtoId: it.produtoId, descricao: it.descricao, valorLista: it.valorLista, quantidade: 1, descontoPct: Number(descPadrao) || 0, saldoBling: it.saldoBling }]));
-      setSku('');
+      const novo: ItemForm = { preCadastro: !!it.preCadastro, idPeca: it.idPeca, codigo: it.codigo, produtoId: it.produtoId, descricao: it.descricao, valorLista: it.valorLista, quantidade: 1, descontoPct: Number(descPadraoRef.current) || 0, saldoBling: it.saldoBling };
+      itensRef.current = itensRef.current.concat([novo]);
+      setItens((prev) => prev.concat([novo]));
       if (d.avisos?.length) setErro(d.avisos.join(' '));
+      setValidando(false);
+      return true;
     } catch (e: any) { setErro(e?.message || 'SKU não pôde ser adicionado'); }
     setValidando(false);
+    return false;
   }
+  async function adicionarItem() {
+    const cod = sku.trim();
+    if (!cod) return;
+    if (await adicionarPorSku(cod)) { setSku(''); setSugestoes([]); }
+  }
+
+  // Ajuda de pesquisa: ao digitar SKU ou descricao, lista sugestoes (estoque + pre-cadastro)
+  const [sugestoes, setSugestoes] = useState<any[]>([]);
+  const [focoSku, setFocoSku] = useState(false);
+  const [buscaAberta, setBuscaAberta] = useState(false);
+  useEffect(() => {
+    const t = sku.trim();
+    if (t.length < 2) { setSugestoes([]); return; }
+    const h = setTimeout(() => {
+      chamar(`/propostas-comerciais/item/buscar?q=${encodeURIComponent(t)}&limite=8`).then((d) => setSugestoes(d.itens || [])).catch(() => setSugestoes([]));
+    }, 250);
+    return () => clearTimeout(h);
+  }, [sku]);
   // Edicao: refaz o preco de lista de cada item com o preco atual da nossa base (util se o Bling gravou o preco errado)
   async function precosDaBase() {
     setErro(''); setValidando(true);
@@ -503,11 +641,30 @@ function NovaPropostaModal({ onClose, onCriada, inicial }: { onClose: () => void
         <label><span style={s.label}>Introdução</span><textarea style={{ ...s.input, minHeight: 56 }} value={f.introducao} onChange={(e) => setF({ ...f, introducao: e.target.value })} /></label>
 
         <div>
-          <span style={s.label}>Itens (SKU da nossa base — o estoque é conferido no Bling)</span>
+          <span style={s.label}>Itens (SKU ou descrição) — peça em estoque tem o saldo conferido no Bling; peça em pré-cadastro respeita o limite do pré-cadastro</span>
           <div style={{ display: 'flex', gap: 8 }}>
-            <input style={s.input} placeholder="Ex.: HD04_0147" value={sku} onChange={(e) => setSku(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') adicionarItem(); }} />
+            <div style={{ position: 'relative', flex: 1 }}>
+              <input style={s.input} placeholder="Digite o SKU ou parte da descrição (ex.: HD04_0147 ou embreagem fat boy)" value={sku}
+                onFocus={() => setFocoSku(true)} onBlur={() => setTimeout(() => setFocoSku(false), 200)}
+                onChange={(e) => setSku(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') adicionarItem(); if (e.key === 'Escape') setSugestoes([]); }} />
+              {focoSku && sugestoes.length > 0 && (
+                <div style={{ ...s.card, position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50, maxHeight: 280, overflowY: 'auto', boxShadow: '0 8px 24px rgba(0,0,0,.12)', marginTop: 4 }}>
+                  {sugestoes.map((x: any) => (
+                    <div key={x.sku} style={{ padding: '7px 12px', cursor: 'pointer', borderBottom: '1px solid var(--border)', fontSize: 12.5, display: 'flex', gap: 8, alignItems: 'baseline' }}
+                      onMouseDown={(e) => { e.preventDefault(); setSku(''); setSugestoes([]); adicionarPorSku(x.sku); }}>
+                      <strong style={{ whiteSpace: 'nowrap' }}>{x.sku}</strong>
+                      <span style={{ flex: 1 }}>{x.descricao} <span style={{ color: 'var(--ink-muted)' }}>· {x.marca} {x.modelo}{x.ano ? ` ${x.ano}` : ''}</span></span>
+                      {x.origem === 'pre_cadastro' && <span style={{ padding: '1px 7px', borderRadius: 999, fontSize: 10.5, fontWeight: 700, background: '#fef3c7', color: '#92400e', whiteSpace: 'nowrap' }}>pré-cadastro</span>}
+                      <span style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{brl(x.preco)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button style={s.btn} title="Abrir a busca com filtros (marca, modelo, ano...)" onClick={() => setBuscaAberta(true)}>🔍 Buscar peças</button>
             <button style={{ ...s.btn, ...s.btnPri }} disabled={validando} onClick={adicionarItem}>{validando ? 'Conferindo…' : 'Adicionar'}</button>
           </div>
+          {buscaAberta && <BuscaPecasModal jaNaProposta={itens.map((i) => i.idPeca.toUpperCase())} onAdicionar={adicionarPorSku} onClose={() => setBuscaAberta(false)} />}
           {erro && <div style={{ color: '#991b1b', fontSize: 12.5, marginTop: 6 }}>{erro}</div>}
           {itens.length > 0 && <button style={{ ...s.btn, marginTop: 8 }} disabled={validando} onClick={precosDaBase}>Usar preços da base nos itens</button>}
           {itens.length > 0 && (

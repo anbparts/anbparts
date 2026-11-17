@@ -246,13 +246,13 @@ export async function validarItemProposta(skuEntrada: string) {
   if (!peca) {
     // Peca ainda em pre-cadastro (nao esta no estoque nem no Bling): entra na proposta, mas a proposta fica so aqui, pendente de envio ao Bling.
     const [pre] = await prisma.$queryRawUnsafe<any[]>(
-      `SELECT "idPeca","descricao","precoVenda"::float AS preco,("fotoCapa" IS NOT NULL AND "fotoCapa" <> '') AS "temFoto","sucata","pecaRestrita" FROM "CadastroPeca" WHERE UPPER("idPeca") = $1 AND "status" = 'pre_cadastro'`, sku).catch(() => [] as any[]);
+      `SELECT "idPeca","descricao","precoVenda"::float AS preco,"estoque",("fotoCapa" IS NOT NULL AND "fotoCapa" <> '') AS "temFoto","sucata","pecaRestrita" FROM "CadastroPeca" WHERE UPPER("idPeca") = $1 AND "status" = 'pre_cadastro'`, sku).catch(() => [] as any[]);
     if (pre) {
       if (pre.sucata || pre.pecaRestrita) return { ok: false as const, erro: `${sku} e sucata/peca restrita (nao entra em proposta).` };
       return {
         ok: true as const,
-        item: { idPeca: txt(pre.idPeca), codigo: txt(pre.idPeca), produtoId: '', descricao: txt(pre.descricao), unidade: 'UN', valorLista: r2(num(pre.preco)), saldoBling: 1, temFoto: !!pre.temFoto, preCadastro: true },
-        avisos: ['Peca em pre-cadastro: a proposta sera criada so aqui e ficara pendente de envio ao Bling.'].concat(num(pre.preco) > 0 ? [] : ['Peca sem preco: informe o valor.']),
+        item: { idPeca: txt(pre.idPeca), codigo: txt(pre.idPeca), produtoId: '', descricao: txt(pre.descricao), unidade: 'UN', valorLista: r2(num(pre.preco)), saldoBling: Math.max(1, Math.floor(num(pre.estoque)) || 1), temFoto: !!pre.temFoto, preCadastro: true },
+        avisos: [`Peca em pre-cadastro (limite ${Math.max(1, Math.floor(num(pre.estoque)) || 1)} un.): a proposta sera criada so aqui e ficara pendente de envio ao Bling.`].concat(num(pre.preco) > 0 ? [] : ['Peca sem preco: informe o valor.']),
       };
     }
     return { ok: false as const, erro: `SKU ${sku} nao existe na base.` };
@@ -284,6 +284,51 @@ export async function validarItemProposta(skuEntrada: string) {
     },
     avisos,
   };
+}
+
+// ───────────── Busca de pecas para a proposta (estoque + pre-cadastro) ─────────────
+const BASE_ITENS_SQL = `(
+  SELECT p."idPeca" AS sku, p."descricao", p."precoML"::float AS preco, 'estoque' AS origem, 1 AS limite, m."marca", m."modelo", m."ano"
+    FROM "Peca" p JOIN "Moto" m ON m."id" = p."motoId"
+   WHERE p."disponivel" = true AND p."emPrejuizo" = false AND p."sucata" = false AND p."dataVenda" IS NULL
+  UNION ALL
+  SELECT c."idPeca" AS sku, c."descricao", c."precoVenda"::float AS preco, 'pre_cadastro' AS origem, GREATEST(c."estoque",1) AS limite, m."marca", m."modelo", m."ano"
+    FROM "CadastroPeca" c JOIN "Moto" m ON m."id" = c."motoId"
+   WHERE c."status" = 'pre_cadastro' AND c."sucata" = false AND c."pecaRestrita" = false
+) t`;
+
+export async function buscarItensProposta(f: { q?: string; marca?: string; modelo?: string; ano?: string; origem?: string; precoMin?: number; precoMax?: number; pagina?: number; limite?: number }) {
+  const cond: string[] = []; const par: any[] = [];
+  const add = (v: any) => { par.push(v); return `$${par.length}`; };
+  // cada palavra digitada precisa aparecer no SKU, na descricao, no modelo ou na marca
+  for (const w of txt(f.q).split(/\s+/).filter(Boolean).slice(0, 6)) {
+    const p = add(`%${w}%`);
+    cond.push(`(t.sku ILIKE ${p} OR t."descricao" ILIKE ${p} OR t."modelo" ILIKE ${p} OR t."marca" ILIKE ${p})`);
+  }
+  if (txt(f.marca)) cond.push(`t."marca" = ${add(txt(f.marca))}`);
+  if (txt(f.modelo)) cond.push(`t."modelo" = ${add(txt(f.modelo))}`);
+  if (txt(f.ano) && Number(f.ano)) cond.push(`t."ano" = ${add(Number(f.ano))}`);
+  if (f.origem === 'estoque' || f.origem === 'pre_cadastro') cond.push(`t.origem = ${add(f.origem)}`);
+  if (num(f.precoMin) > 0) cond.push(`t.preco >= ${add(num(f.precoMin))}`);
+  if (num(f.precoMax) > 0) cond.push(`t.preco <= ${add(num(f.precoMax))}`);
+  const where = cond.length ? `WHERE ${cond.join(' AND ')}` : '';
+  const limite = Math.min(100, Math.max(1, Math.floor(f.limite || 30)));
+  const pagina = Math.max(1, Math.floor(f.pagina || 1));
+  const [tot] = await prisma.$queryRawUnsafe<any[]>(`SELECT COUNT(*)::int AS n FROM ${BASE_ITENS_SQL} ${where}`, ...par);
+  const pExato = add(txt(f.q));
+  const itens = await prisma.$queryRawUnsafe<any[]>(
+    `SELECT t.sku, t."descricao", t.preco, t.origem, t.limite, t."marca", t."modelo", t."ano" FROM ${BASE_ITENS_SQL} ${where}
+      ORDER BY (CASE WHEN UPPER(t.sku) = UPPER(${pExato}) THEN 0 ELSE 1 END), t."marca", t."modelo", t.sku OFFSET ${(pagina - 1) * limite} LIMIT ${limite}`, ...par);
+  return { itens, total: Number(tot?.n || 0), pagina, limite };
+}
+
+// Filtros inteligentes: marcas -> modelos da marca -> anos do modelo (so o que tem peca elegivel), com contagem.
+export async function filtrosItensProposta(f: { marca?: string; modelo?: string; origem?: string }) {
+  const origemSql = f.origem === 'estoque' || f.origem === 'pre_cadastro' ? ` AND t.origem = '${f.origem}'` : '';
+  const marcas = await prisma.$queryRawUnsafe<any[]>(`SELECT t."marca", COUNT(*)::int AS n FROM ${BASE_ITENS_SQL} WHERE true${origemSql} GROUP BY 1 ORDER BY 1`);
+  const modelos = txt(f.marca) ? await prisma.$queryRawUnsafe<any[]>(`SELECT t."modelo", COUNT(*)::int AS n FROM ${BASE_ITENS_SQL} WHERE t."marca" = $1${origemSql} GROUP BY 1 ORDER BY 1`, txt(f.marca)) : [];
+  const anos = txt(f.marca) && txt(f.modelo) ? await prisma.$queryRawUnsafe<any[]>(`SELECT t."ano", COUNT(*)::int AS n FROM ${BASE_ITENS_SQL} WHERE t."marca" = $1 AND t."modelo" = $2${origemSql} GROUP BY 1 ORDER BY 1 DESC`, txt(f.marca), txt(f.modelo)) : [];
+  return { marcas, modelos, anos };
 }
 
 // ───────────── Cliente: busca na base interna ─────────────
@@ -333,7 +378,7 @@ async function validarItensProposta(itens: NovaProposta['itens']): Promise<ItemV
     const v = await validarItemProposta(sku);
     if (!v.ok) throw new Error(v.erro);
     const qtd = Math.max(1, num(it.quantidade) || 1);
-    if (qtd > v.item.saldoBling) throw new Error(`${sku}: quantidade ${qtd} maior que o saldo do Bling (${v.item.saldoBling}).`);
+    if (qtd > v.item.saldoBling) throw new Error(v.item.preCadastro ? `${sku}: quantidade ${qtd} maior que o limite do pre-cadastro (${v.item.saldoBling}).` : `${sku}: quantidade ${qtd} maior que o saldo do Bling (${v.item.saldoBling}).`);
     const lista = num(it.valorLista) > 0 ? num(it.valorLista) : v.item.valorLista;
     if (!(lista > 0)) throw new Error(`${sku}: informe o valor da peca.`);
     out.push({ sku, item: v.item, qtd, lista, pct: Math.min(100, Math.max(0, num(it.descontoPct))), preCadastro: !!v.item.preCadastro });

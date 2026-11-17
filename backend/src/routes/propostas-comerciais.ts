@@ -1,7 +1,7 @@
 // Propostas Comerciais (Bling por tras): lista/detalhe locais, sincronizacao, validacao de item, criacao e PDF.
 import { Router } from 'express';
 import {
-  alterarSituacaoProposta, atualizarProposta, enviarPropostaPendente, filaIntegracao, buscarClientes, criarProposta, definirClienteProposta, excluirProposta, jobPropostas, propostaBrutaDoBling, lerProposta, listarPropostas, sincronizarPropostas, validarItemProposta,
+  alterarSituacaoProposta, atualizarProposta, enviarPropostaPendente, filaIntegracao, buscarClientes, buscarItensProposta, filtrosItensProposta, criarProposta, definirClienteProposta, excluirProposta, jobPropostas, propostaBrutaDoBling, lerProposta, listarPropostas, sincronizarPropostas, validarItemProposta,
 } from '../lib/propostas-comerciais';
 import { gerarPropostaPdf } from '../lib/proposta-pdf';
 import { prisma } from '../lib/prisma';
@@ -27,6 +27,18 @@ propostasComerciaisRouter.get('/status', (_req, res) => res.json({ ok: true, ...
 // GET /propostas-comerciais/item/validar?sku=
 propostasComerciaisRouter.get('/item/validar', async (req, res, next) => {
   try { res.json(await validarItemProposta(String(req.query.sku || ''))); } catch (e) { next(e); }
+});
+
+// GET /propostas-comerciais/item/buscar?q&marca&modelo&ano&origem&precoMin&precoMax&pagina&limite — pecas (estoque + pre-cadastro)
+propostasComerciaisRouter.get('/item/buscar', async (req, res, next) => {
+  try {
+    const q: any = req.query;
+    res.json({ ok: true, ...(await buscarItensProposta({ q: q.q, marca: q.marca, modelo: q.modelo, ano: q.ano, origem: q.origem, precoMin: Number(q.precoMin), precoMax: Number(q.precoMax), pagina: Number(q.pagina), limite: Number(q.limite) })) });
+  } catch (e) { next(e); }
+});
+// GET /propostas-comerciais/item/filtros?marca&modelo&origem — opcoes dos filtros (marca > modelo > ano) com contagem
+propostasComerciaisRouter.get('/item/filtros', async (req, res, next) => {
+  try { const q: any = req.query; res.json({ ok: true, ...(await filtrosItensProposta({ marca: q.marca, modelo: q.modelo, origem: q.origem })) }); } catch (e) { next(e); }
 });
 
 // GET /propostas-comerciais/clientes?q=
