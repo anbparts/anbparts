@@ -34,6 +34,8 @@ export function garantirTabelasPropostas(): Promise<void> {
         "id" SERIAL PRIMARY KEY, "propostaId" BIGINT NOT NULL, "ordem" INTEGER, "produtoId" BIGINT, "codigo" TEXT, "descricao" TEXT, "descricaoDetalhada" TEXT,
         "unidade" TEXT, "quantidade" NUMERIC(14,3), "valorLista" NUMERIC(14,2), "descontoPct" NUMERIC(8,3))`);
       await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "PropostaComercialItem_prop_idx" ON "PropostaComercialItem" ("propostaId")`);
+      // propostas excluidas SO daqui: a sincronizacao nao deve traze-las de volta
+      await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "PropostaComercialIgnorada" ("id" BIGINT PRIMARY KEY, "excluidoEm" TIMESTAMPTZ NOT NULL DEFAULT now(), "excluidoPor" TEXT)`);
     })().catch((e) => { tabelasProntas = null; throw e; });
   }
   return tabelasProntas;
@@ -70,7 +72,7 @@ export async function gravarPropostaDoBling(d: any, extra?: { criadoAqui?: boole
     `INSERT INTO "PropostaComercial" ("id","numero","data","situacao","clienteId","clienteNome","aosCuidadosDe","totalProdutos","total","desconto","outrasDespesas","frete",
         "introducao","observacoes","observacaoInterna","prazoEntrega","criadoAqui","criadoPor","raw","sincronizadoEm")
      VALUES ($1::bigint,$2,$3::date,$4,$5::bigint,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,now())
-     ON CONFLICT ("id") DO UPDATE SET "numero"=EXCLUDED."numero","data"=EXCLUDED."data","situacao"=EXCLUDED."situacao","clienteId"=EXCLUDED."clienteId",
+     ON CONFLICT ("id") DO UPDATE SET "numero"=COALESCE(EXCLUDED."numero","PropostaComercial"."numero"),"data"=EXCLUDED."data","situacao"=EXCLUDED."situacao","clienteId"=EXCLUDED."clienteId",
        "clienteNome"=COALESCE(NULLIF(EXCLUDED."clienteNome",''),"PropostaComercial"."clienteNome"),"aosCuidadosDe"=EXCLUDED."aosCuidadosDe",
        "totalProdutos"=EXCLUDED."totalProdutos","total"=EXCLUDED."total","desconto"=EXCLUDED."desconto","outrasDespesas"=EXCLUDED."outrasDespesas","frete"=EXCLUDED."frete",
        "introducao"=EXCLUDED."introducao","observacoes"=EXCLUDED."observacoes","observacaoInterna"=EXCLUDED."observacaoInterna","prazoEntrega"=EXCLUDED."prazoEntrega",
@@ -118,9 +120,11 @@ export async function sincronizarPropostas(opcoes: { tudo?: boolean } = {}) {
       lista.push(...itens);
       if (itens.length < 100) break;
     }
+    const ignoradas = new Set<string>((await prisma.$queryRawUnsafe<any[]>(`SELECT "id"::text AS id FROM "PropostaComercialIgnorada"`)).map((r) => String(r.id)));
     const existentes = new Map<string, { situacao: string; total: number; versao: number; semCliente: boolean }>(
       (await prisma.$queryRawUnsafe<any[]>(`SELECT "id"::text AS id, "situacao", "total", "itensVersao", ("clienteNome" IS NULL OR "clienteNome" = '') AS "semCliente" FROM "PropostaComercial"`)).map((r) => [String(r.id), { situacao: txt(r.situacao), total: num(r.total), versao: num(r.itensVersao), semCliente: !!r.semCliente }]));
     const alvo = lista.filter((p) => {
+      if (ignoradas.has(txt(p.id))) return false;
       const e = existentes.get(txt(p.id));
       const sit = txt(typeof p?.situacao === 'object' ? (p.situacao?.valor ?? p.situacao?.nome) : p?.situacao);
       return opcoes.tudo || !e || e.versao < 2 || e.semCliente || (sit && e.situacao !== sit) || Math.abs(e.total - num(p.total)) > 0.009;
@@ -255,7 +259,7 @@ async function criarContatoMinimo(nome: string): Promise<string> {
 
 // ───────────── Criar proposta (valida tudo, cria no Bling, le de volta o numero e grava local) ─────────────
 export type NovaProposta = {
-  clienteId?: string; clienteNome?: string; data?: string; aosCuidadosDe?: string;
+  clienteId?: string; clienteNome?: string; data?: string; aosCuidadosDe?: string; numero?: number;
   introducao?: string; observacoes?: string; observacaoInterna?: string; prazoEntrega?: string;
   desconto?: number; outrasDespesas?: number; frete?: number;
   itens: Array<{ codigo: string; quantidade?: number; descontoPct?: number; valorLista?: number }>;
@@ -280,8 +284,9 @@ async function montarCorpoProposta(dados: NovaProposta, contatoExistente?: strin
     const pct = Math.min(100, Math.max(0, num(it.descontoPct)));
     itensBling.push({
       produto: { id: Number(v.item.produtoId), descricao: v.item.descricao }, codigo: v.item.codigo, unidade: 'UN',
-      // mesmo formato que o Bling devolve na leitura: "valor" = unitario JA com desconto; "desconto" = percentual aplicado
-      quantidade: qtd, valor: r2(lista * (1 - pct / 100)), desconto: pct,
+      // GRAVACAO: o Bling quer o preco de LISTA em "valor" e aplica o "desconto" (%) sozinho. (Na LEITURA ele devolve "valor" ja
+      // com desconto - por isso gravarPropostaDoBling divide por (1 - desconto) para recuperar a lista.)
+      quantidade: qtd, valor: r2(lista), desconto: pct,
     });
   }
 
@@ -306,7 +311,7 @@ async function montarCorpoProposta(dados: NovaProposta, contatoExistente?: strin
   if (txt(dados.observacoes)) base.observacoes = txt(dados.observacoes);
   if (txt(dados.observacaoInterna)) base.observacaoInterna = txt(dados.observacaoInterna);
   if (txt(dados.prazoEntrega)) base.prazoEntrega = txt(dados.prazoEntrega);
-  const totalItensNosso = itensBling.reduce((t, i) => t + i.quantidade * i.valor, 0);
+  const totalItensNosso = itensBling.reduce((t, i) => t + i.quantidade * r2(i.valor * (1 - i.desconto / 100)), 0);
   const totalNosso = r2(totalItensNosso - num(dados.desconto) + num(dados.outrasDespesas) + num(dados.frete));
   return { base, totalNosso, contatoId };
 }
@@ -352,10 +357,14 @@ export async function criarProposta(dados: NovaProposta, usuario?: string) {
 // Edita uma proposta que esta em Rascunho: replica a edicao no Bling (PUT) e atualiza a copia local.
 export async function atualizarProposta(id: string, dados: NovaProposta) {
   await garantirTabelasPropostas();
-  const [atual] = await prisma.$queryRawUnsafe<any[]>(`SELECT "situacao","clienteId"::text AS "clienteId","clienteNomeManual" FROM "PropostaComercial" WHERE "id" = $1::bigint`, id);
+  const [atual] = await prisma.$queryRawUnsafe<any[]>(`SELECT "situacao","numero","clienteId"::text AS "clienteId","clienteNomeManual" FROM "PropostaComercial" WHERE "id" = $1::bigint`, id);
   if (!atual) throw new Error('Proposta nao encontrada.');
   if (txt(atual.situacao) !== 'Rascunho') throw new Error(`So da para editar proposta em Rascunho (esta em "${txt(atual.situacao) || 'sem situacao'}").`);
   const { base, totalNosso } = await montarCorpoProposta(dados, txt(atual.clienteId));
+  // o PUT substitui a proposta inteira: sem reenviar o numero, o Bling o perde
+  // (se o numero local se perdeu, usa o que foi informado na tela de edicao)
+  const numeroEnvio = Math.round(num(atual.numero) || num(dados.numero));
+  if (numeroEnvio > 0) base.numero = numeroEnvio;
   await enviarAoBling('PUT', `/propostas-comerciais/${id}`, base, totalNosso);
   const det: any = await blingReq(`/propostas-comerciais/${id}`);
   await gravarPropostaDoBling(det?.data || { id, ...base });
@@ -373,6 +382,19 @@ export async function definirClienteProposta(id: string, nome: string) {
 
 // JSON cru do Bling (diagnostico) - le direto do Bling, sem gravar
 export async function propostaBrutaDoBling(id: string) { return blingReq(`/propostas-comerciais/${id}`); }
+
+// Exclui a proposta. modo "local": so daqui (e a sincronizacao passa a ignorar essa proposta); modo "bling": no Bling e daqui.
+export async function excluirProposta(id: string, modo: 'local' | 'bling', usuario?: string) {
+  await garantirTabelasPropostas();
+  if (modo === 'bling') {
+    try { await blingReq(`/propostas-comerciais/${id}`, { method: 'DELETE' }); }
+    catch (e: any) { throw erroBling(`Bling recusou excluir a proposta (DELETE /propostas-comerciais/${id})`, e); }
+  } else {
+    await prisma.$executeRawUnsafe(`INSERT INTO "PropostaComercialIgnorada" ("id","excluidoPor") VALUES ($1::bigint,$2) ON CONFLICT ("id") DO NOTHING`, id, usuario || null);
+  }
+  await prisma.$executeRawUnsafe(`DELETE FROM "PropostaComercialItem" WHERE "propostaId" = $1::bigint`, id);
+  await prisma.$executeRawUnsafe(`DELETE FROM "PropostaComercial" WHERE "id" = $1::bigint`, id);
+}
 
 export async function alterarSituacaoProposta(id: string, situacao: string) {
   if (!SITUACOES_PROPOSTA.includes(situacao)) throw new Error('Situacao invalida.');

@@ -66,6 +66,7 @@ export default function PropostasComerciaisPage() {
   const [detalhe, setDetalhe] = useState<any>(null);
   const [novaAberta, setNovaAberta] = useState(false);
   const [editando, setEditando] = useState<any>(null);
+  const [excluindo, setExcluindo] = useState<any>(null);
 
   async function carregar(p = pagina) {
     setCarregando(true);
@@ -169,6 +170,7 @@ export default function PropostasComerciaisPage() {
                   <span style={{ display: 'inline-flex', gap: 6 }}>
                     <button style={{ ...s.btn, padding: '5px 10px', fontSize: 12 }} onClick={(e) => { e.stopPropagation(); abrirPdf(p.id).catch((er) => alert(er.message)); }}>PDF</button>
                     {p.situacao === 'Rascunho' && <button style={{ ...s.btn, padding: '5px 10px', fontSize: 12 }} onClick={(e) => { e.stopPropagation(); editarDaLinha(p.id); }}>Editar</button>}
+                    <button style={{ ...s.btn, padding: '5px 10px', fontSize: 12, color: '#991b1b' }} onClick={(e) => { e.stopPropagation(); setExcluindo(p); }}>Excluir</button>
                     {p.situacao === 'Rascunho' && <button style={{ ...s.btn, padding: '5px 10px', fontSize: 12, background: '#166534', color: '#fff', border: '1px solid #166534' }} onClick={(e) => { e.stopPropagation(); aprovarDaLinha(p); }}>Aprovar</button>}
                   </span>
                 </td>
@@ -187,6 +189,7 @@ export default function PropostasComerciaisPage() {
       )}
 
       {detalhe && <DetalheModal key={detalhe.id} p={detalhe} onClose={() => setDetalhe(null)} onSituacao={mudarSituacao} onCliente={salvarCliente} onEditar={(x: any) => { setDetalhe(null); setEditando(x); }} />}
+      {excluindo && <ExcluirModal p={excluindo} onClose={() => setExcluindo(null)} onExcluida={() => { setExcluindo(null); carregar(pagina); }} />}
       {editando && <NovaPropostaModal inicial={editando} onClose={() => setEditando(null)} onCriada={(r: any) => { setEditando(null); carregar(pagina); if (r?.avisos?.length) alert(r.avisos.join('\n')); abrirDetalhe(r.id); }} />}
       {novaAberta && <NovaPropostaModal onClose={() => setNovaAberta(false)} onCriada={(r: any) => { setNovaAberta(false); carregar(1); if (r?.avisos?.length) alert(r.avisos.join('\n')); abrirDetalhe(r.id); }} />}
     </div>
@@ -204,6 +207,37 @@ function Modal({ titulo, onClose, children, largo }: { titulo: string; onClose: 
         {children}
       </div>
     </div>
+  );
+}
+
+function ExcluirModal({ p, onClose, onExcluida }: { p: any; onClose: () => void; onExcluida: () => void }) {
+  const [modo, setModo] = useState<'local' | 'bling'>('local');
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState('');
+  async function excluir() {
+    setSalvando(true); setErro('');
+    try { await chamar(`/propostas-comerciais/${p.id}?modo=${modo}`, { method: 'DELETE' }); onExcluida(); }
+    catch (e: any) { setErro(e?.message || 'Erro ao excluir'); }
+    setSalvando(false);
+  }
+  const opcao = (valor: 'local' | 'bling', titulo: string, desc: string) => (
+    <label style={{ ...s.card, padding: 12, display: 'flex', gap: 10, cursor: 'pointer', borderColor: modo === valor ? '#991b1b' : 'var(--border)' }}>
+      <input type="radio" checked={modo === valor} onChange={() => setModo(valor)} />
+      <span><strong>{titulo}</strong><br /><span style={{ fontSize: 12.5, color: 'var(--ink-soft)' }}>{desc}</span></span>
+    </label>
+  );
+  return (
+    <Modal titulo={`Excluir proposta Nº ${p.numero ?? ''} · ${p.clienteNome || 'sem cliente'}`} onClose={onClose}>
+      <div style={{ display: 'grid', gap: 10 }}>
+        {opcao('local', 'Excluir só aqui no sistema', 'A proposta continua no Bling. A sincronização passa a ignorá-la, então ela não volta para a lista.')}
+        {opcao('bling', 'Excluir aqui e no Bling', 'Apaga a proposta também no Bling. Não dá para desfazer.')}
+        {erro && <div style={{ color: '#991b1b', fontSize: 13 }}>{erro}</div>}
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button style={s.btn} onClick={onClose}>Cancelar</button>
+          <button style={{ ...s.btn, background: '#991b1b', color: '#fff', border: '1px solid #991b1b' }} disabled={salvando} onClick={excluir}>{salvando ? 'Excluindo…' : 'Excluir'}</button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -299,6 +333,7 @@ function NovaPropostaModal({ onClose, onCriada, inicial }: { onClose: () => void
   const [f, setF] = useState({ data: inicial ? String(inicial.data || '').slice(0, 10) : '', aosCuidadosDe: inicial?.aosCuidadosDe || '', introducao: inicial?.introducao || '', observacoes: inicial ? (inicial.observacoes || '') : OBS_PADRAO, prazoEntrega: inicial?.prazoEntrega || '', observacaoInterna: inicial?.observacaoInterna || '' });
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState('');
+  const [numeroProp, setNumeroProp] = useState(inicial && inicial.numero ? String(inicial.numero) : '');
 
   useEffect(() => {
     if (cliBusca.trim().length < 2 || cliSel) { setCliLista([]); return; }
@@ -320,6 +355,19 @@ function NovaPropostaModal({ onClose, onCriada, inicial }: { onClose: () => void
     } catch (e: any) { setErro(e?.message || 'SKU não pôde ser adicionado'); }
     setValidando(false);
   }
+  // Edicao: refaz o preco de lista de cada item com o preco atual da nossa base (util se o Bling gravou o preco errado)
+  async function precosDaBase() {
+    setErro(''); setValidando(true);
+    try {
+      const novos: ItemForm[] = [];
+      for (const it of itens) {
+        const d = await chamar(`/propostas-comerciais/item/validar?sku=${encodeURIComponent(it.idPeca)}`);
+        novos.push({ ...it, valorLista: d.item.valorLista > 0 ? d.item.valorLista : it.valorLista, produtoId: d.item.produtoId || it.produtoId, saldoBling: d.item.saldoBling });
+      }
+      setItens(novos);
+    } catch (e: any) { setErro(e?.message || 'Não foi possível atualizar os preços'); }
+    setValidando(false);
+  }
   const mudar = (idx: number, campo: keyof ItemForm, valor: number) => setItens((prev) => prev.map((it, i) => (i === idx ? { ...it, [campo]: valor } : it)));
 
   const totalItens = r2(itens.reduce((t, i) => t + r2(i.valorLista * (1 - i.descontoPct / 100)) * i.quantidade, 0));
@@ -333,6 +381,7 @@ function NovaPropostaModal({ onClose, onCriada, inicial }: { onClose: () => void
     try {
       const corpo: any = {
         clienteId: cliSel ? cliSel.id : undefined, clienteNome: cliSel ? undefined : cliNome.trim(), data: f.data || undefined,
+        numero: edicao && Number(numeroProp) > 0 ? Number(numeroProp) : undefined,
         aosCuidadosDe: f.aosCuidadosDe, introducao: f.introducao, observacoes: f.observacoes, prazoEntrega: f.prazoEntrega, observacaoInterna: f.observacaoInterna,
         desconto: Number(descGeral) || 0, outrasDespesas: Number(outras) || 0, frete: Number(frete) || 0,
         itens: itens.map((i) => ({ codigo: i.codigo, quantidade: i.quantidade, descontoPct: i.descontoPct, valorLista: i.valorLista })),
@@ -372,6 +421,7 @@ function NovaPropostaModal({ onClose, onCriada, inicial }: { onClose: () => void
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 10 }}>
+          {edicao && <label><span style={s.label}>Nº da proposta (Bling)</span><input style={s.input} inputMode="numeric" value={numeroProp} onChange={(e) => setNumeroProp(e.target.value.replace(/\D/g, ''))} /></label>}
           <label><span style={s.label}>Data</span><input type="date" style={s.input} value={f.data} onChange={(e) => setF({ ...f, data: e.target.value })} /></label>
           <label><span style={s.label}>Aos cuidados de</span><input style={s.input} value={f.aosCuidadosDe} onChange={(e) => setF({ ...f, aosCuidadosDe: e.target.value })} /></label>
           <label><span style={s.label}>Prazo de entrega</span><input style={s.input} value={f.prazoEntrega} onChange={(e) => setF({ ...f, prazoEntrega: e.target.value })} /></label>
@@ -386,6 +436,7 @@ function NovaPropostaModal({ onClose, onCriada, inicial }: { onClose: () => void
             <button style={{ ...s.btn, ...s.btnPri }} disabled={validando} onClick={adicionarItem}>{validando ? 'Conferindo…' : 'Adicionar'}</button>
           </div>
           {erro && <div style={{ color: '#991b1b', fontSize: 12.5, marginTop: 6 }}>{erro}</div>}
+          {itens.length > 0 && <button style={{ ...s.btn, marginTop: 8 }} disabled={validando} onClick={precosDaBase}>Usar preços da base nos itens</button>}
           {itens.length > 0 && (
             <div style={{ overflowX: 'auto', marginTop: 8 }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
