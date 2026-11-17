@@ -220,10 +220,10 @@ export default function PropostasComerciaisPage() {
 
       {!isPhone && <div style={{ ...s.card, overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead><tr>{['Nº', 'Nº Bling', 'Data', 'Cliente', 'Itens', 'Total', 'Situação', ''].map((h) => <th key={h} style={s.th}>{h}</th>)}</tr></thead>
+          <thead><tr>{['Nº', 'Nº Bling', 'Data', 'Cliente', 'Itens', 'Total', 'Situação', 'Pedido Bling', ''].map((h) => <th key={h} style={s.th}>{h}</th>)}</tr></thead>
           <tbody>
-            {carregando && <tr><td style={s.td} colSpan={8}>Carregando…</td></tr>}
-            {!carregando && dados && !dados.itens.length && <tr><td style={s.td} colSpan={8}>Nenhuma proposta. Use “Sincronizar com o Bling” para trazer as que já existem lá.</td></tr>}
+            {carregando && <tr><td style={s.td} colSpan={9}>Carregando…</td></tr>}
+            {!carregando && dados && !dados.itens.length && <tr><td style={s.td} colSpan={9}>Nenhuma proposta. Use “Sincronizar com o Bling” para trazer as que já existem lá.</td></tr>}
             {!carregando && (dados?.itens || []).map((p: any) => (
               <tr key={p.id} style={{ cursor: 'pointer' }} onClick={() => abrirDetalhe(p.id)}>
                 <td style={{ ...s.td, fontWeight: 700 }}>{p.numero ?? '—'}</td>
@@ -236,6 +236,7 @@ export default function PropostasComerciaisPage() {
                   {pill(p.situacao)}
                   {selo(p)}
                 </td>
+                <td style={{ ...s.td, fontWeight: 700 }}>{p.situacao === 'Concluído' && p.pedidoNumero ? p.pedidoNumero : ''}</td>
                 <td style={{ ...s.td, whiteSpace: 'nowrap' }}>
                   <span style={{ display: 'inline-flex', gap: 6 }}>{acoes(p)}</span>
                 </td>
@@ -257,7 +258,7 @@ export default function PropostasComerciaisPage() {
               </div>
               <div style={{ fontSize: 14, marginTop: 2 }}>{p.clienteNome || '—'}</div>
               <div style={{ fontSize: 12.5, color: 'var(--ink-muted)', marginTop: 2 }}>{fmtData(p.data)} · {p.qtdItens} {p.qtdItens === 1 ? 'item' : 'itens'}{p.blingNumero ? ` · Bling Nº ${p.blingNumero}` : ''}</div>
-              <div style={{ marginTop: 8 }}>{pill(p.situacao)}{selo(p)}</div>
+              <div style={{ marginTop: 8 }}>{pill(p.situacao)}{selo(p)}{p.situacao === 'Concluído' && p.pedidoNumero ? <span style={{ fontSize: 13, marginLeft: 8 }}>Pedido Bling <strong>{p.pedidoNumero}</strong></span> : null}</div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }} onClick={(e) => e.stopPropagation()}>{acoes(p)}</div>
             </div>
           ))}
@@ -361,6 +362,7 @@ function DetalheModal({ p, onClose, onSituacao, onCliente, onEditar }: { p: any;
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
         <span style={{ fontSize: 13 }}>Data: <strong>{fmtData(p.data)}</strong></span>
         <span style={{ fontSize: 13 }}>Nº no Bling: <strong>{p.blingNumero ? p.blingNumero : '—'}</strong></span>
+        {p.situacao === 'Concluído' && p.pedidoNumero && <span style={{ fontSize: 13 }}>Pedido Bling: <strong>{p.pedidoNumero}</strong></span>}
         {p.integracao === 'pendente' && <span style={{ fontSize: 12.5, color: '#92400e' }}>Pendente de envio ao Bling. {p.integracaoMotivo || ''}</span>}
         <label style={{ fontSize: 13, display: 'flex', gap: 6, alignItems: 'center' }}>Situação
           <select disabled={!!p.integracao && p.integracao !== 'ok'} title={p.integracao && p.integracao !== 'ok' ? 'Envie a proposta ao Bling antes de mudar a situação' : ''} style={{ ...s.input, width: 'auto' }} value={p.situacao || ''} onChange={(e) => onSituacao(p.id, e.target.value)}>

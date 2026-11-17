@@ -45,6 +45,9 @@ export function garantirTabelasPropostas(): Promise<void> {
       await prisma.$executeRawUnsafe(`CREATE SEQUENCE IF NOT EXISTS proposta_local_seq`);
       // propostas excluidas SO daqui: a sincronizacao nao deve traze-las de volta
       await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "PropostaComercialIgnorada" ("id" BIGINT PRIMARY KEY, "excluidoEm" TIMESTAMPTZ NOT NULL DEFAULT now(), "excluidoPor" TEXT)`);
+      // venda (pedido do Bling) gerada a partir da proposta: preenchido na importacao do pedido (ou por UPDATE manual)
+      await prisma.$executeRawUnsafe(`ALTER TABLE "PropostaComercial" ADD COLUMN IF NOT EXISTS "pedidoNumero" TEXT`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "PropostaComercial" ADD COLUMN IF NOT EXISTS "pedidoId" BIGINT`);
     })().catch((e) => { tabelasProntas = null; throw e; });
   }
   return tabelasProntas;
@@ -90,7 +93,7 @@ export async function gravarPropostaDoBling(d: any, extra?: { criadoAqui?: boole
     `INSERT INTO "PropostaComercial" ("id","numero","data","situacao","clienteId","clienteNome","aosCuidadosDe","totalProdutos","total","desconto","outrasDespesas","frete",
         "introducao","observacoes","observacaoInterna","prazoEntrega","criadoAqui","criadoPor","raw","sincronizadoEm")
      VALUES ($1::bigint,$2,$3::date,$4,$5::bigint,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,now())
-     ON CONFLICT ("id") DO UPDATE SET "numero"=COALESCE("PropostaComercial"."numero",EXCLUDED."numero"),"data"EXCLUDED."data","situacao"=EXCLUDED."situacao","clienteId"=EXCLUDED."clienteId",
+     ON CONFLICT ("id") DO UPDATE SET "numero"=COALESCE("PropostaComercial"."numero",EXCLUDED."numero"),"data"=EXCLUDED."data","situacao"=CASE WHEN "PropostaComercial"."pedidoNumero" IS NOT NULL THEN 'Concluído' ELSE EXCLUDED."situacao" END,"clienteId"=EXCLUDED."clienteId",
        "clienteNome"=COALESCE(NULLIF(EXCLUDED."clienteNome",''),"PropostaComercial"."clienteNome"),"aosCuidadosDe"=EXCLUDED."aosCuidadosDe",
        "totalProdutos"=EXCLUDED."totalProdutos","total"=EXCLUDED."total","desconto"=EXCLUDED."desconto","outrasDespesas"=EXCLUDED."outrasDespesas","frete"=EXCLUDED."frete",
        "introducao"=EXCLUDED."introducao","observacoes"=EXCLUDED."observacoes","observacaoInterna"=EXCLUDED."observacaoInterna","prazoEntrega"=EXCLUDED."prazoEntrega",
@@ -140,13 +143,14 @@ export async function sincronizarPropostas(opcoes: { tudo?: boolean } = {}) {
       if (itens.length < 100) break;
     }
     const ignoradas = new Set<string>((await prisma.$queryRawUnsafe<any[]>(`SELECT "id"::text AS id FROM "PropostaComercialIgnorada"`)).map((r) => String(r.id)));
-    const existentes = new Map<string, { situacao: string; total: number; versao: number; semCliente: boolean }>(
-      (await prisma.$queryRawUnsafe<any[]>(`SELECT "id"::text AS id, "situacao", "total", "itensVersao", ("clienteNome" IS NULL OR "clienteNome" = '') AS "semCliente" FROM "PropostaComercial"`)).map((r) => [String(r.id), { situacao: txt(r.situacao), total: num(r.total), versao: num(r.itensVersao), semCliente: !!r.semCliente }]));
+    // proposta ja ligada a uma venda fica "Concluído" aqui mesmo que o Bling ainda mostre outra situacao: nao conta como mudanca
+    const existentes = new Map<string, { situacao: string; total: number; versao: number; semCliente: boolean; temPedido: boolean }>(
+      (await prisma.$queryRawUnsafe<any[]>(`SELECT "id"::text AS id, "situacao", "total", "itensVersao", ("clienteNome" IS NULL OR "clienteNome" = '') AS "semCliente", ("pedidoNumero" IS NOT NULL) AS "temPedido" FROM "PropostaComercial"`)).map((r) => [String(r.id), { situacao: txt(r.situacao), total: num(r.total), versao: num(r.itensVersao), semCliente: !!r.semCliente, temPedido: !!r.temPedido }]));
     const alvo = lista.filter((p) => {
       if (ignoradas.has(txt(p.id))) return false;
       const e = existentes.get(txt(p.id));
       const sit = txt(typeof p?.situacao === 'object' ? (p.situacao?.valor ?? p.situacao?.nome) : p?.situacao);
-      return opcoes.tudo || !e || e.versao < 2 || e.semCliente || (sit && e.situacao !== sit) || Math.abs(e.total - num(p.total)) > 0.009;
+      return opcoes.tudo || !e || e.versao < 2 || e.semCliente || (sit && !e.temPedido && e.situacao !== sit) || Math.abs(e.total - num(p.total)) > 0.009;
     });
     jobPropostas.total = alvo.length;
     for (const p of alvo) {
@@ -207,7 +211,7 @@ export async function listarPropostas(f: { busca?: string; situacao?: string; de
   const pagina = Math.max(1, Math.floor(f.pagina || 1));
   const [tot] = await prisma.$queryRawUnsafe<any[]>(`SELECT COUNT(*)::int AS n, COALESCE(SUM(p."total"),0)::float AS soma FROM "PropostaComercial" p ${where}`, ...par);
   const itens = await prisma.$queryRawUnsafe<any[]>(
-    `SELECT p."id"::text AS id, p."numero", p."blingNumero", p."data"::text AS data, p."situacao", COALESCE(NULLIF(p."clienteNomeManual",''), p."clienteNome") AS "clienteNome", p."total"::float AS total, p."criadoAqui", p."integracao", p."integracaoMotivo",
+    `SELECT p."id"::text AS id, p."numero", p."blingNumero", p."data"::text AS data, p."situacao", COALESCE(NULLIF(p."clienteNomeManual",''), p."clienteNome") AS "clienteNome", p."total"::float AS total, p."criadoAqui", p."integracao", p."integracaoMotivo", p."pedidoNumero",
             (SELECT COUNT(*)::int FROM "PropostaComercialItem" i WHERE i."propostaId"=p."id") AS "qtdItens"
        FROM "PropostaComercial" p ${where} ORDER BY p."numero" DESC NULLS LAST, p."id" DESC
        OFFSET ${(pagina - 1) * limite} LIMIT ${limite}`, ...par);
@@ -220,7 +224,7 @@ export async function lerProposta(id: string) {
   const [p] = await prisma.$queryRawUnsafe<any[]>(
     `SELECT p."id"::text AS id, p."numero", p."blingNumero", p."data"::text AS data, p."situacao", p."clienteId"::text AS "clienteId", p."clienteNome", p."aosCuidadosDe",
             p."totalProdutos"::float AS "totalProdutos", p."total"::float AS total, p."desconto"::float AS desconto, p."outrasDespesas"::float AS "outrasDespesas", p."frete"::float AS frete,
-            p."introducao", p."observacoes", p."observacaoInterna", p."prazoEntrega", p."criadoAqui", p."sincronizadoEm", p."clienteNomeManual", p."integracao", p."integracaoMotivo"
+            p."introducao", p."observacoes", p."observacaoInterna", p."prazoEntrega", p."criadoAqui", p."sincronizadoEm", p."clienteNomeManual", p."integracao", p."integracaoMotivo", p."pedidoNumero"
        FROM "PropostaComercial" p WHERE p."id" = $1::bigint`, id);
   if (!p) return null;
   if (txt(p.clienteNomeManual)) p.clienteNome = txt(p.clienteNomeManual);
@@ -232,6 +236,31 @@ export async function lerProposta(id: string) {
     `SELECT "ordem","produtoId"::text AS "produtoId","codigo","descricao","descricaoDetalhada","unidade","quantidade"::float AS quantidade,"valorLista"::float AS "valorLista","descontoPct"::float AS "descontoPct"
        FROM "PropostaComercialItem" WHERE "propostaId" = $1::bigint ORDER BY "ordem"`, id);
   return { ...p, itens };
+}
+
+// ───────────── Venda gerada a partir da proposta ─────────────
+// Chamada quando um pedido de venda e' importado do Bling: procura uma proposta "Aprovado" do MESMO cliente com os MESMOS SKUs
+// (data da proposta <= data do pedido) que ainda nao tenha venda; se achar, vira "Concluído" e guarda o numero do pedido.
+export async function vincularPropostaAoPedido(p: { id: string; numero: string; data: string | null; clienteId: string | null; cancelado: boolean; skus: string[] }) {
+  if (p.cancelado || !p.clienteId || !p.skus.length) return null;
+  await garantirTabelasPropostas();
+  const [ja] = await prisma.$queryRawUnsafe<any[]>(`SELECT 1 AS x FROM "PropostaComercial" WHERE "pedidoId" = $1::bigint`, p.id);
+  if (ja) return null;
+  const alvo = Array.from(new Set(p.skus.map((s) => txt(s).toUpperCase()).filter(Boolean))).sort().join('|');
+  const cands = await prisma.$queryRawUnsafe<any[]>(
+    `SELECT pc."id"::text AS id, pc."numero",
+            (SELECT string_agg(DISTINCT UPPER(i."codigo"), '|' ORDER BY UPPER(i."codigo")) FROM "PropostaComercialItem" i WHERE i."propostaId" = pc."id" AND COALESCE(i."codigo",'') <> '') AS skus
+       FROM "PropostaComercial" pc
+      WHERE pc."pedidoNumero" IS NULL AND pc."clienteId" = $1::bigint
+        AND ($2::date IS NULL OR pc."data" IS NULL OR pc."data" <= $2::date)
+        AND (pc."situacao" = 'Aprovado'
+             -- o Bling marca a proposta como Concluído ao gerar a venda: se a sincronizacao das propostas vier antes da importacao do pedido, ainda liga (so propostas recentes)
+             OR (pc."situacao" = 'Concluído' AND ($2::date IS NULL OR pc."data" >= $2::date - 30)))
+      ORDER BY (pc."situacao" = 'Aprovado') DESC, pc."data" DESC NULLS LAST, pc."numero" DESC NULLS LAST`, p.clienteId, p.data);
+  const achada = cands.find((c) => txt(c.skus) === alvo);
+  if (!achada) return null;
+  await prisma.$executeRawUnsafe(`UPDATE "PropostaComercial" SET "situacao" = 'Concluído', "pedidoNumero" = $2, "pedidoId" = $3::bigint WHERE "id" = $1::bigint`, achada.id, txt(p.numero), p.id);
+  return { propostaId: achada.id, propostaNumero: achada.numero };
 }
 
 // ───────────── Item: valida na NOSSA base e depois no Bling (considera variacoes de SKU: SKU, SKU-1, SKU-2...) ─────────────

@@ -117,6 +117,16 @@ export async function sincronizarPedido(pedidoId: number | string) {
     );
   }
 
+  // se existir proposta Aprovada do mesmo cliente/SKUs, ela vira Concluída com o numero deste pedido (nunca derruba a importacao)
+  try {
+    const itensPed: any[] = Array.isArray(d?.itens) ? d.itens : [];
+    await (await import('./propostas-comerciais')).vincularPropostaAoPedido({
+      id: String(d.id), numero: txt(d.numero) || String(d.id), data: (txt(d.data) || '').slice(0, 10) || null,
+      clienteId: clienteId ? String(clienteId) : null, cancelado: !!sit.isCancelado,
+      skus: itensPed.map((it) => txt(it?.codigo || it?.produto?.codigo)).filter(Boolean),
+    });
+  } catch (e: any) { console.error('[propostas] vinculo com pedido falhou:', e?.message || e); }
+
   if (clienteId) {
     await prisma.$executeRawUnsafe(
       `INSERT INTO "BlingCliente" ("id","nome","tipoPessoa","documento","cidade","uf","cep") VALUES ($1::bigint,$2,$3,$4,$5,$6,$7)
