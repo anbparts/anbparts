@@ -49,6 +49,8 @@ import { etiquetasTransporteRouter } from './routes/etiquetas-transporte';
 import { olxRouter, startOlxScheduler } from './routes/olx';
 import { blingPedidosRouter } from './routes/blingPedidos';
 import { startBlingPedidosScheduler } from './lib/bling-pedidos';
+import { propostasComerciaisRouter } from './routes/propostas-comerciais';
+import { startPropostasScheduler } from './lib/propostas-comerciais';
 import { magaluRouter } from './routes/magalu';
 import { authMiddleware } from './middlewares/auth';
 import { errorMiddleware } from './middlewares/error';
@@ -130,6 +132,7 @@ app.use('/sucata', sucataRouter);
 app.use('/shopee', shopeeRouter);
 app.use('/olx', olxRouter);
 app.use('/bling-pedidos', blingPedidosRouter);
+app.use('/propostas-comerciais', propostasComerciaisRouter);
 app.use('/magalu', magaluRouter);
 
 app.use(errorMiddleware);
@@ -148,6 +151,7 @@ app.listen(port, () => {
   startMonitorConexoesScheduler();
   startOlxScheduler();
   startBlingPedidosScheduler();
+  startPropostasScheduler();
   startImportacaoVendasAutomatica();
   console.log(`ANB Backend rodando na porta ${port}`);
 });

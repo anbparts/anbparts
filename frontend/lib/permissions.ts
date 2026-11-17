@@ -25,6 +25,7 @@ export const PAGE_KEY_BY_HREF: Record<string, string> = {
   '/bling/vendas': 'bling_vendas',
   '/bling/relatorio-vendas': 'bling_relatorio',
   '/bling/pedidos': 'bling_pedidos',
+  '/bling/propostas': 'bling_pedidos',
   '/bling/clientes': 'bling_clientes',
   '/bling/auditoria-automatica': 'bling_auditoria',
   '/mercado-livre/perguntas': 'mercado_livre_perguntas',
@@ -70,7 +71,7 @@ export const RELATORIOS_SUBPAGINAS = ['/despesas-receita', '/faturamento', '/fat
 // Operacional (Financeiro): despesas, prejuizos e investimentos em abas; cada aba segue o perfil da pagina original
 export const OPERACIONAL_SUBPAGINAS = ['/despesas', '/prejuizos', '/investimentos'];
 // Operacao: tres paginas de abas; cada aba segue o perfil da pagina original
-export const PEDIDOS_VENDAS_SUBPAGINAS = ['/bling/pedidos', '/bling/vendas', '/olx/anuncios', '/olx/vendas', '/sucata'];
+export const PEDIDOS_VENDAS_SUBPAGINAS = ['/bling/pedidos', '/bling/propostas', '/bling/vendas', '/olx/anuncios', '/olx/vendas', '/sucata'];
 export const MENSAGENS_CLIENTES_SUBPAGINAS = ['/mercado-livre/perguntas', '/olx/conversas'];
 export const WM_GERENCIAMENTO_SUBPAGINAS = ['/armazenagem', '/inventario', '/bling/auditoria-automatica'];
 const PAGINAS_AGREGADAS: Array<[string, string[]]> = [['/conf-conexoes', CONF_CONEXOES_SUBPAGINAS], ['/conf-sistema', CONF_SISTEMA_SUBPAGINAS], ['/relatorios', RELATORIOS_SUBPAGINAS], ['/operacional', OPERACIONAL_SUBPAGINAS], ['/pedidos-vendas', PEDIDOS_VENDAS_SUBPAGINAS], ['/mensagens-clientes', MENSAGENS_CLIENTES_SUBPAGINAS], ['/wm-gerenciamento', WM_GERENCIAMENTO_SUBPAGINAS]];
