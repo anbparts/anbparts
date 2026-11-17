@@ -198,8 +198,23 @@ function DetalheModal({ p, onClose, onSituacao, onCliente, onEditar }: { p: any;
   const rascunho = String(p.situacao || '') === 'Rascunho';
   const [cliente, setCliente] = useState<string>(p.clienteNome || '');
   const [salvandoCli, setSalvandoCli] = useState(false);
+  const [jsonBling, setJsonBling] = useState<string | null>(null);
   return (
     <Modal titulo={`Proposta Nº ${p.numero ?? ''} · ${p.clienteNome || 'sem cliente'}`} onClose={onClose}>
+      {jsonBling !== null && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,.6)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => setJsonBling(null)}>
+          <div style={{ ...s.card, width: '100%', maxWidth: 860, maxHeight: '85vh', padding: 16, display: 'flex', flexDirection: 'column', gap: 8 }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <strong>Resposta do Bling (GET /propostas-comerciais/{p.id})</strong>
+              <span style={{ display: 'flex', gap: 8 }}>
+                <button style={s.btn} onClick={() => { try { navigator.clipboard.writeText(jsonBling); } catch { /* sem area de transferencia */ } }}>Copiar</button>
+                <button style={s.btn} onClick={() => setJsonBling(null)}>Fechar</button>
+              </span>
+            </div>
+            <pre style={{ margin: 0, overflow: 'auto', fontSize: 12, background: 'var(--gray-50)', padding: 12, borderRadius: 8, userSelect: 'text' }}>{jsonBling}</pre>
+          </div>
+        </div>
+      )}
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12 }}>
         <label style={{ fontSize: 13, display: 'flex', gap: 6, alignItems: 'center', flex: 1 }}>Cliente
           <input style={s.input} placeholder="Nome do cliente (aparece na lista e no PDF)" value={cliente} onChange={(e) => setCliente(e.target.value)} />
@@ -214,7 +229,7 @@ function DetalheModal({ p, onClose, onSituacao, onCliente, onEditar }: { p: any;
           </select>
         </label>
         <div style={{ flex: 1 }} />
-        <button style={s.btn} onClick={async () => { try { const d = await chamar(`/propostas-comerciais/${p.id}/bling-bruto`); alert(JSON.stringify({ contato: d.contato, camposDoTopo: d.camposDoTopo }, null, 2)); } catch (e: any) { alert(e?.message || 'Erro'); } }}>Ver dados do Bling</button>
+        <button style={s.btn} onClick={async () => { try { const d = await chamar(`/propostas-comerciais/${p.id}/bling-bruto`); setJsonBling(JSON.stringify(d.bling, null, 2)); } catch (e: any) { alert(e?.message || 'Erro'); } }}>Ver dados do Bling</button>
         {rascunho && <button style={s.btn} onClick={() => onEditar(p)}>Editar</button>}
         {rascunho && <button style={{ ...s.btn, background: '#166534', color: '#fff', border: '1px solid #166534' }} onClick={() => { if (confirm(`Aprovar a proposta Nº ${p.numero ?? ''}? A situação muda de Rascunho para Aprovado no Bling.`)) onSituacao(p.id, 'Aprovado'); }}>Aprovar</button>}
         <button style={{ ...s.btn, ...s.btnPri }} onClick={() => abrirPdf(p.id).catch((er) => alert(er.message))}>Gerar PDF</button>
