@@ -16,6 +16,7 @@ const s: any = {
   label: { fontSize: 11, fontWeight: 700, color: 'var(--ink-muted)', textTransform: 'uppercase' as const, letterSpacing: '.05em', marginBottom: 4, display: 'block' },
 };
 
+const CSS_PHONE = '.pc-root input,.pc-root select,.pc-root textarea{font-size:16px !important}.pc-root button{min-height:40px}';
 const OBS_PADRAO = 'Proposta válida por 3 dias ou enquanto durarem os estoques.';
 const SITUACOES = ['Rascunho', 'Pendente', 'Aguardando', 'Aprovado', 'Não aprovado', 'Concluído'];
 const brl = (v: any) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -167,19 +168,35 @@ export default function PropostasComerciaisPage() {
 
   const totalPaginas = dados ? Math.max(1, Math.ceil((dados.total || 0) / (dados.limite || 50))) : 1;
 
+  const bt: any = isPhone ? { padding: '9px 14px', fontSize: 14 } : { padding: '5px 10px', fontSize: 12 };
+  const acoes = (p: any) => (
+    <>
+      <button style={{ ...s.btn, ...bt }} onClick={(e) => { e.stopPropagation(); abrirPdf(p).catch((er) => alert(er.message)); }}>PDF</button>
+      {p.situacao === 'Rascunho' && <button style={{ ...s.btn, ...bt }} onClick={(e) => { e.stopPropagation(); editarDaLinha(p.id); }}>Editar</button>}
+      <button style={{ ...s.btn, ...bt }} title="Cria uma nova proposta já com os itens desta" onClick={(e) => { e.stopPropagation(); copiarDaLinha(p.id); }}>Copiar</button>
+      <button style={{ ...s.btn, ...bt, color: '#991b1b' }} onClick={(e) => { e.stopPropagation(); setExcluindo(p); }}>Excluir</button>
+      {p.integracao === 'pendente' && <button disabled={enviando === p.id} title="Envia esta proposta ao Bling" style={{ ...s.btn, ...bt, background: '#1d4ed8', color: '#fff', border: '1px solid #1d4ed8' }} onClick={(e) => { e.stopPropagation(); enviarAoBling(p); }}>{enviando === p.id ? 'Enviando…' : 'Enviar ao Bling'}</button>}
+      {p.situacao === 'Rascunho' && (!p.integracao || p.integracao === 'ok') && <button style={{ ...s.btn, ...bt, background: '#166534', color: '#fff', border: '1px solid #166534' }} onClick={(e) => { e.stopPropagation(); aprovarDaLinha(p); }}>Aprovar</button>}
+    </>
+  );
+  const selo = (p: any) => (p.integracao === 'pendente'
+    ? <span title={p.integracaoMotivo || ''} style={{ marginLeft: 6, display: 'inline-block', padding: '2px 9px', borderRadius: 999, fontSize: 11, fontWeight: 700, background: '#fef3c7', color: '#92400e', whiteSpace: 'nowrap' }}>Pendente de envio ao Bling</span>
+    : null);
+
   return (
-    <div style={{ padding: isPhone ? 12 : 24, display: 'grid', gap: 14 }}>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-        <input style={{ ...s.input, maxWidth: 280 }} placeholder="Buscar nº, cliente, SKU ou item" value={busca} onChange={(e) => setBusca(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { setPagina(1); carregar(1); } }} />
-        <select style={{ ...s.input, maxWidth: 170 }} value={situacao} onChange={(e) => setSituacao(e.target.value)}>
+    <div className="pc-root" style={{ padding: isPhone ? 12 : 24, display: 'grid', gap: 14 }}>
+      {isPhone && <style>{CSS_PHONE}</style>}
+      <div style={isPhone ? { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 } : { display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <input style={{ ...s.input, maxWidth: isPhone ? undefined : 280, gridColumn: isPhone ? 'span 2' : undefined }} placeholder="Buscar nº, cliente, SKU ou item" value={busca} onChange={(e) => setBusca(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { setPagina(1); carregar(1); } }} />
+        <select style={{ ...s.input, maxWidth: isPhone ? undefined : 170, gridColumn: isPhone ? 'span 2' : undefined }} value={situacao} onChange={(e) => setSituacao(e.target.value)}>
           <option value="todas">Todas as situações</option>
           {SITUACOES.map((x) => <option key={x} value={x}>{x}</option>)}
         </select>
-        <input type="date" style={{ ...s.input, maxWidth: 150 }} value={de} onChange={(e) => setDe(e.target.value)} />
-        <input type="date" style={{ ...s.input, maxWidth: 150 }} value={ate} onChange={(e) => setAte(e.target.value)} />
-        <button style={s.btn} onClick={() => { setPagina(1); carregar(1); }}>Filtrar</button>
-        <div style={{ flex: 1 }} />
-        <button style={s.btn} onClick={() => sincronizar(false)} title="Traz do Bling as propostas novas ou alteradas">Sincronizar com o Bling</button>
+        <input type="date" style={{ ...s.input, maxWidth: isPhone ? undefined : 150 }} value={de} onChange={(e) => setDe(e.target.value)} />
+        <input type="date" style={{ ...s.input, maxWidth: isPhone ? undefined : 150 }} value={ate} onChange={(e) => setAte(e.target.value)} />
+        <button style={{ ...s.btn, gridColumn: isPhone ? 'span 2' : undefined }} onClick={() => { setPagina(1); carregar(1); }}>Filtrar</button>
+        {!isPhone && <div style={{ flex: 1 }} />}
+        <button style={s.btn} onClick={() => sincronizar(false)} title="Traz do Bling as propostas novas ou alteradas">{isPhone ? 'Sincronizar' : 'Sincronizar com o Bling'}</button>
         <button style={{ ...s.btn, ...s.btnPri }} onClick={() => setNovaAberta(true)}>+ Nova proposta</button>
       </div>
 
@@ -201,7 +218,7 @@ export default function PropostasComerciaisPage() {
         </div>
       )}
 
-      <div style={{ ...s.card, overflowX: 'auto' }}>
+      {!isPhone && <div style={{ ...s.card, overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead><tr>{['Nº', 'Nº Bling', 'Data', 'Cliente', 'Itens', 'Total', 'Situação', ''].map((h) => <th key={h} style={s.th}>{h}</th>)}</tr></thead>
           <tbody>
@@ -217,23 +234,35 @@ export default function PropostasComerciaisPage() {
                 <td style={{ ...s.td, fontWeight: 700 }}>{brl(p.total)}</td>
                 <td style={s.td}>
                   {pill(p.situacao)}
-                  {p.integracao === 'pendente' && <span title={p.integracaoMotivo || ''} style={{ marginLeft: 6, display: 'inline-block', padding: '2px 9px', borderRadius: 999, fontSize: 11, fontWeight: 700, background: '#fef3c7', color: '#92400e', whiteSpace: 'nowrap' }}>Pendente de envio ao Bling</span>}
+                  {selo(p)}
                 </td>
                 <td style={{ ...s.td, whiteSpace: 'nowrap' }}>
-                  <span style={{ display: 'inline-flex', gap: 6 }}>
-                    <button style={{ ...s.btn, padding: '5px 10px', fontSize: 12 }} onClick={(e) => { e.stopPropagation(); abrirPdf(p).catch((er) => alert(er.message)); }}>PDF</button>
-                    {p.situacao === 'Rascunho' && <button style={{ ...s.btn, padding: '5px 10px', fontSize: 12 }} onClick={(e) => { e.stopPropagation(); editarDaLinha(p.id); }}>Editar</button>}
-                    <button style={{ ...s.btn, padding: '5px 10px', fontSize: 12 }} title="Cria uma nova proposta já com os itens desta" onClick={(e) => { e.stopPropagation(); copiarDaLinha(p.id); }}>Copiar</button>
-                    <button style={{ ...s.btn, padding: '5px 10px', fontSize: 12, color: '#991b1b' }} onClick={(e) => { e.stopPropagation(); setExcluindo(p); }}>Excluir</button>
-                    {p.integracao === 'pendente' && <button disabled={enviando === p.id} title="Envia esta proposta ao Bling" style={{ ...s.btn, padding: '5px 10px', fontSize: 12, background: '#1d4ed8', color: '#fff', border: '1px solid #1d4ed8' }} onClick={(e) => { e.stopPropagation(); enviarAoBling(p); }}>{enviando === p.id ? 'Enviando…' : 'Enviar ao Bling'}</button>}
-                    {p.situacao === 'Rascunho' && (!p.integracao || p.integracao === 'ok') && <button style={{ ...s.btn, padding: '5px 10px', fontSize: 12, background: '#166534', color: '#fff', border: '1px solid #166534' }} onClick={(e) => { e.stopPropagation(); aprovarDaLinha(p); }}>Aprovar</button>}
-                  </span>
+                  <span style={{ display: 'inline-flex', gap: 6 }}>{acoes(p)}</span>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
-      </div>
+      </div>}
+
+      {isPhone && (
+        <div style={{ display: 'grid', gap: 10 }}>
+          {carregando && <div style={{ ...s.card, padding: 12, fontSize: 14 }}>Carregando…</div>}
+          {!carregando && dados && !dados.itens.length && <div style={{ ...s.card, padding: 12, fontSize: 14 }}>Nenhuma proposta. Use “Sincronizar” para trazer as que já existem no Bling.</div>}
+          {!carregando && (dados?.itens || []).map((p: any) => (
+            <div key={p.id} style={{ ...s.card, padding: 12 }} onClick={() => abrirDetalhe(p.id)}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
+                <strong style={{ fontSize: 17 }}>Nº {p.numero ?? '—'}</strong>
+                <strong style={{ fontSize: 16 }}>{brl(p.total)}</strong>
+              </div>
+              <div style={{ fontSize: 14, marginTop: 2 }}>{p.clienteNome || '—'}</div>
+              <div style={{ fontSize: 12.5, color: 'var(--ink-muted)', marginTop: 2 }}>{fmtData(p.data)} · {p.qtdItens} {p.qtdItens === 1 ? 'item' : 'itens'}{p.blingNumero ? ` · Bling Nº ${p.blingNumero}` : ''}</div>
+              <div style={{ marginTop: 8 }}>{pill(p.situacao)}{selo(p)}</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }} onClick={(e) => e.stopPropagation()}>{acoes(p)}</div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {totalPaginas > 1 && (
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'center' }}>
@@ -253,11 +282,12 @@ export default function PropostasComerciaisPage() {
 }
 
 function Modal({ titulo, onClose, children, largo }: { titulo: string; onClose: () => void; children: any; largo?: boolean }) {
+  const isPhone = useIsPhone();
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,.45)', zIndex: 200, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 16, overflowY: 'auto' }} onClick={onClose}>
-      <div style={{ ...s.card, width: '100%', maxWidth: largo ? 980 : 760, padding: 20, marginTop: 20 }} onClick={(e) => e.stopPropagation()}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-          <div style={{ fontSize: 17, fontWeight: 800 }}>{titulo}</div>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,.45)', zIndex: 200, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: isPhone ? 0 : 16, overflowY: 'auto' }} onClick={onClose}>
+      <div style={{ ...s.card, width: '100%', maxWidth: largo ? 980 : 760, padding: isPhone ? 12 : 20, marginTop: isPhone ? 0 : 20, borderRadius: isPhone ? 0 : 14, minHeight: isPhone ? '100%' : undefined, boxSizing: 'border-box' }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 14, position: isPhone ? 'sticky' : undefined, top: 0, background: isPhone ? 'var(--white)' : undefined, zIndex: 2, paddingBottom: isPhone ? 8 : 0 }}>
+          <div style={{ fontSize: isPhone ? 15 : 17, fontWeight: 800, minWidth: 0 }}>{titulo}</div>
           <button style={s.btn} onClick={onClose}>Fechar</button>
         </div>
         {children}
@@ -300,6 +330,7 @@ function ExcluirModal({ p, onClose, onExcluida }: { p: any; onClose: () => void;
 }
 
 function DetalheModal({ p, onClose, onSituacao, onCliente, onEditar }: { p: any; onClose: () => void; onSituacao: (id: string, s: string) => void; onCliente: (id: string, nome: string) => Promise<void>; onEditar: (p: any) => void }) {
+  const isPhone = useIsPhone();
   const itens: any[] = p.itens || [];
   const rascunho = String(p.situacao || '') === 'Rascunho';
   const [cliente, setCliente] = useState<string>(p.clienteNome || '');
@@ -321,7 +352,7 @@ function DetalheModal({ p, onClose, onSituacao, onCliente, onEditar }: { p: any;
           </div>
         </div>
       )}
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12 }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: isPhone ? 'stretch' : 'center', flexDirection: isPhone ? 'column' : 'row', marginBottom: 12 }}>
         <label style={{ fontSize: 13, display: 'flex', gap: 6, alignItems: 'center', flex: 1 }}>Cliente
           <input style={s.input} placeholder="Nome do cliente (aparece na lista e no PDF)" value={cliente} onChange={(e) => setCliente(e.target.value)} />
         </label>
@@ -340,7 +371,19 @@ function DetalheModal({ p, onClose, onSituacao, onCliente, onEditar }: { p: any;
         <button style={s.btn} onClick={async () => { try { const d = await chamar(`/propostas-comerciais/${p.id}/bling-bruto`); setJsonBling(JSON.stringify(d.bling, null, 2)); } catch (e: any) { alert(e?.message || 'Erro'); } }}>Ver dados do Bling</button>
         <button style={{ ...s.btn, ...s.btnPri }} onClick={() => abrirPdf(p).catch((er) => alert(er.message))}>Gerar PDF</button>
       </div>
-      <div style={{ overflowX: 'auto' }}>
+      {isPhone && (
+        <div style={{ display: 'grid', gap: 8 }}>
+          {itens.map((i, k) => (
+            <div key={k} style={{ ...s.card, padding: 10 }}>
+              <div style={{ fontSize: 14, fontWeight: 700 }}>{i.descricao}</div>
+              <div style={{ fontSize: 12.5, color: 'var(--ink-muted)', marginTop: 2 }}>{i.codigo} · {i.quantidade} un. · lista {brl(i.valorLista)} · desc. {i.descontoPct}%</div>
+              <div style={{ fontSize: 15, fontWeight: 800, marginTop: 4 }}>{brl(r2(i.valorLista * (1 - i.descontoPct / 100) * i.quantidade))}</div>
+            </div>
+          ))}
+          {!itens.length && <div style={{ fontSize: 14 }}>Sem itens gravados (use “Sincronizar”).</div>}
+        </div>
+      )}
+      {!isPhone && <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead><tr>{['Código', 'Item', 'Qtd', 'Lista', 'Desc %', 'Total'].map((h) => <th key={h} style={s.th}>{h}</th>)}</tr></thead>
           <tbody>
@@ -354,7 +397,7 @@ function DetalheModal({ p, onClose, onSituacao, onCliente, onEditar }: { p: any;
             {!itens.length && <tr><td style={s.td} colSpan={6}>Sem itens gravados (use “Sincronizar com o Bling”).</td></tr>}
           </tbody>
         </table>
-      </div>
+      </div>}
       <div style={{ textAlign: 'right', marginTop: 12, fontSize: 13 }}>
         {p.desconto ? <div>Desconto: {brl(p.desconto)}</div> : null}
         {p.outrasDespesas ? <div>Outras despesas: {brl(p.outrasDespesas)}</div> : null}
@@ -376,6 +419,7 @@ function DetalheModal({ p, onClose, onSituacao, onCliente, onEditar }: { p: any;
 // data de hoje (fuso de Sao Paulo) no formato do campo de data: AAAA-MM-DD
 const hojeSP = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 function BuscaPecasModal({ onClose, onAdicionar, jaNaProposta }: { onClose: () => void; onAdicionar: (sku: string) => Promise<boolean>; jaNaProposta: string[] }) {
+  const isPhone = useIsPhone();
   const [q, setQ] = useState('');
   const [origem, setOrigem] = useState('');
   const [marca, setMarca] = useState('');
@@ -418,14 +462,14 @@ function BuscaPecasModal({ onClose, onAdicionar, jaNaProposta }: { onClose: () =
   const totalPag = Math.max(1, Math.ceil((res.total || 0) / (res.limite || 30)));
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,.55)', zIndex: 400, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 16, overflowY: 'auto' }} onClick={onClose}>
-      <div style={{ ...s.card, width: '100%', maxWidth: 1000, padding: 16, marginTop: 10 }} onClick={(e) => e.stopPropagation()}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,.55)', zIndex: 400, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: isPhone ? 0 : 16, overflowY: 'auto' }} onClick={onClose}>
+      <div style={{ ...s.card, width: '100%', maxWidth: 1000, padding: isPhone ? 12 : 16, marginTop: isPhone ? 0 : 10, borderRadius: isPhone ? 0 : 14, minHeight: isPhone ? '100%' : undefined, boxSizing: 'border-box' }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
           <div style={{ fontSize: 16, fontWeight: 800 }}>Buscar peças</div>
           <button style={s.btn} onClick={onClose}>Fechar</button>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 8, marginBottom: 10 }}>
-          <input style={{ ...s.input, gridColumn: 'span 2' }} placeholder="SKU, descrição, marca ou modelo" value={q} onChange={(e) => mudaFiltro(() => setQ(e.target.value))} autoFocus />
+        <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr 1fr' : 'repeat(auto-fit,minmax(150px,1fr))', gap: 8, marginBottom: 10 }}>
+          <input style={{ ...s.input, gridColumn: isPhone ? '1 / -1' : 'span 2' }} placeholder="SKU, descrição, marca ou modelo" value={q} onChange={(e) => mudaFiltro(() => setQ(e.target.value))} autoFocus />
           <select style={s.input} value={origem} onChange={(e) => mudaFiltro(() => { setOrigem(e.target.value); setMarca(''); setModelo(''); setAno(''); })}>
             <option value="">Estoque e pré-cadastro</option><option value="estoque">Só em estoque</option><option value="pre_cadastro">Só pré-cadastro</option>
           </select>
@@ -444,13 +488,34 @@ function BuscaPecasModal({ onClose, onAdicionar, jaNaProposta }: { onClose: () =
           <input style={s.input} inputMode="decimal" placeholder="Preço mín." value={precoMin} onChange={(e) => mudaFiltro(() => setPrecoMin(e.target.value.replace(',', '.')))} />
           <input style={s.input} inputMode="decimal" placeholder="Preço máx." value={precoMax} onChange={(e) => mudaFiltro(() => setPrecoMax(e.target.value.replace(',', '.')))} />
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8, fontSize: 12.5, color: 'var(--ink-soft)' }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8, fontSize: 12.5, color: 'var(--ink-soft)' }}>
           <span>{carregando ? 'Buscando…' : `${res.total} peça(s)`}</span>
           <div style={{ flex: 1 }} />
           <button style={s.btn} onClick={() => { setQ(''); setOrigem(''); setMarca(''); setModelo(''); setAno(''); setPrecoMin(''); setPrecoMax(''); setPagina(1); }}>Limpar filtros</button>
           <button style={{ ...s.btn, ...s.btnPri }} disabled={!marcados.length || adicionando} onClick={adicionarMarcados}>{adicionando ? 'Adicionando…' : `Adicionar selecionadas (${marcados.length})`}</button>
         </div>
-        <div style={{ overflowX: 'auto', maxHeight: '52vh', overflowY: 'auto' }}>
+        {isPhone && (
+          <div style={{ display: 'grid', gap: 8 }}>
+            {(res.itens || []).map((x: any) => {
+              const naProposta = ja.indexOf(String(x.sku).toUpperCase()) >= 0;
+              return (
+                <div key={x.sku} style={{ ...s.card, padding: 10, opacity: naProposta ? 0.5 : 1 }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                    <input type="checkbox" style={{ marginTop: 4, width: 20, height: 20 }} disabled={naProposta} checked={marcados.indexOf(x.sku) >= 0} onChange={() => alternar(x.sku)} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 700 }}>{x.sku} <span style={{ fontWeight: 400 }}>· {x.descricao}</span></div>
+                      <div style={{ fontSize: 12.5, color: 'var(--ink-muted)', marginTop: 2 }}>{x.marca} {x.modelo}{x.ano ? ` ${x.ano}` : ''} · {x.origem === 'pre_cadastro' ? 'pré-cadastro' : 'estoque'}</div>
+                      <div style={{ fontSize: 15, fontWeight: 800, marginTop: 2 }}>{brl(x.preco)}</div>
+                    </div>
+                    {naProposta ? <span style={{ fontSize: 12 }}>na proposta</span> : <button style={{ ...s.btn, padding: '8px 12px' }} disabled={adicionando} onClick={async () => { setAdicionando(true); if (await onAdicionar(x.sku)) setJa((prev) => prev.concat([String(x.sku).toUpperCase()])); setAdicionando(false); }}>Adicionar</button>}
+                  </div>
+                </div>
+              );
+            })}
+            {!carregando && !(res.itens || []).length && <div style={{ fontSize: 14 }}>Nenhuma peça com esses filtros.</div>}
+          </div>
+        )}
+        {!isPhone && <div style={{ overflowX: 'auto', maxHeight: '52vh', overflowY: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr>{['', 'SKU', 'Descrição', 'Moto', 'Origem', 'Preço', ''].map((h, i) => <th key={i} style={s.th}>{h}</th>)}</tr></thead>
             <tbody>
@@ -471,7 +536,7 @@ function BuscaPecasModal({ onClose, onAdicionar, jaNaProposta }: { onClose: () =
               {!carregando && !(res.itens || []).length && <tr><td style={s.td} colSpan={7}>Nenhuma peça com esses filtros.</td></tr>}
             </tbody>
           </table>
-        </div>
+        </div>}
         {totalPag > 1 && (
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'center', marginTop: 8 }}>
             <button style={s.btn} disabled={pagina <= 1} onClick={() => setPagina(pagina - 1)}>←</button>
@@ -486,6 +551,7 @@ function BuscaPecasModal({ onClose, onAdicionar, jaNaProposta }: { onClose: () =
 
 const baseSkuFront = (v: any) => String(v || '').trim().toUpperCase().replace(/-\d+$/, '');
 function NovaPropostaModal({ onClose, onCriada, inicial }: { onClose: () => void; onCriada: (r: any) => void; inicial?: any }) {
+  const isPhone = useIsPhone();
   const copia = !!inicial?.copia;
   const edicao = !!inicial && !copia;
   const [cliBusca, setCliBusca] = useState('');
@@ -642,8 +708,8 @@ function NovaPropostaModal({ onClose, onCriada, inicial }: { onClose: () => void
 
         <div>
           <span style={s.label}>Itens (SKU ou descrição) — peça em estoque tem o saldo conferido no Bling; peça em pré-cadastro respeita o limite do pré-cadastro</span>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <div style={{ position: 'relative', flex: 1 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <div style={{ position: 'relative', flex: isPhone ? '1 1 100%' : 1 }}>
               <input style={s.input} placeholder="Digite o SKU ou parte da descrição (ex.: HD04_0147 ou embreagem fat boy)" value={sku}
                 onFocus={() => setFocoSku(true)} onBlur={() => setTimeout(() => setFocoSku(false), 200)}
                 onChange={(e) => setSku(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') adicionarItem(); if (e.key === 'Escape') setSugestoes([]); }} />
@@ -667,7 +733,29 @@ function NovaPropostaModal({ onClose, onCriada, inicial }: { onClose: () => void
           {buscaAberta && <BuscaPecasModal jaNaProposta={itens.map((i) => i.idPeca.toUpperCase())} onAdicionar={adicionarPorSku} onClose={() => setBuscaAberta(false)} />}
           {erro && <div style={{ color: '#991b1b', fontSize: 12.5, marginTop: 6 }}>{erro}</div>}
           {itens.length > 0 && <button style={{ ...s.btn, marginTop: 8 }} disabled={validando} onClick={precosDaBase}>Usar preços da base nos itens</button>}
-          {itens.length > 0 && (
+          {isPhone && itens.length > 0 && (
+            <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
+              {itens.map((i, idx) => {
+                const un = r2(i.valorLista * (1 - i.descontoPct / 100));
+                return (
+                  <div key={i.idPeca} style={{ ...s.card, padding: 10 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                      <div style={{ fontSize: 14, fontWeight: 700 }}>{i.descricao}{i.preCadastro && <span style={{ marginLeft: 6, padding: '1px 7px', borderRadius: 999, fontSize: 10.5, fontWeight: 700, background: '#fef3c7', color: '#92400e' }}>pré-cadastro</span>}</div>
+                      <button style={s.btn} onClick={() => setItens((prev) => prev.filter((_, k) => k !== idx))}>✕</button>
+                    </div>
+                    <div style={{ fontSize: 12.5, color: 'var(--ink-muted)', margin: '2px 0 8px' }}>{i.codigo}{i.saldoBling < 9999 ? ` · máx. ${i.saldoBling} un.` : ''}</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                      <label><span style={s.label}>Qtd</span><input style={s.input} inputMode="numeric" value={i.quantidade} onChange={(e) => mudar(idx, 'quantidade', Math.min(i.saldoBling, Math.max(1, Number(e.target.value) || 1)))} /></label>
+                      <label><span style={s.label}>Lista</span><input style={s.input} inputMode="decimal" value={i.valorLista} onChange={(e) => mudar(idx, 'valorLista', Number(e.target.value.replace(',', '.')) || 0)} /></label>
+                      <label><span style={s.label}>Desc %</span><input style={s.input} inputMode="decimal" value={i.descontoPct} onChange={(e) => mudar(idx, 'descontoPct', Math.min(100, Math.max(0, Number(e.target.value.replace(',', '.')) || 0)))} /></label>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 13 }}><span>Unitário {brl(un)}</span><strong style={{ fontSize: 15 }}>{brl(r2(un * i.quantidade))}</strong></div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {!isPhone && itens.length > 0 && (
             <div style={{ overflowX: 'auto', marginTop: 8 }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead><tr>{['Código', 'Item', 'Qtd', 'Preço lista', 'Desc %', 'Preço un.', 'Total', ''].map((h) => <th key={h} style={s.th}>{h}</th>)}</tr></thead>
@@ -700,7 +788,7 @@ function NovaPropostaModal({ onClose, onCriada, inicial }: { onClose: () => void
         <label><span style={s.label}>Observações (aparecem na proposta)</span><textarea style={{ ...s.input, minHeight: 56 }} value={f.observacoes} onChange={(e) => setF({ ...f, observacoes: e.target.value })} /></label>
         <label><span style={s.label}>Observação interna (só no Bling)</span><textarea style={{ ...s.input, minHeight: 44 }} value={f.observacaoInterna} onChange={(e) => setF({ ...f, observacaoInterna: e.target.value })} /></label>
 
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap' }}>
           {!edicao && itens.some((i) => i.preCadastro) && <span style={{ fontSize: 12, color: '#92400e', fontWeight: 600 }}>Há peça em pré-cadastro: a proposta será criada só aqui (pendente de envio ao Bling), com o número já reservado.</span>}
           <span style={{ fontSize: 12, color: 'var(--ink-muted)' }}>{edicao ? 'Ao salvar, a edição também é gravada no Bling.' : 'Ao salvar, a proposta é criada no Bling como Rascunho e recebe o número do Bling.'}</span>
           <button style={s.btn} onClick={onClose}>Cancelar</button>
