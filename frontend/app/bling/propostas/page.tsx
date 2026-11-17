@@ -334,14 +334,16 @@ function DetalheModal({ p, onClose, onSituacao, onCliente, onEditar }: { p: any;
   );
 }
 
+// data de hoje (fuso de Sao Paulo) no formato do campo de data: AAAA-MM-DD
+const hojeSP = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 const baseSkuFront = (v: any) => String(v || '').trim().toUpperCase().replace(/-\d+$/, '');
 function NovaPropostaModal({ onClose, onCriada, inicial }: { onClose: () => void; onCriada: (r: any) => void; inicial?: any }) {
   const copia = !!inicial?.copia;
   const edicao = !!inicial && !copia;
   const [cliBusca, setCliBusca] = useState('');
   const [cliLista, setCliLista] = useState<any[]>([]);
-  const [cliSel, setCliSel] = useState<{ id: string; nome: string } | null>(inicial && !copia && inicial.clienteId ? { id: String(inicial.clienteId), nome: String(inicial.clienteNome || `Contato ${inicial.clienteId}`) } : null);
-  const [cliNome, setCliNome] = useState(inicial && !copia && !inicial.clienteId ? String(inicial.clienteNome || '') : '');
+  const [cliSel, setCliSel] = useState<{ id: string; nome: string } | null>(inicial && inicial.clienteId ? { id: String(inicial.clienteId), nome: String(inicial.clienteNome || `Contato ${inicial.clienteId}`) } : null);
+  const [cliNome, setCliNome] = useState(inicial && !inicial.clienteId ? String(inicial.clienteNome || '') : '');
   const [sku, setSku] = useState('');
   const [validando, setValidando] = useState(false);
   const [itens, setItens] = useState<ItemForm[]>(inicial ? (inicial.itens || []).map((i: any) => ({
@@ -357,7 +359,7 @@ function NovaPropostaModal({ onClose, onCriada, inicial }: { onClose: () => void
     const d0 = lista.length ? Number(lista[0].descontoPct) || 0 : 0;
     return lista.length && d0 > 0 && lista.every((i: any) => (Number(i.descontoPct) || 0) === d0) ? String(d0) : '';
   });
-  const [f, setF] = useState({ data: inicial && !copia ? String(inicial.data || '').slice(0, 10) : '', aosCuidadosDe: copia ? '' : (inicial?.aosCuidadosDe || ''), introducao: inicial?.introducao || '', observacoes: inicial && !copia ? (inicial.observacoes || '') : OBS_PADRAO, prazoEntrega: inicial?.prazoEntrega || '', observacaoInterna: copia ? '' : (inicial?.observacaoInterna || '') });
+  const [f, setF] = useState({ data: inicial && !copia ? String(inicial.data || '').slice(0, 10) : hojeSP(), aosCuidadosDe: copia ? '' : (inicial?.aosCuidadosDe || ''), introducao: inicial?.introducao || '', observacoes: inicial && !copia ? (inicial.observacoes || '') : OBS_PADRAO, prazoEntrega: inicial?.prazoEntrega || '', observacaoInterna: copia ? '' : (inicial?.observacaoInterna || '') });
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState('');
   const [numeroProp, setNumeroProp] = useState(inicial && !copia && inicial.numero ? String(inicial.numero) : '');
@@ -428,7 +430,9 @@ function NovaPropostaModal({ onClose, onCriada, inicial }: { onClose: () => void
           <span style={s.label}>Cliente</span>
           {cliSel ? (
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <strong>{cliSel.nome}</strong><button style={s.btn} onClick={() => { setCliSel(null); setCliBusca(''); }}>Trocar</button>
+              <strong>{cliSel.nome}</strong>
+              <button style={s.btn} onClick={() => { setCliSel(null); setCliBusca(''); }}>Trocar</button>
+              <button style={{ ...s.btn, color: '#991b1b' }} onClick={() => { setCliSel(null); setCliBusca(''); setCliNome(''); }}>Limpar</button>
             </div>
           ) : (
             <div style={{ display: 'grid', gap: 6 }}>
@@ -442,7 +446,10 @@ function NovaPropostaModal({ onClose, onCriada, inicial }: { onClose: () => void
                   ))}
                 </div>
               )}
-              <input style={s.input} placeholder="Não está na base? Digite o nome do cliente (será criado no Bling só com o nome)" value={cliNome} onChange={(e) => setCliNome(e.target.value)} />
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input style={s.input} placeholder="Não está na base? Digite o nome do cliente (será criado no Bling só com o nome)" value={cliNome} onChange={(e) => setCliNome(e.target.value)} />
+                {(cliNome || cliBusca) && <button style={{ ...s.btn, color: '#991b1b' }} onClick={() => { setCliNome(''); setCliBusca(''); setCliLista([]); }}>Limpar</button>}
+              </div>
             </div>
           )}
         </div>
