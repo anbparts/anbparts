@@ -424,7 +424,9 @@ function ClienteModal({ p, onClose }: { p: any; onClose: () => void }) {
                       <strong>{brl(x.total)}</strong>
                     </div>
                     <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', marginTop: 4 }}>
-                      {(x.itens || []).map((i: any) => `${i.quantidade}× ${i.sku || ''} ${i.descricao || ''}`.trim()).join(' · ') || 'Sem itens'}
+                      {(x.itens || []).length
+                        ? (x.itens || []).map((i: any, k: number) => <div key={k}>{`${i.quantidade}× ${i.sku || ''} ${i.descricao || ''}`.trim()}</div>)
+                        : 'Sem itens'}
                     </div>
                   </div>
                 ))}
