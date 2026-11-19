@@ -1080,7 +1080,7 @@ etiquetasDetranRouter.get('/pendencias-ativacao', async (req, res, next) => {
     const [motos, posicoes, ativacoesMap] = await Promise.all([
       (prisma as any).moto.findMany({
         where: { id: { in: motoIds } },
-        select: { id: true, marca: true, modelo: true, renavam: true, placa: true, chassi: true, notaFiscalEntrada: true, notaFiscalEntradaData: true, detranCartelaId: true },
+        select: { id: true, marca: true, modelo: true, renavam: true, placa: true, chassi: true, notaFiscalEntrada: true, notaFiscalEntradaData: true, detranCartelaId: true, dataCompra: true, createdAt: true },
       }),
       prisma.motoDetranPosicao.findMany({
         where: { motoId: { in: motoIds }, idPeca: { not: null } },
@@ -1134,6 +1134,41 @@ etiquetasDetranRouter.get('/pendencias-ativacao', async (req, res, next) => {
         });
       }
     }
+
+    // Linhas com NF de entrada mas sem data de emissao: consulta no Bling (uma vez por numero) e grava na origem
+    // (Moto.notaFiscalEntradaData ou DevolucaoRegistro.nfDevolucaoData) pra nao consultar de novo.
+    try {
+      const { dataEmissaoNfEntrada } = await import('../lib/nf-entrada-data');
+      const motoRef = new Map<number, string | null>();
+      for (const m of motos as any[]) {
+        const ref = m.dataCompra || m.createdAt;
+        motoRef.set(m.id, ref ? new Date(ref).toISOString().slice(0, 10) : null);
+      }
+      const pendentes = new Map<string, any[]>();
+      for (const l of linhas) {
+        const num = String(l.notaFiscalEntrada || '').trim();
+        if (!num || l.notaFiscalEntradaData) continue;
+        const k = `${l.nfEntradaOrigem}|${num}`;
+        (pendentes.get(k) || pendentes.set(k, []).get(k)!).push(l);
+      }
+      for (const [k, grupo] of Array.from(pendentes.entries())) {
+        const primeira = grupo[0];
+        const numero = String(primeira.notaFiscalEntrada).trim();
+        const peca = pecas.find((p) => p.id === primeira.pecaId);
+        const ref = primeira.nfEntradaOrigem === 'moto' ? (peca ? motoRef.get(peca.motoId) || null : null) : null;
+        const data = await dataEmissaoNfEntrada(numero, ref);
+        if (!data) continue;
+        for (const l of grupo) l.notaFiscalEntradaData = data;
+        try {
+          if (primeira.nfEntradaOrigem === 'moto' && peca) {
+            await prisma.$executeRawUnsafe(`UPDATE "Moto" SET "notaFiscalEntradaData" = $2::date WHERE "id" = $1::int AND "notaFiscalEntradaData" IS NULL`, peca.motoId, data);
+          } else if (primeira.nfEntradaOrigem === 'devolucao') {
+            await prisma.$executeRawUnsafe(`UPDATE "DevolucaoRegistro" SET "nfDevolucaoData" = $2::date WHERE "pecaId" = $1::int AND trim("nfDevolucao") = $3 AND "nfDevolucaoData" IS NULL`, primeira.pecaId, data, numero);
+          }
+        } catch { /* sem cache: consulta de novo na proxima */ }
+        void k;
+      }
+    } catch (e) { console.warn('[pendencias-ativacao] data da NF de entrada:', e); }
 
     res.json({ ok: true, total: linhas.length, linhas });
   } catch (e) { next(e); }
