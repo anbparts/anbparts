@@ -379,8 +379,10 @@ export default function FaturamentoMotoPage() {
     ? `Consolidado - ${estoqueMarcaFilt}`
     : 'Consolidado - Todas as Motos';
 
+  const motoFiltradaRef = estoqueMotoFilt !== 'todas' ? estoquePorMotoBase.find((p: any) => p.moto === estoqueMotoFilt) : null;
+  const motoFiltradaPrefixo = motoFiltradaRef ? (skuPorMoto[motoFiltradaRef.motoId] || []).join(' - ') : '';
   const estoqueDetalheTitulo = estoqueMotoFilt !== 'todas'
-    ? estoqueMotoFilt
+    ? (motoFiltradaRef ? `ID ${motoFiltradaRef.motoId}${motoFiltradaPrefixo ? ` · ${motoFiltradaPrefixo}` : ''} - ${estoqueMotoFilt}` : estoqueMotoFilt)
     : estoqueMarcaFilt !== 'todas'
     ? `Detalhe por Moto - ${estoqueMarcaFilt}`
     : 'Detalhe por Moto';
@@ -888,7 +890,10 @@ export default function FaturamentoMotoPage() {
                       return (
                         <div key={`${p.motoId}-${p.key}-mobile-${i}`} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14 }}>
                           {estoqueMotoFilt === 'todas' && (
-                            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: 8 }}>{p.moto}</div>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: 8 }}>
+                              <span style={{ fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', fontWeight: 600 }}>ID {p.motoId}{(skuPorMoto[p.motoId] || []).length ? ` · ${(skuPorMoto[p.motoId] || []).join(' - ')}` : ''}</span>
+                              <div>{p.moto}</div>
+                            </div>
                           )}
                           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
                             <div style={{ fontSize: 12, color: 'var(--ink-muted)', fontFamily: 'Geist Mono, monospace' }}>{MESES[p.mes - 1]}/{p.ano}</div>
@@ -932,7 +937,7 @@ export default function FaturamentoMotoPage() {
                     <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
                       <tr>
                         {(estoqueMotoFilt === 'todas'
-                          ? ['Moto', 'Mês', 'Estoque início', 'Vendido', '% vendido', 'Qtd']
+                          ? ['ID', 'Código', 'Moto', 'Mês', 'Estoque início', 'Vendido', '% vendido', 'Qtd']
                           : ['Mês', 'Estoque início', 'Vendido', '% vendido', 'Qtd']
                         ).map(h => (
                           <th key={h} style={cs.th}>{h}</th>
@@ -947,9 +952,13 @@ export default function FaturamentoMotoPage() {
                           return (
                             <tr key={`${p.motoId}-${p.key}-${i}`}>
                               {estoqueMotoFilt === 'todas' && (
-                                <td style={{ ...cs.td, fontSize: 12, maxWidth: 200 }}>
-                                  <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>{p.moto}</div>
-                                </td>
+                                <>
+                                  <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, whiteSpace: 'nowrap' as const }}>{p.motoId}</td>
+                                  <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, whiteSpace: 'nowrap' as const }}>{(skuPorMoto[p.motoId] || []).join(' - ') || '-'}</td>
+                                  <td style={{ ...cs.td, fontSize: 12, maxWidth: 200 }}>
+                                    <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>{p.moto}</div>
+                                  </td>
+                                </>
                               )}
                               <td style={{ ...cs.td, fontFamily: 'Geist Mono, monospace', fontSize: 12, whiteSpace: 'nowrap' as const }}>
                                 {MESES[p.mes - 1]}/{p.ano}
