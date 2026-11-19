@@ -104,6 +104,7 @@ export default function FaturamentoMotoPage() {
   const [filtAno, setFiltAno] = useState(currentYear());
   const [filtMes, setFiltMes] = useState('');
   const [relatorioSort, setRelatorioSort] = useState<{ key: string; dir: 'asc' | 'desc' }>({ key: 'ano', dir: 'desc' });
+  const [estoqueSort, setEstoqueSort] = useState<{ key: string; dir: 'asc' | 'desc' }>({ key: 'motoId', dir: 'asc' });
   const [loading, setLoading] = useState(true);
   const [modo, setModo] = usePersistentTab<ViewMode>('aba', 'grafico', ['grafico', 'relatorio', 'estoque', 'giro', 'valor', 'provisao']);
   const [estoqueData, setEstoqueData] = useState<{ meses: string[]; porMoto: any[]; consolidado: any[] } | null>(null);
@@ -362,11 +363,37 @@ export default function FaturamentoMotoPage() {
       (!estoqueAnoFilt || String(p.ano) === estoqueAnoFilt) &&
       (!estoqueMesFilt || String(p.mes) === estoqueMesFilt)
     )
-    .sort((a: any, b: any) =>
-      a.ano !== b.ano ? a.ano - b.ano :
-      a.mes !== b.mes ? a.mes - b.mes :
-      a.moto.localeCompare(b.moto)
-    );
+    .sort((a: any, b: any) => {
+      const valor = (p: any): number | string => {
+        switch (estoqueSort.key) {
+          case 'codigo': return (skuPorMoto[p.motoId] || []).join(' - ');
+          case 'moto': return String(p.moto || '');
+          case 'periodo': return p.ano * 100 + p.mes;
+          case 'estoqueInicio': return Number(p.estoqueInicio) || 0;
+          case 'vendido': return Number(p.vendido) || 0;
+          case 'percentual': return Number(p.percentual) || 0;
+          case 'qtdVendida': return Number(p.qtdVendida) || 0;
+          default: return Number(p.motoId) || 0;
+        }
+      };
+      const va = valor(a);
+      const vb = valor(b);
+      const dir = estoqueSort.dir === 'asc' ? 1 : -1;
+      const cmp = typeof va === 'string' || typeof vb === 'string'
+        ? String(va).localeCompare(String(vb), 'pt-BR', { numeric: true })
+        : (va as number) - (vb as number);
+      if (cmp !== 0) return cmp * dir;
+      // desempate: ID da moto e depois periodo cronologico
+      return (a.motoId - b.motoId) || (a.ano - b.ano) || (a.mes - b.mes);
+    });
+
+  function toggleEstoqueSort(key: string) {
+    setEstoqueSort((atual) => ({ key, dir: atual.key === key && atual.dir === 'asc' ? 'desc' : 'asc' }));
+  }
+  function indicadorEstoqueSort(key: string) {
+    if (estoqueSort.key !== key) return '';
+    return estoqueSort.dir === 'asc' ? ' ▲' : ' ▼';
+  }
 
   const estoqueConsolidadoFiltrado = estoqueMarcaFilt === 'todas' && estoqueMotoFilt === 'todas'
     ? (estoqueData?.consolidado || [])
@@ -936,11 +963,21 @@ export default function FaturamentoMotoPage() {
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' }}>
                       <tr>
-                        {(estoqueMotoFilt === 'todas'
-                          ? ['ID', 'Código', 'Moto', 'Mês', 'Estoque início', 'Vendido', '% vendido', 'Qtd']
-                          : ['Mês', 'Estoque início', 'Vendido', '% vendido', 'Qtd']
-                        ).map(h => (
-                          <th key={h} style={cs.th}>{h}</th>
+                        {([
+                          ...(estoqueMotoFilt === 'todas' ? [
+                            { key: 'motoId', label: 'ID' },
+                            { key: 'codigo', label: 'Código' },
+                            { key: 'moto', label: 'Moto' },
+                          ] : []),
+                          { key: 'periodo', label: 'Mês' },
+                          { key: 'estoqueInicio', label: 'Estoque início' },
+                          { key: 'vendido', label: 'Vendido' },
+                          { key: 'percentual', label: '% vendido' },
+                          { key: 'qtdVendida', label: 'Qtd' },
+                        ]).map(h => (
+                          <th key={h.key} style={{ ...cs.th, cursor: 'pointer', userSelect: 'none' as const }} onClick={() => toggleEstoqueSort(h.key)}>
+                            {h.label}{indicadorEstoqueSort(h.key)}
+                          </th>
                         ))}
                       </tr>
                     </thead>
