@@ -3,6 +3,7 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { listarEtiquetaTransporteLog, lerEtiquetaTransporteLog } from '../lib/etiqueta-transporte-log';
+import { magaluReqBruto } from '../lib/magalu-api';
 import { diagnosticoEtiquetaShopee, etiquetaMercadoLivre, etiquetaShopee } from '../lib/etiqueta-transporte';
 
 export const etiquetasTransporteRouter = Router();
@@ -129,4 +130,35 @@ etiquetasTransporteRouter.get('/log/:id/:parte', async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="${nome}"`);
     res.send(Buffer.from(b64, 'base64'));
   } catch (e: any) { res.status(500).json({ ok: false, error: String(e?.message || e) }); }
+});
+
+// POST /etiquetas-transporte/magalu/diagnostico { codigoPedido?, deliveryId?, corpoEtiqueta? }
+// Explora a API do Magalu SEM gerar nada alem do que for pedido: le o pedido, lista entregas e (opcional) chama
+// POST /seller/v1/logistics/shipping-labels com o corpo informado. Devolve as respostas CRUAS (status, tipo, trecho do corpo).
+// Servira para descobrir o formato real (campos do pedido -> id da entrega, corpo da etiqueta, PDF/ZPL) antes de implementar.
+etiquetasTransporteRouter.post('/magalu/diagnostico', async (req, res) => {
+  const resumo = async (path: string, init?: { method?: string; body?: any }) => {
+    try {
+      const r = await magaluReqBruto(path, init);
+      const ehTexto = /json|text|xml/i.test(r.contentType);
+      return {
+        path, metodo: init?.method || 'GET', status: r.status, contentType: r.contentType, bytes: r.buffer.length,
+        corpo: ehTexto ? r.buffer.toString('utf8').slice(0, 6000) : undefined,
+        inicioBinario: ehTexto ? undefined : r.buffer.subarray(0, 16).toString('latin1'),
+      };
+    } catch (e: any) { return { path, erro: String(e?.message || e) }; }
+  };
+  try {
+    const codigo = String(req.body?.codigoPedido || '').trim();
+    const deliveryId = String(req.body?.deliveryId || '').trim();
+    const out: any = { passos: [] };
+    if (codigo) {
+      out.passos.push(await resumo(`/seller/v1/orders/${encodeURIComponent(codigo)}`));
+      out.passos.push(await resumo(`/seller/v1/deliveries?order_id=${encodeURIComponent(codigo)}`));
+    }
+    out.passos.push(await resumo('/seller/v1/logistics/shipping-labels', { method: 'POST', body: req.body?.corpoEtiqueta ?? (deliveryId ? { deliveries: [{ id: deliveryId }] } : {}) }));
+    res.json({ ok: true, ...out });
+  } catch (e: any) {
+    res.status(502).json({ ok: false, error: String(e?.message || e) });
+  }
 });

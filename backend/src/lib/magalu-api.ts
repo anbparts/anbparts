@@ -143,6 +143,21 @@ export async function magaluReq(path: string, init?: { method?: string; body?: a
   return payload;
 }
 
+// Como magaluReq, mas devolve status + corpo BRUTO sem lancar erro (para diagnostico e arquivos binarios como etiqueta).
+export async function magaluReqBruto(path: string, init?: { method?: string; body?: any }): Promise<{ status: number; contentType: string; buffer: Buffer }> {
+  let config = await getMagaluConfig();
+  if (!config.accessToken) throw new Error('Magalu nao autorizado. Conecte em Configuracao.');
+  if (config.expiresAt && new Date(config.expiresAt).getTime() < Date.now() + 60_000) { await magaluRefreshToken(); config = await getMagaluConfig(); }
+  const doRequest = (token: string) => fetch(`${getApiHost(config.environment)}${path}`, {
+    method: init?.method || 'GET',
+    headers: { 'Content-Type': 'application/json', Accept: '*/*', Authorization: `Bearer ${token}` },
+    body: init?.body !== undefined ? JSON.stringify(init.body) : undefined,
+  });
+  let response = await doRequest(config.accessToken);
+  if (response.status === 401) response = await doRequest(await magaluRefreshToken());
+  return { status: response.status, contentType: String(response.headers.get('content-type') || ''), buffer: Buffer.from(await response.arrayBuffer()) };
+}
+
 // GET /seller/v1/portfolios/me — confirmado na doc oficial (Seller > Consultar informacoes do
 // seller). Devolve tenant/channel/seller — e' daqui que pegamos o channel.id real da loja (nao
 // precisa ficar fixo/hardcoded), usado em channels[], prices e stocks. Cacheado em memoria por

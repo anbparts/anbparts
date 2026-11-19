@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { compressDataUrlImage, normalizeImageFileName } from '../lib/image';
-import { buscarCadastroFotos, buscarCadastroFotosAnb, buscarCadastroFotosDrive, enviarCadastroFotosManual, processarCadastroFotos, verificarCadastroFotoSku, verificarFotosCadastroPeca, getPastaPreCadastroDoSku, analisarFotosSku, apagarPastaDrive, escanearFotosDrive, processarPastaFotosDrive, novoResultadoFotoDrive, enviarFotoCameraPreCadastro, apagarFotoCameraPreCadastro, prepararManutencaoFotos, manutencaoFotosMlUpload, manutencaoFotosMlTrocar, manutencaoFotosNuvemshopLimpar, manutencaoFotosNuvemshopEnviar } from '../lib/fotos-cadastro';
+import { buscarCadastroFotos, buscarCadastroFotosAnb, buscarCadastroFotosDrive, enviarCadastroFotosManual, processarCadastroFotos, verificarCadastroFotoSku, verificarFotosCadastroPeca, getPastaPreCadastroDoSku, analisarFotosSku, apagarPastaDrive, escanearFotosDrive, processarPastaFotosDrive, novoResultadoFotoDrive, enviarFotoCameraPreCadastro, apagarFotoCameraPreCadastro, prepararManutencaoFotos, manutencaoFotosMlUpload, manutencaoFotosMlTrocar, manutencaoFotosNuvemshopLimpar, manutencaoFotosNuvemshopEnviar, manutencaoFotosAnb, manutencaoFotosShopee, manutencaoFotosMagalu } from '../lib/fotos-cadastro';
 import type { FotoDriveResultado } from '../lib/fotos-cadastro';
 import { blingReq, fetchBlingProductDetailById, findBlingProductsByCodes, resolveBlingLocation, fetchProdutoLojaLinksByProductId, resolveBlingMercadoLivreItemId, resolveBlingMercadoLivreLinkWithFallback, resolveMercadoLivreItemIdViaAnuncios, buildMercadoLivreItemLink } from './bling';
 import { criarPastaPreCadastro, renomearPastaPreCadastro } from './google-drive';
@@ -1208,6 +1208,20 @@ cadastroRouter.post('/fotos/manutencao/nuvemshop-enviar', requireCadastroAction(
   } catch (e: any) {
     res.status(400).json({ error: e?.message || 'Erro ao enviar fotos novas na Nuvemshop.' });
   }
+});
+
+// Manutencao de Fotos — capa do ANB, Shopee e Magalu (mesma ideia: 1 etapa por chamada pra tela mostrar o avanco).
+cadastroRouter.post('/fotos/manutencao/anb', requireCadastroAction('enviar_fotos'), async (req, res) => {
+  try { res.json(await manutencaoFotosAnb(String(req.body?.sku || ''))); }
+  catch (e: any) { res.status(400).json({ error: e?.message || 'Erro ao atualizar a foto capa do ANB.' }); }
+});
+cadastroRouter.post('/fotos/manutencao/shopee', requireCadastroAction('enviar_fotos'), async (req, res) => {
+  try { res.json(await manutencaoFotosShopee(String(req.body?.sku || ''))); }
+  catch (e: any) { res.status(400).json({ error: e?.message || 'Erro ao trocar fotos na Shopee.' }); }
+});
+cadastroRouter.post('/fotos/manutencao/magalu', requireCadastroAction('enviar_fotos'), async (req, res) => {
+  try { res.json(await manutencaoFotosMagalu(String(req.body?.sku || ''))); }
+  catch (e: any) { res.status(400).json({ error: e?.message || 'Erro ao trocar fotos no Magalu.' }); }
 });
 
 // PUT /cadastro/:id

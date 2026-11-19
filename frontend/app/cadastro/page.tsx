@@ -103,12 +103,20 @@ type ManutencaoFotosLinha = {
   pastaFotos: string;
   temMl: boolean;
   temNuvemshop: boolean;
+  temShopee: boolean;
+  temMagalu: boolean;
   status: 'pendente' | 'processando' | 'concluido' | 'erro';
   etapaAtual: string;
+  anbOk: boolean | null;
+  anbErro: string;
   mlOk: boolean | null;
   mlErro: string;
   nuvemshopOk: boolean | null;
   nuvemshopErro: string;
+  shopeeOk: boolean | null;
+  shopeeErro: string;
+  magaluOk: boolean | null;
+  magaluErro: string;
 };
 
 const FOTOS_SISTEMAS_PROCESSAMENTO: CadastroFotosSistema[] = ['anb', 'ml', 'nuvemshop', 'shopee', 'magalu'];
@@ -596,12 +604,20 @@ export default function CadastroPage() {
         pastaFotos: item.pastaFotos || '',
         temMl: Boolean(item.temMl),
         temNuvemshop: Boolean(item.temNuvemshop),
+        temShopee: Boolean(item.temShopee),
+        temMagalu: Boolean(item.temMagalu),
         status: item.ok ? 'pendente' : 'erro',
         etapaAtual: '',
+        anbOk: null,
+        anbErro: '',
         mlOk: null,
         mlErro: '',
         nuvemshopOk: null,
         nuvemshopErro: '',
+        shopeeOk: null,
+        shopeeErro: '',
+        magaluOk: null,
+        magaluErro: '',
       })));
     } catch (e: any) {
       setManutencaoErro(e?.message || 'Erro ao preparar manutencao de fotos.');
@@ -628,6 +644,15 @@ export default function CadastroPage() {
       setManutencaoSkuAtual(linha.sku);
       atualizarManutencaoLinha(linha.sku, { status: 'processando' });
 
+      // Foto capa do ANB (sistema): a 1a foto tratada da pasta oficial; o backend confere a gravacao.
+      atualizarManutencaoLinha(linha.sku, { etapaAtual: 'Atualizando a foto capa no ANB...' });
+      try {
+        const anb = await manutencaoPostJson('/cadastro/fotos/manutencao/anb', { sku: linha.sku });
+        atualizarManutencaoLinha(linha.sku, { anbOk: Boolean(anb.ok), anbErro: anb.erro || '' });
+      } catch (e: any) {
+        atualizarManutencaoLinha(linha.sku, { anbOk: false, anbErro: e?.message || 'Erro ao atualizar a capa do ANB.' });
+      }
+
       if (linha.temMl) {
         atualizarManutencaoLinha(linha.sku, { etapaAtual: 'Subindo fotos novas no Mercado Livre...' });
         try {
@@ -642,8 +667,6 @@ export default function CadastroPage() {
         } catch (e: any) {
           atualizarManutencaoLinha(linha.sku, { mlOk: false, mlErro: e?.message || 'Erro no Mercado Livre.' });
         }
-      } else {
-        atualizarManutencaoLinha(linha.sku, { mlOk: false, mlErro: 'SKU sem item vinculado no Mercado Livre.' });
       }
 
       if (linha.temNuvemshop) {
@@ -660,8 +683,26 @@ export default function CadastroPage() {
         } catch (e: any) {
           atualizarManutencaoLinha(linha.sku, { nuvemshopOk: false, nuvemshopErro: e?.message || 'Erro na Nuvemshop.' });
         }
-      } else {
-        atualizarManutencaoLinha(linha.sku, { nuvemshopOk: false, nuvemshopErro: 'SKU sem produto encontrado na Nuvemshop.' });
+      }
+
+      if (linha.temShopee) {
+        atualizarManutencaoLinha(linha.sku, { etapaAtual: 'Trocando fotos na Shopee...' });
+        try {
+          const r = await manutencaoPostJson('/cadastro/fotos/manutencao/shopee', { sku: linha.sku });
+          atualizarManutencaoLinha(linha.sku, { shopeeOk: Boolean(r.ok), shopeeErro: r.erro || '' });
+        } catch (e: any) {
+          atualizarManutencaoLinha(linha.sku, { shopeeOk: false, shopeeErro: e?.message || 'Erro na Shopee.' });
+        }
+      }
+
+      if (linha.temMagalu) {
+        atualizarManutencaoLinha(linha.sku, { etapaAtual: 'Trocando fotos no Magalu...' });
+        try {
+          const r = await manutencaoPostJson('/cadastro/fotos/manutencao/magalu', { sku: linha.sku });
+          atualizarManutencaoLinha(linha.sku, { magaluOk: Boolean(r.ok), magaluErro: r.erro || '' });
+        } catch (e: any) {
+          atualizarManutencaoLinha(linha.sku, { magaluOk: false, magaluErro: e?.message || 'Erro no Magalu.' });
+        }
       }
 
       atualizarManutencaoLinha(linha.sku, { status: 'concluido', etapaAtual: '' });
@@ -3604,7 +3645,7 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
         <div style={{ ...s.card, padding: isPhone ? '14px' : '18px' }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 4 }}>Manutenção de fotos em anúncios já publicados</div>
           <div style={{ fontSize: 12, color: 'var(--gray-500)', marginBottom: 14, lineHeight: 1.5 }}>
-            Substitui <b>todas</b> as fotos do anúncio no Mercado Livre e na Nuvemshop pelas fotos já tratadas na pasta oficial da moto. Rode o <b>Fotos Drive</b> primeiro (é de lá que vêm as fotos novas) — as antigas são removidas dos dois marketplaces.
+            Substitui <b>todas</b> as fotos do anúncio no Mercado Livre, Nuvemshop, Shopee e Magalu (onde o SKU estiver publicado) pelas fotos já tratadas na pasta oficial da moto, e atualiza a <b>foto capa no ANB</b>. Rode o <b>Fotos Drive</b> primeiro (é de lá que vêm as fotos novas) — as antigas são removidas dos marketplaces.
           </div>
           <label style={s.label}>SKUs</label>
           <textarea
@@ -3667,22 +3708,27 @@ No marketplace: ${data.marketplace_acao}.` : ''}${Array.isArray(data.removidoNoB
                       </div>
                     )}
 
-                    {(linha.mlOk !== null || linha.nuvemshopOk !== null) && (
-                      <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '1fr 1fr', gap: 8, marginTop: 8 }}>
-                        <div style={{ padding: '8px 10px', borderRadius: 6, background: linha.mlOk ? '#f0fdf4' : linha.mlOk === false ? '#fef2f2' : '#f8fafc' }}>
-                          <div style={{ fontSize: 11, fontWeight: 700, color: linha.mlOk ? '#16a34a' : linha.mlOk === false ? '#dc2626' : 'var(--gray-500)' }}>
-                            Mercado Livre {linha.mlOk ? '✓ substituído' : linha.mlOk === false ? '✗' : '…'}
+                    {/* 1 caixinha por destino: ANB (capa), Mercado Livre, Nuvemshop, Shopee e Magalu (so os que tem anuncio sao processados) */}
+                    <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr 1fr' : 'repeat(5, 1fr)', gap: 8, marginTop: 8 }}>
+                      {([
+                        { nome: 'ANB (capa)', tem: true, ok: linha.anbOk, erro: linha.anbErro, feito: '✓ atualizada' },
+                        { nome: 'Mercado Livre', tem: linha.temMl, ok: linha.mlOk, erro: linha.mlErro, feito: '✓ substituído' },
+                        { nome: 'Nuvemshop', tem: linha.temNuvemshop, ok: linha.nuvemshopOk, erro: linha.nuvemshopErro, feito: '✓ substituído' },
+                        { nome: 'Shopee', tem: linha.temShopee, ok: linha.shopeeOk, erro: linha.shopeeErro, feito: '✓ substituído' },
+                        { nome: 'Magalu', tem: linha.temMagalu, ok: linha.magaluOk, erro: linha.magaluErro, feito: '✓ substituído' },
+                      ]).map((c) => {
+                        const processando = linha.status === 'processando' && c.ok === null;
+                        const texto = !c.tem ? 'sem anúncio' : c.ok ? c.feito : c.ok === false ? '✗ falhou' : processando ? '…' : 'aguardando';
+                        const cor = !c.tem ? 'var(--gray-400)' : c.ok ? '#16a34a' : c.ok === false ? '#dc2626' : 'var(--gray-500)';
+                        return (
+                          <div key={c.nome} style={{ padding: '8px 10px', borderRadius: 6, background: !c.tem ? '#f8fafc' : c.ok ? '#f0fdf4' : c.ok === false ? '#fef2f2' : '#f8fafc', opacity: c.tem ? 1 : 0.65 }}>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: cor }}>{c.nome}</div>
+                            <div style={{ fontSize: 11, color: cor, marginTop: 2 }}>{texto}</div>
+                            {c.erro && <div style={{ fontSize: 11, color: '#dc2626', marginTop: 3 }}>{c.erro}</div>}
                           </div>
-                          {linha.mlErro && <div style={{ fontSize: 11, color: '#dc2626', marginTop: 3 }}>{linha.mlErro}</div>}
-                        </div>
-                        <div style={{ padding: '8px 10px', borderRadius: 6, background: linha.nuvemshopOk ? '#f0fdf4' : linha.nuvemshopOk === false ? '#fef2f2' : '#f8fafc' }}>
-                          <div style={{ fontSize: 11, fontWeight: 700, color: linha.nuvemshopOk ? '#16a34a' : linha.nuvemshopOk === false ? '#dc2626' : 'var(--gray-500)' }}>
-                            Nuvemshop {linha.nuvemshopOk ? '✓ substituído' : linha.nuvemshopOk === false ? '✗' : '…'}
-                          </div>
-                          {linha.nuvemshopErro && <div style={{ fontSize: 11, color: '#dc2626', marginTop: 3 }}>{linha.nuvemshopErro}</div>}
-                        </div>
-                      </div>
-                    )}
+                        );
+                      })}
+                    </div>
                   </div>
                 );
               })}

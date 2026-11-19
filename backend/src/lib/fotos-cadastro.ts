@@ -1272,7 +1272,7 @@ async function resolverContextoManutencaoFotos(sku: string) {
   const base = baseSku(sku);
   const peca = await prisma.peca.findFirst({
     where: { idPeca: base },
-    select: { idPeca: true, descricao: true, motoId: true, mercadoLivreItemId: true, mercadoLivreLink: true },
+    select: { idPeca: true, descricao: true, motoId: true, mercadoLivreItemId: true, mercadoLivreLink: true, shopeeItemId: true, magaluItemId: true },
   });
   if (!peca) return { ok: false as const, erro: 'SKU nao encontrado como peca ja finalizada no ANB.' };
 
@@ -1286,7 +1286,10 @@ async function resolverContextoManutencaoFotos(sku: string) {
     produtoId = produto?.id ?? null;
   } catch { /* segue sem nuvemshop — a etapa dedicada reporta o erro se tentar usar */ }
 
-  return { ok: true as const, sku: base, pasta, fotos, itemId, produtoId };
+  const shopeeItemId = normalizeText((peca as any).shopeeItemId) || null;
+  const magaluItemId = normalizeText((peca as any).magaluItemId) || null;
+
+  return { ok: true as const, sku: base, pasta, fotos, itemId, produtoId, shopeeItemId, magaluItemId };
 }
 
 // Preparacao: valida todos os SKUs da lista de uma vez (so metadados/Drive, rapido) pra montar a
@@ -1303,9 +1306,81 @@ export async function prepararManutencaoFotos(skusInput: any) {
       pastaFotos: ctx.pasta,
       temMl: Boolean(ctx.itemId),
       temNuvemshop: Boolean(ctx.produtoId),
+      temShopee: Boolean(ctx.shopeeItemId),
+      temMagalu: Boolean(ctx.magaluItemId),
     };
   }));
   return { ok: true, itens };
+}
+
+// Etapa ANB — foto capa do sistema (Peca.fotoCapaArquivo): a capa e' a 1a foto tratada da pasta oficial.
+// Aplica na base e nas variacoes (-2, -3...) e LE DE VOLTA do banco pra confirmar que gravou.
+export async function manutencaoFotosAnb(sku: string) {
+  const ctx = await resolverContextoManutencaoFotos(sku);
+  if (!ctx.ok) return { ok: false, erro: ctx.erro };
+  try {
+    const { fotoCapaNome, fotoCapaArquivo } = await prepararFotoCapaAnb(ctx.fotos[0], ctx.sku);
+    const upd = await prisma.peca.updateMany({
+      where: { OR: [
+        { idPeca: { equals: ctx.sku, mode: 'insensitive' } },
+        { idPeca: { startsWith: `${ctx.sku}-`, mode: 'insensitive' } },
+      ] },
+      data: { fotoCapaNome, fotoCapaArquivo },
+    });
+    const confere = await prisma.peca.count({
+      where: { AND: [
+        { OR: [{ idPeca: { equals: ctx.sku, mode: 'insensitive' } }, { idPeca: { startsWith: `${ctx.sku}-`, mode: 'insensitive' } }] },
+        { fotoCapaNome },
+      ] },
+    });
+    if (!upd.count || confere !== upd.count) return { ok: false, erro: `Capa gravada em ${confere} de ${upd.count} registro(s) — confira o SKU.` };
+    return { ok: true, nome: fotoCapaNome, registros: upd.count, erro: null as string | null };
+  } catch (e: any) {
+    return { ok: false, erro: e?.message || String(e) };
+  }
+}
+
+// Etapa Shopee — sobe as fotos novas e troca a lista INTEIRA de imagens do item (a API substitui tudo).
+// So troca se pelo menos 1 foto nova subiu; depois confere quantas imagens o item ficou com.
+export async function manutencaoFotosShopee(sku: string) {
+  const ctx = await resolverContextoManutencaoFotos(sku);
+  if (!ctx.ok) return { ok: false, erro: ctx.erro };
+  if (!ctx.shopeeItemId) return { ok: false, erro: 'SKU sem item vinculado na Shopee.' };
+  try {
+    const novosIds: string[] = [];
+    let falhas = 0;
+    for (const foto of ctx.fotos.slice(0, SHOPEE_MAX_FOTOS)) {
+      try {
+        const baixada = await downloadDriveFoto(foto);
+        novosIds.push(await shopeeUploadImage(baixada.buffer, foto.nome || 'foto.jpg'));
+        await pauseUploadBatch(novosIds.length - 1);
+      } catch { falhas += 1; }
+    }
+    if (!novosIds.length) return { ok: false, erro: 'Nenhuma foto nova foi enviada com sucesso — nada sera trocado no anuncio.' };
+    await shopeeUpdateItemImages(ctx.shopeeItemId, novosIds);
+    const item = await shopeeGetItemBaseInfo(ctx.shopeeItemId).catch(() => null);
+    const ficou = Array.isArray(item?.image?.image_id_list) ? item.image.image_id_list.length : null;
+    return { ok: true, enviadas: novosIds.length, falhas, ficou, erro: null as string | null };
+  } catch (e: any) {
+    return { ok: false, erro: e?.message || String(e) };
+  }
+}
+
+// Etapa Magalu — a API aceita so URL publica (/magalu/imagem/:id) e o PATCH substitui a lista inteira.
+export async function manutencaoFotosMagalu(sku: string) {
+  const ctx = await resolverContextoManutencaoFotos(sku);
+  if (!ctx.ok) return { ok: false, erro: ctx.erro };
+  if (!ctx.magaluItemId) return { ok: false, erro: 'SKU sem item vinculado no Magalu.' };
+  try {
+    const base = (process.env.BACKEND_URL || 'http://localhost:4000').replace(/\/$/, '');
+    const fotos = ctx.fotos.slice(0, MAGALU_MAX_FOTOS);
+    await magaluUpdateSkuImages(ctx.magaluItemId, fotos.map((f) => `${base}/magalu/imagem/${encodeURIComponent(f.id)}`));
+    const atual = await magaluGetSku(ctx.magaluItemId).catch(() => null);
+    const ficou = Array.isArray(atual?.images) ? atual.images.length : null;
+    return { ok: true, enviadas: fotos.length, ficou, erro: null as string | null };
+  } catch (e: any) {
+    return { ok: false, erro: e?.message || String(e) };
+  }
 }
 
 // Etapa 1/4 — ML: sobe cada foto nova. Fica "solta" (nao vinculada ao item ainda), entao nao
