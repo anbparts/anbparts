@@ -7410,10 +7410,30 @@ blingRouter.get('/relatorio-separacao-manual/pedidos', async (req, res, next) =>
     const canalPorPedido = await canaisDosPedidos((pedidos as any[]).map((p) => p.pedidoId));
     for (const p of pedidos as any[]) p.canal = canalPorPedido.get(String(p.pedidoId)) || null;
 
+    // Situacao no Bling (tabela local BlingPedido): cancelado nao entra na separacao; faturado = situacao Concluido.
+    const situacaoPorPedido = new Map<string, { situacao: string; cancelado: boolean }>();
+    try {
+      const ids = Array.from(new Set((pedidos as any[]).map((p) => String(p.pedidoId)).filter((x) => /^\d+$/.test(x))));
+      if (ids.length) {
+        const rows = await prisma.$queryRawUnsafe<Array<{ id: string; situacao: string | null; cancelado: boolean | null }>>(
+          `SELECT "id"::text AS id, "situacao", "cancelado" FROM "BlingPedido" WHERE "id" = ANY($1::bigint[])`, ids);
+        for (const r of rows) situacaoPorPedido.set(String(r.id), { situacao: String(r.situacao || ''), cancelado: !!r.cancelado });
+      }
+    } catch { /* tabela local ainda nao criada: sem filtro nem marca de faturado */ }
+    const pedidosVisiveis = (pedidos as any[]).filter((p) => {
+      const s = situacaoPorPedido.get(String(p.pedidoId));
+      return !(s && (s.cancelado || /cancel/i.test(s.situacao)));
+    });
+    for (const p of pedidosVisiveis) {
+      const s = situacaoPorPedido.get(String(p.pedidoId));
+      p.situacao = s?.situacao || null;
+      p.faturado = !!s && /conclu/i.test(s.situacao);
+    }
+
     res.json({
       ok: true,
-      total: pedidos.length,
-      pedidos,
+      total: pedidosVisiveis.length,
+      pedidos: pedidosVisiveis,
     });
   } catch (e) {
     next(e);

@@ -148,6 +148,7 @@ type SeparacaoManualPedido = {
   nomeCliente?: string | null;
   envioPrevisto?: string | null; // YYYY-MM-DD: separado agora, enviado so nessa data
   canal?: string | null; // marketplace do pedido (so aparece na tela, nao vai pro PDF)
+  faturado?: boolean; // situacao Concluido no Bling = faturado (F); senao pendente (P)
 };
 
 const SEPARACAO_STATUS_KEY = 'anb:bling:vendas:separacao-pdfs';
@@ -1335,6 +1336,7 @@ export default function VendasBlingPage() {
                         <div style={{ minWidth: 0 }}>
                           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                             <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--blue-500)' }}>#{pedido.pedidoNum}</div>
+                            <span title={pedido.faturado ? 'Faturado (Concluido no Bling)' : 'Pendente de faturamento'} style={{ fontSize: 14, fontWeight: 800, color: pedido.faturado ? '#16a34a' : '#dc2626' }}>{pedido.faturado ? 'F' : 'P'}</span>
                             <span style={{ border: `1px solid ${paletaSeparacao(pedido.envioPrevisto, !!separadoEm).borda}`, background: paletaSeparacao(pedido.envioPrevisto, !!separadoEm).bg, color: paletaSeparacao(pedido.envioPrevisto, !!separadoEm).cor, borderRadius: 999, padding: '2px 8px', fontSize: 10.5, fontWeight: 800 }}>
                               {rotuloSeparacao(pedido.envioPrevisto, separadoEm)}
                             </span>
@@ -1389,7 +1391,7 @@ export default function VendasBlingPage() {
                       <tr>
                         {[
                           { label: '', width: 48 },
-                          { label: 'Pedido', width: '10%' },
+                          { label: 'Pedido', width: '10%' }, { label: 'F/P', width: 48 },
                           { label: 'Cliente', width: '28%' },
                           { label: 'Data da venda', width: '13%' },
                           { label: 'Envio previsto', width: '14%' },
@@ -1417,6 +1419,7 @@ export default function VendasBlingPage() {
                               <input type="checkbox" checked={checked} onChange={() => togglePedidoManual(pedido.pedidoId)} />
                             </td>
                             <td style={{ padding: '8px 10px', fontWeight: 700, color: 'var(--blue-500)' }}>#{pedido.pedidoNum}</td>
+                            <td title={pedido.faturado ? 'Faturado (Concluido no Bling)' : 'Pendente de faturamento'} style={{ padding: '8px 10px', fontWeight: 800, fontSize: 14, color: pedido.faturado ? '#16a34a' : '#dc2626' }}>{pedido.faturado ? 'F' : 'P'}</td>
                             <td style={{ padding: '8px 10px', color: 'var(--gray-800)' }}>{pedido.nomeCliente || <span style={{ color: 'var(--gray-400)' }}>—</span>}</td>
                             <td style={{ padding: '8px 10px', color: 'var(--gray-700)' }}>{fmtDate(pedido.dataVenda)}</td>
                             <td style={{ padding: '8px 10px', color: pedido.envioPrevisto ? paletaSeparacao(pedido.envioPrevisto, !!separadoEm).cor : 'var(--gray-400)', fontWeight: pedido.envioPrevisto ? 700 : 400 }}>{pedido.envioPrevisto ? fmtDate(pedido.envioPrevisto) : '—'}</td>
@@ -1441,7 +1444,7 @@ export default function VendasBlingPage() {
                           {expandido && (
                             <tr style={{ background: '#f8fafc' }}>
                               <td />
-                              <td colSpan={6} style={{ padding: '6px 10px 10px' }}>
+                              <td colSpan={7} style={{ padding: '6px 10px 10px' }}>
                                 <div style={{ display: 'grid', gap: 4 }}>
                                   {(pedido.itens || []).length === 0 ? (
                                     <span style={{ fontSize: 12, color: 'var(--gray-500)' }}>Sem itens registrados.</span>
