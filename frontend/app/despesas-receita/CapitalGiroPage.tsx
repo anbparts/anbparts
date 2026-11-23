@@ -27,11 +27,11 @@ const cs: any = {
   title: { fontFamily: 'Fraunces, serif', fontSize: 17, fontWeight: 600, letterSpacing: '-0.3px' },
   sub: { fontSize: 12, color: 'var(--ink-muted)', marginTop: 2 },
   card: { background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden', boxShadow: 'var(--shadow-sm)' },
-  sCard: { background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, padding: '18px 20px' },
-  th: { padding: '10px 14px', textAlign: 'right' as const, fontFamily: 'Geist Mono, monospace', fontSize: 10.5, letterSpacing: '0.7px', textTransform: 'uppercase' as const, color: 'var(--ink-muted)', whiteSpace: 'nowrap' as const, background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' },
-  td: { padding: '10px 14px', textAlign: 'right' as const, borderBottom: '1px solid var(--gray-100)', fontSize: 13, fontFamily: 'JetBrains Mono, monospace', whiteSpace: 'nowrap' as const },
+  sCard: { background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 16px' },
+  th: { padding: '7px 12px', textAlign: 'right' as const, fontFamily: 'Geist Mono, monospace', fontSize: 10.5, letterSpacing: '0.7px', textTransform: 'uppercase' as const, color: 'var(--ink-muted)', whiteSpace: 'nowrap' as const, background: 'var(--gray-50)', borderBottom: '1px solid var(--border)' },
+  td: { padding: '7px 12px', textAlign: 'right' as const, borderBottom: '1px solid var(--gray-100)', fontSize: 12.5, fontFamily: 'JetBrains Mono, monospace', whiteSpace: 'nowrap' as const },
   sel: { background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 6, padding: '7px 11px', fontSize: 13, fontFamily: 'Geist, sans-serif', outline: 'none', height: 32, cursor: 'pointer' },
-  kpiLabel: { fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '.6px', textTransform: 'uppercase' as const, marginBottom: 8 },
+  kpiLabel: { fontSize: 11, fontFamily: 'Geist Mono, monospace', color: 'var(--ink-muted)', letterSpacing: '.6px', textTransform: 'uppercase' as const, marginBottom: 4 },
 };
 
 type Janela = { ano: number; mes: number };
@@ -163,7 +163,7 @@ export default function CapitalGiroPage() {
   const rotuloMes = (l: { ano: number; mes: number }) => `${MESES[l.mes - 1]}/${String(l.ano).slice(2)}`;
   const periodo = janela.length ? `${rotuloMes(janela[0])} a ${rotuloMes(janela[janela.length - 1])}` : '';
   const semDados = !carregando && !erro && calc.n === 0;
-  const alturaGrafico = isPhone ? 150 : 200;
+  const alturaGrafico = isPhone ? 100 : 120;
   const linhaMediaPct = (calc.mediaTotal / calc.maxTotal) * 100;
 
   return (
@@ -193,42 +193,42 @@ export default function CapitalGiroPage() {
         </div>
       </div>
 
-      <div style={{ padding: isCompact ? 16 : 28, display: 'grid', gap: 20 }}>
+      <div style={{ padding: isCompact ? 14 : 20, display: 'grid', gap: 14, maxWidth: 1100 }}>
         {erro && <div style={{ padding: '10px 14px', borderRadius: 8, background: 'var(--red-light)', color: 'var(--red)', border: '1px solid #fca5a5', fontSize: 13 }}>{erro}</div>}
 
         {/* destaque: capital de giro necessario */}
-        <div style={{ borderRadius: 14, padding: isCompact ? '22px 20px' : '28px 32px', background: 'linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%)', color: '#fff', display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', boxShadow: 'var(--shadow-sm)' }}>
+        <div style={{ borderRadius: 12, padding: isCompact ? '14px 16px' : '16px 24px', background: 'linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%)', color: '#fff', display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', boxShadow: 'var(--shadow-sm)' }}>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 11.5, fontFamily: 'Geist Mono, monospace', letterSpacing: '.8px', textTransform: 'uppercase', opacity: 0.75 }}>Capital de giro necessário · {cobertura} {cobertura === 1 ? 'mês' : 'meses'}</div>
-            <div style={{ fontFamily: 'Fraunces, serif', fontSize: isPhone ? 34 : 46, fontWeight: 500, lineHeight: 1.1, marginTop: 8, ...mask }}>
+            <div style={{ fontFamily: 'Fraunces, serif', fontSize: isPhone ? 26 : 32, fontWeight: 500, lineHeight: 1.1, marginTop: 4, ...mask }}>
               {carregando ? '...' : sensitiveText(fmt(calc.necessario), hidden)}
             </div>
-            <div style={{ fontSize: 12.5, opacity: 0.8, marginTop: 10, lineHeight: 1.5 }}>
+            <div style={{ fontSize: 12, opacity: 0.8, marginTop: 6, lineHeight: 1.4 }}>
               {calc.n ? <>Média de {calc.n} {calc.n === 1 ? 'mês' : 'meses'} ({periodo}) × {cobertura} {cobertura === 1 ? 'mês' : 'meses'} de cobertura</> : 'Sem custos lançados no período escolhido'}
             </div>
           </div>
-          <div style={{ display: 'grid', gap: 6, fontSize: 12.5, minWidth: isPhone ? '100%' : 260 }}>
+          <div style={{ display: 'grid', gap: 3, fontSize: 12, minWidth: isPhone ? '100%' : 230 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, opacity: 0.9 }}><span>Soma da média mensal</span><b style={mask}>{sensitiveText(fmt(calc.mediaTotal), hidden)}</b></div>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, opacity: 0.9 }}><span>Custo por dia</span><b style={mask}>{sensitiveText(fmt(calc.mediaTotal / 30), hidden)}</b></div>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, opacity: 0.9 }}><span>Custo por semana</span><b style={mask}>{sensitiveText(fmt((calc.mediaTotal / 30) * 7), hidden)}</b></div>
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
           <div style={cs.sCard}>
             <div style={cs.kpiLabel}>Custo fixo mensal (média)</div>
-            <div style={{ fontFamily: 'Fraunces, serif', fontSize: 22, fontWeight: 500, color: COR_FIXO, ...mask }}>{sensitiveText(fmt(calc.mediaFixo), hidden)}</div>
+            <div style={{ fontFamily: 'Fraunces, serif', fontSize: 18, fontWeight: 500, color: COR_FIXO, ...mask }}>{sensitiveText(fmt(calc.mediaFixo), hidden)}</div>
             <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 6 }}>{calc.pctFixo.toFixed(0)}% do custo mensal</div>
           </div>
           <div style={cs.sCard}>
             <div style={cs.kpiLabel}>Custo variável mensal (média)</div>
-            <div style={{ fontFamily: 'Fraunces, serif', fontSize: 22, fontWeight: 500, color: COR_VAR, ...mask }}>{sensitiveText(fmt(calc.mediaVar), hidden)}</div>
+            <div style={{ fontFamily: 'Fraunces, serif', fontSize: 18, fontWeight: 500, color: COR_VAR, ...mask }}>{sensitiveText(fmt(calc.mediaVar), hidden)}</div>
             <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 6 }}>{(calc.mediaTotal ? 100 - calc.pctFixo : 0).toFixed(0)}% do custo mensal</div>
           </div>
           <div style={cs.sCard}>
             <div style={cs.kpiLabel}>Soma média mensal</div>
-            <div style={{ fontFamily: 'Fraunces, serif', fontSize: 22, fontWeight: 500, ...mask }}>{sensitiveText(fmt(calc.mediaTotal), hidden)}</div>
-            <div style={{ height: 8, borderRadius: 99, overflow: 'hidden', background: 'var(--border)', display: 'flex', marginTop: 12 }}>
+            <div style={{ fontFamily: 'Fraunces, serif', fontSize: 18, fontWeight: 500, ...mask }}>{sensitiveText(fmt(calc.mediaTotal), hidden)}</div>
+            <div style={{ height: 8, borderRadius: 99, overflow: 'hidden', background: 'var(--border)', display: 'flex', marginTop: 8 }}>
               <div style={{ width: `${calc.pctFixo}%`, background: COR_FIXO }} />
               <div style={{ flex: 1, background: COR_VAR }} />
             </div>
@@ -240,13 +240,13 @@ export default function CapitalGiroPage() {
         </div>
 
         {/* grafico: custo de cada mes (fixo + variavel) e a media */}
-        <div style={{ ...cs.card, padding: isCompact ? 14 : 20 }}>
-          <div style={{ fontFamily: 'Fraunces, serif', fontSize: 17, fontWeight: 600 }}>Custo mensal · {periodo}</div>
-          <div style={{ fontSize: 12.5, color: 'var(--ink-muted)', margin: '4px 0 16px' }}>Cada coluna soma o custo fixo e o variável do mês. A linha tracejada é a média usada no cálculo.</div>
+        <div style={{ ...cs.card, padding: isCompact ? 12 : 14 }}>
+          <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>Custo mensal · {periodo}</div>
+          <div style={{ fontSize: 12.5, color: 'var(--ink-muted)', margin: '2px 0 8px' }}>Cada coluna soma o custo fixo e o variável do mês. A linha tracejada é a média usada no cálculo.</div>
           {carregando ? (
             <div style={{ padding: 24, color: 'var(--ink-muted)', fontSize: 13 }}>Carregando custos...</div>
           ) : (
-            <div style={{ position: 'relative', height: alturaGrafico + 44, paddingTop: 8 }}>
+            <div style={{ position: 'relative', height: alturaGrafico + 40, paddingTop: 6 }}>
               {calc.n > 0 && (
                 <div style={{ position: 'absolute', left: 0, right: 0, bottom: 28 + (alturaGrafico * linhaMediaPct) / 100, borderTop: '2px dashed var(--ink-muted)', opacity: 0.55, zIndex: 1, pointerEvents: 'none' }}>
                   <span style={{ position: 'absolute', right: 0, top: -18, fontSize: 11, color: 'var(--ink-muted)', background: 'var(--white)', padding: '0 4px', ...mask }}>média {sensitiveText(fmtCurto(calc.mediaTotal), hidden)}</span>
@@ -259,7 +259,7 @@ export default function CapitalGiroPage() {
                   return (
                     <div key={`${l.ano}-${l.mes}`} style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', height: '100%', opacity: l.temDados ? 1 : 0.4 }} title={`${MESES_LONGO[l.mes - 1]}/${l.ano}: fixo ${fmt(l.fixo)} + variável ${fmt(l.variavel)} = ${fmt(l.total)}`}>
                       <div style={{ fontSize: 11, fontFamily: 'JetBrains Mono, monospace', color: 'var(--ink)', marginBottom: 4, whiteSpace: 'nowrap', ...mask }}>{l.temDados ? sensitiveText(fmtCurto(l.total), hidden) : ''}</div>
-                      <div style={{ width: '100%', maxWidth: 72, display: 'flex', flexDirection: 'column-reverse', borderRadius: '6px 6px 0 0', overflow: 'hidden' }}>
+                      <div style={{ width: '100%', maxWidth: 56, display: 'flex', flexDirection: 'column-reverse', borderRadius: '6px 6px 0 0', overflow: 'hidden' }}>
                         <div style={{ height: hFixo, background: COR_FIXO }} />
                         <div style={{ height: hVar, background: COR_VAR }} />
                       </div>
@@ -274,8 +274,8 @@ export default function CapitalGiroPage() {
 
         {/* tabela no formato da visao do Nelson */}
         <div style={cs.card}>
-          <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
-            <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>Custos mês a mês</div>
+          <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)' }}>
+            <div style={{ fontFamily: 'Fraunces, serif', fontSize: 14, fontWeight: 600 }}>Custos mês a mês</div>
             <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 4 }}>Fixo e variável de cada mês, a média dos meses e o capital de giro para {cobertura} {cobertura === 1 ? 'mês' : 'meses'} de cobertura.</div>
           </div>
           {semDados ? (
@@ -325,17 +325,17 @@ export default function CapitalGiroPage() {
         </div>
 
         {/* de onde vem o custo */}
-        <div style={{ display: 'grid', gridTemplateColumns: isCompact ? '1fr' : '1fr 1fr', gap: 20 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isCompact ? '1fr' : '1fr 1fr', gap: 14 }}>
           {[
             { titulo: 'O que pesa no custo fixo', cor: COR_FIXO, itens: calc.topFixos, total: calc.mediaFixo },
             { titulo: 'O que pesa no custo variável', cor: COR_VAR, itens: calc.topVars, total: calc.mediaVar },
           ].map((bloco) => (
             <div key={bloco.titulo} style={cs.card}>
-              <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
-                <div style={{ fontFamily: 'Fraunces, serif', fontSize: 15, fontWeight: 600 }}>{bloco.titulo}</div>
+              <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)' }}>
+                <div style={{ fontFamily: 'Fraunces, serif', fontSize: 14, fontWeight: 600 }}>{bloco.titulo}</div>
                 <div style={{ fontSize: 12, color: 'var(--ink-muted)', marginTop: 4 }}>Média mensal por categoria</div>
               </div>
-              <div style={{ padding: '12px 18px 16px', display: 'grid', gap: 12 }}>
+              <div style={{ padding: '10px 16px 12px', display: 'grid', gap: 8 }}>
                 {!bloco.itens.length ? (
                   <div style={{ fontSize: 13, color: 'var(--ink-muted)' }}>Sem lançamentos no período.</div>
                 ) : bloco.itens.map((p) => (
