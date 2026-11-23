@@ -179,6 +179,20 @@ function paletaSeparacao(envioPrevisto: string | null | undefined, separado: boo
   return separado ? { borda: '#bbf7d0', bg: '#f0fdf4', cor: '#15803d' } : { borda: '#fed7aa', bg: '#fff7ed', cor: '#c2410c' };
 }
 
+// Ordem da lista do Relatorio de Separacao: 1) pendentes (inclusive os com data de envio futura), 2) separados com envio posterior
+// (data de envio definida), 3) demais separados; dentro de cada grupo, pelo numero do pedido em ordem crescente.
+function ordenarPedidosManuais(lista: SeparacaoManualPedido[], separadoEm: (pedidoId: number) => string): SeparacaoManualPedido[] {
+  const grupo = (p: SeparacaoManualPedido) => (!separadoEm(p.pedidoId) ? 0 : p.envioPrevisto ? 1 : 2);
+  return [...lista].sort((a, b) => {
+    const g = grupo(a) - grupo(b);
+    if (g) return g;
+    const na = Number(a.pedidoNum);
+    const nb = Number(b.pedidoNum);
+    if (Number.isFinite(na) && Number.isFinite(nb) && na !== nb) return na - nb;
+    return String(a.pedidoNum).localeCompare(String(b.pedidoNum), 'pt-BR', { numeric: true });
+  });
+}
+
 function calcularLiq(precoML: number, frete: number, taxaPct: number) {
   const taxaValor = parseFloat((precoML * taxaPct / 100).toFixed(2));
   const valorLiq = parseFloat((precoML - frete - taxaValor).toFixed(2));
@@ -1108,7 +1122,7 @@ export default function VendasBlingPage() {
   const cancelSemBaixa = itens.filter((item) => item.tipo === 'CANCELAMENTO' && !item.baixaVinculada);
   const cancelNaoAchados = itens.filter((item) => item.tipo === 'CANCELAMENTO' && item.baixaVinculada && !item.encontrada);
   const filtroPedidoManualNormalizado = filtroPedidoManual.trim().toLowerCase();
-  const pedidosManuaisFiltrados = pedidosManuais.filter((pedido) => {
+  const pedidosManuaisFiltrados = ordenarPedidosManuais(pedidosManuais, pedidoSeparadoEm).filter((pedido) => {
     if (!filtroPedidoManualNormalizado) return true;
     return [
       String(pedido.pedidoNum || ''),
@@ -1314,7 +1328,7 @@ export default function VendasBlingPage() {
                   Nenhum pedido importado encontrado para a selecao manual.
                 </div>
               ) : isPhone ? (
-                <div style={{ maxHeight: 420, overflowY: 'auto', display: 'grid', gap: 10, padding: 12 }}>
+                <div style={{ maxHeight: '70vh', overflowY: 'auto', display: 'grid', gap: 10, padding: 12 }}>
                   {pedidosManuaisFiltrados.map((pedido) => {
                     const checked = pedidosManuaisSelecionadosSet.has(pedido.pedidoId);
                     const separadoEm = pedidoSeparadoEm(pedido.pedidoId);
@@ -1385,7 +1399,7 @@ export default function VendasBlingPage() {
                   })}
                 </div>
               ) : (
-                <div style={{ maxHeight: 360, overflowY: 'auto' }}>
+                <div style={{ maxHeight: '72vh', minHeight: 360, overflowY: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
                     <thead style={{ background: 'var(--gray-50)', position: 'sticky', top: 0, zIndex: 1 }}>
                       <tr>
