@@ -6,7 +6,7 @@ import { canAccessPage, canProcessAction } from '@/lib/permissions';
 import { useIsPhone } from '@/lib/use-is-phone';
 import { usePersistentTab } from '@/lib/use-persistent-tab';
 import TabsBar from '@/components/ui/TabsBar';
-import DespesasReceitaPage from '../despesas-receita/page';
+import FinanceiroPage from '../despesas-receita/FinanceiroPage';
 import FaturamentoMotoPage from '../faturamento/page';
 import FaturamentoGeralPage from '../faturamento/geral/page';
 import DREPage from '../dre/page';
@@ -19,7 +19,7 @@ import MarkupTab from '../estoque/MarkupTab';
 type Aba = { id: string; label: string; href: string; Pagina: ComponentType<any> };
 
 const ABAS: Aba[] = [
-  { id: 'despesas-receita', label: 'Despesas x Receita', href: '/despesas-receita', Pagina: DespesasReceitaPage },
+  { id: 'financeiro', label: 'Financeiro', href: '/despesas-receita', Pagina: FinanceiroPage },
   { id: 'faturamento-moto', label: 'Faturamento por Moto', href: '/faturamento', Pagina: FaturamentoMotoPage },
   { id: 'faturamento-geral', label: 'Faturamento Geral', href: '/faturamento/geral', Pagina: FaturamentoGeralPage },
   { id: 'dre', label: 'DRE', href: '/dre', Pagina: DREPage },
@@ -38,7 +38,8 @@ export default function RelatoriosPage() {
   const isPhone = useIsPhone();
   // Markup nao e' pagina propria: segue a permissao "Markup" (em Estoque) do perfil; Bruno/admin sempre
   const canMarkup = canProcessAction(user as any, 'estoque', 'markup');
-  const visiveis = ABAS.filter((a) => (a.id === 'markup' ? canMarkup : canAccessPage(user as any, a.href)));
+  // Financeiro reune Despesas x Receitas (/despesas-receita) e Capital de Giro (custos do DRE, /dre): aparece se o perfil tem uma das duas
+  const visiveis = ABAS.filter((a) => (a.id === 'markup' ? canMarkup : a.id === 'financeiro' ? (canAccessPage(user as any, '/despesas-receita') || canAccessPage(user as any, '/dre')) : canAccessPage(user as any, a.href)));
   // chave "rel": as paginas de dentro usam "aba" para as proprias abas internas
   const [rel, setRel] = usePersistentTab<string>('rel', ABAS[0].id, ABAS.map((a) => a.id));
   const atual = visiveis.find((a) => a.id === rel) || visiveis[0];
@@ -67,7 +68,7 @@ export default function RelatoriosPage() {
       <div style={{ minHeight: 'var(--topbar-h)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: isPhone ? '12px 14px' : '10px 28px', background: 'var(--white)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, zIndex: 60, gap: 12, flexWrap: 'wrap' }}>
         <div>
           <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--gray-800)', letterSpacing: '-0.3px' }}>Relatórios</div>
-          <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>Despesas x receita, faturamento, DRE, curva ABC, vendas e markup</div>
+          <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>Financeiro (despesas x receitas e capital de giro), faturamento, DRE, curva ABC, vendas e markup</div>
         </div>
       </div>
       {visiveis.length ? (
