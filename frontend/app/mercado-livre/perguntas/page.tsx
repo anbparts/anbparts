@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '../../../lib/api';
+import { API_BASE } from '../../../lib/api-base';
+import PecaDetalheNovaModal from '../../estoque/PecaDetalheNovaModal';
 
 type LayoutMode = 'phone' | 'tablet-portrait' | 'tablet-landscape' | 'desktop';
 
@@ -163,6 +165,52 @@ export default function MercadoLivrePerguntasPage() {
   const [buscaHistoricoLoading, setBuscaHistoricoLoading] = useState(false);
   const [buscaHistoricoError, setBuscaHistoricoError] = useState('');
   const [buscaHistoricoResultado, setBuscaHistoricoResultado] = useState<any | null>(null);
+
+  // Popup "Detalhes da Peça" do Estoque, so para consulta (sem permissao de editar nem de trocar a foto)
+  const [pecaDetalhe, setPecaDetalhe] = useState<any | null>(null);
+  const [pecaDetalheLoading, setPecaDetalheLoading] = useState('');
+
+  async function abrirPecaDetalhe(sku: string | null | undefined, pecaId?: number | null) {
+    const codigo = String(sku || '').trim();
+    if (!codigo || pecaDetalheLoading) return;
+    setPecaDetalheLoading(codigo);
+    try {
+      let peca: any = null;
+      if (pecaId) {
+        const resp = await fetch(`${API_BASE}/pecas/${pecaId}`, { credentials: 'include' });
+        if (resp.ok) peca = await resp.json();
+      }
+      if (!peca) {
+        const resp = await fetch(`${API_BASE}/pecas?sku=${encodeURIComponent(codigo)}&per=20`, { credentials: 'include' });
+        const lista = resp.ok ? await resp.json() : null;
+        peca = (lista?.data || []).find((p: any) => String(p.idPeca || '').toUpperCase() === codigo.toUpperCase()) || null;
+      }
+      if (!peca) {
+        alert(`Peça ${codigo} não encontrada no estoque.`);
+        return;
+      }
+      setPecaDetalhe(peca);
+    } catch (e: any) {
+      alert(`Erro ao abrir a peça ${codigo}: ${e?.message || e}`);
+    } finally {
+      setPecaDetalheLoading('');
+    }
+  }
+
+  const skuLinkStyle: any = {
+    background: 'none',
+    border: 'none',
+    padding: 0,
+    margin: 0,
+    font: 'inherit',
+    color: 'var(--blue-500)',
+    cursor: 'pointer',
+    textAlign: 'left',
+    overflowWrap: 'anywhere',
+    textDecoration: 'underline',
+    textDecorationStyle: 'dotted',
+    textUnderlineOffset: 3,
+  };
 
   const shellOffset = isDesktop ? 0 : 64;
   const pagePadding = isPhone ? 14 : isTabletPortrait ? 18 : isTabletLandscape ? 22 : 28;
@@ -521,7 +569,11 @@ export default function MercadoLivrePerguntasPage() {
                             overflowWrap: 'anywhere',
                           }}
                         >
-                          {pergunta.sku || pergunta.tituloAnuncio || 'Sem identificacao'}
+                          {pergunta.sku ? (
+                            <button type="button" onClick={() => abrirPecaDetalhe(pergunta.sku, pergunta.pecaId)} style={skuLinkStyle} title="Ver detalhes da peça (consulta)">
+                              {pergunta.sku}
+                            </button>
+                          ) : (pergunta.tituloAnuncio || 'Sem identificacao')}
                         </div>
 
                         <div
@@ -603,7 +655,11 @@ export default function MercadoLivrePerguntasPage() {
                               overflowWrap: 'anywhere',
                             }}
                           >
-                            {item.value}
+                            {item.label === 'SKU' && pergunta.sku ? (
+                              <button type="button" onClick={() => abrirPecaDetalhe(pergunta.sku, pergunta.pecaId)} style={skuLinkStyle} title="Ver detalhes da peça (consulta)">
+                                {item.value}
+                              </button>
+                            ) : item.value}
                           </div>
                         </div>
                       ))}
@@ -1178,6 +1234,15 @@ export default function MercadoLivrePerguntasPage() {
           </div>
         </div>
       ) : null}
+
+      <PecaDetalheNovaModal
+        open={Boolean(pecaDetalhe)}
+        peca={pecaDetalhe}
+        onClose={() => setPecaDetalhe(null)}
+        canEditarPeca={false}
+        canTrocarFotoCapa={false}
+        viewportMode={isPhone ? 'phone' : 'desktop'}
+      />
     </>
   );
 }
