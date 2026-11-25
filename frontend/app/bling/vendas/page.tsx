@@ -180,14 +180,14 @@ function paletaSeparacao(envioPrevisto: string | null | undefined, separado: boo
 }
 
 // Ordem da lista do Relatorio de Separacao: 1) pendentes (inclusive os com data de envio futura), 2) separados com envio posterior
-// (data de envio definida), 3) demais separados; pelo numero do pedido: decrescente nos grupos 1 e 2, crescente no 3.
+// (data de envio definida), 3) demais separados; pelo numero do pedido decrescente nos 3 grupos.
 function ordenarPedidosManuais(lista: SeparacaoManualPedido[], separadoEm: (pedidoId: number) => string): SeparacaoManualPedido[] {
   const grupo = (p: SeparacaoManualPedido) => (!separadoEm(p.pedidoId) ? 0 : p.envioPrevisto ? 1 : 2);
   return [...lista].sort((a, b) => {
     const g = grupo(a) - grupo(b);
     if (g) return g;
-    // pendentes e envio posterior: numero decrescente (mais recentes primeiro); demais separados: crescente
-    const dir = grupo(a) < 2 ? -1 : 1;
+    // todos os grupos: numero do pedido decrescente (mais recentes primeiro)
+    const dir = -1;
     const na = Number(a.pedidoNum);
     const nb = Number(b.pedidoNum);
     if (Number.isFinite(na) && Number.isFinite(nb) && na !== nb) return (na - nb) * dir;
